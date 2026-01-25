@@ -16,7 +16,6 @@ def layout(root, config):
     """
     text_font = ("Terminal", 10)
     enter_emoji_unicode = "^⏎"
-    print(enter_emoji_unicode)
 
     # Get screen dimensions
     screen_width = root.winfo_screenwidth()

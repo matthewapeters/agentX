@@ -1,12 +1,11 @@
 import asyncio
-import json
 import tkinter as tk
 
 import httpx
-from ollama import AsyncClient
+from ollama import Client
 
 
-async def stream_ollama_response(root, config):
+def stream_ollama_response(root, config):
     """
     Streams the response from the Ollama server and updates the output_text widget.
     """
@@ -32,16 +31,17 @@ async def stream_ollama_response(root, config):
     try:
         # Use the AsyncClient to stream responses
         last_channel = ""
-        client = AsyncClient(host=f"http://{ollama_host}")
-        async for part in (
-            await client.chat(model=ollama_model, messages=[message], stream=True)
-        ):
+        client = Client(host=f"http://{ollama_host}")
+        for part in client.chat(
+            model=ollama_model, 
+            messages=[message], 
+            stream=True): 
             #print(f"Received part: {part}")  # Debugging for received part
             channels = [k for k,v in part.message.__dict__.items() if v and k not in ["role", ""]]
             if channels:
                 channel = channels[0]
                 # print(f"Received channel: {channel}: {part.message[channel]}")  # Debugging for received channel
-                if channel != last_channel:
+                if last_channel and channel != last_channel:
                     root.output_text.insert(tk.END, "\n\n", ("system_space",))  # Add spacing between different channels
                 match channel:
                     case "thinking":
@@ -80,7 +80,7 @@ def setup_ollama_client(root, config):
     """
     add_text_styling(root, config)  # Ensure text styling tags are added
     root.user_submit.config(
-        command=lambda: asyncio.run(stream_ollama_response(root, config))
+        command=lambda: stream_ollama_response(root, config)
     )
 
 
