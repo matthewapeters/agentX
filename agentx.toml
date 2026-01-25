@@ -1,0 +1,3 @@
+[agentx]
+ollama_host=localhost:11434
+ollama_model=gpt-oss
