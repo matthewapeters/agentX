@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentx"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "emoji>=2.15.0",
+    "ollama>=0.6.1",
+    "pillow>=12.1.0",
+]
+
+[tool.setuptools]
+packages = ["agentx"]
+include-package-data = true
+
+[tool.setuptools.package-dir]
+agentx = "src/agentx"

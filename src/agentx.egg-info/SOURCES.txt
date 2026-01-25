@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+src/agentx/__init__.py
+src/agentx/layout.py
+src/agentx/main.py
+src/agentx.egg-info/PKG-INFO
+src/agentx.egg-info/SOURCES.txt
+src/agentx.egg-info/dependency_links.txt
+src/agentx.egg-info/top_level.txt
