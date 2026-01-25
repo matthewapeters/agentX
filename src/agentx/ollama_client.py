@@ -21,14 +21,14 @@ def stream_ollama_response(root, config):
 
     # Display the user prompt in the output_text widget
     root.user_input_text.delete("1.0", tk.END)  # Clear the user input text
-    root.output_text.insert(tk.END, prompt + "\n", ("user_prompt",))
+    root.output_text.insert(tk.END, f"User: {prompt}\n", ("user_prompt",))
     root.output_text.insert(tk.END, "\n", ("system_space",))  # Add extra whitespace with system background
     root.output_text.see(tk.END)  # Auto-scroll to the end
-
-    # Define the message payload
-    message = {"role": "user", "content": prompt}
+    root.update_idletasks()
 
     try:
+        # Define the message payload
+        message = {"role": "user", "content": prompt}
         # Use the AsyncClient to stream responses
         last_channel = ""
         client = Client(host=f"http://{ollama_host}")
@@ -41,8 +41,17 @@ def stream_ollama_response(root, config):
             if channels:
                 channel = channels[0]
                 # print(f"Received channel: {channel}: {part.message[channel]}")  # Debugging for received channel
-                if last_channel and channel != last_channel:
-                    root.output_text.insert(tk.END, "\n\n", ("system_space",))  # Add spacing between different channels
+                if channel != last_channel:
+                    match channel:
+                        case "thinking":
+                            root.output_text.insert(tk.END, "(Agent is thinking...)\n\n", ("agent_thinking",))
+                            root.output_text.see(tk.END)  # Auto-scroll to the end
+                        case "content":
+                            root.output_text.insert(tk.END, "\n", ("system_space",))  # Add spacing between different channels
+                            root.output_text.insert(tk.END, "Agent:\n\n", ("agent_response",))
+                            root.update_idletasks()
+                        case _:
+                            pass  # For other channels, no special header
                 match channel:
                     case "thinking":
                         # Handle agent thinking content
@@ -69,6 +78,11 @@ def stream_ollama_response(root, config):
                     case _:
                         print(f"Unknown channel received: {channel}")  # Debugging for unknown channels
                         last_channel = channel
+                root.update_idletasks()
+        # After streaming is complete, add spacing
+        root.output_text.insert(tk.END, "\n\n", ("system_space",))  # Add spacing between different channels
+        root.update_idletasks()
+
     except Exception as e:
         root.output_text.insert(tk.END, f"Error: {e}\n")
         print(f"Request error: {e}")
