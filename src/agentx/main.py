@@ -1,8 +1,10 @@
-from logging import root
 import tkinter as tk
-from .layout import layout
+from logging import root
+
 from .config import load_config
+from .layout import layout
 from .ollama_client import perform_service_handshake
+
 
 def main():
     root = tk.Tk()

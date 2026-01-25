@@ -10,8 +10,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "asyncio>=4.0.0",
+    "black>=26.1.0",
     "emoji>=2.15.0",
+    "flake8>=7.3.0",
     "httpx>=0.28.1",
+    "isort>=7.0.0",
     "ollama>=0.6.1",
     "pillow>=12.1.0",
     "pytoml>=0.1.21",

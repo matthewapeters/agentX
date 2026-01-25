@@ -4,6 +4,7 @@ Docstring for layout
 
 import tkinter as tk
 from tkinter import font
+
 from .ollama_client import setup_ollama_client
 
 # import emoji
@@ -14,7 +15,7 @@ def layout(root, config):
     Sets up the layout for the tkinter root window.
     """
     text_font = ("Terminal", 10)
-    enter_emoji_unicode = "⏎"
+    enter_emoji_unicode = "^⏎"
     print(enter_emoji_unicode)
 
     # Get screen dimensions
@@ -22,13 +23,13 @@ def layout(root, config):
     screen_height = root.winfo_screenheight()
 
     # Determine screen side from config (default to "right")
-    screen_side = config['agentx'].get('screen_side', 'right').lower()
+    screen_side = config["agentx"].get("screen_side", "right").lower()
     if screen_side == "left":
         root.geometry(f"{screen_width // 2}x{screen_height}+0+0")
     else:  # Default to "right"
         root.geometry(f"{screen_width // 2}x{screen_height}+{screen_width // 2}+0")
 
-    root.title("AgentX Application")
+    root.title("AgentX - the Ollama Agent")
 
     root.output_display = tk.Frame(root, bg="white")
     root.output_text = tk.Text(root.output_display, wrap=tk.WORD, font=text_font)
@@ -48,6 +49,9 @@ def layout(root, config):
     root.output_display.place(relx=0.001, rely=0.001, relwidth=0.79, relheight=0.79)
     root.system_status.place(relx=0.80, rely=0.001, relwidth=0.2, relheight=0.79)
     root.user_input.place(relx=0.001, rely=0.80, relwidth=1.0, relheight=0.2)
+
+    # Bind Ctrl-Enter to trigger the user_submit button
+    root.user_input_text.bind("<Control-Return>", lambda event: root.user_submit.invoke())
 
     # Setup the Ollama client with the loaded configuration
     setup_ollama_client(root, config)
