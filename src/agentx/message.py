@@ -108,6 +108,16 @@ class Message:
         ▶ [x] 🤖  That is a great question...       # Disabled agent response, collapsed
 
 
+        Explanataon: 
+        Each message is a single frame with a 4x1+n grid layout.
+        The first row contains:
+        - A toggle button (▼ or ▶) to expand/collapse the message content (column 0)
+        - A checkbox to enable/disable the message in the context (column 1)
+        - A label showing the role icon (👤, 🤖, ⚙️) (column 2)
+        - a label showing a preview of the message content (column 3)
+        - Additional rows (n) for each attachment showing a "📁" icon and the filename of the attachments
+
+
         :return: tkinter Frame representing the message
         """
         frame = tk.Frame()
