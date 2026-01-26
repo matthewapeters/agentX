@@ -4,14 +4,15 @@ import tkinter as tk
 import httpx
 from ollama import Client
 
-
 # Global variable to manage streaming state
 is_streaming = threading.Event()
+streaming_thread = None
 
 
-def stream_ollama_response(root, config):
+def _stream_ollama_response_worker(root, config):
     """
-    Streams the response from the Ollama server and updates the output_text widget.
+    Worker function that streams the response from the Ollama server and updates the output_text widget.
+    This runs in a separate thread to keep the GUI responsive.
     """
     global is_streaming  # Ensure we use the global is_streaming instance
     is_streaming.set()
@@ -31,9 +32,6 @@ def stream_ollama_response(root, config):
     # Display the user prompt in the output_text widget
     root.user_input_text.delete("1.0", tk.END)  # Clear the user input text
     root.output_text.insert(tk.END, f"User: {prompt}\n", ("user_prompt",))
-    root.output_text.insert(
-        tk.END, "\n", ("system_space",)
-    )  # Add extra whitespace with system background
     root.output_text.see(tk.END)  # Auto-scroll to the end
     root.update_idletasks()
 
@@ -59,12 +57,18 @@ def stream_ollama_response(root, config):
                     match channel:
                         case "thinking":
                             root.output_text.insert(
+                                tk.END, "\n", ("system_space",)
+                            )  # Add spacing between different channels
+                            root.output_text.insert(
                                 tk.END,
                                 "(Agent is thinking...)\n\n",
                                 ("agent_thinking",),
                             )
                             root.output_text.see(tk.END)  # Auto-scroll to the end
                         case "content":
+                            root.output_text.insert(
+                                tk.END, "\n", ("agent_thinking",)
+                            )  # end of line for thinking
                             root.output_text.insert(
                                 tk.END, "\n", ("system_space",)
                             )  # Add spacing between different channels
@@ -152,6 +156,7 @@ def perform_service_handshake(config):
             f"Failed to perform service handshake and model invocation: {e}"
         )
 
+
 def interrupt_streaming():
     """
     Interrupts the ongoing streaming process.
@@ -159,3 +164,17 @@ def interrupt_streaming():
     global is_streaming
     print("Interrupting streaming...")
     is_streaming.clear()
+
+
+def stream_ollama_response(root, config):
+    """
+    Initiates streaming response in a separate thread to keep the GUI responsive.
+    """
+    global streaming_thread
+    if streaming_thread and streaming_thread.is_alive():
+        print("Streaming already in progress")
+        return
+    streaming_thread = threading.Thread(
+        target=_stream_ollama_response_worker, args=(root, config), daemon=False
+    )
+    streaming_thread.start()

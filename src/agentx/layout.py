@@ -4,7 +4,7 @@ Docstring for layout
 
 import tkinter as tk
 
-from .ollama_client import stream_ollama_response, interrupt_streaming
+from .ollama_client import interrupt_streaming, stream_ollama_response
 
 
 def layout(root, config):
@@ -62,19 +62,19 @@ def layout(root, config):
     )  # Positioned at the right edge of user_input_text
 
     root.user_submit = tk.Button(
-        root.user_input, 
+        root.user_input,
         text=enter_emoji_unicode,
-        command=lambda: stream_ollama_response(root, config)
-        )
+        command=lambda: stream_ollama_response(root, config),
+    )
     root.user_submit.place(relx=0.92, rely=0, relwidth=0.07, relheight=0.25)
 
     # Add a break button below the submit button
     root.user_break = tk.Button(
-        root.user_input, 
-        text="❌", 
+        root.user_input,
+        text="❌",
         command=lambda: interrupt_streaming(),
         state=tk.DISABLED,
-        )
+    )
     root.user_break.place(relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25)
 
     root.output_display.place(relx=0.001, rely=0.001, relwidth=0.79, relheight=0.79)
