@@ -96,14 +96,16 @@ class Message:
         if there are attachments,
         the attachments will be represented in the GUI by "📁" followed by the filename
 
-        [ ] ⚙️  You are a helpful assistant... 
-                📁  canned prompt1.txt
-                📁  canned prompt2.txt
-        [ ] 👤  This is the message content...
-                📁 filename.txt
-                📁 filename.txt
-                📁 filename.txt
-        [x] 🤖  That is a great question...
+        Example:
+
+        ▼ [ ] ⚙️  You are a helpful assistant...    # Enambled system prompt, expanded
+                  📁  canned prompt1.txt            
+                  📁  canned prompt2.txt
+        ▼ [ ] 👤  This is the message content...    # Enabled user prompt, expanded
+                  📁 filename.txt
+                  📁 filename.txt
+                  📁 filename.txt
+        ▶ [x] 🤖  That is a great question...       # Disabled agent response, collapsed
 
 
         :return: tkinter Frame representing the message
