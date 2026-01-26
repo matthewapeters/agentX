@@ -121,30 +121,56 @@ class Message:
         :return: tkinter Frame representing the message
         """
         frame = tk.Frame()
-        
-        collapse_expand_button = tk.Button(frame, text="▼" if self.enabled else "▶")
-        
-        enabled_var = tk.BooleanVar(value=self.enabled)
-        enabled_checkbox = tk.Checkbutton(frame, text="Enabled", variable=enabled_var)
 
-        role: str 
+        # State for expand/collapse
+        expanded_var = tk.BooleanVar(value=True)
+
+        def toggle_expand():
+            expanded = expanded_var.get()
+            if expanded:
+                collapse_expand_button.config(text="▶")
+                # Hide attachments and content
+                for w in attachment_widgets:
+                    w.grid_remove()
+            else:
+                collapse_expand_button.config(text="▼")
+                for idx, w in enumerate(attachment_widgets):
+                    w.grid(row=1+idx, column=3, columnspan=2, sticky="w", padx=(30,0))
+            expanded_var.set(not expanded)
+
+        collapse_expand_button = tk.Button(
+            frame, text="▼", width=2, command=toggle_expand
+        )
+        collapse_expand_button.grid(row=0, column=0, sticky="w")
+
+        enabled_var = tk.BooleanVar(value=self.enabled)
+        enabled_checkbox = tk.Checkbutton(frame, variable=enabled_var)
+        enabled_checkbox.grid(row=0, column=1, sticky="w")
+
+        role: str
         match self.role:
             case "user":
                 role = "👤"
             case "assistant":
                 role = "🤖"
             case _:
-                role = "⚙️" # default to system
-
+                role = "⚙️"  # default to system
         role_label = tk.Label(frame, text=role)
-        attachements_frame = tk.Frame(frame)
-        attachments = [f"📁  {att.split('/')[-1]}" for att in self.attachments]
+        role_label.grid(row=0, column=2, sticky="w")
 
-        content_text = tk.Text(frame, wrap=tk.WORD, height=4, width=50)
-        content_text.insert(tk.END, self.content)
+        # Content preview (first 40 chars)
+        preview = self.content[:40] + ("..." if len(self.content) > 40 else "")
+        preview_label = tk.Label(frame, text=preview, anchor="w", width=50)
+        preview_label.grid(row=0, column=3, sticky="w")
 
-        # TODO: layout the components in the frame's grid
+        # Attachments
+        attachment_widgets = []
+        for idx, att in enumerate(self.attachments):
+            att_label = tk.Label(frame, text=f"📁  {att.split('/')[-1]}", anchor="w")
+            att_label.grid(row=1+idx, column=3, columnspan=2, sticky="w", padx=(30,0))
+            attachment_widgets.append(att_label)
 
-
+        # Start collapsed state (all widgets hidden) to respect screen space
+        expanded_var.set(False)
 
         return frame
