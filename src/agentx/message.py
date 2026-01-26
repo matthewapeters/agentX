@@ -121,9 +121,11 @@ class Message:
         :return: tkinter Frame representing the message
         """
         frame = tk.Frame()
+        
+        collapse_expand_button = tk.Button(frame, text="▼" if self.enabled else "▶")
+        
         enabled_var = tk.BooleanVar(value=self.enabled)
         enabled_checkbox = tk.Checkbutton(frame, text="Enabled", variable=enabled_var)
-        enabled_checkbox.pack(side=tk.LEFT)
 
         role: str 
         match self.role:
@@ -135,10 +137,14 @@ class Message:
                 role = "⚙️" # default to system
 
         role_label = tk.Label(frame, text=role)
-        role_label.pack(side=tk.LEFT)
+        attachements_frame = tk.Frame(frame)
+        attachments = [f"📁  {att.split('/')[-1]}" for att in self.attachments]
 
         content_text = tk.Text(frame, wrap=tk.WORD, height=4, width=50)
         content_text.insert(tk.END, self.content)
-        content_text.pack(side=tk.LEFT)
+
+        # TODO: layout the components in the frame's grid
+
+
 
         return frame
