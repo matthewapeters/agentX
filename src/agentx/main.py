@@ -13,16 +13,14 @@ def main():
     """
     Docstring for main
     """
-    root: tk.Tk = tk.Tk()
-    config = load_config()
-    session = AgentXSession(root, config)
+    session = AgentXSession(tk.Tk(), load_config())
 
     # Perform service handshake before initializing the layout
     try:
-        perform_service_handshake(config)
+        perform_service_handshake(session.config)
     except RuntimeError as e:
         print(e)
         return
 
-    layout(session)
-    root.mainloop()
+    session.layout()
+    session.root.mainloop()
