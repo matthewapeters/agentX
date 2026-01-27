@@ -4,16 +4,20 @@ import tkinter as tk
 import httpx
 from ollama import Client
 
+from .session import AgentXSession
+from .message import Message
 # Global variable to manage streaming state
 is_streaming = threading.Event()
 streaming_thread = None
 
 
-def _stream_ollama_response_worker(root, config):
+def _stream_ollama_response_worker(session: AgentXSession ):
     """
     Worker function that streams the response from the Ollama server and updates the output_text widget.
     This runs in a separate thread to keep the GUI responsive.
     """
+    root = session.root
+    config = session.config
     global is_streaming  # Ensure we use the global is_streaming instance
     is_streaming.set()
     root.user_break.config(state=tk.NORMAL)  # Enable the break button
@@ -37,7 +41,11 @@ def _stream_ollama_response_worker(root, config):
 
     try:
         # Define the message payload
-        message = {"role": "user", "content": prompt}
+        message = Message(role="user", content=prompt)
+        agent_thinking_message = message(role="assistant", content="")
+        agent_thinking_message.enabled = False
+        agent_response_message = message(role="assistant", content="")
+        session.add_message_to_context(message)
         # Use the AsyncClient to stream responses
         last_channel = ""
         client = Client(host=f"http://{ollama_host}")
@@ -66,6 +74,7 @@ def _stream_ollama_response_worker(root, config):
                             )
                             root.output_text.see(tk.END)  # Auto-scroll to the end
                         case "content":
+                            session.add_message_to_context(agent_thinking_message)
                             root.output_text.insert(
                                 tk.END, "\n", ("agent_thinking",)
                             )  # end of line for thinking
@@ -84,6 +93,7 @@ def _stream_ollama_response_worker(root, config):
                         root.output_text.insert(
                             tk.END, part.message.thinking, ("agent_thinking",)
                         )
+                        agent_thinking_message.content += part.message.thinking
                         root.output_text.see(tk.END)  # Auto-scroll to the end
                         last_channel = channel
                     case "content":
@@ -91,6 +101,7 @@ def _stream_ollama_response_worker(root, config):
                         root.output_text.insert(
                             tk.END, part.message.content, ("agent_response",)
                         )
+                        agent_response_message.content += part.message.content
                         root.output_text.see(tk.END)  # Auto-scroll to the end
                         last_channel = channel
                     case "tool_name":
@@ -121,6 +132,7 @@ def _stream_ollama_response_worker(root, config):
         root.output_text.insert(
             tk.END, "\n\n", ("system_space",)
         )  # Add spacing between different channels
+        session.add_message_to_context(agent_response_message)
         root.update_idletasks()
 
     except Exception as e:
