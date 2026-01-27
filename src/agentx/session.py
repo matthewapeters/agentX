@@ -1,17 +1,16 @@
 """
 Docstring for agentx.session
 """
-from datetime import datetime
+
+import json
+import os
 import threading
 import tkinter as tk
+from datetime import datetime
+from typing import Any
 
 import httpx
 from ollama import Client
-
-import os
-
-import tkinter as tk
-from typing import Any
 
 from .context import Context
 from .message import Message
@@ -19,18 +18,25 @@ from .message import Message
 is_streaming = threading.Event()
 streaming_thread = None
 
+
 class AgentXSession:
     """
     AgentXSession
     """
-    def __init__(self, root:tk.Tk, config: dict[str, Any]):
+
+    def __init__(self, root: tk.Tk, config: dict[str, Any]):
         self.root = root
         self.config = config
         self.context = Context()
         self.user = os.getenv("USER") or os.getenv("USERNAME") or "User"
         self.start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.root.title(f"{self.user} - AgentX Session - {self.start_time}")
-        self.session_folder = os.path.join(os.getcwd(), "sessions", self.user,f"session_{self.start_time.replace(' ', '_').replace(':', '-')}")
+        self.session_folder = os.path.join(
+            os.getcwd(),
+            "sessions",
+            self.user,
+            f"session_{self.start_time.replace(' ', '_').replace(':', '-')}",
+        )
         os.makedirs(self.session_folder, exist_ok=True)
         self.context_folder = os.path.join(self.session_folder, "context")
         os.makedirs(self.context_folder, exist_ok=True)
@@ -41,11 +47,12 @@ class AgentXSession:
         """
         time_added = datetime.now()
         self.context.add_message(time_added, message=message)
-        message_file = os.path.join(self.context_folder, f"{time_added.timestamp()}_{message.role}.json")
+        message_file = os.path.join(
+            self.context_folder, f"{time_added.timestamp()}_{message.role}.json"
+        )
         message.file = message_file
         with open(message_file, "w", encoding="utf-8") as f:
             f.write(str(message.serialize()))
-
 
     def layout(self):
         """
@@ -82,9 +89,7 @@ class AgentXSession:
         root.output_text.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
         root.output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         # Ensure selection highlighting is visible (after output_text is created)
-        root.output_text.tag_config(
-            "sel", background="#3399ff", foreground="#ffffff"
-        )
+        root.output_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
 
         root.system_status = tk.Frame(root, bg="lightblue")
         root.system_status_context = self.context._to_gui(root.system_status)
@@ -110,7 +115,7 @@ class AgentXSession:
         root.user_submit = tk.Button(
             root.user_input,
             text=enter_emoji_unicode,
-            command=lambda: self._stream_ollama_response_worker(),
+            command=lambda: self.stream_ollama_response_worker(),
         )
         root.user_submit.place(relx=0.92, rely=0, relwidth=0.07, relheight=0.25)
 
@@ -140,20 +145,12 @@ class AgentXSession:
         root.output_text.tag_config(
             "gray", foreground="gray", font=("Terminal", 10, "italic")
         )
-        root.output_text.tag_config(
-            "user_prompt", font=("Terminal", 10, "bold")
-        )
-        root.output_text.tag_config(
-            "agent_response", font=("Terminal", 10, "normal")
-        )
-        root.output_text.tag_config(
-            "agent_thinking", font=("Terminal", 10, "italic")
-        )
-        root.output_text.tag_config(
-            "system_space", font=("Terminal", 10, "normal")
-        )
+        root.output_text.tag_config("user_prompt", font=("Terminal", 10, "bold"))
+        root.output_text.tag_config("agent_response", font=("Terminal", 10, "normal"))
+        root.output_text.tag_config("agent_thinking", font=("Terminal", 10, "italic"))
+        root.output_text.tag_config("system_space", font=("Terminal", 10, "normal"))
 
-    def _stream_ollama_response_worker(self):
+    def stream_ollama_response_worker(self):
         """
         Worker function that streams the response from the Ollama server and updates the output_text widget.
         This runs in a separate thread to keep the GUI responsive.
@@ -184,15 +181,17 @@ class AgentXSession:
 
         try:
             # Define the message payload
-            message = Message(role="user", content=prompt)
-            agent_thinking_message = message(role="assistant", content="")
+            user_message = Message(role="user", content=prompt)
+            agent_thinking_message = Message(role="assistant", content="")
             agent_thinking_message.enabled = False
-            agent_response_message = message(role="assistant", content="")
-            self.add_message_to_context(message)
+            agent_response_message = Message(role="assistant", content="")
+            self.add_message_to_context(user_message)
             # Use the AsyncClient to stream responses
             last_channel = ""
             client = Client(host=f"http://{ollama_host}")
-            for part in client.chat(model=ollama_model, messages=[message], stream=True):
+            for part in client.chat(
+                model=ollama_model, messages=[user_message.llm_mesage_dict()], stream=True
+            ):
                 if not is_streaming.is_set():
                     break  # Exit the loop if streaming is interrupted
                 # print(f"Received part: {part}")  # Debugging for received part
@@ -279,12 +278,13 @@ class AgentXSession:
             root.update_idletasks()
 
         except Exception as e:
+            import traceback
             root.output_text.insert(tk.END, f"Error: {e}\n")
             print(f"Request error: {e}")
+            traceback.print_exc()
         finally:
             is_streaming.clear()
             root.user_break.config(state=tk.DISABLED)  # Disable the break button
-
 
     def perform_service_handshake(self):
         """
@@ -293,7 +293,9 @@ class AgentXSession:
         config = self.config
         ollama_host = config["agentx"]["ollama_host"]
         ollama_model = config["agentx"]["ollama_model"]
-        timeout_seconds = config["agentx"].get("ollama_initial_load_timeout_seconds", 120)
+        timeout_seconds = config["agentx"].get(
+            "ollama_initial_load_timeout_seconds", 120
+        )
 
         url = f"http://{ollama_host}/api/chat"
         headers = {"Content-Type": "application/json"}
@@ -323,15 +325,15 @@ class AgentXSession:
             print("Streaming already in progress")
             return
         streaming_thread = threading.Thread(
-            target=self._stream_ollama_response_worker, args=(root, config), daemon=False
+            target=self.stream_ollama_response_worker, args=(root, config), daemon=False
         )
         streaming_thread.start()
 
-def interrupt_streaming():
-        """
-        Interrupts the ongoing streaming process.
-        """
-        global is_streaming
-        print("Interrupting streaming...")
-        is_streaming.clear()
 
+def interrupt_streaming():
+    """
+    Interrupts the ongoing streaming process.
+    """
+    global is_streaming
+    print("Interrupting streaming...")
+    is_streaming.clear()

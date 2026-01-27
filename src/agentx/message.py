@@ -1,18 +1,21 @@
+import tkinter as tk
 from dataclasses import dataclass
 
-import tkinter as tk
 
 @dataclass
 class Message:
     """
     Docstring for src.agentx.message
     """
-    def __init__(self, 
-                 role: str, 
-                 content: str, 
-                 attachments: list[str] = None, 
-                 enabled: bool = True, 
-                 file: str = None):
+
+    def __init__(
+        self,
+        role: str,
+        content: str,
+        attachments: list[str] = None,
+        enabled: bool = True,
+        file: str = None,
+    ):
         """
         Message
 
@@ -25,21 +28,24 @@ class Message:
         self.role = role
         self.content = content
         self.attachments: list[str] = attachments or []
-        self._enabled = enabled 
+        self._enabled = enabled
         self._file = file
 
     @property
     def enabled(self) -> bool:
         return self._enabled
+
     @enabled.setter
     def enabled(self, value: bool):
         self._enabled = value
+
     @property
     def file(self) -> str:
         return self._file
+
     @file.setter
     def file(self, value: str):
-        self._file = value  
+        self._file = value
 
     def attach(self, attachment_path: str):
         """
@@ -63,7 +69,7 @@ class Message:
         serialize
 
         Use this method to convet the Message object to a dictionary for writing to context JSON file.
-        
+
         :param self: Description
         :return: Description
         :rtype: dict
@@ -75,52 +81,24 @@ class Message:
             "file": self.file,
         }
 
-    def to_json(self) -> dict:
+    def llm_mesage_dict(self) -> dict:
         """
         Custom JSON serialization that omits the file property.
         """
-        return {
+        mj ={
             "role": self.role,
             "content": self.content,
-            "attachments": "",
-        }
-    
+            "attachments": self.attachments,
+        } 
+        return mj 
 
-    def _to_gui(self):
+    def _to_gui(self, parent):
         """
-        Generage tkkinter GUI representation of the message:
-
-        enabled renders a checkbox showing if the message is enabled
-        the role will be represented as either "👤" for userm or "🤖" for assistant or "⚙️" for system
-        a short preview of the content will be shown as a label
-        if there are attachments,
-        the attachments will be represented in the GUI by "📁" followed by the filename
-
-        Example:
-
-        ▼ [ ] ⚙️  You are a helpful assistant...    # Enambled system prompt, expanded
-                  📁  canned prompt1.txt            
-                  📁  canned prompt2.txt
-        ▼ [ ] 👤  This is the message content...    # Enabled user prompt, expanded
-                  📁 filename.txt
-                  📁 filename.txt
-                  📁 filename.txt
-        ▶ [x] 🤖  That is a great question...       # Disabled agent response, collapsed
-
-
-        Explanataon: 
-        Each message is a single frame with a 4x1+n grid layout.
-        The first row contains:
-        - A toggle button (▼ or ▶) to expand/collapse the message content (column 0)
-        - A checkbox to enable/disable the message in the context (column 1)
-        - A label showing the role icon (👤, 🤖, ⚙️) (column 2)
-        - a label showing a preview of the message content (column 3)
-        - Additional rows (n) for each attachment showing a "📁" icon and the filename of the attachments
-
-
+        Generate tkinter GUI representation of the message.
+        :param parent: The parent widget for the frame.
         :return: tkinter Frame representing the message
         """
-        frame = tk.Frame()
+        frame = tk.Frame(parent)
 
         # State for expand/collapse
         expanded_var = tk.BooleanVar(value=False)
@@ -138,15 +116,26 @@ class Message:
                     w.grid_remove()
             else:
                 for idx, w in enumerate(attachment_widgets):
-                    w.grid(row=1+idx, column=3, columnspan=2, sticky="w", padx=(30,0))
+                    w.grid(
+                        row=1 + idx, column=3, columnspan=2, sticky="w", padx=(30, 0)
+                    )
 
         collapse_expand_button = tk.Button(
-            frame, text=expand_collapse[expanded_var.get()], width=2, command=toggle_expand
+            frame,
+            text=expand_collapse[expanded_var.get()],
+            width=2,
+            command=toggle_expand,
         )
         collapse_expand_button.grid(row=0, column=0, sticky="w")
 
         enabled_var = tk.BooleanVar(value=self.enabled)
-        enabled_checkbox = tk.Checkbutton(frame, variable=enabled_var)
+
+        def on_enabled_toggle():
+            self.enabled = enabled_var.get()
+
+        enabled_checkbox = tk.Checkbutton(
+            frame, variable=enabled_var, command=on_enabled_toggle
+        )
         enabled_checkbox.grid(row=0, column=1, sticky="w")
 
         roles = {
@@ -166,7 +155,9 @@ class Message:
         attachment_widgets = []
         for idx, att in enumerate(self.attachments):
             att_label = tk.Label(frame, text=f"📁  {att.split('/')[-1]}", anchor="w")
-            att_label.grid(row=1+idx, column=3, columnspan=2, sticky="w", padx=(30,0))
+            att_label.grid(
+                row=1 + idx, column=3, columnspan=2, sticky="w", padx=(30, 0)
+            )
             attachment_widgets.append(att_label)
 
         return frame

@@ -7,6 +7,7 @@ import tkinter as tk
 from .config import load_config
 from .session import AgentXSession
 
+
 def main():
     """
     Docstring for main
