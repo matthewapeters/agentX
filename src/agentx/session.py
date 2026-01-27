@@ -23,7 +23,6 @@ class AgentXSession:
     """
     AgentXSession
     """
-
     def __init__(self, root: tk.Tk, config: dict[str, Any]):
         self.root = root
         self.config = config
@@ -41,9 +40,19 @@ class AgentXSession:
         self.context_folder = os.path.join(self.session_folder, "context")
         os.makedirs(self.context_folder, exist_ok=True)
 
+    def refresh_context_gui(self):
+        """
+        Refreshes the context GUI in the system status frame.
+        Destroys the old context frame and re-renders the updated context.
+        """
+        if hasattr(self.root, "system_status_context") and self.root.system_status_context:
+            self.root.system_status_context.destroy()
+        self.root.system_status_context = self.context._to_gui(self.root.system_status)
+        self.root.system_status_context.pack(expand=True, fill=tk.BOTH)
+
     def add_message_to_context(self, message: Message):
         """
-        Adds a message to the session context.
+        Adds a message to the session context and refreshes the context GUI.
         """
         time_added = datetime.now()
         self.context.add_message(time_added, message=message)
@@ -53,6 +62,7 @@ class AgentXSession:
         message.file = message_file
         with open(message_file, "w", encoding="utf-8") as f:
             f.write(str(message.serialize()))
+        self.refresh_context_gui()
 
     def layout(self):
         """
@@ -76,8 +86,12 @@ class AgentXSession:
 
         root.title("AgentX - the Ollama Agent")
 
+        # Create a PanedWindow for resizable output and system frames
+        root.paned = tk.PanedWindow(root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
+        root.paned.place(relx=0.001, rely=0.001, relwidth=0.99, relheight=0.79)
+
         # Output display with scrollbar
-        root.output_display = tk.Frame(root, bg="white")
+        root.output_display = tk.Frame(root.paned, bg="white")
         root.output_scrollbar = tk.Scrollbar(root.output_display)
         root.output_text = tk.Text(
             root.output_display,
@@ -91,9 +105,11 @@ class AgentXSession:
         # Ensure selection highlighting is visible (after output_text is created)
         root.output_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
 
-        root.system_status = tk.Frame(root, bg="lightblue")
-        root.system_status_context = self.context._to_gui(root.system_status)
-        root.system_status_context.pack(expand=True, fill=tk.BOTH)
+        root.system_status = tk.Frame(root.paned, bg="lightblue")
+        self.refresh_context_gui()
+
+        root.paned.add(root.output_display, stretch='always')
+        root.paned.add(root.system_status, stretch='always')
 
         # User input with scrollbar
         root.user_input = tk.Frame(root, bg="lightgrey")
@@ -128,8 +144,6 @@ class AgentXSession:
         )
         root.user_break.place(relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25)
 
-        root.output_display.place(relx=0.001, rely=0.001, relwidth=0.79, relheight=0.79)
-        root.system_status.place(relx=0.80, rely=0.001, relwidth=0.2, relheight=0.79)
         root.user_input.place(relx=0.001, rely=0.80, relwidth=1.0, relheight=0.2)
 
         # Bind Ctrl-Enter to trigger the user_submit button
@@ -190,7 +204,7 @@ class AgentXSession:
             last_channel = ""
             client = Client(host=f"http://{ollama_host}")
             for part in client.chat(
-                model=ollama_model, messages=[user_message.llm_mesage_dict()], stream=True
+                model=ollama_model, messages=[user_message.llm_message_dict()], stream=True
             ):
                 if not is_streaming.is_set():
                     break  # Exit the loop if streaming is interrupted

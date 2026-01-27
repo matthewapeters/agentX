@@ -83,7 +83,9 @@ class Context:
             context_frame,
             command=toggle_expand,
             text=expand_collapse[expanded_var.get()],
-            width=2,
+                width=1,
+                height=1,
+                font=("Terminal", 10)
         )
         collapse_expand_button.grid(row=0, column=0, sticky="w")
 

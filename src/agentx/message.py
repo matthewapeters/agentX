@@ -81,7 +81,7 @@ class Message:
             "file": self.file,
         }
 
-    def llm_mesage_dict(self) -> dict:
+    def llm_message_dict(self) -> dict:
         """
         Custom JSON serialization that omits the file property.
         """
@@ -123,7 +123,9 @@ class Message:
         collapse_expand_button = tk.Button(
             frame,
             text=expand_collapse[expanded_var.get()],
-            width=2,
+                width=1,
+                height=1,
+                font=("Terminal", 10),
             command=toggle_expand,
         )
         collapse_expand_button.grid(row=0, column=0, sticky="w")
