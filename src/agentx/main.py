@@ -5,8 +5,6 @@ Docstring for agentx.main
 import tkinter as tk
 
 from .config import load_config
-from .layout import layout
-from .ollama_client import perform_service_handshake
 from .session import AgentXSession
 
 def main():
@@ -17,7 +15,7 @@ def main():
 
     # Perform service handshake before initializing the layout
     try:
-        perform_service_handshake(session.config)
+        session.perform_service_handshake()
     except RuntimeError as e:
         print(e)
         return
