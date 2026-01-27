@@ -5,12 +5,14 @@ Docstring for layout
 import tkinter as tk
 
 from .ollama_client import interrupt_streaming, stream_ollama_response
+from .session import AgentXSession
 
-
-def layout(root, config):
+def layout(session: AgentXSession ):
     """
     Sets up the layout for the tkinter root window.
     """
+    root = session.root
+    config = session.config
     text_font = ("Terminal", 10)
     enter_emoji_unicode = "^⏎"
 
