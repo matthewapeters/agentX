@@ -39,6 +39,10 @@ def layout(root, config):
     root.output_scrollbar.config(command=root.output_text.yview)
     root.output_text.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
     root.output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    # Ensure selection highlighting is visible (after output_text is created)
+    root.output_text.tag_config(
+        "sel", background="#3399ff", foreground="#ffffff"
+    )
 
     root.system_status = tk.Frame(root, bg="lightblue")
     root.system_status_text = tk.Text(root.system_status, wrap=tk.WORD, font=text_font)
@@ -72,7 +76,7 @@ def layout(root, config):
     root.user_break = tk.Button(
         root.user_input,
         text="❌",
-        command=lambda: interrupt_streaming(),
+        command=interrupt_streaming,
         state=tk.DISABLED,
     )
     root.user_break.place(relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25)
@@ -91,25 +95,18 @@ def layout(root, config):
 
     # Setup the Ollama client with the loaded configuration
     # Adds text styling tags to the output_text widget.
-    user_prompt_bg = config["agentx"].get("user_prompt_font_background", "lightblue")
-    agent_response_bg = config["agentx"].get("agent_response_font_background", "white")
-    agent_thinking_bg = config["agentx"].get(
-        "agent_thinking_font_background", "lightgray"
-    )
-    system_bg = config["agentx"].get("system_font_background", "#ffffff")
-
     root.output_text.tag_config(
         "gray", foreground="gray", font=("Terminal", 10, "italic")
     )
     root.output_text.tag_config(
-        "user_prompt", background=user_prompt_bg, font=("Terminal", 10, "bold")
+        "user_prompt", font=("Terminal", 10, "bold")
     )
     root.output_text.tag_config(
-        "agent_response", background=agent_response_bg, font=("Terminal", 10, "normal")
+        "agent_response", font=("Terminal", 10, "normal")
     )
     root.output_text.tag_config(
-        "agent_thinking", background=agent_thinking_bg, font=("Terminal", 10, "italic")
+        "agent_thinking", font=("Terminal", 10, "italic")
     )
     root.output_text.tag_config(
-        "system_space", background=system_bg, font=("Terminal", 10, "normal")
+        "system_space", font=("Terminal", 10, "normal")
     )
