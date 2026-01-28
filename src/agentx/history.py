@@ -58,8 +58,11 @@ class History:
             except OSError:
                 continue
 
-            # Add context to records
-            self.sessions.append(context)
+            # Add context to history if it contains messages
+            if context.messages:
+                # start with contexts collapsed
+                context.expanded = False
+                self.sessions.append(context)
 
     def to_gui(self, parent_frame: tk.Frame, user_name: str) -> tk.Frame:
         """

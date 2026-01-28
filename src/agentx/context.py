@@ -19,6 +19,7 @@ class Context:
         self.messages: list[Message] = []  # List to hold context messages
         self.session_id: str | None = None  # Optional session ID
         self.path: str | None = None  # Optional path for context storage
+        self.expanded: bool = True  # Whether the context is expanded in the GUI
 
     def add_message(self, ts: datetime, message: Message) -> None:
         """
@@ -50,9 +51,10 @@ class Context:
         :param messages_json: JSON string representing a list of messages.
         """
         save_epoch = ""
-        for f in glob(self.path + "/*.json"):
+        g = glob(self.path + "/*.json")
+        g.sort()
+        for f in g:
             with open(f, "r", encoding="utf-8") as file:
-
                 message = Message.from_dict(json.loads(file.read()), file_path=f)
                 self.messages.append((message.ts, message))
 
@@ -98,6 +100,7 @@ class Context:
         def toggle_expand():
             expanded = expanded_var.get()
             expanded_var.set(not expanded)
+            self.expanded = expanded_var.get()
             collapse_expand_button.config(text=expand_collapse[expanded_var.get()])
             if expanded:
                 context_messages_frame.grid_remove()
@@ -121,11 +124,15 @@ class Context:
         )
         context_label.grid(row=0, column=1, sticky="w")
 
+        # Normally this is True, but for history contexts we start collapsed
         context_messages_frame = tk.Frame(context_frame)
         context_messages_frame.grid(row=1, column=1, columnspan=2, sticky="w")
 
         for idx, (ts, message) in enumerate(self.messages):
             m_frame = message.to_gui(context_messages_frame)
             m_frame.grid(row=idx, column=0, sticky="w")
+
+        if not self.expanded:
+            toggle_expand()
 
         return context_frame
