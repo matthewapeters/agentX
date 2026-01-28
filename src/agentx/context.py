@@ -10,6 +10,10 @@ from .message import Message
 
 
 class Context:
+    """
+    Context class to hold a list of messages.
+    """
+
     def __init__(self):
         self.messages: list[Message] = []  # List to hold context messages
 
@@ -31,9 +35,9 @@ class Context:
         """
         return json.dumps([m.serialize() for ts, m in self.messages if m.enabled])
 
-    def _to_gui(self, root):
+    def to_gui(self, root):
         """
-        _to_gui
+        to_gui
 
         Use this method to render the Context object in a tkinter GUI.
 
@@ -83,9 +87,9 @@ class Context:
             context_frame,
             command=toggle_expand,
             text=expand_collapse[expanded_var.get()],
-                width=1,
-                height=1,
-                font=("Terminal", 10)
+            width=1,
+            height=1,
+            font=("Terminal", 10),
         )
         collapse_expand_button.grid(row=0, column=0, sticky="w")
 
@@ -100,7 +104,7 @@ class Context:
         context_messages_frame.grid(row=1, column=1, columnspan=2, sticky="w")
 
         for idx, (ts, message) in enumerate(self.messages):
-            m_frame = message._to_gui(context_messages_frame)
+            m_frame = message.to_gui(context_messages_frame)
             m_frame.grid(row=idx, column=0, sticky="w")
 
         return context_frame

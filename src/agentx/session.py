@@ -13,6 +13,7 @@ import httpx
 from ollama import Client
 
 from .context import Context
+from .history import History
 from .message import Message
 
 is_streaming = threading.Event()
@@ -23,6 +24,7 @@ class AgentXSession:
     """
     AgentXSession
     """
+
     def __init__(self, root: tk.Tk, config: dict[str, Any]):
         self.root = root
         self.config = config
@@ -39,15 +41,50 @@ class AgentXSession:
         os.makedirs(self.session_folder, exist_ok=True)
         self.context_folder = os.path.join(self.session_folder, "context")
         os.makedirs(self.context_folder, exist_ok=True)
+        self._history = None  # Placeholder for History object
+
+    @property
+    def history(self) -> "History":
+        """
+        Docstring for history
+
+        :param self: Description
+        :return: Description
+        :rtype: History
+        """
+        if self._history is None:
+            self._history = History(user_session_path=self.session_folder)
+        return self._history
+
+    @history.setter
+    def history(self, value: "History"):
+        self._history = value
 
     def refresh_context_gui(self):
         """
         Refreshes the context GUI in the system status frame.
-        Destroys the old context frame and re-renders the updated context.
+        Destroys the old frames and re-renders the history and current context.
         """
-        if hasattr(self.root, "system_status_context") and self.root.system_status_context:
+        # Destroy existing frames
+        if (
+            hasattr(self.root, "system_status_history")
+            and self.root.system_status_history
+        ):
+            self.root.system_status_history.destroy()
+        if (
+            hasattr(self.root, "system_status_context")
+            and self.root.system_status_context
+        ):
             self.root.system_status_context.destroy()
-        self.root.system_status_context = self.context._to_gui(self.root.system_status)
+
+        # Render history first (collapsed by default)
+        self.root.system_status_history = self.history.to_gui(
+            self.root.system_status, self.user
+        )
+        self.root.system_status_history.pack(expand=False, fill=tk.X, anchor=tk.N)
+
+        # Render current context
+        self.root.system_status_context = self.context.to_gui(self.root.system_status)
         self.root.system_status_context.pack(expand=True, fill=tk.BOTH)
 
     def add_message_to_context(self, message: Message):
@@ -108,8 +145,8 @@ class AgentXSession:
         root.system_status = tk.Frame(root.paned, bg="lightblue")
         self.refresh_context_gui()
 
-        root.paned.add(root.output_display, stretch='always')
-        root.paned.add(root.system_status, stretch='always')
+        root.paned.add(root.output_display, stretch="always")
+        root.paned.add(root.system_status, stretch="always")
 
         # User input with scrollbar
         root.user_input = tk.Frame(root, bg="lightgrey")
@@ -204,7 +241,9 @@ class AgentXSession:
             last_channel = ""
             client = Client(host=f"http://{ollama_host}")
             for part in client.chat(
-                model=ollama_model, messages=[user_message.llm_message_dict()], stream=True
+                model=ollama_model,
+                messages=[user_message.llm_message_dict()],
+                stream=True,
             ):
                 if not is_streaming.is_set():
                     break  # Exit the loop if streaming is interrupted
@@ -293,6 +332,7 @@ class AgentXSession:
 
         except Exception as e:
             import traceback
+
             root.output_text.insert(tk.END, f"Error: {e}\n")
             print(f"Request error: {e}")
             traceback.print_exc()

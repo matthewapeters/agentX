@@ -31,6 +31,23 @@ class Message:
         self._enabled = enabled
         self._file = file
 
+    @classmethod
+    def from_dict(cls, data: dict, file_path: str = None) -> "Message":
+        """
+        Create a Message instance from a dictionary.
+
+        :param data: Dictionary containing message data
+        :param file_path: Optional file path to override the one in data
+        :return: Message instance
+        """
+        return cls(
+            role=data.get("role", "user"),
+            content=data.get("content", ""),
+            attachments=data.get("attachments", []),
+            enabled=data.get("enabled", True),
+            file=file_path or data.get("file"),
+        )
+
     @property
     def enabled(self) -> bool:
         return self._enabled
@@ -85,14 +102,14 @@ class Message:
         """
         Custom JSON serialization that omits the file property.
         """
-        mj ={
+        mj = {
             "role": self.role,
             "content": self.content,
             "attachments": self.attachments,
-        } 
-        return mj 
+        }
+        return mj
 
-    def _to_gui(self, parent):
+    def to_gui(self, parent):
         """
         Generate tkinter GUI representation of the message.
         :param parent: The parent widget for the frame.
@@ -123,9 +140,9 @@ class Message:
         collapse_expand_button = tk.Button(
             frame,
             text=expand_collapse[expanded_var.get()],
-                width=1,
-                height=1,
-                font=("Terminal", 10),
+            width=1,
+            height=1,
+            font=("Terminal", 10),
             command=toggle_expand,
         )
         collapse_expand_button.grid(row=0, column=0, sticky="w")
