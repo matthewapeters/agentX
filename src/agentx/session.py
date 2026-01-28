@@ -240,7 +240,11 @@ class AgentXSession:
             client = Client(host=f"http://{ollama_host}")
             for part in client.chat(
                 model=ollama_model,
-                messages=[user_message.llm_message_dict()],
+                messages=[
+                    m[1].llm_message_dict()
+                    for m in self.context.messages
+                    if m[1].enabled
+                ],
                 stream=True,
             ):
                 if not is_streaming.is_set():
