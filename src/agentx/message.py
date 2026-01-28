@@ -1,5 +1,8 @@
+import json
+import os
 import tkinter as tk
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass
@@ -15,6 +18,7 @@ class Message:
         attachments: list[str] = None,
         enabled: bool = True,
         file: str = None,
+        epoch: float = 0.0,
     ):
         """
         Message
@@ -30,6 +34,7 @@ class Message:
         self.attachments: list[str] = attachments or []
         self._enabled = enabled
         self._file = file
+        self._epoch = epoch
 
     @classmethod
     def from_dict(cls, data: dict, file_path: str = None) -> "Message":
@@ -46,6 +51,7 @@ class Message:
             attachments=data.get("attachments", []),
             enabled=data.get("enabled", True),
             file=file_path or data.get("file"),
+            epoch=data.get("epoch", 0),
         )
 
     @property
@@ -59,6 +65,14 @@ class Message:
     @property
     def file(self) -> str:
         return self._file
+
+    @property
+    def ts(self) -> datetime:
+        return datetime.fromtimestamp(self._epoch)
+
+    @ts.setter
+    def ts(self, value: datetime):
+        self._epoch = value.timestamp()
 
     @file.setter
     def file(self, value: str):
@@ -96,7 +110,21 @@ class Message:
             "content": self.content,
             "enabled": self.enabled,
             "file": self.file,
+            "epoch": self._epoch,
+            "attachments": self.attachments,
         }
+
+    def save(self, context_path: str, time_added: datetime) -> None:
+        """
+        save
+        Use this method to save the context object to a JSON file.
+        """
+        message_file = os.path.join(
+            context_path, f"{time_added.timestamp()}_{self.role}.json"
+        )
+        self.file = message_file
+        with open(message_file, "w", encoding="utf-8") as f:
+            f.write(json.dumps(self.serialize()))
 
     def llm_message_dict(self) -> dict:
         """

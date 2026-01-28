@@ -32,15 +32,19 @@ class AgentXSession:
         self.user = os.getenv("USER") or os.getenv("USERNAME") or "User"
         self.start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.root.title(f"{self.user} - AgentX Session - {self.start_time}")
-        self.session_folder = os.path.join(
+        self.user_history_folder = os.path.join(
             os.getcwd(),
             "sessions",
             self.user,
+        )
+        self.session_folder = os.path.join(
+            self.user_history_folder,
             f"session_{self.start_time.replace(' ', '_').replace(':', '-')}",
         )
         os.makedirs(self.session_folder, exist_ok=True)
         self.context_folder = os.path.join(self.session_folder, "context")
         os.makedirs(self.context_folder, exist_ok=True)
+        self.context.path = self.context_folder
         self._history = None  # Placeholder for History object
 
     @property
@@ -53,7 +57,7 @@ class AgentXSession:
         :rtype: History
         """
         if self._history is None:
-            self._history = History(user_session_path=self.session_folder)
+            self._history = History(user_history_path=self.user_history_folder)
         return self._history
 
     @history.setter
@@ -92,13 +96,7 @@ class AgentXSession:
         Adds a message to the session context and refreshes the context GUI.
         """
         time_added = datetime.now()
-        self.context.add_message(time_added, message=message)
-        message_file = os.path.join(
-            self.context_folder, f"{time_added.timestamp()}_{message.role}.json"
-        )
-        message.file = message_file
-        with open(message_file, "w", encoding="utf-8") as f:
-            f.write(str(message.serialize()))
+        self.context.add_message(ts=time_added, message=message)
         self.refresh_context_gui()
 
     def layout(self):

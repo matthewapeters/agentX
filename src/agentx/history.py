@@ -12,7 +12,7 @@ class History:
     Docstring for History
     """
 
-    def __init__(self, user_session_path: str):
+    def __init__(self, user_history_path: str):
         """
         Docstring for __init__
 
@@ -20,22 +20,22 @@ class History:
         :param user_session_path: Description
         :type user_session_path: str
         """
-        self.records = []
+        self.sessions = []
 
         # Load the list of contexts from the user session path
         # each folder under the user session path represent a context
         # each file under the context folder represent a message
         # add each context to self.records alphabetically
 
-        if not os.path.exists(user_session_path):
+        if not os.path.exists(user_history_path):
             return
 
-        # Get all folders under user_session_path
+        # Get all folders under user_history_path
         try:
             context_folders = [
                 d
-                for d in os.listdir(user_session_path)
-                if os.path.isdir(os.path.join(user_session_path, d))
+                for d in os.listdir(user_history_path)
+                if os.path.isdir(os.path.join(user_history_path, d))
             ]
         except OSError:
             return
@@ -45,36 +45,21 @@ class History:
 
         # Load each context
         for context_folder_name in context_folders:
-            context_folder_path = os.path.join(user_session_path, context_folder_name)
+            context_folder_path = os.path.join(
+                user_history_path, context_folder_name, "context"
+            )
             context = Context()
+            context.session_id = context_folder_name
+            context.path = context_folder_path
 
             # Load all message files from this context folder
             try:
-                message_files = [
-                    f for f in os.listdir(context_folder_path) if f.endswith(".json")
-                ]
+                context.load_messages(context_folder_name)
             except OSError:
                 continue
 
-            # Sort message files by name (which includes timestamp)
-            message_files.sort()
-
-            # Load each message
-            for message_file in message_files:
-                message_file_path = os.path.join(context_folder_path, message_file)
-                with open(message_file_path, "r", encoding="utf-8") as f:
-                    message_data = json.load(f)
-
-                    # Extract timestamp from filename (e.g., "1769529115.019496_user.json")
-                    timestamp_str = message_file.split("_")[0]
-                    ts = datetime.fromtimestamp(float(timestamp_str))
-
-                    # Create Message object and add to context
-                    message = Message.from_dict(message_data, message_file_path)
-                    context.add_message(ts=ts, message=message)
-
             # Add context to records
-            self.records.append(context)
+            self.sessions.append(context)
 
     def to_gui(self, parent_frame: tk.Frame, user_name: str) -> tk.Frame:
         """
@@ -131,7 +116,7 @@ class History:
 
         history_label = tk.Label(
             history_frame,
-            text=f"{user_name} History ({len(self.records)} contexts)",
+            text=f"{user_name} History ({len(self.sessions)} contexts)",
             font=("Terminal", 10, "bold"),
         )
         history_label.grid(row=0, column=1, sticky="w")
@@ -140,7 +125,7 @@ class History:
         history_contexts_frame.grid(row=1, column=1, columnspan=2, sticky="w")
         history_contexts_frame.grid_remove()  # Start collapsed
 
-        for idx, context in enumerate(self.records):
+        for idx, context in enumerate(self.sessions):
             c_frame = context.to_gui(history_contexts_frame)
             c_frame.grid(row=idx, column=0, sticky="w", padx=(20, 0))
 

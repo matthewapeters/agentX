@@ -5,6 +5,7 @@ Docstring for src.agentx.context
 import json
 import tkinter as tk
 from datetime import datetime
+from glob import glob
 
 from .message import Message
 
@@ -16,11 +17,15 @@ class Context:
 
     def __init__(self):
         self.messages: list[Message] = []  # List to hold context messages
+        self.session_id: str | None = None  # Optional session ID
+        self.path: str | None = None  # Optional path for context storage
 
     def add_message(self, ts: datetime, message: Message) -> None:
         """
         Add a new message to the context.
         """
+        if message.file is None:
+            message.save(self.path, ts)
         self.messages.append((ts, message))
 
     def get_messages(self):
@@ -34,6 +39,22 @@ class Context:
         :param self: Description
         """
         return json.dumps([m.serialize() for ts, m in self.messages if m.enabled])
+
+    def load_messages(self, messages_json: str) -> None:
+        """
+        load_messages
+
+        Use this method to load messages from a JSON files into the Context object.
+
+        :param self: Description
+        :param messages_json: JSON string representing a list of messages.
+        """
+        save_epoch = ""
+        for f in glob(self.path + "/*.json"):
+            with open(f, "r", encoding="utf-8") as file:
+
+                message = Message.from_dict(json.loads(file.read()), file_path=f)
+                self.messages.append((message.ts, message))
 
     def to_gui(self, root):
         """
@@ -95,7 +116,7 @@ class Context:
 
         context_label = tk.Label(
             context_frame,
-            text=f"Context ({len(self.messages)} messages)",
+            text=f"{self.session_id or 'Context'} ({len(self.messages)} messages)",
             font=("Terminal", 10, "bold"),
         )
         context_label.grid(row=0, column=1, sticky="w")
