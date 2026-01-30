@@ -146,9 +146,19 @@ class AgentXSession:
 
         # Output display with scrollbar
         root.output_display = tk.Frame(root.paned, bg="white")
-        root.output_scrollbar = tk.Scrollbar(root.output_display)
+        
+        # Create a notebook (tabbed interface) for output
+        root.output_notebook = ttk.Notebook(root.output_display)
+        root.output_notebook.pack(expand=True, fill=tk.BOTH, padx=0, pady=0)
+        
+        # Create Output tab
+        root.output_tab = tk.Frame(root.output_notebook, bg="white")
+        root.output_notebook.add(root.output_tab, text="Output")
+        
+        # Create output text and scrollbar in the Output tab
+        root.output_scrollbar = tk.Scrollbar(root.output_tab)
         root.output_text = tk.Text(
-            root.output_display,
+            root.output_tab,
             wrap=tk.WORD,
             font=text_font,
             yscrollcommand=root.output_scrollbar.set,
