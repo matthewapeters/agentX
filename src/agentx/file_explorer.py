@@ -34,22 +34,24 @@ class FileExplorer:
             items = []
             entries = os.listdir(self.current_path)
             entries.sort()
-            
+
             for entry in entries:
                 full_path = os.path.join(self.current_path, entry)
                 is_dir = os.path.isdir(full_path)
                 try:
                     size = os.path.getsize(full_path) if not is_dir else None
-                    items.append({
-                        'name': entry,
-                        'path': full_path,
-                        'is_dir': is_dir,
-                        'size': size
-                    })
+                    items.append(
+                        {
+                            "name": entry,
+                            "path": full_path,
+                            "is_dir": is_dir,
+                            "size": size,
+                        }
+                    )
                 except (OSError, PermissionError):
                     # Skip files we can't access
                     continue
-            
+
             return items
         except (OSError, PermissionError):
             return []
@@ -66,7 +68,7 @@ class FileExplorer:
             self.current_path = abs_path
             # Update history
             if self.history_index < len(self.history) - 1:
-                self.history = self.history[:self.history_index + 1]
+                self.history = self.history[: self.history_index + 1]
             self.history.append(abs_path)
             self.history_index = len(self.history) - 1
             return True
@@ -88,7 +90,7 @@ class FileExplorer:
         :return: The contents of the file as a string.
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
         except (OSError, UnicodeDecodeError):
             return ""
@@ -154,42 +156,27 @@ class FileExplorer:
         button_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
 
         back_btn = tk.Button(
-            button_frame,
-            text="◀ Back",
-            width=6,
-            command=self._on_back_click
+            button_frame, text="◀ Back", width=6, command=self._on_back_click
         )
         back_btn.pack(side=tk.LEFT, padx=2)
 
         forward_btn = tk.Button(
-            button_frame,
-            text="Forward ▶",
-            width=8,
-            command=self._on_forward_click
+            button_frame, text="Forward ▶", width=8, command=self._on_forward_click
         )
         forward_btn.pack(side=tk.LEFT, padx=2)
 
         up_btn = tk.Button(
-            button_frame,
-            text="⬆ Up",
-            width=5,
-            command=self._on_up_click
+            button_frame, text="⬆ Up", width=5, command=self._on_up_click
         )
         up_btn.pack(side=tk.LEFT, padx=2)
 
         home_btn = tk.Button(
-            button_frame,
-            text="🏠 Home",
-            width=7,
-            command=self._on_home_click
+            button_frame, text="🏠 Home", width=7, command=self._on_home_click
         )
         home_btn.pack(side=tk.LEFT, padx=2)
 
         refresh_btn = tk.Button(
-            button_frame,
-            text="🔄 Refresh",
-            width=8,
-            command=self._on_refresh_click
+            button_frame, text="🔄 Refresh", width=8, command=self._on_refresh_click
         )
         refresh_btn.pack(side=tk.LEFT, padx=2)
 
@@ -200,9 +187,20 @@ class FileExplorer:
             bg="lightgray",
             fg="black",
             font=("Terminal", 9),
-            justify=tk.LEFT
+            justify=tk.LEFT,
         )
         path_label.pack(side=tk.TOP, fill=tk.X, padx=5, pady=0)
+
+        # Update font to use NotoColorEmoji if available
+        # Locate the font file relative to the installed package directory
+        package_dir = os.path.dirname(__file__)
+        emoji_font_path = os.path.join(package_dir, "fonts", "NotoColorEmoji.ttf")
+        if os.path.exists(emoji_font_path):
+            label_font = (emoji_font_path, 9)
+        else:
+            label_font = ("Terminal", 9)
+
+        path_label.config(font=label_font)
 
         # Store references for updating
         self._path_label = path_label
@@ -224,7 +222,7 @@ class FileExplorer:
             columns=("type", "size"),
             height=15,
             yscrollcommand=vsb.set,
-            xscrollcommand=hsb.set
+            xscrollcommand=hsb.set,
         )
         vsb.config(command=self.tree.yview)
         hsb.config(command=self.tree.xview)
@@ -267,8 +265,8 @@ class FileExplorer:
         items = self.list_directory()
 
         # Add items to tree (directories first, then files)
-        dirs = [item for item in items if item['is_dir']]
-        files = [item for item in items if not item['is_dir']]
+        dirs = [item for item in items if item["is_dir"]]
+        files = [item for item in items if not item["is_dir"]]
 
         for item in dirs:
             size_text = ""
@@ -277,22 +275,22 @@ class FileExplorer:
                 "end",
                 text=f"📁 {item['name']}",
                 values=("Folder", size_text),
-                tags=("directory",)
+                tags=("directory",),
             )
 
         for item in files:
-            size_kb = item['size'] / 1024 if item['size'] else 0
+            size_kb = item["size"] / 1024 if item["size"] else 0
             if size_kb > 1024:
                 size_text = f"{size_kb / 1024:.1f} MB"
             else:
                 size_text = f"{size_kb:.1f} KB" if size_kb > 0 else "0 KB"
-            
+
             self.tree.insert(
                 "",
                 "end",
                 text=f"📄 {item['name']}",
                 values=("File", size_text),
-                tags=("file",)
+                tags=("file",),
             )
 
     def _on_item_double_click(self, event):
@@ -305,9 +303,9 @@ class FileExplorer:
             item_text = self.tree.item(item, "text")
             # Remove the emoji and get the actual name
             item_name = item_text.split(" ", 1)[1] if " " in item_text else item_text
-            
+
             new_path = os.path.join(self.current_path, item_name)
-            
+
             if os.path.isdir(new_path):
                 self.change_directory(new_path)
                 self._populate_tree()
@@ -360,16 +358,22 @@ class FileExplorer:
         """
         Update the path display label.
         """
-        if hasattr(self, '_path_label'):
+        if hasattr(self, "_path_label"):
             self._path_label.config(text=f"📁 {self.current_path}")
 
     def _update_button_states(self):
         """
         Update the enabled/disabled state of navigation buttons.
         """
-        if hasattr(self, '_back_btn'):
-            self._back_btn.config(state=tk.NORMAL if self.history_index > 0 else tk.DISABLED)
-        if hasattr(self, '_forward_btn'):
-            self._forward_btn.config(state=tk.NORMAL if self.history_index < len(self.history) - 1 else tk.DISABLED)
-
-
+        if hasattr(self, "_back_btn"):
+            self._back_btn.config(
+                state=tk.NORMAL if self.history_index > 0 else tk.DISABLED
+            )
+        if hasattr(self, "_forward_btn"):
+            self._forward_btn.config(
+                state=(
+                    tk.NORMAL
+                    if self.history_index < len(self.history) - 1
+                    else tk.DISABLED
+                )
+            )

@@ -1,0 +1,1 @@
+This directory contains open-source fonts. Ensure that any font added here complies with the licensing requirements of the project.

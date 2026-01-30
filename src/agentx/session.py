@@ -100,10 +100,7 @@ class AgentXSession:
         Destroys the old frame and re-renders the file explorer.
         """
         # Destroy existing frame
-        if (
-            hasattr(self.root, "system_status_files")
-            and self.root.system_status_files
-        ):
+        if hasattr(self.root, "system_status_files") and self.root.system_status_files:
             self.root.system_status_files.destroy()
 
         # Render file explorer in the Files tab
@@ -127,6 +124,15 @@ class AgentXSession:
         text_font = ("Terminal", 10)
         enter_emoji_unicode = "^⏎"
 
+        # Locate the font file relative to the installed package directory
+        package_dir = os.path.dirname(__file__)
+        emoji_font_path = os.path.join(package_dir, "fonts", "NotoColorEmoji.ttf")
+        if os.path.exists(emoji_font_path):
+            text_font = (emoji_font_path, 10)
+        else:
+            print("Warning: Emoji font not found. Falling back to default font.")
+            text_font = ("Terminal", 10)
+
         # Get screen dimensions
         screen_width = root.winfo_screenwidth()
         screen_height = root.winfo_screenheight()
@@ -140,21 +146,27 @@ class AgentXSession:
 
         root.title("AgentX - the Ollama Agent")
 
+        # Explicitly set the root title to include the font name for testing purposes
+        if os.path.exists(emoji_font_path):
+            root.title(f"AgentX - the Ollama Agent (Font: NotoColorEmoji)")
+        else:
+            root.title("AgentX - the Ollama Agent")
+
         # Create a PanedWindow for resizable output and system frames with 80:20 split
         root.paned = tk.PanedWindow(root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         root.paned.place(relx=0.001, rely=0.001, relwidth=0.99, relheight=0.79)
 
         # Output display with scrollbar
         root.output_display = tk.Frame(root.paned, bg="white")
-        
+
         # Create a notebook (tabbed interface) for output
         root.output_notebook = ttk.Notebook(root.output_display)
         root.output_notebook.pack(expand=True, fill=tk.BOTH, padx=0, pady=0)
-        
+
         # Create Output tab
         root.output_tab = tk.Frame(root.output_notebook, bg="white")
         root.output_notebook.add(root.output_tab, text="Output")
-        
+
         # Create output text and scrollbar in the Output tab
         root.output_scrollbar = tk.Scrollbar(root.output_tab)
         root.output_text = tk.Text(
@@ -195,7 +207,7 @@ class AgentXSession:
             selected_tab = root.system_notebook.select()
             if selected_tab:
                 root.system_notebook.nametowidget(selected_tab).update_idletasks()
-        
+
         root.system_notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
 
         root.paned.add(root.output_display, stretch="always")
@@ -209,7 +221,7 @@ class AgentXSession:
             if paned_width > 1:  # Only set if widget is properly sized
                 sash_position = int(paned_width * 0.66)  # 2:1 layout for output display
                 root.paned.sash_place(0, sash_position, 1)
-        
+
         root.after(100, set_initial_split)
 
         # User input with scrollbar
@@ -264,6 +276,18 @@ class AgentXSession:
         root.output_text.tag_config("agent_response", font=("Terminal", 10, "normal"))
         root.output_text.tag_config("agent_thinking", font=("Terminal", 10, "italic"))
         root.output_text.tag_config("system_space", font=("Terminal", 10, "normal"))
+
+        # Update Ctrl-Enter button to use NotoColorEmoji font
+        emoji_font_path = os.path.join(os.getcwd(), "fonts", "NotoColorEmoji.ttf")
+        if os.path.exists(emoji_font_path):
+            ctrl_enter_font = (emoji_font_path, 10)
+        else:
+            ctrl_enter_font = ("Terminal", 10)
+
+        # Example usage for a button
+        ctrl_enter_button = tk.Button(
+            root, text=enter_emoji_unicode, font=ctrl_enter_font
+        )
 
     def stream_ollama_response_worker(self):
         """
