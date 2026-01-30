@@ -6,6 +6,7 @@ import json
 import os
 import threading
 import tkinter as tk
+from tkinter import ttk
 from datetime import datetime
 from typing import Any
 
@@ -13,6 +14,7 @@ import httpx
 from ollama import Client
 
 from .context import Context
+from .file_explorer import FileExplorer
 from .history import History
 from .message import Message
 
@@ -29,6 +31,7 @@ class AgentXSession:
         self.root = root
         self.config = config
         self.context = Context()
+        self.file_explorer = FileExplorer(start_path=os.getcwd())
         self.user = os.getenv("USER") or os.getenv("USERNAME") or "User"
         self.start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.root.title(f"{self.user} - AgentX Session - {self.start_time}")
@@ -66,7 +69,7 @@ class AgentXSession:
 
     def refresh_context_gui(self):
         """
-        Refreshes the context GUI in the system status frame.
+        Refreshes the context GUI in the Session tab of the system status notebook.
         Destroys the old frames and re-renders the history and current context.
         """
         # Destroy existing frames
@@ -81,15 +84,31 @@ class AgentXSession:
         ):
             self.root.system_status_context.destroy()
 
-        # Render history first (collapsed by default)
+        # Render history first (collapsed by default) in the Session tab
         self.root.system_status_history = self.history.to_gui(
-            self.root.system_status, self.user
+            self.root.session_tab, self.user
         )
         self.root.system_status_history.pack(expand=False, fill=tk.X, anchor=tk.N)
 
-        # Render current context
-        self.root.system_status_context = self.context.to_gui(self.root.system_status)
+        # Render current context in the Session tab
+        self.root.system_status_context = self.context.to_gui(self.root.session_tab)
         self.root.system_status_context.pack(expand=True, fill=tk.BOTH)
+
+    def refresh_files_gui(self):
+        """
+        Refreshes the file explorer GUI in the Files tab of the system status notebook.
+        Destroys the old frame and re-renders the file explorer.
+        """
+        # Destroy existing frame
+        if (
+            hasattr(self.root, "system_status_files")
+            and self.root.system_status_files
+        ):
+            self.root.system_status_files.destroy()
+
+        # Render file explorer in the Files tab
+        self.root.system_status_files = self.file_explorer.to_gui(self.root.files_tab)
+        self.root.system_status_files.pack(expand=True, fill=tk.BOTH)
 
     def add_message_to_context(self, message: Message):
         """
@@ -121,7 +140,7 @@ class AgentXSession:
 
         root.title("AgentX - the Ollama Agent")
 
-        # Create a PanedWindow for resizable output and system frames
+        # Create a PanedWindow for resizable output and system frames with 80:20 split
         root.paned = tk.PanedWindow(root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         root.paned.place(relx=0.001, rely=0.001, relwidth=0.99, relheight=0.79)
 
@@ -141,10 +160,32 @@ class AgentXSession:
         root.output_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
 
         root.system_status = tk.Frame(root.paned, bg="lightblue")
+        # Create a notebook (tabbed interface) for system status
+        root.system_notebook = ttk.Notebook(root.system_status)
+        root.system_notebook.pack(expand=True, fill=tk.BOTH, padx=0, pady=0)
+
+        # Create Session tab
+        root.session_tab = tk.Frame(root.system_notebook, bg="lightblue")
+        root.system_notebook.add(root.session_tab, text="Session")
+
+        # Create Files tab
+        root.files_tab = tk.Frame(root.system_notebook, bg="lightblue")
+        root.system_notebook.add(root.files_tab, text="Files")
+
+        # Initialize the Session tab content
         self.refresh_context_gui()
+
+        # Initialize the Files tab content
+        self.refresh_files_gui()
 
         root.paned.add(root.output_display, stretch="always")
         root.paned.add(root.system_status, stretch="always")
+
+        # Set the sash position to create an 80:20 split
+        # Calculate 80% of the paned window width
+        paned_width = int((screen_width // 2) * 0.99)
+        sash_position = int(paned_width * 0.8)
+        root.after(10, lambda: root.paned.sash_place(0, sash_position, 1))
 
         # User input with scrollbar
         root.user_input = tk.Frame(root, bg="lightgrey")
