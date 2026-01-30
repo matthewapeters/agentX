@@ -28,3 +28,9 @@ include-package-data = true
 
 [tool.setuptools.package-dir]
 agentx = "src/agentx"
+
+[tool.setuptools.package-data]
+agentx = [
+    "fonts/*.ttf",
+    "assets/icons/opemmoji-svg-color/*.svg"
+]

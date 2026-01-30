@@ -127,10 +127,13 @@ class AgentXSession:
         # Locate the font file relative to the installed package directory
         package_dir = os.path.dirname(__file__)
         emoji_font_path = os.path.join(package_dir, "fonts", "NotoColorEmoji.ttf")
+        # Debugging: Print the resolved path for the font file
+        print(f"Resolved font path: {emoji_font_path}")
         if os.path.exists(emoji_font_path):
+            print("Font file found.")
             text_font = (emoji_font_path, 10)
         else:
-            print("Warning: Emoji font not found. Falling back to default font.")
+            print("Font file not found.")
             text_font = ("Terminal", 10)
 
         # Get screen dimensions
