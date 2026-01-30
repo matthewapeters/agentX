@@ -197,7 +197,7 @@ class AgentXSession:
             root.update_idletasks()  # Ensure widgets are rendered
             paned_width = root.paned.winfo_width()
             if paned_width > 1:  # Only set if widget is properly sized
-                sash_position = int(paned_width * 0.66)  # 80% for output display
+                sash_position = int(paned_width * 0.66)  # 2:1 layout for output display
                 root.paned.sash_place(0, sash_position, 1)
         
         root.after(100, set_initial_split)
