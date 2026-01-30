@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 from glob import glob
 
-from .session import AgentXSession
 
 # TODO: Implement the file explorer functionality here in the style of context.py and history.py
 # the objective is to allow the user to explore files and directories within the agentx application,
@@ -71,6 +70,8 @@ class FileExplorer:
         :param parent_frame: The parent Tkinter frame to attach the file explorer GUI to.
         :return: A Tkinter frame containing the file explorer GUI.
         """
-        pass  # TODO: Implement GUI representation of the file explorer 
+        frame = tk.Frame(parent_frame)
+        # TODO: Implement GUI representation of the file explorer 
+        return frame
 
 

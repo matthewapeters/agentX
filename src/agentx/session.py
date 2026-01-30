@@ -178,14 +178,29 @@ class AgentXSession:
         # Initialize the Files tab content
         self.refresh_files_gui()
 
+        # Bind tab change event to force widget updates
+        def on_tab_changed(event):
+            root.update_idletasks()
+            # Force update of the selected tab's content
+            selected_tab = root.system_notebook.select()
+            if selected_tab:
+                root.system_notebook.nametowidget(selected_tab).update_idletasks()
+        
+        root.system_notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
+
         root.paned.add(root.output_display, stretch="always")
         root.paned.add(root.system_status, stretch="always")
 
-        # Set the sash position to create an 80:20 split
-        # Calculate 80% of the paned window width
-        paned_width = int((screen_width // 2) * 0.99)
-        sash_position = int(paned_width * 0.8)
-        root.after(10, lambda: root.paned.sash_place(0, sash_position, 1))
+        # Set the sash position to create an 80:20 split after widgets are rendered
+        def set_initial_split():
+            # Calculate 80% of the actual paned window width
+            root.update_idletasks()  # Ensure widgets are rendered
+            paned_width = root.paned.winfo_width()
+            if paned_width > 1:  # Only set if widget is properly sized
+                sash_position = int(paned_width * 0.66)  # 80% for output display
+                root.paned.sash_place(0, sash_position, 1)
+        
+        root.after(100, set_initial_split)
 
         # User input with scrollbar
         root.user_input = tk.Frame(root, bg="lightgrey")
