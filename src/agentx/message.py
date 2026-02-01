@@ -16,6 +16,7 @@ class Message:
         role: str,
         content: str,
         attachments: list[str] = None,
+        attachment_paths: list[str] = None,
         enabled: bool = True,
         file: str = None,
         epoch: float = 0.0,
@@ -32,6 +33,8 @@ class Message:
         self.role = role
         self.content = content
         self.attachments: list[str] = attachments or []
+        self.attachment_paths = attachment_paths or []
+        self._id: int | None = None
         self._enabled = enabled
         self._file = file
         self._epoch = epoch
@@ -49,6 +52,7 @@ class Message:
             role=data.get("role", "user"),
             content=data.get("content", ""),
             attachments=data.get("attachments", []),
+            attachment_paths=data.get("attachment_paths", []),
             enabled=data.get("enabled", True),
             file=file_path or data.get("file"),
             epoch=data.get("epoch", 0),
@@ -84,6 +88,8 @@ class Message:
 
         :param attachment_path: The file path to attach.
         """
+        self.attachment_paths = set(self.attachment_paths).add(attachment_path)
+        # TODO: read the file and add it as a str to self.attachements
         self.attachments.append(attachment_path)
 
     def detach(self, attachment_path: str):
@@ -112,6 +118,7 @@ class Message:
             "file": self.file,
             "epoch": self._epoch,
             "attachments": self.attachments,
+            "attachment_paths": self.attachment_paths,
         }
 
     def save(self, context_path: str, time_added: datetime) -> None:
