@@ -137,7 +137,7 @@ class FileExplorer:
             return self.change_directory(parent)
         return False
 
-    def to_gui(self, parent_frame: tk.Frame) -> tk.Frame:
+    def to_gui(self, parent_frame: tk.Frame, on_attach=None, on_edit=None) -> tk.Frame:
         """
         Create a GUI frame for the file explorer.
 
@@ -239,6 +239,14 @@ class FileExplorer:
         # Bind events
         self.tree.bind("<Double-1>", self._on_item_double_click)
 
+        # --- Right-click popup menu ---
+        self._popup_menu = tk.Menu(self.tree, tearoff=0)
+        self._popup_menu.add_command(label="Attach", command=self._on_attach_selected)
+        self._popup_menu.add_command(label="Edit", command=self._on_edit_selected)
+        self._on_attach_callback = on_attach
+        self._on_edit_callback = on_edit
+        self.tree.bind("<Button-3>", self._on_right_click)
+
         # Pack the treeview and scrollbars
         self.tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
@@ -252,6 +260,35 @@ class FileExplorer:
         self._update_button_states()
 
         return frame
+
+    def _on_right_click(self, event):
+        # Select the item under the mouse
+        item = self.tree.identify_row(event.y)
+        if item:
+            self.tree.selection_set(item)
+            tags = self.tree.item(item, "tags")
+            if "file" in tags:
+                self._popup_menu.tk_popup(event.x_root, event.y_root)
+
+    def _on_attach_selected(self):
+        selection = self.tree.selection()
+        if selection:
+            item = selection[0]
+            item_text = self.tree.item(item, "text")
+            item_name = item_text.split(" ", 1)[1] if " " in item_text else item_text
+            file_path = os.path.join(self.current_path, item_name)
+            if self._on_attach_callback:
+                self._on_attach_callback(file_path)
+
+    def _on_edit_selected(self):
+        selection = self.tree.selection()
+        if selection:
+            item = selection[0]
+            item_text = self.tree.item(item, "text")
+            item_name = item_text.split(" ", 1)[1] if " " in item_text else item_text
+            file_path = os.path.join(self.current_path, item_name)
+            if self._on_edit_callback:
+                self._on_edit_callback(file_path)
 
     def _populate_tree(self):
         """

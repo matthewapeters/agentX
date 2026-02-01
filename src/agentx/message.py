@@ -88,9 +88,17 @@ class Message:
 
         :param attachment_path: The file path to attach.
         """
-        self.attachment_paths = set(self.attachment_paths).add(attachment_path)
-        # TODO: read the file and add it as a str to self.attachements
-        self.attachments.append(attachment_path)
+        print(f"Attaching file: {attachment_path}")
+        if attachment_path not in self.attachment_paths:
+            self.attachment_paths.append(attachment_path)
+        # Read the file and add its content to attachments
+        try:
+            with open(attachment_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.attachments.append(content)
+        except Exception as e:
+            # If file can't be read, just store the path as a fallback
+            self.attachments.append(f"[Could not read file: {attachment_path}]")
 
     def detach(self, attachment_path: str):
         """

@@ -131,6 +131,17 @@ class Context:
         for idx, (ts, message) in enumerate(self.messages):
             m_frame = message.to_gui(context_messages_frame)
             m_frame.grid(row=idx, column=0, sticky="w")
+            # Display attached files (if any)
+            if message.attachment_paths:
+                for aidx, att_path in enumerate(message.attachment_paths):
+                    att_label = tk.Label(
+                        context_messages_frame,
+                        text=f"📁  {att_path.split('/')[-1]}",
+                        anchor="w",
+                        fg="#555555",
+                        font=("Terminal", 9, "italic")
+                    )
+                    att_label.grid(row=idx, column=1 + aidx, sticky="w", padx=(10, 0))
 
         if not self.expanded:
             toggle_expand()

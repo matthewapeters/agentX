@@ -49,6 +49,7 @@ class AgentXSession:
         os.makedirs(self.context_folder, exist_ok=True)
         self.context.path = self.context_folder
         self._history = None  # Placeholder for History object
+        self.message = Message(role="user", content="")
 
     @property
     def history(self) -> "History":
@@ -94,6 +95,44 @@ class AgentXSession:
         self.root.system_status_context = self.context.to_gui(self.root.session_tab)
         self.root.system_status_context.pack(expand=True, fill=tk.BOTH)
 
+    def attach_file(self, file_path: str):
+        """
+        Attach a file to the session context.
+        :param file_path: The path to the file to be attached.  
+        """
+        self.message.attach(file_path)
+        self.refresh_user_gui()
+
+    def refresh_user_gui(self):
+        """
+        Refreshes the user GUI in the Session tab of the system status notebook.
+        Displays the current message's attached files as labels above the user input box.
+        """
+        root = self.root
+        # Remove old attachment labels if they exist
+        if hasattr(root, "attachment_labels"):
+            for label in root.attachment_labels:
+                label.destroy()
+        root.attachment_labels = []
+
+        # Create a frame above the user input for attachments if not present
+        if not hasattr(root, "attachments_frame"):
+            root.attachments_frame = tk.Frame(root, bg="white")
+            root.attachments_frame.place(relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03)
+
+        # Display each attached file as a label
+        for idx, att_path in enumerate(self.message.attachment_paths):
+            label = tk.Label(
+                root.attachments_frame,
+                text=f"📁 {att_path.split('/')[-1]}",
+                anchor="w",
+                bg="white",
+                fg="#555555",
+                font=("Terminal", 9, "italic")
+            )
+            label.pack(side=tk.LEFT, padx=(5, 0))
+            root.attachment_labels.append(label)
+
     def refresh_files_gui(self):
         """
         Refreshes the file explorer GUI in the Files tab of the system status notebook.
@@ -103,8 +142,12 @@ class AgentXSession:
         if hasattr(self.root, "system_status_files") and self.root.system_status_files:
             self.root.system_status_files.destroy()
 
-        # Render file explorer in the Files tab
-        self.root.system_status_files = self.file_explorer.to_gui(self.root.files_tab)
+        # Render file explorer in the Files tab, wiring Attach to self.attach_file
+        self.root.system_status_files = self.file_explorer.to_gui(
+            self.root.files_tab,
+            on_attach=self.attach_file,
+            on_edit=None  # You can wire up edit logic here later
+        )
         self.root.system_status_files.pack(expand=True, fill=tk.BOTH)
 
     def add_message_to_context(self, message: Message):
@@ -229,6 +272,10 @@ class AgentXSession:
 
         # User input with scrollbar
         root.user_input = tk.Frame(root, bg="lightgrey")
+        # Add a row at the top of the root.user_input frame to list attached files
+        root.attachments = tk.Frame(root, height=2)
+        root.attachments.place(relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03)
+        root.user_input.place(relx=0.001, rely=0.80, relwidth=1.0, relheight=0.2)
         root.input_scrollbar = tk.Scrollbar(root.user_input)
         root.user_input_text = tk.Text(
             root.user_input,
@@ -311,23 +358,35 @@ class AgentXSession:
 
         # Get the prompt from the user_input_text widget
         prompt = root.user_input_text.get("1.0", tk.END).strip()
-        if not prompt:
+        if not prompt and not self.message.attachment_paths:
             root.output_text.insert(tk.END, "No input provided.\n")
             return
+
+        # Build the full user message including attached file contents
+        full_prompt = prompt
+        if self.message.attachment_paths:
+            for idx, (path, content) in enumerate(zip(self.message.attachment_paths, self.message.attachments)):
+                filename = os.path.basename(path)
+                full_prompt += f"\n\n--- [Attached file: {filename}] ---\n{content}\n--- [End of {filename}] ---"
 
         # Display the user prompt in the output_text widget
         root.user_input_text.delete("1.0", tk.END)  # Clear the user input text
         root.output_text.insert(tk.END, f"User: {prompt}\n", ("user_prompt",))
+        if self.message.attachment_paths:
+            for idx, (path, content) in enumerate(zip(self.message.attachment_paths, self.message.attachments)):
+                filename = os.path.basename(path)
+                root.output_text.insert(tk.END, f"\n[Attached file: {filename}]\n", ("gray",))
         root.output_text.see(tk.END)  # Auto-scroll to the end
         root.update_idletasks()
 
         try:
             # Define the message payload
-            user_message = Message(role="user", content=prompt)
+            self.message.content = full_prompt
             agent_thinking_message = Message(role="assistant", content="")
             agent_thinking_message.enabled = False
             agent_response_message = Message(role="assistant", content="")
-            self.add_message_to_context(user_message)
+            self.add_message_to_context(self.message)
+            self.message = Message(role="user", content="")
             # Use the AsyncClient to stream responses
             last_channel = ""
             client = Client(host=f"http://{ollama_host}")
@@ -423,6 +482,7 @@ class AgentXSession:
                 tk.END, "\n\n", ("system_space",)
             )  # Add spacing between different channels
             self.add_message_to_context(agent_response_message)
+            self.refresh_user_gui()
             root.update_idletasks()
 
         except Exception as e:
