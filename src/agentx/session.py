@@ -6,8 +6,8 @@ import json
 import os
 import threading
 import tkinter as tk
-from tkinter import ttk
 from datetime import datetime
+from tkinter import ttk
 from typing import Any
 
 import httpx
@@ -98,7 +98,7 @@ class AgentXSession:
     def attach_file(self, file_path: str):
         """
         Attach a file to the session context.
-        :param file_path: The path to the file to be attached.  
+        :param file_path: The path to the file to be attached.
         """
         self.message.attach(file_path)
         self.refresh_user_gui()
@@ -118,7 +118,9 @@ class AgentXSession:
         # Create a frame above the user input for attachments if not present
         if not hasattr(root, "attachments_frame"):
             root.attachments_frame = tk.Frame(root, bg="white")
-            root.attachments_frame.place(relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03)
+            root.attachments_frame.place(
+                relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03
+            )
 
         # Display each attached file as a label
         for idx, att in enumerate(self.message.attachments):
@@ -128,7 +130,7 @@ class AgentXSession:
                 anchor="w",
                 bg="white",
                 fg="#555555",
-                font=("Terminal", 9, "italic")
+                font=("Terminal", 9, "italic"),
             )
             label.pack(side=tk.LEFT, padx=(5, 0))
             root.attachment_labels.append(label)
@@ -146,7 +148,7 @@ class AgentXSession:
         self.root.system_status_files = self.file_explorer.to_gui(
             self.root.files_tab,
             on_attach=self.attach_file,
-            on_edit=None  # You can wire up edit logic here later
+            on_edit=None,  # You can wire up edit logic here later
         )
         self.root.system_status_files.pack(expand=True, fill=tk.BOTH)
 
@@ -373,9 +375,10 @@ class AgentXSession:
         if self.message.attachments:
             for att in self.message.attachments:
                 filename = os.path.basename(att.file_path)
-                root.output_text.insert(tk.END, f"\n[Attached file: {filename}]\n", ("gray",))
+                root.output_text.insert(
+                    tk.END, f"\n[Attached file: {filename}]\n", ("gray",)
+                )
         root.output_text.see(tk.END)  # Auto-scroll to the end
-
 
         root.update_idletasks()
 
@@ -392,17 +395,23 @@ class AgentXSession:
             llm_messages = []
             for context in self.history.sessions:
                 for ts, msg in context.messages:
-                    if getattr(msg, 'enabled', False):
+                    if getattr(msg, "enabled", False):
                         # Only include enabled attachments
-                        if hasattr(msg, 'attachments'):
-                            msg.attachments = [a for a in msg.attachments if getattr(a, 'enabled', False)]
+                        if hasattr(msg, "attachments"):
+                            msg.attachments = [
+                                a
+                                for a in msg.attachments
+                                if getattr(a, "enabled", False)
+                            ]
                         llm_messages.append(msg.llm_message_dict())
 
             # Also include enabled messages from the current context (if not already in history)
             for ts, msg in self.context.messages:
-                if getattr(msg, 'enabled', False):
-                    if hasattr(msg, 'attachments'):
-                        msg.attachments = [a for a in msg.attachments if getattr(a, 'enabled', False)]
+                if getattr(msg, "enabled", False):
+                    if hasattr(msg, "attachments"):
+                        msg.attachments = [
+                            a for a in msg.attachments if getattr(a, "enabled", False)
+                        ]
                     llm_messages.append(msg.llm_message_dict())
 
             last_channel = ""

@@ -1,9 +1,12 @@
 import json
 import os
+import re
 import tkinter as tk
 from dataclasses import dataclass
 from datetime import datetime
+
 from .attachment import Attachment
+
 
 @dataclass
 class Message:
@@ -111,8 +114,7 @@ class Message:
         :param attachment_path: The file path to detach.
         """
         self.attachments = [
-            a for a in self.attachments 
-            if a.file_path != attachment_path
+            a for a in self.attachments if a.file_path != attachment_path
         ]
 
     def serialize(self) -> dict:
@@ -132,7 +134,12 @@ class Message:
             "file": self.file,
             "epoch": self._epoch,
             "attachments": [
-                {"file_path": a.file_path, "content_type": a.content_type, "enabled": a.enabled, "content": a.content}
+                {
+                    "file_path": a.file_path,
+                    "content_type": a.content_type,
+                    "enabled": a.enabled,
+                    "content": a.content,
+                }
                 for a in self.attachments
             ],
         }
@@ -157,7 +164,12 @@ class Message:
             "role": self.role,
             "content": self.content,
             "attachments": [
-                {"file_path": a.file_path, "content_type": a.content_type, "enabled": a.enabled, "content": a.content}
+                {
+                    "file_path": a.file_path,
+                    "content_type": a.content_type,
+                    "enabled": a.enabled,
+                    "content": a.content,
+                }
                 for a in self.attachments
             ],
         }
@@ -189,7 +201,13 @@ class Message:
                 if expanded_var.get():
                     # Show attachments
                     for idx, w in enumerate(attachment_widgets):
-                        w.grid(row=1 + idx, column=3, columnspan=2, sticky="w", padx=(30, 0))
+                        w.grid(
+                            row=1 + idx,
+                            column=3,
+                            columnspan=2,
+                            sticky="w",
+                            padx=(30, 0),
+                        )
                 else:
                     # Hide attachments
                     for w in attachment_widgets:
@@ -228,31 +246,31 @@ class Message:
 
         # Content preview (first 40 chars, trimmed, no attachments)
         trimmed_content = self.content.strip()
-        # Remove any lines that look like attachment markers (e.g., --- [Attached file: ...] ---)
-        import re
-        lines = [line for line in trimmed_content.splitlines() if not re.match(r"--- \[Attached file: .+\] ---", line) and not re.match(r"--- \[End of .+\] ---", line)]
+        lines = [
+            line
+            for line in trimmed_content.splitlines()
+            if not re.match(r"--- \[Attached file: .+\] ---", line)
+            and not re.match(r"--- \[End of .+\] ---", line)
+        ]
         preview_text = " ".join([l.strip() for l in lines if l.strip()])
         preview = preview_text[:40] + ("..." if len(preview_text) > 40 else "")
         preview_label = tk.Label(frame, text=preview, anchor="w", width=50)
         preview_label.grid(row=0, column=col, sticky="w")
 
-        # Attachments (only in collapsible area, not to the right of the message)
         for idx, att in enumerate(self.attachments):
             att_frame = tk.Frame(frame)
-            # Handle legacy or malformed attachments that are strings
-            if isinstance(att, str):
-                att_label = tk.Label(att_frame, text=f"📁  {att}", anchor="w")
-                att_label.pack(side=tk.LEFT)
-                attachment_widgets.append(att_frame)
-                continue
             enabled_var = tk.BooleanVar(value=att.enabled)
+
             def toggle(var=enabled_var, a=att):
                 a.enabled = var.get()
+
             enabled_checkbox = tk.Checkbutton(
                 att_frame, variable=enabled_var, command=toggle
             )
             enabled_checkbox.pack(side=tk.LEFT)
-            att_label = tk.Label(att_frame, text=f"📁  {att.file_path.split('/')[-1]}", anchor="w")
+            att_label = tk.Label(
+                att_frame, text=f"📁  {att.file_path.split('/')[-1]}", anchor="w"
+            )
             att_label.pack(side=tk.LEFT)
             attachment_widgets.append(att_frame)
 
@@ -260,7 +278,9 @@ class Message:
         if has_attachments:
             if expanded_var.get():
                 for idx, w in enumerate(attachment_widgets):
-                    w.grid(row=1 + idx, column=3, columnspan=2, sticky="w", padx=(30, 0))
+                    w.grid(
+                        row=1 + idx, column=3, columnspan=2, sticky="w", padx=(30, 0)
+                    )
             else:
                 for w in attachment_widgets:
                     w.grid_remove()

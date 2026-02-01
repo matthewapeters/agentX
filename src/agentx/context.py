@@ -58,8 +58,8 @@ class Context:
                 message = Message.from_dict(json.loads(file.read()), file_path=f)
                 # Default all loaded messages and attachments to disabled
                 message.enabled = False
-                for att in getattr(message, 'attachments', []):
-                    if hasattr(att, 'enabled'):
+                for att in getattr(message, "attachments", []):
+                    if hasattr(att, "enabled"):
                         att.enabled = False
                 self.messages.append((message.ts, message))
 
@@ -136,22 +136,6 @@ class Context:
         for idx, (ts, message) in enumerate(self.messages):
             m_frame = message.to_gui(context_messages_frame)
             m_frame.grid(row=idx, column=0, sticky="w")
-            # Display attached files (if any)
-            if message.attachments:
-                for aidx, att in enumerate(message.attachments):
-                    # Handle legacy or malformed attachments that are strings
-                    if isinstance(att, str):
-                        display_name = att.split('/')[-1]
-                    else:
-                        display_name = att.file_path.split('/')[-1]
-                    att_label = tk.Label(
-                        context_messages_frame,
-                        text=f"📁  {display_name}",
-                        anchor="w",
-                        fg="#555555",
-                        font=("Terminal", 9, "italic")
-                    )
-                    att_label.grid(row=idx, column=1 + aidx, sticky="w", padx=(10, 0))
 
         if not self.expanded:
             toggle_expand()

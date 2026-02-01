@@ -1,5 +1,6 @@
 import os
 from importlib.resources import files
+
 import toml
 
 DEFAULT_CONFIG = "agentx.toml"

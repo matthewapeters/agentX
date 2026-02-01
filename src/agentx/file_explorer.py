@@ -2,10 +2,10 @@
 Docstring for agentx.file_explorer
 """
 
-import tkinter as tk
-from tkinter import ttk
 import os
+import tkinter as tk
 from pathlib import Path
+from tkinter import ttk
 
 
 class FileExplorer:
