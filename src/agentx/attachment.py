@@ -8,7 +8,7 @@ class Attachment:
     Docstring for Attachment
     """
     file_path: str
-    content_type: str  
-    enabled: bool = True
+    content_type: str
     content: str
+    enabled: bool = True
 

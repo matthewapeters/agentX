@@ -132,11 +132,16 @@ class Context:
             m_frame = message.to_gui(context_messages_frame)
             m_frame.grid(row=idx, column=0, sticky="w")
             # Display attached files (if any)
-            if message.attachment_paths:
-                for aidx, att_path in enumerate(message.attachment_paths):
+            if message.attachments:
+                for aidx, att in enumerate(message.attachments):
+                    # Handle legacy or malformed attachments that are strings
+                    if isinstance(att, str):
+                        display_name = att.split('/')[-1]
+                    else:
+                        display_name = att.file_path.split('/')[-1]
                     att_label = tk.Label(
                         context_messages_frame,
-                        text=f"📁  {att_path.split('/')[-1]}",
+                        text=f"📁  {display_name}",
                         anchor="w",
                         fg="#555555",
                         font=("Terminal", 9, "italic")

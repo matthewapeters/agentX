@@ -121,10 +121,10 @@ class AgentXSession:
             root.attachments_frame.place(relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03)
 
         # Display each attached file as a label
-        for idx, att_path in enumerate(self.message.attachment_paths):
+        for idx, att in enumerate(self.message.attachments):
             label = tk.Label(
                 root.attachments_frame,
-                text=f"📁 {att_path.split('/')[-1]}",
+                text=f"📁 {att.file_path.split('/')[-1]}",
                 anchor="w",
                 bg="white",
                 fg="#555555",
@@ -358,23 +358,24 @@ class AgentXSession:
 
         # Get the prompt from the user_input_text widget
         prompt = root.user_input_text.get("1.0", tk.END).strip()
-        if not prompt and not self.message.attachment_paths:
+        if not prompt and not self.message.attachments:
             root.output_text.insert(tk.END, "No input provided.\n")
             return
 
-        # Build the full user message including attached file contents
+        # Build the full user message including only enabled attached file contents
         full_prompt = prompt
-        if self.message.attachment_paths:
-            for idx, (path, content) in enumerate(zip(self.message.attachment_paths, self.message.attachments)):
-                filename = os.path.basename(path)
-                full_prompt += f"\n\n--- [Attached file: {filename}] ---\n{content}\n--- [End of {filename}] ---"
+        if self.message.attachments:
+            for att in self.message.attachments:
+                if att.enabled:
+                    filename = os.path.basename(att.file_path)
+                    full_prompt += f"\n\n--- [Attached file: {filename}] ---\n{att.content}\n--- [End of {filename}] ---"
 
         # Display the user prompt in the output_text widget
         root.user_input_text.delete("1.0", tk.END)  # Clear the user input text
         root.output_text.insert(tk.END, f"User: {prompt}\n", ("user_prompt",))
-        if self.message.attachment_paths:
-            for idx, (path, content) in enumerate(zip(self.message.attachment_paths, self.message.attachments)):
-                filename = os.path.basename(path)
+        if self.message.attachments:
+            for att in self.message.attachments:
+                filename = os.path.basename(att.file_path)
                 root.output_text.insert(tk.END, f"\n[Attached file: {filename}]\n", ("gray",))
         root.output_text.see(tk.END)  # Auto-scroll to the end
         root.update_idletasks()

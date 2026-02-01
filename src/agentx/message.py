@@ -33,7 +33,6 @@ class Message:
         self.role = role
         self.content = content
         self.attachments: list[Attachment] = attachments or []
-        self.attachment_paths = attachment_paths or []
         self._id: int | None = None
         self._enabled = enabled
         self._file = file
@@ -48,10 +47,18 @@ class Message:
         :param file_path: Optional file path to override the one in data
         :return: Message instance
         """
+        # Convert attachments from dicts to Attachment objects if needed
+        raw_attachments = data.get("attachments", [])
+        attachments = []
+        for a in raw_attachments:
+            if isinstance(a, dict):
+                attachments.append(Attachment(**a))
+            else:
+                attachments.append(a)
         return cls(
             role=data.get("role", "user"),
             content=data.get("content", ""),
-            attachments=data.get("attachments", []),
+            attachments=attachments,
             enabled=data.get("enabled", True),
             file=file_path or data.get("file"),
             epoch=data.get("epoch", 0),
@@ -88,16 +95,14 @@ class Message:
         :param attachment_path: The file path to attach.
         """
         print(f"Attaching file: {attachment_path}")
-        a = Attachment(file_path=attachment_path, content_type="unknown")
+        a = Attachment(file_path=attachment_path, content_type="unknown", content="")
         # Read the file and add its content to attachments
         try:
             with open(attachment_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            a.content = content
+                a.content = f.read()
         except Exception as e:
-            # If file can't be read, just store the path as a fallback
-            self.attachments.append(f"[Could not read file: {attachment_path}]")
-        self.attachment_paths.append(a)
+            a.content = f"[Could not read file: {attachment_path}]"
+        self.attachments.append(a)
 
     def detach(self, attachment_path: str):
         """
@@ -107,8 +112,8 @@ class Message:
         """
         self.attachments = [
             a for a in self.attachments 
-            if a.path != attachment_path
-            ]
+            if a.file_path != attachment_path
+        ]
 
     def serialize(self) -> dict:
         """
@@ -126,7 +131,10 @@ class Message:
             "enabled": self.enabled,
             "file": self.file,
             "epoch": self._epoch,
-            "attachments": self.attachments,
+            "attachments": [
+                {"file_path": a.file_path, "content_type": a.content_type, "enabled": a.enabled, "content": a.content}
+                for a in self.attachments
+            ],
         }
 
     def save(self, context_path: str, time_added: datetime) -> None:
@@ -145,12 +153,14 @@ class Message:
         """
         Custom JSON serialization that omits the file property.
         """
-        mj = {
+        return {
             "role": self.role,
             "content": self.content,
-            "attachments": self.attachments,
+            "attachments": [
+                {"file_path": a.file_path, "content_type": a.content_type, "enabled": a.enabled, "content": a.content}
+                for a in self.attachments
+            ],
         }
-        return mj
 
     def to_gui(self, parent):
         """
@@ -216,10 +226,26 @@ class Message:
         # Attachments
         attachment_widgets = []
         for idx, att in enumerate(self.attachments):
-            att_label = tk.Label(frame, text=f"📁  {att.split('/')[-1]}", anchor="w")
-            att_label.grid(
-                row=1 + idx, column=3, columnspan=2, sticky="w", padx=(30, 0)
+            att_frame = tk.Frame(frame)
+            # Handle legacy or malformed attachments that are strings
+            if isinstance(att, str):
+                att_label = tk.Label(att_frame, text=f"📁  {att}", anchor="w")
+                att_label.pack(side=tk.LEFT)
+                # Place in column 2 (role emoji column) for alignment
+                att_frame.grid(row=1 + idx, column=2, columnspan=3, sticky="w", padx=(0, 0))
+                attachment_widgets.append(att_frame)
+                continue
+            enabled_var = tk.BooleanVar(value=att.enabled)
+            def toggle(var=enabled_var, a=att):
+                a.enabled = var.get()
+            enabled_checkbox = tk.Checkbutton(
+                att_frame, variable=enabled_var, command=toggle
             )
-            attachment_widgets.append(att_label)
+            enabled_checkbox.pack(side=tk.LEFT)
+            att_label = tk.Label(att_frame, text=f"📁  {att.file_path.split('/')[-1]}", anchor="w")
+            att_label.pack(side=tk.LEFT)
+            # Place in column 2 (role emoji column) for alignment
+            att_frame.grid(row=1 + idx, column=2, columnspan=3, sticky="w", padx=(0, 0))
+            attachment_widgets.append(att_frame)
 
         return frame
