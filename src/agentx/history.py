@@ -84,6 +84,8 @@ class History:
         - [v] or [>] indicates whether the context is expanded or collapsed.
         - row 0 is always displayed as the header with the user's name and "History".
 
+        Only messages and attachments with their checkboxes enabled will be included in the LLM context.
+
         :param parent_frame: Description
         :type parent_frame: tk.Frame
         :param user_name: The name of the user

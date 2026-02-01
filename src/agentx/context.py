@@ -56,6 +56,11 @@ class Context:
         for f in g:
             with open(f, "r", encoding="utf-8") as file:
                 message = Message.from_dict(json.loads(file.read()), file_path=f)
+                # Default all loaded messages and attachments to disabled
+                message.enabled = False
+                for att in getattr(message, 'attachments', []):
+                    if hasattr(att, 'enabled'):
+                        att.enabled = False
                 self.messages.append((message.ts, message))
 
     def to_gui(self, root):

@@ -357,9 +357,9 @@ class AgentXSession:
         ollama_model = config["agentx"]["ollama_model"]
 
         # Get the prompt from the user_input_text widget
-        # Always clear the input box before and after processing to avoid stray newlines
-        root.user_input_text.delete("1.0", tk.END)
         prompt = root.user_input_text.get("1.0", tk.END).strip()
+        # Always clear the input box after extracting the prompt
+        root.user_input_text.delete("1.0", tk.END)
         if not prompt and not self.message.attachments:
             root.output_text.insert(tk.END, "No input provided.\n")
             return
@@ -390,16 +390,29 @@ class AgentXSession:
             agent_response_message = Message(role="assistant", content="")
             self.add_message_to_context(self.message)
             self.message = Message(role="user", content="")
-            # Use the AsyncClient to stream responses
+
+            # Build LLM context from enabled messages/attachments in history (all sessions)
+            llm_messages = []
+            for context in self.history.sessions:
+                for ts, msg in context.messages:
+                    if getattr(msg, 'enabled', False):
+                        # Only include enabled attachments
+                        if hasattr(msg, 'attachments'):
+                            msg.attachments = [a for a in msg.attachments if getattr(a, 'enabled', False)]
+                        llm_messages.append(msg.llm_message_dict())
+
+            # Also include enabled messages from the current context (if not already in history)
+            for ts, msg in self.context.messages:
+                if getattr(msg, 'enabled', False):
+                    if hasattr(msg, 'attachments'):
+                        msg.attachments = [a for a in msg.attachments if getattr(a, 'enabled', False)]
+                    llm_messages.append(msg.llm_message_dict())
+
             last_channel = ""
             client = Client(host=f"http://{ollama_host}")
             for part in client.chat(
                 model=ollama_model,
-                messages=[
-                    m[1].llm_message_dict()
-                    for m in self.context.messages
-                    if m[1].enabled
-                ],
+                messages=llm_messages,
                 stream=True,
             ):
                 if not is_streaming.is_set():
