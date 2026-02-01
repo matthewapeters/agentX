@@ -3,7 +3,7 @@ import os
 import tkinter as tk
 from dataclasses import dataclass
 from datetime import datetime
-
+from .attachment import Attachment
 
 @dataclass
 class Message:
@@ -32,7 +32,7 @@ class Message:
         """
         self.role = role
         self.content = content
-        self.attachments: list[str] = attachments or []
+        self.attachments: list[Attachment] = attachments or []
         self.attachment_paths = attachment_paths or []
         self._id: int | None = None
         self._enabled = enabled
@@ -52,7 +52,6 @@ class Message:
             role=data.get("role", "user"),
             content=data.get("content", ""),
             attachments=data.get("attachments", []),
-            attachment_paths=data.get("attachment_paths", []),
             enabled=data.get("enabled", True),
             file=file_path or data.get("file"),
             epoch=data.get("epoch", 0),
@@ -89,16 +88,16 @@ class Message:
         :param attachment_path: The file path to attach.
         """
         print(f"Attaching file: {attachment_path}")
-        if attachment_path not in self.attachment_paths:
-            self.attachment_paths.append(attachment_path)
+        a = Attachment(file_path=attachment_path, content_type="unknown")
         # Read the file and add its content to attachments
         try:
             with open(attachment_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            self.attachments.append(content)
+            a.content = content
         except Exception as e:
             # If file can't be read, just store the path as a fallback
             self.attachments.append(f"[Could not read file: {attachment_path}]")
+        self.attachment_paths.append(a)
 
     def detach(self, attachment_path: str):
         """
@@ -106,8 +105,10 @@ class Message:
 
         :param attachment_path: The file path to detach.
         """
-        if attachment_path in self.attachments:
-            self.attachments.remove(attachment_path)
+        self.attachments = [
+            a for a in self.attachments 
+            if a.path != attachment_path
+            ]
 
     def serialize(self) -> dict:
         """
@@ -126,7 +127,6 @@ class Message:
             "file": self.file,
             "epoch": self._epoch,
             "attachments": self.attachments,
-            "attachment_paths": self.attachment_paths,
         }
 
     def save(self, context_path: str, time_added: datetime) -> None:
