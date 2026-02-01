@@ -366,11 +366,6 @@ class AgentXSession:
 
         # Build the full user message including only enabled attached file contents
         full_prompt = prompt
-        if self.message.attachments:
-            for att in self.message.attachments:
-                if att.enabled:
-                    filename = os.path.basename(att.file_path)
-                    full_prompt += f"\n\n--- [Attached file: {filename}] ---\n{att.content}\n--- [End of {filename}] ---"
 
         # Display the user prompt in the output_text widget
         root.user_input_text.delete("1.0", tk.END)  # Clear the user input text again
@@ -380,6 +375,8 @@ class AgentXSession:
                 filename = os.path.basename(att.file_path)
                 root.output_text.insert(tk.END, f"\n[Attached file: {filename}]\n", ("gray",))
         root.output_text.see(tk.END)  # Auto-scroll to the end
+
+
         root.update_idletasks()
 
         try:
