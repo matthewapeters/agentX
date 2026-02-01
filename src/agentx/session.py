@@ -357,6 +357,8 @@ class AgentXSession:
         ollama_model = config["agentx"]["ollama_model"]
 
         # Get the prompt from the user_input_text widget
+        # Always clear the input box before and after processing to avoid stray newlines
+        root.user_input_text.delete("1.0", tk.END)
         prompt = root.user_input_text.get("1.0", tk.END).strip()
         if not prompt and not self.message.attachments:
             root.output_text.insert(tk.END, "No input provided.\n")
@@ -371,7 +373,7 @@ class AgentXSession:
                     full_prompt += f"\n\n--- [Attached file: {filename}] ---\n{att.content}\n--- [End of {filename}] ---"
 
         # Display the user prompt in the output_text widget
-        root.user_input_text.delete("1.0", tk.END)  # Clear the user input text
+        root.user_input_text.delete("1.0", tk.END)  # Clear the user input text again
         root.output_text.insert(tk.END, f"User: {prompt}\n", ("user_prompt",))
         if self.message.attachments:
             for att in self.message.attachments:
