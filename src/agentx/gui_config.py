@@ -7,45 +7,45 @@ from typing import Any, Optional
 @dataclass
 class GUIConfig:
     """Configuration for GUI appearance and behavior.
-    
+
     This dataclass encapsulates all GUI-related configuration,
     extracted from the main application config dictionary.
     """
-    
+
     # Window Configuration
     screen_side: str = "right"
     window_width_ratio: float = 0.5
     window_height_ratio: float = 1.0
-    
+
     # Layout Configuration
     output_panel_ratio: float = 0.66
     attachment_bar_height: float = 0.03
     input_panel_height: float = 0.2
-    
+
     # Font Configuration
     default_font: tuple = ("Terminal", 10)
     emoji_font_path: Optional[str] = None
-    
+
     # Style Configuration
     output_bg: str = "white"
     status_bg: str = "lightblue"
     input_bg: str = "lightgrey"
     attachment_bg: str = "white"
     history_attachment_bg: str = "#f0f0f0"
-    
+
     # Text Style Configuration
     user_prompt_font: tuple[str, int, str] = ("Terminal", 10, "bold")
     agent_response_font: tuple[str, int, str] = ("Terminal", 10, "normal")
     agent_thinking_font: tuple[str, int, str] = ("Terminal", 10, "italic")
     gray_text_font: tuple[str, int, str] = ("Terminal", 10, "italic")
-    
+
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> "GUIConfig":
         """Create GUIConfig from application config dictionary.
-        
+
         Args:
             config: Application configuration dictionary
-            
+
         Returns:
             GUIConfig instance with values from config, or defaults
         """
@@ -64,8 +64,16 @@ class GUIConfig:
             input_bg=agentx.get("input_bg", "lightgrey"),
             attachment_bg=agentx.get("attachment_bg", "white"),
             history_attachment_bg=agentx.get("history_attachment_bg", "#f0f0f0"),
-            user_prompt_font=tuple(agentx.get("user_prompt_font", ["Terminal", 10, "bold"])),
-            agent_response_font=tuple(agentx.get("agent_response_font", ["Terminal", 10, "normal"])),
-            agent_thinking_font=tuple(agentx.get("agent_thinking_font", ["Terminal", 10, "italic"])),
-            gray_text_font=tuple(agentx.get("gray_text_font", ["Terminal", 10, "italic"])),
+            user_prompt_font=tuple(
+                agentx.get("user_prompt_font", ["Terminal", 10, "bold"])
+            ),
+            agent_response_font=tuple(
+                agentx.get("agent_response_font", ["Terminal", 10, "normal"])
+            ),
+            agent_thinking_font=tuple(
+                agentx.get("agent_thinking_font", ["Terminal", 10, "italic"])
+            ),
+            gray_text_font=tuple(
+                agentx.get("gray_text_font", ["Terminal", 10, "italic"])
+            ),
         )

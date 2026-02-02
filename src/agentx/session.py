@@ -52,7 +52,7 @@ class AgentXSession:
         self.enabled_history_attachments = []  # Track enabled attachments from history
         self._is_streaming = threading.Event()
         self._streaming_thread = None
-        
+
         # Initialize GUIManager
         gui_config = GUIConfig.from_dict(config)
         self.gui = GUIManager(
@@ -60,13 +60,11 @@ class AgentXSession:
             config=gui_config,
             on_submit=self._handle_submit,
             on_interrupt=self._handle_interrupt,
-            on_attachment_toggle=self._handle_attachment_toggle
+            on_attachment_toggle=self._handle_attachment_toggle,
         )
-        
+
         # Set window title with session info
-        self.gui.set_window_title(
-            f"{self.user} - AgentX Session - {self.start_time}"
-        )
+        self.gui.set_window_title(f"{self.user} - AgentX Session - {self.start_time}")
 
     @property
     def history(self) -> "History":
@@ -89,18 +87,18 @@ class AgentXSession:
         self._history = value
 
     # Callback handlers for GUIManager
-    
+
     def _handle_submit(self) -> None:
         """Handle user submit button click."""
         self.stream_ollama_response()
-    
+
     def _handle_interrupt(self) -> None:
         """Handle user interrupt button click."""
         self.interrupt_streaming()
-    
+
     def _handle_attachment_toggle(self, attachment_id: str, enabled: bool) -> None:
         """Handle attachment checkbox toggle from GUI.
-        
+
         Args:
             attachment_id: Unique identifier of attachment (from AttachmentInfo)
             enabled: New enabled state
@@ -111,7 +109,7 @@ class AgentXSession:
             if str(id(att)) == attachment_id:
                 att.enabled = enabled
                 break
-        
+
         # Also check history attachments
         for att in self.enabled_history_attachments:
             if str(id(att)) == attachment_id:
@@ -121,7 +119,7 @@ class AgentXSession:
                 elif not enabled and att in self.enabled_history_attachments:
                     self.enabled_history_attachments.remove(att)
                 break
-        
+
         # Refresh display
         self.refresh_user_gui()
 
@@ -150,7 +148,7 @@ class AgentXSession:
             on_attachment_toggle=self.on_history_attachment_toggle,
         )
         self.gui.update_history_panel(history_widget)
-        
+
         # Render current context in the Session tab
         context_widget = self.context.to_gui(
             self.gui.get_context_parent(),
@@ -176,13 +174,13 @@ class AgentXSession:
             AttachmentInfo.from_attachment(att, is_from_history=False)
             for att in self.message.attachments
         ]
-        
+
         # Convert enabled history attachments to AttachmentInfo DTOs
         history_attachments = [
             AttachmentInfo.from_attachment(att, is_from_history=True)
             for att in self.enabled_history_attachments
         ]
-        
+
         # Update via GUIManager
         self.gui.update_attachment_bar(current_attachments, history_attachments)
 
@@ -215,7 +213,7 @@ class AgentXSession:
         """
         # Create all GUI widgets via GUIManager
         self.gui.create_layout()
-        
+
         # Initialize dynamic content in panels
         self.refresh_context_gui()
         self.refresh_files_gui()
@@ -238,7 +236,7 @@ class AgentXSession:
 
         # Get the prompt from the user input (via GUIManager)
         prompt = self.gui.get_user_input()
-        
+
         if not prompt and not self.message.attachments:
             self.gui.display_error("No input provided.")
             return
@@ -247,7 +245,9 @@ class AgentXSession:
         full_prompt = prompt
 
         # Display the user prompt and attachments
-        attachment_filenames = [os.path.basename(att.file_path) for att in self.message.attachments]
+        attachment_filenames = [
+            os.path.basename(att.file_path) for att in self.message.attachments
+        ]
         self.gui.display_user_message(prompt, attachment_filenames, datetime.now())
 
         try:

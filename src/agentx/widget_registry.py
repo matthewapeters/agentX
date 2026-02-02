@@ -7,36 +7,36 @@ from typing import Optional
 
 class WidgetRegistry:
     """Manages widget references and lifecycle.
-    
+
     This class serves as the single source of truth for all widget
     references in the GUI. It enables centralized cleanup and provides
     type-safe access to widgets throughout the GUIManager.
     """
-    
+
     def __init__(self):
         """Initialize the widget registry."""
         # Main structure widgets
         self.root: Optional[tk.Tk] = None
         self.paned: Optional[tk.PanedWindow] = None
-        
+
         # Output panel widgets
         self.output_display: Optional[tk.Frame] = None
         self.output_notebook: Optional[ttk.Notebook] = None
         self.output_tab: Optional[tk.Frame] = None
         self.output_text: Optional[tk.Text] = None
         self.output_scrollbar: Optional[tk.Scrollbar] = None
-        
+
         # Status panel widgets
         self.system_status: Optional[tk.Frame] = None
         self.system_notebook: Optional[ttk.Notebook] = None
         self.session_tab: Optional[tk.Frame] = None
         self.files_tab: Optional[tk.Frame] = None
-        
+
         # Dynamic content widgets (replaced during updates)
         self.system_status_history: Optional[tk.Widget] = None
         self.system_status_context: Optional[tk.Widget] = None
         self.system_status_files: Optional[tk.Widget] = None
-        
+
         # Input panel widgets
         self.attachments_frame: Optional[tk.Frame] = None
         self.attachment_labels: list = []
@@ -45,28 +45,28 @@ class WidgetRegistry:
         self.input_scrollbar: Optional[tk.Scrollbar] = None
         self.user_submit: Optional[tk.Button] = None
         self.user_break: Optional[tk.Button] = None
-    
+
     def clear_attachments(self) -> None:
         """Destroy all attachment label widgets.
-        
+
         Called before updating the attachment display to clean up
         old widgets before creating new ones.
         """
         for widget in self.attachment_labels:
             widget.destroy()
         self.attachment_labels.clear()
-    
+
     def destroy_all(self) -> None:
         """Destroy all managed widgets.
-        
+
         Called during cleanup to ensure all widgets are properly
         destroyed and resources are released.
         """
         # Destroy widgets in reverse creation order to respect dependencies
-        
+
         # Clear attachment widgets first
         self.clear_attachments()
-        
+
         # Destroy input panel widgets
         if self.user_break is not None:
             self.user_break.destroy()
@@ -80,7 +80,7 @@ class WidgetRegistry:
             self.user_input.destroy()
         if self.attachments_frame is not None:
             self.attachments_frame.destroy()
-        
+
         # Destroy dynamic content widgets
         if self.system_status_files is not None:
             self.system_status_files.destroy()
@@ -88,7 +88,7 @@ class WidgetRegistry:
             self.system_status_context.destroy()
         if self.system_status_history is not None:
             self.system_status_history.destroy()
-        
+
         # Destroy status panel widgets
         if self.files_tab is not None:
             self.files_tab.destroy()
@@ -98,7 +98,7 @@ class WidgetRegistry:
             self.system_notebook.destroy()
         if self.system_status is not None:
             self.system_status.destroy()
-        
+
         # Destroy output panel widgets
         if self.output_scrollbar is not None:
             self.output_scrollbar.destroy()
@@ -110,7 +110,7 @@ class WidgetRegistry:
             self.output_notebook.destroy()
         if self.output_display is not None:
             self.output_display.destroy()
-        
+
         # Destroy main structure widgets
         if self.paned is not None:
             self.paned.destroy()
