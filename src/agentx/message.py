@@ -73,6 +73,8 @@ class Message:
 
     @enabled.setter
     def enabled(self, value: bool):
+        if self.file:
+            self.save(self.file, self.ts)
         self._enabled = value
 
     @property
@@ -106,6 +108,8 @@ class Message:
         except Exception as e:
             a.content = f"[Could not read file: {attachment_path}]"
         self.attachments.append(a)
+        if self.file:
+            self.save(self.file, self.ts)
 
     def detach(self, attachment_path: str):
         """
@@ -116,6 +120,8 @@ class Message:
         self.attachments = [
             a for a in self.attachments if a.file_path != attachment_path
         ]
+        if self.file:
+            self.save(self.file, self.ts)
 
     def serialize(self) -> dict:
         """
@@ -149,11 +155,17 @@ class Message:
         save
         Use this method to save the context object to a JSON file.
         """
-        message_file = os.path.join(
-            context_path, f"{time_added.timestamp()}_{self.role}.json"
-        )
-        self.file = message_file
-        with open(message_file, "w", encoding="utf-8") as f:
+        if not self._epoch:
+            if time_added is None:
+                self.ts = datetime.now()
+            else:
+                self.ts = time_added
+        if self.file is None:
+            message_file = os.path.join(
+                context_path, f"{self.ts.timestamp()}_{self.role}.json"
+            )
+            self.file = message_file
+        with open(self.file, "w", encoding="utf-8") as f:
             f.write(json.dumps(self.serialize()))
 
     def llm_message_dict(self) -> dict:

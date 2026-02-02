@@ -41,16 +41,14 @@ class Context:
         """
         return json.dumps([m.serialize() for ts, m in self.messages if m.enabled])
 
-    def load_messages(self, messages_json: str) -> None:
+    def load_messages(self) -> None:
         """
         load_messages
 
         Use this method to load messages from a JSON files into the Context object.
 
         :param self: Description
-        :param messages_json: JSON string representing a list of messages.
         """
-        save_epoch = ""
         g = glob(self.path + "/*.json")
         g.sort()
         for f in g:
@@ -134,8 +132,11 @@ class Context:
         context_messages_frame = tk.Frame(context_frame)
         context_messages_frame.grid(row=1, column=1, columnspan=2, sticky="w")
 
-        for idx, (ts, message) in enumerate(self.messages):
-            m_frame = message.to_gui(context_messages_frame, on_attachment_toggle=on_attachment_toggle)
+        message:Message
+        for idx, (_, message) in enumerate(self.messages):
+            m_frame = message.to_gui(
+                context_messages_frame, 
+                on_attachment_toggle=on_attachment_toggle)
             m_frame.grid(row=idx, column=0, sticky="w")
 
         if not self.expanded:

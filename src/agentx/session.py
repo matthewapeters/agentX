@@ -64,7 +64,7 @@ class AgentXSession:
         if self._history is None:
             self._history = History(
                 user_history_path=self.user_history_folder,
-                exclude_session=self.session_folder
+                exclude_session=self.context_folder
             )
         return self._history
 
@@ -373,7 +373,7 @@ class AgentXSession:
         root.user_submit = tk.Button(
             root.user_input,
             text=enter_emoji_unicode,
-            command=lambda: self.stream_ollama_response_worker(),
+            command=lambda: self.stream_ollama_response(),
         )
         root.user_submit.place(relx=0.92, rely=0, relwidth=0.07, relheight=0.25)
 
@@ -429,6 +429,8 @@ class AgentXSession:
         global is_streaming  # Ensure we use the global is_streaming instance
         is_streaming.set()
         root.user_break.config(state=tk.NORMAL)  # Enable the break button
+        
+        self.refresh_user_gui()
         root.update_idletasks()
 
         # Load configuration
@@ -464,13 +466,17 @@ class AgentXSession:
                 )
         root.output_text.see(tk.END)  # Auto-scroll to the end
 
+        self.refresh_user_gui()
         root.update_idletasks()
 
         try:
             # Define the message payload
             self.message.content = full_prompt
-            # Enable the message
+            # Enable the message before adding to context
             self.message.enabled = True
+
+            # Refresh context GUI to show the enabled message immediately
+            self.root.after(0, self.refresh_context_gui)
 
             # Add enabled history attachments to the current message
             for att in self.enabled_history_attachments:
@@ -588,6 +594,7 @@ class AgentXSession:
                                 f"Unknown channel received: {channel}"
                             )  # Debugging for unknown channels
                             last_channel = channel
+                    self.refresh_user_gui()
                     root.update_idletasks()
             # After streaming is complete, add spacing
             root.output_text.insert(
@@ -640,13 +647,11 @@ class AgentXSession:
         Initiates streaming response in a separate thread to keep the GUI responsive.
         """
         global streaming_thread
-        root = self.root
-        config = self.config
         if streaming_thread and streaming_thread.is_alive():
             print("Streaming already in progress")
             return
         streaming_thread = threading.Thread(
-            target=self.stream_ollama_response_worker, args=(root, config), daemon=False
+            target=self.stream_ollama_response_worker, daemon=True
         )
         streaming_thread.start()
 

@@ -29,21 +29,24 @@ class History:
         # each file under the context folder represent a message
         # add each context to self.records alphabetically
 
-        if not os.path.exists(user_history_path):
-            return
+        # if not os.path.exists(user_history_path):
+        #    return
 
         # Get all folders under user_history_path
         try:
+            print("Loading history from:", user_history_path)
             context_folders = [
                 d
                 for d in os.listdir(user_history_path)
                 if os.path.isdir(os.path.join(user_history_path, d))
             ]
-        except OSError:
+        except OSError as e:
+            print(f"Could not access user history path: {user_history_path}. Error: {e }")
             return
 
         # Sort alphabetically
         context_folders.sort()
+        #print("Found context folders:", context_folders)
 
         # Load each context
         for context_folder_name in context_folders:
@@ -53,6 +56,7 @@ class History:
             # Skip the current session folder if specified
             session_folder = os.path.join(user_history_path, context_folder_name)
             if exclude_session and os.path.normpath(session_folder) == os.path.normpath(exclude_session):
+                print("Skipping current session folder in history:", exclude_session)
                 continue
 
             context = Context()
@@ -61,8 +65,10 @@ class History:
 
             # Load all message files from this context folder
             try:
-                context.load_messages(context_folder_name)
-            except OSError:
+                print("  Loading context from:", context_folder_path)
+                context.load_messages()
+            except OSError as e:
+                print(f"Could not load messages from context folder: {context_folder_name}. Error: {e}")
                 continue
 
             # Add context to history if it contains messages
