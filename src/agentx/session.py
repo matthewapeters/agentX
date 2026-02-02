@@ -2,7 +2,6 @@
 Docstring for agentx.session
 """
 
-import json
 import os
 import threading
 import tkinter as tk
@@ -17,9 +16,6 @@ from .context import Context
 from .file_explorer import FileExplorer
 from .history import History
 from .message import Message
-
-is_streaming = threading.Event()
-streaming_thread = None
 
 
 class AgentXSession:
@@ -51,6 +47,8 @@ class AgentXSession:
         self._history = None  # Placeholder for History object
         self.message = Message(role="user", content="")
         self.enabled_history_attachments = []  # Track enabled attachments from history
+        self._is_streaming = threading.Event()
+        self._streaming_thread = None
 
     @property
     def history(self) -> "History":
@@ -276,7 +274,7 @@ class AgentXSession:
         """
         root = self.root
         config = self.config
-        
+
         # Get screen dimensions
         screen_width = root.winfo_screenwidth()
         screen_height = root.winfo_screenheight()
@@ -295,7 +293,7 @@ class AgentXSession:
         Creates the main output panel with text display and scrollbar.
         """
         root = self.root
-        
+
         # Create a PanedWindow for resizable output and system frames
         root.paned = tk.PanedWindow(root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         root.paned.place(relx=0.001, rely=0.001, relwidth=0.99, relheight=0.79)
@@ -324,7 +322,7 @@ class AgentXSession:
         root.output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         # Ensure selection highlighting is visible
         root.output_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
-        
+
         root.paned.add(root.output_display, stretch="always")
 
     def _create_status_panel(self):
@@ -332,7 +330,7 @@ class AgentXSession:
         Creates the system status panel with Session and Files tabs.
         """
         root = self.root
-        
+
         root.system_status = tk.Frame(root.paned, bg="lightblue")
         # Create a notebook (tabbed interface) for system status
         root.system_notebook = ttk.Notebook(root.system_status)
@@ -361,7 +359,7 @@ class AgentXSession:
                 root.system_notebook.nametowidget(selected_tab).update_idletasks()
 
         root.system_notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
-        
+
         root.paned.add(root.system_status, stretch="always")
 
         # Set the sash position to create a 2:1 split after widgets are rendered
@@ -380,15 +378,15 @@ class AgentXSession:
         """
         root = self.root
         enter_emoji_unicode = "^⏎"
-        
+
         # Add a frame for attachments display
         root.attachments = tk.Frame(root, height=2)
         root.attachments.place(relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03)
-        
+
         # User input with scrollbar
         root.user_input = tk.Frame(root, bg="lightgrey")
         root.user_input.place(relx=0.001, rely=0.80, relwidth=1.0, relheight=0.2)
-        
+
         root.input_scrollbar = tk.Scrollbar(root.user_input)
         root.user_input_text = tk.Text(
             root.user_input,
@@ -412,7 +410,7 @@ class AgentXSession:
         root.user_break = tk.Button(
             root.user_input,
             text="❌",
-            command=interrupt_streaming,
+            command=lambda: self.interrupt_streaming(),
             state=tk.DISABLED,
         )
         root.user_break.place(relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25)
@@ -430,7 +428,7 @@ class AgentXSession:
         Configures text styling tags for the output widget.
         """
         root = self.root
-        
+
         # Adds text styling tags to the output_text widget
         root.output_text.tag_config(
             "gray", foreground="gray", font=("Terminal", 10, "italic")
@@ -448,8 +446,7 @@ class AgentXSession:
         root = self.root
         config = self.config
 
-        global is_streaming  # Ensure we use the global is_streaming instance
-        is_streaming.set()
+        self._is_streaming.set()
         root.user_break.config(state=tk.NORMAL)  # Enable the break button
 
         self.refresh_user_gui()
@@ -539,7 +536,7 @@ class AgentXSession:
                 messages=llm_messages,
                 stream=True,
             ):
-                if not is_streaming.is_set():
+                if not self._is_streaming.is_set():
                     break  # Exit the loop if streaming is interrupted
                 # print(f"Received part: {part}")  # Debugging for received part
                 channels = [
@@ -633,7 +630,7 @@ class AgentXSession:
             print(f"Request error: {e}")
             traceback.print_exc()
         finally:
-            is_streaming.clear()
+            self._is_streaming.clear()
             root.user_break.config(state=tk.DISABLED)  # Disable the break button
 
     def perform_service_handshake(self):
@@ -668,20 +665,17 @@ class AgentXSession:
         """
         Initiates streaming response in a separate thread to keep the GUI responsive.
         """
-        global streaming_thread
-        if streaming_thread and streaming_thread.is_alive():
+        if self._streaming_thread and self._streaming_thread.is_alive():
             print("Streaming already in progress")
             return
-        streaming_thread = threading.Thread(
+        self._streaming_thread = threading.Thread(
             target=self.stream_ollama_response_worker, daemon=True
         )
-        streaming_thread.start()
+        self._streaming_thread.start()
 
-
-def interrupt_streaming():
-    """
-    Interrupts the ongoing streaming process.
-    """
-    global is_streaming
-    print("Interrupting streaming...")
-    is_streaming.clear()
+    def interrupt_streaming(self):
+        """
+        Interrupts the ongoing streaming process.
+        """
+        print("Interrupting streaming...")
+        self._is_streaming.clear()
