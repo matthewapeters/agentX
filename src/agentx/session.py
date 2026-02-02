@@ -12,8 +12,11 @@ from typing import Any
 import httpx
 from ollama import Client
 
+from .attachment_info import AttachmentInfo
 from .context import Context
 from .file_explorer import FileExplorer
+from .gui_config import GUIConfig
+from .gui_manager import GUIManager
 from .history import History
 from .message import Message
 
@@ -30,7 +33,7 @@ class AgentXSession:
         self.file_explorer = FileExplorer(start_path=os.getcwd())
         self.user = os.getenv("USER") or os.getenv("USERNAME") or "User"
         self.start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.root.title(f"{self.user} - AgentX Session - {self.start_time}")
+        # Title will be set by GUIManager after initialization
         self.user_history_folder = os.path.join(
             os.getcwd(),
             "sessions",
@@ -49,6 +52,21 @@ class AgentXSession:
         self.enabled_history_attachments = []  # Track enabled attachments from history
         self._is_streaming = threading.Event()
         self._streaming_thread = None
+        
+        # Initialize GUIManager
+        gui_config = GUIConfig.from_dict(config)
+        self.gui = GUIManager(
+            root=root,
+            config=gui_config,
+            on_submit=self._handle_submit,
+            on_interrupt=self._handle_interrupt,
+            on_attachment_toggle=self._handle_attachment_toggle
+        )
+        
+        # Set window title with session info
+        self.gui.set_window_title(
+            f"{self.user} - AgentX Session - {self.start_time}"
+        )
 
     @property
     def history(self) -> "History":
@@ -70,6 +88,43 @@ class AgentXSession:
     def history(self, value: "History"):
         self._history = value
 
+    # Callback handlers for GUIManager
+    
+    def _handle_submit(self) -> None:
+        """Handle user submit button click."""
+        self.stream_ollama_response()
+    
+    def _handle_interrupt(self) -> None:
+        """Handle user interrupt button click."""
+        self.interrupt_streaming()
+    
+    def _handle_attachment_toggle(self, attachment_id: str, enabled: bool) -> None:
+        """Handle attachment checkbox toggle from GUI.
+        
+        Args:
+            attachment_id: Unique identifier of attachment (from AttachmentInfo)
+            enabled: New enabled state
+        """
+        # Find the attachment by ID
+        # ID is str(id(attachment)) from AttachmentInfo.from_attachment()
+        for att in self.message.attachments:
+            if str(id(att)) == attachment_id:
+                att.enabled = enabled
+                break
+        
+        # Also check history attachments
+        for att in self.enabled_history_attachments:
+            if str(id(att)) == attachment_id:
+                # Toggle presence in enabled list
+                if enabled and att not in self.enabled_history_attachments:
+                    self.enabled_history_attachments.append(att)
+                elif not enabled and att in self.enabled_history_attachments:
+                    self.enabled_history_attachments.remove(att)
+                break
+        
+        # Refresh display
+        self.refresh_user_gui()
+
     def on_history_attachment_toggle(self, attachment, enabled: bool):
         """
         Callback when a history attachment is enabled or disabled.
@@ -88,32 +143,20 @@ class AgentXSession:
         Refreshes the context GUI in the Session tab of the system status notebook.
         Destroys the old frames and re-renders the history and current context.
         """
-        # Destroy existing frames
-        if (
-            hasattr(self.root, "system_status_history")
-            and self.root.system_status_history
-        ):
-            self.root.system_status_history.destroy()
-        if (
-            hasattr(self.root, "system_status_context")
-            and self.root.system_status_context
-        ):
-            self.root.system_status_context.destroy()
-
         # Render history first (collapsed by default) in the Session tab
-        self.root.system_status_history = self.history.to_gui(
-            self.root.session_tab,
+        history_widget = self.history.to_gui(
+            self.gui.get_history_parent(),
             self.user,
             on_attachment_toggle=self.on_history_attachment_toggle,
         )
-        self.root.system_status_history.pack(expand=False, fill=tk.X, anchor=tk.N)
-
+        self.gui.update_history_panel(history_widget)
+        
         # Render current context in the Session tab
-        self.root.system_status_context = self.context.to_gui(
-            self.root.session_tab,
+        context_widget = self.context.to_gui(
+            self.gui.get_context_parent(),
             on_attachment_toggle=self.on_history_attachment_toggle,
         )
-        self.root.system_status_context.pack(expand=True, fill=tk.BOTH)
+        self.gui.update_context_panel(context_widget)
 
     def attach_file(self, file_path: str):
         """
@@ -125,110 +168,37 @@ class AgentXSession:
 
     def refresh_user_gui(self):
         """
-        Refreshes the user GUI in the Session tab of the system status notebook.
-        Displays the current message's attached files as labels above the user input box.
-        Also displays enabled history attachments.
+        Refreshes the user attachment bar display.
+        Now delegated to GUIManager via update_attachment_bar().
         """
-        root = self.root
-        # Remove old attachment labels if they exist
-        if hasattr(root, "attachment_labels"):
-            for label in root.attachment_labels:
-                label.destroy()
-        root.attachment_labels = []
-
-        # Create a frame above the user input for attachments if not present
-        if not hasattr(root, "attachments_frame"):
-            root.attachments_frame = tk.Frame(root, bg="white")
-            root.attachments_frame.place(
-                relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03
-            )
-
-        # Display current message attachments
-        for att in self.message.attachments:
-            att_frame = tk.Frame(root.attachments_frame, bg="white")
-            att_frame.pack(side=tk.LEFT, padx=(5, 0))
-
-            # Create checkbox for enabling/disabling attachment
-            enabled_var = tk.BooleanVar(value=att.enabled)
-
-            def make_toggle(attachment, var):
-                def toggle():
-                    attachment.enabled = var.get()
-
-                return toggle
-
-            checkbox = tk.Checkbutton(
-                att_frame,
-                variable=enabled_var,
-                command=make_toggle(att, enabled_var),
-                bg="white",
-                activebackground="white",
-            )
-            checkbox.pack(side=tk.LEFT, padx=(0, 3))
-
-            # File label
-            label = tk.Label(
-                att_frame,
-                text=f"📁 {att.file_path.split('/')[-1]}",
-                anchor="w",
-                bg="white",
-                fg="#555555",
-                font=("Terminal", 9, "italic"),
-            )
-            label.pack(side=tk.LEFT)
-            root.attachment_labels.append(att_frame)
-
-        # Display enabled history attachments (with different styling)
-        for att in self.enabled_history_attachments:
-            att_frame = tk.Frame(root.attachments_frame, bg="#f0f0f0")
-            att_frame.pack(side=tk.LEFT, padx=(5, 0))
-
-            # Create checkbox for enabling/disabling attachment
-            enabled_var = tk.BooleanVar(value=att.enabled)
-
-            def make_history_toggle(attachment, var):
-                def toggle():
-                    self.on_history_attachment_toggle(attachment, var.get())
-
-                return toggle
-
-            checkbox = tk.Checkbutton(
-                att_frame,
-                variable=enabled_var,
-                command=make_history_toggle(att, enabled_var),
-                bg="#f0f0f0",
-                activebackground="#f0f0f0",
-            )
-            checkbox.pack(side=tk.LEFT, padx=(0, 3))
-
-            # File label with "(history)" indicator
-            label = tk.Label(
-                att_frame,
-                text=f"📜 {att.file_path.split('/')[-1]} (history)",
-                anchor="w",
-                bg="#f0f0f0",
-                fg="#666688",
-                font=("Terminal", 9, "italic"),
-            )
-            label.pack(side=tk.LEFT)
-            root.attachment_labels.append(att_frame)
+        # Convert current message attachments to AttachmentInfo DTOs
+        current_attachments = [
+            AttachmentInfo.from_attachment(att, is_from_history=False)
+            for att in self.message.attachments
+        ]
+        
+        # Convert enabled history attachments to AttachmentInfo DTOs
+        history_attachments = [
+            AttachmentInfo.from_attachment(att, is_from_history=True)
+            for att in self.enabled_history_attachments
+        ]
+        
+        # Update via GUIManager
+        self.gui.update_attachment_bar(current_attachments, history_attachments)
 
     def refresh_files_gui(self):
         """
-        Refreshes the file explorer GUI in the Files tab of the system status notebook.
-        Destroys the old frame and re-renders the file explorer.
+        Refreshes the file explorer GUI in the Files tab.
+        Now delegated to GUIManager via update_files_panel().
         """
-        # Destroy existing frame
-        if hasattr(self.root, "system_status_files") and self.root.system_status_files:
-            self.root.system_status_files.destroy()
-
-        # Render file explorer in the Files tab, wiring Attach to self.attach_file
-        self.root.system_status_files = self.file_explorer.to_gui(
-            self.root.files_tab,
+        # Render file explorer widget
+        files_widget = self.file_explorer.to_gui(
+            self.gui.get_files_parent(),
             on_attach=self.attach_file,
             on_edit=None,  # You can wire up edit logic here later
         )
-        self.root.system_status_files.pack(expand=True, fill=tk.BOTH)
+        # Update via GUIManager
+        self.gui.update_files_panel(files_widget)
 
     def add_message_to_context(self, message: Message):
         """
@@ -241,252 +211,44 @@ class AgentXSession:
     def layout(self):
         """
         Sets up the layout for the tkinter root window.
+        Now delegated to GUIManager.
         """
-        text_font = self._setup_fonts()
-        self._setup_window_geometry()
-        self._create_output_panel(text_font)
-        self._create_status_panel()
-        self._create_input_panel(text_font)
-        self._configure_styles()
-
-    def _setup_fonts(self) -> tuple:
-        """
-        Locates and loads the emoji font if available.
-        Returns the font tuple to use for text widgets.
-        """
-        text_font = ("Terminal", 10)
-        # Locate the font file relative to the installed package directory
-        package_dir = os.path.dirname(__file__)
-        emoji_font_path = os.path.join(package_dir, "fonts", "NotoColorEmoji.ttf")
-        # Debugging: Print the resolved path for the font file
-        print(f"Resolved font path: {emoji_font_path}")
-        if os.path.exists(emoji_font_path):
-            print("Font file found.")
-            text_font = (emoji_font_path, 10)
-        else:
-            print("Font file not found.")
-            text_font = ("Terminal", 10)
-        return text_font
-
-    def _setup_window_geometry(self):
-        """
-        Configures window size, position, and title based on screen dimensions and config.
-        """
-        root = self.root
-        config = self.config
-
-        # Get screen dimensions
-        screen_width = root.winfo_screenwidth()
-        screen_height = root.winfo_screenheight()
-
-        # Determine screen side from config (default to "right")
-        screen_side = config["agentx"].get("screen_side", "right").lower()
-        if screen_side == "left":
-            root.geometry(f"{screen_width // 2}x{screen_height}+0+0")
-        else:  # Default to "right"
-            root.geometry(f"{screen_width // 2}x{screen_height}+{screen_width // 2}+0")
-
-        root.title("AgentX - the Ollama Agent")
-
-    def _create_output_panel(self, text_font: tuple):
-        """
-        Creates the main output panel with text display and scrollbar.
-        """
-        root = self.root
-
-        # Create a PanedWindow for resizable output and system frames
-        root.paned = tk.PanedWindow(root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
-        root.paned.place(relx=0.001, rely=0.001, relwidth=0.99, relheight=0.79)
-
-        # Output display with scrollbar
-        root.output_display = tk.Frame(root.paned, bg="white")
-
-        # Create a notebook (tabbed interface) for output
-        root.output_notebook = ttk.Notebook(root.output_display)
-        root.output_notebook.pack(expand=True, fill=tk.BOTH, padx=0, pady=0)
-
-        # Create Output tab
-        root.output_tab = tk.Frame(root.output_notebook, bg="white")
-        root.output_notebook.add(root.output_tab, text="Output")
-
-        # Create output text and scrollbar in the Output tab
-        root.output_scrollbar = tk.Scrollbar(root.output_tab)
-        root.output_text = tk.Text(
-            root.output_tab,
-            wrap=tk.WORD,
-            font=text_font,
-            yscrollcommand=root.output_scrollbar.set,
-        )
-        root.output_scrollbar.config(command=root.output_text.yview)
-        root.output_text.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
-        root.output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        # Ensure selection highlighting is visible
-        root.output_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
-
-        root.paned.add(root.output_display, stretch="always")
-
-    def _create_status_panel(self):
-        """
-        Creates the system status panel with Session and Files tabs.
-        """
-        root = self.root
-
-        root.system_status = tk.Frame(root.paned, bg="lightblue")
-        # Create a notebook (tabbed interface) for system status
-        root.system_notebook = ttk.Notebook(root.system_status)
-        root.system_notebook.pack(expand=True, fill=tk.BOTH, padx=0, pady=0)
-
-        # Create Session tab
-        root.session_tab = tk.Frame(root.system_notebook, bg="lightblue")
-        root.system_notebook.add(root.session_tab, text="Session")
-
-        # Create Files tab
-        root.files_tab = tk.Frame(root.system_notebook, bg="lightblue")
-        root.system_notebook.add(root.files_tab, text="Files")
-
-        # Initialize the Session tab content
+        # Create all GUI widgets via GUIManager
+        self.gui.create_layout()
+        
+        # Initialize dynamic content in panels
         self.refresh_context_gui()
-
-        # Initialize the Files tab content
         self.refresh_files_gui()
-
-        # Bind tab change event to force widget updates
-        def on_tab_changed(event):
-            root.update_idletasks()
-            # Force update of the selected tab's content
-            selected_tab = root.system_notebook.select()
-            if selected_tab:
-                root.system_notebook.nametowidget(selected_tab).update_idletasks()
-
-        root.system_notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
-
-        root.paned.add(root.system_status, stretch="always")
-
-        # Set the sash position to create a 2:1 split after widgets are rendered
-        def set_initial_split():
-            root.update_idletasks()  # Ensure widgets are rendered
-            paned_width = root.paned.winfo_width()
-            if paned_width > 1:  # Only set if widget is properly sized
-                sash_position = int(paned_width * 0.66)  # 2:1 layout for output display
-                root.paned.sash_place(0, sash_position, 1)
-
-        root.after(100, set_initial_split)
-
-    def _create_input_panel(self, text_font: tuple):
-        """
-        Creates the user input panel with text box, scrollbar, and control buttons.
-        """
-        root = self.root
-        enter_emoji_unicode = "^⏎"
-
-        # Add a frame for attachments display
-        root.attachments = tk.Frame(root, height=2)
-        root.attachments.place(relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03)
-
-        # User input with scrollbar
-        root.user_input = tk.Frame(root, bg="lightgrey")
-        root.user_input.place(relx=0.001, rely=0.80, relwidth=1.0, relheight=0.2)
-
-        root.input_scrollbar = tk.Scrollbar(root.user_input)
-        root.user_input_text = tk.Text(
-            root.user_input,
-            wrap=tk.WORD,
-            font=text_font,
-            yscrollcommand=root.input_scrollbar.set,
-        )
-        root.input_scrollbar.config(command=root.user_input_text.yview)
-        root.user_input_text.place(relx=0, rely=0, relwidth=0.90, relheight=1.0)
-        root.input_scrollbar.place(relx=0.90, rely=0, relheight=1.0)
-
-        # Submit button
-        root.user_submit = tk.Button(
-            root.user_input,
-            text=enter_emoji_unicode,
-            command=lambda: self.stream_ollama_response(),
-        )
-        root.user_submit.place(relx=0.92, rely=0, relwidth=0.07, relheight=0.25)
-
-        # Break button below the submit button
-        root.user_break = tk.Button(
-            root.user_input,
-            text="❌",
-            command=lambda: self.interrupt_streaming(),
-            state=tk.DISABLED,
-        )
-        root.user_break.place(relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25)
-
-        # Bind Ctrl-Enter to trigger the user_submit button
-        root.user_input_text.bind(
-            "<Control-Return>", lambda event: root.user_submit.invoke()
-        )
-
-        # Bind Ctrl-Space globally to trigger the user_break button
-        root.bind_all("<Control-space>", lambda event: root.user_break.invoke())
-
-    def _configure_styles(self):
-        """
-        Configures text styling tags for the output widget.
-        """
-        root = self.root
-
-        # Adds text styling tags to the output_text widget
-        root.output_text.tag_config(
-            "gray", foreground="gray", font=("Terminal", 10, "italic")
-        )
-        root.output_text.tag_config("user_prompt", font=("Terminal", 10, "bold"))
-        root.output_text.tag_config("agent_response", font=("Terminal", 10, "normal"))
-        root.output_text.tag_config("agent_thinking", font=("Terminal", 10, "italic"))
-        root.output_text.tag_config("system_space", font=("Terminal", 10, "normal"))
 
     def stream_ollama_response_worker(self):
         """
-        Worker function that streams the response from the Ollama server and updates the output_text widget.
+        Worker function that streams the response from the Ollama server and updates the output via GUIManager.
         This runs in a separate thread to keep the GUI responsive.
         """
-        root = self.root
         config = self.config
 
         self._is_streaming.set()
-        root.user_break.config(state=tk.NORMAL)  # Enable the break button
+        self.gui.set_streaming_state(True)  # Update GUI to streaming state
 
         self.refresh_user_gui()
-        root.update_idletasks()
 
         # Load configuration
         ollama_host = config["agentx"]["ollama_host"]
         ollama_model = config["agentx"]["ollama_model"]
 
-        # Get the prompt from the user_input_text widget
-        prompt = root.user_input_text.get("1.0", tk.END).strip()
-        # Always clear the input box after extracting the prompt
-        root.user_input_text.delete("1.0", tk.END)
+        # Get the prompt from the user input (via GUIManager)
+        prompt = self.gui.get_user_input()
+        
         if not prompt and not self.message.attachments:
-            root.output_text.insert(tk.END, "No input provided.\n")
+            self.gui.display_error("No input provided.")
             return
 
         # Build the full user message including only enabled attached file contents
         full_prompt = prompt
 
-        # Display the user prompt in the output_text widget
-        root.user_input_text.delete("1.0", tk.END)  # Clear the user input text again
-        root.output_text.insert(tk.END, f"User: {prompt}\n", ("user_prompt",))
-        if self.message.attachments:
-            for att in self.message.attachments:
-                filename = os.path.basename(att.file_path)
-                root.output_text.insert(
-                    tk.END, f"\n[Attached file: {filename}]\n", ("gray",)
-                )
-        # Also display enabled history attachments
-        if self.enabled_history_attachments:
-            for att in self.enabled_history_attachments:
-                filename = os.path.basename(att.file_path)
-                root.output_text.insert(
-                    tk.END, f"\n[Attached from history: {filename}]\n", ("gray",)
-                )
-        root.output_text.see(tk.END)  # Auto-scroll to the end
-
-        self.refresh_user_gui()
-        root.update_idletasks()
+        # Display the user prompt and attachments
+        attachment_filenames = [os.path.basename(att.file_path) for att in self.message.attachments]
+        self.gui.display_user_message(prompt, attachment_filenames, datetime.now())
 
         try:
             # Define the message payload
@@ -546,49 +308,24 @@ class AgentXSession:
                 ]
                 if channels:
                     channel = channels[0]
-                    # print(f"Received channel: {channel}: {part.message[channel]}")  # Debugging for received channel
                     if channel != last_channel:
                         match channel:
                             case "thinking":
-                                root.output_text.insert(
-                                    tk.END, "\n", ("system_space",)
-                                )  # Add spacing between different channels
-                                root.output_text.insert(
-                                    tk.END,
-                                    "(Agent is thinking...)\n\n",
-                                    ("agent_thinking",),
-                                )
-                                root.output_text.see(tk.END)  # Auto-scroll to the end
+                                # First thinking block - header handled by display method
+                                pass
                             case "content":
+                                # Transition from thinking to content
                                 self.add_message_to_context(agent_thinking_message)
-                                root.output_text.insert(
-                                    tk.END, "\n", ("agent_thinking",)
-                                )  # end of line for thinking
-                                root.output_text.insert(
-                                    tk.END, "\n", ("system_space",)
-                                )  # Add spacing between different channels
-                                root.output_text.insert(
-                                    tk.END, "Agent:\n\n", ("agent_response",)
-                                )
-                                root.update_idletasks()
                             case _:
-                                pass  # For other channels, no special header
+                                pass
                     match channel:
                         case "thinking":
-                            # Handle agent thinking content
-                            root.output_text.insert(
-                                tk.END, part.message.thinking, ("agent_thinking",)
-                            )
+                            self.gui.display_agent_thinking(part.message.thinking)
                             agent_thinking_message.content += part.message.thinking
-                            root.output_text.see(tk.END)  # Auto-scroll to the end
                             last_channel = channel
                         case "content":
-                            # Handle agent response content
-                            root.output_text.insert(
-                                tk.END, part.message.content, ("agent_response",)
-                            )
+                            self.gui.display_agent_response(part.message.content)
                             agent_response_message.content += part.message.content
-                            root.output_text.see(tk.END)  # Auto-scroll to the end
                             last_channel = channel
                         case "tool_name":
                             # Handle tool_name (currently pass)
@@ -614,24 +351,20 @@ class AgentXSession:
                             )  # Debugging for unknown channels
                             last_channel = channel
                     self.refresh_user_gui()
-                    root.update_idletasks()
             # After streaming is complete, add spacing
-            root.output_text.insert(
-                tk.END, "\n\n", ("system_space",)
-            )  # Add spacing between different channels
+            self.gui.display_spacing()
             self.add_message_to_context(agent_response_message)
             self.refresh_user_gui()
-            root.update_idletasks()
 
         except Exception as e:
             import traceback
 
-            root.output_text.insert(tk.END, f"Error: {e}\n")
+            self.gui.display_error(f"Error: {e}")
             print(f"Request error: {e}")
             traceback.print_exc()
         finally:
             self._is_streaming.clear()
-            root.user_break.config(state=tk.DISABLED)  # Disable the break button
+            self.gui.set_streaming_state(False)  # Update GUI to idle state
 
     def perform_service_handshake(self):
         """
