@@ -158,26 +158,31 @@ class Message:
 
     def llm_message_dict(self) -> dict:
         """
-        Custom JSON serialization that omits the file property.
+        Build the message dict for the LLM API.
+        Includes enabled attachment content inline in the content field,
+        since Ollama expects content in the 'content' field only.
         """
+        # Build content with enabled attachments included
+        full_content = self.content
+        enabled_attachments = [a for a in self.attachments if a.enabled]
+        if enabled_attachments:
+            attachment_text = "\n\n--- Attached Files ---\n"
+            for a in enabled_attachments:
+                filename = a.file_path.split("/")[-1]
+                attachment_text += f"\n[File: {filename}]\n```\n{a.content}\n```\n"
+            full_content = full_content + attachment_text
+
         return {
             "role": self.role,
-            "content": self.content,
-            "attachments": [
-                {
-                    "file_path": a.file_path,
-                    "content_type": a.content_type,
-                    "enabled": a.enabled,
-                    "content": a.content,
-                }
-                for a in self.attachments
-            ],
+            "content": full_content,
         }
 
-    def to_gui(self, parent):
+    def to_gui(self, parent, on_attachment_toggle=None):
         """
         Generate tkinter GUI representation of the message.
         :param parent: The parent widget for the frame.
+        :param on_attachment_toggle: Optional callback when attachment enabled state changes.
+                                      Called with (attachment, enabled) arguments.
         :return: tkinter Frame representing the message
         """
         frame = tk.Frame(parent)
@@ -261,8 +266,10 @@ class Message:
             att_frame = tk.Frame(frame)
             enabled_var = tk.BooleanVar(value=att.enabled)
 
-            def toggle(var=enabled_var, a=att):
+            def toggle(var=enabled_var, a=att, callback=on_attachment_toggle):
                 a.enabled = var.get()
+                if callback:
+                    callback(a, a.enabled)
 
             enabled_checkbox = tk.Checkbutton(
                 att_frame, variable=enabled_var, command=toggle

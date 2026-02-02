@@ -12,13 +12,15 @@ class History:
     Docstring for History
     """
 
-    def __init__(self, user_history_path: str):
+    def __init__(self, user_history_path: str, exclude_session: str = None):
         """
         Docstring for __init__
 
         :param self: Description
         :param user_session_path: Description
         :type user_session_path: str
+        :param exclude_session: Path to the current session folder to exclude from history
+        :type exclude_session: str
         """
         self.sessions = []
 
@@ -48,6 +50,11 @@ class History:
             context_folder_path = os.path.join(
                 user_history_path, context_folder_name, "context"
             )
+            # Skip the current session folder if specified
+            session_folder = os.path.join(user_history_path, context_folder_name)
+            if exclude_session and os.path.normpath(session_folder) == os.path.normpath(exclude_session):
+                continue
+
             context = Context()
             context.session_id = context_folder_name
             context.path = context_folder_path
@@ -64,7 +71,26 @@ class History:
                 context.expanded = False
                 self.sessions.append(context)
 
-    def to_gui(self, parent_frame: tk.Frame, user_name: str) -> tk.Frame:
+    def get_enabled_messages(self) -> list:
+        """
+        Collect all enabled messages from history sessions with their enabled attachments.
+        Returns a list of tuples: (timestamp, message)
+        """
+        enabled_messages = []
+        for context in self.sessions:
+            for ts, message in context.messages:
+                if getattr(message, "enabled", False):
+                    # Filter attachments to only include enabled ones
+                    if hasattr(message, "attachments"):
+                        message.attachments = [
+                            a
+                            for a in message.attachments
+                            if getattr(a, "enabled", False)
+                        ]
+                    enabled_messages.append((ts, message))
+        return enabled_messages
+
+    def to_gui(self, parent_frame: tk.Frame, user_name: str, on_attachment_toggle=None) -> tk.Frame:
         """
         Docstring for to_gui
 
@@ -90,6 +116,7 @@ class History:
         :type parent_frame: tk.Frame
         :param user_name: The name of the user
         :type user_name: str
+        :param on_attachment_toggle: Optional callback when attachment enabled state changes.
         :return: tk.Frame
         """
         history_frame = tk.Frame(parent_frame)
@@ -131,7 +158,7 @@ class History:
         history_contexts_frame.grid_remove()  # Start collapsed
 
         for idx, context in enumerate(self.sessions):
-            c_frame = context.to_gui(history_contexts_frame)
+            c_frame = context.to_gui(history_contexts_frame, on_attachment_toggle=on_attachment_toggle)
             c_frame.grid(row=idx, column=0, sticky="w", padx=(20, 0))
 
         return history_frame

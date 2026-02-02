@@ -245,7 +245,9 @@ class FileExplorer:
         self._popup_menu.add_command(label="Edit", command=self._on_edit_selected)
         self._on_attach_callback = on_attach
         self._on_edit_callback = on_edit
+        # Bind right-click (Button-3) for most platforms and Control+Button-1 for macOS
         self.tree.bind("<Button-3>", self._on_right_click)
+        self.tree.bind("<Control-Button-1>", self._on_right_click)
 
         # Pack the treeview and scrollbars
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -267,8 +269,14 @@ class FileExplorer:
         if item:
             self.tree.selection_set(item)
             tags = self.tree.item(item, "tags")
+            print(item , tags)
             if "file" in tags:
-                self._popup_menu.tk_popup(event.x_root, event.y_root)
+                # Display the popup menu at the click location
+                try:
+                    self._popup_menu.tk_popup(event.x_root, event.y_root)
+                finally:
+                    # Ensure the menu is removed from the screen after it's no longer needed
+                    self._popup_menu.grab_release()
 
     def _on_attach_selected(self):
         selection = self.tree.selection()

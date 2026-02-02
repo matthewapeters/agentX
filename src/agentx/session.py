@@ -50,6 +50,7 @@ class AgentXSession:
         self.context.path = self.context_folder
         self._history = None  # Placeholder for History object
         self.message = Message(role="user", content="")
+        self.enabled_history_attachments = []  # Track enabled attachments from history
 
     @property
     def history(self) -> "History":
@@ -61,12 +62,28 @@ class AgentXSession:
         :rtype: History
         """
         if self._history is None:
-            self._history = History(user_history_path=self.user_history_folder)
+            self._history = History(
+                user_history_path=self.user_history_folder,
+                exclude_session=self.session_folder
+            )
         return self._history
 
     @history.setter
     def history(self, value: "History"):
         self._history = value
+
+    def on_history_attachment_toggle(self, attachment, enabled: bool):
+        """
+        Callback when a history attachment is enabled or disabled.
+        Updates the enabled_history_attachments list and refreshes the attachment bar.
+        """
+        if enabled:
+            if attachment not in self.enabled_history_attachments:
+                self.enabled_history_attachments.append(attachment)
+        else:
+            if attachment in self.enabled_history_attachments:
+                self.enabled_history_attachments.remove(attachment)
+        self.refresh_user_gui()
 
     def refresh_context_gui(self):
         """
@@ -87,12 +104,16 @@ class AgentXSession:
 
         # Render history first (collapsed by default) in the Session tab
         self.root.system_status_history = self.history.to_gui(
-            self.root.session_tab, self.user
+            self.root.session_tab, self.user,
+            on_attachment_toggle=self.on_history_attachment_toggle
         )
         self.root.system_status_history.pack(expand=False, fill=tk.X, anchor=tk.N)
 
         # Render current context in the Session tab
-        self.root.system_status_context = self.context.to_gui(self.root.session_tab)
+        self.root.system_status_context = self.context.to_gui(
+            self.root.session_tab,
+            on_attachment_toggle=self.on_history_attachment_toggle
+        )
         self.root.system_status_context.pack(expand=True, fill=tk.BOTH)
 
     def attach_file(self, file_path: str):
@@ -107,6 +128,7 @@ class AgentXSession:
         """
         Refreshes the user GUI in the Session tab of the system status notebook.
         Displays the current message's attached files as labels above the user input box.
+        Also displays enabled history attachments.
         """
         root = self.root
         # Remove old attachment labels if they exist
@@ -122,18 +144,73 @@ class AgentXSession:
                 relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03
             )
 
-        # Display each attached file as a label
-        for idx, att in enumerate(self.message.attachments):
+        # Display current message attachments
+        for att in self.message.attachments:
+            att_frame = tk.Frame(root.attachments_frame, bg="white")
+            att_frame.pack(side=tk.LEFT, padx=(5, 0))
+
+            # Create checkbox for enabling/disabling attachment
+            enabled_var = tk.BooleanVar(value=att.enabled)
+
+            def make_toggle(attachment, var):
+                def toggle():
+                    attachment.enabled = var.get()
+                return toggle
+
+            checkbox = tk.Checkbutton(
+                att_frame,
+                variable=enabled_var,
+                command=make_toggle(att, enabled_var),
+                bg="white",
+                activebackground="white",
+            )
+            checkbox.pack(side=tk.LEFT, padx=(0, 3))
+
+            # File label
             label = tk.Label(
-                root.attachments_frame,
+                att_frame,
                 text=f"📁 {att.file_path.split('/')[-1]}",
                 anchor="w",
                 bg="white",
                 fg="#555555",
                 font=("Terminal", 9, "italic"),
             )
-            label.pack(side=tk.LEFT, padx=(5, 0))
-            root.attachment_labels.append(label)
+            label.pack(side=tk.LEFT)
+            root.attachment_labels.append(att_frame)
+
+        # Display enabled history attachments (with different styling)
+        for att in self.enabled_history_attachments:
+            att_frame = tk.Frame(root.attachments_frame, bg="#f0f0f0")
+            att_frame.pack(side=tk.LEFT, padx=(5, 0))
+
+            # Create checkbox for enabling/disabling attachment
+            enabled_var = tk.BooleanVar(value=att.enabled)
+
+            def make_history_toggle(attachment, var):
+                def toggle():
+                    self.on_history_attachment_toggle(attachment, var.get())
+                return toggle
+
+            checkbox = tk.Checkbutton(
+                att_frame,
+                variable=enabled_var,
+                command=make_history_toggle(att, enabled_var),
+                bg="#f0f0f0",
+                activebackground="#f0f0f0",
+            )
+            checkbox.pack(side=tk.LEFT, padx=(0, 3))
+
+            # File label with "(history)" indicator
+            label = tk.Label(
+                att_frame,
+                text=f"📜 {att.file_path.split('/')[-1]} (history)",
+                anchor="w",
+                bg="#f0f0f0",
+                fg="#666688",
+                font=("Terminal", 9, "italic"),
+            )
+            label.pack(side=tk.LEFT)
+            root.attachment_labels.append(att_frame)
 
     def refresh_files_gui(self):
         """
@@ -378,6 +455,13 @@ class AgentXSession:
                 root.output_text.insert(
                     tk.END, f"\n[Attached file: {filename}]\n", ("gray",)
                 )
+        # Also display enabled history attachments
+        if self.enabled_history_attachments:
+            for att in self.enabled_history_attachments:
+                filename = os.path.basename(att.file_path)
+                root.output_text.insert(
+                    tk.END, f"\n[Attached from history: {filename}]\n", ("gray",)
+                )
         root.output_text.see(tk.END)  # Auto-scroll to the end
 
         root.update_idletasks()
@@ -385,28 +469,34 @@ class AgentXSession:
         try:
             # Define the message payload
             self.message.content = full_prompt
+            # Enable the message
+            self.message.enabled = True
+
+            # Add enabled history attachments to the current message
+            for att in self.enabled_history_attachments:
+                if att not in self.message.attachments:
+                    self.message.attachments.append(att)
+
             agent_thinking_message = Message(role="assistant", content="")
             agent_thinking_message.enabled = False
             agent_response_message = Message(role="assistant", content="")
+
             self.add_message_to_context(self.message)
+
+            # Reset the message and clear enabled history attachments
             self.message = Message(role="user", content="")
+            self.enabled_history_attachments = []
 
             # Build LLM context from enabled messages/attachments in history (all sessions)
             llm_messages = []
-            for context in self.history.sessions:
-                for ts, msg in context.messages:
-                    if getattr(msg, "enabled", False):
-                        # Only include enabled attachments
-                        if hasattr(msg, "attachments"):
-                            msg.attachments = [
-                                a
-                                for a in msg.attachments
-                                if getattr(a, "enabled", False)
-                            ]
-                        llm_messages.append(msg.llm_message_dict())
 
-            # Also include enabled messages from the current context (if not already in history)
-            for ts, msg in self.context.messages:
+            # Collect enabled messages from history
+            history_messages = self.history.get_enabled_messages()
+            for _, msg in history_messages:
+                llm_messages.append(msg.llm_message_dict())
+
+            # Also include enabled messages from the current context
+            for _, msg in self.context.messages:
                 if getattr(msg, "enabled", False):
                     if hasattr(msg, "attachments"):
                         msg.attachments = [

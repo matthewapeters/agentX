@@ -63,7 +63,7 @@ class Context:
                         att.enabled = False
                 self.messages.append((message.ts, message))
 
-    def to_gui(self, root):
+    def to_gui(self, root, on_attachment_toggle=None):
         """
         to_gui
 
@@ -93,6 +93,7 @@ class Context:
 
         :param self: Description
         :param root: The tkinter root or parent widget where the context will be rendered.
+        :param on_attachment_toggle: Optional callback when attachment enabled state changes.
         """
         context_frame = tk.Frame(root)
 
@@ -134,7 +135,7 @@ class Context:
         context_messages_frame.grid(row=1, column=1, columnspan=2, sticky="w")
 
         for idx, (ts, message) in enumerate(self.messages):
-            m_frame = message.to_gui(context_messages_frame)
+            m_frame = message.to_gui(context_messages_frame, on_attachment_toggle=on_attachment_toggle)
             m_frame.grid(row=idx, column=0, sticky="w")
 
         if not self.expanded:
