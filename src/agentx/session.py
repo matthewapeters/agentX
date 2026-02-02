@@ -64,7 +64,7 @@ class AgentXSession:
         if self._history is None:
             self._history = History(
                 user_history_path=self.user_history_folder,
-                exclude_session=self.context_folder
+                exclude_session=self.context_folder,
             )
         return self._history
 
@@ -104,15 +104,16 @@ class AgentXSession:
 
         # Render history first (collapsed by default) in the Session tab
         self.root.system_status_history = self.history.to_gui(
-            self.root.session_tab, self.user,
-            on_attachment_toggle=self.on_history_attachment_toggle
+            self.root.session_tab,
+            self.user,
+            on_attachment_toggle=self.on_history_attachment_toggle,
         )
         self.root.system_status_history.pack(expand=False, fill=tk.X, anchor=tk.N)
 
         # Render current context in the Session tab
         self.root.system_status_context = self.context.to_gui(
             self.root.session_tab,
-            on_attachment_toggle=self.on_history_attachment_toggle
+            on_attachment_toggle=self.on_history_attachment_toggle,
         )
         self.root.system_status_context.pack(expand=True, fill=tk.BOTH)
 
@@ -155,6 +156,7 @@ class AgentXSession:
             def make_toggle(attachment, var):
                 def toggle():
                     attachment.enabled = var.get()
+
                 return toggle
 
             checkbox = tk.Checkbutton(
@@ -189,6 +191,7 @@ class AgentXSession:
             def make_history_toggle(attachment, var):
                 def toggle():
                     self.on_history_attachment_toggle(attachment, var.get())
+
                 return toggle
 
             checkbox = tk.Checkbutton(
@@ -429,7 +432,7 @@ class AgentXSession:
         global is_streaming  # Ensure we use the global is_streaming instance
         is_streaming.set()
         root.user_break.config(state=tk.NORMAL)  # Enable the break button
-        
+
         self.refresh_user_gui()
         root.update_idletasks()
 

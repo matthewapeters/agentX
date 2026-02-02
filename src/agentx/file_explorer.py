@@ -269,7 +269,7 @@ class FileExplorer:
         if item:
             self.tree.selection_set(item)
             tags = self.tree.item(item, "tags")
-            print(item , tags)
+            print(item, tags)
             if "file" in tags:
                 # Display the popup menu at the click location
                 try:

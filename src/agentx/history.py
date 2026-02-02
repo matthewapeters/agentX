@@ -41,12 +41,14 @@ class History:
                 if os.path.isdir(os.path.join(user_history_path, d))
             ]
         except OSError as e:
-            print(f"Could not access user history path: {user_history_path}. Error: {e }")
+            print(
+                f"Could not access user history path: {user_history_path}. Error: {e }"
+            )
             return
 
         # Sort alphabetically
         context_folders.sort()
-        #print("Found context folders:", context_folders)
+        # print("Found context folders:", context_folders)
 
         # Load each context
         for context_folder_name in context_folders:
@@ -55,7 +57,9 @@ class History:
             )
             # Skip the current session folder if specified
             session_folder = os.path.join(user_history_path, context_folder_name)
-            if exclude_session and os.path.normpath(session_folder) == os.path.normpath(exclude_session):
+            if exclude_session and os.path.normpath(session_folder) == os.path.normpath(
+                exclude_session
+            ):
                 print("Skipping current session folder in history:", exclude_session)
                 continue
 
@@ -68,7 +72,9 @@ class History:
                 print("  Loading context from:", context_folder_path)
                 context.load_messages()
             except OSError as e:
-                print(f"Could not load messages from context folder: {context_folder_name}. Error: {e}")
+                print(
+                    f"Could not load messages from context folder: {context_folder_name}. Error: {e}"
+                )
                 continue
 
             # Add context to history if it contains messages
@@ -96,7 +102,9 @@ class History:
                     enabled_messages.append((ts, message))
         return enabled_messages
 
-    def to_gui(self, parent_frame: tk.Frame, user_name: str, on_attachment_toggle=None) -> tk.Frame:
+    def to_gui(
+        self, parent_frame: tk.Frame, user_name: str, on_attachment_toggle=None
+    ) -> tk.Frame:
         """
         Docstring for to_gui
 
@@ -164,7 +172,9 @@ class History:
         history_contexts_frame.grid_remove()  # Start collapsed
 
         for idx, context in enumerate(self.sessions):
-            c_frame = context.to_gui(history_contexts_frame, on_attachment_toggle=on_attachment_toggle)
+            c_frame = context.to_gui(
+                history_contexts_frame, on_attachment_toggle=on_attachment_toggle
+            )
             c_frame.grid(row=idx, column=0, sticky="w", padx=(20, 0))
 
         return history_frame

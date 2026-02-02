@@ -132,11 +132,11 @@ class Context:
         context_messages_frame = tk.Frame(context_frame)
         context_messages_frame.grid(row=1, column=1, columnspan=2, sticky="w")
 
-        message:Message
+        message: Message
         for idx, (_, message) in enumerate(self.messages):
             m_frame = message.to_gui(
-                context_messages_frame, 
-                on_attachment_toggle=on_attachment_toggle)
+                context_messages_frame, on_attachment_toggle=on_attachment_toggle
+            )
             m_frame.grid(row=idx, column=0, sticky="w")
 
         if not self.expanded:
