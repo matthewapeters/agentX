@@ -244,11 +244,19 @@ class AgentXSession:
         """
         Sets up the layout for the tkinter root window.
         """
-        root = self.root
-        config = self.config
-        text_font = ("Terminal", 10)
-        enter_emoji_unicode = "^⏎"
+        text_font = self._setup_fonts()
+        self._setup_window_geometry()
+        self._create_output_panel(text_font)
+        self._create_status_panel()
+        self._create_input_panel(text_font)
+        self._configure_styles()
 
+    def _setup_fonts(self) -> tuple:
+        """
+        Locates and loads the emoji font if available.
+        Returns the font tuple to use for text widgets.
+        """
+        text_font = ("Terminal", 10)
         # Locate the font file relative to the installed package directory
         package_dir = os.path.dirname(__file__)
         emoji_font_path = os.path.join(package_dir, "fonts", "NotoColorEmoji.ttf")
@@ -260,7 +268,15 @@ class AgentXSession:
         else:
             print("Font file not found.")
             text_font = ("Terminal", 10)
+        return text_font
 
+    def _setup_window_geometry(self):
+        """
+        Configures window size, position, and title based on screen dimensions and config.
+        """
+        root = self.root
+        config = self.config
+        
         # Get screen dimensions
         screen_width = root.winfo_screenwidth()
         screen_height = root.winfo_screenheight()
@@ -274,13 +290,13 @@ class AgentXSession:
 
         root.title("AgentX - the Ollama Agent")
 
-        # Explicitly set the root title to include the font name for testing purposes
-        if os.path.exists(emoji_font_path):
-            root.title(f"AgentX - the Ollama Agent (Font: NotoColorEmoji)")
-        else:
-            root.title("AgentX - the Ollama Agent")
-
-        # Create a PanedWindow for resizable output and system frames with 80:20 split
+    def _create_output_panel(self, text_font: tuple):
+        """
+        Creates the main output panel with text display and scrollbar.
+        """
+        root = self.root
+        
+        # Create a PanedWindow for resizable output and system frames
         root.paned = tk.PanedWindow(root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         root.paned.place(relx=0.001, rely=0.001, relwidth=0.99, relheight=0.79)
 
@@ -306,9 +322,17 @@ class AgentXSession:
         root.output_scrollbar.config(command=root.output_text.yview)
         root.output_text.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
         root.output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        # Ensure selection highlighting is visible (after output_text is created)
+        # Ensure selection highlighting is visible
         root.output_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
+        
+        root.paned.add(root.output_display, stretch="always")
 
+    def _create_status_panel(self):
+        """
+        Creates the system status panel with Session and Files tabs.
+        """
+        root = self.root
+        
         root.system_status = tk.Frame(root.paned, bg="lightblue")
         # Create a notebook (tabbed interface) for system status
         root.system_notebook = ttk.Notebook(root.system_status)
@@ -337,13 +361,11 @@ class AgentXSession:
                 root.system_notebook.nametowidget(selected_tab).update_idletasks()
 
         root.system_notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
-
-        root.paned.add(root.output_display, stretch="always")
+        
         root.paned.add(root.system_status, stretch="always")
 
-        # Set the sash position to create an 80:20 split after widgets are rendered
+        # Set the sash position to create a 2:1 split after widgets are rendered
         def set_initial_split():
-            # Calculate 80% of the actual paned window width
             root.update_idletasks()  # Ensure widgets are rendered
             paned_width = root.paned.winfo_width()
             if paned_width > 1:  # Only set if widget is properly sized
@@ -352,12 +374,21 @@ class AgentXSession:
 
         root.after(100, set_initial_split)
 
-        # User input with scrollbar
-        root.user_input = tk.Frame(root, bg="lightgrey")
-        # Add a row at the top of the root.user_input frame to list attached files
+    def _create_input_panel(self, text_font: tuple):
+        """
+        Creates the user input panel with text box, scrollbar, and control buttons.
+        """
+        root = self.root
+        enter_emoji_unicode = "^⏎"
+        
+        # Add a frame for attachments display
         root.attachments = tk.Frame(root, height=2)
         root.attachments.place(relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03)
+        
+        # User input with scrollbar
+        root.user_input = tk.Frame(root, bg="lightgrey")
         root.user_input.place(relx=0.001, rely=0.80, relwidth=1.0, relheight=0.2)
+        
         root.input_scrollbar = tk.Scrollbar(root.user_input)
         root.user_input_text = tk.Text(
             root.user_input,
@@ -366,13 +397,10 @@ class AgentXSession:
             yscrollcommand=root.input_scrollbar.set,
         )
         root.input_scrollbar.config(command=root.user_input_text.yview)
-        root.user_input_text.place(
-            relx=0, rely=0, relwidth=0.90, relheight=1.0
-        )  # Adjusted width to make space for scrollbar
-        root.input_scrollbar.place(
-            relx=0.90, rely=0, relheight=1.0
-        )  # Positioned at the right edge of user_input_text
+        root.user_input_text.place(relx=0, rely=0, relwidth=0.90, relheight=1.0)
+        root.input_scrollbar.place(relx=0.90, rely=0, relheight=1.0)
 
+        # Submit button
         root.user_submit = tk.Button(
             root.user_input,
             text=enter_emoji_unicode,
@@ -380,7 +408,7 @@ class AgentXSession:
         )
         root.user_submit.place(relx=0.92, rely=0, relwidth=0.07, relheight=0.25)
 
-        # Add a break button below the submit button
+        # Break button below the submit button
         root.user_break = tk.Button(
             root.user_input,
             text="❌",
@@ -388,8 +416,6 @@ class AgentXSession:
             state=tk.DISABLED,
         )
         root.user_break.place(relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25)
-
-        root.user_input.place(relx=0.001, rely=0.80, relwidth=1.0, relheight=0.2)
 
         # Bind Ctrl-Enter to trigger the user_submit button
         root.user_input_text.bind(
@@ -399,8 +425,13 @@ class AgentXSession:
         # Bind Ctrl-Space globally to trigger the user_break button
         root.bind_all("<Control-space>", lambda event: root.user_break.invoke())
 
-        # Setup the Ollama client with the loaded configuration
-        # Adds text styling tags to the output_text widget.
+    def _configure_styles(self):
+        """
+        Configures text styling tags for the output widget.
+        """
+        root = self.root
+        
+        # Adds text styling tags to the output_text widget
         root.output_text.tag_config(
             "gray", foreground="gray", font=("Terminal", 10, "italic")
         )
@@ -408,18 +439,6 @@ class AgentXSession:
         root.output_text.tag_config("agent_response", font=("Terminal", 10, "normal"))
         root.output_text.tag_config("agent_thinking", font=("Terminal", 10, "italic"))
         root.output_text.tag_config("system_space", font=("Terminal", 10, "normal"))
-
-        # Update Ctrl-Enter button to use NotoColorEmoji font
-        emoji_font_path = os.path.join(os.getcwd(), "fonts", "NotoColorEmoji.ttf")
-        if os.path.exists(emoji_font_path):
-            ctrl_enter_font = (emoji_font_path, 10)
-        else:
-            ctrl_enter_font = ("Terminal", 10)
-
-        # Example usage for a button
-        ctrl_enter_button = tk.Button(
-            root, text=enter_emoji_unicode, font=ctrl_enter_font
-        )
 
     def stream_ollama_response_worker(self):
         """
