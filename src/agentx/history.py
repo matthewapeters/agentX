@@ -69,7 +69,7 @@ class History:
 
             # Load all message files from this context folder
             try:
-                print("  Loading context from:", context_folder_path)
+                #  print("  Loading context from:", context_folder_path)
                 context.load_messages()
             except OSError as e:
                 print(

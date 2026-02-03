@@ -27,11 +27,14 @@ class GUIConfig:
     emoji_font_path: Optional[str] = None
 
     # Style Configuration
-    output_bg: str = "white"
-    status_bg: str = "lightblue"
-    input_bg: str = "lightgrey"
-    attachment_bg: str = "white"
-    history_attachment_bg: str = "#f0f0f0"
+    colors = ["white", "lightblue", "lightgrey", "white", "#f0f0f0"]
+    output_bg: str = colors[2]
+    status_bg: str = colors[2]
+    input_bg: str = colors[2]
+    attachment_fg: str = colors[3]
+    input_fg: str = colors[3]
+    attachment_bg: str = colors[2]
+    history_attachment_bg: str = colors[4]  # "#f0f0f0"
 
     # Text Style Configuration
     user_prompt_font: tuple[str, int, str] = ("Terminal", 10, "bold")
