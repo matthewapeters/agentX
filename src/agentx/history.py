@@ -20,7 +20,7 @@ class History:
         :param user_session_path: Description
         :type user_session_path: str
         """
-        self.sessions = []
+        self.sessions: list[Context] = []
 
         # Load the list of contexts from the user session path
         # each folder under the user session path represent a context

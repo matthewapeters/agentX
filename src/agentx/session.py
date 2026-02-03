@@ -379,32 +379,36 @@ class AgentXSession:
                     tk.END, f"\n[Attached file: {filename}]\n", ("gray",)
                 )
         root.output_text.see(tk.END)  # Auto-scroll to the end
-
         root.update_idletasks()
 
         try:
             # Define the message payload
-            self.message.content = full_prompt
             agent_thinking_message = Message(role="assistant", content="")
             agent_thinking_message.enabled = False
             agent_response_message = Message(role="assistant", content="")
-            self.add_message_to_context(self.message)
-            self.message = Message(role="user", content="")
 
             # Build LLM context from enabled messages/attachments in history (all sessions)
             llm_messages = []
+            historical_attachments = []
             for context in self.history.sessions:
                 for ts, msg in context.messages:
                     if getattr(msg, "enabled", False):
                         # Only include enabled attachments
-                        if hasattr(msg, "attachments"):
-                            msg.attachments = [
-                                a
-                                for a in msg.attachments
-                                if getattr(a, "enabled", False)
-                            ]
                         llm_messages.append(msg.llm_message_dict())
+                    if hasattr(msg, "attachments"):
+                        historical_attachments.extend( 
+                            [ a for a in msg.attachments if getattr(a, "enabled", False) ]
+                        )
 
+            # add the user prompt to the current message
+            self.message.content = full_prompt
+            # add enabled historical attachements to the current message
+            if historical_attachments:
+                print("adding history attachements: ", historical_attachments)
+                self.message.attachments.extend(historical_attachments)
+
+            # Finally, add the current user message
+            self.add_message_to_context(self.message)
             # Also include enabled messages from the current context (if not already in history)
             for ts, msg in self.context.messages:
                 if getattr(msg, "enabled", False):
@@ -503,7 +507,10 @@ class AgentXSession:
             root.output_text.insert(
                 tk.END, "\n\n", ("system_space",)
             )  # Add spacing between different channels
-            self.add_message_to_context(agent_response_message)
+
+            # Prepare for the next user input
+            self.message = Message(role="user", content="")
+            # self.add_message_to_context(agent_response_message)
             self.refresh_user_gui()
             root.update_idletasks()
 

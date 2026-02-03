@@ -180,49 +180,52 @@ class Message:
         :param parent: The parent widget for the frame.
         :return: tkinter Frame representing the message
         """
-        frame = tk.Frame(parent)
+        message_frame = tk.Frame(parent)
 
         has_attachments = bool(self.attachments)
-        attachment_widgets = []
+        attachment_widgets:list[tk.Frame] = []
+        attachments_frame = tk.Frame(message_frame)
 
-        col = 0
+        columns = {
+            "collapse_expand": 0,
+            "enabled":1,
+            "role": 2,
+            "content": 3,
+        }
+        expand_collapse = {
+            True: "▼",
+            False: "▶",
+        }
+        roles = {
+            "user": "👤",
+            "assistant": "🤖",
+            "system": "⚙️",
+        }
+
+        expanded_var = tk.BooleanVar(value=False)
+
+        def toggle_expand():
+            expanded = expanded_var.get()
+            expanded_var.set(not expanded)
+            collapse_expand_button.config(text=expand_collapse[expanded_var.get()])
+            if expanded_var.get():
+                # Show attachments
+                attachments_frame.grid(row=1, columnspan=columns["role"], sticky="w")
+            else:
+                # Hide attachments
+                attachments_frame.grid_remove()
+
+        collapse_expand_button = tk.Button(
+            message_frame,
+            text=expand_collapse[expanded_var.get()],
+            width=1,
+            height=1,
+            font=("Terminal", 10),
+            command=toggle_expand,
+        )
         # Only show collapse/expand if there are attachments
         if has_attachments:
-            expanded_var = tk.BooleanVar(value=False)
-            expand_collapse = {
-                True: "▼",
-                False: "▶",
-            }
-
-            def toggle_expand():
-                expanded = expanded_var.get()
-                expanded_var.set(not expanded)
-                collapse_expand_button.config(text=expand_collapse[expanded_var.get()])
-                if expanded_var.get():
-                    # Show attachments
-                    for idx, w in enumerate(attachment_widgets):
-                        w.grid(
-                            row=1 + idx,
-                            column=3,
-                            columnspan=2,
-                            sticky="w",
-                            padx=(30, 0),
-                        )
-                else:
-                    # Hide attachments
-                    for w in attachment_widgets:
-                        w.grid_remove()
-
-            collapse_expand_button = tk.Button(
-                frame,
-                text=expand_collapse[expanded_var.get()],
-                width=1,
-                height=1,
-                font=("Terminal", 10),
-                command=toggle_expand,
-            )
-            collapse_expand_button.grid(row=0, column=col, sticky="w")
-            col += 1
+            collapse_expand_button.grid(row=0, column=columns["collapse_expand"], sticky="w")
 
         enabled_var = tk.BooleanVar(value=self.enabled)
 
@@ -230,59 +233,54 @@ class Message:
             self.enabled = enabled_var.get()
 
         enabled_checkbox = tk.Checkbutton(
-            frame, variable=enabled_var, command=on_enabled_toggle
+            message_frame, variable=enabled_var, command=on_enabled_toggle
         )
-        enabled_checkbox.grid(row=0, column=col, sticky="w")
-        col += 1
+        enabled_checkbox.grid(row=0, column=columns["enabled"], sticky="w")
 
-        roles = {
-            "user": "👤",
-            "assistant": "🤖",
-            "system": "⚙️",
-        }
-        role_label = tk.Label(frame, text=roles.get(self.role, "⚙️"))
-        role_label.grid(row=0, column=col, sticky="w")
-        col += 1
+        role_label = tk.Label(message_frame, text=roles.get(self.role, "⚙️"))
+        role_label.grid(row=0, column=columns["role"], sticky="w")
 
         # Content preview (first 40 chars, trimmed, no attachments)
         trimmed_content = self.content.strip()
         lines = [
             line
             for line in trimmed_content.splitlines()
-            if not re.match(r"--- \[Attached file: .+\] ---", line)
-            and not re.match(r"--- \[End of .+\] ---", line)
         ]
         preview_text = " ".join([l.strip() for l in lines if l.strip()])
         preview = preview_text[:40] + ("..." if len(preview_text) > 40 else "")
-        preview_label = tk.Label(frame, text=preview, anchor="w", width=50)
-        preview_label.grid(row=0, column=col, sticky="w")
+        preview_label = tk.Label(message_frame, text=preview, anchor="w", width=50)
 
-        for idx, att in enumerate(self.attachments):
-            att_frame = tk.Frame(frame)
-            enabled_var = tk.BooleanVar(value=att.enabled)
+        preview_label.grid(row=0, column=columns["content"], sticky="w")
 
-            def toggle(var=enabled_var, a=att):
-                a.enabled = var.get()
+        if has_attachments: 
+            attachments_frame.grid(row=1, column=columns["role"], sticky="w")
 
-            enabled_checkbox = tk.Checkbutton(
-                att_frame, variable=enabled_var, command=toggle
-            )
-            enabled_checkbox.pack(side=tk.LEFT)
-            att_label = tk.Label(
-                att_frame, text=f"📁  {att.file_path.split('/')[-1]}", anchor="w"
-            )
-            att_label.pack(side=tk.LEFT)
-            attachment_widgets.append(att_frame)
+            for idx, att in enumerate(self.attachments):
+                att_frame = tk.Frame(message_frame)
+                enabled_var = tk.BooleanVar(value=att.enabled)
 
-        # Initial attachment frame visibility: hide if collapsed, show if expanded
-        if has_attachments:
-            if expanded_var.get():
+                def toggle(var=enabled_var, a=att):
+                    a.enabled = var.get()
+
+                enabled_checkbox = tk.Checkbutton(
+                    att_frame, variable=enabled_var, command=toggle
+                )
+                enabled_checkbox.grid(row=0, column=0, sticky="w")
+                att_label = tk.Label(
+                    att_frame, text=f"📁  {att.file_path.split('/')[-1]}", anchor="w"
+                )
+                att_label.grid(row=0, column=1, sticky="w")
+                attachment_widgets.append(att_frame)
                 for idx, w in enumerate(attachment_widgets):
                     w.grid(
-                        row=1 + idx, column=3, columnspan=2, sticky="w", padx=(30, 0)
+                        in_=attachments_frame,
+                        row=1 + idx, 
+                        column=columns["role"], 
+                        columnspan=2, 
+                        sticky="w",
                     )
-            else:
-                for w in attachment_widgets:
-                    w.grid_remove()
 
-        return frame
+            # Initial attachment frame visibility: hide if collapsed, show if expanded
+            for i_ in range(2):
+                toggle_expand()
+        return message_frame
