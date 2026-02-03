@@ -15,6 +15,7 @@ dependencies = [
     "flake8>=7.3.0",
     "httpx>=0.28.1",
     "isort>=7.0.0",
+    "mypy>=1.19.1",
     "ollama>=0.6.1",
     "pillow>=12.1.0",
     "pytoml>=0.1.21",
