@@ -139,10 +139,12 @@ class AgentXSession:
     def refresh_context_gui(self):
         """
         Refreshes the context GUI in the Session tab of the system status notebook.
-        Destroys the old frames and re-renders the history and current context.
+        Uses GUIManager's rendering methods for context/history.
         """
         # Render history first (collapsed by default) in the Session tab
-        history_widget = self.history.to_gui(
+
+        history_widget = self.gui.render_history_widget(
+            self.history,
             self.gui.get_history_parent(),
             self.user,
             on_attachment_toggle=self.on_history_attachment_toggle,
@@ -150,7 +152,8 @@ class AgentXSession:
         self.gui.update_history_panel(history_widget)
 
         # Render current context in the Session tab
-        context_widget = self.context.to_gui(
+        context_widget = self.gui.render_context_widget(
+            self.context,
             self.gui.get_context_parent(),
             on_attachment_toggle=self.on_history_attachment_toggle,
         )

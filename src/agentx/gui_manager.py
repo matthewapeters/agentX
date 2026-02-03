@@ -10,8 +10,229 @@ from .gui_config import GUIConfig
 from .igui_manager import IGUIManager
 from .widget_registry import WidgetRegistry
 
-
 class GUIManager:
+    """Manages all GUI widgets and presentation logic.
+
+    This class implements the IGUIManager interface and handles all
+    presentation concerns, completely separated from business logic.
+    """
+
+    def render_history_widget(self, history_obj, parent, user_name, on_attachment_toggle=None):
+        """
+        Render a History object as a tkinter widget (Frame), replicating History.to_gui logic.
+        Args:
+            history_obj: The History instance to render
+            parent: The parent tkinter widget
+            user_name: The name of the user (for label)
+            on_attachment_toggle: Optional callback for attachment toggles
+        Returns:
+            tkinter Frame representing the history
+        """
+        import tkinter as tk
+        history_frame = tk.Frame(parent)
+
+        expanded_var = tk.BooleanVar(value=False)
+        expand_collapse = {True: "▼", False: "▶"}
+
+        def toggle_expand():
+            expanded = expanded_var.get()
+            expanded_var.set(not expanded)
+            collapse_expand_button.config(text=expand_collapse[expanded_var.get()])
+            if expanded:
+                history_contexts_frame.grid_remove()
+            else:
+                history_contexts_frame.grid(row=1, column=1, columnspan=2, sticky="w")
+
+        collapse_expand_button = tk.Button(
+            history_frame,
+            command=toggle_expand,
+            text=expand_collapse[expanded_var.get()],
+            width=1,
+            height=1,
+            font=("Terminal", 10),
+        )
+        collapse_expand_button.grid(row=0, column=0, sticky="w")
+
+        history_label = tk.Label(
+            history_frame,
+            text=f"{user_name} History ({len(history_obj.sessions)} contexts)",
+            font=("Terminal", 10, "bold"),
+        )
+        history_label.grid(row=0, column=1, sticky="w")
+
+        history_contexts_frame = tk.Frame(history_frame)
+        history_contexts_frame.grid(row=1, column=1, columnspan=2, sticky="w")
+        history_contexts_frame.grid_remove()  # Start collapsed
+
+        for idx, context in enumerate(history_obj.sessions):
+            c_frame = self.render_context_widget(
+                context, history_contexts_frame, on_attachment_toggle=on_attachment_toggle
+            )
+            c_frame.grid(row=idx, column=0, sticky="w", padx=(20, 0))
+
+        return history_frame
+    """Manages all GUI widgets and presentation logic.
+
+    This class implements the IGUIManager interface and handles all
+    presentation concerns, completely separated from business logic.
+    """
+
+    def render_context_widget(self, context_obj, parent, on_attachment_toggle=None):
+        """
+        Render a Context object as a tkinter widget (Frame), replicating Context.to_gui logic.
+        Args:
+            context_obj: The Context instance to render
+            parent: The parent tkinter widget
+            on_attachment_toggle: Optional callback for attachment toggles
+        Returns:
+            tkinter Frame representing the context
+        """
+        import tkinter as tk
+        context_frame = tk.Frame(parent)
+
+        expanded_var = tk.BooleanVar(value=getattr(context_obj, 'expanded', True))
+        expand_collapse = {True: "▼", False: "▶"}
+
+        def toggle_expand():
+            expanded = expanded_var.get()
+            expanded_var.set(not expanded)
+            context_obj.expanded = expanded_var.get()
+            collapse_expand_button.config(text=expand_collapse[expanded_var.get()])
+            if expanded:
+                context_messages_frame.grid_remove()
+            else:
+                context_messages_frame.grid(row=1, column=1, columnspan=2, sticky="w")
+
+        collapse_expand_button = tk.Button(
+            context_frame,
+            command=toggle_expand,
+            text=expand_collapse[expanded_var.get()],
+            width=1,
+            height=1,
+            font=("Terminal", 10),
+        )
+        collapse_expand_button.grid(row=0, column=0, sticky="w")
+
+        context_label = tk.Label(
+            context_frame,
+            text=f"{getattr(context_obj, 'session_id', None) or 'Context'} ({len(context_obj.messages)} messages)",
+            font=("Terminal", 10, "bold"),
+        )
+        context_label.grid(row=0, column=1, sticky="w")
+
+        context_messages_frame = tk.Frame(context_frame)
+        context_messages_frame.grid(row=1, column=1, columnspan=2, sticky="w")
+
+        for idx, (_, message) in enumerate(context_obj.messages):
+            m_frame = self.render_message_widget(message, context_messages_frame, on_attachment_toggle=on_attachment_toggle)
+            m_frame.grid(row=idx, column=0, sticky="w")
+
+        if not getattr(context_obj, 'expanded', True):
+            toggle_expand()
+
+        return context_frame
+
+    def render_message_widget(self, message_obj, parent, on_attachment_toggle=None):
+        """
+        Render a Message object as a tkinter widget (Frame), replicating Message.to_gui logic.
+        Args:
+            message_obj: The Message instance to render
+            parent: The parent tkinter widget
+            on_attachment_toggle: Optional callback for attachment toggles
+        Returns:
+            tkinter Frame representing the message
+        """
+        import tkinter as tk
+        import re
+        frame = tk.Frame(parent)
+
+        # Layout constants
+        COLLAPSE_EXPAND_ICON = {True: "▼", False: "▶"}
+        COLUMNS = {"collapse_expand": 0, "enabled": 1, "role": 2, "content": 3}
+        ROLES = {"user": "👤", "assistant": "🤖", "system": "⚙️"}
+
+        has_attachments = bool(getattr(message_obj, 'attachments', []))
+        attachment_widgets = []
+        attachments_frame = tk.Frame(frame)
+
+        expanded_var = tk.BooleanVar(value=False)
+
+        def toggle_expand():
+            expanded = expanded_var.get()
+            expanded_var.set(not expanded)
+            collapse_expand_button.config(text=COLLAPSE_EXPAND_ICON[expanded_var.get()])
+            if expanded_var.get():
+                attachments_frame.grid(row=1, column=COLUMNS["content"], columnspan=2, sticky="w")
+            else:
+                attachments_frame.grid_remove()
+
+        # Always reserve column 0 for collapse/expand (button or empty)
+        if has_attachments:
+            collapse_expand_button = tk.Button(
+                frame,
+                text=COLLAPSE_EXPAND_ICON[expanded_var.get()],
+                width=1,
+                height=1,
+                font=("Terminal", 10),
+                command=toggle_expand,
+            )
+            collapse_expand_button.grid(row=0, column=COLUMNS["collapse_expand"], sticky="w")
+        else:
+            empty_label = tk.Label(frame, width=2)
+            empty_label.grid(row=0, column=COLUMNS["collapse_expand"], sticky="w")
+
+        enabled_var = tk.BooleanVar(value=getattr(message_obj, 'enabled', True))
+
+        def on_enabled_toggle():
+            message_obj.enabled = enabled_var.get()
+
+        enabled_checkbox = tk.Checkbutton(
+            frame, variable=enabled_var, command=on_enabled_toggle
+        )
+        enabled_checkbox.grid(row=0, column=COLUMNS["enabled"], sticky="w")
+        role_label = tk.Label(frame, text=ROLES.get(getattr(message_obj, 'role', 'system'), "⚙️"))
+        role_label.grid(row=0, column=COLUMNS["role"], sticky="w")
+
+        # Content preview (first 40 chars, trimmed, no attachments)
+        trimmed_content = getattr(message_obj, 'content', '').strip()
+        lines = [
+            line
+            for line in trimmed_content.splitlines()
+            if not re.match(r"--- \[Attached file: .+\] ---", line)
+            and not re.match(r"--- \[End of .+\] ---", line)
+        ]
+        preview_text = " ".join([l.strip() for l in lines if l.strip()])
+        preview = preview_text[:40] + ("..." if len(preview_text) > 40 else "")
+        preview_label = tk.Label(frame, text=preview, anchor="w", width=50)
+        preview_label.grid(row=0, column=COLUMNS["content"], sticky="w")
+
+        # Attachments (in a sub-frame)
+        if has_attachments:
+            attachments_frame.grid(row=1, column=COLUMNS["content"], columnspan=2, sticky="w")
+            for idx, att in enumerate(getattr(message_obj, 'attachments', [])):
+                att_frame = tk.Frame(attachments_frame)
+                att_enabled_var = tk.BooleanVar(value=getattr(att, 'enabled', True))
+
+                def toggle(var=att_enabled_var, a=att, callback=on_attachment_toggle):
+                    a.enabled = var.get()
+                    if callback:
+                        callback(a, a.enabled)
+
+                enabled_checkbox = tk.Checkbutton(
+                    att_frame, variable=att_enabled_var, command=toggle
+                )
+                enabled_checkbox.grid(row=idx, column=COLUMNS["role"], sticky="w")
+                att_label = tk.Label(
+                    att_frame, text=f"📁  {getattr(att, 'file_path', '').split('/')[-1]}", anchor="w"
+                )
+                att_label.grid(row=idx, column=COLUMNS["content"], sticky="w")
+                att_frame.grid(row=idx, column=COLUMNS["collapse_expand"], sticky="w")
+                attachment_widgets.append(att_frame)
+
+            if not expanded_var.get():
+                attachments_frame.grid_remove()
+
+        return frame
     """Manages all GUI widgets and presentation logic.
 
     This class implements the IGUIManager interface and handles all
