@@ -10,7 +10,7 @@ from .gui_config import GUIConfig
 from .igui_manager import IGUIManager
 from .widget_registry import WidgetRegistry
 
-class GUIManager:
+class GUIManager(IGUIManager):
     """Manages all GUI widgets and presentation logic.
 
     This class implements the IGUIManager interface and handles all
