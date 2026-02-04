@@ -1,5 +1,5 @@
 [agentx]
-ollama_host = "localhost:11434"
+ollama_host = "localhost:11435"
 ollama_model = "gpt-oss"
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
