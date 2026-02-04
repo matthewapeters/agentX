@@ -100,10 +100,12 @@ class GUIManager(IGUIManager):
         history_contexts_frame.grid_remove()  # Start collapsed
 
         for idx, context in enumerate(history_obj.sessions):
-            c_frame = self.render_context_widget(
-                context, history_contexts_frame, on_attachment_toggle=on_attachment_toggle
-            )
-            c_frame.grid(row=idx, column=0, sticky="w", padx=(20, 0))
+                # Ensure each context is collapsed by default when rendering history
+                setattr(context, 'expanded', False)
+                c_frame = self.render_context_widget(
+                    context, history_contexts_frame, on_attachment_toggle=on_attachment_toggle
+                )
+                c_frame.grid(row=idx, column=0, sticky="w", padx=(20, 0))
 
         return history_frame
 
@@ -119,7 +121,7 @@ class GUIManager(IGUIManager):
         """
         context_frame = tk.Frame(parent)
 
-        expanded_var = tk.BooleanVar(value=getattr(context_obj, 'expanded', True))
+        expanded_var = tk.BooleanVar(value=getattr(context_obj, 'expanded', False))
 
         def toggle_expand():
             expanded = expanded_var.get()
@@ -164,8 +166,9 @@ class GUIManager(IGUIManager):
                 message, context_messages_frame, current_row, on_attachment_toggle
             )
 
-        if not getattr(context_obj, 'expanded', True):
-            toggle_expand()
+        # Hide messages frame if not expanded on initial render
+        if not getattr(context_obj, 'expanded', False):
+            context_messages_frame.grid_remove()
 
         return context_frame
 
