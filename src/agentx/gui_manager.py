@@ -100,12 +100,13 @@ class GUIManager(IGUIManager):
         history_contexts_frame.grid_remove()  # Start collapsed
 
         for idx, context in enumerate(history_obj.sessions):
-                # Ensure each context is collapsed by default when rendering history
-                setattr(context, 'expanded', False)
-                c_frame = self.render_context_widget(
-                    context, history_contexts_frame, on_attachment_toggle=on_attachment_toggle
-                )
-                c_frame.grid(row=idx, column=0, sticky="w", padx=(20, 0))
+            # Ensure each context is collapsed by default when rendering history
+            setattr(context, 'expanded', False)
+            c_frame = self.render_context_widget(
+                context, history_contexts_frame, on_attachment_toggle=on_attachment_toggle
+            )
+            # Stack tightly, no vertical padding, align to top
+            c_frame.grid(row=idx, column=0, sticky="n")
 
         return history_frame
 
@@ -141,8 +142,8 @@ class GUIManager(IGUIManager):
             height=1,
             font=("Terminal", 10),
         )
+        # Place expand/collapse button and label in the same column for tight stacking
         collapse_expand_button.grid(row=0, column=0, sticky="w")
-
         context_label = tk.Label(
             context_frame,
             text=f"{getattr(context_obj, 'session_id', None) or 'Context'} ({len(context_obj.messages)} messages)",
@@ -150,8 +151,9 @@ class GUIManager(IGUIManager):
         )
         context_label.grid(row=0, column=1, sticky="w")
 
+        # Stack messages frame directly below, in column 0, spanning both columns
         context_messages_frame = tk.Frame(context_frame)
-        context_messages_frame.grid(row=1, column=1, columnspan=2, sticky="w")
+        context_messages_frame.grid(row=1, column=0, columnspan=2, sticky="w")
         
         # Configure column weights for consistent alignment across all messages
         context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["collapse_expand"], weight=0, minsize=30)
@@ -518,7 +520,7 @@ class GUIManager(IGUIManager):
             self.widgets.system_status_history.destroy()
 
         # Pack new widget into session tab
-        history_widget.pack(expand=True, fill=tk.BOTH)
+        history_widget.pack(expand=False, fill=tk.X)
 
         # Store reference
         self.widgets.system_status_history = history_widget
