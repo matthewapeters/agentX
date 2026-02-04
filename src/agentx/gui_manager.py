@@ -710,7 +710,7 @@ class GUIManager(IGUIManager):
         self.widgets.paned = tk.PanedWindow(
             self.root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED
         )
-        self.widgets.paned.place(relx=0.001, rely=0.001, relwidth=0.99, relheight=0.79)
+        self.widgets.paned.place(relx=0.001, rely=0.001, relwidth=0.99, relheight=0.77)
 
         # Output display with scrollbar
         self.widgets.output_display = tk.Frame(
