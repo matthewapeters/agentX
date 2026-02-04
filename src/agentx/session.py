@@ -6,7 +6,6 @@ import os
 import threading
 import tkinter as tk
 from datetime import datetime
-from tkinter import ttk
 from typing import Any
 
 import httpx
@@ -267,9 +266,9 @@ class AgentXSession:
                 if att not in self.message.attachments:
                     self.message.attachments.append(att)
 
-            agent_thinking_message = Message(role="assistant", content="")
+            agent_thinking_message = Message(role="thinking", content="")
             agent_thinking_message.enabled = False
-            agent_response_message = Message(role="assistant", content="")
+            agent_response_message = Message(role="assistant", content="" )
 
             self.add_message_to_context(self.message)
 
@@ -323,10 +322,14 @@ class AgentXSession:
                                 pass
                     match channel:
                         case "thinking":
+                            if agent_thinking_message.content == "":
+                                self.gui.display_agent_thinking(f"\n{GUIManager.MESSAGE_ROLES["thinking"]}\t(The agent is thinking...)\n")
                             self.gui.display_agent_thinking(part.message.thinking)
                             agent_thinking_message.content += part.message.thinking
                             last_channel = channel
                         case "content":
+                            if agent_response_message.content == "": 
+                                self.gui.display_agent_response(f"\n\n{GUIManager.MESSAGE_ROLES["assistant"]}\t")
                             self.gui.display_agent_response(part.message.content)
                             agent_response_message.content += part.message.content
                             last_channel = channel
