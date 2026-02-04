@@ -12,6 +12,7 @@ from .gui_config import GUIConfig
 from .igui_manager import IGUIManager
 from .widget_registry import WidgetRegistry
 
+
 class GUIManager(IGUIManager):
     """Manages all GUI widgets and presentation logic.
 
@@ -51,10 +52,24 @@ class GUIManager(IGUIManager):
 
     # Layout constants for UI rendering
     EXPAND_COLLAPSE_ICONS = {True: "▼", False: "▶"}
-    MESSAGE_ROLES = {"user": "👤", "assistant": "🤖", "system": "⚙️", "thinking": "💭", "tools":"🛠️"}
-    MESSAGE_COLUMNS = {"collapse_expand": 0, "enabled": 1, "role": 2, "content": 3}
+    MESSAGE_ROLES = {
+        "user": "👤",
+        "assistant": "🤖",
+        "system": "⚙️",
+        "thinking": "💭",
+        "tools": "🛠️",
+    }
+    MESSAGE_COLUMNS = {
+        "indent": 0,
+        "collapse_expand": 1,
+        "enabled": 2,
+        "role": 3,
+        "content": 4,
+    }
 
-    def render_history_widget(self, history_obj, parent, user_name, on_attachment_toggle=None):
+    def render_history_widget(
+        self, history_obj, parent, user_name, on_attachment_toggle=None
+    ):
         """
         Render a History object as a tkinter widget (Frame), replicating History.to_gui logic.
         Args:
@@ -72,7 +87,9 @@ class GUIManager(IGUIManager):
         def toggle_expand():
             expanded = expanded_var.get()
             expanded_var.set(not expanded)
-            collapse_expand_button.config(text=self.EXPAND_COLLAPSE_ICONS[expanded_var.get()])
+            collapse_expand_button.config(
+                text=self.EXPAND_COLLAPSE_ICONS[expanded_var.get()]
+            )
             if expanded:
                 history_contexts_frame.grid_remove()
             else:
@@ -101,9 +118,11 @@ class GUIManager(IGUIManager):
 
         for idx, context in enumerate(history_obj.sessions):
             # Ensure each context is collapsed by default when rendering history
-            setattr(context, 'expanded', False)
+            setattr(context, "expanded", False)
             c_frame = self.render_context_widget(
-                context, history_contexts_frame, on_attachment_toggle=on_attachment_toggle
+                context,
+                history_contexts_frame,
+                on_attachment_toggle=on_attachment_toggle,
             )
             # Stack tightly, no vertical padding, align to top
             c_frame.grid(row=idx, column=0, sticky="n")
@@ -122,13 +141,15 @@ class GUIManager(IGUIManager):
         """
         context_frame = tk.Frame(parent)
 
-        expanded_var = tk.BooleanVar(value=getattr(context_obj, 'expanded', False))
+        expanded_var = tk.BooleanVar(value=getattr(context_obj, "expanded", False))
 
         def toggle_expand():
             expanded = expanded_var.get()
             expanded_var.set(not expanded)
             context_obj.expanded = expanded_var.get()
-            collapse_expand_button.config(text=self.EXPAND_COLLAPSE_ICONS[expanded_var.get()])
+            collapse_expand_button.config(
+                text=self.EXPAND_COLLAPSE_ICONS[expanded_var.get()]
+            )
             if expanded:
                 context_messages_frame.grid_remove()
             else:
@@ -142,24 +163,38 @@ class GUIManager(IGUIManager):
             height=1,
             font=("Terminal", 10),
         )
-        # Place expand/collapse button and label in the same column for tight stacking
-        collapse_expand_button.grid(row=0, column=0, sticky="w")
+
+        # Create a sub-frame for expand/collapse button and label, so label is always left-aligned
+        header_frame = tk.Frame(context_frame)
+        collapse_expand_button = tk.Button(
+            header_frame,
+            command=toggle_expand,
+            text=self.EXPAND_COLLAPSE_ICONS[expanded_var.get()],
+            width=1,
+            height=1,
+            font=("Terminal", 10),
+        )
+        collapse_expand_button.pack(side=tk.LEFT)
         context_label = tk.Label(
-            context_frame,
+            header_frame,
             text=f"{getattr(context_obj, 'session_id', None) or 'Context'} ({len(context_obj.messages)} messages)",
             font=("Terminal", 10, "bold"),
         )
-        context_label.grid(row=0, column=1, sticky="w")
+        context_label.pack(side=tk.LEFT)
+        header_frame.grid(row=0, column=0, sticky="w")
 
-        # Stack messages frame directly below, in column 0, spanning both columns
+        # Add an indent column (col 0) for message controls
         context_messages_frame = tk.Frame(context_frame)
         context_messages_frame.grid(row=1, column=0, columnspan=2, sticky="w")
-        
-        # Configure column weights for consistent alignment across all messages
-        context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["collapse_expand"], weight=0, minsize=30)
-        context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["enabled"], weight=0, minsize=30)
-        context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["role"], weight=0, minsize=30)
-        context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["content"], weight=1)
+
+        # Configure column 0 as indent, then message columns
+        context_messages_frame.columnconfigure(0, weight=0, minsize=20)  # indent
+        context_messages_frame.columnconfigure(
+            1, weight=0, minsize=30
+        )  # collapse/expand
+        context_messages_frame.columnconfigure(2, weight=0, minsize=30)  # enabled
+        context_messages_frame.columnconfigure(3, weight=0, minsize=30)  # role
+        context_messages_frame.columnconfigure(4, weight=1)  # content
 
         # Render messages directly into the frame's grid
         current_row = 0
@@ -169,49 +204,51 @@ class GUIManager(IGUIManager):
             )
 
         # Hide messages frame if not expanded on initial render
-        if not getattr(context_obj, 'expanded', False):
+        if not getattr(context_obj, "expanded", False):
             context_messages_frame.grid_remove()
 
         return context_frame
 
     def _render_message_to_grid(
-        self, 
-        message_obj, 
-        parent_frame: tk.Frame, 
-        start_row: int, 
-        on_attachment_toggle=None
+        self,
+        message_obj,
+        parent_frame: tk.Frame,
+        start_row: int,
+        on_attachment_toggle=None,
     ) -> int:
         """
         Render a Message object directly into the parent frame's grid.
-        
+
         This method places message components (checkbox, role, content, attachments)
         directly into the parent frame's grid system using MESSAGE_COLUMNS for alignment.
         This ensures consistent column widths across all messages.
-        
+
         Args:
             message_obj: The Message instance to render
             parent_frame: The parent tkinter Frame with grid layout
             start_row: The starting row number in the parent grid
             on_attachment_toggle: Optional callback for attachment toggles
-            
+
         Returns:
             The next available row number after this message and its attachments
         """
         current_row = start_row
-        
-        has_attachments = bool(getattr(message_obj, 'attachments', []))
-        
+
+        has_attachments = bool(getattr(message_obj, "attachments", []))
+
         # Track widgets for show/hide on expand/collapse
         attachment_rows: list[list[tk.Widget]] = []
         expanded_var = tk.BooleanVar(value=False)
-        
+
         # Forward declare for use in toggle_expand closure
         collapse_expand_button: tk.Button
-        
+
         def toggle_expand():
             expanded = expanded_var.get()
             expanded_var.set(not expanded)
-            collapse_expand_button.config(text=self.EXPAND_COLLAPSE_ICONS[expanded_var.get()])
+            collapse_expand_button.config(
+                text=self.EXPAND_COLLAPSE_ICONS[expanded_var.get()]
+            )
             # Show or hide attachment rows
             for row_widgets in attachment_rows:
                 for widget in row_widgets:
@@ -219,8 +256,10 @@ class GUIManager(IGUIManager):
                         widget.grid()
                     else:
                         widget.grid_remove()
-        
-        # Column 0: Collapse/Expand button (or empty space)
+
+        # Column 1: Collapse/Expand button (or empty space), indented by one column
+        indent_col = 0
+        collapse_col = 1
         if has_attachments:
             collapse_expand_button = tk.Button(
                 parent_frame,
@@ -231,46 +270,32 @@ class GUIManager(IGUIManager):
                 command=toggle_expand,
             )
             collapse_expand_button.grid(
-                row=current_row, 
-                column=self.MESSAGE_COLUMNS["collapse_expand"], 
-                sticky="w"
+                row=current_row, column=collapse_col, sticky="w"
             )
         else:
             empty_label = tk.Label(parent_frame, width=2)
-            empty_label.grid(
-                row=current_row, 
-                column=self.MESSAGE_COLUMNS["collapse_expand"], 
-                sticky="w"
-            )
-        
+            empty_label.grid(row=current_row, column=collapse_col, sticky="w")
+
         # Column 1: Enabled checkbox
-        enabled_var = tk.BooleanVar(value=getattr(message_obj, 'enabled', True))
-        
+        enabled_var = tk.BooleanVar(value=getattr(message_obj, "enabled", True))
+
         def on_enabled_toggle():
             message_obj.enabled = enabled_var.get()
-        
+
         enabled_checkbox = tk.Checkbutton(
             parent_frame, variable=enabled_var, command=on_enabled_toggle
         )
-        enabled_checkbox.grid(
-            row=current_row, 
-            column=self.MESSAGE_COLUMNS["enabled"], 
-            sticky="w"
-        )
-        
+        enabled_checkbox.grid(row=current_row, column=2, sticky="w")
+
         # Column 2: Role icon
         role_label = tk.Label(
-            parent_frame, 
-            text=self.MESSAGE_ROLES.get(getattr(message_obj, 'role', 'system'), "⚙️")
+            parent_frame,
+            text=self.MESSAGE_ROLES.get(getattr(message_obj, "role", "system"), "⚙️"),
         )
-        role_label.grid(
-            row=current_row, 
-            column=self.MESSAGE_COLUMNS["role"], 
-            sticky="w"
-        )
-        
+        role_label.grid(row=current_row, column=3, sticky="w")
+
         # Column 3: Content preview
-        trimmed_content = getattr(message_obj, 'content', '').strip()
+        trimmed_content = getattr(message_obj, "content", "").strip()
         lines = [
             line
             for line in trimmed_content.splitlines()
@@ -280,57 +305,49 @@ class GUIManager(IGUIManager):
         preview_text = " ".join([l.strip() for l in lines if l.strip()])
         preview = preview_text[:40] + ("..." if len(preview_text) > 40 else "")
         preview_label = tk.Label(parent_frame, text=preview, anchor="w", width=50)
-        preview_label.grid(
-            row=current_row, 
-            column=self.MESSAGE_COLUMNS["content"], 
-            sticky="w"
-        )
-        
+        preview_label.grid(row=current_row, column=4, sticky="w")
+
         current_row += 1
-        
+
         # Render attachments directly in the parent grid
         if has_attachments:
-            for att in getattr(message_obj, 'attachments', []):
+            for att in getattr(message_obj, "attachments", []):
                 row_widgets: list[tk.Widget] = []
-                
+
                 # Column 2: Attachment enabled checkbox (in role column for visual indentation)
-                att_enabled_var = tk.BooleanVar(value=getattr(att, 'enabled', True))
-                
+                att_enabled_var = tk.BooleanVar(value=getattr(att, "enabled", True))
+
                 def toggle(var=att_enabled_var, a=att, callback=on_attachment_toggle):
                     a.enabled = var.get()
                     if callback:
                         callback(a, a.enabled)
-                
+
                 att_checkbox = tk.Checkbutton(
                     parent_frame, variable=att_enabled_var, command=toggle
                 )
                 att_checkbox.grid(
-                    row=current_row, 
-                    column=self.MESSAGE_COLUMNS["role"], 
-                    sticky="w"
+                    row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="w"
                 )
                 row_widgets.append(att_checkbox)
-                
+
                 # Column 3: Attachment label
                 att_label = tk.Label(
-                    parent_frame, 
-                    text=f"📁  {getattr(att, 'file_path', '').split('/')[-1]}", 
-                    anchor="w"
+                    parent_frame,
+                    text=f"📁  {getattr(att, 'file_path', '').split('/')[-1]}",
+                    anchor="w",
                 )
                 att_label.grid(
-                    row=current_row, 
-                    column=self.MESSAGE_COLUMNS["content"], 
-                    sticky="w"
+                    row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="w"
                 )
                 row_widgets.append(att_label)
-                
+
                 # Start with attachments hidden
                 for widget in row_widgets:
                     widget.grid_remove()
-                
+
                 attachment_rows.append(row_widgets)
                 current_row += 1
-        
+
         return current_row
 
     # Lifecycle Methods
@@ -379,7 +396,9 @@ class GUIManager(IGUIManager):
             return
 
         # Insert message with role emoji
-        output.insert(tk.END, f"{self.MESSAGE_ROLES['user']} User: {content}\n", ("user_prompt",))
+        output.insert(
+            tk.END, f"{self.MESSAGE_ROLES['user']} User: {content}\n", ("user_prompt",)
+        )
 
         # Display attachments
         if attachments:

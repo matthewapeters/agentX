@@ -216,4 +216,3 @@ class Message:
             "role": self.role,
             "content": full_content,
         }
-

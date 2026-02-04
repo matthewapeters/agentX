@@ -60,4 +60,3 @@ class Context:
                     if hasattr(att, "enabled"):
                         att.enabled = False
                 self.messages.append((message.ts, message))
-
