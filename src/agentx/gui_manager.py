@@ -51,7 +51,7 @@ class GUIManager(IGUIManager):
 
     # Layout constants for UI rendering
     EXPAND_COLLAPSE_ICONS = {True: "▼", False: "▶"}
-    MESSAGE_ROLES = {"user": "👤", "assistant": "🤖", "system": "⚙️"}
+    MESSAGE_ROLES = {"user": "👤", "assistant": "🤖", "system": "⚙️", "thinking": "💭", "tools":"🛠️"}
     MESSAGE_COLUMNS = {"collapse_expand": 0, "enabled": 1, "role": 2, "content": 3}
 
     def render_history_widget(self, history_obj, parent, user_name, on_attachment_toggle=None):
@@ -378,8 +378,8 @@ class GUIManager(IGUIManager):
         if output is None:
             return
 
-        # Insert message
-        output.insert(tk.END, f"User: {content}\n", ("user_prompt",))
+        # Insert message with role emoji
+        output.insert(tk.END, f"{self.MESSAGE_ROLES['user']} User: {content}\n", ("user_prompt",))
 
         # Display attachments
         if attachments:
@@ -399,11 +399,6 @@ class GUIManager(IGUIManager):
         if output is None:
             return
 
-        # Check if this is the first call (no agent thinking header yet)
-        current_content = output.get("1.0", tk.END)
-        if "(Agent is thinking..." not in current_content:
-            output.insert(tk.END, "(Agent is thinking...)\n\n", ("agent_thinking",))
-
         # Append content
         output.insert(tk.END, content, ("agent_thinking",))
 
@@ -422,11 +417,6 @@ class GUIManager(IGUIManager):
 
         # Check if this is the first call (no agent response header yet)
         current_content = output.get("1.0", tk.END)
-        if "\nAgent:\n\n" not in current_content and not current_content.startswith(
-            "Agent:\n\n"
-        ):
-            output.insert(tk.END, "\nAgent:\n\n", ("agent_response",))
-
         # Append content
         output.insert(tk.END, content, ("agent_response",))
 
