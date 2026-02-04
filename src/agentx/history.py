@@ -22,7 +22,7 @@ class History:
         :param exclude_session: Path to the current session folder to exclude from history
         :type exclude_session: str
         """
-        self.sessions:list[Context] = []
+        self.sessions: list[Context] = []
 
         # Load the list of contexts from the user session path
         # each folder under the user session path represent a context
