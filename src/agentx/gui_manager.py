@@ -464,9 +464,6 @@ class GUIManager(IGUIManager):
         output = self.widgets.output_text
         if output is None:
             return
-
-        # Check if this is the first call (no agent response header yet)
-        current_content = output.get("1.0", tk.END)
         # Append content
         output.insert(tk.END, content, ("agent_response",))
 
