@@ -163,6 +163,97 @@ class AgentXSession:
                 self.gui.populate_tools(tools)
         except Exception as e:
             print(f"Error loading tools: {e}")
+    
+    def execute_tool(self, tool_name: str, tool_input: dict) -> str:
+        """
+        Execute a tool (either client-side or server-side).
+        
+        Args:
+            tool_name: Name of the tool to execute
+            tool_input: Arguments for the tool
+            
+        Returns:
+            Tool execution result as string
+        """
+        try:
+            # Import tool models
+            from shared.models.tools import ToolRequest
+            
+            # Create tool request
+            tool_request = ToolRequest(
+                tool_name=tool_name,
+                arguments=tool_input
+            )
+            
+            # For now, return a placeholder message
+            # Full tool execution depends on tool type and context
+            result = f"Tool '{tool_name}' execution requested with args: {tool_input}"
+            
+            # TODO: Implement actual client-side tool execution
+            # - Check ToolDefinition.execution_context
+            # - Route to appropriate executor
+            # - Handle server-side tools via agentix_adapter
+            
+            return result
+            
+        except Exception as e:
+            return f"Error executing tool '{tool_name}': {str(e)}"
+    
+    def handle_tool_call(self, tool_name: str, tool_input: dict) -> None:
+        """
+        Handle a tool call from the LLM response.
+        
+        This method:
+        1. Stores the TOOL_CALL message in context
+        2. Executes the tool
+        3. Stores the TOOL_RESULT message in context
+        4. Displays both in the GUI
+        
+        Args:
+            tool_name: Name of the tool to call
+            tool_input: Arguments for the tool
+        """
+        try:
+            from shared.models.message import Message as SharedMessage, MessageRole
+            
+            # Store TOOL_CALL message
+            tool_call_msg = Message(
+                role="tool_call",
+                content=f"Calling tool: {tool_name}",
+            )
+            tool_call_msg.tool_name = tool_name
+            tool_call_msg.tool_input = tool_input
+            tool_call_msg.enabled = True
+            
+            self.add_message_to_context(tool_call_msg)
+            
+            # Display tool call in GUI
+            self.gui.display_agent_response(
+                f"\n[🔧 Calling tool: {tool_name}]\n"
+            )
+            
+            # Execute the tool
+            result = self.execute_tool(tool_name, tool_input)
+            
+            # Store TOOL_RESULT message
+            tool_result_msg = Message(
+                role="tool_result",
+                content=result,
+            )
+            tool_result_msg.tool_name = tool_name
+            tool_result_msg.enabled = True
+            
+            self.add_message_to_context(tool_result_msg)
+            
+            # Display tool result in GUI
+            self.gui.display_agent_response(
+                f"[📋 Tool result: {result[:100]}...]\n" if len(result) > 100 else f"[📋 Tool result: {result}]\n"
+            )
+            
+        except Exception as e:
+            error_msg = f"Error handling tool call: {e}"
+            self.gui.display_error(error_msg)
+            print(error_msg)
 
     def on_history_attachment_toggle(self, attachment, enabled: bool):
         """
@@ -359,11 +450,9 @@ class AgentXSession:
             handler = ResponseHandler(
                 on_content=lambda text: self.gui.display_agent_response(text),
                 on_thinking=lambda text: self._display_thinking(text),
-                on_tool_call=lambda name, args: self.gui.display_agent_response(
-                    f"\n[Tool: {name}({args})]\n"
-                ),
+                on_tool_call=lambda name, args: self.handle_tool_call(name, args),
                 on_tool_result=lambda id, result: self.gui.display_agent_response(
-                    f"\n[Result: {result[:100]}...]\n" if len(result) > 100 else f"\n[Result: {result}]\n"
+                    f"\n[📋 Tool result: {result[:100]}...]\n" if len(result) > 100 else f"\n[📋 Tool result: {result}]\n"
                 ),
                 on_error=lambda msg, code: self.gui.display_error(f"{code}: {msg}"),
             )

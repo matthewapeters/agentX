@@ -80,6 +80,8 @@ class GUIManager(IGUIManager):
         "assistant": "🤖",
         "system": "⚙️",
         "thinking": "💭",
+        "tool_call": "🔧",
+        "tool_result": "📋",
         "tools": "🛠️",
     }
     MESSAGE_COLUMNS = {
