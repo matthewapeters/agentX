@@ -2,6 +2,7 @@
 
 import json
 import sys
+from typing import Iterator
 
 import requests
 
@@ -88,3 +89,79 @@ def summarize_user_prompt(args: AgentixConfig) -> str:
     # Clean up the response to create a valid session ID
     session_id = response.strip().replace(" ", "_").replace("/", "_")
     args.session = session_id
+
+
+def query_api_streaming(
+    args: AgentixConfig, 
+    payload: QueryPayload
+) -> Iterator[dict]:
+    """
+    Stream responses from Ollama API.
+    
+    This function sends a request to Ollama with streaming enabled
+    and yields response chunks as they arrive.
+    
+    Args:
+        args: AgentixConfig with model and settings
+        payload: QueryPayload to send to API
+        
+    Yields:
+        Response chunk dictionaries from Ollama
+        
+    Example:
+        for chunk in query_api_streaming(config, payload):
+            if chunk.get("done"):
+                break
+            content = chunk.get("message", {}).get("content", "")
+            print(content, end="", flush=True)
+    """
+    headers = {"Content-Type": "application/json"}
+    
+    # Convert payload to dict and enable streaming
+    payload_dict = payload if isinstance(payload, dict) else payload.to_dict()
+    payload_dict["stream"] = True
+    
+    if args.debug:
+        print("Streaming payload:", file=sys.stderr)
+        print(json.dumps(payload_dict, indent=2), file=sys.stderr)
+    
+    try:
+        response = requests.post(
+            f"{OLLAMA_API_BASE}{OLLAMA_CHAT_ENDPOINT}",
+            headers=headers,
+            json=payload_dict,
+            timeout=300,
+            stream=True,  # Enable streaming mode
+        )
+        
+        if response.status_code == 200:
+            # Iterate over lines in the response
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        chunk = json.loads(line.decode("utf-8"))
+                        
+                        if args.debug:
+                            print(f"Chunk: {chunk}", file=sys.stderr)
+                        
+                        yield chunk
+                        
+                        # Stop if done
+                        if chunk.get("done", False):
+                            break
+                    except json.JSONDecodeError as e:
+                        if args.debug:
+                            print(f"JSON decode error: {e}", file=sys.stderr)
+                        continue
+        else:
+            # Yield error chunk
+            yield {
+                "error": f"HTTP {response.status_code}: {response.text}",
+                "done": True,
+            }
+    except Exception as e:
+        # Yield exception as error chunk
+        yield {
+            "error": f"Request failed: {str(e)}",
+            "done": True,
+        }

@@ -7,7 +7,13 @@ import os
 from argparse import Namespace
 from dataclasses import dataclass
 
-import tomli
+try:
+    import tomllib  # Python 3.11+
+except ImportError:
+    try:
+        import tomli as tomllib  # Fallback for Python < 3.11
+    except ImportError:
+        tomllib = None  # TOML support disabled
 
 from .constants import DEFAULT_SESSION_ID, DEFAULT_TEMPERATURE
 
@@ -198,10 +204,13 @@ class AgentixConfig:
         Loads and parses a local .toml config file if present.
         Returns a dict of config values, or empty dict if not found.
         """
+        if tomllib is None:
+            return {}  # TOML support not available
+        
         path = AgentixConfig.find_local_config(filename)
         if path:
             with open(path, "rb") as f:
-                return tomli.load(f)
+                return tomllib.load(f)
         return {}
 
     @staticmethod

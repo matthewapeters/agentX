@@ -8,7 +8,13 @@ from .agentix_config import AgentixConfig
 from .constants import SESSIONS_METADATA_FILE
 from .context.prompts import get_prompts
 from .models import get_models
-from .server import start_server
+
+try:
+    from .server import start_server
+    SERVER_AVAILABLE = True
+except ImportError:
+    SERVER_AVAILABLE = False
+    start_server = None
 
 
 def main(args: AgentixConfig) -> None:
@@ -29,6 +35,9 @@ def main(args: AgentixConfig) -> None:
                 print("No sessions found", file=sys.stderr)
             return
         case "serve":
+            if not SERVER_AVAILABLE or start_server is None:
+                print("Server functionality requires fastapi. Install with: uv pip install fastapi uvicorn", file=sys.stderr)
+                return
             start_server(args.port)
             return
         case "run_agentix":

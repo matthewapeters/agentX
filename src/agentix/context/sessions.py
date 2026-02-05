@@ -6,7 +6,7 @@ import os
 import sys
 from datetime import UTC, datetime
 
-from agentix import Message
+from agentix.context.message import Message
 
 from ..agentix_config import AgentixConfig
 from ..api_client import summarize_user_prompt

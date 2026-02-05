@@ -7,8 +7,6 @@ import sys
 from ..agentix_config import AgentixConfig
 from ..constants import SYSTEM_PROMPTS_DIR
 from ..file_utils import get_file
-from ..tools import ast_tools, cst_tools
-from ..tools.describe_tools import extract_tools_from_file, to_openai_tools
 
 
 def get_system_prompt(args: AgentixConfig) -> str:
@@ -39,6 +37,10 @@ def get_user_prompt(args: AgentixConfig) -> str:
 
 def get_tools_prompt(args: AgentixConfig) -> str:
     """Assemble tools prompt from CLI arguments."""
+    # Lazy import to avoid circular dependencies and missing libcst
+    from ..tools import ast_tools, cst_tools
+    from ..tools.describe_tools import extract_tools_from_file, to_openai_tools
+    
     f = ""
     tools = []
     for t in args.tools or []:
@@ -46,9 +48,11 @@ def get_tools_prompt(args: AgentixConfig) -> str:
             print(f"Processing tool: {t}", file=sys.stderr)
         match t:
             case "cst":
-                f = cst_tools.__file__
+                if cst_tools is not None:
+                    f = cst_tools.__file__
             case "ast":
-                f = ast_tools.__file__
+                if ast_tools is not None:
+                    f = ast_tools.__file__
             case _:
                 if args.debug:
                     print(f"Unknown tool: {t}", file=sys.stderr)

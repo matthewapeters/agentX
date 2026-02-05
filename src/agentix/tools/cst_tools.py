@@ -5,8 +5,16 @@ from __future__ import annotations
 from glob import glob
 from typing import Dict, List, Optional
 
-import libcst as cst
-from libcst.metadata import CodeRange, MetadataWrapper, PositionProvider
+try:
+    import libcst as cst
+    from libcst.metadata import CodeRange, MetadataWrapper, PositionProvider
+    LIBCST_AVAILABLE = True
+except ImportError:
+    LIBCST_AVAILABLE = False
+    # Module will not work without libcst - all code below depends on it
+    raise ImportError(
+        "libcst is required for cst_tools. Install with: uv pip install libcst"
+    )
 
 # --------------------------------------------------------------------------------------
 # Filesystem helpers (kept compatible with your original behavior)

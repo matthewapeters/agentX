@@ -1,17 +1,26 @@
 """agentix.tools package initializer"""
 
-from . import ast_tools, cst_tools, describe_tools
-from .describe_tools import (
-    ToolExtractor,
-    extract_tools_from_code,
-    extract_tools_from_file,
-    to_openai_tools,
-)
+try:
+    from . import ast_tools, cst_tools, describe_tools
+    from .describe_tools import (
+        ToolExtractor,
+        extract_tools_from_code,
+        extract_tools_from_file,
+        to_openai_tools,
+    )
+    TOOLS_AVAILABLE = True
+except ImportError as e:
+    # Tools not available (missing libcst or other dependencies)
+    TOOLS_AVAILABLE = False
+    ast_tools = None
+    cst_tools = None
+    describe_tools = None
 
 
 def extract_cst_tools():
+    if not TOOLS_AVAILABLE or cst_tools is None:
+        return []
     return extract_tools_from_file(cst_tools.__file__)
-
 
 __all__ = [
     "ast_tools",
