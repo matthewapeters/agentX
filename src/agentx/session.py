@@ -18,6 +18,8 @@ from .gui_config import GUIConfig
 from .gui_manager import GUIManager
 from .history import History
 from .message import Message
+from .integration import AgentixBridgeAdapter, ResponseHandler
+from .integration.agentix_bridge_adapter import create_adapter
 
 
 class AgentXSession:
@@ -64,6 +66,9 @@ class AgentXSession:
 
         # Set window title with session info
         self.gui.set_window_title(f"{self.user} - AgentX Session - {self.start_time}")
+        
+        # Initialize Agentix bridge if enabled
+        self.agentix_adapter = create_adapter(config)
 
     @property
     def history(self) -> "History":
@@ -224,7 +229,154 @@ class AgentXSession:
         """
         Worker function that streams the response from the Ollama server and updates the output via GUIManager.
         This runs in a separate thread to keep the GUI responsive.
+        
+        If Agentix is enabled, routes through Agentix middleware for classification and tool support.
+        Otherwise, uses direct Ollama streaming.
         """
+        # Route to Agentix if enabled
+        if self.agentix_adapter and self.agentix_adapter.enabled:
+            self._stream_via_agentix()
+        else:
+            self._stream_direct_ollama()
+    
+    def _stream_via_agentix(self):
+        """Stream response through Agentix middleware."""
+        config = self.config
+
+        self._is_streaming.set()
+        self.gui.set_streaming_state(True)
+        self.refresh_user_gui()
+
+        # Get the prompt from the user input
+        prompt = self.gui.get_user_input()
+
+        if not prompt and not self.message.attachments:
+            self.gui.display_error("No input provided.")
+            self._is_streaming.clear()
+            self.gui.set_streaming_state(False)
+            return
+
+        # Display the user prompt and attachments
+        attachment_filenames = [
+            os.path.basename(att.file_path) for att in self.message.attachments
+        ]
+        self.gui.display_user_message(prompt, attachment_filenames, datetime.now())
+
+        try:
+            # Prepare message
+            self.message.content = prompt
+            self.message.enabled = True
+            self.root.after(0, self.refresh_context_gui)
+
+            # Add enabled history attachments
+            for att in self.enabled_history_attachments:
+                if att not in self.message.attachments:
+                    self.message.attachments.append(att)
+
+            # Convert AgentX context to shared Context format
+            from shared.models.context import Context as SharedContext
+            from shared.models.message import Message as SharedMessage, MessageRole
+            
+            shared_context = SharedContext()
+            
+            # Add history messages
+            history_messages = self.history.get_enabled_messages()
+            for _, msg in history_messages:
+                shared_msg = SharedMessage(
+                    role=MessageRole[msg.role.upper()] if hasattr(MessageRole, msg.role.upper()) else MessageRole.USER,
+                    content=msg.content,
+                    enabled=msg.enabled
+                )
+                shared_context.add_message(shared_msg)
+            
+            # Add current context messages
+            for _, msg in self.context.messages:
+                if getattr(msg, "enabled", False):
+                    shared_msg = SharedMessage(
+                        role=MessageRole[msg.role.upper()] if hasattr(MessageRole, msg.role.upper()) else MessageRole.USER,
+                        content=msg.content,
+                        enabled=msg.enabled
+                    )
+                    shared_context.add_message(shared_msg)
+
+            # Add current message
+            self.add_message_to_context(self.message)
+            
+            # Reset message and history attachments
+            self.message = Message(role="user", content="")
+            self.enabled_history_attachments = []
+
+            # Classify prompt if enabled
+            classification = None
+            if config.get("agentix", {}).get("classify_prompts", True):
+                classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context)
+                if classification and config.get("agentix", {}).get("show_classification", False):
+                    self.gui.display_agent_thinking(
+                        f"\n[Classification: {classification.intent.name} → {classification.next_step.name}]\n"
+                    )
+
+            # Create response handler
+            agent_response_message = Message(role="assistant", content="")
+            thinking_shown = False
+            
+            handler = ResponseHandler(
+                on_content=lambda text: self.gui.display_agent_response(text),
+                on_thinking=lambda text: self._display_thinking(text),
+                on_tool_call=lambda name, args: self.gui.display_agent_response(
+                    f"\n[Tool: {name}({args})]\n"
+                ),
+                on_tool_result=lambda id, result: self.gui.display_agent_response(
+                    f"\n[Result: {result[:100]}...]\n" if len(result) > 100 else f"\n[Result: {result}]\n"
+                ),
+                on_error=lambda msg, code: self.gui.display_error(f"{code}: {msg}"),
+            )
+
+            # Display assistant header
+            self.gui.display_agent_response(
+                f"\n\n{GUIManager.MESSAGE_ROLES['assistant']}\t"
+            )
+
+            # Stream through Agentix
+            for chunk in self.agentix_adapter.process_prompt_generator(
+                prompt, shared_context, classification
+            ):
+                if not self._is_streaming.is_set():
+                    break
+                
+                handler.process_chunk(chunk)
+                
+                # Accumulate content for message
+                if chunk.type.value == "content":
+                    agent_response_message.content += chunk.content
+                
+                self.refresh_user_gui()
+
+            # Complete the response
+            self.gui.display_spacing()
+            if agent_response_message.content:
+                self.add_message_to_context(agent_response_message)
+            self.refresh_user_gui()
+
+        except Exception as e:
+            import traceback
+            self.gui.display_error(f"Error: {e}")
+            print(f"Request error: {e}")
+            traceback.print_exc()
+        finally:
+            self._is_streaming.clear()
+            self.gui.set_streaming_state(False)
+    
+    def _display_thinking(self, text: str):
+        """Helper to display thinking text with header on first call."""
+        if not hasattr(self, '_thinking_header_shown'):
+            self.gui.display_agent_thinking(
+                f"\n{GUIManager.MESSAGE_ROLES['thinking']}\t(The agent is thinking...)\n"
+            )
+            self._thinking_header_shown = True
+        self.gui.display_agent_thinking(text)
+    
+    def _stream_direct_ollama(self):
+        """Stream response directly from Ollama (original implementation)."""
         config = self.config
 
         self._is_streaming.set()
