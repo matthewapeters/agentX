@@ -12,6 +12,7 @@ from .gui_config import GUIConfig
 from .history import History
 from .igui_manager import IGUIManager
 from .widget_registry import WidgetRegistry
+from .integration import ModelSelector, ToolPanel
 
 
 class GUIManager(IGUIManager):
@@ -64,6 +65,10 @@ class GUIManager(IGUIManager):
         self._on_submit = on_submit
         self._on_interrupt = on_interrupt
         self._on_attachment_toggle = on_attachment_toggle
+
+        # Widget components (initialized in create_layout)
+        self.model_selector: Optional[ModelSelector] = None
+        self.tool_panel: Optional[ToolPanel] = None
 
         # Cache for text font
         self._text_font: Optional[tuple] = None
@@ -780,6 +785,17 @@ class GUIManager(IGUIManager):
             self.widgets.paned, bg=self.config.status_bg
         )
 
+        # Create a frame for model selector at the top
+        model_frame = tk.Frame(self.widgets.system_status, bg=self.config.status_bg)
+        model_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Add model selector
+        self.model_selector = ModelSelector(
+            parent=model_frame,
+            on_model_change=self._on_model_change,
+        )
+        self.model_selector.get_widget().pack(side=tk.LEFT)
+
         # Create a notebook (tabbed interface) for system status
         self.widgets.system_notebook = ttk.Notebook(self.widgets.system_status)
         self.widgets.system_notebook.pack(expand=True, fill=tk.BOTH, padx=0, pady=0)
@@ -789,6 +805,13 @@ class GUIManager(IGUIManager):
             self.widgets.system_notebook, bg=self.config.status_bg
         )
         self.widgets.system_notebook.add(self.widgets.session_tab, text="Session")
+        
+        # Add tool panel to session tab
+        self.tool_panel = ToolPanel(
+            parent=self.widgets.session_tab,
+            on_tool_toggle=self._on_tool_toggle
+        )
+        self.tool_panel.get_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Create Files tab
         self.widgets.files_tab = tk.Frame(
@@ -931,6 +954,34 @@ class GUIManager(IGUIManager):
             bg=bg,
         )
         checkbox.pack(side=tk.LEFT, padx=5, pady=2)
+    
+    # Callbacks for model selector and tool panel
+    
+    def _on_model_change(self, model: str) -> None:
+        """Handle model selection change."""
+        # This is a placeholder - the actual handler should be set by AgentXSession
+        pass
+    
+    def _on_tool_toggle(self, tool_name: str, enabled: bool) -> None:
+        """Handle tool toggle."""
+        # This is a placeholder - the actual handler should be set by AgentXSession
+        pass
+    
+    def populate_models(self, models: list[dict]) -> None:
+        """Populate model selector with available models."""
+        if self.model_selector:
+            self.model_selector.populate(models)
+    
+    def populate_tools(self, tools: list[dict]) -> None:
+        """Populate tool panel with available tools."""
+        if self.tool_panel:
+            self.tool_panel.populate(tools)
+    
+    def get_enabled_tools(self) -> list[str]:
+        """Get list of currently enabled tools."""
+        if self.tool_panel:
+            return self.tool_panel.get_enabled_tools()
+        return []
 
         return att_frame
 

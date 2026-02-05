@@ -69,6 +69,9 @@ class AgentXSession:
         
         # Initialize Agentix bridge if enabled
         self.agentix_adapter = create_adapter(config)
+        
+        # Setup model selector and tool panel if Agentix is available
+        self._setup_agentix_ui()
 
     @property
     def history(self) -> "History":
@@ -126,6 +129,40 @@ class AgentXSession:
 
         # Refresh display
         self.refresh_user_gui()
+
+    def _setup_agentix_ui(self) -> None:
+        """Setup model selector and tool panel from Agentix."""
+        if not self.agentix_adapter or not self.agentix_adapter.enabled:
+            return
+        
+        # Override GUI callbacks to update config
+        original_model_change = self.gui._on_model_change
+        def on_model_change(model: str):
+            self.config["agentx"]["ollama_model"] = model
+            original_model_change(model)
+        self.gui._on_model_change = on_model_change
+        
+        original_tool_toggle = self.gui._on_tool_toggle
+        def on_tool_toggle(tool_name: str, enabled: bool):
+            enabled_tools = self.gui.get_enabled_tools()
+            self.config["agentix"]["available_tools"] = enabled_tools
+            original_tool_toggle(tool_name, enabled)
+        self.gui._on_tool_toggle = on_tool_toggle
+        
+        # Populate with models and tools
+        try:
+            models = self.agentix_adapter.get_models()
+            if models:
+                self.gui.populate_models(models)
+        except Exception as e:
+            print(f"Error loading models: {e}")
+        
+        try:
+            tools = self.agentix_adapter.get_tools()
+            if tools:
+                self.gui.populate_tools(tools)
+        except Exception as e:
+            print(f"Error loading tools: {e}")
 
     def on_history_attachment_toggle(self, attachment, enabled: bool):
         """
