@@ -19,6 +19,20 @@ from .code_analysis import (
     execute_find_imports,
     execute_suggest_refactoring,
 )
+from .streaming_executor import (
+    StreamingExecutor,
+    ProgressUpdate,
+    ProgressType,
+    ProgressTracker,
+    StreamingToolChain,
+    create_progress_stream,
+)
+from .progress_widgets import (
+    ProgressIndicator,
+    ProgressPanel,
+    ResultStreamWidget,
+    StreamingExecutionUI,
+)
 
 __all__ = [
     "AgentixBridgeAdapter",
@@ -35,4 +49,14 @@ __all__ = [
     "execute_find_classes",
     "execute_find_imports",
     "execute_suggest_refactoring",
+    "StreamingExecutor",
+    "ProgressUpdate",
+    "ProgressType",
+    "ProgressTracker",
+    "StreamingToolChain",
+    "create_progress_stream",
+    "ProgressIndicator",
+    "ProgressPanel",
+    "ResultStreamWidget",
+    "StreamingExecutionUI",
 ]
