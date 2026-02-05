@@ -10,6 +10,15 @@ from .response_handler import ResponseHandler
 from .model_selector import ModelSelector
 from .tool_panel import ToolPanel
 from .client_tool_executor import ClientToolExecutor
+from .server_tool_executor import ServerToolExecutor, AdvancedToolRegistry, CodeAnalysisTool
+from .code_analysis import (
+    CodeAnalyzer,
+    execute_analyze_syntax,
+    execute_find_functions,
+    execute_find_classes,
+    execute_find_imports,
+    execute_suggest_refactoring,
+)
 
 __all__ = [
     "AgentixBridgeAdapter",
@@ -17,4 +26,13 @@ __all__ = [
     "ModelSelector",
     "ToolPanel",
     "ClientToolExecutor",
+    "ServerToolExecutor",
+    "AdvancedToolRegistry",
+    "CodeAnalysisTool",
+    "CodeAnalyzer",
+    "execute_analyze_syntax",
+    "execute_find_functions",
+    "execute_find_classes",
+    "execute_find_imports",
+    "execute_suggest_refactoring",
 ]

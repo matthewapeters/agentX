@@ -18,7 +18,13 @@ from .gui_config import GUIConfig
 from .gui_manager import GUIManager
 from .history import History
 from .message import Message
-from .integration import AgentixBridgeAdapter, ResponseHandler
+from .integration import (
+    AgentixBridgeAdapter, 
+    ResponseHandler,
+    ClientToolExecutor,
+    ServerToolExecutor,
+    AdvancedToolRegistry,
+)
 from .integration.agentix_bridge_adapter import create_adapter
 
 
@@ -69,6 +75,11 @@ class AgentXSession:
         
         # Initialize Agentix bridge if enabled
         self.agentix_adapter = create_adapter(config)
+        
+        # Initialize tool executors
+        self.client_tool_executor = ClientToolExecutor(base_path=os.getcwd())
+        self.server_tool_executor = ServerToolExecutor(agentix_bridge=self.agentix_adapter.bridge if self.agentix_adapter else None)
+        self.advanced_tools = AdvancedToolRegistry(agentix_bridge=self.agentix_adapter.bridge if self.agentix_adapter else None)
         
         # Setup model selector and tool panel if Agentix is available
         self._setup_agentix_ui()
@@ -170,7 +181,8 @@ class AgentXSession:
         
         Routes to appropriate executor based on tool type and availability:
         - CLIENT tools: Execute via ClientToolExecutor
-        - SERVER tools: Execute via Agentix adapter
+        - SERVER tools: Execute via ServerToolExecutor
+        - CODE_ANALYSIS: Execute via ServerToolExecutor (Agentix)
         - EITHER: Try client first, fall back to server
         
         Args:
@@ -181,23 +193,31 @@ class AgentXSession:
             Tool execution result as string
         """
         try:
-            from shared.models.tools import ToolExecutionContext
-            from .integration import ClientToolExecutor
+            from .integration import CodeAnalysisTool
             
-            # Get tool definition to determine execution context
-            # For now, assume client-side tools are simple file/directory tools
-            client_tool_names = {"read_file", "list_directory", "write_file", "get_file_info", "search_files"}
+            # Client-side tool names
+            client_tool_names = {
+                "read_file", 
+                "list_directory", 
+                "write_file", 
+                "get_file_info", 
+                "search_files"
+            }
             
-            # Client-side tool execution
+            # Try client-side tools first
             if tool_name in client_tool_names:
-                executor = ClientToolExecutor(base_path=os.getcwd())
-                return executor.execute(tool_name, tool_input)
+                return self.client_tool_executor.execute(tool_name, tool_input)
             
-            # Server-side tool execution (via Agentix)
-            if self.agentix_adapter and self.agentix_adapter.enabled:
-                # TODO: Implement server-side tool execution through Agentix
-                # For now, return a placeholder
-                return f"Server-side tool '{tool_name}' not yet fully implemented. Args: {tool_input}"
+            # Check if it's a code analysis tool
+            if CodeAnalysisTool.is_code_analysis_tool(tool_name):
+                if self.server_tool_executor.is_available():
+                    return self.server_tool_executor.execute(tool_name, tool_input)
+                else:
+                    return f"Code analysis tool '{tool_name}' not available - Agentix not connected"
+            
+            # Try server-side tools
+            if self.server_tool_executor.is_available():
+                return self.server_tool_executor.execute(tool_name, tool_input)
             
             # Unknown tool
             return f"Unknown tool: {tool_name}"
