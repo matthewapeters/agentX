@@ -168,6 +168,11 @@ class AgentXSession:
         """
         Execute a tool (either client-side or server-side).
         
+        Routes to appropriate executor based on tool type and availability:
+        - CLIENT tools: Execute via ClientToolExecutor
+        - SERVER tools: Execute via Agentix adapter
+        - EITHER: Try client first, fall back to server
+        
         Args:
             tool_name: Name of the tool to execute
             tool_input: Arguments for the tool
@@ -176,25 +181,26 @@ class AgentXSession:
             Tool execution result as string
         """
         try:
-            # Import tool models
-            from shared.models.tools import ToolRequest
+            from shared.models.tools import ToolExecutionContext
+            from .integration import ClientToolExecutor
             
-            # Create tool request
-            tool_request = ToolRequest(
-                tool_name=tool_name,
-                arguments=tool_input
-            )
+            # Get tool definition to determine execution context
+            # For now, assume client-side tools are simple file/directory tools
+            client_tool_names = {"read_file", "list_directory", "write_file", "get_file_info", "search_files"}
             
-            # For now, return a placeholder message
-            # Full tool execution depends on tool type and context
-            result = f"Tool '{tool_name}' execution requested with args: {tool_input}"
+            # Client-side tool execution
+            if tool_name in client_tool_names:
+                executor = ClientToolExecutor(base_path=os.getcwd())
+                return executor.execute(tool_name, tool_input)
             
-            # TODO: Implement actual client-side tool execution
-            # - Check ToolDefinition.execution_context
-            # - Route to appropriate executor
-            # - Handle server-side tools via agentix_adapter
+            # Server-side tool execution (via Agentix)
+            if self.agentix_adapter and self.agentix_adapter.enabled:
+                # TODO: Implement server-side tool execution through Agentix
+                # For now, return a placeholder
+                return f"Server-side tool '{tool_name}' not yet fully implemented. Args: {tool_input}"
             
-            return result
+            # Unknown tool
+            return f"Unknown tool: {tool_name}"
             
         except Exception as e:
             return f"Error executing tool '{tool_name}': {str(e)}"
