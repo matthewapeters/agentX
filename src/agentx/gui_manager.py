@@ -68,7 +68,13 @@ class GUIManager(IGUIManager):
 
         # Widget components (initialized in create_layout)
         self.model_selector: Optional[ModelSelector] = None
-        self.tool_panel: Optional[ToolPanel] = None
+        
+        # Tool panel state (inlined implementation)
+        self._tool_panel_frame: Optional[tk.Frame] = None
+        self._tool_panel_tools_container: Optional[tk.Frame] = None
+        self._tool_panel_vars: dict = {}
+        self._tool_panel_expanded: bool = True
+        self._tool_panel_tools: Optional[list] = None
 
         # Cache for text font
         self._text_font: Optional[tuple] = None
@@ -403,13 +409,6 @@ class GUIManager(IGUIManager):
         self._setup_window_geometry()
 
         # Create main panels
-        # Ensure files_tab is created before any possible usage
-        if not hasattr(self.widgets, 'system_notebook') or self.widgets.system_notebook is None:
-            self.widgets.system_notebook = ttk.Notebook(self.root)
-        if not hasattr(self.widgets, 'files_tab') or self.widgets.files_tab is None:
-            self.widgets.files_tab = tk.Frame(self.widgets.system_notebook, bg=self.config.status_bg)
-            self.widgets.system_notebook.add(self.widgets.files_tab, text="Files")
-
         self._create_output_panel()
         self._create_status_panel()
         self._create_input_panel()
@@ -820,6 +819,36 @@ class GUIManager(IGUIManager):
         self._tool_panel_vars = {}
         self._tool_panel_expanded = True
         self._create_tool_panel(self.widgets.session_tab)
+
+        # Create Files tab
+        self.widgets.files_tab = tk.Frame(
+            self.widgets.system_notebook, bg=self.config.status_bg
+        )
+        self.widgets.system_notebook.add(self.widgets.files_tab, text="Files")
+
+        # Bind tab change event to force widget updates
+        def on_tab_changed(event):
+            self.root.update_idletasks()
+            selected_tab = self.widgets.system_notebook.select()
+            if selected_tab:
+                self.widgets.system_notebook.nametowidget(
+                    selected_tab
+                ).update_idletasks()
+
+        self.widgets.system_notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
+
+        self.widgets.paned.add(self.widgets.system_status, stretch="always")
+
+        # Set the sash position to create a 2:1 split after widgets are rendered
+        def set_initial_split():
+            self.root.update_idletasks()
+            paned_width = self.widgets.paned.winfo_width()
+            if paned_width > 1:
+                sash_position = int(paned_width * self.config.output_panel_ratio)
+                self.widgets.paned.sash_place(0, sash_position, 1)
+
+        self.root.after(100, set_initial_split)
+
     def _create_tool_panel(self, parent):
         """Create the tool panel UI in the given parent."""
         if self._tool_panel_frame:
@@ -899,35 +928,6 @@ class GUIManager(IGUIManager):
         if hasattr(self, '_tool_panel_vars'):
             return [name for name, var in self._tool_panel_vars.items() if var.get()]
         return []
-
-        # Create Files tab
-        self.widgets.files_tab = tk.Frame(
-            self.widgets.system_notebook, bg=self.config.status_bg
-        )
-        self.widgets.system_notebook.add(self.widgets.files_tab, text="Files")
-
-        # Bind tab change event to force widget updates
-        def on_tab_changed(event):
-            self.root.update_idletasks()
-            selected_tab = self.widgets.system_notebook.select()
-            if selected_tab:
-                self.widgets.system_notebook.nametowidget(
-                    selected_tab
-                ).update_idletasks()
-
-        self.widgets.system_notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
-
-        self.widgets.paned.add(self.widgets.system_status, stretch="always")
-
-        # Set the sash position to create a 2:1 split after widgets are rendered
-        def set_initial_split():
-            self.root.update_idletasks()
-            paned_width = self.widgets.paned.winfo_width()
-            if paned_width > 1:
-                sash_position = int(paned_width * self.config.output_panel_ratio)
-                self.widgets.paned.sash_place(0, sash_position, 1)
-
-        self.root.after(100, set_initial_split)
 
     def _create_input_panel(self) -> None:
         """Create user input area."""
@@ -1041,6 +1041,8 @@ class GUIManager(IGUIManager):
             bg=bg,
         )
         checkbox.pack(side=tk.LEFT, padx=5, pady=2)
+        
+        return att_frame
     
     # Callbacks for model selector and tool panel
     
@@ -1059,19 +1061,6 @@ class GUIManager(IGUIManager):
         if self.model_selector:
             self.model_selector.populate(models)
     
-    def populate_tools(self, tools: list[dict]) -> None:
-        """Populate tool panel with available tools."""
-        if self.tool_panel:
-            self.tool_panel.populate(tools)
-    
-    def get_enabled_tools(self) -> list[str]:
-        """Get list of currently enabled tools."""
-        if self.tool_panel:
-            return self.tool_panel.get_enabled_tools()
-        return []
-
-        return att_frame
-
     def _on_submit_clicked(self) -> None:
         """Internal handler for submit button/keyboard."""
         if self._on_submit:
