@@ -32,8 +32,11 @@ def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
         print("Payload:", file=sys.stderr)
         print(json.dumps(payload, indent=2), file=sys.stderr)
 
+    # Use configured host or fallback to constant
+    ollama_base = f"http://{args.ollama_host}" if hasattr(args, 'ollama_host') and args.ollama_host else OLLAMA_API_BASE
+    
     response = requests.post(
-        f"{OLLAMA_API_BASE}{OLLAMA_CHAT_ENDPOINT}",
+        f"{ollama_base}{OLLAMA_CHAT_ENDPOINT}",
         headers=headers,
         data=json.dumps(payload),
         timeout=300,
@@ -125,9 +128,12 @@ def query_api_streaming(
         print("Streaming payload:", file=sys.stderr)
         print(json.dumps(payload_dict, indent=2), file=sys.stderr)
     
+    # Use configured host or fallback to constant
+    ollama_base = f"http://{args.ollama_host}" if hasattr(args, 'ollama_host') and args.ollama_host else OLLAMA_API_BASE
+    
     try:
         response = requests.post(
-            f"{OLLAMA_API_BASE}{OLLAMA_CHAT_ENDPOINT}",
+            f"{ollama_base}{OLLAMA_CHAT_ENDPOINT}",
             headers=headers,
             json=payload_dict,
             timeout=300,

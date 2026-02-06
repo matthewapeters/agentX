@@ -10,7 +10,10 @@ from .constants import OLLAMA_API_BASE, OLLAMA_MODELS_ENDPOINT
 
 def get_models(args):
     """Fetch available models from Ollama API."""
-    result = requests.get(f"{OLLAMA_API_BASE}{OLLAMA_MODELS_ENDPOINT}")
+    # Use configured host or fallback to constant
+    ollama_base = f"http://{args.ollama_host}" if hasattr(args, 'ollama_host') and args.ollama_host else OLLAMA_API_BASE
+    
+    result = requests.get(f"{ollama_base}{OLLAMA_MODELS_ENDPOINT}")
     models_json = result.json()
 
     if args.debug:

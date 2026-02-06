@@ -84,9 +84,6 @@ class AgentXSession:
         self.client_tool_executor = ClientToolExecutor(base_path=os.getcwd())
         self.server_tool_executor = ServerToolExecutor(agentix_bridge=self.agentix_adapter.bridge if self.agentix_adapter else None)
         self.advanced_tools = AdvancedToolRegistry(agentix_bridge=self.agentix_adapter.bridge if self.agentix_adapter else None)
-        
-        # Setup model selector and tool panel if Agentix is available
-        self._setup_agentix_ui()
 
     @property
     def history(self) -> "History":
@@ -169,6 +166,20 @@ class AgentXSession:
             models = self.agentix_adapter.get_models()
             if models:
                 self.gui.populate_models(models)
+            else:
+                # Fallback: fetch models directly from Ollama if Agentix fails
+                print("Agentix model fetch returned empty, falling back to direct Ollama fetch...")
+                try:
+                    ollama_host = self.config["agentx"]["ollama_host"]
+                    with httpx.Client(timeout=10) as client:
+                        response = client.get(f"http://{ollama_host}/api/tags")
+                        if response.status_code == 200:
+                            models_data = response.json()
+                            models = models_data.get("models", [])
+                            if models:
+                                self.gui.populate_models(models)
+                except Exception as e:
+                    print(f"Fallback model fetch also failed: {e}")
         except Exception as e:
             print(f"Error loading models: {e}")
         
@@ -382,6 +393,10 @@ class AgentXSession:
         # Initialize dynamic content in panels
         self.refresh_context_gui()
         self.refresh_files_gui()
+        
+        # Setup model selector and tool panel if Agentix is available
+        # (Must be after layout is created so the widgets exist)
+        self._setup_agentix_ui()
 
     def stream_ollama_response_worker(self):
         """
@@ -692,6 +707,7 @@ class AgentXSession:
         1. Ensure Ollama service is running
         2. Ensure Agentix service is running (if enabled)
         3. Verify Ollama model is loaded and responsive
+        4. Display available models and services
         """
         config = self.config
         ollama_host = config["agentx"]["ollama_host"]
@@ -702,15 +718,24 @@ class AgentXSession:
 
         # Determine which services to ensure are running
         services_to_start = ["ollama"]
-        if config.get("agentix", {}).get("enabled", False):
+        agentix_enabled = config.get("agentix", {}).get("enabled", False)
+        if agentix_enabled:
             services_to_start.append("agentix")
 
         # Start services
         print(f"Ensuring services are running: {', '.join(services_to_start)}")
-        if not self.service_manager.ensure_services(services_to_start, timeout=30):
-            print("Warning: Not all services started successfully, attempting to continue...")
+        all_services_started = self.service_manager.ensure_services(services_to_start, timeout=30)
+        
+        if not all_services_started:
+            if agentix_enabled:
+                print("⚠ Warning: Agentix service did not start successfully")
+                print("  - Check that Agentix dependencies are installed (e.g., libcst)")
+                print("  - Code analysis tools will be unavailable")
+                print("  - Continuing with Ollama only...")
+            else:
+                print("Warning: Not all services started successfully, attempting to continue...")
 
-        # Perform Ollama model handshake
+        # Perform Ollama model handshake and list available models
         url = f"http://{ollama_host}/api/chat"
         headers = {"Content-Type": "application/json"}
         payload = {
@@ -725,6 +750,39 @@ class AgentXSession:
                 response = client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
                 print("✓ Service handshake and model invocation successful.")
+                
+                # List available models
+                try:
+                    models_response = client.get(f"http://{ollama_host}/api/tags")
+                    if models_response.status_code == 200:
+                        import json
+                        models_data = models_response.json()
+                        models = models_data.get("models", [])
+                        if models:
+                            print(f"\n✓ Available Ollama models ({len(models)}):")
+                            for model in models:
+                                model_name = model.get("name", "unknown")
+                                # Show simplified name without tag
+                                display_name = model_name.split(":")[0] if ":" in model_name else model_name
+                                print(f"  • {display_name}")
+                        else:
+                            print("\n⚠ No models available in Ollama")
+                except Exception as e:
+                    print(f"\n⚠ Could not fetch model list: {e}")
+                
+                # Show service status
+                print()
+                print("Service Status:")
+                print(f"  ✓ Ollama: Ready")
+                if agentix_enabled:
+                    if all_services_started:
+                        print(f"  ✓ Agentix: Ready (code analysis available)")
+                    else:
+                        print(f"  ✗ Agentix: Failed (code analysis unavailable)")
+                else:
+                    print(f"  • Agentix: Disabled (optional)")
+                print()
+                
         except httpx.RequestError as e:
             raise RuntimeError(
                 f"Failed to perform service handshake and model invocation: {e}"

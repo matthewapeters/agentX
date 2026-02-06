@@ -39,6 +39,7 @@ class AgentixConfig:
     port: int = 8000
     with_frontend: bool = False
     tools: list[str] | None = None
+    ollama_host: str = "localhost:11434"
 
     @property
     def action(self) -> str:
@@ -176,11 +177,11 @@ class AgentixConfig:
             model=args.model,
             temperature=args.temperature,
             user=args.user,
-            file_path=args.file,
+            file_path=args.file_path,
             replace_file=args.replace_file,
             serve=args.serve,
             port=args.port,
-            with_frontend=args.with_frontend,
+            with_frontend=args.with_front_end,
             tools=args.tools,
             debug=args.debug,
         )

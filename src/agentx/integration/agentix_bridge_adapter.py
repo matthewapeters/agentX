@@ -164,7 +164,7 @@ class AgentixBridgeAdapter:
         
         Maps between the two configuration formats:
         - agentx.ollama_model -> model
-        - agentx.ollama_host -> (not used by bridge, uses default)
+        - agentx.ollama_host -> ollama_host
         - agentix.classify_prompts -> classify_prompts
         - etc.
         
@@ -183,6 +183,7 @@ class AgentixBridgeAdapter:
             tools=agentix_section.get("available_tools", ["cst", "ast"]),
             system=agentix_section.get("default_system_prompts", []),
             debug=agentix_section.get("debug", False),
+            ollama_host=agentx_section.get("ollama_host", "localhost:11434"),
         )
 
 
@@ -190,12 +191,24 @@ def create_adapter(config: dict) -> Optional[AgentixBridgeAdapter]:
     """
     Convenience function to create an adapter if Agentix is enabled.
     
+    Gracefully handles missing Agentix or its dependencies.
+    
     Args:
         config: AgentX configuration dictionary
         
     Returns:
-        AgentixBridgeAdapter if enabled, None otherwise
+        AgentixBridgeAdapter if enabled and available, None otherwise
     """
     if config.get("agentix", {}).get("enabled", False):
-        return AgentixBridgeAdapter(config)
+        try:
+            return AgentixBridgeAdapter(config)
+        except ImportError as e:
+            print(f"⚠ Agentix import error (missing dependency): {e}")
+            print("  Install missing dependencies to enable code analysis tools")
+            print(f"  Command: pip install libcst")
+            return None
+        except Exception as e:
+            print(f"⚠ Failed to initialize Agentix bridge: {e}")
+            print("  Code analysis tools will be unavailable")
+            return None
     return None

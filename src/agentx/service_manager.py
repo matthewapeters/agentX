@@ -178,9 +178,38 @@ class ServiceManager:
             if self.check_health(service_name):
                 print(f"✓ {service.name} started successfully")
                 return True
+            
+            # Check if process has already crashed
+            poll_result = process.poll()
+            if poll_result is not None:
+                # Process exited prematurely
+                try:
+                    _, stderr = process.communicate(timeout=1)
+                    if stderr:
+                        error_msg = stderr.decode('utf-8', errors='replace').strip()
+                        if error_msg:
+                            print(f"  Error details: {error_msg[:200]}")
+                except Exception:
+                    pass
+                print(f"✗ {service.name} process exited prematurely (exit code: {poll_result})")
+                return False
+            
             time.sleep(0.5)
         
-        print(f"✗ {service.name} did not start within {timeout} seconds")
+        # Check if process is still running but unhealthy
+        if process.poll() is None:
+            print(f"✗ {service.name} did not start within {timeout} seconds (process running but unhealthy)")
+        else:
+            try:
+                _, stderr = process.communicate(timeout=1)
+                if stderr:
+                    error_msg = stderr.decode('utf-8', errors='replace').strip()
+                    if error_msg:
+                        print(f"  Error output: {error_msg[:200]}")
+            except Exception:
+                pass
+            print(f"✗ {service.name} did not start (process crashed)")
+        
         return False
     
     def ensure_services(self, services: list[str], timeout: int = 30) -> bool:
