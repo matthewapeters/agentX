@@ -129,7 +129,6 @@ class AgentixBridgeAdapter:
             yield ResponseChunk(
                 type=ChunkType.ERROR,
                 content=f"Error processing prompt: {str(e)}",
-                error_code="BRIDGE_ERROR",
             )
     
     def get_models(self) -> list[dict]:

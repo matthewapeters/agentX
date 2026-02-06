@@ -8,8 +8,14 @@ import requests
 from .constants import OLLAMA_API_BASE, OLLAMA_MODELS_ENDPOINT
 
 
-def get_models(args):
-    """Fetch available models from Ollama API."""
+def get_models(args, filter_by_model=True):
+    """
+    Fetch available models from Ollama API.
+    
+    Args:
+        args: AgentixConfig with model and ollama_host settings
+        filter_by_model: If True, filter to models matching args.model; if False, return all models
+    """
     # Use configured host or fallback to constant
     ollama_base = f"http://{args.ollama_host}" if hasattr(args, 'ollama_host') and args.ollama_host else OLLAMA_API_BASE
     
@@ -19,15 +25,24 @@ def get_models(args):
     if args.debug:
         print("Available models:", file=sys.stderr)
         print(json.dumps(models_json, indent=2), file=sys.stderr)
-        print(f"Filtering models with prefix: {args.model}", file=sys.stderr)
+        if filter_by_model:
+            print(f"Filtering models with prefix: {args.model}", file=sys.stderr)
 
-    models = [
-        m
-        for m in models_json["models"]
-        # filter based on model_name if provided
-        if (args.model and m["name"].startswith(args.model)) or (not args.model)
-    ]
-    # return the first matching model or default to the first model
+    # Only filter if requested and model is configured
+    if filter_by_model and args.model:
+        models = [
+            m
+            for m in models_json["models"]
+            # filter based on model_name if provided
+            if m["name"].startswith(args.model)
+        ]
+        # return the first matching model or default to the first model
+        if models and len(models) == 1:
+            return models
+        return models
+    else:
+        # Return all models
+        return models_json["models"]
     if models and len(models) == 1:
         return models
     return models_json["models"]

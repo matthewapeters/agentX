@@ -143,7 +143,29 @@ class AgentXSession:
         self.refresh_user_gui()
 
     def _setup_agentix_ui(self) -> None:
-        """Setup model selector and tool panel from Agentix."""
+        """Setup model selector and tool panel from Agentix or Ollama."""
+        # Always try to populate models (from Agentix if enabled, otherwise from Ollama)
+        try:
+            if self.agentix_adapter and self.agentix_adapter.enabled:
+                # Get models from Agentix
+                models = self.agentix_adapter.get_models()
+            else:
+                # Get models directly from Ollama
+                ollama_host = self.config["agentx"]["ollama_host"]
+                with httpx.Client(timeout=10) as client:
+                    response = client.get(f"http://{ollama_host}/api/tags")
+                    if response.status_code == 200:
+                        models_data = response.json()
+                        models = models_data.get("models", [])
+                    else:
+                        models = []
+            
+            if models:
+                self.gui.populate_models(models)
+        except Exception as e:
+            print(f"Error loading models: {e}")
+        
+        # Only setup tool callbacks if Agentix is enabled
         if not self.agentix_adapter or not self.agentix_adapter.enabled:
             return
         
@@ -161,28 +183,7 @@ class AgentXSession:
             original_tool_toggle(tool_name, enabled)
         self.gui._on_tool_toggle = on_tool_toggle
         
-        # Populate with models and tools
-        try:
-            models = self.agentix_adapter.get_models()
-            if models:
-                self.gui.populate_models(models)
-            else:
-                # Fallback: fetch models directly from Ollama if Agentix fails
-                print("Agentix model fetch returned empty, falling back to direct Ollama fetch...")
-                try:
-                    ollama_host = self.config["agentx"]["ollama_host"]
-                    with httpx.Client(timeout=10) as client:
-                        response = client.get(f"http://{ollama_host}/api/tags")
-                        if response.status_code == 200:
-                            models_data = response.json()
-                            models = models_data.get("models", [])
-                            if models:
-                                self.gui.populate_models(models)
-                except Exception as e:
-                    print(f"Fallback model fetch also failed: {e}")
-        except Exception as e:
-            print(f"Error loading models: {e}")
-        
+        # Populate tools from Agentix
         try:
             tools = self.agentix_adapter.get_tools()
             if tools:

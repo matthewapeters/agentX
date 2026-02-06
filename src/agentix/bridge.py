@@ -181,7 +181,8 @@ class AgentixBridge:
             List of model dictionaries with name, size, details
         """
         if self._model_cache is None:
-            self._model_cache = get_models(self.config)
+            # Don't filter - we want all models for the UI dropdown
+            self._model_cache = get_models(self.config, filter_by_model=False)
         return self._model_cache
     
     def get_available_tools(self) -> list[dict]:
