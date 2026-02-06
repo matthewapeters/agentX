@@ -19,7 +19,13 @@ def main():
         session.perform_service_handshake()
     except RuntimeError as e:
         print(e)
+        # Cleanup services even on error
+        session.service_manager.shutdown()
         return
 
-    session.layout()
-    session.root.mainloop()
+    try:
+        session.layout()
+        session.root.mainloop()
+    finally:
+        # Cleanup services on exit
+        session.service_manager.shutdown()

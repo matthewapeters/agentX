@@ -18,6 +18,7 @@ from .gui_config import GUIConfig
 from .gui_manager import GUIManager
 from .history import History
 from .message import Message
+from .service_manager import ServiceManager
 from .integration import (
     AgentixBridgeAdapter, 
     ResponseHandler,
@@ -59,6 +60,9 @@ class AgentXSession:
         self.enabled_history_attachments = []  # Track enabled attachments from history
         self._is_streaming = threading.Event()
         self._streaming_thread = None
+        
+        # Initialize service manager for external services
+        self.service_manager = ServiceManager(config)
 
         # Initialize GUIManager
         gui_config = GUIConfig.from_dict(config)
@@ -682,7 +686,12 @@ class AgentXSession:
 
     def perform_service_handshake(self):
         """
-        Performs a handshake with the Ollama server and ensures the model is loaded.
+        Performs service startup and handshake with required services.
+        
+        Steps:
+        1. Ensure Ollama service is running
+        2. Ensure Agentix service is running (if enabled)
+        3. Verify Ollama model is loaded and responsive
         """
         config = self.config
         ollama_host = config["agentx"]["ollama_host"]
@@ -691,6 +700,17 @@ class AgentXSession:
             "ollama_initial_load_timeout_seconds", 120
         )
 
+        # Determine which services to ensure are running
+        services_to_start = ["ollama"]
+        if config.get("agentix", {}).get("enabled", False):
+            services_to_start.append("agentix")
+
+        # Start services
+        print(f"Ensuring services are running: {', '.join(services_to_start)}")
+        if not self.service_manager.ensure_services(services_to_start, timeout=30):
+            print("Warning: Not all services started successfully, attempting to continue...")
+
+        # Perform Ollama model handshake
         url = f"http://{ollama_host}/api/chat"
         headers = {"Content-Type": "application/json"}
         payload = {
@@ -698,11 +718,13 @@ class AgentXSession:
             "prompt": "",
         }  # Empty prompt to trigger model load
 
+        print(f"Connecting to Ollama at {url}")
+
         try:
             with httpx.Client(timeout=timeout_seconds) as client:
                 response = client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
-                print("Service handshake and model invocation successful.")
+                print("✓ Service handshake and model invocation successful.")
         except httpx.RequestError as e:
             raise RuntimeError(
                 f"Failed to perform service handshake and model invocation: {e}"

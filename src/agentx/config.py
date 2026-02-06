@@ -9,6 +9,7 @@ DEFAULT_CONFIG = "agentx.toml"
 def load_config(config_path=DEFAULT_CONFIG):
     with open(config_path, "r") as f:
         config = toml.loads(f.read())
+
     return config
 
 
