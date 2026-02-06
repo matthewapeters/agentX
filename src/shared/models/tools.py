@@ -327,6 +327,22 @@ class BaseTool(ABC):
 
 
 class ToolRegistry:
+    # --- Enabled tools state management ---
+    def get_enabled_tools(self) -> list[str]:
+        """Return a list of enabled tool names. Default: all tools enabled."""
+        # In a real app, this could be loaded from config/session
+        # For now, all registered tools are enabled by default
+        return list(self._tools.keys())
+
+    def set_enabled_tools(self, enabled_tools: list[str]) -> None:
+        """Set which tools are enabled (stub for config/session integration)."""
+        # In a real app, store this in config/session
+        # Here, just a placeholder (no-op)
+        pass
+
+    def is_tool_enabled(self, name: str) -> bool:
+        """Return True if the tool is enabled."""
+        return name in self.get_enabled_tools()
     """
     Registry for discovering and managing tools.
     

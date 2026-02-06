@@ -12,7 +12,7 @@ from .gui_config import GUIConfig
 from .history import History
 from .igui_manager import IGUIManager
 from .widget_registry import WidgetRegistry
-from .integration import ModelSelector, ToolPanel
+from .integration import ModelSelector
 
 
 class GUIManager(IGUIManager):
@@ -403,6 +403,13 @@ class GUIManager(IGUIManager):
         self._setup_window_geometry()
 
         # Create main panels
+        # Ensure files_tab is created before any possible usage
+        if not hasattr(self.widgets, 'system_notebook') or self.widgets.system_notebook is None:
+            self.widgets.system_notebook = ttk.Notebook(self.root)
+        if not hasattr(self.widgets, 'files_tab') or self.widgets.files_tab is None:
+            self.widgets.files_tab = tk.Frame(self.widgets.system_notebook, bg=self.config.status_bg)
+            self.widgets.system_notebook.add(self.widgets.files_tab, text="Files")
+
         self._create_output_panel()
         self._create_status_panel()
         self._create_input_panel()
@@ -808,12 +815,90 @@ class GUIManager(IGUIManager):
         )
         self.widgets.system_notebook.add(self.widgets.session_tab, text="Session")
         
-        # Add tool panel to session tab
-        self.tool_panel = ToolPanel(
-            parent=self.widgets.session_tab,
-            on_tool_toggle=self._on_tool_toggle
+        # Add tool panel to session tab (rendered directly here)
+        self._tool_panel_frame = None
+        self._tool_panel_vars = {}
+        self._tool_panel_expanded = True
+        self._create_tool_panel(self.widgets.session_tab)
+    def _create_tool_panel(self, parent):
+        """Create the tool panel UI in the given parent."""
+        if self._tool_panel_frame:
+            self._tool_panel_frame.destroy()
+        self._tool_panel_frame = tk.Frame(parent)
+        self._tool_panel_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # Header with expand/collapse
+        header = tk.Frame(self._tool_panel_frame)
+        header.pack(fill=tk.X, padx=5, pady=(5, 0))
+        btn = tk.Button(
+            header,
+            text="▼" if self._tool_panel_expanded else "▶",
+            width=2,
+            font=("Terminal", 10),
+            command=self._toggle_tool_panel_expand
         )
-        self.tool_panel.get_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        btn.pack(side=tk.LEFT)
+        label = tk.Label(
+            header,
+            text="Available Tools",
+            font=("Terminal", 10, "bold")
+        )
+        label.pack(side=tk.LEFT, padx=(5, 0))
+
+        # Collapsible container
+        self._tool_panel_tools_container = tk.Frame(self._tool_panel_frame)
+        if self._tool_panel_expanded:
+            self._tool_panel_tools_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # If no tools, show empty
+        if not hasattr(self, '_tool_panel_tools') or not self._tool_panel_tools:
+            empty = tk.Label(
+                self._tool_panel_tools_container,
+                text="No tools available",
+                foreground="gray",
+                font=("", 9, "italic")
+            )
+            empty.grid(row=0, column=0, sticky="w", pady=10)
+            return
+
+        # Render tool checkboxes
+        self._tool_panel_vars = {}
+        for idx, tool in enumerate(self._tool_panel_tools):
+            name = tool.get("name", "Unknown")
+            description = tool.get("description", "")
+            var = tk.BooleanVar(value=True)
+            self._tool_panel_vars[name] = var
+            cb = tk.Checkbutton(
+                self._tool_panel_tools_container,
+                text=name,
+                variable=var,
+                command=lambda n=name, v=var: self._on_tool_toggle(n, v.get())
+            )
+            cb.grid(row=idx, column=0, sticky="w", pady=2, padx=(0, 5))
+            if description:
+                desc_text = f"- {description[:50]}..." if len(description) > 50 else f"- {description}"
+                desc = tk.Label(
+                    self._tool_panel_tools_container,
+                    text=desc_text,
+                    foreground="gray",
+                    font=("", 9)
+                )
+                desc.grid(row=idx, column=1, sticky="w")
+
+    def _toggle_tool_panel_expand(self):
+        self._tool_panel_expanded = not self._tool_panel_expanded
+        self._create_tool_panel(self.widgets.session_tab)
+
+    def populate_tools(self, tools: list[dict]) -> None:
+        """Populate tool panel with available tools."""
+        self._tool_panel_tools = tools
+        self._create_tool_panel(self.widgets.session_tab)
+
+    def get_enabled_tools(self) -> list[str]:
+        """Get list of currently enabled tools."""
+        if hasattr(self, '_tool_panel_vars'):
+            return [name for name, var in self._tool_panel_vars.items() if var.get()]
+        return []
 
         # Create Files tab
         self.widgets.files_tab = tk.Frame(
