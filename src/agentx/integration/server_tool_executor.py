@@ -34,7 +34,7 @@ class ServerToolExecutor:
     - Future: API integration tools, database tools, etc.
     """
     
-    def __init__(self, agentix_bridge=None):
+    def __init__(self, agentix_bridge):
         """
         Initialize server tool executor.
         
@@ -43,10 +43,6 @@ class ServerToolExecutor:
         """
         self.agentix_bridge = agentix_bridge
         self._tool_cache = None
-    
-    def is_available(self) -> bool:
-        """Check if server tools are available."""
-        return self.agentix_bridge is not None
     
     def get_available_tools(self) -> list[dict]:
         """
@@ -185,13 +181,6 @@ class ServerToolExecutor:
         Returns:
             Result dictionary with success, message, and result fields
         """
-        if not self.agentix_bridge:
-            return {
-                "success": False,
-                "message": "Agentix bridge not available",
-                "result": {}
-            }
-        
         try:
             # Call Agentix bridge to execute tool
             # The bridge handles streaming and response formatting
@@ -317,7 +306,7 @@ class AdvancedToolRegistry:
     Tracks which tools are available and their capabilities.
     """
     
-    def __init__(self, agentix_bridge=None):
+    def __init__(self, agentix_bridge):
         """Initialize registry."""
         self.agentix_bridge = agentix_bridge
         self._registry = {}
@@ -326,10 +315,6 @@ class AdvancedToolRegistry:
     def initialize(self):
         """Load tools from Agentix."""
         if self._initialized:
-            return
-        
-        if not self.agentix_bridge:
-            self._initialized = True
             return
         
         try:

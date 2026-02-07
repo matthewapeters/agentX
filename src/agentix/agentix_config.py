@@ -40,6 +40,7 @@ class AgentixConfig:
     with_frontend: bool = False
     tools: list[str] | None = None
     ollama_host: str = "localhost:11434"
+    classify_prompts: bool = True  # Enable prompt classification by default
 
     @property
     def action(self) -> str:

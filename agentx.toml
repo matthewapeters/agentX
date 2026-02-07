@@ -5,11 +5,9 @@ ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
 
 [agentix]
-# Enable Agentix integration for code analysis tools
-# Requires: libcst, agentix packages installed
-# If disabled, basic tool execution still works via Ollama
-enabled = true
+# Agentix integration for code analysis and advanced tools  
+# Requires: libcst package installed
 host = "localhost:8000"
-classify_prompts = false
-debug = false
+classify_prompts = false  # Enable to analyze intent and route workflows (transparent to user)
+debug = false  # Enable for verbose classification logging to stderr
 available_tools = ["cst", "ast"]

@@ -77,13 +77,13 @@ class AgentXSession:
         # Set window title with session info
         self.gui.set_window_title(f"{self.user} - AgentX Session - {self.start_time}")
         
-        # Initialize Agentix bridge if enabled
+        # Initialize Agentix bridge (always integrated)
         self.agentix_adapter = create_adapter(config)
         
         # Initialize tool executors
         self.client_tool_executor = ClientToolExecutor(base_path=os.getcwd())
-        self.server_tool_executor = ServerToolExecutor(agentix_bridge=self.agentix_adapter.bridge if self.agentix_adapter else None)
-        self.advanced_tools = AdvancedToolRegistry(agentix_bridge=self.agentix_adapter.bridge if self.agentix_adapter else None)
+        self.server_tool_executor = ServerToolExecutor(agentix_bridge=self.agentix_adapter.bridge)
+        self.advanced_tools = AdvancedToolRegistry(agentix_bridge=self.agentix_adapter.bridge)
         
         # Initialize active model from config
         self._active_model = config["agentx"]["ollama_model"]
@@ -115,10 +115,8 @@ class AgentXSession:
         self._active_model = model
         self.config["agentx"]["ollama_model"] = model
         
-        # If agentix adapter exists, update its config too
-        if self.agentix_adapter and self.agentix_adapter.enabled:
-            # Update the bridge's config
-            self.agentix_adapter.agentix_config.model = model
+        # Update the bridge's config
+        self.agentix_adapter.agentix_config.model = model
 
     @property
     def history(self) -> "History":
@@ -178,39 +176,27 @@ class AgentXSession:
         self.refresh_user_gui()
 
     def _setup_agentix_ui(self) -> None:
-        """Setup model selector and tool panel from Agentix or Ollama."""
-        # Always try to populate models (from Agentix if enabled, otherwise from Ollama)
+        """Setup model selector and tool panel from Agentix."""
+        # Setup model change callback by updating the ModelSelector's callback directly
+        # (Since ModelSelector was already created with a reference to the old callback)
+        if self.gui.model_selector:
+            original_callback = self.gui.model_selector.on_model_change
+            def on_model_change(model: str):
+                print(f"Model selector changed to: {model}")
+                self.active_model = model  # Use property setter for 3-way sync
+                print(f"Session.active_model updated to: {self.active_model}")
+                original_callback(model)
+            self.gui.model_selector.on_model_change = on_model_change
+        
+        # Always populate models from Agentix (integrated and always available)
         try:
-            if self.agentix_adapter and self.agentix_adapter.enabled:
-                # Get models from Agentix
-                models = self.agentix_adapter.get_models()
-            else:
-                # Get models directly from Ollama
-                ollama_host = self.config["agentx"]["ollama_host"]
-                with httpx.Client(timeout=10) as client:
-                    response = client.get(f"http://{ollama_host}/api/tags")
-                    if response.status_code == 200:
-                        models_data = response.json()
-                        models = models_data.get("models", [])
-                    else:
-                        models = []
-            
+            models = self.agentix_adapter.get_models()
             if models:
                 self.gui.populate_models(models, initial_model=self.active_model)
         except Exception as e:
             print(f"Error loading models: {e}")
         
-        # Setup model change callback (always needed, regardless of Agentix)
-        original_model_change = self.gui._on_model_change
-        def on_model_change(model: str):
-            self.active_model = model  # Use property setter to update both internal state and config
-            original_model_change(model)
-        self.gui._on_model_change = on_model_change
-        
-        # Only setup tool callbacks if Agentix is enabled
-        if not self.agentix_adapter or not self.agentix_adapter.enabled:
-            return
-        
+        # Setup tool callbacks
         original_tool_toggle = self.gui._on_tool_toggle
         def on_tool_toggle(tool_name: str, enabled: bool):
             enabled_tools = self.gui.get_enabled_tools()
@@ -442,11 +428,8 @@ class AgentXSession:
         If Agentix is enabled, routes through Agentix middleware for classification and tool support.
         Otherwise, uses direct Ollama streaming.
         """
-        # Route to Agentix if enabled
-        if self.agentix_adapter and self.agentix_adapter.enabled:
-            self._stream_via_agentix()
-        else:
-            self._stream_direct_ollama()
+        # Route to Agentix streaming
+        self._stream_via_agentix()
     
     def _stream_via_agentix(self):
         """Stream response through Agentix middleware."""
@@ -491,22 +474,34 @@ class AgentXSession:
             # Add history messages
             history_messages = self.history.get_enabled_messages()
             for _, msg in history_messages:
-                shared_msg = SharedMessage(
-                    role=MessageRole[msg.role.upper()] if hasattr(MessageRole, msg.role.upper()) else MessageRole.USER,
-                    content=msg.content,
-                    enabled=msg.enabled
-                )
-                shared_context.add_message(shared_msg)
-            
-            # Add current context messages
-            for _, msg in self.context.messages:
-                if getattr(msg, "enabled", False):
+                try:
                     shared_msg = SharedMessage(
                         role=MessageRole[msg.role.upper()] if hasattr(MessageRole, msg.role.upper()) else MessageRole.USER,
                         content=msg.content,
                         enabled=msg.enabled
                     )
                     shared_context.add_message(shared_msg)
+                except AttributeError as e:
+                    print(f"ERROR: Invalid message in history: type={type(msg)}, error={e}")
+                    print(f"  Message content: {msg if isinstance(msg, dict) else repr(msg)}")
+                    # Skip this invalid message and continue
+                    continue
+            
+            # Add current context messages
+            for _, msg in self.context.messages:
+                if getattr(msg, "enabled", False):
+                    try:
+                        shared_msg = SharedMessage(
+                            role=MessageRole[msg.role.upper()] if hasattr(MessageRole, msg.role.upper()) else MessageRole.USER,
+                            content=msg.content,
+                            enabled=msg.enabled
+                        )
+                        shared_context.add_message(shared_msg)
+                    except AttributeError as e:
+                        print(f"ERROR: Invalid message in context: type={type(msg)}, error={e}")
+                        print(f"  Message content: {msg if isinstance(msg, dict) else repr(msg)}")
+                        # Skip this invalid message and continue
+                        continue
 
             # Add current message
             self.add_message_to_context(self.message)

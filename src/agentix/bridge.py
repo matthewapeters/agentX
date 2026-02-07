@@ -133,41 +133,38 @@ class AgentixBridge:
         Yields:
             ResponseChunk objects for GUI rendering
         """
-        # Auto-classify if not provided
-        if classification is None:
-            yield ResponseChunk(
-                type=ChunkType.THINKING,
-                content="Classifying prompt...",
-            )
+        # Auto-classify if not provided and classification is enabled
+        # Note: Classification is transparent to the user - logged but not displayed
+        if classification is None and self.config.classify_prompts:
+            import sys
+            print("[Agentix] Classifying prompt...", file=sys.stderr)
             classification = self.classify_prompt(prompt, context)
+            if self.config.debug and classification:
+                print(f"[Agentix] Classification: intent={classification.intent.name}, "
+                      f"next_step={classification.next_step.name}, "
+                      f"reasoning={classification.reasoning_summary}", file=sys.stderr)
         
-        # Emit classification for GUI display
-        if self.config.debug:
-            yield ResponseChunk(
-                type=ChunkType.CLASSIFICATION,
-                classification={
-                    "intent": classification.intent.name,
-                    "next_step": classification.next_step.name,
-                    "reasoning": classification.reasoning_summary,
-                },
-            )
-        
-        # Route based on next_step
-        match classification.next_step:
-            case NextStep.respond_directly:
-                yield from self._stream_direct_response(prompt, context)
-            
-            case NextStep.single_tool:
-                yield from self._stream_tool_response(prompt, context, classification)
-            
-            case NextStep.invoke_planner:
-                yield from self._stream_planned_response(prompt, context)
-            
-            case NextStep.escalate:
-                yield ResponseChunk(
-                    type=ChunkType.ERROR,
-                    content="This request requires human assistance or involves safety concerns.",
-                )
+        # Route based on next_step (if classification provided) or default to direct response
+        # Route based on next_step (if classification provided) or default to direct response
+        if classification:
+            match classification.next_step:
+                case NextStep.respond_directly:
+                    yield from self._stream_direct_response(prompt, context)
+                
+                case NextStep.single_tool:
+                    yield from self._stream_tool_response(prompt, context, classification)
+                
+                case NextStep.invoke_planner:
+                    yield from self._stream_planned_response(prompt, context)
+                
+                case NextStep.escalate:
+                    yield ResponseChunk(
+                        type=ChunkType.ERROR,
+                        content="This request requires human assistance or involves safety concerns.",
+                    )
+        else:
+            # No classification - default to direct response
+            yield from self._stream_direct_response(prompt, context)
     
     def get_available_models(self) -> list[dict]:
         """
@@ -254,9 +251,9 @@ class AgentixBridge:
         # Build payload from context
         history = self._context_to_history(context)
         
-        # Convert to Ollama message format
+        # Convert to Ollama message format (history is already list of dicts)
         messages = [
-            {"role": msg.role.value, "content": msg.content}
+            {"role": msg["role"], "content": msg["content"]}
             for msg in history
         ]
         
@@ -279,16 +276,29 @@ class AgentixBridge:
                     )
                     break
                 
-                # Extract content from chunk
-                message = chunk.get("message", {})
-                content = message.get("content", "")
+                # Extract content from streaming chunk
+                # Ollama streaming API uses choices[0].delta for chunks
+                choices = chunk.get("choices", [])
+                if choices:
+                    delta = choices[0].get("delta", {})
+                    content = delta.get("content", "")
+                    
+                    if content:
+                        yield ResponseChunk(
+                            type=ChunkType.CONTENT,
+                            content=content,
+                        )
+                    
+                    # Check finish reason
+                    finish_reason = choices[0].get("finish_reason")
+                    if finish_reason:
+                        yield ResponseChunk(
+                            type=ChunkType.DONE,
+                            done_reason=finish_reason,
+                        )
+                        break
                 
-                if content:
-                    yield ResponseChunk(
-                        type=ChunkType.CONTENT,
-                        content=content,
-                    )
-                
+                # Also check top-level done flag (fallback)
                 if chunk.get("done"):
                     break
         except Exception as e:

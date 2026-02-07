@@ -62,12 +62,6 @@ class AgentixBridgeAdapter:
         self.config = config
         self.agentix_config = self._convert_config(config)
         self.bridge = AgentixBridge(self.agentix_config)
-        self._enabled = config.get("agentix", {}).get("enabled", False)
-        
-    @property
-    def enabled(self) -> bool:
-        """Check if Agentix integration is enabled."""
-        return self._enabled
     
     def classify_prompt_sync(
         self, 
@@ -86,9 +80,6 @@ class AgentixBridgeAdapter:
         Returns:
             PromptClassificationResponse or None if classification disabled
         """
-        if not self.enabled:
-            return None
-        
         if not self.agentix_config.classify_prompts:
             return None
         
@@ -119,10 +110,6 @@ class AgentixBridgeAdapter:
         Yields:
             ResponseChunk objects with content, tool calls, etc.
         """
-        if not self.enabled:
-            # Fall back to direct Ollama streaming (handled by caller)
-            return
-        
         try:
             # Bridge returns an iterator, so we can yield directly
             yield from self.bridge.process_prompt_streaming(
@@ -188,31 +175,29 @@ class AgentixBridgeAdapter:
             system=agentix_section.get("default_system_prompts", []),
             debug=agentix_section.get("debug", False),
             ollama_host=agentx_section.get("ollama_host", "localhost:11434"),
+            classify_prompts=agentix_section.get("classify_prompts", True),
         )
 
 
-def create_adapter(config: dict) -> Optional[AgentixBridgeAdapter]:
+def create_adapter(config: dict) -> AgentixBridgeAdapter:
     """
-    Convenience function to create an adapter if Agentix is enabled.
+    Create Agentix bridge adapter.
     
-    Gracefully handles missing Agentix or its dependencies.
+    Agentix is always integrated and enabled.
     
     Args:
         config: AgentX configuration dictionary
         
     Returns:
-        AgentixBridgeAdapter if enabled and available, None otherwise
+        AgentixBridgeAdapter instance
     """
-    if config.get("agentix", {}).get("enabled", False):
-        try:
-            return AgentixBridgeAdapter(config)
-        except ImportError as e:
-            print(f"⚠ Agentix import error (missing dependency): {e}")
-            print("  Install missing dependencies to enable code analysis tools")
-            print(f"  Command: pip install libcst")
-            return None
-        except Exception as e:
-            print(f"⚠ Failed to initialize Agentix bridge: {e}")
-            print("  Code analysis tools will be unavailable")
-            return None
-    return None
+    try:
+        return AgentixBridgeAdapter(config)
+    except ImportError as e:
+        print(f"⚠ Agentix import error (missing dependency): {e}")
+        print("  Install missing dependencies to enable code analysis tools")
+        print(f"  Command: pip install libcst")
+        raise
+    except Exception as e:
+        print(f"⚠ Failed to initialize Agentix bridge: {e}")
+        raise

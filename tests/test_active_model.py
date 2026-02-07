@@ -55,7 +55,6 @@ class TestActiveModelProperty(unittest.TestCase):
                 "ollama_timeout": 30,
             },
             "agentix": {
-                "enabled": False,
                 "host": "localhost:8000",
             }
         }
@@ -155,11 +154,11 @@ class TestActiveModelProperty(unittest.TestCase):
                            "Agentix adapter config not updated")
     
     def test_active_model_setter_handles_no_agentix(self):
-        """Test that property setter works when agentix is disabled/absent."""
+        """Test that property setter works with agentix always enabled."""
         session = AgentXSession(root=self.root, config=self.config)
         
-        # Agentix should be disabled
-        self.assertFalse(session.agentix_adapter.enabled if session.agentix_adapter else False)
+        # Agentix adapter should exist (always integrated)
+        self.assertIsNotNone(session.agentix_adapter)
         
         # Should not raise exception
         new_model = "llama3.1"
@@ -317,15 +316,14 @@ class TestActiveModelUsage(unittest.TestCase):
         self.assertEqual(session.config["agentx"]["ollama_model"], selected_model)
     
     def test_model_change_callback_works_without_agentix(self):
-        """Test that model change callback is set up even when Agentix is disabled."""
-        # Ensure Agentix is disabled
+        """Test that model change callback is set up with Agentix always integrated."""
+        # Setup config
         config = self.config.copy()
-        config["agentix"]["enabled"] = False
         
         session = AgentXSession(root=self.root, config=config)
         
-        # Verify agentix is not enabled
-        self.assertFalse(session.agentix_adapter.enabled if session.agentix_adapter else False)
+        # Agentix adapter should exist (always integrated)
+        self.assertIsNotNone(session.agentix_adapter)
         
         # Trigger _setup_agentix_ui to set up callbacks
         session._setup_agentix_ui()

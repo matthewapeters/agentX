@@ -145,7 +145,18 @@ def query_api_streaming(
             for line in response.iter_lines():
                 if line:
                     try:
-                        chunk = json.loads(line.decode("utf-8"))
+                        # Decode line
+                        line_str = line.decode("utf-8")
+                        
+                        # Strip SSE "data: " prefix if present
+                        if line_str.startswith("data: "):
+                            line_str = line_str[6:]  # Remove "data: " prefix
+                        
+                        # Skip empty lines after stripping prefix
+                        if not line_str.strip():
+                            continue
+                        
+                        chunk = json.loads(line_str)
                         
                         if args.debug:
                             print(f"Chunk: {chunk}", file=sys.stderr)
@@ -158,6 +169,7 @@ def query_api_streaming(
                     except json.JSONDecodeError as e:
                         if args.debug:
                             print(f"JSON decode error: {e}", file=sys.stderr)
+                            print(f"Line was: {line_str[:100]}", file=sys.stderr)
                         continue
         else:
             # Yield error chunk
