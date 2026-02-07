@@ -11,7 +11,7 @@ import threading
 from typing import Optional, Callable, Any
 from datetime import datetime
 
-from .streaming_executor import ProgressUpdate, ProgressType
+from ..integration.streaming_executor import ProgressUpdate, ProgressType
 
 
 class ProgressIndicator(tk.Frame):

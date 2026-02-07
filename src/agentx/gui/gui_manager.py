@@ -7,12 +7,12 @@ from datetime import datetime
 from tkinter import ttk
 from typing import Callable, Optional
 
-from .attachment_info import AttachmentInfo
+from ..attachment_info import AttachmentInfo
 from .gui_config import GUIConfig
-from .history import History
-from .igui_manager import IGUIManager
-from .widget_registry import WidgetRegistry
-from .integration import ModelSelector
+from ..history import History
+from ..igui_manager import IGUIManager
+from ..widget_registry import WidgetRegistry
+from ..integration import ModelSelector
 
 
 class GUIManager(IGUIManager):

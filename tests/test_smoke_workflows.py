@@ -19,7 +19,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from agentx.session import AgentXSession
-from agentx.gui_manager import GUIManager
+from agentx.gui.gui_manager import GUIManager
 from agentx.message import Message
 from agentx.context import Context
 
@@ -274,7 +274,7 @@ class TestGuiManagerRobustness(unittest.TestCase):
             "ollama_timeout": 30,
         }
         
-        from agentx.gui_config import GUIConfig
+        from agentx.gui.gui_config import GUIConfig
         config = GUIConfig.from_dict(config_dict)
         
         self.gui = GUIManager(

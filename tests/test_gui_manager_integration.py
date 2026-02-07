@@ -14,8 +14,8 @@ import os
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from agentx.gui_manager import GUIManager
-from agentx.gui_config import GUIConfig
+from agentx.gui.gui_manager import GUIManager
+from agentx.gui.gui_config import GUIConfig
 
 
 class TestGUIManagerInitialization(unittest.TestCase):

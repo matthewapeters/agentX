@@ -111,7 +111,7 @@ def test_tool_execution_in_session():
 
 def test_gui_message_roles_updated():
     """Test that GUIManager has updated MESSAGE_ROLES."""
-    from agentx.gui_manager import GUIManager
+    from agentx.gui.gui_manager import GUIManager
     
     # Check that tool_call and tool_result are in MESSAGE_ROLES
     assert "tool_call" in GUIManager.MESSAGE_ROLES

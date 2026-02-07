@@ -14,8 +14,8 @@ from ollama import Client
 from .attachment_info import AttachmentInfo
 from .context import Context
 from .file_explorer import FileExplorer
-from .gui_config import GUIConfig
-from .gui_manager import GUIManager
+from .gui.gui_config import GUIConfig
+from .gui.gui_manager import GUIManager
 from .history import History
 from .message import Message
 from .service_manager import ServiceManager
