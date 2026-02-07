@@ -1056,10 +1056,15 @@ class GUIManager(IGUIManager):
         # This is a placeholder - the actual handler should be set by AgentXSession
         pass
     
-    def populate_models(self, models: list[dict]) -> None:
-        """Populate model selector with available models."""
+    def populate_models(self, models: list[dict], initial_model: str = None) -> None:
+        """Populate model selector with available models.
+        
+        Args:
+            models: List of model dictionaries
+            initial_model: Model to select initially (if present in list)
+        """
         if self.model_selector:
-            self.model_selector.populate(models)
+            self.model_selector.populate(models, initial_model=initial_model)
     
     def _on_submit_clicked(self) -> None:
         """Internal handler for submit button/keyboard."""

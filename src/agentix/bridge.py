@@ -145,8 +145,7 @@ class AgentixBridge:
         if self.config.debug:
             yield ResponseChunk(
                 type=ChunkType.CLASSIFICATION,
-                content=f"Intent: {classification.intent.name}, Next: {classification.next_step.name}",
-                metadata={
+                classification={
                     "intent": classification.intent.name,
                     "next_step": classification.next_step.name,
                     "reasoning": classification.reasoning_summary,
@@ -168,7 +167,6 @@ class AgentixBridge:
                 yield ResponseChunk(
                     type=ChunkType.ERROR,
                     content="This request requires human assistance or involves safety concerns.",
-                    error_code="ESCALATE",
                 )
     
     def get_available_models(self) -> list[dict]:
@@ -221,7 +219,7 @@ class AgentixBridge:
         Returns:
             List of enabled Message objects
         """
-        return context.get_enabled_messages()
+        return list(context.get_enabled_messages())
     
     def _get_max_tokens(self) -> int:
         """
@@ -276,7 +274,6 @@ class AgentixBridge:
                     yield ResponseChunk(
                         type=ChunkType.ERROR,
                         content=chunk["error"],
-                        error_code="API_ERROR",
                     )
                     break
                 
@@ -296,7 +293,6 @@ class AgentixBridge:
             yield ResponseChunk(
                 type=ChunkType.ERROR,
                 content=f"Error generating response: {str(e)}",
-                error_code="LLM_ERROR",
             )
     
     def _stream_tool_response(

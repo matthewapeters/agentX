@@ -8,7 +8,7 @@ screen_side = "left"
 # Enable Agentix integration for code analysis tools
 # Requires: libcst, agentix packages installed
 # If disabled, basic tool execution still works via Ollama
-enabled = false
+enabled = true
 host = "localhost:8000"
 classify_prompts = false
 debug = false

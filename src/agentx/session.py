@@ -84,6 +84,41 @@ class AgentXSession:
         self.client_tool_executor = ClientToolExecutor(base_path=os.getcwd())
         self.server_tool_executor = ServerToolExecutor(agentix_bridge=self.agentix_adapter.bridge if self.agentix_adapter else None)
         self.advanced_tools = AdvancedToolRegistry(agentix_bridge=self.agentix_adapter.bridge if self.agentix_adapter else None)
+        
+        # Initialize active model from config
+        self._active_model = config["agentx"]["ollama_model"]
+
+    @property
+    def active_model(self) -> str:
+        """
+        Get the currently active Ollama model.
+        
+        This is the single source of truth for which model is being used.
+        All Ollama calls should use this property.
+        
+        Returns:
+            Model name (e.g., "gpt-oss", "llama3.2")
+        """
+        return self._active_model
+    
+    @active_model.setter
+    def active_model(self, model: str) -> None:
+        """
+        Set the active Ollama model.
+        
+        Updates both the internal state and the config dictionary
+        to keep them synchronized.
+        
+        Args:
+            model: Model name to use
+        """
+        self._active_model = model
+        self.config["agentx"]["ollama_model"] = model
+        
+        # If agentix adapter exists, update its config too
+        if self.agentix_adapter and self.agentix_adapter.enabled:
+            # Update the bridge's config
+            self.agentix_adapter.agentix_config.model = model
 
     @property
     def history(self) -> "History":
@@ -161,20 +196,20 @@ class AgentXSession:
                         models = []
             
             if models:
-                self.gui.populate_models(models)
+                self.gui.populate_models(models, initial_model=self.active_model)
         except Exception as e:
             print(f"Error loading models: {e}")
+        
+        # Setup model change callback (always needed, regardless of Agentix)
+        original_model_change = self.gui._on_model_change
+        def on_model_change(model: str):
+            self.active_model = model  # Use property setter to update both internal state and config
+            original_model_change(model)
+        self.gui._on_model_change = on_model_change
         
         # Only setup tool callbacks if Agentix is enabled
         if not self.agentix_adapter or not self.agentix_adapter.enabled:
             return
-        
-        # Override GUI callbacks to update config
-        original_model_change = self.gui._on_model_change
-        def on_model_change(model: str):
-            self.config["agentx"]["ollama_model"] = model
-            original_model_change(model)
-        self.gui._on_model_change = on_model_change
         
         original_tool_toggle = self.gui._on_tool_toggle
         def on_tool_toggle(tool_name: str, enabled: bool):
@@ -505,7 +540,7 @@ class AgentXSession:
 
             # Display assistant header
             self.gui.display_agent_response(
-                f"\n\n{GUIManager.MESSAGE_ROLES['assistant']}\t"
+                f"\n\n{GUIManager.MESSAGE_ROLES['assistant']} ({self.active_model})\t"
             )
 
             # Stream through Agentix
@@ -542,7 +577,7 @@ class AgentXSession:
         """Helper to display thinking text with header on first call."""
         if not hasattr(self, '_thinking_header_shown'):
             self.gui.display_agent_thinking(
-                f"\n{GUIManager.MESSAGE_ROLES['thinking']}\t(The agent is thinking...)\n"
+                f"\n{GUIManager.MESSAGE_ROLES['thinking']} ({self.active_model})\t(The agent is thinking...)\n"
             )
             self._thinking_header_shown = True
         self.gui.display_agent_thinking(text)
@@ -558,7 +593,7 @@ class AgentXSession:
 
         # Load configuration
         ollama_host = config["agentx"]["ollama_host"]
-        ollama_model = config["agentx"]["ollama_model"]
+        ollama_model = self.active_model
 
         # Get the prompt from the user input (via GUIManager)
         prompt = self.gui.get_user_input()
@@ -648,7 +683,7 @@ class AgentXSession:
                         case "thinking":
                             if agent_thinking_message.content == "":
                                 self.gui.display_agent_thinking(
-                                    f"\n{GUIManager.MESSAGE_ROLES["thinking"]}\t(The agent is thinking...)\n"
+                                    f"\n{GUIManager.MESSAGE_ROLES['thinking']} ({self.active_model})\t(The agent is thinking...)\n"
                                 )
                             self.gui.display_agent_thinking(part.message.thinking)
                             agent_thinking_message.content += part.message.thinking
@@ -656,7 +691,7 @@ class AgentXSession:
                         case "content":
                             if agent_response_message.content == "":
                                 self.gui.display_agent_response(
-                                    f"\n\n{GUIManager.MESSAGE_ROLES["assistant"]}\t"
+                                    f"\n\n{GUIManager.MESSAGE_ROLES['assistant']} ({self.active_model})\t"
                                 )
                             self.gui.display_agent_response(part.message.content)
                             agent_response_message.content += part.message.content
@@ -712,7 +747,7 @@ class AgentXSession:
         """
         config = self.config
         ollama_host = config["agentx"]["ollama_host"]
-        ollama_model = config["agentx"]["ollama_model"]
+        ollama_model = self.active_model
         timeout_seconds = config["agentx"].get(
             "ollama_initial_load_timeout_seconds", 120
         )

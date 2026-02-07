@@ -18,7 +18,7 @@ class ModelSelector:
     
     Example:
         def on_model_change(model: str):
-            session.config["agentx"]["ollama_model"] = model
+            session.active_model = model
         
         selector = ModelSelector(
             parent=status_frame,
@@ -64,12 +64,13 @@ class ModelSelector:
         self.dropdown.bind("<<ComboboxSelected>>", self._on_selection)
         self.dropdown.pack(side=tk.LEFT)
     
-    def populate(self, models: list[dict]) -> None:
+    def populate(self, models: list[dict], initial_model: str = None) -> None:
         """
         Populate dropdown with available models.
         
         Args:
             models: List of model dictionaries from Ollama/Agentix
+            initial_model: Model to select initially (if present in list)
         """
         self._models.clear()
         model_names = []
@@ -91,8 +92,43 @@ class ModelSelector:
         # Set dropdown values
         self.dropdown["values"] = model_names
         
-        # Select first if no current selection
-        if not self.current_model.get() and model_names:
+        # Try to select initial_model if provided, otherwise select first
+        selected = False
+        if initial_model:
+            # Find the display name for this model
+            # Try multiple matching strategies to handle Ollama tags (e.g., "gpt-oss" vs "gpt-oss:latest")
+            
+            # Strategy 1: Exact match
+            for display_name, actual_name in self._models.items():
+                if actual_name == initial_model:
+                    self.current_model.set(display_name)
+                    selected = True
+                    break
+            
+            # Strategy 2: Try with ":latest" tag if initial_model has no tag
+            if not selected and ":" not in initial_model:
+                initial_with_tag = f"{initial_model}:latest"
+                for display_name, actual_name in self._models.items():
+                    if actual_name == initial_with_tag:
+                        self.current_model.set(display_name)
+                        selected = True
+                        break
+            
+            # Strategy 3: Match base name (before colon) if initial_model has no tag
+            if not selected and ":" not in initial_model:
+                for display_name, actual_name in self._models.items():
+                    # Extract base name from actual_name (e.g., "gpt-oss:latest" -> "gpt-oss")
+                    base_name = actual_name.split(":")[0] if ":" in actual_name else actual_name
+                    if base_name == initial_model:
+                        self.current_model.set(display_name)
+                        selected = True
+                        break
+            
+            if not selected:
+                print(f"Warning: Model '{initial_model}' not found in available models")
+        
+        # If initial_model not found or not provided, select first if no current selection
+        if not selected and not self.current_model.get() and model_names:
             self.current_model.set(model_names[0])
             self.on_model_change(self._models[model_names[0]])
     

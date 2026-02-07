@@ -46,9 +46,14 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
         }.get(key, default)
         
         config = {
-            "ollama_host": "localhost:11434",
-            "ollama_model": "mistral",
-            "ollama_timeout": 30,
+            "agentx": {
+                "ollama_host": "localhost:11434",
+                "ollama_model": "mistral",
+                "ollama_timeout": 30,
+            },
+            "agentix": {
+                "enabled": False,
+            }
         }
         
         self.session = AgentXSession(
@@ -103,8 +108,8 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
     def test_session_has_valid_configuration(self):
         """Test that session configuration is properly loaded."""
         self.assertIsNotNone(self.session.config)
-        self.assertEqual(self.session.config["ollama_host"], "localhost:11434")
-        self.assertEqual(self.session.config["ollama_model"], "mistral")
+        self.assertEqual(self.session.config["agentx"]["ollama_host"], "localhost:11434")
+        self.assertEqual(self.session.config["agentx"]["ollama_model"], "mistral")
     
     def test_session_folders_created(self):
         """Test that session folders are created."""
@@ -152,9 +157,14 @@ class TestAgentXSessionGuiDelegation(unittest.TestCase):
         }.get(key, default)
         
         config = {
-            "ollama_host": "localhost:11434",
-            "ollama_model": "mistral",
-            "ollama_timeout": 30,
+            "agentx": {
+                "ollama_host": "localhost:11434",
+                "ollama_model": "mistral",
+                "ollama_timeout": 30,
+            },
+            "agentix": {
+                "enabled": False,
+            }
         }
         
         self.session = AgentXSession(

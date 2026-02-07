@@ -53,7 +53,7 @@ class ResponseHandler:
             on_content: Called with content text for display
             on_thinking: Called with thinking/reasoning text
             on_tool_call: Called with (tool_name, tool_input)
-            on_tool_result: Called with (tool_id, result_text)
+            on_tool_result: Called with (tool_name, result_text)
             on_classification: Called with classification metadata
             on_error: Called with (error_message, error_code)
             on_done: Called when stream is complete
@@ -116,30 +116,33 @@ class ResponseHandler:
     def _handle_tool_call(self, chunk: ResponseChunk) -> None:
         """Handle tool call chunk."""
         if chunk.tool_name:
+            # Track tool call (tool_id not available in ResponseChunk yet)
             self.tool_calls.append({
                 "name": chunk.tool_name,
                 "input": chunk.tool_input or {},
-                "id": chunk.tool_id,
             })
             self.on_tool_call(chunk.tool_name, chunk.tool_input or {})
     
     def _handle_tool_result(self, chunk: ResponseChunk) -> None:
         """Handle tool result chunk."""
-        if chunk.tool_id:
-            self.tool_results.append({
-                "id": chunk.tool_id,
-                "result": chunk.content,
-            })
-            self.on_tool_result(chunk.tool_id, chunk.content)
+        # Track tool result (using content as result)
+        self.tool_results.append({
+            "name": chunk.tool_name,  # Tool name should be in the result chunk
+            "result": chunk.content,
+        })
+        # For now, use tool_name as ID since tool_id doesn't exist in ResponseChunk
+        tool_id = chunk.tool_name or "unknown"
+        self.on_tool_result(tool_id, chunk.content)
     
     def _handle_classification(self, chunk: ResponseChunk) -> None:
         """Handle classification metadata chunk."""
-        if chunk.metadata:
-            self.on_classification(chunk.metadata)
+        if chunk.classification:
+            self.on_classification(chunk.classification)
     
     def _handle_error(self, chunk: ResponseChunk) -> None:
         """Handle error chunk."""
-        error_code = chunk.error_code or "UNKNOWN_ERROR"
+        # ERROR chunks only have content, no separate error_code attribute
+        error_code = "ERROR"
         self.on_error(chunk.content, error_code)
     
     def _handle_done(self, chunk: ResponseChunk) -> None:
