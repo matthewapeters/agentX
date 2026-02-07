@@ -217,9 +217,11 @@ class AgentixBridge:
             context: AgentX Context with messages
             
         Returns:
-            List of enabled Message objects
+            List of enabled Message dictionaries (Agentix format)
         """
-        return list(context.get_enabled_messages())
+        # Note: Return type annotation says list[Message] but Agentix
+        # actually expects list[dict]. Converting to dicts here.
+        return [msg.to_dict() for msg in context.get_enabled_messages()]
     
     def _get_max_tokens(self) -> int:
         """

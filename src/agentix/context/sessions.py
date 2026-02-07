@@ -54,8 +54,11 @@ def assemble_prompts(
             attachment = get_attachments(args)
         history.append(Message(role=role, content=content, attachments=attachment))
 
+    # Convert Message objects to dicts for trim_context
+    history_dicts = [msg.to_dict() if hasattr(msg, 'to_dict') else msg for msg in history]
+    
     # Trim context based on max_tokens
-    contextual_messages = trim_context(args, history, max_tokens)
+    contextual_messages = trim_context(args, history_dicts, max_tokens)
 
     return QueryPayload(
         model=args.model,

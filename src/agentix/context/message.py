@@ -26,3 +26,13 @@ class Message:
     def exclude_from_context(self):
         """Mark this message to be excluded from context trimming."""
         self._exclude_from_context = True
+    
+    def to_dict(self) -> dict:
+        """Convert Message to dictionary for JSON serialization."""
+        data = {
+            "role": self.role,
+            "content": self.content,
+        }
+        if self.attachments:
+            data["attachments"] = self.attachments
+        return data

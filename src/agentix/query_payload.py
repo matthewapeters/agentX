@@ -19,3 +19,11 @@ class QueryPayload:
         self.model = model
         self.messages = messages
         self.temperature = temperature
+    
+    def to_dict(self) -> dict:
+        """Convert QueryPayload to dictionary for JSON serialization."""
+        return {
+            "model": self.model,
+            "messages": self.messages,  # Already converted to dicts in assemble_prompts
+            "temperature": self.temperature,
+        }

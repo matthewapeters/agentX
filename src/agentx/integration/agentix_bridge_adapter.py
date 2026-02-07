@@ -5,6 +5,7 @@ AgentX uses tkinter which requires all GUI updates to happen on the main thread,
 while Agentix uses async/await patterns. This adapter bridges the two models.
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Iterator, Optional
@@ -13,6 +14,10 @@ from typing import Iterator, Optional
 parent_dir = str(Path(__file__).parent.parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
+
+# Set AGENTIX_HOME to project root for local system_prompts
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+os.environ["AGENTIX_HOME"] = str(PROJECT_ROOT)
 
 from agentix.bridge import AgentixBridge
 from agentix.agentix_config import AgentixConfig
