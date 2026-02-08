@@ -73,14 +73,16 @@ class ResponseChunk:
         done_reason: Reason for completion (for DONE)
     """
     
-    type: ChunkType
+    type: Optional[ChunkType] = None
     content: str = ""
+    chunk_type: Optional[ChunkType] = None
     
     # Tool-specific fields
     tool_name: Optional[str] = None
     tool_input: Optional[dict] = None
     tool_output: Optional[Any] = None
     tool_execution_context: Optional[str] = None  # "client" or "server"
+    tool_id: Optional[str] = None
     
     # Classification fields
     classification: Optional[dict] = None
@@ -88,11 +90,17 @@ class ResponseChunk:
     # Metadata
     model: Optional[str] = None
     done_reason: Optional[str] = None
+    error_code: Optional[str] = None
     
     def __post_init__(self):
         """Ensure type is ChunkType enum."""
+        if self.chunk_type and self.type is None:
+            self.type = self.chunk_type
+        if self.type is None:
+            self.type = ChunkType.CONTENT
         if isinstance(self.type, str):
             self.type = ChunkType(self.type)
+        self.chunk_type = self.type
     
     def to_dict(self) -> dict:
         """
@@ -114,12 +122,16 @@ class ResponseChunk:
             data["tool_output"] = self.tool_output
         if self.tool_execution_context:
             data["tool_execution_context"] = self.tool_execution_context
+        if self.tool_id:
+            data["tool_id"] = self.tool_id
         if self.classification:
             data["classification"] = self.classification
         if self.model:
             data["model"] = self.model
         if self.done_reason:
             data["done_reason"] = self.done_reason
+        if self.error_code:
+            data["error_code"] = self.error_code
             
         return data
     
@@ -129,13 +141,16 @@ class ResponseChunk:
         return cls(
             type=ChunkType(data.get("type", "content")),
             content=data.get("content", ""),
+            chunk_type=ChunkType(data.get("type", "content")),
             tool_name=data.get("tool_name"),
             tool_input=data.get("tool_input"),
             tool_output=data.get("tool_output"),
             tool_execution_context=data.get("tool_execution_context"),
+            tool_id=data.get("tool_id"),
             classification=data.get("classification"),
             model=data.get("model"),
             done_reason=data.get("done_reason"),
+            error_code=data.get("error_code"),
         )
     
     @classmethod
@@ -222,12 +237,13 @@ def tool_call_chunk(
     )
 
 
-def tool_result_chunk(tool_name: str, tool_output: Any) -> ResponseChunk:
+def tool_result_chunk(tool_name: str, tool_output: Any, tool_id: Optional[str] = None) -> ResponseChunk:
     """Create a tool result chunk."""
     return ResponseChunk(
         type=ChunkType.TOOL_RESULT,
         tool_name=tool_name,
         tool_output=tool_output,
+        tool_id=tool_id,
     )
 
 
@@ -239,9 +255,9 @@ def classification_chunk(classification: dict) -> ResponseChunk:
     )
 
 
-def error_chunk(message: str) -> ResponseChunk:
+def error_chunk(message: str, error_code: Optional[str] = None) -> ResponseChunk:
     """Create an error chunk."""
-    return ResponseChunk(type=ChunkType.ERROR, content=message)
+    return ResponseChunk(type=ChunkType.ERROR, content=message, error_code=error_code)
 
 
 def done_chunk(reason: str = "stop") -> ResponseChunk:

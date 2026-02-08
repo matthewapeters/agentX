@@ -12,9 +12,34 @@ from pathlib import Path
 from typing import Iterator, Optional
 import json
 import os
+import threading
 from glob import glob
 
 from .message import Message, MessageRole
+
+
+@dataclass
+class MessageEntry:
+    """Compatibility wrapper for context message storage."""
+
+    timestamp: datetime
+    message: Message
+
+    def __iter__(self):
+        yield self.timestamp
+        yield self.message
+
+    def __getattr__(self, name: str):
+        return getattr(self.message, name)
+
+    def __setattr__(self, name: str, value):
+        if name in {"timestamp", "message"}:
+            object.__setattr__(self, name, value)
+            return
+        if hasattr(self.__dict__.get("message", None), name):
+            setattr(self.message, name, value)
+        else:
+            object.__setattr__(self, name, value)
 
 
 @dataclass
@@ -36,7 +61,8 @@ class Context:
     
     path: Optional[str] = None
     session_id: Optional[str] = None
-    messages: list[tuple[datetime, Message]] = field(default_factory=list)
+    messages: list[MessageEntry] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
     expanded: bool = True  # GUI state
     
     def add_message(self, message: Message, ts: Optional[datetime] = None) -> None:
@@ -47,14 +73,17 @@ class Context:
             message: The message to add
             ts: Optional timestamp (uses message.timestamp if not provided)
         """
+        if isinstance(message, datetime) and isinstance(ts, Message):
+            message, ts = ts, message
+
         timestamp = ts or message.timestamp
         message.timestamp = timestamp
         
         # Save to disk if path is set
-        if self.path and message.file_path is None:
+        if self.path and message.file_path is None and threading.current_thread() is threading.main_thread():
             message.save(self.path)
         
-        self.messages.append((timestamp, message))
+        self.messages.append(MessageEntry(timestamp=timestamp, message=message))
     
     def get_messages(self, enabled_only: bool = True) -> list[Message]:
         """
@@ -67,19 +96,12 @@ class Context:
             List of messages
         """
         if enabled_only:
-            return [msg for _, msg in self.messages if msg.enabled]
-        return [msg for _, msg in self.messages]
+            return [entry.message for entry in self.messages if entry.enabled]
+        return [entry.message for entry in self.messages]
     
-    def get_enabled_messages(self) -> Iterator[Message]:
-        """
-        Iterate over enabled messages.
-        
-        Yields:
-            Enabled Message objects
-        """
-        for _, msg in self.messages:
-            if msg.enabled:
-                yield msg
+    def get_enabled_messages(self) -> list[Message]:
+        """Return enabled messages as a list."""
+        return [entry.message for entry in self.messages if entry.enabled]
     
     def to_llm_messages(self) -> list[dict]:
         """
@@ -99,21 +121,29 @@ class Context:
         """
         return {
             "session_id": self.session_id,
-            "messages": [msg.to_dict() for _, msg in self.messages],
+            "metadata": self.metadata,
+            "messages": [entry.message.to_dict() for entry in self.messages],
         }
     
-    def to_payload(self, enabled_only: bool = True) -> list[dict]:
-        """
-        Create payload for Agentix server request.
-        
-        Args:
-            enabled_only: If True, only include enabled messages
-            
-        Returns:
-            List of message dicts for API payload
-        """
+    def to_payload(
+        self,
+        model: Optional[str] = None,
+        stream: Optional[bool] = None,
+        options: Optional[dict] = None,
+        enabled_only: bool = True,
+    ) -> dict:
+        """Create payload for Agentix server request."""
         messages = self.get_messages(enabled_only=enabled_only)
-        return [msg.to_dict() for msg in messages]
+        payload = {
+            "messages": [msg.to_llm_dict() for msg in messages],
+        }
+        if model is not None:
+            payload["model"] = model
+        if stream is not None:
+            payload["stream"] = stream
+        if options is not None:
+            payload["options"] = options
+        return payload
     
     @classmethod
     def from_dict(cls, data: dict, path: Optional[str] = None) -> "Context":
@@ -132,51 +162,63 @@ class Context:
             session_id=data.get("session_id"),
         )
         
+        context.metadata = data.get("metadata", {})
+
         for msg_data in data.get("messages", []):
             msg = Message.from_dict(msg_data)
-            context.messages.append((msg.timestamp, msg))
+            context.messages.append(MessageEntry(timestamp=msg.timestamp, message=msg))
         
         return context
     
-    def load(self, path: Optional[str] = None) -> None:
-        """
-        Load messages from disk.
-        
-        Args:
-            path: Directory to load from (uses self.path if not provided)
-        """
+    def load_from_dir(self, path: Optional[str] = None) -> None:
+        """Load messages from a context directory on disk."""
         load_path = path or self.path
         if not load_path:
             raise ValueError("No path specified for loading context")
-        
+
         self.path = load_path
         self.messages = []
-        
-        # Find all JSON files in the context directory
+
         pattern = os.path.join(load_path, "*.json")
         files = sorted(glob(pattern))
-        
+
         for file_path in files:
             try:
                 msg = Message.load(file_path)
-                # Default loaded messages to disabled (user must enable)
                 msg.enabled = False
                 for att in msg.attachments:
                     att.enabled = False
-                self.messages.append((msg.timestamp, msg))
+                self.messages.append(MessageEntry(timestamp=msg.timestamp, message=msg))
             except Exception as e:
                 print(f"Warning: Could not load message from {file_path}: {e}")
+
+    @classmethod
+    def load(cls, path: str) -> "Context":
+        """Load context from a JSON file or context directory."""
+        if os.path.isdir(path):
+            context = cls(path=path)
+            context.load_from_dir(path)
+            return context
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls.from_dict(data)
     
-    def save(self) -> None:
-        """Save all messages to disk."""
-        if not self.path:
+    def save(self, path: Optional[str] = None) -> None:
+        """Save context to a directory or JSON file."""
+        target = path or self.path
+        if not target:
             raise ValueError("No path specified for saving context")
-        
-        os.makedirs(self.path, exist_ok=True)
-        
-        for _, msg in self.messages:
-            if msg.file_path is None:
-                msg.save(self.path)
+
+        if os.path.isdir(target) or not os.path.splitext(target)[1]:
+            os.makedirs(target, exist_ok=True)
+            for entry in self.messages:
+                if entry.message.file_path is None:
+                    entry.message.save(target)
+            self.path = target
+            return
+
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, indent=2)
     
     def clear(self) -> None:
         """Clear all messages from context (does not delete files)."""
@@ -186,39 +228,39 @@ class Context:
         """Return number of messages in context."""
         return len(self.messages)
     
-    def __iter__(self) -> Iterator[tuple[datetime, Message]]:
-        """Iterate over (timestamp, message) tuples."""
+    def __iter__(self) -> Iterator[Message]:
+        """Iterate over message entries."""
         return iter(self.messages)
     
     # Utility methods for message filtering
     
     def get_user_messages(self) -> list[Message]:
         """Get all user messages."""
-        return [msg for _, msg in self.messages if msg.role == MessageRole.USER]
+        return [entry.message for entry in self.messages if entry.message.role == MessageRole.USER]
     
     def get_assistant_messages(self) -> list[Message]:
         """Get all assistant messages."""
-        return [msg for _, msg in self.messages if msg.role == MessageRole.ASSISTANT]
+        return [entry.message for entry in self.messages if entry.message.role == MessageRole.ASSISTANT]
     
     def get_tool_messages(self) -> list[Message]:
         """Get all tool-related messages."""
         return [
-            msg for _, msg in self.messages 
-            if msg.role in (MessageRole.TOOL_CALL, MessageRole.TOOL_RESULT)
+            entry.message for entry in self.messages
+            if entry.message.role in (MessageRole.TOOL_CALL, MessageRole.TOOL_RESULT)
         ]
     
     def get_last_user_message(self) -> Optional[Message]:
         """Get the most recent user message."""
-        for _, msg in reversed(self.messages):
-            if msg.role == MessageRole.USER:
-                return msg
+        for entry in reversed(self.messages):
+            if entry.message.role == MessageRole.USER:
+                return entry.message
         return None
     
     def get_last_assistant_message(self) -> Optional[Message]:
         """Get the most recent assistant message."""
-        for _, msg in reversed(self.messages):
-            if msg.role == MessageRole.ASSISTANT:
-                return msg
+        for entry in reversed(self.messages):
+            if entry.message.role == MessageRole.ASSISTANT:
+                return entry.message
         return None
     
     # Token management
@@ -260,12 +302,12 @@ class Context:
         """
         # Separate by priority
         system_msgs = [
-            msg for _, msg in self.messages 
-            if msg.role == MessageRole.SYSTEM and msg.enabled
+            entry.message for entry in self.messages
+            if entry.message.role == MessageRole.SYSTEM and entry.message.enabled
         ]
         other_msgs = [
-            msg for _, msg in self.messages 
-            if msg.role != MessageRole.SYSTEM and msg.enabled
+            entry.message for entry in self.messages
+            if entry.message.role != MessageRole.SYSTEM and entry.message.enabled
         ]
         
         # Calculate system token budget
@@ -289,3 +331,9 @@ class Context:
                 break
         
         return system_msgs + trimmed
+
+    # Backward compatibility aliases
+
+    def load_messages(self) -> None:
+        """Alias for loading messages from context directory."""
+        self.load_from_dir(self.path)

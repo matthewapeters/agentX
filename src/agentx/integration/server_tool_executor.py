@@ -62,6 +62,10 @@ class ServerToolExecutor:
                 return []
         
         return self._tool_cache
+
+    def is_available(self) -> bool:
+        """Return True when Agentix bridge is available."""
+        return self.agentix_bridge is not None
     
     def execute(self, tool_name: str, arguments: dict, context: Optional[dict] = None) -> str:
         """

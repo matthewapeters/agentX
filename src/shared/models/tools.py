@@ -117,6 +117,11 @@ class ToolRequest:
     arguments: dict = field(default_factory=dict)
     request_id: Optional[str] = None
     context_snapshot: Optional[dict] = None
+    tool_input: Optional[dict] = None
+
+    def __post_init__(self):
+        if self.tool_input is not None and not self.arguments:
+            self.arguments = self.tool_input
     
     def to_dict(self) -> dict:
         """Serialize for transmission."""
@@ -124,6 +129,8 @@ class ToolRequest:
             "tool_name": self.tool_name,
             "arguments": self.arguments,
         }
+        if self.tool_input:
+            data["tool_input"] = self.tool_input
         if self.request_id:
             data["request_id"] = self.request_id
         if self.context_snapshot:
@@ -135,9 +142,10 @@ class ToolRequest:
         """Create ToolRequest from dictionary."""
         return cls(
             tool_name=data.get("tool_name", ""),
-            arguments=data.get("arguments", {}),
+            arguments=data.get("arguments", data.get("tool_input", {})),
             request_id=data.get("request_id"),
             context_snapshot=data.get("context_snapshot"),
+            tool_input=data.get("tool_input"),
         )
     
     @classmethod
@@ -189,6 +197,11 @@ class ToolResponse:
     request_id: Optional[str] = None
     execution_time_ms: Optional[int] = None
     add_to_context: bool = True
+    result: Any = None
+
+    def __post_init__(self):
+        if self.result is not None and self.output is None:
+            self.output = self.result
     
     def to_dict(self) -> dict:
         """Serialize for transmission/storage."""
@@ -197,6 +210,8 @@ class ToolResponse:
             "output": self.output,
             "add_to_context": self.add_to_context,
         }
+        if self.output is not None:
+            data["result"] = self.output
         if self.error:
             data["error"] = self.error
         if self.request_id:
@@ -292,15 +307,23 @@ class BaseTool(ABC):
     """
     
     @property
-    @abstractmethod
     def definition(self) -> ToolDefinition:
         """Return the tool's definition."""
-        pass
+        parameters = getattr(self, "parameters", None)
+        return ToolDefinition(
+            name=getattr(self, "name", self.__class__.__name__),
+            description=getattr(self, "description", ""),
+            parameters=parameters or {"type": "object", "properties": {}},
+            execution_context=getattr(
+                self,
+                "execution_context",
+                ToolExecutionContext.CLIENT,
+            ),
+        )
     
-    @abstractmethod
     async def execute(self, **kwargs) -> ToolResponse:
         """Execute the tool with the given arguments."""
-        pass
+        raise NotImplementedError("Tool execution not implemented")
     
     def validate_input(self, **kwargs) -> bool:
         """
@@ -369,6 +392,14 @@ class ToolRegistry:
     def list_definitions(self) -> list[ToolDefinition]:
         """List all tool definitions."""
         return [tool.definition for tool in self._tools.values()]
+
+    def list_tools(self) -> list[str]:
+        """List registered tool names."""
+        return list(self._tools.keys())
+
+    def get_definitions(self) -> list[ToolDefinition]:
+        """Alias for list_definitions (backward compatibility)."""
+        return self.list_definitions()
     
     def list_by_context(self, context: ToolExecutionContext) -> list[ToolDefinition]:
         """List tools for a specific execution context."""

@@ -30,6 +30,11 @@ class Attachment:
     content_type: str = "text/plain"
     content: str = ""
     enabled: bool = True
+    mime_type: Optional[str] = None
+
+    def __post_init__(self):
+        if self.mime_type and self.content_type == "text/plain":
+            self.content_type = self.mime_type
     
     @property
     def filename(self) -> str:
@@ -47,6 +52,7 @@ class Attachment:
         return {
             "file_path": self.file_path,
             "content_type": self.content_type,
+            "mime_type": self.content_type,
             "content": self.content,
             "enabled": self.enabled,
         }
@@ -54,11 +60,13 @@ class Attachment:
     @classmethod
     def from_dict(cls, data: dict) -> "Attachment":
         """Create Attachment from dictionary."""
+        content_type = data.get("content_type", data.get("mime_type", "text/plain"))
         return cls(
             file_path=data.get("file_path", ""),
-            content_type=data.get("content_type", "text/plain"),
+            content_type=content_type,
             content=data.get("content", ""),
             enabled=data.get("enabled", True),
+            mime_type=data.get("mime_type"),
         )
     
     @classmethod

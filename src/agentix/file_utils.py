@@ -2,6 +2,8 @@
 
 import sys
 
+from shared.models.attachment import Attachment
+
 
 def load_file(file_path: str) -> str:
     """Load the raw contents of a file."""
@@ -24,7 +26,7 @@ def get_attachments(args) -> list:
     attachments = []
     for attachment_path in args.file_path or []:
         try:
-            attachments.append(get_file(attachment_path))
+            attachments.append(Attachment.from_file(attachment_path))
         except Exception as e:
             print(f"Error loading attachment {attachment_path}: {e}", file=sys.stderr)
     return attachments

@@ -44,7 +44,7 @@ class ModelSelector:
         """
         self.parent = parent
         self.on_model_change = on_model_change
-        self.current_model = tk.StringVar(value=initial_model)
+        self.current_model = tk.StringVar(master=parent, value=initial_model)
         self._models = {}  # Map display name to full model info
         
         # Create frame

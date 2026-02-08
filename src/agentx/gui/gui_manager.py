@@ -2,6 +2,7 @@
 
 import os
 import re
+import threading
 import tkinter as tk
 from datetime import datetime
 from tkinter import ttk
@@ -78,6 +79,13 @@ class GUIManager(IGUIManager):
 
         # Cache for text font
         self._text_font: Optional[tuple] = None
+
+        # Cache for thread-safe input access
+        self._cached_user_input: str = ""
+
+        # Streaming label state
+        self._agent_thinking_started = False
+        self._agent_response_started = False
 
     # Layout constants for UI rendering
     EXPAND_COLLAPSE_ICONS = {True: "▼", False: "▶"}
@@ -250,7 +258,7 @@ class GUIManager(IGUIManager):
 
         # Render messages directly into the frame's grid
         current_row = 0
-        for _, message in context_obj.messages:
+        for message in context_obj.messages:
             current_row = self._render_message_to_grid(
                 message, context_messages_frame, current_row, on_attachment_toggle
             )
@@ -326,9 +334,11 @@ class GUIManager(IGUIManager):
         )
 
         # Column 2: Role icon
+        role_value = getattr(message_obj, "role", "system")
+        role_key = role_value.value if hasattr(role_value, "value") else role_value
         role_label = tk.Label(
             parent_frame,
-            text=self.MESSAGE_ROLES.get(getattr(message_obj, "role", "system"), "⚙️"),
+            text=self.MESSAGE_ROLES.get(role_key, "⚙️"),
         )
         role_label.grid(
             row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew"
@@ -435,6 +445,9 @@ class GUIManager(IGUIManager):
             attachments: List of attachment filenames (for display only)
             timestamp: When the message was created
         """
+        if threading.current_thread() is not threading.main_thread():
+            return
+
         output = self.widgets.output_text
         if output is None:
             return
@@ -443,6 +456,10 @@ class GUIManager(IGUIManager):
         output.insert(
             tk.END, f"{self.MESSAGE_ROLES['user']} User: {content}\n", ("user_prompt",)
         )
+
+        # Reset agent display state for a new turn
+        self._agent_thinking_started = False
+        self._agent_response_started = False
 
         # Display attachments
         if attachments:
@@ -458,9 +475,16 @@ class GUIManager(IGUIManager):
         Args:
             content: Chunk of thinking text to append
         """
+        if threading.current_thread() is not threading.main_thread():
+            return
+
         output = self.widgets.output_text
         if output is None:
             return
+
+        if not self._agent_thinking_started:
+            output.insert(tk.END, "Agent is thinking: ", ("agent_thinking",))
+            self._agent_thinking_started = True
 
         # Append content
         output.insert(tk.END, content, ("agent_thinking",))
@@ -474,9 +498,16 @@ class GUIManager(IGUIManager):
         Args:
             content: Chunk of response text to append
         """
+        if threading.current_thread() is not threading.main_thread():
+            return
+
         output = self.widgets.output_text
         if output is None:
             return
+        if not self._agent_response_started:
+            output.insert(tk.END, "Agent: ", ("agent_response",))
+            self._agent_response_started = True
+
         # Append content
         output.insert(tk.END, content, ("agent_response",))
 
@@ -489,6 +520,9 @@ class GUIManager(IGUIManager):
         Args:
             message: Error message text
         """
+        if threading.current_thread() is not threading.main_thread():
+            return
+
         output = self.widgets.output_text
         if output is None:
             return
@@ -501,12 +535,19 @@ class GUIManager(IGUIManager):
 
     def display_spacing(self) -> None:
         """Display spacing between conversation segments."""
+        if threading.current_thread() is not threading.main_thread():
+            return
+
         output = self.widgets.output_text
         if output is None:
             return
 
         # Insert spacing
         output.insert(tk.END, "\n\n", ("system_space",))
+
+        # Reset agent display state for next turn
+        self._agent_thinking_started = False
+        self._agent_response_started = False
 
         # Auto-scroll
         output.see(tk.END)
@@ -602,14 +643,16 @@ class GUIManager(IGUIManager):
         text_widget = self.widgets.user_input_text
         if text_widget is None:
             return ""
+        if threading.current_thread() is not threading.main_thread():
+            return self._cached_user_input
 
-        # Get text and strip whitespace
-        content = text_widget.get("1.0", tk.END).strip()
-
-        # Clear the widget
-        text_widget.delete("1.0", tk.END)
-
-        return content
+        try:
+            content = text_widget.get("1.0", tk.END).strip()
+            self._cached_user_input = content
+            text_widget.delete("1.0", tk.END)
+            return content
+        except RuntimeError:
+            return self._cached_user_input
 
     def clear_user_input(self) -> None:
         """Clear the user input field."""
@@ -623,14 +666,22 @@ class GUIManager(IGUIManager):
         Args:
             is_streaming: True if streaming in progress, False if idle
         """
-        submit = self.widgets.user_submit
-        interrupt = self.widgets.user_break
+        def _apply():
+            submit = self.widgets.user_submit
+            interrupt = self.widgets.user_break
 
-        if submit is not None:
-            submit.config(state=tk.DISABLED if is_streaming else tk.NORMAL)
+            if submit is not None:
+                submit.config(state=tk.DISABLED if is_streaming else tk.NORMAL)
 
-        if interrupt is not None:
-            interrupt.config(state=tk.NORMAL if is_streaming else tk.DISABLED)
+            if interrupt is not None:
+                interrupt.config(state=tk.NORMAL if is_streaming else tk.DISABLED)
+
+        if threading.current_thread() is not threading.main_thread():
+            return
+        try:
+            _apply()
+        except RuntimeError:
+            pass
 
     def set_busy_state(self, is_busy: bool) -> None:
         """Update UI for busy operations (non-streaming).
@@ -638,19 +689,30 @@ class GUIManager(IGUIManager):
         Args:
             is_busy: True if operation in progress
         """
-        # Update cursor
-        cursor = "wait" if is_busy else ""
-        self.root.config(cursor=cursor)
+        def _apply():
+            # Update cursor
+            cursor = "watch" if is_busy else ""
+            try:
+                self.root.config(cursor=cursor)
+            except tk.TclError:
+                self.root.config(cursor="")
 
-        # Disable/enable input controls
-        input_text = self.widgets.user_input_text
-        submit = self.widgets.user_submit
+            # Disable/enable input controls
+            input_text = self.widgets.user_input_text
+            submit = self.widgets.user_submit
 
-        if input_text is not None:
-            input_text.config(state=tk.DISABLED if is_busy else tk.NORMAL)
+            if input_text is not None:
+                input_text.config(state=tk.DISABLED if is_busy else tk.NORMAL)
 
-        if submit is not None:
-            submit.config(state=tk.DISABLED if is_busy else tk.NORMAL)
+            if submit is not None:
+                submit.config(state=tk.DISABLED if is_busy else tk.NORMAL)
+
+        if threading.current_thread() is not threading.main_thread():
+            return
+        try:
+            _apply()
+        except RuntimeError:
+            pass
 
     def set_window_title(self, title: str) -> None:
         """Set the window title.
@@ -954,6 +1016,17 @@ class GUIManager(IGUIManager):
             font=text_font,
             yscrollcommand=self.widgets.input_scrollbar.set,
         )
+        original_insert = self.widgets.user_input_text.insert
+
+        def insert_with_cache(*args, **kwargs):
+            result = original_insert(*args, **kwargs)
+            try:
+                self._cached_user_input = self.widgets.user_input_text.get("1.0", tk.END).strip()
+            except Exception:
+                pass
+            return result
+
+        self.widgets.user_input_text.insert = insert_with_cache
         self.widgets.input_scrollbar.config(command=self.widgets.user_input_text.yview)
         self.widgets.user_input_text.place(relx=0, rely=0, relwidth=0.90, relheight=1.0)
         self.widgets.input_scrollbar.place(relx=0.90, rely=0, relheight=1.0)

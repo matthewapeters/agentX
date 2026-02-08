@@ -39,3 +39,8 @@ agentx = [
     "fonts/*.ttf",
     "assets/icons/opemmoji-svg-color/*.svg"
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "live: live integration tests that require external services"
+]

@@ -216,9 +216,7 @@ class AgentixBridge:
         Returns:
             List of enabled Message dictionaries (Agentix format)
         """
-        # Note: Return type annotation says list[Message] but Agentix
-        # actually expects list[dict]. Converting to dicts here.
-        return [msg.to_dict() for msg in context.get_enabled_messages()]
+        return list(context.get_enabled_messages())
     
     def _get_max_tokens(self) -> int:
         """
@@ -250,12 +248,9 @@ class AgentixBridge:
         """
         # Build payload from context
         history = self._context_to_history(context)
-        
-        # Convert to Ollama message format (history is already list of dicts)
-        messages = [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in history
-        ]
+
+        # Convert to Ollama message format
+        messages = [msg.to_llm_dict() for msg in history]
         
         # Add current prompt
         messages.append({"role": "user", "content": prompt})

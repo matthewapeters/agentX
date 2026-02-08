@@ -15,7 +15,7 @@ import os
 from .attachment import Attachment
 
 
-class MessageRole(str, Enum):
+class MessageRole(Enum):
     """
     Roles for messages in the conversation.
     
@@ -35,6 +35,17 @@ class MessageRole(str, Enum):
     THINKING = "thinking"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return self.value == other
+        return Enum.__eq__(self, other)
+
+    def __hash__(self) -> int:
+        return Enum.__hash__(self)
+
+    def upper(self) -> str:
+        return self.value.upper()
 
 
 # Role display icons for GUI
@@ -85,6 +96,7 @@ class Message:
     tool_name: Optional[str] = None
     tool_input: Optional[dict] = None
     tool_output: Optional[Any] = None
+    tool_id: Optional[str] = None
     
     # Classification metadata
     classification: Optional[dict] = None
@@ -155,6 +167,8 @@ class Message:
             data["tool_input"] = self.tool_input
         if self.tool_output is not None:
             data["tool_output"] = self.tool_output
+        if self.tool_id:
+            data["tool_id"] = self.tool_id
         if self.classification:
             data["classification"] = self.classification
             
@@ -199,6 +213,7 @@ class Message:
             tool_name=data.get("tool_name"),
             tool_input=data.get("tool_input"),
             tool_output=data.get("tool_output"),
+            tool_id=data.get("tool_id"),
             classification=data.get("classification"),
         )
     
@@ -257,6 +272,8 @@ class Message:
         if self.file_path is None:
             filename = f"{self.epoch}_{self.role.value}.json"
             self.file_path = os.path.join(context_path, filename)
+
+        os.makedirs(context_path, exist_ok=True)
         
         with open(self.file_path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
@@ -279,11 +296,14 @@ class Message:
 
 # Factory functions for common message types
 
-def user_message(content: str, attachments: list[str] = None) -> Message:
+def user_message(content: str, attachments: list[Any] = None) -> Message:
     """Create a user message with optional file attachments."""
     msg = Message(role=MessageRole.USER, content=content)
-    for path in (attachments or []):
-        msg.attach(path)
+    for item in (attachments or []):
+        if isinstance(item, Attachment):
+            msg.attachments.append(item)
+        else:
+            msg.attach(item)
     return msg
 
 
@@ -302,22 +322,36 @@ def thinking_message(content: str) -> Message:
     return Message(role=MessageRole.THINKING, content=content, enabled=False)
 
 
-def tool_call_message(tool_name: str, tool_input: dict) -> Message:
+def tool_call_message(
+    tool_name: str,
+    tool_input: dict,
+    tool_id: Optional[str] = None,
+    content: Optional[str] = None,
+) -> Message:
     """Create a tool call message."""
     return Message(
         role=MessageRole.TOOL_CALL,
-        content=f"Calling {tool_name}",
+        content=content or f"Calling {tool_name}",
         tool_name=tool_name,
         tool_input=tool_input,
+        tool_id=tool_id,
     )
 
 
-def tool_result_message(tool_name: str, tool_output: Any, success: bool = True) -> Message:
+def tool_result_message(
+    tool_id: Optional[str] = None,
+    content: Optional[str] = None,
+    tool_name: Optional[str] = None,
+    tool_output: Any = None,
+    success: bool = True,
+) -> Message:
     """Create a tool result message."""
-    content = f"Result from {tool_name}" if success else f"Error from {tool_name}"
+    if content is None and tool_name:
+        content = f"Result from {tool_name}" if success else f"Error from {tool_name}"
     return Message(
         role=MessageRole.TOOL_RESULT,
-        content=content,
+        content=content or "",
         tool_name=tool_name,
         tool_output=tool_output,
+        tool_id=tool_id,
     )

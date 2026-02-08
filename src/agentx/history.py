@@ -3,8 +3,7 @@ import os
 import tkinter as tk
 from datetime import datetime
 
-from .context import Context
-from .message import Message
+from shared.models.context import Context
 
 
 class History:
@@ -70,7 +69,7 @@ class History:
             # Load all message files from this context folder
             try:
                 #  print("  Loading context from:", context_folder_path)
-                context.load_messages()
+                context.load_from_dir(context.path)
             except OSError as e:
                 print(
                     f"Could not load messages from context folder: {context_folder_name}. Error: {e}"
@@ -90,7 +89,7 @@ class History:
         """
         enabled_messages = []
         for context in self.sessions:
-            for ts, message in context.messages:
+            for message in context.messages:
                 if getattr(message, "enabled", False):
                     # Filter attachments to only include enabled ones
                     if hasattr(message, "attachments"):
@@ -99,7 +98,7 @@ class History:
                             for a in message.attachments
                             if getattr(a, "enabled", False)
                         ]
-                    enabled_messages.append((ts, message))
+                    enabled_messages.append((message.timestamp, message))
         return enabled_messages
 
     def to_gui(

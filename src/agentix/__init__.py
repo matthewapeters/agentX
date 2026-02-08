@@ -1,6 +1,13 @@
-"""
-Docstring for agentix
-"""
+"""Docstring for agentix."""
+
+import os
+import sys
+
+# Ensure shared module is importable when running from repo root.
+_pkg_dir = os.path.dirname(os.path.abspath(__file__))
+_src_dir = os.path.dirname(_pkg_dir)
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
 
 # Import constants first (no dependencies)
 from .constants import (

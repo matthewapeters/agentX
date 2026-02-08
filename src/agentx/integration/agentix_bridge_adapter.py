@@ -21,7 +21,11 @@ os.environ["AGENTIX_HOME"] = str(PROJECT_ROOT)
 
 from agentix.bridge import AgentixBridge
 from agentix.agentix_config import AgentixConfig
-from agentix.prompt_classification_response import PromptClassificationResponse
+from agentix.prompt_classification_response import (
+    PromptClassificationResponse,
+    Intent,
+    NextStep,
+)
 from shared.models.context import Context
 from shared.models.response import ResponseChunk
 
@@ -87,7 +91,13 @@ class AgentixBridgeAdapter:
             return self.bridge.classify_prompt(prompt, context)
         except Exception as e:
             print(f"Classification error: {e}")
-            return None
+            return PromptClassificationResponse(
+                intent=Intent.conversation,
+                needs_clarification=False,
+                missing_fields=[],
+                reasoning_summary="Classification unavailable",
+                next_step=NextStep.respond_directly,
+            )
     
     def process_prompt_generator(
         self,
