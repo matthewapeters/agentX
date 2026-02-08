@@ -20,7 +20,7 @@ except ImportError as e:
 def extract_cst_tools():
     if not TOOLS_AVAILABLE or cst_tools is None:
         return []
-    return extract_tools_from_file(cst_tools.__file__)
+    return extract_tools_from_file(cst_tools.__file__, return_dicts=False)
 
 __all__ = [
     "ast_tools",

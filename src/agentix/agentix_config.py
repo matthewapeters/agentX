@@ -41,6 +41,8 @@ class AgentixConfig:
     tools: list[str] | None = None
     ollama_host: str = "localhost:11434"
     classify_prompts: bool = True  # Enable prompt classification by default
+    classification_model: str | None = None
+    classification_max_tokens: int | None = None
 
     @property
     def action(self) -> str:

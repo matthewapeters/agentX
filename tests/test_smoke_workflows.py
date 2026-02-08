@@ -497,6 +497,34 @@ class TestAgentXWorkflow(unittest.TestCase):
         self.assertIn("ERROR", content)
         self.assertIn("Connection timeout", content)
         self.assertIn("Try again", content)
+
+    def test_tool_panel_names_from_openai_format(self):
+        """Tool panel should display names from OpenAI tool format."""
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "cst__analyze",
+                    "description": "Analyze a Python file",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "ast__summarize",
+                    "description": "Summarize AST structure",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+        ]
+
+        self.session.gui.populate_tools(tools)
+
+        tool_names = set(self.session.gui._tool_panel_vars.keys())
+        self.assertIn("cst__analyze", tool_names)
+        self.assertIn("ast__summarize", tool_names)
+        self.assertNotIn("Unknown", tool_names)
     
     def test_busy_state_workflow(self):
         """Test busy state transitions for non-streaming operations."""

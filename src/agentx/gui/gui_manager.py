@@ -955,8 +955,15 @@ class GUIManager(IGUIManager):
         # Render tool checkboxes
         self._tool_panel_vars = {}
         for idx, tool in enumerate(self._tool_panel_tools):
-            name = tool.get("name", "Unknown")
-            description = tool.get("description", "")
+            tool_func = tool.get("function") if isinstance(tool, dict) else None
+            name = tool.get("name") if isinstance(tool, dict) else None
+            if not name and isinstance(tool_func, dict):
+                name = tool_func.get("name")
+            if not name:
+                name = "Unknown"
+            description = tool.get("description", "") if isinstance(tool, dict) else ""
+            if not description and isinstance(tool_func, dict):
+                description = tool_func.get("description", "")
             var = tk.BooleanVar(value=True)
             self._tool_panel_vars[name] = var
             cb = tk.Checkbutton(

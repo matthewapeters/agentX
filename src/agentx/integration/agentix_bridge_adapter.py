@@ -186,6 +186,9 @@ class AgentixBridgeAdapter:
             debug=agentix_section.get("debug", False),
             ollama_host=agentx_section.get("ollama_host", "localhost:11434"),
             classify_prompts=agentix_section.get("classify_prompts", True),
+            classification_model=agentix_section.get(
+                "agentix_bench_classification_model"
+            ),
         )
 
 

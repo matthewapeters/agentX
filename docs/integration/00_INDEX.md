@@ -5,8 +5,8 @@
 This documentation set provides comprehensive guidance for integrating **AgentX** (GUI frontend) with **Agentix** (agent middleware) to create a unified agentic platform for data analytics teams.
 
 **Current Status (Feb 7, 2026):**
-- Phase 4 (Context Unification): **Complete (verification pending)**
-- Phase 5 (Testing & Refinement): **In Progress**
+- Phase 4 (Context Unification): **Complete**
+- Phase 5 (Testing & Refinement): **In Progress (benchmarks below target)**
 
 ## Project Summary
 
@@ -46,7 +46,7 @@ This documentation set provides comprehensive guidance for integrating **AgentX*
 - **Phase 1:** Agentix Programmatic API (5-7 days)
 - **Phase 2:** AgentX Integration Layer (5-7 days)
 - **Phase 3:** Model Selection & Tool Display (4-5 days)
-- **Phase 4:** Context Unification (4-5 days) — **Complete (verification pending)**
+- **Phase 4:** Context Unification (4-5 days) — **Complete**
 - **Phase 5:** Testing & Refinement (3-4 days) — **In Progress**
 
 ### 3. [Research & Clarifications](03_RESEARCH_AND_CLARIFICATIONS.md)
@@ -170,23 +170,27 @@ See [Research & Clarifications](03_RESEARCH_AND_CLARIFICATIONS.md) for detailed 
 ### Phase 4 Complete When:
 - [x] Single unified Message/Context model
 - [x] Agentix reads AgentX sessions
-- [ ] All tests pass with new models
+- [x] All tests pass with new models
 
-**Phase 4 Status (code review):**
+**Phase 4 Status (verification):**
 - ✅ AgentX and Agentix both re-export shared models (no legacy message/context classes)
 - ✅ Agentix session handling prefers AgentX session structure when available
 - ✅ GUI rendering accepts `MessageRole` enums
-- ⏳ Tests not run in this update
+- ✅ Full test suite passes
 
 ### Phase 5 Complete When:
-- [ ] Integration tests pass
+- [x] Integration tests pass
 - [ ] Performance benchmarks met
-- [ ] Documentation complete
+- [x] Documentation complete
 
-**Phase 5 Status (code review):**
+**Phase 5 Status (verification):**
 - ✅ Phase 5 tool execution tests passed: [tests/test_phase5_tool_execution.py](tests/test_phase5_tool_execution.py)
 - ✅ Integration tests passed: [tests/integration/](tests/integration/)
-- ⏳ Performance benchmarks not run in this update
+- ✅ Full test suite passes (`pytest -q`)
+- ⚠️ Performance benchmarks ran; classification latency exceeded target (10.8s > 2.0s)
+- ✅ Streaming first chunk benchmark passed (< 8.0s)
+- Benchmarks: [tests/integration/test_performance.py](tests/integration/test_performance.py) (run with `AGENTIX_BENCH_RUN=1 pytest -m live tests/integration/test_performance.py`)
+- Tip: try `AGENTIX_BENCH_CLASSIFICATION_MODEL=phi4-mini:3.8b` to reduce classification latency
 
 ---
 
@@ -198,4 +202,4 @@ See [Research & Clarifications](03_RESEARCH_AND_CLARIFICATIONS.md) for detailed 
 
 ---
 
-*Generated: February 5, 2026*
+*Generated: February 7, 2026*

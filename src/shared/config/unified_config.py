@@ -138,12 +138,15 @@ class AgentixConfig:
     @classmethod
     def from_dict(cls, data: dict) -> "AgentixConfig":
         """Create from dictionary (e.g., from TOML section)."""
+        classification_model = data.get("classification_model")
+        if classification_model is None:
+            classification_model = data.get("agentix_bench_classification_model")
         return cls(
             enabled=data.get("enabled", cls.enabled),
             server_url=data.get("server_url"),
             server_timeout_seconds=data.get("server_timeout_seconds", cls.server_timeout_seconds),
             classify_prompts=data.get("classify_prompts", cls.classify_prompts),
-            classification_model=data.get("classification_model"),
+            classification_model=classification_model,
             show_classification=data.get("show_classification", cls.show_classification),
             available_tools=data.get("available_tools", ["cst", "ast"]),
             show_tool_calls=data.get("show_tool_calls", cls.show_tool_calls),

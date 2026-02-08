@@ -11,6 +11,7 @@ from agentix.context.message import Message
 from ..agentix_config import AgentixConfig
 from ..api_client import summarize_user_prompt
 from ..constants import (
+    CLASSIFICATION_MAX_TOKENS,
     DEFAULT_SESSION_ID,
     PROMPT_CLASSIFICATION,
     SESSIONS_DIR,
@@ -83,16 +84,30 @@ def assemble_classification_prompt(
     # and determine next steps.  We do this for all user prompts.
     # We do not include system prompts or tool prompts in this classification step.
     classification_config = AgentixConfig()
-    classification_config.model = args.model
+    classification_config.model = args.classification_model or args.model
     classification_config.system = [PROMPT_CLASSIFICATION]
     classification_config.user = args.user
     classification_config.debug = args.debug
 
-    return assemble_prompts(classification_config, history, max_tokens)
+    response_max_tokens = (
+        args.classification_max_tokens
+        if args.classification_max_tokens is not None
+        else CLASSIFICATION_MAX_TOKENS
+    )
+
+    return assemble_prompts(
+        classification_config,
+        history,
+        max_tokens,
+        response_max_tokens=response_max_tokens,
+    )
 
 
 def assemble_prompts(
-    args: AgentixConfig, history: list[Message], max_tokens: int
+    args: AgentixConfig,
+    history: list[Message],
+    max_tokens: int,
+    response_max_tokens: int | None = None,
 ) -> QueryPayload:
     """Construct API request payload with messages and configuration."""
 
@@ -122,6 +137,7 @@ def assemble_prompts(
         model=args.model,
         messages=contextual_messages,
         temperature=args.temperature,
+        max_tokens=response_max_tokens,
     )
 
 

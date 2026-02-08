@@ -8,6 +8,7 @@ AGENTIX_HOME = os.getenv("AGENTIX_HOME", os.path.expanduser("~/.agentix"))
 
 # Token limits
 MAX_TOKENS = 4096
+CLASSIFICATION_MAX_TOKENS = 256
 
 # Directory paths
 SYSTEM_PROMPTS_DIR = f"{AGENTIX_HOME}/system_prompts/"

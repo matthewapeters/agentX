@@ -811,6 +811,9 @@ class AgentXSession:
                 
         except httpx.RequestError as e:
             raise RuntimeError(f"Failed to connect to Ollama at {url}") from e
+
+    def stream_ollama_response(self) -> None:
+        """Start streaming response in a background thread."""
         if self._streaming_thread and self._streaming_thread.is_alive():
             print("Streaming already in progress")
             return

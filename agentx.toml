@@ -9,5 +9,6 @@ screen_side = "left"
 # Requires: libcst package installed
 host = "localhost:8000"
 classify_prompts = false  # Enable to analyze intent and route workflows (transparent to user)
+agentix_bench_classification_model = "phi4-mini:3.8b"  # Override model used for classification
 debug = false  # Enable for verbose classification logging to stderr
 available_tools = ["cst", "ast"]

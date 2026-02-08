@@ -20,6 +20,7 @@ dependencies = [
     "mypy>=1.19.1",
     "ollama>=0.6.1",
     "pillow>=12.1.0",
+    "pytest>=9.0.2",
     "pytoml>=0.1.21",
     "requests>=2.32.5",
     "toml>=0.10.2",
@@ -27,12 +28,13 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["agentx", "agentix"]
+packages = ["agentx", "agentix", "shared"]
 include-package-data = true
 
 [tool.setuptools.package-dir]
 agentx = "src/agentx"
 agentix = "src/agentix"
+shared = "src/shared"
 
 [tool.setuptools.package-data]
 agentx = [
