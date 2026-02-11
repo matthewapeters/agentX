@@ -224,7 +224,7 @@ def test_session_with_advanced_tools():
             "ollama_host": "http://localhost:11434",
         },
         "agentix": {
-            "enabled": False,
+            "host": "localhost:8000",
         }
     }
     
@@ -259,7 +259,7 @@ def test_tool_routing():
             "ollama_host": "http://localhost:11434",
         },
         "agentix": {
-            "enabled": False,
+            "host": "localhost:8000",
         }
     }
     

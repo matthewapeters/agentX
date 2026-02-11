@@ -60,7 +60,7 @@ class AgentixBridgeAdapter:
             config: AgentX configuration dictionary with structure:
                 {
                     "agentx": {"ollama_model": str, "ollama_host": str, ...},
-                    "agentix": {"enabled": bool, "classify_prompts": bool, ...}
+                    "agentix": {"classify_prompts": bool, ...}
                 }
         """
         self.config = config
@@ -189,6 +189,15 @@ class AgentixBridgeAdapter:
             classification_model=agentix_section.get(
                 "agentix_bench_classification_model"
             ),
+            classification_backend=agentix_section.get(
+                "classification_backend", "ollama"
+            ),
+            classification_torch_model=agentix_section.get(
+                "classification_torch_model"
+            ),
+            classification_torch_device=agentix_section.get(
+                "classification_torch_device"
+            ),
         )
 
 
@@ -196,7 +205,7 @@ def create_adapter(config: dict) -> AgentixBridgeAdapter:
     """
     Create Agentix bridge adapter.
     
-    Agentix is always integrated and enabled.
+    Agentix is always integrated.
     
     Args:
         config: AgentX configuration dictionary

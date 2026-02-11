@@ -223,6 +223,31 @@ class TestChatWorkflow(unittest.TestCase):
             # Should be empty (no previous messages)
             self.assertEqual(len(messages), 0)
 
+    def test_stream_routes_to_agentix(self):
+        """Ensure streaming routes through Agentix."""
+        config = {
+            "agentx": {
+                "ollama_host": "localhost:11434",
+                "ollama_model": "test-model",
+                "ollama_timeout": 30,
+            },
+            "agentix": {
+                "classify_prompts": False,
+                "debug": False,
+                "available_tools": [],
+            },
+        }
+
+        session = AgentXSession(root=self.root, config=config)
+
+        with patch.object(session, "_stream_direct_ollama") as direct_mock, patch.object(
+            session, "_stream_via_agentix"
+        ) as agentix_mock:
+            session.stream_ollama_response_worker()
+
+        self.assertFalse(direct_mock.called)
+        self.assertTrue(agentix_mock.called)
+
 
 if __name__ == '__main__':
     unittest.main()

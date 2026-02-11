@@ -89,7 +89,7 @@ def test_tool_execution_in_session():
             "ollama_host": "http://localhost:11434",
         },
         "agentix": {
-            "enabled": False,  # Don't load real bridge
+            "host": "localhost:8000",
         }
     }
     

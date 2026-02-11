@@ -14,6 +14,35 @@ from .query_payload import QueryPayload
 # from .sessions import update_session
 
 
+def _extract_json_payload(text: str) -> str:
+    cleaned = text.strip()
+
+    if cleaned.startswith("<|assistant|>"):
+        cleaned = cleaned[len("<|assistant|>"):].lstrip()
+
+    if "```" in cleaned:
+        parts = cleaned.split("```")
+        if len(parts) >= 3:
+            cleaned = parts[1].strip()
+        else:
+            cleaned = cleaned.replace("```", "").strip()
+
+    lines = cleaned.splitlines()
+    if lines and lines[0].strip() == "json":
+        cleaned = "\n".join(lines[1:]).strip()
+
+    return cleaned
+
+
+def _get_latest_user_prompt(payload: QueryPayload | dict) -> str:
+    payload_dict = payload if isinstance(payload, dict) else payload.to_dict()
+    messages = payload_dict.get("messages", [])
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            return message.get("content") or ""
+    return ""
+
+
 def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
     """
     Send request to Ollama API and parse response.
@@ -61,11 +90,39 @@ def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
             print(reasoning, file=sys.stderr)
 
         # update_session(args, payload["messages"], answer)
-        agent_content_clean = answer.replace("\n", "").replace("\t", "")
+        agent_content_clean = _extract_json_payload(answer)
         return json.loads(agent_content_clean)
     else:
         print("Error:", response.status_code, response.text)
         return {}
+
+
+def query_classification(args: AgentixConfig, payload: QueryPayload | dict) -> dict:
+    """Classify intent using the configured backend.
+
+    This keeps query_api intact for the baseline Ollama path.
+    """
+    backend = getattr(args, "classification_backend", "ollama")
+    if backend == "torch":
+        from .local_classifier import classify_intent_with_torch
+
+        prompt_text = _get_latest_user_prompt(payload)
+        if not prompt_text:
+            return {
+                "intent": "conversation",
+                "needs_clarification": False,
+                "missing_fields": [],
+                "reasoning_summary": "torch-zero-shot:empty prompt",
+                "next_step": "respond_directly",
+            }
+
+        return classify_intent_with_torch(
+            prompt_text,
+            getattr(args, "classification_torch_model", None),
+            getattr(args, "classification_torch_device", None),
+        )
+
+    return query_api(args, payload)
 
 
 def summarize_user_prompt(args: AgentixConfig) -> str:

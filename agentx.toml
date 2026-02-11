@@ -7,8 +7,11 @@ screen_side = "left"
 [agentix]
 # Agentix integration for code analysis and advanced tools  
 # Requires: libcst package installed
-host = "localhost:8000"
-classify_prompts = false  # Enable to analyze intent and route workflows (transparent to user)
 agentix_bench_classification_model = "phi4-mini:3.8b"  # Override model used for classification
-debug = false  # Enable for verbose classification logging to stderr
 available_tools = ["cst", "ast"]
+classification_backend = "torch"
+classification_torch_device = -1  # CPU; use 0 for first GPU
+classification_torch_model = "typeform/distilbert-base-uncased-mnli"
+classify_prompts = false  # Enable to analyze intent and route workflows (transparent to user)
+debug = false  # Enable for verbose classification logging to stderr
+host = "localhost:8000"

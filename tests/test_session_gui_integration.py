@@ -52,7 +52,7 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
                 "ollama_timeout": 30,
             },
             "agentix": {
-                "enabled": False,
+                "host": "localhost:8000",
             }
         }
         
@@ -163,7 +163,7 @@ class TestAgentXSessionGuiDelegation(unittest.TestCase):
                 "ollama_timeout": 30,
             },
             "agentix": {
-                "enabled": False,
+                "host": "localhost:8000",
             }
         }
         

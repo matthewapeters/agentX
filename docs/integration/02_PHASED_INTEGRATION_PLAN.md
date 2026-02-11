@@ -56,8 +56,7 @@ class UnifiedConfig:
     ollama_model: str = "llama3.2"
     screen_side: str = "left"
     
-    # Agentix middleware settings  
-    agentix_enabled: bool = True
+    # Agentix middleware settings
     classify_prompts: bool = True
     default_system_prompts: list[str] = field(default_factory=list)
     available_tools: list[str] = field(default_factory=lambda: ["cst", "ast"])
@@ -441,11 +440,7 @@ class AgentXSession:
         # ... existing init code ...
         
         # Initialize Agentix bridge
-        self.agentix_enabled = config.get("agentix", {}).get("enabled", True)
-        if self.agentix_enabled:
-            self.agentix_bridge = AgentixBridgeAdapter(config)
-        else:
-            self.agentix_bridge = None
+        self.agentix_bridge = AgentixBridgeAdapter(config)
     
     def stream_ollama_response_worker(self):
         """Enhanced worker that routes through Agentix"""
@@ -454,7 +449,7 @@ class AgentXSession:
         
         prompt = self.gui.get_user_input()
         
-        if self.agentix_enabled and self.agentix_bridge:
+        if self.agentix_bridge:
             # Route through Agentix classification
             classification = self.agentix_bridge.classify_prompt_sync(
                 prompt, self.context
@@ -541,7 +536,7 @@ class GUIManager(IGUIManager):
 
 ### Verification
 ```bash
-# Launch AgentX with Agentix enabled
+# Launch AgentX with Agentix integrated
 python -m agentx
 
 # Type a prompt and verify:

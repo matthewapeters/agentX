@@ -8,6 +8,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
@@ -29,6 +30,30 @@ def _bench_enabled() -> bool:
     return os.getenv("AGENTIX_BENCH_RUN") == "1"
 
 
+def _load_classification_model_from_toml() -> Optional[str]:
+    config_path = PROJECT_ROOT / "agentx.toml"
+    if not config_path.exists():
+        return None
+
+    try:
+        import tomllib  # Python 3.11+
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore[import-not-found]
+        except ImportError:
+            return None
+
+    with open(config_path, "rb") as handle:
+        data = tomllib.load(handle)
+
+    agentix_section = data.get("agentix", {})
+    return agentix_section.get("agentix_bench_classification_model")
+
+
+def _configured_classification_model() -> Optional[str]:
+    return os.getenv("AGENTIX_BENCH_CLASSIFICATION_MODEL") or _load_classification_model_from_toml()
+
+
 def _create_bridge() -> AgentixBridge:
     config = AgentixConfig(
         model=os.getenv("AGENTIX_BENCH_MODEL", "gpt-oss"),
@@ -36,7 +61,7 @@ def _create_bridge() -> AgentixBridge:
         ollama_host=os.getenv("AGENTIX_BENCH_OLLAMA_HOST", "localhost:11434"),
         debug=False,
     )
-    config.classification_model = os.getenv("AGENTIX_BENCH_CLASSIFICATION_MODEL")
+    config.classification_model = _configured_classification_model()
     classify_max_tokens = os.getenv("AGENTIX_BENCH_CLASSIFY_MAX_TOKENS")
     if classify_max_tokens:
         try:
@@ -63,6 +88,16 @@ def _create_bridge() -> AgentixBridge:
     else:
         config.model = models[0].get("name")
 
+    if config.classification_model:
+        classification_matching = [
+            m for m in models if m.get("name", "").startswith(config.classification_model)
+        ]
+        if not classification_matching:
+            pytest.skip(
+                f"Classification model '{config.classification_model}' not found in Ollama"
+            )
+        config.classification_model = classification_matching[0].get("name")
+
     return bridge
 
 
@@ -73,6 +108,10 @@ def test_classification_latency():
         pytest.skip("Set AGENTIX_BENCH_RUN=1 to enable benchmarks")
 
     bridge = _create_bridge()
+    expected_model = _configured_classification_model()
+    if expected_model:
+        assert bridge.config.classification_model
+        assert bridge.config.classification_model.startswith(expected_model)
     context = Context()
     context.add_message(user_message("Hello"))
 

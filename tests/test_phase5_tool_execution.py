@@ -175,7 +175,7 @@ def test_session_execute_tool_integration():
             "ollama_host": "http://localhost:11434",
         },
         "agentix": {
-            "enabled": False,
+            "host": "localhost:8000",
         }
     }
     

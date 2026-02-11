@@ -106,9 +106,6 @@ class AgentixConfig:
     classification, tool management, and server connection.
     """
     
-    # Integration enablement
-    enabled: bool = True
-    
     # Server connection (when Agentix is remote)
     server_url: Optional[str] = None  # None means local/embedded
     server_timeout_seconds: int = 300
@@ -116,6 +113,9 @@ class AgentixConfig:
     # Classification settings
     classify_prompts: bool = True
     classification_model: Optional[str] = None  # None means use default model
+    classification_backend: str = "ollama"
+    classification_torch_model: Optional[str] = None
+    classification_torch_device: Optional[int] = None
     show_classification: bool = True
     
     # Tool settings
@@ -142,11 +142,15 @@ class AgentixConfig:
         if classification_model is None:
             classification_model = data.get("agentix_bench_classification_model")
         return cls(
-            enabled=data.get("enabled", cls.enabled),
             server_url=data.get("server_url"),
             server_timeout_seconds=data.get("server_timeout_seconds", cls.server_timeout_seconds),
             classify_prompts=data.get("classify_prompts", cls.classify_prompts),
             classification_model=classification_model,
+            classification_backend=data.get(
+                "classification_backend", cls.classification_backend
+            ),
+            classification_torch_model=data.get("classification_torch_model"),
+            classification_torch_device=data.get("classification_torch_device"),
             show_classification=data.get("show_classification", cls.show_classification),
             available_tools=data.get("available_tools", ["cst", "ast"]),
             show_tool_calls=data.get("show_tool_calls", cls.show_tool_calls),
@@ -159,11 +163,13 @@ class AgentixConfig:
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
-            "enabled": self.enabled,
             "server_url": self.server_url,
             "server_timeout_seconds": self.server_timeout_seconds,
             "classify_prompts": self.classify_prompts,
             "classification_model": self.classification_model,
+            "classification_backend": self.classification_backend,
+            "classification_torch_model": self.classification_torch_model,
+            "classification_torch_device": self.classification_torch_device,
             "show_classification": self.show_classification,
             "available_tools": self.available_tools,
             "show_tool_calls": self.show_tool_calls,
@@ -189,7 +195,6 @@ class UnifiedConfig:
         screen_side = "left"
         
         [agentix]
-        enabled = true
         classify_prompts = true
         available_tools = ["cst", "ast"]
     """
@@ -276,8 +281,6 @@ class UnifiedConfig:
         # Agentix settings
         if url := os.getenv("AGENTIX_SERVER_URL"):
             config.agentix.server_url = url
-        if os.getenv("AGENTIX_ENABLED", "").lower() in ("false", "0", "no"):
-            config.agentix.enabled = False
         if os.getenv("AGENTIX_DEBUG", "").lower() in ("true", "1", "yes"):
             config.agentix.debug = True
         
@@ -314,8 +317,6 @@ class UnifiedConfig:
             config.agentx.screen_side = env_config.agentx.screen_side
         if os.getenv("AGENTIX_SERVER_URL"):
             config.agentix.server_url = env_config.agentix.server_url
-        if os.getenv("AGENTIX_ENABLED"):
-            config.agentix.enabled = env_config.agentix.enabled
         if os.getenv("AGENTIX_DEBUG"):
             config.agentix.debug = env_config.agentix.debug
         
@@ -334,10 +335,6 @@ class UnifiedConfig:
         return self.agentx.ollama_model
     
     @property
-    def agentix_enabled(self) -> bool:
-        """Check if Agentix integration is enabled."""
-        return self.agentix.enabled
-    
     @property
     def is_remote_agentix(self) -> bool:
         """Check if Agentix server is remote."""

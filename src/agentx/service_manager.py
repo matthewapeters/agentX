@@ -75,18 +75,17 @@ class ServiceManager:
             start_command=["ollama", "serve"]
         )
         
-        # Agentix service (if enabled)
-        if self.config.get("agentix", {}).get("enabled", False):
-            agentix_host = self.config.get("agentix", {}).get("host", "localhost:8000")
-            host, port = self._parse_host_port(agentix_host, 8000)
-            
-            self.services["agentix"] = ServiceConfig(
-                name="Agentix",
-                host=host,
-                port=port,
-                health_endpoint="/health",
-                start_command=["python", "-m", "agentix.server"]
-            )
+        # Agentix service (always integrated)
+        agentix_host = self.config.get("agentix", {}).get("host", "localhost:8000")
+        host, port = self._parse_host_port(agentix_host, 8000)
+
+        self.services["agentix"] = ServiceConfig(
+            name="Agentix",
+            host=host,
+            port=port,
+            health_endpoint="/health",
+            start_command=["python", "-m", "agentix.server"]
+        )
     
     @staticmethod
     def _parse_host_port(host_string: str, default_port: int) -> tuple[str, int]:

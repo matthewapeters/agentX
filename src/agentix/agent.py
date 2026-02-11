@@ -5,7 +5,7 @@ import sys
 from typing import Optional
 
 from .agentix_config import AgentixConfig
-from .api_client import query_api
+from .api_client import query_classification
 from .context.sessions import assemble_classification_prompt, manage_sessions
 from .models import get_model
 from .next_steps import take_steps
@@ -26,7 +26,7 @@ def agentix(args: AgentixConfig) -> Optional[dict]:
     initial_prompt = assemble_classification_prompt(args, history, max_tokens)
 
     # Query API and get classification
-    classification: dict = query_api(args, initial_prompt)
+    classification: dict = query_classification(args, initial_prompt)
     if args.debug:
         print(
             json.dumps(classification, indent=2)

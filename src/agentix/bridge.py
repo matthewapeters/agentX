@@ -11,7 +11,7 @@ from typing import AsyncIterator, Iterator, Optional
 
 # Direct imports to avoid circular dependencies
 from agentix.agentix_config import AgentixConfig
-from agentix.api_client import query_api, query_api_streaming
+from agentix.api_client import query_classification, query_api_streaming
 from agentix.models import get_models, get_model
 from agentix.prompt_classification_response import (
     PromptClassificationResponse,
@@ -99,7 +99,7 @@ class AgentixBridge:
         )
         
         # Query API for classification
-        result = query_api(self.config, classification_payload)
+        result = query_classification(self.config, classification_payload)
         
         # Parse result into PromptClassificationResponse
         return PromptClassificationResponse(
@@ -276,6 +276,12 @@ class AgentixBridge:
                 choices = chunk.get("choices", [])
                 if choices:
                     delta = choices[0].get("delta", {})
+                    reasoning = delta.get("reasoning") or delta.get("thinking")
+                    if reasoning:
+                        yield ResponseChunk(
+                            type=ChunkType.THINKING,
+                            content=reasoning,
+                        )
                     content = delta.get("content", "")
                     
                     if content:
@@ -296,6 +302,14 @@ class AgentixBridge:
                 # Also check top-level done flag (fallback)
                 if chunk.get("done"):
                     break
+                
+                # Some providers stream thinking at the top level.
+                top_thinking = chunk.get("thinking") or chunk.get("reasoning")
+                if top_thinking:
+                    yield ResponseChunk(
+                        type=ChunkType.THINKING,
+                        content=top_thinking,
+                    )
         except Exception as e:
             yield ResponseChunk(
                 type=ChunkType.ERROR,

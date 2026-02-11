@@ -77,7 +77,6 @@ class TestServiceManager(unittest.TestCase):
                 "ollama_model": "gpt-oss",
             },
             "agentix": {
-                "enabled": True,
                 "host": "localhost:8000",
             }
         }
@@ -100,8 +99,8 @@ class TestServiceManager(unittest.TestCase):
         self.assertEqual(ollama.health_endpoint, "/api/models")
         self.assertEqual(ollama.start_command, ["ollama", "serve"])
     
-    def test_agentix_service_config_enabled(self):
-        """Test Agentix service is configured when enabled."""
+    def test_agentix_service_config(self):
+        """Test Agentix service is configured."""
         manager = ServiceManager(self.config)
         agentix = manager.services["agentix"]
         
@@ -110,16 +109,6 @@ class TestServiceManager(unittest.TestCase):
         self.assertEqual(agentix.port, 8000)
         self.assertEqual(agentix.health_endpoint, "/health")
         self.assertEqual(agentix.start_command, ["python", "-m", "agentix.server"])
-    
-    def test_agentix_service_config_disabled(self):
-        """Test Agentix service is not configured when disabled."""
-        config = {
-            "agentx": {"ollama_host": "localhost:11435"},
-            "agentix": {"enabled": False}
-        }
-        manager = ServiceManager(config)
-        
-        self.assertNotIn("agentix", manager.services)
     
     def test_get_service_url(self):
         """Test getting full service URL."""
@@ -146,7 +135,7 @@ class TestHealthCheck(unittest.TestCase):
         """Set up test fixtures."""
         self.config = {
             "agentx": {"ollama_host": "localhost:11435"},
-            "agentix": {"enabled": False}
+            "agentix": {"host": "localhost:8000"}
         }
         self.manager = ServiceManager(self.config)
     
@@ -204,7 +193,7 @@ class TestServiceStartup(unittest.TestCase):
         """Set up test fixtures."""
         self.config = {
             "agentx": {"ollama_host": "localhost:11435"},
-            "agentix": {"enabled": False}
+            "agentix": {"host": "localhost:8000"}
         }
         self.manager = ServiceManager(self.config)
     
@@ -271,7 +260,7 @@ class TestEnsureServices(unittest.TestCase):
         """Set up test fixtures."""
         self.config = {
             "agentx": {"ollama_host": "localhost:11435"},
-            "agentix": {"enabled": False}
+            "agentix": {"host": "localhost:8000"}
         }
         self.manager = ServiceManager(self.config)
     
@@ -302,7 +291,7 @@ class TestShutdown(unittest.TestCase):
         """Set up test fixtures."""
         self.config = {
             "agentx": {"ollama_host": "localhost:11435"},
-            "agentix": {"enabled": False}
+            "agentix": {"host": "localhost:8000"}
         }
         self.manager = ServiceManager(self.config)
     

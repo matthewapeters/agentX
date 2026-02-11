@@ -43,6 +43,9 @@ class AgentixConfig:
     classify_prompts: bool = True  # Enable prompt classification by default
     classification_model: str | None = None
     classification_max_tokens: int | None = None
+    classification_backend: str = "ollama"
+    classification_torch_model: str | None = None
+    classification_torch_device: int | None = None
 
     @property
     def action(self) -> str:
@@ -169,6 +172,27 @@ class AgentixConfig:
             dest="tools",
             help="Specify tools to use",
         )
+        args.add_argument(
+            "--classification-backend",
+            type=str,
+            default="ollama",
+            dest="classification_backend",
+            help="Classification backend: ollama or torch",
+        )
+        args.add_argument(
+            "--classification-torch-model",
+            type=str,
+            default=None,
+            dest="classification_torch_model",
+            help="Hugging Face model id for torch classification",
+        )
+        args.add_argument(
+            "--classification-torch-device",
+            type=int,
+            default=None,
+            dest="classification_torch_device",
+            help="Transformers device index (-1 for CPU, 0 for first GPU)",
+        )
         args: Namespace = args.parse_args()
 
         return AgentixConfig(
@@ -187,6 +211,9 @@ class AgentixConfig:
             with_frontend=args.with_front_end,
             tools=args.tools,
             debug=args.debug,
+            classification_backend=args.classification_backend,
+            classification_torch_model=args.classification_torch_model,
+            classification_torch_device=args.classification_torch_device,
         )
 
     # Helper functions for config discovery and merging

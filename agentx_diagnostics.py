@@ -76,17 +76,10 @@ def check_agentix():
     print_header("AGENTIX CHECK")
     
     config = load_config()
-    agentix_enabled = config.get("agentix", {}).get("enabled", False)
     agentix_host = config.get("agentix", {}).get("host", "localhost:8000")
     
     print(f"\n🔧 Agentix Configuration:")
-    print(f"   Enabled: {agentix_enabled}")
     print(f"   Host: {agentix_host}")
-    
-    if not agentix_enabled:
-        print("\n✅ Agentix is disabled (optional)")
-        print("   To enable code analysis tools, set 'enabled = true' in agentx.toml")
-        return None
     
     # Check if running
     try:

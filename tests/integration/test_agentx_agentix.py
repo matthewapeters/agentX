@@ -422,8 +422,6 @@ class TestConfiguration:
     def test_default_agentix_config(self):
         """Test AgentixConfig defaults."""
         config = AgentixConfig()
-        
-        assert config.enabled is True
         assert config.server_url is None
         assert config.classify_prompts is True
     
@@ -450,7 +448,6 @@ class TestConfiguration:
                 "screen_side": "right"
             },
             "agentix": {
-                "enabled": False,
                 "debug": True
             }
         }
@@ -459,7 +456,6 @@ class TestConfiguration:
         
         assert config.agentx.ollama_model == "codellama"
         assert config.agentx.screen_side == ScreenSide.RIGHT
-        assert config.agentix.enabled is False
         assert config.agentix.debug is True
     
     def test_unified_config_from_toml(self):
@@ -471,7 +467,6 @@ ollama_model = "mistral"
 screen_side = "center"
 
 [agentix]
-enabled = true
 classify_prompts = true
 available_tools = ["cst", "ast", "search"]
 """
@@ -496,7 +491,6 @@ available_tools = ["cst", "ast", "search"]
         config = UnifiedConfig.from_toml("/nonexistent/path.toml")
         
         assert config.agentx.ollama_model == "llama3.2"
-        assert config.agentix.enabled is True
     
     def test_config_convenience_properties(self):
         """Test convenience properties on UnifiedConfig."""
@@ -504,7 +498,6 @@ available_tools = ["cst", "ast", "search"]
         
         assert config.ollama_host == config.agentx.ollama_host
         assert config.ollama_model == config.agentx.ollama_model
-        assert config.agentix_enabled == config.agentix.enabled
     
     def test_config_to_dict_roundtrip(self):
         """Test configuration serialization roundtrip."""

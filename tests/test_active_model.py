@@ -4,7 +4,7 @@ Tests verify that the active model configuration is properly:
 - Initialized from config
 - Accessed via the property getter
 - Updated via the property setter across all storage locations
-- Propagated to agentix adapter when enabled
+- Propagated to agentix adapter
 - Used consistently in all Ollama call sites
 """
 
@@ -125,12 +125,10 @@ class TestActiveModelProperty(unittest.TestCase):
         self.assertEqual(session.config["agentx"]["ollama_model"], new_model,
                         "Config dict not updated")
     
-    def test_active_model_setter_updates_agentix_when_enabled(self):
-        """Test that property setter updates agentix adapter config when enabled."""
-        # Enable agentix in config
+    def test_active_model_setter_updates_agentix_config(self):
+        """Test that property setter updates agentix adapter config."""
         config_with_agentix = self.config.copy()
         config_with_agentix["agentix"] = {
-            "enabled": True,
             "host": "localhost:8000",
             "classify_prompts": False,
             "available_tools": [],
@@ -139,7 +137,6 @@ class TestActiveModelProperty(unittest.TestCase):
         # Create session with mocked agentix adapter
         with patch('agentx.session.create_adapter') as mock_create_adapter:
             mock_adapter = Mock()
-            mock_adapter.enabled = True
             mock_adapter.agentix_config = Mock()
             mock_adapter.agentix_config.model = self.initial_model
             mock_create_adapter.return_value = mock_adapter
@@ -153,8 +150,8 @@ class TestActiveModelProperty(unittest.TestCase):
             self.assertEqual(mock_adapter.agentix_config.model, new_model,
                            "Agentix adapter config not updated")
     
-    def test_active_model_setter_handles_no_agentix(self):
-        """Test that property setter works with agentix always enabled."""
+    def test_active_model_setter_handles_agentix(self):
+        """Test that property setter works with agentix integration."""
         session = AgentXSession(root=self.root, config=self.config)
         
         # Agentix adapter should exist (always integrated)
@@ -211,7 +208,7 @@ class TestActiveModelUsage(unittest.TestCase):
                 "ollama_initial_load_timeout_seconds": 120,
             },
             "agentix": {
-                "enabled": False,
+                "host": "localhost:8000",
             }
         }
     
@@ -394,7 +391,7 @@ class TestActiveModelPropagation(unittest.TestCase):
                 "ollama_model": "model-v1",
             },
             "agentix": {
-                "enabled": False,
+                "host": "localhost:8000",
             }
         }
         
@@ -426,7 +423,7 @@ class TestActiveModelPropagation(unittest.TestCase):
                 "ollama_model": initial_model,
             },
             "agentix": {
-                "enabled": False,
+                "host": "localhost:8000",
             }
         }
         
@@ -547,7 +544,7 @@ class TestModelSelectorInitialization(unittest.TestCase):
                 "ollama_model": "configured-model",
             },
             "agentix": {
-                "enabled": False,
+                "host": "localhost:8000",
             }
         }
         
@@ -616,7 +613,7 @@ class TestModelNameInOutput(unittest.TestCase):
                 "ollama_model": "test-model",
             },
             "agentix": {
-                "enabled": False,
+                "host": "localhost:8000",
             }
         }
     

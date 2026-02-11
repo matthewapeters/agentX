@@ -483,7 +483,6 @@ class GUIManager(IGUIManager):
             return
 
         if not self._agent_thinking_started:
-            output.insert(tk.END, "Agent is thinking: ", ("agent_thinking",))
             self._agent_thinking_started = True
 
         # Append content
@@ -505,7 +504,6 @@ class GUIManager(IGUIManager):
         if output is None:
             return
         if not self._agent_response_started:
-            output.insert(tk.END, "Agent: ", ("agent_response",))
             self._agent_response_started = True
 
         # Append content
