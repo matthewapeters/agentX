@@ -97,6 +97,22 @@ Identify concrete areas where the Hugging Face smolagents CodeAgent can enhance 
 3. Merge this plan or iterate based on feedback.
 4. Implement PoC scripts and workflows on `smolagents` branch.
 
+## HF smolagents agents/tools that can contribute
+The table below lists HF smolagents’ representative agents/tools that are relevant to this repo, a short description of how each can help, and an estimated Level of Effort (LOE) to integrate for a minimal PoC.
+
+| Agent / Tool | How it can help | Estimated LOE (PoC) |
+|--------------|------------------|---------------------|
+| CodeAgent (core) | Generates code patches, implements small features, and repairs bugs from failing tests or issue descriptions. Can produce diffs and basic tests. | Low — days to a week (SDK + prompt templates + simple runner)
+| TestGenAgent | Produces unit/integration/property test scaffolding for uncovered code paths and can suggest test cases derived from function signatures and docstrings. | Low–Medium — ~1–2 weeks (test templates, coverage gating)
+| PRAgent | Creates draft PRs with agent-produced patches, artifacts, prompt/audit logs, and test results. Handles metadata and PR descriptions. | Medium — ~1–2 weeks (auth, PR formatting, artifact upload)
+| RefactorAgent | Suggests and applies safe refactorings (rename, extract function, reduce duplication) and can produce accompanying tests to ensure behavior is preserved. | Medium — ~2–3 weeks (safety checks, more complex parsing)
+| DocAgent | Auto-generates or updates documentation, README examples, and inline usage snippets from code and docstrings. | Low — days to a week (template-driven generation)
+| DependencyAgent | Proposes dependency updates, runs compatibility checks, and drafts migration notes or upgrade PRs. | Medium — ~1–2 weeks (dependency scanning, compatibility verification)
+| SecurityAgent | Runs static analysis, dependency-supply-chain checks, and summarizes security findings with remediation suggestions. | Medium — ~2 weeks (integrations with scanners, policy mapping)
+| SandboxRunner / Orchestrator | Isolates agent execution in ephemeral environments, runs tests/lint/type checks, and collects artifacts/logs deterministically. | High — multiple weeks (runner infra, security hardening)
+
+Notes on LOE: Low: can be integrated in days to a week for a minimal PoC; Medium: typically 1–2 weeks to build safe, usable integration; High: multi-week effort involving infra, security, or deep repo-specific adaption.
+
 ---
 
 This file was created as a starting point — please review and tell me which area you want me to implement first (PoC scripts, workflow, prompt templates, or sample module integration).
