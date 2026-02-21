@@ -21,6 +21,7 @@ class GUIConfig:
     output_panel_ratio: float = 0.66
     attachment_bar_height: float = 0.03
     input_panel_height: float = 0.2
+    session_section_spacing: int = 8
 
     # Font Configuration
     default_font: tuple = ("Terminal", 10)
@@ -60,6 +61,7 @@ class GUIConfig:
             output_panel_ratio=agentx.get("output_panel_ratio", 0.66),
             attachment_bar_height=agentx.get("attachment_bar_height", 0.03),
             input_panel_height=agentx.get("input_panel_height", 0.2),
+            session_section_spacing=agentx.get("session_section_spacing", 8),
             default_font=tuple(agentx.get("default_font", ["Terminal", 10])),
             emoji_font_path=agentx.get("emoji_font_path", None),
             output_bg=agentx.get("output_bg", "white"),

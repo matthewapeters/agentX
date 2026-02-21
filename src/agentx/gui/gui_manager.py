@@ -9,6 +9,7 @@ from tkinter import ttk
 from typing import Callable, Optional
 
 from ..attachment_info import AttachmentInfo
+from .collapsible_section import CollapsibleSection
 from .gui_config import GUIConfig
 from ..history import History
 from ..igui_manager import IGUIManager
@@ -61,6 +62,7 @@ class GUIManager(IGUIManager):
         self.root = root
         self.config = config
         self.widgets = WidgetRegistry()
+        self._section_bg = self.root.cget("bg")
 
         # Store callbacks
         self._on_submit = on_submit
@@ -69,12 +71,15 @@ class GUIManager(IGUIManager):
 
         # Widget components (initialized in create_layout)
         self.model_selector: Optional[ModelSelector] = None
-        
-        # Tool panel state (inlined implementation)
-        self._tool_panel_frame: Optional[tk.Frame] = None
-        self._tool_panel_tools_container: Optional[tk.Frame] = None
-        self._tool_panel_vars: dict = {}
-        self._tool_panel_expanded: bool = True
+
+        # Session/System collapsible section state
+        self._session_sections: dict[str, CollapsibleSection] = {}
+        self._system_tab_frames: dict[str, tk.Frame] = {}
+        self._system_tab_section_stacks: dict[str, tk.Frame] = {}
+        self._session_section_spacing: int = self.config.session_section_spacing
+
+        # Available tools state
+        self._tool_panel_vars: dict[str, tk.BooleanVar] = {}
         self._tool_panel_tools: Optional[list] = None
 
         # Cache for text font
@@ -159,7 +164,12 @@ class GUIManager(IGUIManager):
         return collapse_expand_button
 
     def render_history_widget(
-        self, history_obj: History, parent, user_name, on_attachment_toggle=None
+        self,
+        history_obj: History,
+        parent,
+        user_name,
+        on_attachment_toggle=None,
+        include_header: bool = False,
     ):
         """
         Render a History object as a tkinter widget (Frame), replicating History.to_gui logic.
@@ -172,26 +182,31 @@ class GUIManager(IGUIManager):
             tkinter Frame representing the history
         """
         history_frame = tk.Frame(parent)
-        history_contexts_frame = tk.Frame(history_frame)
-        collapse_expand_button = self.collapse_expand_button(
-            history_frame, history_contexts_frame
-        )
-        history_label = tk.Label(
-            history_frame,
-            text=f"{user_name} History ({len(history_obj.sessions)} contexts)",
-            font=("Terminal", 10, "bold"),
-        )
 
-        collapse_expand_button.grid(
-            row=0, column=self.MESSAGE_COLUMNS["exp_button"], sticky="w"
-        )
-        history_label.grid(row=0, column=self.MESSAGE_COLUMNS["enabled"], sticky="w")
+        if include_header:
+            history_contexts_frame = tk.Frame(history_frame)
+            collapse_expand_button = self.collapse_expand_button(
+                history_frame, history_contexts_frame
+            )
+            history_label = tk.Label(
+                history_frame,
+                text=f"{user_name} History ({len(history_obj.sessions)} contexts)",
+                font=("Terminal", 10, "bold"),
+            )
 
-        # context widgets indented by one column
-        # columns: | indent | context widgets... |
-        history_contexts_frame.grid(
-            row=1, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew"
-        )
+            collapse_expand_button.grid(
+                row=0, column=self.MESSAGE_COLUMNS["exp_button"], sticky="w"
+            )
+            history_label.grid(
+                row=0, column=self.MESSAGE_COLUMNS["enabled"], sticky="w"
+            )
+            history_contexts_frame.grid(
+                row=1, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew"
+            )
+        else:
+            history_contexts_frame = tk.Frame(history_frame)
+            history_contexts_frame.pack(fill=tk.BOTH, expand=True)
+
         for idx, context in enumerate(history_obj.sessions):
             # Ensure each context is collapsed by default when rendering history
             context.expanded = False
@@ -199,17 +214,26 @@ class GUIManager(IGUIManager):
                 context,
                 history_contexts_frame,
                 on_attachment_toggle=on_attachment_toggle,
+                include_header=True,
             )
-            # Stack tightly, no vertical padding, align to top
-            # column 0 of history_contexts_frame which is in history_frame column 1 (indent)
-            c_frame.grid(
-                row=idx, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew"
-            )
+            if include_header:
+                c_frame.grid(
+                    row=idx, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew"
+                )
+            else:
+                c_frame.pack(fill=tk.X, expand=False)
 
-        history_contexts_frame.grid_remove()  # Start collapsed
+        if include_header:
+            history_contexts_frame.grid_remove()  # Start collapsed
         return history_frame
 
-    def render_context_widget(self, context_obj, parent, on_attachment_toggle=None):
+    def render_context_widget(
+        self,
+        context_obj,
+        parent,
+        on_attachment_toggle=None,
+        include_header: bool = False,
+    ):
         """
         Render a Context object as a tkinter widget (Frame), replicating Context.to_gui logic.
         Args:
@@ -222,27 +246,27 @@ class GUIManager(IGUIManager):
         context_frame = tk.Frame(parent)
         context_messages_frame = tk.Frame(context_frame)
 
-        # Create a sub-frame for expand/collapse button and label, so label is always left-aligned
-        # header_frame = tk.Frame(context_frame)
-        collapse_expand_button = self.collapse_expand_button(
-            context_frame, context_messages_frame
-        )
-        context_label = tk.Label(
-            # header_frame,
-            context_frame,
-            text=(
-                f"{getattr(context_obj, 'session_id', None) or 'Context'} "
-                f"({len(context_obj.messages)} messages)"
-            ),
-            font=("Terminal", 10, "bold"),
-        )
-        collapse_expand_button.grid(
-            row=0, column=self.MESSAGE_COLUMNS["exp_button"], sticky="w"
-        )
-        context_label.grid(row=0, column=1, sticky="w")
-        context_messages_frame.grid(
-            row=1, column=self.MESSAGE_COLUMNS["enabled"], sticky="nsew"
-        )
+        if include_header:
+            collapse_expand_button = self.collapse_expand_button(
+                context_frame, context_messages_frame
+            )
+            context_label = tk.Label(
+                context_frame,
+                text=(
+                    f"{getattr(context_obj, 'session_id', None) or 'Context'} "
+                    f"({len(context_obj.messages)} messages)"
+                ),
+                font=("Terminal", 10, "bold"),
+            )
+            collapse_expand_button.grid(
+                row=0, column=self.MESSAGE_COLUMNS["exp_button"], sticky="w"
+            )
+            context_label.grid(row=0, column=1, sticky="w")
+            context_messages_frame.grid(
+                row=1, column=self.MESSAGE_COLUMNS["enabled"], sticky="nsew"
+            )
+        else:
+            context_messages_frame.pack(fill=tk.BOTH, expand=True)
 
         # Configure column 0 as indent, then message columns
         context_messages_frame.columnconfigure(
@@ -263,8 +287,8 @@ class GUIManager(IGUIManager):
                 message, context_messages_frame, current_row, on_attachment_toggle
             )
 
-        # Hide messages frame if not expanded on initial render
-        if not getattr(context_obj, "expanded", False):
+        # Hide messages frame if not expanded on initial render (header mode only)
+        if include_header and not getattr(context_obj, "expanded", False):
             context_messages_frame.grid_remove()
 
         return context_frame
@@ -588,14 +612,11 @@ class GUIManager(IGUIManager):
         Args:
             context_widget: Fully rendered context widget from Context.to_gui()
         """
-        # Destroy old widget if it exists
-        if self.widgets.system_status_context is not None:
-            self.widgets.system_status_context.destroy()
+        section = self._session_sections.get("context")
+        if section is None:
+            raise RuntimeError("Context section not initialized")
 
-        # Pack new widget into session tab
-        context_widget.pack(expand=True, fill=tk.BOTH)
-
-        # Store reference
+        section.set_content(context_widget, fill=tk.BOTH, expand=True)
         self.widgets.system_status_context = context_widget
 
     def update_history_panel(self, history_widget: tk.Widget) -> None:
@@ -604,14 +625,11 @@ class GUIManager(IGUIManager):
         Args:
             history_widget: Fully rendered history widget from History.to_gui()
         """
-        # Destroy old widget if it exists
-        if self.widgets.system_status_history is not None:
-            self.widgets.system_status_history.destroy()
+        section = self._session_sections.get("history")
+        if section is None:
+            raise RuntimeError("History section not initialized")
 
-        # Pack new widget into session tab
-        history_widget.pack(expand=False, fill=tk.X)
-
-        # Store reference
+        section.set_content(history_widget, fill=tk.BOTH, expand=False)
         self.widgets.system_status_history = history_widget
 
     def update_files_panel(self, files_widget: tk.Widget) -> None:
@@ -736,9 +754,10 @@ class GUIManager(IGUIManager):
         Returns:
             The widget to use as parent for context.to_gui()
         """
-        if self.widgets.session_tab is None:
-            raise RuntimeError("session_tab not yet created")
-        return self.widgets.session_tab
+        section = self._session_sections.get("context")
+        if section is None:
+            raise RuntimeError("context section not yet created")
+        return section.content_container
 
     def get_history_parent(self) -> tk.Widget:
         """Get parent widget for history rendering.
@@ -746,9 +765,10 @@ class GUIManager(IGUIManager):
         Returns:
             The widget to use as parent for history.to_gui()
         """
-        if self.widgets.session_tab is None:
-            raise RuntimeError("session_tab not yet created")
-        return self.widgets.session_tab
+        section = self._session_sections.get("history")
+        if section is None:
+            raise RuntimeError("history section not yet created")
+        return section.content_container
 
     def get_files_parent(self) -> tk.Widget:
         """Get parent widget for file explorer rendering.
@@ -759,6 +779,28 @@ class GUIManager(IGUIManager):
         if self.widgets.files_tab is None:
             raise RuntimeError("files_tab not yet created")
         return self.widgets.files_tab
+
+    def register_system_collapsible_section(
+        self,
+        tab_name: str,
+        section_key: str,
+        title: str,
+        initial_collapsed: bool = True,
+        spacing: Optional[int] = None,
+    ) -> tk.Widget:
+        """Register a reusable collapsible section in a system tab.
+
+        This enables future Session/System components to share the same
+        look, feel, and behavior as existing collapsible sections.
+        """
+        section = self._register_system_collapsible_section(
+            tab_name=tab_name,
+            section_key=section_key,
+            title=title,
+            initial_collapsed=initial_collapsed,
+            spacing=self._session_section_spacing if spacing is None else spacing,
+        )
+        return section.get_widget()
 
     # Private helper methods
 
@@ -850,11 +892,11 @@ class GUIManager(IGUIManager):
     def _create_status_panel(self) -> None:
         """Create status panel with tabs."""
         self.widgets.system_status = tk.Frame(
-            self.widgets.paned, bg=self.config.status_bg
+            self.widgets.paned, bg=self._section_bg
         )
 
         # Create a frame for model selector at the top
-        model_frame = tk.Frame(self.widgets.system_status, bg=self.config.status_bg)
+        model_frame = tk.Frame(self.widgets.system_status, bg=self._section_bg)
         model_frame.pack(fill=tk.X, padx=5, pady=5)
         
         # Add model selector
@@ -870,19 +912,39 @@ class GUIManager(IGUIManager):
 
         # Create Session tab
         self.widgets.session_tab = tk.Frame(
-            self.widgets.system_notebook, bg=self.config.status_bg
+            self.widgets.system_notebook, bg=self._section_bg
         )
         self.widgets.system_notebook.add(self.widgets.session_tab, text="Session")
-        
-        # Add tool panel to session tab (rendered directly here)
-        self._tool_panel_frame = None
-        self._tool_panel_vars = {}
-        self._tool_panel_expanded = True
-        self._create_tool_panel(self.widgets.session_tab)
+
+        # Build ordered, reusable section stack for Session tab
+        self._register_system_collapsible_section(
+            tab_name="Session",
+            section_key="history",
+            title="History",
+            initial_collapsed=True,
+            spacing=self._session_section_spacing,
+        )
+        self._register_system_collapsible_section(
+            tab_name="Session",
+            section_key="tools",
+            title="Available Tools",
+            initial_collapsed=True,
+            spacing=self._session_section_spacing,
+        )
+        self._register_system_collapsible_section(
+            tab_name="Session",
+            section_key="context",
+            title="Context",
+            initial_collapsed=True,
+            spacing=self._session_section_spacing,
+        )
+
+        # Initialize Available Tools section with empty-state content
+        self._refresh_tools_section()
 
         # Create Files tab
         self.widgets.files_tab = tk.Frame(
-            self.widgets.system_notebook, bg=self.config.status_bg
+            self.widgets.system_notebook, bg=self._section_bg
         )
         self.widgets.system_notebook.add(self.widgets.files_tab, text="Files")
 
@@ -909,86 +971,128 @@ class GUIManager(IGUIManager):
 
         self.root.after(100, set_initial_split)
 
-    def _create_tool_panel(self, parent):
-        """Create the tool panel UI in the given parent."""
-        if self._tool_panel_frame:
-            self._tool_panel_frame.destroy()
-        self._tool_panel_frame = tk.Frame(parent)
-        self._tool_panel_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    def _get_or_create_system_tab(self, tab_name: str) -> tk.Frame:
+        if self.widgets.system_notebook is None:
+            raise RuntimeError("system_notebook not yet created")
 
-        # Header with expand/collapse
-        header = tk.Frame(self._tool_panel_frame)
-        header.pack(fill=tk.X, padx=5, pady=(5, 0))
-        btn = tk.Button(
-            header,
-            text="▼" if self._tool_panel_expanded else "▶",
-            width=2,
-            font=("Terminal", 10),
-            command=self._toggle_tool_panel_expand
+        key = tab_name.lower()
+        if key in self._system_tab_frames:
+            return self._system_tab_frames[key]
+
+        if key == "session" and self.widgets.session_tab is not None:
+            tab_frame = self.widgets.session_tab
+        elif key == "files" and self.widgets.files_tab is not None:
+            tab_frame = self.widgets.files_tab
+        else:
+            tab_frame = tk.Frame(self.widgets.system_notebook, bg=self._section_bg)
+            self.widgets.system_notebook.add(tab_frame, text=tab_name)
+
+        self._system_tab_frames[key] = tab_frame
+        return tab_frame
+
+    def _get_or_create_system_section_stack(self, tab_name: str) -> tk.Frame:
+        key = tab_name.lower()
+        if key in self._system_tab_section_stacks:
+            return self._system_tab_section_stacks[key]
+
+        tab_frame = self._get_or_create_system_tab(tab_name)
+        stack = tk.Frame(tab_frame, bg=self._section_bg)
+        stack.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self._system_tab_section_stacks[key] = stack
+        return stack
+
+    def _register_system_collapsible_section(
+        self,
+        tab_name: str,
+        section_key: str,
+        title: str,
+        initial_collapsed: bool = True,
+        spacing: int = 8,
+    ) -> CollapsibleSection:
+        stack = self._get_or_create_system_section_stack(tab_name)
+        section = CollapsibleSection(
+            parent=stack,
+            title=title,
+            initial_collapsed=initial_collapsed,
         )
-        btn.pack(side=tk.LEFT)
-        label = tk.Label(
-            header,
-            text="Available Tools",
-            font=("Terminal", 10, "bold")
-        )
-        label.pack(side=tk.LEFT, padx=(5, 0))
+        section.get_widget().pack(fill=tk.X, expand=False, pady=(0, spacing))
+        if tab_name.lower() == "session":
+            self._session_sections[section_key] = section
+        return section
 
-        # Collapsible container
-        self._tool_panel_tools_container = tk.Frame(self._tool_panel_frame)
-        if self._tool_panel_expanded:
-            self._tool_panel_tools_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    def _parse_tool_metadata(self, tool: dict) -> tuple[str, str]:
+        tool_func = tool.get("function") if isinstance(tool, dict) else None
+        name = tool.get("name") if isinstance(tool, dict) else None
+        if not name and isinstance(tool_func, dict):
+            name = tool_func.get("name")
+        if not name:
+            name = "Unknown"
 
-        # If no tools, show empty
-        if not hasattr(self, '_tool_panel_tools') or not self._tool_panel_tools:
+        description = tool.get("description", "") if isinstance(tool, dict) else ""
+        if not description and isinstance(tool_func, dict):
+            description = tool_func.get("description", "")
+        return name, description
+
+    def _build_tools_content_widget(self, parent: tk.Widget) -> tk.Widget:
+        content = tk.Frame(parent)
+
+        if not self._tool_panel_tools:
             empty = tk.Label(
-                self._tool_panel_tools_container,
+                content,
                 text="No tools available",
                 foreground="gray",
-                font=("", 9, "italic")
+                font=("", 9, "italic"),
             )
             empty.grid(row=0, column=0, sticky="w", pady=10)
-            return
+            return content
 
-        # Render tool checkboxes
+        previous_enabled = {
+            name: var.get() for name, var in self._tool_panel_vars.items()
+        }
         self._tool_panel_vars = {}
+
         for idx, tool in enumerate(self._tool_panel_tools):
-            tool_func = tool.get("function") if isinstance(tool, dict) else None
-            name = tool.get("name") if isinstance(tool, dict) else None
-            if not name and isinstance(tool_func, dict):
-                name = tool_func.get("name")
-            if not name:
-                name = "Unknown"
-            description = tool.get("description", "") if isinstance(tool, dict) else ""
-            if not description and isinstance(tool_func, dict):
-                description = tool_func.get("description", "")
-            var = tk.BooleanVar(value=True)
+            name, description = self._parse_tool_metadata(tool)
+            is_enabled = previous_enabled.get(name, True)
+            var = tk.BooleanVar(value=is_enabled)
             self._tool_panel_vars[name] = var
-            cb = tk.Checkbutton(
-                self._tool_panel_tools_container,
+
+            checkbox = tk.Checkbutton(
+                content,
                 text=name,
                 variable=var,
-                command=lambda n=name, v=var: self._on_tool_toggle(n, v.get())
+                command=lambda n=name, v=var: self._on_tool_toggle(n, v.get()),
             )
-            cb.grid(row=idx, column=0, sticky="w", pady=2, padx=(0, 5))
+            checkbox.grid(row=idx, column=0, sticky="w", pady=2, padx=(0, 5))
+
             if description:
-                desc_text = f"- {description[:50]}..." if len(description) > 50 else f"- {description}"
-                desc = tk.Label(
-                    self._tool_panel_tools_container,
+                desc_text = (
+                    f"- {description[:50]}..."
+                    if len(description) > 50
+                    else f"- {description}"
+                )
+                description_label = tk.Label(
+                    content,
                     text=desc_text,
                     foreground="gray",
-                    font=("", 9)
+                    font=("", 9),
                 )
-                desc.grid(row=idx, column=1, sticky="w")
+                description_label.grid(row=idx, column=1, sticky="w")
 
-    def _toggle_tool_panel_expand(self):
-        self._tool_panel_expanded = not self._tool_panel_expanded
-        self._create_tool_panel(self.widgets.session_tab)
+        return content
+
+    def _refresh_tools_section(self) -> None:
+        tools_section = self._session_sections.get("tools")
+        if tools_section is None:
+            return
+
+        tools_content = self._build_tools_content_widget(tools_section.content_container)
+        tools_section.set_content(tools_content, fill=tk.BOTH, expand=False)
 
     def populate_tools(self, tools: list[dict]) -> None:
         """Populate tool panel with available tools."""
         self._tool_panel_tools = tools
-        self._create_tool_panel(self.widgets.session_tab)
+        self._refresh_tools_section()
 
     def get_enabled_tools(self) -> list[str]:
         """Get list of currently enabled tools."""

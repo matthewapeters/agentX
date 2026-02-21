@@ -87,6 +87,17 @@ class TestGUIManagerInitialization(unittest.TestCase):
         # Widgets should start as None before layout
         self.assertIsNone(gui.widgets.output_text)
 
+    def test_session_section_spacing_default(self):
+        """Session section spacing should default to configured value."""
+        gui = GUIManager(
+            root=self.root,
+            config=self.config,
+            on_submit=self.on_submit,
+            on_interrupt=self.on_interrupt,
+            on_attachment_toggle=self.on_attachment_toggle
+        )
+        self.assertEqual(gui._session_section_spacing, 8)
+
 
 class TestGUIManagerDisplayMethods(unittest.TestCase):
     """Test display methods of GUIManager."""
@@ -442,6 +453,17 @@ class TestGUIManagerPanelMethods(unittest.TestCase):
         # Verify panel was updated
         files_parent = self.gui.get_files_parent()
         self.assertIsNotNone(files_parent)
+
+    def test_session_sections_have_required_order(self):
+        """Session tab should host sections in History, Available Tools, Context order."""
+        section_keys = list(self.gui._session_sections.keys())
+        self.assertEqual(section_keys, ["history", "tools", "context"])
+
+    def test_session_sections_start_collapsed(self):
+        """Session sections should be collapsed initially at application start."""
+        self.assertFalse(self.gui._session_sections["history"].is_expanded())
+        self.assertFalse(self.gui._session_sections["tools"].is_expanded())
+        self.assertFalse(self.gui._session_sections["context"].is_expanded())
 
 
 if __name__ == '__main__':
