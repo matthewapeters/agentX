@@ -4,23 +4,24 @@ Programmatic API bridge for Agentix.
 This module provides a clean programmatic interface to Agentix functionality
 that can be consumed by AgentX GUI without going through the CLI.
 """
-
+import sys
 from typing import Iterator, Optional
 
-from shared.models.message import Message
-from shared.models.context import Context
-from shared.models.response import ResponseChunk, ChunkType
+from agentix.agentix_config import AgentixConfig
+from agentix.api_client import query_api_streaming
+from agentix.models import get_model, get_models
+from agentix.prompt_classification_response import (
+    NextStep,
+    PromptClassificationResponse,
+)
 
 # Direct imports to avoid circular dependencies
-from agentix.agentix_config import AgentixConfig
-from agentix.api_client import query_classification, query_api_streaming
-from agentix.models import get_models, get_model
-from agentix.prompt_classification_response import (
-    PromptClassificationResponse,
-    Intent,
-    NextStep,
-)
+from agentix.tools import extract_cst_tools
 from agentix.tools.describe_tools import to_openai_tools
+from shared.models.context import Context
+from shared.models.message import Message
+from shared.models.response import ChunkType, ResponseChunk
+from .classify_prompt import classify_prompt as classifier
 
 
 class AgentixBridge:
@@ -76,28 +77,12 @@ class AgentixBridge:
         Returns:
             PromptClassificationResponse with intent and next_step
         """
-        # Convert shared Context to Agentix format
-        history = self._context_to_history(context)
-
-        # Build classification prompt using Agentix logic
-        from .context.sessions import assemble_classification_prompt
-
-        classification_payload = assemble_classification_prompt(
+        return classifier(
             self.config,
-            history,
+            prompt,
+            context,
+            self._context_to_history(context),
             self._get_max_tokens(),
-        )
-
-        # Query API for classification
-        result = query_classification(self.config, classification_payload)
-
-        # Parse result into PromptClassificationResponse
-        return PromptClassificationResponse(
-            intent=Intent[result.get("intent", "conversation")],
-            needs_clarification=result.get("needs_clarification", False),
-            missing_fields=result.get("missing_fields", []),
-            reasoning_summary=result.get("reasoning_summary", ""),
-            next_step=NextStep[result.get("next_step", "respond_directly")],
         )
 
     def process_prompt_streaming(
@@ -126,13 +111,16 @@ class AgentixBridge:
         # Auto-classify if not provided and classification is enabled
         # Note: Classification is transparent to the user - logged but not displayed
         if classification is None and self.config.classify_prompts:
-            import sys
+
             print("[Agentix] Classifying prompt...", file=sys.stderr)
             classification = self.classify_prompt(prompt, context)
             if self.config.debug and classification:
-                print(f"[Agentix] Classification: intent={classification.intent.name}, "
-                      f"next_step={classification.next_step.name}, "
-                      f"reasoning={classification.reasoning_summary}", file=sys.stderr)
+                print(
+                    f"[Agentix] Classification: intent={classification.intent.name}, "
+                    f"next_step={classification.next_step.name}, "
+                    f"reasoning={classification.reasoning_summary}",
+                    file=sys.stderr,
+                )
 
         # Route based on next_step (if classification provided) or default to direct response
         # Route based on next_step (if classification provided) or default to direct response
@@ -186,7 +174,6 @@ class AgentixBridge:
         tools = []
         for tool_name in self.config.tools or []:
             if tool_name == "cst":
-                from .tools import extract_cst_tools
                 cst_tools = extract_cst_tools()
                 tools.extend(cst_tools)
             elif tool_name == "ast":
