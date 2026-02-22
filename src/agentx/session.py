@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Any, Optional, Iterator
 
 import httpx
-from ollama import Client
 
 from .attachment_info import AttachmentInfo
 from shared.models.context import Context
@@ -21,7 +20,7 @@ from shared.models.message import Message, MessageRole
 from shared.models.response import ResponseChunk, ChunkType
 from .service_manager import ServiceManager
 from .integration import (
-    AgentixBridgeAdapter, 
+    AgentixBridgeAdapter,
     ResponseHandler,
     ClientToolExecutor,
     ServerToolExecutor,
@@ -79,7 +78,7 @@ class AgentXSession:
         self._is_streaming = threading.Event()
         self._streaming_thread = None
         self._pending_prompt: Optional[str] = None
-        
+
         # Initialize service manager for external services
         self.service_manager = ServiceManager(config)
 
@@ -95,25 +94,25 @@ class AgentXSession:
 
         # Set window title with session info
         self.gui.set_window_title(f"{self.user} - AgentX Session - {self.start_time}")
-        
+
         # Initialize Agentix bridge (always integrated)
         self.agentix_adapter = create_adapter(config)
-        
+
         # Initialize tool executors
         self.client_tool_executor = ClientToolExecutor(base_path=os.getcwd())
         self.server_tool_executor = ServerToolExecutor(agentix_bridge=self.agentix_adapter.bridge)
         self.advanced_tools = AdvancedToolRegistry(agentix_bridge=self.agentix_adapter.bridge)
-        
+
         # Initialize active model from config
         self._active_model = config["agentx"]["ollama_model"]
 
     def process_prompt(self, prompt: str) -> Iterator[ResponseChunk]:
         """Process a prompt and yield response chunks (test-friendly API)."""
-        shared_context = Context()
-        for entry in self.context.messages:
-            msg = entry.message if hasattr(entry, "message") else entry
-            if getattr(msg, "enabled", False):
-                shared_context.add_message(msg, ts=msg.timestamp)
+        shared_context = self._build_shared_context_from_context()
+
+        user_message = Message(role=MessageRole.USER, content=prompt)
+        user_message.enabled = True
+        self.context.add_message(user_message, ts=datetime.now())
 
         classification = None
         if self.config.get("agentix", {}).get("classify_prompts", False):
@@ -125,38 +124,50 @@ class AgentXSession:
                     classification=classification.__dict__,
                 )
 
+        thinking_parts: list[str] = []
+        content_parts: list[str] = []
         for chunk in self.agentix_adapter.process_prompt_generator(
             prompt, shared_context, classification
         ):
+            if chunk.type == ChunkType.THINKING and chunk.content:
+                thinking_parts.append(chunk.content)
+            elif chunk.type == ChunkType.CONTENT and chunk.content:
+                content_parts.append(chunk.content)
             yield chunk
+
+        self._persist_stream_messages(
+            "".join(thinking_parts),
+            "".join(content_parts),
+            refresh_gui=False,
+        )
 
     @property
     def active_model(self) -> str:
         """
         Get the currently active Ollama model.
-        
+
         This is the single source of truth for which model is being used.
         All Ollama calls should use this property.
-        
+
         Returns:
             Model name (e.g., "gpt-oss", "llama3.2")
         """
         return self._active_model
-    
+
     @active_model.setter
     def active_model(self, model: str) -> None:
         """
         Set the active Ollama model.
-        
+
         Updates both the internal state and the config dictionary
         to keep them synchronized.
-        
+
         Args:
             model: Model name to use
         """
         self._active_model = model
         self.config["agentx"]["ollama_model"] = model
-        
+
         # Update the bridge's config
         self.agentix_adapter.agentix_config.model = model
 
@@ -233,7 +244,7 @@ class AgentXSession:
         self.gui._on_model_change = on_model_change
         if self.gui.model_selector:
             self.gui.model_selector.on_model_change = on_model_change
-        
+
         # Always populate models from Agentix (integrated and always available)
         try:
             models = self.agentix_adapter.get_models()
@@ -241,7 +252,7 @@ class AgentXSession:
                 self.gui.populate_models(models, initial_model=self.active_model)
         except Exception as e:
             print(f"Error loading models: {e}")
-        
+
         # Setup tool callbacks
         original_tool_toggle = self.gui._on_tool_toggle
         def on_tool_toggle(tool_name: str, enabled: bool):
@@ -249,7 +260,7 @@ class AgentXSession:
             self.config["agentix"]["available_tools"] = enabled_tools
             original_tool_toggle(tool_name, enabled)
         self.gui._on_tool_toggle = on_tool_toggle
-        
+
         # Populate tools from Agentix
         try:
             tools = self.agentix_adapter.get_tools()
@@ -257,66 +268,66 @@ class AgentXSession:
                 self.gui.populate_tools(tools)
         except Exception as e:
             print(f"Error loading tools: {e}")
-    
+
     def execute_tool(self, tool_name: str, tool_input: dict) -> str:
         """
         Execute a tool (either client-side or server-side).
-        
+
         Routes to appropriate executor based on tool type and availability:
         - CLIENT tools: Execute via ClientToolExecutor
         - SERVER tools: Execute via ServerToolExecutor
         - CODE_ANALYSIS: Execute via ServerToolExecutor (Agentix)
         - EITHER: Try client first, fall back to server
-        
+
         Args:
             tool_name: Name of the tool to execute
             tool_input: Arguments for the tool
-            
+
         Returns:
             Tool execution result as string
         """
         try:
             from .integration import CodeAnalysisTool
-            
+
             # Client-side tool names
             client_tool_names = {
-                "read_file", 
-                "list_directory", 
-                "write_file", 
-                "get_file_info", 
+                "read_file",
+                "list_directory",
+                "write_file",
+                "get_file_info",
                 "search_files"
             }
-            
+
             # Try client-side tools first
             if tool_name in client_tool_names:
                 return self.client_tool_executor.execute(tool_name, tool_input)
-            
+
             # Check if it's a code analysis tool
             if CodeAnalysisTool.is_code_analysis_tool(tool_name):
                 if self.server_tool_executor.is_available():
                     return self.server_tool_executor.execute(tool_name, tool_input)
                 return f"Code analysis tool '{tool_name}' not available - Agentix not connected"
-            
+
             # Try server-side tools
             if self.server_tool_executor.is_available():
                 return self.server_tool_executor.execute(tool_name, tool_input)
-            
+
             # Unknown tool
             return f"Unknown tool: {tool_name}"
-            
+
         except Exception as e:
             return f"Error executing tool '{tool_name}': {str(e)}"
-    
+
     def handle_tool_call(self, tool_name: str, tool_input: dict) -> None:
         """
         Handle a tool call from the LLM response.
-        
+
         This method:
         1. Stores the TOOL_CALL message in context
         2. Executes the tool
         3. Stores the TOOL_RESULT message in context
         4. Displays both in the GUI
-        
+
         Args:
             tool_name: Name of the tool to call
             tool_input: Arguments for the tool
@@ -330,19 +341,19 @@ class AgentXSession:
             tool_call_msg.tool_name = tool_name
             tool_call_msg.tool_input = tool_input
             tool_call_msg.enabled = True
-            
+
             self.add_message_to_context(tool_call_msg)
-            
+
             # Display tool call in GUI
             self._safe_root_after(
                 lambda: self.gui.display_agent_response(
                     f"\n[🔧 Calling tool: {tool_name}]\n"
                 )
             )
-            
+
             # Execute the tool
             result = self.execute_tool(tool_name, tool_input)
-            
+
             # Store TOOL_RESULT message
             tool_result_msg = Message(
                 role=MessageRole.TOOL_RESULT,
@@ -350,9 +361,9 @@ class AgentXSession:
             )
             tool_result_msg.tool_name = tool_name
             tool_result_msg.enabled = True
-            
+
             self.add_message_to_context(tool_result_msg)
-            
+
             # Display tool result in GUI
             self._safe_root_after(
                 lambda: self.gui.display_agent_response(
@@ -361,7 +372,7 @@ class AgentXSession:
                     else f"[📋 Tool result: {result}]\n"
                 )
             )
-            
+
         except Exception as e:
             error_msg = f"Error handling tool call: {e}"
             self._safe_root_after(lambda: self.gui.display_error(error_msg))
@@ -471,7 +482,7 @@ class AgentXSession:
         # Initialize dynamic content in panels
         self.refresh_context_gui()
         self.refresh_files_gui()
-        
+
         # Setup model selector and tool panel if Agentix is available
         # (Must be after layout is created so the widgets exist)
         self._setup_agentix_ui()
@@ -480,7 +491,7 @@ class AgentXSession:
         """
         Worker function that streams the response from the Ollama server and updates the output via GUIManager.
         This runs in a separate thread to keep the GUI responsive.
-        
+
         Routes through Agentix middleware for classification and tool support.
         """
         # Agentix is always integrated.
@@ -494,7 +505,7 @@ class AgentXSession:
                 self.root.after(0, callback)
         except RuntimeError:
             pass
-    
+
     def _stream_via_agentix(self):
         """Stream response through Agentix middleware."""
         config = self.config
@@ -555,7 +566,7 @@ class AgentXSession:
 
             # Add current message
             self.add_message_to_context(self.message)
-            
+
             # Reset message and history attachments
             self.message = Message(role="user", content="")
             self.enabled_history_attachments = []
@@ -576,7 +587,8 @@ class AgentXSession:
             self._thinking_header_shown = False
 
             # Create response handler
-            agent_response_message = Message(role="assistant", content="")
+            thinking_parts: list[str] = []
+            content_parts: list[str] = []
 
             handler = ResponseHandler(
                 on_content=lambda text: self._handle_stream_content(text),
@@ -600,30 +612,33 @@ class AgentXSession:
             ):
                 if not self._is_streaming.is_set():
                     break
-                
+
                 handler.process_chunk(chunk)
-                
-                # Accumulate content for message
-                if chunk.type.value == "content":
-                    agent_response_message.content += chunk.content
+
+                if chunk.type == ChunkType.THINKING and chunk.content:
+                    thinking_parts.append(chunk.content)
+                elif chunk.type == ChunkType.CONTENT and chunk.content:
+                    content_parts.append(chunk.content)
 
                 self._safe_root_after(self.refresh_user_gui)
 
             # Complete the response
             self._safe_root_after(self.gui.display_spacing)
-            if agent_response_message.content:
-                self.add_message_to_context(agent_response_message)
+            self._persist_stream_messages(
+                "".join(thinking_parts),
+                "".join(content_parts),
+            )
             self._safe_root_after(self.refresh_user_gui)
 
         except Exception as e:
             import traceback
-            self._safe_root_after(lambda: self.gui.display_error(f"Error: {e}"))
+            self._safe_root_after(lambda err=e: self.gui.display_error(f"Error: {err}"))
             print(f"Request error: {e}")
             traceback.print_exc()
         finally:
             self._is_streaming.clear()
             self._safe_root_after(lambda: self.gui.set_streaming_state(False))
-    
+
     def _display_thinking(self, text: str):
         """Helper to display thinking text with header on first call."""
         if not getattr(self, "_thinking_header_shown", False):
@@ -649,120 +664,49 @@ class AgentXSession:
         """Ensure header is shown before streaming content chunks."""
         self._display_assistant_header()
         self._safe_root_after(lambda: self.gui.display_agent_response(text))
-    
+
+    def _build_shared_context_from_context(self) -> Context:
+        """Build shared context from currently enabled messages."""
+        shared_context = Context()
+        for entry in self.context.messages:
+            msg = entry.message if hasattr(entry, "message") else entry
+            if getattr(msg, "enabled", False):
+                shared_context.add_message(msg, ts=msg.timestamp)
+        return shared_context
+
+    def _persist_stream_messages(
+        self,
+        thinking_text: str,
+        content_text: str,
+        refresh_gui: bool = True,
+    ) -> None:
+        """Persist streamed thinking and assistant content to context."""
+        if thinking_text:
+            thinking_message = Message(role=MessageRole.THINKING, content=thinking_text)
+            thinking_message.enabled = False
+            if refresh_gui:
+                self.add_message_to_context(thinking_message)
+            else:
+                self.context.add_message(thinking_message, ts=datetime.now())
+
+        if content_text:
+            assistant_message = Message(role=MessageRole.ASSISTANT, content=content_text)
+            assistant_message.enabled = True
+            if refresh_gui:
+                self.add_message_to_context(assistant_message)
+            else:
+                self.context.add_message(assistant_message, ts=datetime.now())
+
     def _stream_direct_ollama(self):
-        """Stream response directly from Ollama (original implementation)."""
-        config = self.config
-
-        self._is_streaming.set()
-        self._safe_root_after(lambda: self.gui.set_streaming_state(True))
-
-        self._safe_root_after(self.refresh_user_gui)
-
-        # Reset per-turn display state
-        self._assistant_header_shown = False
-        self._thinking_header_shown = False
-
-        # Load configuration
-        ollama_host = config["agentx"]["ollama_host"]
-        ollama_model = self.active_model
-
-        # Get the prompt from the user input (via GUIManager)
-        prompt = self.gui.get_user_input()
-
-        if not prompt and not self.message.attachments:
-            self._safe_root_after(lambda: self.gui.display_error("No input provided."))
-            return
-
-        # Build the full user message including only enabled attached file contents
-        full_prompt = prompt
-
-        # Display the user prompt and attachments
-        attachment_filenames = [
-            os.path.basename(att.file_path) for att in self.message.attachments
-        ]
-        self._safe_root_after(
-            lambda: self.gui.display_user_message(
-                prompt, attachment_filenames, datetime.now()
-            )
-        )
-
-        try:
-            # Define the message payload
-            self.message.content = full_prompt
-            # Enable the message before adding to context
-            self.message.enabled = True
-
-            # Refresh context GUI to show the enabled message immediately
-            self._safe_root_after(self.refresh_context_gui)
-
-            # Add enabled history attachments to the current message
-            for att in self.enabled_history_attachments:
-                if att not in self.message.attachments:
-                    self.message.attachments.append(att)
-
-            agent_thinking_message = Message(role="thinking", content="")
-            agent_thinking_message.enabled = False
-            agent_response_message = Message(role="assistant", content="")
-
-            self.add_message_to_context(self.message)
-
-            # Reset the message and clear enabled history attachments
-            self.message = Message(role="user", content="")
-            self.enabled_history_attachments = []
-
-            # Build LLM context from enabled messages/attachments in history (all sessions)
-            llm_messages = []
-
-            # Collect enabled messages from history
-            history_messages = self.history.get_enabled_messages()
-            for _, msg in history_messages:
-                llm_messages.append(msg.llm_message_dict())
-
-            # Also include enabled messages from the current context
-            for msg in self.context.messages:
-                if hasattr(msg, "message"):
-                    msg = msg.message
-                if getattr(msg, "enabled", False):
-                    if hasattr(msg, "attachments"):
-                        msg.attachments = [
-                            a for a in msg.attachments if getattr(a, "enabled", False)
-                        ]
-                    llm_messages.append(msg.llm_message_dict())
-
-            client = Client(host=f"http://{ollama_host}")
-            for part in client.chat(
-                model=ollama_model,
-                messages=llm_messages,
-                stream=True,
-            ):
-                if not self._is_streaming.is_set():
-                    break  # Exit the loop if streaming is interrupted
-
-                if part.message.thinking:
-                    self._display_thinking(part.message.thinking)
-                if part.message.content:
-                    self._display_assistant_header()
-                    agent_response_message.content += part.message.content
-                    self._safe_root_after(
-                        lambda: self.gui.display_agent_response(part.message.content)
-                    )
-
-                self._safe_root_after(self.refresh_user_gui)
-            # After streaming is complete, add spacing
-            self._safe_root_after(self.gui.display_spacing)
-            self.add_message_to_context(agent_response_message)
-            self._safe_root_after(self.refresh_user_gui)
-
-        except Exception as e:
-            import traceback
-
-            print(f"Request error: {e}")
-            traceback.print_exc()
+        """Deprecated compatibility shim that delegates to canonical Agentix stream path."""
+        print("[AgentX] _stream_direct_ollama is deprecated; delegating to _stream_via_agentix")
+        if self._pending_prompt is None:
+            self._pending_prompt = self.gui.get_user_input()
+        self._stream_via_agentix()
     def perform_service_handshake(self):
         """
         Performs service startup and handshake with required services.
-        
+
         Steps:
         1. Ensure Ollama service is running
         2. Ensure Agentix service is running
@@ -782,7 +726,7 @@ class AgentXSession:
         # Start services
         print(f"Ensuring services are running: {', '.join(services_to_start)}")
         all_services_started = self.service_manager.ensure_services(services_to_start, timeout=30)
-        
+
         if not all_services_started:
             print("⚠ Warning: Agentix service did not start successfully")
             print("  - Check that Agentix dependencies are installed (e.g., libcst)")
@@ -804,7 +748,7 @@ class AgentXSession:
                 response = client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
                 print("✓ Service handshake and model invocation successful.")
-                
+
                 # List available models
                 try:
                     models_response = client.get(f"http://{ollama_host}/api/tags")
@@ -823,7 +767,7 @@ class AgentXSession:
                             print("\n⚠ No models available in Ollama")
                 except Exception as e:
                     print(f"\n⚠ Could not fetch model list: {e}")
-                
+
                 # Show service status
                 print()
                 print("Service Status:")
@@ -833,7 +777,7 @@ class AgentXSession:
                 else:
                     print("  ✗ Agentix: Failed (code analysis unavailable)")
                 print()
-                
+
         except httpx.RequestError as e:
             raise RuntimeError(f"Failed to connect to Ollama at {url}") from e
 
