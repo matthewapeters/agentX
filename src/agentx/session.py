@@ -468,8 +468,7 @@ class AgentXSession:
         """
         time_added = datetime.now()
         self.context.add_message(message, ts=time_added)
-        if threading.current_thread() is threading.main_thread():
-            self.refresh_context_gui()
+        self._safe_root_after(self.refresh_context_gui)
 
     def layout(self):
         """
