@@ -520,7 +520,7 @@ class TestGUIManagerPanelMethods(unittest.TestCase):
     def test_session_sections_have_required_order(self):
         """Session tab should host sections in History, Available Tools, Context order."""
         section_keys = list(self.gui._session_sections.keys())
-        self.assertEqual(section_keys, ["history", "tools", "context"])
+        self.assertEqual(section_keys, ["history", "tools", "working_memory", "context"])
 
     def test_session_sections_start_collapsed(self):
         """Session sections should be collapsed initially at application start."""

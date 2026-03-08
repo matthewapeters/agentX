@@ -86,6 +86,28 @@ class AgentixBridgeAdapter:
             self.bridge.register_tool_implementations(impls, schemas)
         except Exception as exc:
             print(f"⚠ Could not register client tools: {exc}")
+
+    def register_working_memory_tools(self, working_memory) -> None:
+        """Register Working Memory tools with the bridge.
+
+        Called after session creates its ``WorkingMemory`` instance so the tools
+        hold a live reference to session state. Must be called before the first
+        prompt is processed.
+
+        Args:
+            working_memory: The session's ``WorkingMemory`` instance.
+        """
+        try:
+            from agentx.integration.working_memory_tool_executor import (
+                WorkingMemoryToolExecutor,
+                get_working_memory_tool_schemas,
+            )
+            executor = WorkingMemoryToolExecutor(working_memory)
+            impls = executor.get_tool_implementations()
+            schemas = get_working_memory_tool_schemas()
+            self.bridge.register_tool_implementations(impls, schemas)
+        except Exception as exc:
+            print(f"⚠ Could not register working memory tools: {exc}")
     
     def classify_prompt_sync(
         self, 

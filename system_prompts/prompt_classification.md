@@ -94,3 +94,20 @@ Rules for "next_step" are fixed and non-negotiable:
 - safety_issue → escalate
 
 [ END OF SYSTEM PROMPT ]
+
+## [WORKING MEMORY OPERATIONS]
+
+The agent has a Working Memory store (🏛️) that holds persistent facts across the session.
+Users may ask to add, update, remove, or query facts. Classify these as follows:
+
+- "remember that X is Y" / "note that..." / "store fact X = Y" / "keep in mind that..."
+  → intent = "simple_action", next_step = "single_tool"
+
+- "forget X" / "remove fact X" / "clear your memory of X"
+  → intent = "simple_action", next_step = "single_tool"
+
+- "what facts do you know?" / "list your memory" / "what do you remember about X?"
+  → intent = "conversation", next_step = "respond_directly"
+
+- Requests to update multiple facts or perform complex memory restructuring
+  → intent = "complex_action", next_step = "invoke_planner"

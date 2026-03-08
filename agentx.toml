@@ -22,3 +22,8 @@ show_intent = true     # 🤔 intent: <value>
 show_reasoning = true  # 🤔    reasoning: <text>
 show_clarification = true  # 🤔    clarification needed / missing fields (suppressed when falsy)
 show_next_step = true  # 💡 path: <next_step>
+
+[agentx.working_memory]
+enabled = true              # Master switch — enable 🏛️ Working Memory feature
+inject_into_context = true  # Prepend enabled facts to LLM system context on each prompt
+max_facts = 50              # Safety cap on total stored facts (0 = unlimited)

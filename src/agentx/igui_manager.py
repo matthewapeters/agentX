@@ -170,6 +170,19 @@ class IGUIManager(Protocol):
         """
         ...
 
+    def update_working_memory_panel(self, working_memory_widget: tk.Widget) -> None:
+        """Replace Working Memory panel content with a newly rendered widget.
+
+        Args:
+            working_memory_widget: Fully rendered widget from
+                ``GUIManager.render_working_memory_widget()``.
+
+        Behavior:
+            - Replaces existing content inside the 🏛️ Working Memory section.
+            - No-op if the working_memory section is not present (feature disabled).
+        """
+        ...
+
     def update_files_panel(self, files_widget: tk.Widget) -> None:
         """Replace files panel content with new widget.
 

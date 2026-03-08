@@ -5,6 +5,7 @@ import re
 import threading
 import tkinter as tk
 from datetime import datetime
+from tkinter import messagebox as tk_messagebox
 from tkinter import ttk
 from typing import Callable, Optional
 
@@ -676,6 +677,236 @@ class GUIManager(IGUIManager):
         section.set_content(history_widget, fill=tk.BOTH, expand=False)
         self.widgets.system_status_history = history_widget
 
+    def update_working_memory_panel(self, working_memory_widget: tk.Widget) -> None:
+        """Replace Working Memory panel content with a newly rendered widget.
+
+        Args:
+            working_memory_widget: Fully rendered working memory widget from
+                ``render_working_memory_widget()``.
+        """
+        section = self._session_sections.get("working_memory")
+        if section is None:
+            return  # Working Memory disabled — silently no-op
+        section.set_content(working_memory_widget, fill=tk.BOTH, expand=True)
+
+    def get_working_memory_parent(self) -> tk.Widget:
+        """Get parent widget for Working Memory panel rendering.
+
+        Returns:
+            The content container of the 🏛️ Working Memory collapsible section.
+
+        Raises:
+            RuntimeError: If the section has not yet been created (layout not called).
+        """
+        section = self._session_sections.get("working_memory")
+        if section is None:
+            raise RuntimeError("working_memory section not yet created")
+        return section.content_container
+
+    def render_working_memory_widget(
+        self,
+        working_memory,
+        parent: tk.Widget,
+        on_toggle: "Callable[[str, bool], None] | None" = None,
+        on_delete: "Callable[[str], None] | None" = None,
+        on_promote: "Callable[[str], None] | None" = None,
+        on_user_add: "Callable[[str, str], None] | None" = None,
+    ) -> tk.Frame:
+        """Render a WorkingMemory instance as a Tkinter widget tree.
+
+        Produces a scrollable frame listing all facts grouped by owner with
+        per-row controls:
+          - enable/disable checkbox (all facts)
+          - delete button (agent-owned only)
+          - 🤖 promote button (agent-owned only) → confirmation dialog
+          - user-add form at the bottom
+
+        Args:
+            working_memory: ``WorkingMemory`` instance to render.
+            parent: Parent widget.
+            on_toggle: Called with ``(compound_key, enabled)`` on checkbox change.
+            on_delete: Called with ``compound_key`` when delete is confirmed.
+            on_promote: Called with ``compound_key`` when promote is confirmed.
+            on_user_add: Called with ``(key, value_str)`` when user submits a new fact.
+
+        Returns:
+            Frame widget ready for placement.
+        """
+        from shared.models.working_memory import FactOwner
+
+        outer = tk.Frame(parent, bg=self._section_bg)
+
+        if working_memory is None or len(working_memory) == 0:
+            tk.Label(
+                outer,
+                text="No facts stored yet.",
+                bg=self._section_bg,
+                fg=self.config.system_status_fg,
+                font=("Terminal", 9),
+            ).pack(anchor="w", padx=4, pady=2)
+        else:
+            facts = working_memory.all_facts()
+            for fact in facts:
+                self._render_working_memory_row(
+                    outer,
+                    fact,
+                    on_toggle=on_toggle,
+                    on_delete=on_delete,
+                    on_promote=on_promote,
+                )
+
+        # --- User-add form ---
+        sep = tk.Frame(outer, height=1, bg="#555555")
+        sep.pack(fill=tk.X, padx=4, pady=(6, 2))
+
+        add_frame = tk.Frame(outer, bg=self._section_bg)
+        add_frame.pack(fill=tk.X, padx=4, pady=2)
+
+        tk.Label(
+            add_frame, text="👤 Add fact:", bg=self._section_bg,
+            fg=self.config.system_status_fg, font=("Terminal", 9),
+        ).grid(row=0, column=0, sticky="w")
+
+        key_var = tk.StringVar()
+        val_var = tk.StringVar()
+
+        tk.Label(
+            add_frame, text="key", bg=self._section_bg,
+            fg=self.config.system_status_fg, font=("Terminal", 8),
+        ).grid(row=1, column=0, sticky="w")
+        tk.Entry(add_frame, textvariable=key_var, width=18, font=("Terminal", 9)).grid(
+            row=1, column=1, sticky="ew", padx=2,
+        )
+
+        tk.Label(
+            add_frame, text="value", bg=self._section_bg,
+            fg=self.config.system_status_fg, font=("Terminal", 8),
+        ).grid(row=2, column=0, sticky="w")
+        tk.Entry(add_frame, textvariable=val_var, width=28, font=("Terminal", 9)).grid(
+            row=2, column=1, sticky="ew", padx=2,
+        )
+        add_frame.columnconfigure(1, weight=1)
+
+        def _submit_add():
+            k = key_var.get().strip()
+            v = val_var.get().strip()
+            if k and on_user_add:
+                on_user_add(k, v)
+                key_var.set("")
+                val_var.set("")
+
+        tk.Button(
+            add_frame, text="Add 👤", font=("Terminal", 9),
+            command=_submit_add,
+        ).grid(row=3, column=1, sticky="e", pady=2)
+
+        return outer
+
+    def _render_working_memory_row(
+        self,
+        parent: tk.Frame,
+        fact,
+        on_toggle=None,
+        on_delete=None,
+        on_promote=None,
+    ) -> None:
+        """Render a single FactEntry as a grid row inside parent."""
+        from shared.models.working_memory import FactOwner
+
+        row_frame = tk.Frame(parent, bg=self._section_bg)
+        row_frame.pack(fill=tk.X, padx=2, pady=1)
+
+        is_agent = fact.owner == FactOwner.AGENT
+
+        # Enable/disable checkbox
+        enabled_var = tk.BooleanVar(value=fact.enabled)
+
+        def _on_toggle(ck=fact.compound_key, var=enabled_var):
+            if on_toggle:
+                on_toggle(ck, var.get())
+
+        tk.Checkbutton(
+            row_frame,
+            variable=enabled_var,
+            command=_on_toggle,
+            bg=self._section_bg,
+            activebackground=self._section_bg,
+        ).grid(row=0, column=0, sticky="w")
+
+        # Owner icon — clickable button for agent facts (promote), plain label for user
+        if is_agent:
+            def _on_promote_click(ck=fact.compound_key):
+                self._confirm_promote(ck, on_promote)
+
+            tk.Button(
+                row_frame,
+                text=fact.owner_icon,
+                font=("Terminal", 10),
+                relief="flat",
+                bg=self._section_bg,
+                activebackground=self._section_bg,
+                cursor="hand2",
+                command=_on_promote_click,
+            ).grid(row=0, column=1, sticky="w", padx=(0, 2))
+        else:
+            tk.Label(
+                row_frame,
+                text=fact.owner_icon,
+                bg=self._section_bg,
+                fg=self.config.system_status_fg,
+                font=("Terminal", 10),
+            ).grid(row=0, column=1, sticky="w", padx=(0, 2))
+
+        # Key: value label
+        preview = fact.value_preview()
+        label_text = f"{fact.key}: {preview}"
+        tk.Label(
+            row_frame,
+            text=label_text,
+            bg=self._section_bg,
+            fg=self.config.system_status_fg,
+            font=("Terminal", 9),
+            anchor="w",
+            justify="left",
+        ).grid(row=0, column=2, sticky="ew", padx=2)
+        row_frame.columnconfigure(2, weight=1)
+
+        # Delete button (agent-owned only)
+        if is_agent:
+            def _on_delete(ck=fact.compound_key):
+                if on_delete and tk_messagebox.askyesno(
+                    "Delete Fact", f"Remove agent fact '{fact.key}'?"
+                ):
+                    on_delete(ck)
+
+            tk.Button(
+                row_frame,
+                text="✕",
+                font=("Terminal", 8),
+                relief="flat",
+                fg="#cc4444",
+                bg=self._section_bg,
+                activebackground=self._section_bg,
+                cursor="hand2",
+                command=_on_delete,
+            ).grid(row=0, column=3, sticky="e", padx=2)
+
+    def _confirm_promote(self, compound_key: str, on_promote) -> None:
+        """Show promote-to-user confirmation dialog.
+
+        Opens a simple Yes/No dialog.  The actual conflict-resolution dialog
+        (if the target user key already exists) is handled by the caller after
+        receiving the callback with the compound_key — the caller calls
+        ``WorkingMemory.promote_to_user()`` and checks the returned status.
+        """
+        key = compound_key.split(":", 1)[-1] if ":" in compound_key else compound_key
+        if tk_messagebox.askyesno(
+            "Promote Fact",
+            f"Promote 🤖 '{key}' to your own 👤 fact?\n\nYou will own this fact and the agent will no longer modify it automatically.",
+        ):
+            if on_promote:
+                on_promote(compound_key)
+
     def update_files_panel(self, files_widget: tk.Widget) -> None:
         """Replace files panel content with new widget.
 
@@ -973,6 +1204,13 @@ class GUIManager(IGUIManager):
             section_key="tools",
             title="Available Tools",
             initial_collapsed=True,
+            spacing=self._session_section_spacing,
+        )
+        self._register_system_collapsible_section(
+            tab_name="Session",
+            section_key="working_memory",
+            title="🏛️ Working Memory",
+            initial_collapsed=False,
             spacing=self._session_section_spacing,
         )
         self._register_system_collapsible_section(

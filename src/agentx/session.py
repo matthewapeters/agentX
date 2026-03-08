@@ -12,6 +12,7 @@ import httpx
 
 from .attachment_info import AttachmentInfo
 from shared.models.context import Context
+from shared.models.working_memory import WorkingMemory
 from .file_explorer import FileExplorer
 from .gui.gui_config import GUIConfig
 from .gui.gui_manager import GUIManager
@@ -102,6 +103,15 @@ class AgentXSession:
         self.client_tool_executor = ClientToolExecutor(base_path=os.getcwd())
         self.server_tool_executor = ServerToolExecutor(agentix_bridge=self.agentix_adapter.bridge)
         self.advanced_tools = AdvancedToolRegistry(agentix_bridge=self.agentix_adapter.bridge)
+
+        # Initialize Working Memory — loaded from session folder (or empty on new session)
+        wm_config = config.get("agentx", {}).get("working_memory", {})
+        if wm_config.get("enabled", True):
+            self.working_memory: Optional[WorkingMemory] = WorkingMemory.load(self.session_folder)
+            self.working_memory.set_path(self.session_folder)
+            self.agentix_adapter.register_working_memory_tools(self.working_memory)
+        else:
+            self.working_memory = None
 
         # Initialize active model from config
         self._active_model = config["agentx"]["ollama_model"]
@@ -417,6 +427,96 @@ class AgentXSession:
         )
         self.gui.update_context_panel(context_widget)
 
+    def refresh_working_memory_gui(self):
+        """Refresh the 🏛️ Working Memory panel in the Session tab."""
+        if threading.current_thread() is not threading.main_thread():
+            return
+        if self.working_memory is None:
+            return
+        try:
+            wm_widget = self.gui.render_working_memory_widget(
+                self.working_memory,
+                self.gui.get_working_memory_parent(),
+                on_toggle=self._on_wm_toggle,
+                on_delete=self._on_wm_delete,
+                on_promote=self._on_wm_promote,
+                on_user_add=self._on_wm_user_add,
+            )
+            self.gui.update_working_memory_panel(wm_widget)
+        except RuntimeError:
+            pass  # working_memory section not present (feature disabled in config)
+
+    # ------------------------------------------------------------------
+    # Working Memory GUI callbacks
+    # ------------------------------------------------------------------
+
+    def _on_wm_toggle(self, compound_key: str, enabled: bool) -> None:
+        if self.working_memory:
+            self.working_memory.set_enabled(compound_key, enabled)
+            self._safe_root_after(self.refresh_working_memory_gui)
+
+    def _on_wm_delete(self, compound_key: str) -> None:
+        if self.working_memory:
+            self.working_memory.remove_fact(compound_key)
+            self._safe_root_after(self.refresh_working_memory_gui)
+
+    def _on_wm_promote(self, compound_key: str) -> None:
+        """Handle promote-to-user-owned with conflict resolution dialog."""
+        if not self.working_memory:
+            return
+        from shared.models.working_memory import PromotionStatus
+        result = self.working_memory.promote_to_user(compound_key)
+        if result.status == PromotionStatus.OK:
+            self._safe_root_after(self.refresh_working_memory_gui)
+        elif result.status == PromotionStatus.CONFLICT:
+            self._handle_wm_promote_conflict(compound_key, result)
+        # NOT_FOUND / NOT_AGENT_OWNED — silently ignore (should not happen from GUI)
+
+    def _handle_wm_promote_conflict(self, compound_key: str, result) -> None:
+        """Show conflict resolution dialog for promote operation."""
+        import tkinter.simpledialog as sd
+        from shared.models.working_memory import PromotionStatus
+        key = compound_key.split(":", 1)[-1] if ":" in compound_key else compound_key
+        existing_preview = str(result.conflicting_value)[:60]
+        choice = sd.askstring(
+            "Promote Conflict",
+            (
+                f"A user-owned fact '{key}' already exists:\n"
+                f"  Current value: {existing_preview}\n\n"
+                f"Options:\n"
+                f"  • Type a new key name to rename\n"
+                f"  • Type 'replace' to overwrite the existing user fact\n"
+                f"  • Cancel to abort"
+            ),
+        )
+        if choice is None:
+            return
+        if choice.strip().lower() == "replace":
+            r = self.working_memory.promote_to_user(compound_key, force=True)
+        else:
+            new_key = choice.strip()
+            if not new_key:
+                return
+            r = self.working_memory.promote_to_user(compound_key, new_key=new_key)
+        if r.status == PromotionStatus.OK:
+            self._safe_root_after(self.refresh_working_memory_gui)
+
+    def _on_wm_user_add(self, key: str, value_str: str) -> None:
+        """Handle user submitting a new user-owned fact via the add form."""
+        if not self.working_memory:
+            return
+        import json as _json
+        from shared.models.working_memory import FactOwner
+        parsed_value = value_str
+        try:
+            candidate = _json.loads(value_str)
+            if isinstance(candidate, (dict, list, int, float)):
+                parsed_value = candidate
+        except (ValueError, _json.JSONDecodeError):
+            pass
+        self.working_memory.add_fact(FactOwner.USER, key, parsed_value)
+        self._safe_root_after(self.refresh_working_memory_gui)
+
     def attach_file(self, file_path: str):
         """
         Attach a file to the session context.
@@ -482,6 +582,7 @@ class AgentXSession:
         # Initialize dynamic content in panels
         self.refresh_context_gui()
         self.refresh_files_gui()
+        self.refresh_working_memory_gui()
 
         # Setup model selector and tool panel if Agentix is available
         # (Must be after layout is created so the widgets exist)
@@ -549,6 +650,18 @@ class AgentXSession:
 
             # Build shared Context from history and current context
             shared_context = Context()
+
+            # Prepend Working Memory block as a system message when enabled
+            wm_config = config.get("agentx", {}).get("working_memory", {})
+            if (
+                wm_config.get("enabled", True)
+                and wm_config.get("inject_into_context", True)
+                and self.working_memory
+            ):
+                wm_block = self.working_memory.to_llm_block()
+                if wm_block:
+                    wm_msg = Message(role=MessageRole.SYSTEM, content=wm_block)
+                    shared_context.add_message(wm_msg, ts=datetime.now())
 
             # Add history messages
             history_messages = self.history.get_enabled_messages()
@@ -707,6 +820,8 @@ class AgentXSession:
             tool_output=output,
             tool_id=tool_id,
         )
+        # Refresh Working Memory panel in case the tool mutated it
+        self._safe_root_after(self.refresh_working_memory_gui)
 
 
 
