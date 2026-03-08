@@ -9,10 +9,10 @@ screen_side = "left"
 # Requires: libcst package installed
 agentix_bench_classification_model = "phi4-mini:3.8b"  # Override model used for classification
 available_tools = ["cst", "ast"]
-classification_backend = "torch"
+classification_backend = "ollama"
 classification_torch_device = -1  # CPU; use 0 for first GPU
 classification_torch_model = "typeform/distilbert-base-uncased-mnli"
-classify_prompts = false  # Enable to analyze intent and route workflows (transparent to user)
+classify_prompts = true   # Enable to analyze intent and route workflows
 debug = false  # Enable for verbose classification logging to stderr
 host = "localhost:8000"
 
