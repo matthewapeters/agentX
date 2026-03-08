@@ -269,10 +269,10 @@ class WorkingMemory:
         enabled = self.get_enabled_facts()
         if not enabled:
             return ""
-        lines = [f"{self.PANEL_ICON} [WORKING MEMORY]"]
+        lines = ["<working_memory>"]
         for fact in enabled:
             lines.append(f"  {fact.to_llm_line()}")
-        lines.append("[END WORKING MEMORY]")
+        lines.append("</working_memory>")
         return "\n".join(lines)
 
     # ------------------------------------------------------------------

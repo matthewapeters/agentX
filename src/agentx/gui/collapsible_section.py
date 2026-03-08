@@ -71,6 +71,11 @@ class CollapsibleSection:
         self._content_widget = widget
         self._content_widget.pack(fill=fill, expand=expand)
 
+    def set_title(self, title: str) -> None:
+        """Update the section header label text."""
+        self.title = title
+        self.title_label.config(text=title)
+
     def clear_content(self) -> None:
         """Clear current content while preserving section state."""
         if self._content_widget is not None:

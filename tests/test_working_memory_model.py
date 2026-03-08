@@ -278,10 +278,10 @@ class TestLLMBlock:
         wm.add_fact(FactOwner.USER, "project", "AgentX")
         wm.add_fact(FactOwner.AGENT, "task", "coding")
         block = wm.to_llm_block()
-        assert "WORKING MEMORY" in block
+        assert "<working_memory>" in block
         assert "👤 project: AgentX" in block
         assert "🤖 task: coding" in block
-        assert "END WORKING MEMORY" in block
+        assert "</working_memory>" in block
 
     def test_block_user_facts_before_agent(self):
         wm = WorkingMemory()

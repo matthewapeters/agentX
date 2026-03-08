@@ -677,16 +677,20 @@ class GUIManager(IGUIManager):
         section.set_content(history_widget, fill=tk.BOTH, expand=False)
         self.widgets.system_status_history = history_widget
 
-    def update_working_memory_panel(self, working_memory_widget: tk.Widget) -> None:
+    def update_working_memory_panel(self, working_memory_widget: tk.Widget, fact_count: int = 0) -> None:
         """Replace Working Memory panel content with a newly rendered widget.
 
         Args:
             working_memory_widget: Fully rendered working memory widget from
                 ``render_working_memory_widget()``.
+            fact_count: Number of facts currently in working memory; shown in
+                the section header so the user gets immediate feedback.
         """
         section = self._session_sections.get("working_memory")
         if section is None:
             return  # Working Memory disabled — silently no-op
+        label = "🏛️ Working Memory" if fact_count == 0 else f"🏛️ Working Memory ({fact_count})"
+        section.set_title(label)
         section.set_content(working_memory_widget, fill=tk.BOTH, expand=True)
 
     def get_working_memory_parent(self) -> tk.Widget:

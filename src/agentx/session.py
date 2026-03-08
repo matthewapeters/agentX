@@ -442,7 +442,7 @@ class AgentXSession:
                 on_promote=self._on_wm_promote,
                 on_user_add=self._on_wm_user_add,
             )
-            self.gui.update_working_memory_panel(wm_widget)
+            self.gui.update_working_memory_panel(wm_widget, fact_count=len(self.working_memory))
         except RuntimeError:
             pass  # working_memory section not present (feature disabled in config)
 

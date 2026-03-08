@@ -170,7 +170,7 @@ class IGUIManager(Protocol):
         """
         ...
 
-    def update_working_memory_panel(self, working_memory_widget: tk.Widget) -> None:
+    def update_working_memory_panel(self, working_memory_widget: tk.Widget, fact_count: int = 0) -> None:
         """Replace Working Memory panel content with a newly rendered widget.
 
         Args:
