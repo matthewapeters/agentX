@@ -125,7 +125,7 @@ def assemble_prompts(
             content = get_user_prompt(args)
         if args.file_path:
             attachment = get_attachments(args)
-        history.append(Message(role=role, content=content, attachments=attachment))
+        history.append(Message(role=role, content=content, attachments=attachment or []))
 
     # Convert Message objects to dicts for trim_context
     history_dicts = [msg.to_dict() if hasattr(msg, "to_dict") else msg for msg in history]

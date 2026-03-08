@@ -155,7 +155,7 @@ class Message:
             "content": self.content,
             "enabled": self.enabled,
             "epoch": self.epoch,
-            "attachments": [a.to_dict() for a in self.attachments],
+            "attachments": [a.to_dict() for a in (self.attachments or [])],
         }
         
         # Include optional fields if present
@@ -191,9 +191,9 @@ class Message:
         Returns:
             Message instance
         """
-        # Parse attachments
+        # Parse attachments (guard against null stored in JSON)
         attachments = []
-        for a in data.get("attachments", []):
+        for a in (data.get("attachments") or []):
             if isinstance(a, dict):
                 attachments.append(Attachment.from_dict(a))
             elif isinstance(a, Attachment):

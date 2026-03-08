@@ -52,6 +52,14 @@ def classify_prompt(
 
     effective_history = list(history) if history is not None else list(context.get_enabled_messages())
 
+    # Filter to only conversational roles — tool_call/tool_result are not valid LLM API roles
+    # and are not needed for intent classification.
+    _CLASSIFY_ROLES = {"user", "assistant", "system"}
+    effective_history = [
+        msg for msg in effective_history
+        if (msg.role.value if hasattr(msg, "role") and hasattr(msg.role, "value") else msg.get("role", "")) in _CLASSIFY_ROLES
+    ]
+
     # Build classification prompt using Agentix logic
     classification_payload = assemble_prompts(
         classification_config,
