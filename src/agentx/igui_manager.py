@@ -81,6 +81,28 @@ class IGUIManager(Protocol):
         """
         ...
 
+    def display_classification(self, classification: dict) -> None:
+        """Display prompt classification metadata block in the output panel.
+
+        Args:
+            classification: Dict with keys:
+                intent (str): Classifier intent label (e.g. "simple_action")
+                next_step (str): Routing decision (e.g. "invoke_planner")
+                reasoning_summary (str): Brief explanation from the classifier
+                needs_clarification (bool): Whether the prompt is ambiguous
+                missing_fields (list[str]): Fields the classifier found missing
+
+        Behavior:
+            - Renders a one-shot block before any THINKING or CONTENT output
+            - 🤔 prefixes the analysis group (intent, reasoning, clarification)
+            - 💡 prefixes the routing decision (next_step)
+            - needs_clarification / missing_fields lines suppressed when falsy
+            - Uses 'agent_classification' text tag for distinct styling
+            - Auto-scrolls to show the block
+            - Designed to be called once per turn (not a streaming method)
+        """
+        ...
+
     def display_error(self, message: str) -> None:
         """Display an error message to the user.
 

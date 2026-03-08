@@ -118,7 +118,6 @@ class AgentixBridge:
             ResponseChunk objects for GUI rendering
         """
         # Auto-classify if not provided and classification is enabled
-        # Note: Classification is transparent to the user - logged but not displayed
         if classification is None and self.config.classify_prompts:
 
             print("[Agentix] Classifying prompt...", file=sys.stderr)
@@ -131,7 +130,19 @@ class AgentixBridge:
                     file=sys.stderr,
                 )
 
-        # Route based on next_step (if classification provided) or default to direct response
+        # Emit classification as a stream chunk so the GUI can display it
+        if classification:
+            yield ResponseChunk(
+                type=ChunkType.CLASSIFICATION,
+                classification={
+                    "intent": classification.intent.name,
+                    "next_step": classification.next_step.name,
+                    "reasoning_summary": classification.reasoning_summary,
+                    "needs_clarification": classification.needs_clarification,
+                    "missing_fields": classification.missing_fields,
+                },
+            )
+
         # Route based on next_step (if classification provided) or default to direct response
         if classification:
             match classification.next_step:

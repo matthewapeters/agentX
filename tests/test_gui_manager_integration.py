@@ -203,6 +203,71 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
         # Should have extra newlines
         self.assertIn("\n\n", content)
 
+    def test_display_classification_shows_all_fields(self):
+        """Classification block renders intent, reasoning, clarification, and path."""
+        self.gui.display_classification({
+            "intent": "simple_action",
+            "next_step": "invoke_planner",
+            "reasoning_summary": "Multi-step refactor needed.",
+            "needs_clarification": True,
+            "missing_fields": ["target_dir", "language"],
+        })
+
+        content = self.gui.widgets.output_text.get("1.0", tk.END)
+
+        self.assertIn("simple_action", content)
+        self.assertIn("invoke_planner", content)
+        self.assertIn("Multi-step refactor needed.", content)
+        self.assertIn("clarification needed: yes", content)
+        self.assertIn("target_dir", content)
+        self.assertIn("language", content)
+
+    def test_display_classification_suppresses_falsy_clarification(self):
+        """Clarification line is absent when needs_clarification is False and missing_fields is empty."""
+        self.gui.display_classification({
+            "intent": "conversation",
+            "next_step": "respond_directly",
+            "reasoning_summary": "Simple chat.",
+            "needs_clarification": False,
+            "missing_fields": [],
+        })
+
+        content = self.gui.widgets.output_text.get("1.0", tk.END)
+
+        self.assertIn("conversation", content)
+        self.assertIn("respond_directly", content)
+        self.assertNotIn("clarification needed", content)
+        self.assertNotIn("missing fields", content)
+
+    def test_display_classification_shown_only_once_per_turn(self):
+        """display_classification is a one-shot per turn — second call is ignored."""
+        classification = {
+            "intent": "simple_action",
+            "next_step": "single_tool",
+            "reasoning_summary": "One tool needed.",
+            "needs_clarification": False,
+            "missing_fields": [],
+        }
+        self.gui.display_classification(classification)
+        self.gui.display_classification(classification)
+
+        content = self.gui.widgets.output_text.get("1.0", tk.END)
+        # "simple_action" should appear exactly once
+        self.assertEqual(content.count("simple_action"), 1)
+
+    def test_display_spacing_resets_classification_state(self):
+        """display_spacing resets state so classification can show again on next turn."""
+        classification = {
+            "intent": "simple_action",
+            "next_step": "single_tool",
+            "reasoning_summary": "One tool needed.",
+            "needs_clarification": False,
+            "missing_fields": [],
+        }
+        self.gui.display_classification(classification)
+        self.gui.display_spacing()
+        self.assertFalse(self.gui._agent_classification_shown)
+
 
 class TestGUIManagerStateMethods(unittest.TestCase):
     """Test state management methods of GUIManager."""

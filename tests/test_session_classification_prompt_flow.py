@@ -79,3 +79,63 @@ class TestSessionClassificationPromptFlow(unittest.TestCase):
 
         self.assertEqual(captured["classification_user"], ["what model are you?"])
         self.assertIn("THINKING", [chunk.type.name for chunk in chunks])
+
+    def test_classification_chunk_triggers_display_classification(self):
+        """_make_classification_callback returns a callable that invokes gui.display_classification."""
+        session = AgentXSession(
+            root=self.root,
+            config={
+                **self.config,
+                "agentix": {
+                    **self.config["agentix"],
+                    "classification_display": {"enabled": True},
+                },
+            },
+            username="test_user",
+            session_dir=self.temp_dir,
+        )
+
+        display_calls: list[dict] = []
+        session.gui.display_classification = lambda meta: display_calls.append(meta)  # type: ignore[assignment]
+
+        callback = session._make_classification_callback(session.config)
+        callback({
+            "intent": "simple_action",
+            "next_step": "single_tool",
+            "reasoning_summary": "One tool needed.",
+            "needs_clarification": False,
+            "missing_fields": [],
+        })
+
+        self.assertEqual(len(display_calls), 1)
+        self.assertEqual(display_calls[0]["intent"], "simple_action")
+        self.assertEqual(display_calls[0]["next_step"], "single_tool")
+
+    def test_classification_display_disabled_skips_gui_call(self):
+        """When classification_display.enabled is False, display_classification is never called."""
+        session = AgentXSession(
+            root=self.root,
+            config={
+                **self.config,
+                "agentix": {
+                    **self.config["agentix"],
+                    "classification_display": {"enabled": False},
+                },
+            },
+            username="test_user",
+            session_dir=self.temp_dir,
+        )
+
+        display_calls: list = []
+        session.gui.display_classification = lambda meta: display_calls.append(meta)  # type: ignore[assignment]
+
+        callback = session._make_classification_callback(session.config)
+        callback({
+            "intent": "conversation",
+            "next_step": "respond_directly",
+            "reasoning_summary": "ok",
+            "needs_clarification": False,
+            "missing_fields": [],
+        })
+
+        self.assertEqual(len(display_calls), 0)

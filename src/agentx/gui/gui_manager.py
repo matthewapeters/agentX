@@ -39,6 +39,7 @@ class GUIManager(IGUIManager):
     COLOR_USER_PROMPT = "#eeeeee"
     COLOR_AGENT_RESPONSE = "#eeeeee"
     COLOR_AGENT_THINKING = "#cccccc"
+    COLOR_AGENT_CLASSIFICATION = "#7dd3fc"  # sky-blue — distinct from thinking/response
     COLOR_SYSTEM_SPACE = "#888888"
 
     def __init__(
@@ -91,6 +92,7 @@ class GUIManager(IGUIManager):
         # Streaming label state
         self._agent_thinking_started = False
         self._agent_response_started = False
+        self._agent_classification_shown = False
 
     # Layout constants for UI rendering
     EXPAND_COLLAPSE_ICONS = {True: "▼", False: "▶"}
@@ -484,6 +486,7 @@ class GUIManager(IGUIManager):
         # Reset agent display state for a new turn
         self._agent_thinking_started = False
         self._agent_response_started = False
+        self._agent_classification_shown = False
 
         # Display attachments
         if attachments:
@@ -513,6 +516,46 @@ class GUIManager(IGUIManager):
         output.insert(tk.END, content, ("agent_thinking",))
 
         # Auto-scroll
+        output.see(tk.END)
+
+    def display_classification(self, classification: dict) -> None:
+        """Display prompt classification metadata block in the output panel.
+
+        Args:
+            classification: Dict with keys: intent, next_step, reasoning_summary,
+                            needs_clarification, missing_fields.
+        """
+        if threading.current_thread() is not threading.main_thread():
+            return
+
+        output = self.widgets.output_text
+        if output is None or self._agent_classification_shown:
+            return
+
+        self._agent_classification_shown = True
+        tag = ("agent_classification",)
+
+        intent = classification.get("intent", "")
+        reasoning = classification.get("reasoning_summary", "")
+        needs_clarification = classification.get("needs_clarification", False)
+        missing_fields: list = classification.get("missing_fields") or []
+        next_step = classification.get("next_step", "")
+
+        # 🤔 analysis block
+        if intent:
+            output.insert(tk.END, f"🤔 intent: {intent}\n", tag)
+        if reasoning:
+            output.insert(tk.END, f"   reasoning: {reasoning}\n", tag)
+        if needs_clarification or missing_fields:
+            clarification_line = "   clarification needed: yes"
+            if missing_fields:
+                clarification_line += f"  |  missing fields: {', '.join(missing_fields)}"
+            output.insert(tk.END, clarification_line + "\n", tag)
+
+        # 💡 routing decision
+        if next_step:
+            output.insert(tk.END, f"💡 path: {next_step}\n", tag)
+
         output.see(tk.END)
 
     def display_agent_response(self, content: str) -> None:
@@ -570,6 +613,7 @@ class GUIManager(IGUIManager):
         # Reset agent display state for next turn
         self._agent_thinking_started = False
         self._agent_response_started = False
+        self._agent_classification_shown = False
 
         # Auto-scroll
         output.see(tk.END)
@@ -1180,6 +1224,11 @@ class GUIManager(IGUIManager):
         output.tag_config("user_prompt", font=self.config.user_prompt_font)
         output.tag_config("agent_response", font=self.config.agent_response_font)
         output.tag_config("agent_thinking", font=self.config.agent_thinking_font)
+        output.tag_config(
+            "agent_classification",
+            font=self.config.agent_thinking_font,
+            foreground=self.COLOR_AGENT_CLASSIFICATION,
+        )
         output.tag_config("system_space", font=self.config.default_font)
 
     def _create_attachment_widget(

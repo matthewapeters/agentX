@@ -15,3 +15,10 @@ classification_torch_model = "typeform/distilbert-base-uncased-mnli"
 classify_prompts = false  # Enable to analyze intent and route workflows (transparent to user)
 debug = false  # Enable for verbose classification logging to stderr
 host = "localhost:8000"
+
+[agentix.classification_display]
+enabled = true         # Master switch — show classification block in output panel
+show_intent = true     # 🤔 intent: <value>
+show_reasoning = true  # 🤔    reasoning: <text>
+show_clarification = true  # 🤔    clarification needed / missing fields (suppressed when falsy)
+show_next_step = true  # 💡 path: <next_step>

@@ -575,12 +575,6 @@ class AgentXSession:
             classification = None
             if config.get("agentix", {}).get("classify_prompts", True):
                 classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context)
-                if classification and config.get("agentix", {}).get("show_classification", False):
-                    self._safe_root_after(
-                        lambda: self.gui.display_agent_thinking(
-                            f"\n[Classification: {classification.intent.name} → {classification.next_step.name}]\n"
-                        )
-                    )
 
             # Reset per-turn display state
             self._assistant_header_shown = False
@@ -598,6 +592,7 @@ class AgentXSession:
                 on_error=lambda msg, code: self._safe_root_after(
                     lambda: self.gui.display_error(f"{code}: {msg}")
                 ),
+                on_classification=self._make_classification_callback(config),
             )
 
             # Stream through Agentix
@@ -632,6 +627,29 @@ class AgentXSession:
         finally:
             self._is_streaming.clear()
             self._safe_root_after(lambda: self.gui.set_streaming_state(False))
+
+    def _make_classification_callback(self, config: dict):
+        """Build the on_classification callback respecting field-level display config."""
+        cd = config.get("agentix", {}).get("classification_display", {})
+        if not cd.get("enabled", True):
+            return lambda meta: None
+
+        show_intent = cd.get("show_intent", True)
+        show_reasoning = cd.get("show_reasoning", True)
+        show_clarification = cd.get("show_clarification", True)
+        show_next_step = cd.get("show_next_step", True)
+
+        def _callback(meta: dict) -> None:
+            filtered = {
+                "intent": meta.get("intent", "") if show_intent else "",
+                "reasoning_summary": meta.get("reasoning_summary", "") if show_reasoning else "",
+                "needs_clarification": meta.get("needs_clarification", False) if show_clarification else False,
+                "missing_fields": meta.get("missing_fields") if show_clarification else [],
+                "next_step": meta.get("next_step", "") if show_next_step else "",
+            }
+            self._safe_root_after(lambda m=filtered: self.gui.display_classification(m))
+
+        return _callback
 
     def _display_thinking(self, text: str):
         """Helper to display thinking text with header on first call."""

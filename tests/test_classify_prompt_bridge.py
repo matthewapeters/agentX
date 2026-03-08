@@ -72,3 +72,94 @@ def test_classify_prompt_uses_context_when_history_not_provided():
 
     assert len(captured["history"]) == 1
     assert captured["history"][0].content == "previous message"
+
+
+# ---------------------------------------------------------------------------
+# Bridge: CLASSIFICATION chunk emission tests
+# ---------------------------------------------------------------------------
+
+def test_process_prompt_streaming_emits_classification_chunk_first():
+    """process_prompt_streaming yields a CLASSIFICATION chunk as the first chunk."""
+    from unittest.mock import MagicMock
+    from agentix.bridge.bridge import AgentixBridge
+    from agentix.prompt_classification_response import (
+        Intent,
+        NextStep,
+        PromptClassificationResponse,
+    )
+    from shared.models.response import ChunkType
+
+    config = AgentixConfig(model="gpt-oss", classify_prompts=False)
+    bridge = AgentixBridge(config)
+
+    classification = PromptClassificationResponse(
+        intent=Intent.simple_action,
+        next_step=NextStep.respond_directly,
+        reasoning_summary="Direct answer is sufficient.",
+        needs_clarification=False,
+        missing_fields=[],
+    )
+
+    # Stub the underlying stream so it produces no extra chunks
+    bridge._stream_direct_response = MagicMock(return_value=iter([]))
+
+    chunks = list(bridge.process_prompt_streaming("hello", Context(), classification=classification))
+
+    assert len(chunks) >= 1
+    first = chunks[0]
+    assert first.type == ChunkType.CLASSIFICATION
+    assert first.classification is not None
+    assert first.classification["intent"] == "simple_action"
+    assert first.classification["next_step"] == "respond_directly"
+    assert first.classification["reasoning_summary"] == "Direct answer is sufficient."
+    assert first.classification["needs_clarification"] is False
+    assert first.classification["missing_fields"] == []
+
+
+def test_process_prompt_streaming_classification_chunk_has_all_keys():
+    """CLASSIFICATION chunk dict contains all five expected keys."""
+    from unittest.mock import MagicMock
+    from agentix.bridge.bridge import AgentixBridge
+    from agentix.prompt_classification_response import (
+        Intent,
+        NextStep,
+        PromptClassificationResponse,
+    )
+
+    config = AgentixConfig(model="gpt-oss", classify_prompts=False)
+    bridge = AgentixBridge(config)
+
+    classification = PromptClassificationResponse(
+        intent=Intent.complex_action,
+        next_step=NextStep.invoke_planner,
+        reasoning_summary="Needs planning.",
+        needs_clarification=True,
+        missing_fields=["file_path"],
+    )
+
+    bridge._stream_planned_response = MagicMock(return_value=iter([]))
+
+    chunks = list(bridge.process_prompt_streaming("do something complex", Context(), classification=classification))
+
+    classification_chunk = chunks[0]
+    meta = classification_chunk.classification
+    assert set(meta.keys()) >= {"intent", "next_step", "reasoning_summary", "needs_clarification", "missing_fields"}
+    assert meta["needs_clarification"] is True
+    assert meta["missing_fields"] == ["file_path"]
+
+
+def test_process_prompt_streaming_no_classification_chunk_when_unclassified():
+    """Without a classification, the stream starts directly with content (no CLASSIFICATION chunk)."""
+    from unittest.mock import MagicMock, patch
+    from agentix.bridge.bridge import AgentixBridge
+    from shared.models.response import ChunkType, ResponseChunk, content_chunk
+
+    config = AgentixConfig(model="gpt-oss", classify_prompts=False)
+    bridge = AgentixBridge(config)
+    bridge._stream_direct_response = MagicMock(return_value=iter([content_chunk("hi")]))
+
+    chunks = list(bridge.process_prompt_streaming("hello", Context(), classification=None))
+
+    types = [c.type for c in chunks]
+    assert ChunkType.CLASSIFICATION not in types
+    assert ChunkType.CONTENT in types
