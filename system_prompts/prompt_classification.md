@@ -107,7 +107,11 @@ Users may ask to add, update, remove, or query facts. Classify these as follows:
   → intent = "simple_action", next_step = "single_tool"
 
 - "what facts do you know?" / "list your memory" / "what do you remember about X?"
+  / "show me the working memory" / "show me your facts" / "display working memory"
+  / "what's in your memory?" / "list facts"
   → intent = "conversation", next_step = "respond_directly"
+  NOTE: These are READ/DISPLAY requests, not write/store requests.
+        Do NOT classify them as simple_action.
 
 - Requests to update multiple facts or perform complex memory restructuring
   → intent = "complex_action", next_step = "invoke_planner"

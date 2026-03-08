@@ -451,18 +451,18 @@ class AgentXSession:
     # ------------------------------------------------------------------
 
     def _on_wm_toggle(self, compound_key: str, enabled: bool) -> None:
-        if self.working_memory:
+        if self.working_memory is not None:
             self.working_memory.set_enabled(compound_key, enabled)
             self._safe_root_after(self.refresh_working_memory_gui)
 
     def _on_wm_delete(self, compound_key: str) -> None:
-        if self.working_memory:
+        if self.working_memory is not None:
             self.working_memory.remove_fact(compound_key)
             self._safe_root_after(self.refresh_working_memory_gui)
 
     def _on_wm_promote(self, compound_key: str) -> None:
         """Handle promote-to-user-owned with conflict resolution dialog."""
-        if not self.working_memory:
+        if self.working_memory is None:
             return
         from shared.models.working_memory import PromotionStatus
         result = self.working_memory.promote_to_user(compound_key)
@@ -503,7 +503,7 @@ class AgentXSession:
 
     def _on_wm_user_add(self, key: str, value_str: str) -> None:
         """Handle user submitting a new user-owned fact via the add form."""
-        if not self.working_memory:
+        if self.working_memory is None:
             return
         import json as _json
         from shared.models.working_memory import FactOwner
@@ -656,7 +656,7 @@ class AgentXSession:
             if (
                 wm_config.get("enabled", True)
                 and wm_config.get("inject_into_context", True)
-                and self.working_memory
+                and self.working_memory is not None
             ):
                 wm_block = self.working_memory.to_llm_block()
                 if wm_block:
