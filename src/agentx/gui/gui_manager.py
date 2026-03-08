@@ -741,7 +741,6 @@ class GUIManager(IGUIManager):
                 outer,
                 text="No facts stored yet.",
                 bg=self._section_bg,
-                fg=self.config.system_status_fg,
                 font=("Terminal", 9),
             ).pack(anchor="w", padx=4, pady=2)
         else:
@@ -764,7 +763,7 @@ class GUIManager(IGUIManager):
 
         tk.Label(
             add_frame, text="👤 Add fact:", bg=self._section_bg,
-            fg=self.config.system_status_fg, font=("Terminal", 9),
+            font=("Terminal", 9),
         ).grid(row=0, column=0, sticky="w")
 
         key_var = tk.StringVar()
@@ -772,7 +771,7 @@ class GUIManager(IGUIManager):
 
         tk.Label(
             add_frame, text="key", bg=self._section_bg,
-            fg=self.config.system_status_fg, font=("Terminal", 8),
+            font=("Terminal", 8),
         ).grid(row=1, column=0, sticky="w")
         tk.Entry(add_frame, textvariable=key_var, width=18, font=("Terminal", 9)).grid(
             row=1, column=1, sticky="ew", padx=2,
@@ -780,7 +779,7 @@ class GUIManager(IGUIManager):
 
         tk.Label(
             add_frame, text="value", bg=self._section_bg,
-            fg=self.config.system_status_fg, font=("Terminal", 8),
+            font=("Terminal", 8),
         ).grid(row=2, column=0, sticky="w")
         tk.Entry(add_frame, textvariable=val_var, width=28, font=("Terminal", 9)).grid(
             row=2, column=1, sticky="ew", padx=2,
@@ -853,7 +852,6 @@ class GUIManager(IGUIManager):
                 row_frame,
                 text=fact.owner_icon,
                 bg=self._section_bg,
-                fg=self.config.system_status_fg,
                 font=("Terminal", 10),
             ).grid(row=0, column=1, sticky="w", padx=(0, 2))
 
@@ -864,7 +862,6 @@ class GUIManager(IGUIManager):
             row_frame,
             text=label_text,
             bg=self._section_bg,
-            fg=self.config.system_status_fg,
             font=("Terminal", 9),
             anchor="w",
             justify="left",
