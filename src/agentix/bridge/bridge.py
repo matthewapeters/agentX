@@ -470,6 +470,14 @@ class AgentixBridge:
         """
         Stream a direct LLM response without tools.
 
+        No tool schemas are passed to the LLM.  If the model unexpectedly
+        returns a TOOL_CALL chunk (e.g. from a fine-tuned model that ignores
+        the absence of tool schemas), the entire buffered response is discarded
+        and the request is transparently re-routed through the full tool loop
+        (max 3 rounds) so the user still gets a coherent answer and any unknown
+        tool name is reported as an error result rather than leaving the
+        response hanging.
+
         Args:
             prompt: User prompt
             context: Conversation context
@@ -480,7 +488,22 @@ class AgentixBridge:
         history = self._context_to_history(context)
         messages = [msg.to_llm_dict() for msg in history]
         messages.append({"role": "user", "content": prompt})
-        yield from self._iter_llm_chunks(messages)
+
+        # Buffer chunks so we can detect a rogue TOOL_CALL before yielding anything.
+        buffered: list[ResponseChunk] = []
+        has_tool_calls = False
+        for chunk in self._iter_llm_chunks(messages):
+            if chunk.type == ChunkType.TOOL_CALL:
+                has_tool_calls = True
+            buffered.append(chunk)
+
+        if has_tool_calls:
+            # LLM attempted tool use in direct-response mode; fall back so the
+            # tool executor can handle (and report) unknown / valid tools.
+            yield from self._run_tool_loop(prompt, context, max_rounds=3)
+            return
+
+        yield from buffered
 
     def _stream_tool_response(
         self,

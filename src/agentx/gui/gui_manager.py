@@ -1317,22 +1317,54 @@ class GUIManager(IGUIManager):
         return name, description
 
     def _build_tools_content_widget(self, parent: tk.Widget) -> tk.Widget:
-        content = tk.Frame(parent)
+        container = tk.Frame(parent)
+        container.columnconfigure(0, weight=1)
 
         if not self._tool_panel_tools:
             empty = tk.Label(
-                content,
+                container,
                 text="No tools available",
                 foreground="gray",
                 font=("", 9, "italic"),
             )
             empty.grid(row=0, column=0, sticky="w", pady=10)
-            return content
+            return container
 
         previous_enabled = {
             name: var.get() for name, var in self._tool_panel_vars.items()
         }
         self._tool_panel_vars = {}
+
+        # Scrollable canvas so the list doesn't overflow its section.
+        canvas = tk.Canvas(container, borderwidth=0, highlightthickness=0, height=160)
+        scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        container.rowconfigure(0, weight=1)
+
+        content = tk.Frame(canvas)
+        canvas_window = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def _on_content_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+
+        content.bind("<Configure>", _on_content_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # Mouse-wheel scrolling (cross-platform).
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _on_mousewheel_linux(event):
+            canvas.yview_scroll(-1 if event.num == 4 else 1, "units")
+
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        canvas.bind("<Button-4>", _on_mousewheel_linux)
+        canvas.bind("<Button-5>", _on_mousewheel_linux)
 
         for idx, tool in enumerate(self._tool_panel_tools):
             name, description = self._parse_tool_metadata(tool)
@@ -1362,7 +1394,7 @@ class GUIManager(IGUIManager):
                 )
                 description_label.grid(row=idx, column=1, sticky="w")
 
-        return content
+        return container
 
     def _refresh_tools_section(self) -> None:
         tools_section = self._session_sections.get("tools")

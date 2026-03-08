@@ -2,6 +2,7 @@
 Docstring for agentx.session
 """
 
+import logging
 import os
 import threading
 import tkinter as tk
@@ -28,6 +29,8 @@ from .integration import (
     AdvancedToolRegistry,
 )
 from .integration import agentix_bridge_adapter
+
+logger = logging.getLogger(__name__)
 
 
 def create_adapter(config: dict) -> agentix_bridge_adapter.AgentixBridgeAdapter:
@@ -733,10 +736,8 @@ class AgentXSession:
             self._safe_root_after(self.refresh_user_gui)
 
         except Exception as e:
-            import traceback
+            logger.exception("Request error during streaming")
             self._safe_root_after(lambda err=e: self.gui.display_error(f"Error: {err}"))
-            print(f"Request error: {e}")
-            traceback.print_exc()
         finally:
             self._is_streaming.clear()
             self._safe_root_after(lambda: self.gui.set_streaming_state(False))
