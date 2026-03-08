@@ -66,6 +66,26 @@ class AgentixBridgeAdapter:
         self.config = config
         self.agentix_config = self._convert_config(config)
         self.bridge = AgentixBridge(self.agentix_config)
+        self._register_client_tools()
+
+    def _register_client_tools(self) -> None:
+        """Register client-side file tools with the bridge.
+
+        This makes ``read_file``, ``write_file``, ``list_directory``,
+        ``get_file_info``, and ``search_files`` available to the LLM tool loop.
+        The tools execute locally (within the AgentX process) but are fully
+        transparent to the bridge's ``_run_tool_loop``.
+        """
+        try:
+            from agentx.integration.client_tool_executor import (
+                get_client_tool_implementations,
+                get_client_tool_schemas,
+            )
+            impls = get_client_tool_implementations()
+            schemas = get_client_tool_schemas()
+            self.bridge.register_tool_implementations(impls, schemas)
+        except Exception as exc:
+            print(f"⚠ Could not register client tools: {exc}")
     
     def classify_prompt_sync(
         self, 
@@ -158,6 +178,22 @@ class AgentixBridgeAdapter:
         except Exception as e:
             print(f"Error fetching tools: {e}")
             return []
+
+    def set_enabled_tools(self, enabled_tool_names: list[str]) -> None:
+        """
+        Restrict tools offered to the LLM to the given names.
+
+        Delegates directly to the bridge so that the next call to
+        ``get_available_tools()`` (inside ``_run_tool_loop``) honours the
+        user's selection.
+
+        Args:
+            enabled_tool_names: Tool names the user has checked in the GUI.
+        """
+        try:
+            self.bridge.set_enabled_tools(enabled_tool_names)
+        except Exception as exc:
+            print(f"⚠ Could not update enabled tools: {exc}")
     
     def _convert_config(self, agentx_config: dict) -> AgentixConfig:
         """

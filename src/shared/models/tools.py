@@ -11,7 +11,7 @@ The tool system supports both local and remote Agentix servers.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 import json
 
 
@@ -86,6 +86,39 @@ class ToolDefinition:
             "returns": self.returns,
         }
     
+    @classmethod
+    def from_callable(
+        cls,
+        fn: Callable,
+        execution_context: "ToolExecutionContext" = None,
+    ) -> "ToolDefinition":
+        """
+        Derive a ToolDefinition from a plain Python callable.
+
+        The callable must have a docstring (used as the LLM-facing description)
+        and type-annotated parameters (used to generate the JSON schema).
+
+        Args:
+            fn: The callable to introspect.
+            execution_context: Override the default CLIENT execution context.
+
+        Returns:
+            A fully populated ToolDefinition.
+
+        Raises:
+            SchemaGenerationError: If the callable has no docstring.
+        """
+        from agentix.tools.schema import extract_tool_schema
+
+        schema = extract_tool_schema(fn)
+        fn_schema = schema["function"]
+        return cls(
+            name=fn_schema["name"],
+            description=fn_schema["description"],
+            parameters=fn_schema["parameters"],
+            execution_context=execution_context or ToolExecutionContext.CLIENT,
+        )
+
     @classmethod
     def from_dict(cls, data: dict) -> "ToolDefinition":
         """Create ToolDefinition from dictionary."""
@@ -350,34 +383,56 @@ class BaseTool(ABC):
 
 
 class ToolRegistry:
-    # --- Enabled tools state management ---
-    def get_enabled_tools(self) -> list[str]:
-        """Return a list of enabled tool names. Default: all tools enabled."""
-        # In a real app, this could be loaded from config/session
-        # For now, all registered tools are enabled by default
-        return list(self._tools.keys())
-
-    def set_enabled_tools(self, enabled_tools: list[str]) -> None:
-        """Set which tools are enabled (stub for config/session integration)."""
-        # In a real app, store this in config/session
-        # Here, just a placeholder (no-op)
-        pass
-
-    def is_tool_enabled(self, name: str) -> bool:
-        """Return True if the tool is enabled."""
-        return name in self.get_enabled_tools()
     """
     Registry for discovering and managing tools.
-    
+
     Maintains a collection of available tools and provides
     lookup functionality for tool execution.
     """
-    
+
     def __init__(self):
         self._tools: dict[str, ITool] = {}
-    
-    def register(self, tool: ITool) -> None:
-        """Register a tool."""
+        self._enabled: Optional[set[str]] = None  # None means "all enabled"
+
+    # ------------------------------------------------------------------
+    # Enabled tools state management
+    # ------------------------------------------------------------------
+
+    def get_enabled_tools(self) -> list[str]:
+        """Return enabled tool names. When no explicit set is configured, all registered tools are enabled."""
+        if self._enabled is None:
+            return list(self._tools.keys())
+        return [name for name in self._tools if name in self._enabled]
+
+    def set_enabled_tools(self, enabled_tools: list[str]) -> None:
+        """Restrict which tools are active. Pass an empty list to disable all tools."""
+        self._enabled = set(enabled_tools)
+
+    def enable_all_tools(self) -> None:
+        """Re-enable all registered tools (clear any restriction)."""
+        self._enabled = None
+
+    def is_tool_enabled(self, name: str) -> bool:
+        """Return True if the named tool is registered and enabled."""
+        if name not in self._tools:
+            return False
+        if self._enabled is None:
+            return True
+        return name in self._enabled
+
+    # ------------------------------------------------------------------
+    # Registration
+    # ------------------------------------------------------------------
+
+    def register(self, tool: "ITool | Callable", execution_context: "ToolExecutionContext | None" = None) -> None:
+        """
+        Register a tool.
+
+        Accepts either an ITool/BaseTool instance or a plain Python callable.
+        When a callable is provided it is wrapped via ToolDefinition.from_callable().
+        """
+        if callable(tool) and not hasattr(tool, "definition"):
+            tool = _CallableTool(tool, execution_context)
         self._tools[tool.definition.name] = tool
     
     def unregister(self, name: str) -> None:
@@ -420,6 +475,18 @@ class ToolRegistry:
     def to_openai_format(self) -> list[dict]:
         """Get all tools in OpenAI function calling format."""
         return [tool.definition.to_openai_format() for tool in self._tools.values()]
+
+    def to_llm_tools(self) -> list[dict]:
+        """
+        Return the enabled tools as an OpenAI-compatible ``tools`` array.
+
+        Only tools that pass ``is_tool_enabled()`` are included, so callers
+        can safely pass this directly to an Ollama or OpenAI chat request.
+        """
+        return [
+            self._tools[name].definition.to_openai_format()
+            for name in self.get_enabled_tools()
+        ]
     
     async def execute(self, request: ToolRequest) -> ToolResponse:
         """
@@ -457,6 +524,34 @@ class ToolRegistry:
                 str(e),
                 request_id=request.request_id
             )
+
+
+class _CallableTool:
+    """
+    Thin ITool wrapper around a plain Python callable.
+
+    Created automatically by ToolRegistry.register() when a bare function
+    is passed instead of a BaseTool/ITool instance.
+    """
+
+    def __init__(self, fn: Callable, execution_context: Optional["ToolExecutionContext"] = None):
+        self._fn = fn
+        self._definition = ToolDefinition.from_callable(fn, execution_context)
+
+    @property
+    def definition(self) -> ToolDefinition:
+        return self._definition
+
+    async def execute(self, **kwargs) -> ToolResponse:
+        try:
+            result = self._fn(**kwargs)
+            return ToolResponse.success_response(result)
+        except Exception as exc:
+            return ToolResponse.error_response(str(exc))
+
+    def validate_input(self, **kwargs) -> bool:
+        required = self._definition.parameters.get("required", [])
+        return all(p in kwargs for p in required)
 
 
 # Global registries for client and server tools

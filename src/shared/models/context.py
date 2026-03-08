@@ -15,7 +15,7 @@ import os
 import threading
 from glob import glob
 
-from .message import Message, MessageRole
+from .message import Message, MessageRole, tool_call_message, tool_result_message
 
 
 @dataclass
@@ -242,6 +242,61 @@ class Context:
         """Get all assistant messages."""
         return [entry.message for entry in self.messages if entry.message.role == MessageRole.ASSISTANT]
     
+    def add_tool_call_message(
+        self,
+        tool_name: str,
+        tool_input: dict,
+        tool_id: Optional[str] = None,
+    ) -> Message:
+        """
+        Add an assistant tool-call message to the context.
+
+        Produces the correct Ollama wire format (``role: "assistant"`` +
+        ``tool_calls`` array) when serialized via ``to_llm_messages()``.
+
+        Args:
+            tool_name: Name of the tool being called.
+            tool_input: Arguments dict to pass to the tool.
+            tool_id: Optional tool-call ID from the LLM for correlation.
+
+        Returns:
+            The created Message instance.
+        """
+        msg = tool_call_message(tool_name, tool_input, tool_id=tool_id)
+        self.add_message(msg)
+        return msg
+
+    def add_tool_result_message(
+        self,
+        tool_name: str,
+        tool_output,
+        tool_id: Optional[str] = None,
+        success: bool = True,
+    ) -> Message:
+        """
+        Add a tool-result message to the context.
+
+        Produces the correct Ollama wire format (``role: "tool"`` +
+        ``tool_call_id``) when serialized via ``to_llm_messages()``.
+
+        Args:
+            tool_name: Name of the tool that was executed.
+            tool_output: Result data (dict, list, or str).
+            tool_id: Tool-call ID to correlate with the original call.
+            success: Whether the tool executed successfully.
+
+        Returns:
+            The created Message instance.
+        """
+        msg = tool_result_message(
+            tool_id=tool_id,
+            tool_name=tool_name,
+            tool_output=tool_output,
+            success=success,
+        )
+        self.add_message(msg)
+        return msg
+
     def get_tool_messages(self) -> list[Message]:
         """Get all tool-related messages."""
         return [

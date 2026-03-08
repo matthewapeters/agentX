@@ -40,8 +40,8 @@ class ResponseHandler:
         self,
         on_content: Optional[Callable[[str], None]] = None,
         on_thinking: Optional[Callable[[str], None]] = None,
-        on_tool_call: Optional[Callable[[str, dict], None]] = None,
-        on_tool_result: Optional[Callable[[str, str], None]] = None,
+        on_tool_call: Optional[Callable[[str, dict, Optional[int]], None]] = None,
+        on_tool_result: Optional[Callable[[str, str, Optional[int]], None]] = None,
         on_classification: Optional[Callable[[dict], None]] = None,
         on_error: Optional[Callable[[str, str], None]] = None,
         on_done: Optional[Callable[[], None]] = None,
@@ -60,8 +60,8 @@ class ResponseHandler:
         """
         self.on_content = on_content or (lambda text: None)
         self.on_thinking = on_thinking or (lambda text: None)
-        self.on_tool_call = on_tool_call or (lambda name, args: None)
-        self.on_tool_result = on_tool_result or (lambda id, result: None)
+        self.on_tool_call = on_tool_call or (lambda name, args, round_i=None: None)
+        self.on_tool_result = on_tool_result or (lambda id, result, round_i=None: None)
         self.on_classification = on_classification or (lambda meta: None)
         self.on_error = on_error or (lambda msg, code: None)
         self.on_done = on_done or (lambda: None)
@@ -116,23 +116,23 @@ class ResponseHandler:
     def _handle_tool_call(self, chunk: ResponseChunk) -> None:
         """Handle tool call chunk."""
         if chunk.tool_name:
-            # Track tool call (tool_id not available in ResponseChunk yet)
             self.tool_calls.append({
                 "name": chunk.tool_name,
                 "input": chunk.tool_input or {},
             })
-            self.on_tool_call(chunk.tool_name, chunk.tool_input or {})
+            self.on_tool_call(chunk.tool_name, chunk.tool_input or {}, chunk.round_index)
     
     def _handle_tool_result(self, chunk: ResponseChunk) -> None:
         """Handle tool result chunk."""
-        # Track tool result (using content as result)
+        output = chunk.tool_output
+        if output is None:
+            output = chunk.content or ""
         self.tool_results.append({
-            "name": chunk.tool_name,  # Tool name should be in the result chunk
-            "result": chunk.content,
+            "name": chunk.tool_name,
+            "result": output,
         })
-        # For now, use tool_name as ID since tool_id doesn't exist in ResponseChunk
-        tool_id = chunk.tool_name or "unknown"
-        self.on_tool_result(tool_id, chunk.content)
+        tool_id = chunk.tool_id or chunk.tool_name or "unknown"
+        self.on_tool_result(tool_id, output, chunk.round_index)
     
     def _handle_classification(self, chunk: ResponseChunk) -> None:
         """Handle classification metadata chunk."""

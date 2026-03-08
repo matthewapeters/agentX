@@ -121,3 +121,46 @@ Actions performed
 Commit
 ------
 This document will be committed to docs/architecture.md on branch smolagents.
+---
+
+Tool Pipeline (added 2026-03-08)
+---------------------------------
+The agentic tool-usage pipeline was implemented across Phases 1-6 of
+docs/tool_usage_plan.md. The key components are:
+
+  User prompt
+    └── AgentixBridgeAdapter.process_prompt_generator()
+          └── AgentixBridge.process_prompt_streaming()
+                ├── classify_prompt()  →  NextStep
+                ├── RESPOND_DIRECTLY   →  _stream_direct_response()
+                ├── SINGLE_TOOL        →  _stream_tool_response()   ─┐
+                ├── INVOKE_PLANNER     →  _stream_planned_response() ─┤
+                └── ESCALATE           →  _stream_direct_response()  │
+                                                                      │
+                    All tool routes call _run_tool_loop(max_rounds=N)─┘
+                      ├── _iter_llm_chunks()  — OpenAI-compat stream
+                      ├── execute_tool()      — dispatch by name
+                      │     ├── CST/AST tools (agentix.tools.*)
+                      │     └── File tools    (ClientToolExecutor)
+                      └── ThreadPoolExecutor — parallel multi-tool rounds
+
+Key tool pipeline files:
+  src/agentix/bridge/bridge.py               — _run_tool_loop, execute_tool, register_tool_implementations
+  src/agentix/tools/schema.py                — extract_tool_schema(fn) → OpenAI JSON schema
+  src/shared/models/tools.py                 — ToolDefinition, ToolRegistry, ToolResponse
+  src/shared/models/message.py               — to_llm_dict() with TOOL_CALL/TOOL_RESULT wire format
+  src/shared/models/context.py               — add_tool_call_message(), add_tool_result_message()
+  src/agentx/integration/client_tool_executor.py — file tool wrappers + get_client_tool_schemas()
+  src/agentx/integration/agentix_bridge_adapter.py — _register_client_tools() on init
+  src/agentx/session.py                      — _display_tool_call(), _display_tool_result()
+  system_prompts/tool_use.md                 — LLM guidance for tool use
+
+Tool message wire format (Ollama/OpenAI):
+  TOOL_CALL:   {"role": "assistant", "tool_calls": [{"id": ..., "function": {"name": ..., "arguments": "..."}}]}
+  TOOL_RESULT: {"role": "tool", "content": "...", "tool_call_id": "..."}
+
+Tests added (tool pipeline):
+  tests/test_tool_schema.py                        (15 tests)
+  tests/test_message_wire_format.py                (24 tests)
+  tests/test_client_tool_integration.py            (21 tests)
+  tests/integration/test_ollama_tool_stream.py     (13 tests)

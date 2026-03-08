@@ -258,6 +258,7 @@ class AgentXSession:
         def on_tool_toggle(tool_name: str, enabled: bool):
             enabled_tools = self.gui.get_enabled_tools()
             self.config["agentix"]["available_tools"] = enabled_tools
+            self.agentix_adapter.set_enabled_tools(enabled_tools)
             original_tool_toggle(tool_name, enabled)
         self.gui._on_tool_toggle = on_tool_toggle
 
@@ -592,14 +593,8 @@ class AgentXSession:
             handler = ResponseHandler(
                 on_content=lambda text: self._handle_stream_content(text),
                 on_thinking=lambda text: self._display_thinking(text),
-                on_tool_call=lambda name, args: self.handle_tool_call(name, args),
-                on_tool_result=lambda id, result: self._safe_root_after(
-                    lambda: self.gui.display_agent_response(
-                        f"\n[📋 Tool result: {result[:100]}...]\n"
-                        if len(result) > 100
-                        else f"\n[📋 Tool result: {result}]\n"
-                    )
-                ),
+                on_tool_call=lambda name, args, round_i=None: self._display_tool_call(name, args, round_i),
+                on_tool_result=lambda tool_id, output, round_i=None: self._display_tool_result(tool_id, output, round_i),
                 on_error=lambda msg, code: self._safe_root_after(
                     lambda: self.gui.display_error(f"{code}: {msg}")
                 ),
@@ -648,6 +643,54 @@ class AgentXSession:
             )
             self._thinking_header_shown = True
         self._safe_root_after(lambda: self.gui.display_agent_thinking(text))
+
+    def _display_tool_call(self, tool_name: str, tool_input: dict, round_index: int | None = None) -> None:
+        """
+        Display a tool call in the GUI and store it in context.
+
+        The bridge handles tool execution; this method is display-only.
+        Storing the TOOL_CALL message ensures the tool interaction is visible
+        in the session history and can be re-serialized in future turns.
+        """
+        round_label = f" [round {round_index + 1}]" if round_index is not None else ""
+        self._safe_root_after(
+            lambda: self.gui.display_agent_response(
+                f"\n[🔧 Calling tool{round_label}: {tool_name}]\n"
+            )
+        )
+        self.context.add_tool_call_message(tool_name, tool_input)
+
+    def _display_tool_result(self, tool_id: str, output, round_index: int | None = None) -> None:
+        """
+        Display a tool result in the GUI and store it in context.
+
+        The bridge has already executed the tool and produced ``output``.
+        This method records the result in context so it persists across
+        sessions and is included in future LLM history.
+        """
+        if isinstance(output, str):
+            display_text = output
+        elif output is not None:
+            import json as _json
+            try:
+                display_text = _json.dumps(output)
+            except Exception:
+                display_text = str(output)
+        else:
+            display_text = ""
+
+        round_label = f" [round {round_index + 1}]" if round_index is not None else ""
+        preview = display_text[:100] + "..." if len(display_text) > 100 else display_text
+        self._safe_root_after(
+            lambda: self.gui.display_agent_response(f"\n[📋 Tool result{round_label}: {preview}]\n")
+        )
+        self.context.add_tool_result_message(
+            tool_name=tool_id,  # tool_id carries tool_name from ResponseHandler
+            tool_output=output,
+            tool_id=tool_id,
+        )
+
+
 
     def _display_assistant_header(self) -> None:
         """Display the assistant header once per response stream."""

@@ -83,6 +83,7 @@ class ResponseChunk:
     tool_output: Optional[Any] = None
     tool_execution_context: Optional[str] = None  # "client" or "server"
     tool_id: Optional[str] = None
+    round_index: Optional[int] = None  # which tool-loop round emitted this chunk
     
     # Classification fields
     classification: Optional[dict] = None

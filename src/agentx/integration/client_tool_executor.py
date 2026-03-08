@@ -315,3 +315,149 @@ class ClientToolExecutor:
         
         except Exception as e:
             return f"Error searching files: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
+# Standalone tool functions
+#
+# These thin wrappers have proper type signatures and docstrings so that
+# ``extract_tool_schema()`` can auto-generate OpenAI JSON schemas for them.
+# They delegate to a module-level ClientToolExecutor instance.
+# ---------------------------------------------------------------------------
+
+_executor: "ClientToolExecutor | None" = None
+
+
+def _get_executor() -> "ClientToolExecutor":
+    global _executor
+    if _executor is None:
+        _executor = ClientToolExecutor()
+    return _executor
+
+
+def read_file(path: str, encoding: str = "utf-8") -> str:
+    """Read the contents of a file from the filesystem.
+
+    Args:
+        path: Absolute or relative path to the file.
+        encoding: Text encoding to use when reading (default: utf-8).
+
+    Returns:
+        The file contents as a string (truncated to 50 KB if larger).
+    """
+    return _get_executor().execute("read_file", {"path": path, "encoding": encoding})
+
+
+def write_file(path: str, content: str, append: bool = False, encoding: str = "utf-8") -> str:
+    """Write text content to a file on the filesystem.
+
+    Creates the file and any missing parent directories automatically.
+
+    Args:
+        path: Absolute or relative path to the file to write.
+        content: The text content to write.
+        append: If True, append to the file instead of overwriting it.
+        encoding: Text encoding to use when writing (default: utf-8).
+
+    Returns:
+        A success message with the resolved file path.
+    """
+    return _get_executor().execute(
+        "write_file",
+        {"path": path, "content": content, "append": append, "encoding": encoding},
+    )
+
+
+def list_directory(path: str, recursive: bool = False, pattern: str = "*") -> str:
+    """List the contents of a directory.
+
+    Args:
+        path: Absolute or relative path to the directory.
+        recursive: If True, list all files in subdirectories as well.
+        pattern: Glob pattern to filter results (default: all files).
+
+    Returns:
+        A formatted listing with file sizes and directory markers.
+    """
+    return _get_executor().execute(
+        "list_directory",
+        {"path": path, "recursive": recursive, "pattern": pattern},
+    )
+
+
+def get_file_info(path: str) -> str:
+    """Get metadata for a file or directory.
+
+    Args:
+        path: Absolute or relative path to inspect.
+
+    Returns:
+        JSON-formatted object with size, timestamps, permissions, and type flags.
+    """
+    return _get_executor().execute("get_file_info", {"path": path})
+
+
+def search_files(path: str, pattern: str, recursive: bool = True, limit: int = 100) -> str:
+    """Search for files matching a glob pattern within a directory.
+
+    Args:
+        path: Root directory to search in.
+        pattern: Glob pattern to match filenames (e.g. ``*.py``, ``test_*.txt``).
+        recursive: If True, search all subdirectories (default: True).
+        limit: Maximum number of results to return (default: 100).
+
+    Returns:
+        Newline-separated list of matching relative file paths.
+    """
+    return _get_executor().execute(
+        "search_files",
+        {"path": path, "pattern": pattern, "recursive": recursive, "limit": limit},
+    )
+
+
+# Public names to expose from this module
+CLIENT_TOOL_FUNCTIONS = {
+    "read_file": read_file,
+    "write_file": write_file,
+    "list_directory": list_directory,
+    "get_file_info": get_file_info,
+    "search_files": search_files,
+}
+
+
+def get_client_tool_implementations() -> dict:
+    """Return a mapping of client tool name → callable.
+
+    All returned functions are safe to call with keyword arguments extracted
+    from an LLM tool-call response.
+    """
+    return dict(CLIENT_TOOL_FUNCTIONS)
+
+
+def get_client_tool_schemas() -> list:
+    """Return OpenAI-format tool schemas for all client tools.
+
+    Uses ``extract_tool_schema()`` so schemas always stay in sync with the
+    function signatures and docstrings above.
+
+    Returns:
+        List of dicts in the ``{"type": "function", "function": {...}}`` format.
+    """
+    import sys
+    from pathlib import Path
+
+    # Ensure agentix is importable (sibling src directory)
+    src = str(Path(__file__).resolve().parents[2])
+    if src not in sys.path:
+        sys.path.insert(0, src)
+
+    from agentix.tools.schema import extract_tool_schema, SchemaGenerationError
+
+    schemas = []
+    for fn in CLIENT_TOOL_FUNCTIONS.values():
+        try:
+            schemas.append(extract_tool_schema(fn))
+        except SchemaGenerationError:
+            pass  # skip any function that lacks a docstring (shouldn't happen here)
+    return schemas
+

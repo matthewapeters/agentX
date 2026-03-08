@@ -219,39 +219,63 @@ class Message:
     
     def to_llm_dict(self) -> dict:
         """
-        Format message for LLM API (Ollama/OpenAI).
-        
-        Includes enabled attachment content inline in the content field.
-        Handles role mapping for non-standard roles.
-        
+        Format message for LLM API (Ollama/OpenAI wire format).
+
+        TOOL_CALL messages serialize as the OpenAI assistant message with a
+        ``tool_calls`` array (not plain text). TOOL_RESULT messages use role
+        ``"tool"`` with ``tool_call_id``.  All other roles follow the standard
+        role mapping.
+
         Returns:
             Dictionary suitable for Ollama/OpenAI chat API
         """
-        # Map non-standard roles to standard ones
+        # --- Tool call: assistant message with tool_calls array ---
+        if self.role == MessageRole.TOOL_CALL:
+            return {
+                "role": "assistant",
+                "content": self.content or "",
+                "tool_calls": [
+                    {
+                        "id": self.tool_id or "call_0",
+                        "type": "function",
+                        "function": {
+                            "name": self.tool_name or "",
+                            "arguments": json.dumps(self.tool_input or {}),
+                        },
+                    }
+                ],
+            }
+
+        # --- Tool result: "tool" role with tool_call_id ---
+        if self.role == MessageRole.TOOL_RESULT:
+            output = self.tool_output
+            if isinstance(output, (dict, list)):
+                content = json.dumps(output)
+            elif output is not None:
+                content = str(output)
+            else:
+                content = self.content or ""
+            return {
+                "role": "tool",
+                "content": content,
+                "tool_call_id": self.tool_id or "call_0",
+            }
+
+        # --- Standard roles (user / assistant / system / thinking) ---
         role_mapping = {
             MessageRole.THINKING: "assistant",
-            MessageRole.TOOL_CALL: "assistant",
-            MessageRole.TOOL_RESULT: "user",  # Tool results go back as user context
         }
         api_role = role_mapping.get(self.role, self.role.value)
-        
+
         # Build content with enabled attachments
         full_content = self.content
-        
-        # Add tool info for tool messages
-        if self.role == MessageRole.TOOL_CALL and self.tool_name:
-            full_content = f"[Tool Call: {self.tool_name}]\nInput: {json.dumps(self.tool_input or {}, indent=2)}"
-        elif self.role == MessageRole.TOOL_RESULT and self.tool_name:
-            output_str = json.dumps(self.tool_output, indent=2) if isinstance(self.tool_output, (dict, list)) else str(self.tool_output)
-            full_content = f"[Tool Result: {self.tool_name}]\n{output_str}"
-        
-        # Append enabled attachments
+
         enabled_attachments = [a for a in self.attachments if a.enabled]
         if enabled_attachments:
             full_content += "\n\n--- Attached Files ---"
             for attachment in enabled_attachments:
                 full_content += attachment.to_llm_format()
-        
+
         return {
             "role": api_role,
             "content": full_content,
