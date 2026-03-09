@@ -14,6 +14,7 @@ classification_torch_device = -1  # CPU; use 0 for first GPU
 classification_torch_model = "typeform/distilbert-base-uncased-mnli"
 classify_prompts = true   # Enable to analyze intent and route workflows
 debug = false  # Enable for verbose classification logging to stderr
+default_system_prompts = ["tool_use"]  # System prompts injected into every LLM tool-call request
 host = "localhost:8000"
 
 [agentix.classification_display]

@@ -108,7 +108,7 @@ Users may ask to add, update, remove, or query facts. Classify these as follows:
 
 - "what facts do you know?" / "list your memory" / "what do you remember about X?"
   / "show me the working memory" / "show me your facts" / "display working memory"
-  / "what's in your memory?" / "list facts"
+  / "what's in your memory?" / "list facts" / "show your notes"
   → intent = "conversation", next_step = "respond_directly"
   NOTE: These are READ/DISPLAY requests, not write/store requests.
         Do NOT classify them as simple_action.
@@ -118,18 +118,26 @@ Users may ask to add, update, remove, or query facts. Classify these as follows:
 
 ## [FILE SYSTEM OPERATIONS]
 
+⚠️ DISAMBIGUATION: "working directory" and "working memory" are DIFFERENT concepts.
+  - "working directory" = a filesystem path (the cwd) → file-system tool operation
+  - "working memory" = the agent's fact store → conversation/WM tool operation
+
 The agent has file-system tools: `list_directory`, `read_file`, `write_file`,
 `search_files`. Classify file-system requests as follows:
 
 - "list the contents of X" / "list files in X" / "show files in X" / "what's in folder X"
-  / "list the working directory" / "list the current directory" / "ls X" / "dir X"
+  / "list the working directory" / "list the current directory"
   / "list the contents of the working directory"
+  / "list the contents of the current directory"
+  / "ls X" / "dir X" / "show the directory"
   → intent = "simple_action", next_step = "single_tool"
+  IMPORTANT: "list the working directory" is a FILE SYSTEM operation, NOT a
+  Working Memory read. Do NOT route it to respond_directly.
   NOTE: If the user says "working directory" or "current directory" and the
         conversation context or Working Memory contains a `cwd` key, do NOT
         flag directory_path as missing — it is available from context.
 
-- "read file X" / "show the contents of X" / "open X"
+- "read file X" / "show the contents of X" / "open X" / "cat X"
   → intent = "simple_action", next_step = "single_tool"
 
 - "create file X with content Y" / "write X to file Y"

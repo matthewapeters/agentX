@@ -586,6 +586,16 @@ class AgentixBridge:
         # Build initial message list from context + current prompt
         history = self._context_to_history(context)
         messages: list[dict] = [msg.to_llm_dict() for msg in history]
+
+        # Prepend configured system prompt(s) before history so the LLM sees
+        # tool-use instructions (e.g. "use WM cwd for list_directory") first.
+        if self.config.system:
+            from agentix.context.prompts import get_system_prompt
+
+            sys_content = get_system_prompt(self.config)
+            if sys_content:
+                messages.insert(0, {"role": "system", "content": sys_content})
+
         messages.append({"role": "user", "content": prompt})
 
         # max_rounds = max tool-calling rounds; one extra final round forces a direct answer

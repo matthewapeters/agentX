@@ -42,7 +42,19 @@ commentary outside the tool call.
 5. **Do not call tools when the answer is already in the conversation.**
    If a file was already read in this session, reference that result.
 
-## Error handling
+## Working Memory context
+
+When the system context contains a `<working_memory>` block, treat those facts
+as session-scoped variables that should inform your tool calls.  Key mappings:
+
+| Working Memory key | How to use it in tools |
+|--------------------|------------------------|
+| `cwd` | Use as the `path` argument to `list_directory`, `read_file`, `write_file`, and `search_files` when the user refers to "current directory", "working directory", "here", or omits a path entirely. |
+| Any path-like fact | Prefer it over guessing a path when the user's request is underspecified. |
+
+**Example:** if Working Memory contains `cwd: /Projects/project_001` and the
+user says "list the working directory", call `list_directory` with
+`{"path": "/Projects/project_001"}` — not `"."` or the process working directory.
 
 If a tool returns an error message, include it in your response and suggest
 corrective actions (e.g., check the path, verify file exists, correct
