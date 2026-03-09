@@ -16,6 +16,7 @@ from shared.models.context import Context
 from shared.models.working_memory import WorkingMemory
 from .file_explorer import FileExplorer
 from .gui.gui_config import GUIConfig
+from .config import save_config
 from .gui.gui_manager import GUIManager
 from .history import History
 from shared.models.message import Message, MessageRole
@@ -520,6 +521,88 @@ class AgentXSession:
         self.working_memory.add_fact(FactOwner.USER, key, parsed_value)
         self._safe_root_after(self.refresh_working_memory_gui)
 
+    # ------------------------------------------------------------------
+    # Settings GUI
+    # ------------------------------------------------------------------
+
+    def refresh_settings_gui(self) -> None:
+        """Build (or rebuild) the ⚙️ Settings tab content."""
+        if threading.current_thread() is not threading.main_thread():
+            return
+        try:
+            models: list[dict] = []
+            try:
+                models = self.agentix_adapter.get_models()
+            except Exception:
+                pass
+            self.gui.render_settings_tab(
+                config=self.config,
+                on_change=self._on_setting_change,
+                models=models,
+                system_prompts_dir="system_prompts",
+            )
+        except RuntimeError:
+            pass  # settings_tab not yet created
+
+    def _on_setting_change(self, key_path: list[str], value) -> None:
+        """Handle a setting change from the ⚙️ Settings tab.
+
+        Config-only changes (key_path[0] == '__config_only__') are written to
+        disk but NOT hot-applied at runtime.  All other changes are both
+        written and hot-applied where possible.
+
+        Special rule: 'ollama_model' is the startup *default* only — it must
+        never overwrite the user's live model selection (managed by the toolbar
+        ModelSelector).
+        """
+        config_only = False
+        if key_path and key_path[0] == "__config_only__":
+            config_only = True
+            key_path = key_path[1:]
+
+        if not key_path:
+            return
+
+        # Navigate / create nested dict structure and write the new value.
+        node = self.config
+        for part in key_path[:-1]:
+            node = node.setdefault(part, {})
+        node[key_path[-1]] = value
+
+        # Persist to disk.
+        try:
+            save_config(self.config)
+        except Exception as e:
+            logger.warning("Settings: failed to save config: %s", e)
+
+        if config_only:
+            return
+
+        # Hot-apply where possible.
+        leaf = key_path[-1]
+        section = key_path[0] if len(key_path) > 1 else None
+        sub = key_path[1] if len(key_path) > 2 else None
+
+        # NEVER change the runtime active model here — that is the toolbar's job.
+        if key_path == ["agentx", "ollama_model"]:
+            return
+
+        try:
+            if section == "agentix":
+                agentix_cfg = self.agentix_adapter.agentix_config
+                if leaf == "debug":
+                    agentix_cfg.debug = bool(value)
+                elif leaf == "agentix_bench_classification_model":
+                    agentix_cfg.classification_model = value
+                elif leaf == "available_tools":
+                    self.agentix_adapter.set_enabled_tools(value)
+                elif leaf == "default_system_prompts":
+                    agentix_cfg.system = value
+                # classify_prompts / classification_display / host — all config-dict
+                # reads, no explicit adapter call needed.
+        except AttributeError:
+            pass  # Agentix not available
+
     def attach_file(self, file_path: str):
         """
         Attach a file to the session context.
@@ -586,6 +669,7 @@ class AgentXSession:
         self.refresh_context_gui()
         self.refresh_files_gui()
         self.refresh_working_memory_gui()
+        self.refresh_settings_gui()
 
         # Setup model selector and tool panel if Agentix is available
         # (Must be after layout is created so the widgets exist)

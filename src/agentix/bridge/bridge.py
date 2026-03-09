@@ -528,7 +528,7 @@ class AgentixBridge:
         Yields:
             TOOL_CALL, TOOL_RESULT, CONTENT, THINKING, DONE chunks.
         """
-        yield from self._run_tool_loop(prompt, context, max_rounds=1)
+        yield from self._run_tool_loop(prompt, context, max_rounds=10)
 
     def _stream_planned_response(
         self,

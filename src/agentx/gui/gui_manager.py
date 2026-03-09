@@ -7,11 +7,12 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox as tk_messagebox
 from tkinter import ttk
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from ..attachment_info import AttachmentInfo
 from .collapsible_section import CollapsibleSection
 from .gui_config import GUIConfig
+from .settings_tab import SettingsTab
 from ..history import History
 from ..igui_manager import IGUIManager
 from ..widget_registry import WidgetRegistry
@@ -1240,6 +1241,60 @@ class GUIManager(IGUIManager):
             raise RuntimeError("files_tab not yet created")
         return self.widgets.files_tab
 
+    def get_settings_parent(self) -> tk.Widget:
+        """Return the Settings tab frame (parent for SettingsTab widget).
+
+        Raises:
+            RuntimeError: If the Settings tab has not yet been created.
+        """
+        if getattr(self.widgets, "settings_tab", None) is None:
+            raise RuntimeError("settings_tab not yet created")
+        return self.widgets.settings_tab
+
+    def render_settings_tab(
+        self,
+        config: dict,
+        on_change: "Callable[[list[str], Any], None]",
+        models: list | None = None,
+        system_prompts_dir: str = "system_prompts",
+    ) -> None:
+        """Build or rebuild the ⚙️ Settings tab content.
+
+        Destroys any existing SettingsTab widget and replaces it with a freshly
+        rendered one using the current config snapshot and model list.
+
+        Args:
+            config: The full agentx config dict (passed by reference — not copied).
+            on_change: Callback fired on each control interaction.
+                Signature: ``(key_path: list[str], value: Any) -> None``
+                If ``key_path[0] == '__config_only__'`` the change should only be
+                written to disk, not hot-applied at runtime.
+            models: List of model dicts from Ollama (same format as populate_models).
+            system_prompts_dir: Path to system_prompts directory for prompt discovery.
+        """
+        parent = self.get_settings_parent()
+        # Destroy previous SettingsTab if one exists.
+        if getattr(self, "_settings_tab_widget", None) is not None:
+            try:
+                self._settings_tab_widget.frame.destroy()
+            except Exception:
+                pass
+        self._settings_tab_widget = SettingsTab(
+            parent,
+            config=config,
+            on_change=on_change,
+            models=models or [],
+            system_prompts_dir=system_prompts_dir,
+            bg=self._section_bg,
+        )
+        self._settings_tab_widget.frame.pack(fill=tk.BOTH, expand=True)
+
+    def populate_settings_models(self, models: list[dict]) -> None:
+        """Refresh the model dropdowns in the Settings tab after models list changes."""
+        widget = getattr(self, "_settings_tab_widget", None)
+        if widget is not None:
+            widget.populate_models(models)
+
     def register_system_collapsible_section(
         self,
         tab_name: str,
@@ -1414,6 +1469,12 @@ class GUIManager(IGUIManager):
             self.widgets.system_notebook, bg=self._section_bg
         )
         self.widgets.system_notebook.add(self.widgets.files_tab, text="Files")
+
+        # Create Settings tab
+        self.widgets.settings_tab = tk.Frame(
+            self.widgets.system_notebook, bg=self._section_bg
+        )
+        self.widgets.system_notebook.add(self.widgets.settings_tab, text="⚙️ Settings")
 
         # Bind tab change event to force widget updates
         def on_tab_changed(event):

@@ -2,7 +2,7 @@
 
 import tkinter as tk
 from datetime import datetime
-from typing import Callable, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 from .attachment_info import AttachmentInfo
 
@@ -307,4 +307,22 @@ class IGUIManager(Protocol):
         Returns:
             The widget to use as parent for file_explorer.to_gui()
         """
+        ...
+
+    def get_settings_parent(self) -> tk.Widget:
+        """Get the Settings tab frame."""
+        ...
+
+    def render_settings_tab(
+        self,
+        config: dict,
+        on_change: Callable[[list[str], Any], None],
+        models: list | None = None,
+        system_prompts_dir: str = "system_prompts",
+    ) -> None:
+        """Build or rebuild the ⚙️ Settings tab content."""
+        ...
+
+    def populate_settings_models(self, models: list[dict]) -> None:
+        """Refresh model dropdowns in the Settings tab."""
         ...
