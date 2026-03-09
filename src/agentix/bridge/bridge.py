@@ -570,6 +570,12 @@ class AgentixBridge:
            to the running history.
         7. Yields TOOL_RESULT chunks and loops.
 
+        After at most max_rounds of tool calling a guaranteed synthesis round is
+        run with no tool schemas so the LLM always produces a user-facing
+        content response.  This is separate from the max_rounds cap so a
+        LLM that retries an errored tool in the "final" round still gets a
+        chance to synthesise.
+
         Inspired by the MIT-licensed lmstudio-python multi-round loop
         (sync_api.py:1326-1510).
 
@@ -598,31 +604,34 @@ class AgentixBridge:
 
         messages.append({"role": "user", "content": prompt})
 
-        # max_rounds = max tool-calling rounds; one extra final round forces a direct answer
-        for round_index in range(max_rounds + 1):
-            is_final_round = round_index == max_rounds
-            tools_for_round = (available_tools or None) if not is_final_round else None
+        any_tools_called = False
+        got_content = False
 
+        for round_index in range(max_rounds):
             tool_calls_this_round: list[ResponseChunk] = []
             final_content_chunks: list[ResponseChunk] = []
 
-            # Stream this round; collect tool calls, pass content/thinking straight through
-            for chunk in self._iter_llm_chunks(messages, tools=tools_for_round):
+            # Stream this round (always with tools — synthesis handled below)
+            for chunk in self._iter_llm_chunks(messages, tools=available_tools or None):
                 if chunk.type == ChunkType.TOOL_CALL:
                     tool_calls_this_round.append(chunk)
                 elif chunk.type == ChunkType.DONE:
                     if not tool_calls_this_round:
                         yield chunk
-                    # Don't yield DONE yet if we have tool calls to process
                 elif chunk.type in (ChunkType.CONTENT, ChunkType.THINKING):
                     final_content_chunks.append(chunk)
                     yield chunk
+                    if chunk.type == ChunkType.CONTENT and chunk.content:
+                        got_content = True
                 else:
                     yield chunk
 
-            # No tool calls → LLM produced a final answer; we're done
+            # No tool calls → LLM gave a direct answer; we're done
             if not tool_calls_this_round:
                 break
+
+            any_tools_called = True
+            got_content = False  # reset — content before tool calls doesn't count as synthesis
 
             # Build the assistant message that records the tool call requests
             assistant_msg: dict = {
@@ -680,6 +689,19 @@ class AgentixBridge:
                     })
 
             messages.extend(tool_result_messages)
+
+        # ── Guaranteed synthesis step ────────────────────────────────────────
+        # If tool calls were made and the loop exited without producing content
+        # (e.g. max_rounds exhausted, or LLM retried a tool in the last round),
+        # run one final LLM call with NO tool schemas to force a text response.
+        if any_tools_called and not got_content:
+            for chunk in self._iter_llm_chunks(messages):
+                yield chunk
+                if chunk.type == ChunkType.CONTENT and chunk.content:
+                    got_content = True
+            if not got_content:
+                # Absolute fallback so the user is never left with silence
+                yield ResponseChunk(type=ChunkType.CONTENT, content="\n")
 
         yield ResponseChunk(type=ChunkType.DONE, done_reason="stop")
 

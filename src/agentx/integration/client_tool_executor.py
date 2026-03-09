@@ -73,6 +73,16 @@ class ClientToolExecutor:
         Raises:
             ValueError: If path is outside base_path
         """
+        # Sanitize: strip surrounding whitespace and take the first token if the
+        # LLM accidentally passes a space-separated multi-path string such as
+        # "/Projects/agentX/ /Projects/project_001".
+        path = path.strip()
+        if " " in path:
+            # Use the last token — the LLM tends to prepend the process cwd then
+            # the intended path, so the rightmost part is the intended target.
+            tokens = [t for t in path.split() if t]
+            path = tokens[-1]
+
         file_path = Path(path).expanduser()
         
         # Resolve both paths to handle symlinks properly
