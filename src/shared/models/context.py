@@ -79,8 +79,8 @@ class Context:
         timestamp = ts or message.timestamp
         message.timestamp = timestamp
         
-        # Save to disk if path is set
-        if self.path and message.file_path is None and threading.current_thread() is threading.main_thread():
+        # Save to disk if path is set (safe from any thread — writes unique filenames)
+        if self.path and message.file_path is None:
             message.save(self.path)
         
         self.messages.append(MessageEntry(timestamp=timestamp, message=message))

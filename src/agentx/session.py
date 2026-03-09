@@ -77,6 +77,9 @@ class AgentXSession:
         self.context_folder = os.path.join(self.session_folder, "context")
         os.makedirs(self.context_folder, exist_ok=True)
         self.context.path = self.context_folder
+        # Session transcript log — mirrors everything written to the output panel
+        self._session_log_path = os.path.join(self.session_folder, "session.log")
+        self._session_log = open(self._session_log_path, "a", encoding="utf-8", buffering=1)  # line-buffered
         self._history = None  # Placeholder for History object
         self.message = Message(role="user", content="")
         self.enabled_history_attachments = []  # Track enabled attachments from history
@@ -694,6 +697,13 @@ class AgentXSession:
         except RuntimeError:
             pass
 
+    def _write_log(self, text: str) -> None:
+        """Append text to the session transcript log (thread-safe, best-effort)."""
+        try:
+            self._session_log.write(text)
+        except Exception:
+            pass
+
     def _stream_via_agentix(self):
         """Stream response through Agentix middleware."""
         config = self.config
@@ -723,6 +733,7 @@ class AgentXSession:
                 prompt, attachment_filenames, datetime.now()
             )
         )
+        self._write_log(f"\n👤 User: {prompt}\n")
 
         try:
             # Prepare message
@@ -821,7 +832,9 @@ class AgentXSession:
 
         except Exception as e:
             logger.exception("Request error during streaming")
+            err_line = f"\n⚠️  ERROR: {e}\n"
             self._safe_root_after(lambda err=e: self.gui.display_error(f"Error: {err}"))
+            self._write_log(err_line)
         finally:
             self._is_streaming.clear()
             self._safe_root_after(lambda: self.gui.set_streaming_state(False))
@@ -846,19 +859,36 @@ class AgentXSession:
                 "next_step": meta.get("next_step", "") if show_next_step else "",
             }
             self._safe_root_after(lambda m=filtered: self.gui.display_classification(m))
+            # Mirror classification to session log
+            lines = []
+            if filtered.get("intent"):
+                lines.append(f"🤔 intent: {filtered['intent']}")
+            if filtered.get("reasoning_summary"):
+                lines.append(f"   reasoning: {filtered['reasoning_summary']}")
+            if filtered.get("needs_clarification") or filtered.get("missing_fields"):
+                cl = "   clarification needed: yes"
+                mf = filtered.get("missing_fields") or []
+                if mf:
+                    cl += f"  |  missing fields: {', '.join(mf)}"
+                lines.append(cl)
+            if filtered.get("next_step"):
+                lines.append(f"💡 path: {filtered['next_step']}")
+            if lines:
+                self._write_log("\n".join(lines) + "\n")
 
         return _callback
 
     def _display_thinking(self, text: str):
         """Helper to display thinking text with header on first call."""
         if not getattr(self, "_thinking_header_shown", False):
+            header = f"\n{GUIManager.MESSAGE_ROLES['thinking']} ({self.active_model})\t(The agent is thinking...)\n"
             self._safe_root_after(
-                lambda: self.gui.display_agent_thinking(
-                    f"\n{GUIManager.MESSAGE_ROLES['thinking']} ({self.active_model})\t(The agent is thinking...)\n"
-                )
+                lambda: self.gui.display_agent_thinking(header)
             )
+            self._write_log(header)
             self._thinking_header_shown = True
         self._safe_root_after(lambda: self.gui.display_agent_thinking(text))
+        self._write_log(text)
 
     def _display_tool_call(self, tool_name: str, tool_input: dict, round_index: int | None = None) -> None:
         """
@@ -869,11 +899,9 @@ class AgentXSession:
         in the session history and can be re-serialized in future turns.
         """
         round_label = f" [round {round_index + 1}]" if round_index is not None else ""
-        self._safe_root_after(
-            lambda: self.gui.display_agent_response(
-                f"\n[🔧 Calling tool{round_label}: {tool_name}]\n"
-            )
-        )
+        line = f"\n[🔧 Calling tool{round_label}: {tool_name}]\n"
+        self._safe_root_after(lambda: self.gui.display_agent_response(line))
+        self._write_log(line)
         self.context.add_tool_call_message(tool_name, tool_input)
 
     def _display_tool_result(self, tool_id: str, output, round_index: int | None = None) -> None:
@@ -897,9 +925,9 @@ class AgentXSession:
 
         round_label = f" [round {round_index + 1}]" if round_index is not None else ""
         preview = display_text[:100] + "..." if len(display_text) > 100 else display_text
-        self._safe_root_after(
-            lambda: self.gui.display_agent_response(f"\n[📋 Tool result{round_label}: {preview}]\n")
-        )
+        result_line = f"\n[📋 Tool result{round_label}: {preview}]\n"
+        self._safe_root_after(lambda: self.gui.display_agent_response(result_line))
+        self._write_log(result_line)
         self.context.add_tool_result_message(
             tool_name=tool_id,  # tool_id carries tool_name from ResponseHandler
             tool_output=output,
@@ -914,16 +942,15 @@ class AgentXSession:
         """Display the assistant header once per response stream."""
         if not getattr(self, "_assistant_header_shown", False):
             self._assistant_header_shown = True
-            self._safe_root_after(
-                lambda: self.gui.display_agent_response(
-                    f"\n\n{GUIManager.MESSAGE_ROLES['assistant']} ({self.active_model})\t"
-                )
-            )
+            header = f"\n\n{GUIManager.MESSAGE_ROLES['assistant']} ({self.active_model})\t"
+            self._safe_root_after(lambda: self.gui.display_agent_response(header))
+            self._write_log(header)
 
     def _handle_stream_content(self, text: str) -> None:
         """Ensure header is shown before streaming content chunks."""
         self._display_assistant_header()
         self._safe_root_after(lambda: self.gui.display_agent_response(text))
+        self._write_log(text)
 
     def _build_shared_context_from_context(self) -> Context:
         """Build shared context from currently enabled messages."""
