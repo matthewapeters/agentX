@@ -1,0 +1,28 @@
+[agentx]
+ollama_host = "localhost:11434"
+ollama_model = "gpt-oss"
+ollama_initial_load_timeout_seconds = 120
+screen_side = "left"
+
+[agentix]
+agentix_bench_classification_model = "phi4-mini:3.8b"
+available_tools = [ "cst", "ast",]
+classification_backend = "ollama"
+classification_torch_device = -1
+classification_torch_model = "typeform/distilbert-base-uncased-mnli"
+classify_prompts = true
+debug = false
+default_system_prompts = [ "tool_use",]
+host = "localhost:8000"
+
+[agentx.working_memory]
+enabled = true
+inject_into_context = true
+max_facts = 50
+
+[agentix.classification_display]
+enabled = true
+show_intent = true
+show_reasoning = true
+show_clarification = true
+show_next_step = true

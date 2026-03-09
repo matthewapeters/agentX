@@ -15,7 +15,7 @@ def load_config(config_path=DEFAULT_CONFIG):
 
 def save_config(config, config_path=DEFAULT_CONFIG):
     with open(config_path, "w") as f:
-        toml.dumps(config, f)
+        f.write(toml.dumps(config))
 
 
 def get_icon_path(icon_name):
