@@ -283,11 +283,30 @@ class GUIManager(IGUIManager):
             self.MESSAGE_COLUMNS["content"], weight=1
         )
 
-        # Render messages directly into the frame's grid
+        # Group messages: collect TOOL_CALL/TOOL_RESULT entries as children of
+        # the nearest preceding non-tool message so they render nested in the UI.
+        _TOOL_ROLES = {"tool_call", "tool_result"}
+
+        def _role_str(msg) -> str:
+            r = getattr(msg, "role", "")
+            return r.value if hasattr(r, "value") else str(r)
+
+        grouped: list[tuple] = []  # (message, [tool_interaction_messages])
+        for entry in context_obj.messages:
+            msg = entry.message if hasattr(entry, "message") else entry
+            if _role_str(msg) in _TOOL_ROLES:
+                if grouped:
+                    grouped[-1][1].append(msg)
+                # else: orphaned tool msg with no parent — skip silently
+            else:
+                grouped.append((msg, []))
+
+        # Render grouped messages into the frame's grid
         current_row = 0
-        for message in context_obj.messages:
+        for message, tool_msgs in grouped:
             current_row = self._render_message_to_grid(
-                message, context_messages_frame, current_row, on_attachment_toggle
+                message, context_messages_frame, current_row,
+                on_attachment_toggle, tool_msgs,
             )
 
         # Hide messages frame if not expanded on initial render (header mode only)
@@ -302,37 +321,46 @@ class GUIManager(IGUIManager):
         parent_frame: tk.Frame,
         start_row: int,
         on_attachment_toggle=None,
+        tool_interactions: list | None = None,
     ) -> int:
         """
         Render a Message object directly into the parent frame's grid.
 
-        This method places message components (checkbox, role, content, attachments)
-        directly into the parent frame's grid system using MESSAGE_COLUMNS for alignment.
-        This ensures consistent column widths across all messages.
+        This method places message components (checkbox, role, content, attachments,
+        and any tool call/result sub-rows) directly into the parent frame's grid
+        system using MESSAGE_COLUMNS for alignment.  Tool interactions are rendered
+        as collapsible nested rows below the message — collapsed by default.
 
         Args:
             message_obj: The Message instance to render
             parent_frame: The parent tkinter Frame with grid layout
             start_row: The starting row number in the parent grid
             on_attachment_toggle: Optional callback for attachment toggles
+            tool_interactions: Optional list of TOOL_CALL / TOOL_RESULT Message
+                objects that were triggered by this message.  They are rendered
+                as collapsible sub-rows beneath the message row.
 
         Returns:
-            The next available row number after this message and its attachments
+            The next available row number after this message and its sub-rows
         """
         current_row = start_row
+        tool_interactions = tool_interactions or []
 
         has_attachments = bool(getattr(message_obj, "attachments", []))
+        has_tools = bool(tool_interactions)
+        is_expandable = has_attachments or has_tools
 
-        # Track widgets for show/hide on expand/collapse
-        attachment_rows: list[list[tk.Widget]] = []
+        # Rows that will be toggled by the expand/collapse button.
+        # Each inner list is one visual row's widgets.
+        collapsible_rows: list[list[tk.Widget]] = []
 
-        # Forward declare for use in toggle_expand closure
+        # Forward declare for use in toggle closure
         collapse_expand_button: tk.Button
 
-        # Column 1: Collapse/Expand button (or empty space), indented by one column
-        if has_attachments:
+        # Column 0: Collapse/Expand button (or empty spacer)
+        if is_expandable:
             collapse_expand_button = self.collapse_expand_button(
-                parent=parent_frame, attachment_rows=attachment_rows
+                parent=parent_frame, attachment_rows=collapsible_rows
             )
             collapse_expand_button.grid(
                 row=current_row,
@@ -380,7 +408,9 @@ class GUIManager(IGUIManager):
             and not re.match(r"--- \[End of .+\] ---", line)
         ]
         preview_text = " ".join([l.strip() for l in lines if l.strip()])
-        preview = preview_text[:40] + ("..." if len(preview_text) > 40 else "")
+        if has_tools:
+            preview_text += f"  [{len(tool_interactions)} tool interaction{'s' if len(tool_interactions) != 1 else ''}]"
+        preview = preview_text[:60] + ("..." if len(preview_text) > 60 else "")
         preview_label = tk.Label(parent_frame, text=preview, anchor="w", width=50)
         preview_label.grid(
             row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew"
@@ -388,12 +418,11 @@ class GUIManager(IGUIManager):
 
         current_row += 1
 
-        # Render attachments directly in the parent grid
+        # ── Attachment sub-rows ──────────────────────────────────────────────
         if has_attachments:
             for att in getattr(message_obj, "attachments", []):
                 row_widgets: list[tk.Widget] = []
 
-                # Column 2: Attachment enabled checkbox (in role column for visual indentation)
                 att_enabled_var = tk.BooleanVar(value=getattr(att, "enabled", True))
 
                 def toggle(var=att_enabled_var, a=att, callback=on_attachment_toggle):
@@ -409,7 +438,6 @@ class GUIManager(IGUIManager):
                 )
                 row_widgets.append(att_checkbox)
 
-                # Column 3: Attachment label
                 att_label = tk.Label(
                     parent_frame,
                     text=f"📁  {getattr(att, 'file_path', '').split('/')[-1]}",
@@ -422,12 +450,168 @@ class GUIManager(IGUIManager):
                 )
                 row_widgets.append(att_label)
 
-                # Start with attachments hidden
                 for widget in row_widgets:
                     widget.grid_remove()
 
-                attachment_rows.append(row_widgets)
+                collapsible_rows.append(row_widgets)
                 current_row += 1
+
+        # ── Tool interaction sub-rows ────────────────────────────────────────
+        if has_tools:
+            current_row = self._render_tool_rows(
+                tool_interactions, parent_frame, current_row, collapsible_rows
+            )
+
+        return current_row
+
+    def _render_tool_rows(
+        self,
+        tool_msgs: list,
+        parent_frame: tk.Frame,
+        start_row: int,
+        parent_collapsible: list[list[tk.Widget]],
+    ) -> int:
+        """
+        Render TOOL_CALL / TOOL_RESULT messages as collapsible nested sub-rows.
+
+        Each tool call is paired with its result (matched by tool_id) and rendered
+        as a header row (tool icon + name) with its own expand button revealing the
+        raw input and output below.  All rows start hidden (collapsed under the
+        parent message's expand button).
+
+        Args:
+            tool_msgs: Flat list of TOOL_CALL and TOOL_RESULT Message objects.
+            parent_frame: The grid frame to place rows into.
+            start_row: First grid row to use.
+            parent_collapsible: The parent message's collapsible_rows list — each
+                tool header row is appended here so the parent's toggle hides them.
+
+        Returns:
+            Next available grid row after all tool sub-rows.
+        """
+        import json as _json
+
+        current_row = start_row
+
+        # Pair tool_calls with their results by tool_id; preserve call order.
+        def _role_str(m) -> str:
+            r = getattr(m, "role", "")
+            return r.value if hasattr(r, "value") else str(r)
+
+        calls = [m for m in tool_msgs if _role_str(m) == "tool_call"]
+        results_by_id: dict[str, object] = {}
+        for m in tool_msgs:
+            if _role_str(m) == "tool_result":
+                key = getattr(m, "tool_id", None) or getattr(m, "tool_name", "")
+                results_by_id[key] = m
+
+        for call_msg in calls:
+            call_name = getattr(call_msg, "tool_name", "") or getattr(call_msg, "content", "")
+            call_input = getattr(call_msg, "tool_input", None)
+            call_id = getattr(call_msg, "tool_id", None) or getattr(call_msg, "tool_name", "")
+            result_msg = results_by_id.get(call_id)
+
+            # Widgets that toggle with the parent message's expand button
+            header_row_widgets: list[tk.Widget] = []
+            # Widgets revealed by this tool's own expand button
+            detail_rows: list[list[tk.Widget]] = []
+
+            # ── Tool-call header row ─────────────────────────────────────────
+            # col 0: per-tool expand button
+            tool_btn = self.collapse_expand_button(
+                parent=parent_frame, attachment_rows=detail_rows
+            )
+            tool_btn.grid(
+                row=current_row,
+                column=self.MESSAGE_COLUMNS["exp_button"],
+                sticky="nsew",
+            )
+            header_row_widgets.append(tool_btn)
+
+            tool_icon = tk.Label(parent_frame, text="🔧", anchor="w")
+            tool_icon.grid(row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew")
+            header_row_widgets.append(tool_icon)
+
+            result_preview = ""
+            if result_msg:
+                out = getattr(result_msg, "tool_output", None) or getattr(result_msg, "content", "")
+                if isinstance(out, (dict, list)):
+                    out_str = _json.dumps(out)
+                else:
+                    out_str = str(out) if out else ""
+                result_preview = f"  →  {out_str[:40]}{'...' if len(out_str) > 40 else ''}"
+
+            tool_label = tk.Label(
+                parent_frame,
+                text=f"{call_name}{result_preview}",
+                anchor="w",
+                foreground="gray",
+                font=("", 9),
+            )
+            tool_label.grid(
+                row=current_row,
+                column=self.MESSAGE_COLUMNS["content"],
+                sticky="nsew",
+            )
+            header_row_widgets.append(tool_label)
+
+            current_row += 1
+
+            # ── Input detail row ─────────────────────────────────────────────
+            if call_input is not None:
+                try:
+                    input_str = _json.dumps(call_input, indent=2)
+                except Exception:
+                    input_str = str(call_input)
+
+                in_icon = tk.Label(parent_frame, text="📥", anchor="w")
+                in_icon.grid(row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nw", padx=(12, 0))
+                in_text = tk.Label(
+                    parent_frame,
+                    text=input_str,
+                    anchor="w",
+                    justify="left",
+                    foreground="#4a9eff",
+                    font=("Courier", 8),
+                    wraplength=380,
+                )
+                in_text.grid(row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew")
+                in_row = [in_icon, in_text]
+                for w in in_row:
+                    w.grid_remove()
+                detail_rows.append(in_row)
+                current_row += 1
+
+            # ── Output detail row ────────────────────────────────────────────
+            if result_msg:
+                out_raw = getattr(result_msg, "tool_output", None) or getattr(result_msg, "content", "")
+                if isinstance(out_raw, (dict, list)):
+                    out_str = _json.dumps(out_raw, indent=2)
+                else:
+                    out_str = str(out_raw) if out_raw else ""
+
+                out_icon = tk.Label(parent_frame, text="📤", anchor="w")
+                out_icon.grid(row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nw", padx=(12, 0))
+                out_text = tk.Label(
+                    parent_frame,
+                    text=out_str[:800] + ("…" if len(out_str) > 800 else ""),
+                    anchor="w",
+                    justify="left",
+                    foreground="#5cb85c",
+                    font=("Courier", 8),
+                    wraplength=380,
+                )
+                out_text.grid(row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew")
+                out_row = [out_icon, out_text]
+                for w in out_row:
+                    w.grid_remove()
+                detail_rows.append(out_row)
+                current_row += 1
+
+            # All header + detail rows start hidden (collapsed under parent)
+            for w in header_row_widgets:
+                w.grid_remove()
+            parent_collapsible.append(header_row_widgets)
 
         return current_row
 
