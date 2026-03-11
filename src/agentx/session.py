@@ -799,7 +799,7 @@ class AgentXSession:
                 on_content=lambda text: self._handle_stream_content(text),
                 on_thinking=lambda text: self._display_thinking(text),
                 on_tool_call=lambda name, args, round_i=None: self._display_tool_call(name, args, round_i),
-                on_tool_result=lambda tool_id, output, round_i=None: self._display_tool_result(tool_id, output, round_i),
+                on_tool_result=lambda tool_name, output, round_i=None, tool_id=None: self._display_tool_result(tool_name, output, round_i, tool_id=tool_id),
                 on_error=lambda msg, code: self._safe_root_after(
                     lambda: self.gui.display_error(f"{code}: {msg}")
                 ),
@@ -904,7 +904,7 @@ class AgentXSession:
         self._write_log(line)
         self.context.add_tool_call_message(tool_name, tool_input)
 
-    def _display_tool_result(self, tool_id: str, output, round_index: int | None = None) -> None:
+    def _display_tool_result(self, tool_name: str, output, round_index: int | None = None, tool_id: str | None = None) -> None:
         """
         Display a tool result in the GUI and store it in context.
 
@@ -929,12 +929,13 @@ class AgentXSession:
         self._safe_root_after(lambda: self.gui.display_agent_response(result_line))
         self._write_log(result_line)
         self.context.add_tool_result_message(
-            tool_name=tool_id,  # tool_id carries tool_name from ResponseHandler
+            tool_name=tool_name,
             tool_output=output,
             tool_id=tool_id,
         )
         # Refresh Working Memory panel in case the tool mutated it
         self._safe_root_after(self.refresh_working_memory_gui)
+
 
 
 

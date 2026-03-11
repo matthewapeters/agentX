@@ -41,7 +41,7 @@ class ResponseHandler:
         on_content: Optional[Callable[[str], None]] = None,
         on_thinking: Optional[Callable[[str], None]] = None,
         on_tool_call: Optional[Callable[[str, dict, Optional[int]], None]] = None,
-        on_tool_result: Optional[Callable[[str, str, Optional[int]], None]] = None,
+        on_tool_result: Optional[Callable[[str, str, Optional[int], Optional[str]], None]] = None,
         on_classification: Optional[Callable[[dict], None]] = None,
         on_error: Optional[Callable[[str, str], None]] = None,
         on_done: Optional[Callable[[], None]] = None,
@@ -53,7 +53,7 @@ class ResponseHandler:
             on_content: Called with content text for display
             on_thinking: Called with thinking/reasoning text
             on_tool_call: Called with (tool_name, tool_input)
-            on_tool_result: Called with (tool_name, result_text)
+            on_tool_result: Called with (tool_name, result_output, round_index, tool_id)
             on_classification: Called with classification metadata
             on_error: Called with (error_message, error_code)
             on_done: Called when stream is complete
@@ -61,7 +61,7 @@ class ResponseHandler:
         self.on_content = on_content or (lambda text: None)
         self.on_thinking = on_thinking or (lambda text: None)
         self.on_tool_call = on_tool_call or (lambda name, args, round_i=None: None)
-        self.on_tool_result = on_tool_result or (lambda id, result, round_i=None: None)
+        self.on_tool_result = on_tool_result or (lambda name, result, round_i=None, tool_id=None: None)
         self.on_classification = on_classification or (lambda meta: None)
         self.on_error = on_error or (lambda msg, code: None)
         self.on_done = on_done or (lambda: None)
@@ -131,8 +131,9 @@ class ResponseHandler:
             "name": chunk.tool_name,
             "result": output,
         })
-        tool_id = chunk.tool_id or chunk.tool_name or "unknown"
-        self.on_tool_result(tool_id, output, chunk.round_index)
+        tool_id = chunk.tool_id
+        tool_name = chunk.tool_name or "unknown"
+        self.on_tool_result(tool_name, output, chunk.round_index, tool_id)
     
     def _handle_classification(self, chunk: ResponseChunk) -> None:
         """Handle classification metadata chunk."""
