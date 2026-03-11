@@ -3,6 +3,8 @@ import logging
 import litellm
 from smolagents import CodeAgent, DuckDuckGoSearchTool, LiteLLMModel, RunResult
 
+from agentix.constants import OLLAMA_API_BASE
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -10,67 +12,55 @@ logger = logging.getLogger(__name__)
 litellm._turn_on_debug()
 
 
-def webquery(query: str):
+def webquery(query: str, model: str, ollama_host: str = "localhost:11434") -> RunResult | None:
     """
-    Docstring for webquery
+    Run a web search query using a CodeAgent backed by the given Ollama model.
 
-    :param query: Description
-    :type query: str
+    :param query: The search query to run.
+    :param model: Ollama model name (e.g. "llama3.2:latest"). Read from AgentixConfig.model.
+    :param ollama_host: Ollama host in "host:port" format. Defaults to "localhost:11434".
+    :return: The agent RunResult, or None if an error occurred.
     """
-    # TODO: need to get the model from the agentx config instead of hardcoding it here
-    model = LiteLLMModel(
-        model_id="ollama_chat/llama3.2:latest",
-        api_base="http://localhost:11434",
+    llm = LiteLLMModel(
+        model_id=f"ollama_chat/{model}",
+        api_base=f"http://{ollama_host}",
         temperature=0.7,
         stream=True,
     )
 
-    agent = CodeAgent(tools=[DuckDuckGoSearchTool()], model=model)
+    agent = CodeAgent(tools=[DuckDuckGoSearchTool()], model=llm)
 
-    # Add logging to capture tool call details
-    result: RunResult
     try:
-        result = agent.run(query)
-        print(result)
+        result: RunResult = agent.run(query)
         return result
     except Exception as e:
-        logger.error(
-            f"Error occurred while running the agent: {e}",
-            exc_info=True)
-        logger.debug(
-            "Tool call details:",
-            extra={"query": query,
-                   "tools": agent.tools})
+        logger.error("Error occurred while running webquery agent: %s", e, exc_info=True)
+        logger.debug("Tool call details: query=%s tools=%s", query, agent.tools)
+        return None
 
 
-def codeagent(query: str):
+def codeagent(query: str, model: str, ollama_host: str = "localhost:11434") -> RunResult | None:
     """
-    Docstring for codeagent
+    Run a coding query using a CodeAgent backed by the given Ollama model.
 
-    :param query: Description
-    :type query: str
+    :param query: The coding query to run.
+    :param model: Ollama model name (e.g. "llama3.2:latest"). Read from AgentixConfig.model.
+    :param ollama_host: Ollama host in "host:port" format. Defaults to "localhost:11434".
+    :return: The agent RunResult, or None if an error occurred.
     """
-    # TODO: need to get the model from the agentx config instead of hardcoding it here
-    model = LiteLLMModel(
-        model_id="ollama_chat/llama3.2:latest",
-        api_base="http://localhost:11434",
+    llm = LiteLLMModel(
+        model_id=f"ollama_chat/{model}",
+        api_base=f"http://{ollama_host}",
         temperature=0.7,
         stream=True,
     )
 
-    agent = CodeAgent(tools=[], model=model)
+    agent = CodeAgent(tools=[], model=llm)
 
-    # Add logging to capture tool call details
-    result: RunResult
     try:
-        result = agent.run(query)
-        print(result)
+        result: RunResult = agent.run(query)
         return result
     except Exception as e:
-        logger.error(
-            f"Error occurred while running the agent: {e}",
-            exc_info=True)
-        logger.debug(
-            "Tool call details:",
-            extra={"query": query,
-                   "tools": agent.tools})
+        logger.error("Error occurred while running codeagent: %s", e, exc_info=True)
+        logger.debug("Tool call details: query=%s tools=%s", query, agent.tools)
+        return None

@@ -33,8 +33,6 @@ dependencies = [
     "uvicorn>=0.40.0",
 ]
 
-[tool.uv.sources]
-smolagents = { workspace = true }
 
 [tool.setuptools]
 packages = ["agentx", "agentix", "shared"]
