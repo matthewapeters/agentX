@@ -278,7 +278,8 @@ def test_tool_routing():
         
         print("✅ Session recognizes client-side tools")
         
-        # Code analysis tool without server
+        # Code analysis tool without server: simulate no agentix connection
+        session.server_tool_executor = ServerToolExecutor(agentix_bridge=None)
         result = session.execute_tool("analyze_syntax", {})
         assert "not available" in result.lower() or "agentix" in result.lower()
         print("✅ Session handles code analysis tools without server")

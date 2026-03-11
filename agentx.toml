@@ -7,6 +7,7 @@ screen_side = "left"
 [agentix]
 agentix_bench_classification_model = "phi4-mini:3.8b"
 available_tools = [ "cst", "ast",]
+max_tool_rounds = 10
 classification_backend = "ollama"
 classification_torch_device = -1
 classification_torch_model = "typeform/distilbert-base-uncased-mnli"

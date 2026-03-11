@@ -118,28 +118,12 @@ class TestChatWorkflow(unittest.TestCase):
             prev_message.enabled = True
             session.add_message_to_context(prev_message)
             
-            # Submit a query
-            session.gui.widgets.user_input_text.insert("1.0", "what model are you?")
+            # Set pending prompt directly (insert into widget alone doesn't trigger the worker)
+            session._pending_prompt = "what model are you?"
             
-            # Trigger streaming (in thread-safe way for test)
-            import threading
-            error = []
-            
-            def run_stream():
-                try:
-                    session.stream_ollama_response_worker()
-                except Exception as e:
-                    error.append(str(e))
-                    import traceback
-                    traceback.print_exc()
-            
-            thread = threading.Thread(target=run_stream)
-            thread.start()
-            thread.join(timeout=5)
-            
-            # Check for errors
-            if error:
-                self.fail(f"Chat workflow failed: {error[0]}")
+            # Run worker synchronously in the main thread to avoid root.after() deadlock
+            # in tests (no mainloop running means background threads can't call root.after()).
+            session.stream_ollama_response_worker()
             
             # Verify adapter was called
             self.assertTrue(mock_adapter.process_prompt_generator.called)
@@ -201,16 +185,12 @@ class TestChatWorkflow(unittest.TestCase):
             session = AgentXSession(root=self.root, config=config)
             session.gui.create_layout()
             
-            # Submit first query (no previous context)
-            session.gui.widgets.user_input_text.insert("1.0", "hello")
+            # Set pending prompt directly (widget insertion alone doesn't trigger the worker)
+            session._pending_prompt = "hello"
             
-            import threading
-            def run_stream():
-                session.stream_ollama_response_worker()
-            
-            thread = threading.Thread(target=run_stream)
-            thread.start()
-            thread.join(timeout=5)
+            # Run worker synchronously in the main thread to avoid root.after() deadlock
+            # in tests (no mainloop running means background threads can't call root.after()).
+            session.stream_ollama_response_worker()
             
             # Verify adapter was called with empty context
             self.assertTrue(mock_adapter.process_prompt_generator.called)
