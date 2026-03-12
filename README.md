@@ -2,6 +2,7 @@
 
 A local-first AI agent desktop application with a **Tkinter GUI**, streaming LLM responses, tool execution, and persistent conversation history. AgentX connects to a local [Ollama](https://ollama.com) instance for inference and optionally to **Agentix** middleware for prompt classification and advanced tool orchestration.
 
+![example screen shot](docs/agentX_example.png)
 ---
 
 ## Features
