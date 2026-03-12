@@ -10,13 +10,13 @@ A local-first AI agent desktop application with a **Tkinter GUI**, streaming LLM
 | Feature | Description | Image |
 | ---- | ---- | ---- |
 | 💬 **Streaming chat** | token-by-token response display with interrupt support | |
-| 🔧 **Tool execution** | file read/write/search (client-side) and code analysis via CST/AST (server-side)|  |
+| 🔧 **Tool execution** | file read/write/search (client-side) and code analysis via CST/AST (server-side)| ![tool usage](docs/tool_usage_detail.png) |
 | 🧠 **Working memory** | persistent fact store injected into every conversation turn | ![manually manage context](./docs/manually_manage_context.png) |
+| 🧠 **Context Management** | enable or disable turns, past attachments, past tool usage from context; allows you to curate context without loss to summarization |  |
 | 🗂️ **File explorer** | browse and attach local files as context | ![file explorer](./docs/files.png) |
-| 📋 **Session history** | conversations persisted to disk; prior sessions are browsable in the sidebar |  |
+| 📋 **Session history** | conversations persisted to disk; prior sessions are browsable in the sidebar; capture past conversations for current session |  |
 | 🏷️ **Prompt classification** | optional Agentix middleware classifies each prompt to choose the best response strategy |  |
 | ⚙️ **Model selector** | switch Ollama models at runtime without restarting the agent | ![settings](docs/settings.png) |
-
 ---
 
 ## Prerequisites
