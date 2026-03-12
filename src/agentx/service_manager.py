@@ -84,7 +84,7 @@ class ServiceManager:
             host=host,
             port=port,
             health_endpoint="/health",
-            start_command=["python", "-m", "agentix.server"]
+            start_command=["python", "-m", "agentix.server", "--port", str(port)]
         )
     
     @staticmethod

@@ -108,7 +108,7 @@ class TestServiceManager(unittest.TestCase):
         self.assertEqual(agentix.host, "localhost")
         self.assertEqual(agentix.port, 8000)
         self.assertEqual(agentix.health_endpoint, "/health")
-        self.assertEqual(agentix.start_command, ["python", "-m", "agentix.server"])
+        self.assertEqual(agentix.start_command, ["python", "-m", "agentix.server", "--port", "8000"])
     
     def test_get_service_url(self):
         """Test getting full service URL."""

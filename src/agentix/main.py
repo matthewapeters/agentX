@@ -10,11 +10,10 @@ from .context.prompts import get_prompts
 from .models import get_models
 
 try:
-    from .server import start_server
+    import agentix.server as _server_mod  # noqa: F401 – check availability only
     SERVER_AVAILABLE = True
 except ImportError:
     SERVER_AVAILABLE = False
-    start_server = None
 
 
 def main(args: AgentixConfig) -> None:
@@ -35,10 +34,11 @@ def main(args: AgentixConfig) -> None:
                 print("No sessions found", file=sys.stderr)
             return
         case "serve":
-            if not SERVER_AVAILABLE or start_server is None:
+            if not SERVER_AVAILABLE:
                 print("Server functionality requires fastapi. Install with: uv pip install fastapi uvicorn", file=sys.stderr)
                 return
-            start_server(args.port)
+            from .server import start_server as _start_server
+            _start_server(args.port)
             return
         case "run_agentix":
             agentix(args)

@@ -115,7 +115,22 @@ async def retrieve_engine(engine_id: str):
     return JSONResponse(content={"error": "Engine not found"}, status_code=404)
 
 
-def start_server(port: int):
+def start_server(port: int, host: str = "0.0.0.0"):
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host=host, port=port)
+
+
+@app.get("/health")
+async def health_check():
+    return JSONResponse(content={"status": "ok"})
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Agentix HTTP server")
+    parser.add_argument("--port", type=int, default=8000, help="Port to listen on")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind to")
+    args = parser.parse_args()
+    start_server(args.port, host=args.host)
