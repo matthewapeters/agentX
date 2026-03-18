@@ -636,6 +636,14 @@ class AgentXSession:
         # Update via GUIManager
         self.gui.update_attachment_bar(current_attachments, history_attachments)
 
+    def _on_add_folder_to_memory(self, key: str, value: str) -> None:
+        """Add a folder path to working memory with the folder name as the key."""
+        if self.working_memory is None:
+            return
+        from shared.models.working_memory import FactOwner
+        self.working_memory.add_fact(FactOwner.USER, key, value)
+        self._safe_root_after(self.refresh_working_memory_gui)
+
     def refresh_files_gui(self):
         """
         Refreshes the file explorer GUI in the Files tab.
@@ -648,6 +656,7 @@ class AgentXSession:
             self.gui.get_files_parent(),
             on_attach=self.attach_file,
             on_edit=None,  # You can wire up edit logic here later
+            on_add_folder_to_memory=self._on_add_folder_to_memory,
         )
         # Update via GUIManager
         self.gui.update_files_panel(files_widget)

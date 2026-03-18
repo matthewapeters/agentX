@@ -21,6 +21,7 @@ class FileExplorer:
         :param start_path: The initial path to start exploring from.
         """
         self.current_path = os.path.abspath(start_path)
+        self._root_path = self.current_path
         self.history = [self.current_path]
         self.history_index = 0
 
@@ -137,11 +138,16 @@ class FileExplorer:
             return self.change_directory(parent)
         return False
 
-    def to_gui(self, parent_frame: tk.Frame, on_attach=None, on_edit=None) -> tk.Frame:
+    def to_gui(self, parent_frame: tk.Frame, on_attach=None, on_edit=None, on_add_folder_to_memory=None) -> tk.Frame:
         """
         Create a GUI frame for the file explorer.
 
         :param parent_frame: The parent Tkinter frame to attach the file explorer GUI to.
+        :param on_attach: Callback invoked with a file path when "Attach" is selected.
+        :param on_edit: Callback invoked with a file path when "Edit" is selected.
+        :param on_add_folder_to_memory: Callback ``(key: str, value: str) -> None`` invoked
+            when a folder path is added to working memory. ``key`` is the folder name;
+            ``value`` is the path string chosen by the user (full or relative).
         :return: A Tkinter frame containing the file explorer GUI.
         """
         frame = tk.Frame(parent_frame, bg="white")
@@ -239,15 +245,24 @@ class FileExplorer:
         # Bind events
         self.tree.bind("<Double-1>", self._on_item_double_click)
 
-        # --- Right-click popup menu ---
+        # --- Right-click popup menu for files ---
         self._popup_menu = tk.Menu(self.tree, tearoff=0)
         self._popup_menu.add_command(label="Attach", command=self._on_attach_selected)
         self._popup_menu.add_command(label="Edit", command=self._on_edit_selected)
         self._on_attach_callback = on_attach
         self._on_edit_callback = on_edit
+
+        # --- Right-click popup menu for folders ---
+        self._folder_popup_menu = tk.Menu(self.tree, tearoff=0)
+        self._folder_popup_menu.add_command(label="Add full path to memory", command=self._on_add_full_path_selected)
+        self._folder_popup_menu.add_command(label="Add relative path to memory", command=self._on_add_relative_path_selected)
+        self._on_add_folder_to_memory_callback = on_add_folder_to_memory
+
         # Bind right-click (Button-3) for most platforms and Control+Button-1 for macOS
         self.tree.bind("<Button-3>", self._on_right_click)
         self.tree.bind("<Control-Button-1>", self._on_right_click)
+        self.tree.bind("<Escape>", self._dismiss_popup_menu)
+        self.tree.bind("<FocusOut>", self._dismiss_popup_menu)
 
         # Pack the treeview and scrollbars
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -263,20 +278,39 @@ class FileExplorer:
 
         return frame
 
+    def _dismiss_popup_menu(self, event=None):
+        self._popup_menu.unpost()
+        self._folder_popup_menu.unpost()
+
     def _on_right_click(self, event):
-        # Select the item under the mouse
         item = self.tree.identify_row(event.y)
         if item:
             self.tree.selection_set(item)
             tags = self.tree.item(item, "tags")
-            print(item, tags)
             if "file" in tags:
-                # Display the popup menu at the click location
-                try:
-                    self._popup_menu.tk_popup(event.x_root, event.y_root)
-                finally:
-                    # Ensure the menu is removed from the screen after it's no longer needed
-                    self._popup_menu.grab_release()
+                self._popup_menu.tk_popup(event.x_root, event.y_root)
+            elif "directory" in tags:
+                self._folder_popup_menu.tk_popup(event.x_root, event.y_root)
+
+    def _get_selected_folder_name(self) -> str | None:
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        item_text = self.tree.item(selection[0], "text")
+        return item_text.split(" ", 1)[1] if " " in item_text else item_text
+
+    def _on_add_full_path_selected(self):
+        folder_name = self._get_selected_folder_name()
+        if folder_name and self._on_add_folder_to_memory_callback:
+            full_path = os.path.join(self.current_path, folder_name)
+            self._on_add_folder_to_memory_callback(folder_name, full_path)
+
+    def _on_add_relative_path_selected(self):
+        folder_name = self._get_selected_folder_name()
+        if folder_name and self._on_add_folder_to_memory_callback:
+            full_path = os.path.join(self.current_path, folder_name)
+            rel_path = os.path.relpath(full_path, self._root_path)
+            self._on_add_folder_to_memory_callback(folder_name, rel_path)
 
     def _on_attach_selected(self):
         selection = self.tree.selection()
