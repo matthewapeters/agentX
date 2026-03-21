@@ -98,6 +98,20 @@ class TestGUIManagerInitialization(unittest.TestCase):
         )
         self.assertEqual(gui._session_section_spacing, 8)
 
+    def test_gui_config_defaults_to_dark_mode(self):
+        """GUIConfig should default to dark mode palette."""
+        self.assertEqual(self.config.theme_mode, "Dark Mode")
+        self.assertEqual(self.config.output_bg, "#222222")
+        self.assertEqual(self.config.agent_response_fg, "#eeeeee")
+
+    def test_gui_config_supports_light_mode_palette(self):
+        """GUIConfig should switch colors when light mode is requested."""
+        cfg = GUIConfig.from_dict({"agentx": {"theme_mode": "Light Mode"}})
+
+        self.assertEqual(cfg.theme_mode, "Light Mode")
+        self.assertEqual(cfg.output_bg, "#ffffff")
+        self.assertEqual(cfg.agent_response_fg, "#111827")
+
 
 class TestGUIManagerDisplayMethods(unittest.TestCase):
     """Test display methods of GUIManager."""
@@ -354,6 +368,49 @@ class TestGUIManagerStateMethods(unittest.TestCase):
         # Both should be enabled
         self.assertEqual(input_text.cget("state"), tk.NORMAL)
         self.assertEqual(submit_btn.cget("state"), tk.NORMAL)
+
+
+class TestGUIManagerSettingsTheme(unittest.TestCase):
+    """Test theme setting presence in the GUI settings panel."""
+
+    def setUp(self):
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self.config_dict = {
+            "agentx": {
+                "theme_mode": "Light Mode",
+                "ollama_host": "localhost:11434",
+                "ollama_model": "test-model",
+            },
+            "agentix": {
+                "host": "localhost:8000",
+            },
+        }
+        self.config = GUIConfig.from_dict(self.config_dict)
+        self.gui = GUIManager(
+            root=self.root,
+            config=self.config,
+            on_submit=MagicMock(),
+            on_interrupt=MagicMock(),
+            on_attachment_toggle=MagicMock(),
+        )
+        self.gui.create_layout()
+
+    def tearDown(self):
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def test_settings_tab_reflects_theme_mode(self):
+        self.gui.render_settings_tab(
+            config=self.config_dict,
+            on_change=MagicMock(),
+            models=[],
+            system_prompts_dir="system_prompts",
+        )
+
+        self.assertEqual(self.gui._settings_tab_widget._theme_mode_var.get(), "Light Mode")
 
 
 class TestGUIManagerInputMethods(unittest.TestCase):

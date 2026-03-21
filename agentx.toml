@@ -1,4 +1,5 @@
 [agentx]
+theme_mode = "Dark Mode"
 ollama_host = "localhost:11434"
 ollama_model = "gpt-oss"
 ollama_initial_load_timeout_seconds = 120

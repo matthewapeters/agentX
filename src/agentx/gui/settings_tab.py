@@ -20,6 +20,7 @@ _RESTART_REQUIRED: set[tuple] = {
     ("agentx", "ollama_model"),          # runtime model controlled by toolbar selector
     ("agentx", "ollama_initial_load_timeout_seconds"),
     ("agentx", "screen_side"),
+    ("agentx", "theme_mode"),
     ("agentix", "host"),
     ("agentx", "working_memory", "enabled"),
     ("agentix", "classification_torch_device"),
@@ -62,12 +63,16 @@ class SettingsTab:
         models: list[dict] | None = None,
         system_prompts_dir: str = "system_prompts",
         bg: str = "",
+        fg: str = "",
+        muted_fg: str = "gray",
     ) -> None:
         self._config = config
         self._on_change = on_change
         self._models: list[str] = self._extract_model_names(models or [])
         self._system_prompts_dir = system_prompts_dir
         self._bg = bg
+        self._fg = fg
+        self._muted_fg = muted_fg
 
         self.frame = tk.Frame(parent, bg=bg)
 
@@ -103,9 +108,11 @@ class SettingsTab:
         # References to widgets we may need to update after construction.
         self._torch_widgets: list[tuple[tk.Widget, ...]] = []  # (label, widget)
         self._torch_state_var: tk.StringVar | None = None
+        self._theme_mode_var: tk.StringVar | None = None
         self._model_dropdowns: list[ttk.Combobox] = []
 
         # Build all sections.
+        self._build_appearance_section()
         self._build_ollama_section()
         self._build_agentix_section()
         self._build_classification_display_section()
@@ -127,6 +134,19 @@ class SettingsTab:
     # ──────────────────────────────────────────────────────────────────────────
     # Section builders
     # ──────────────────────────────────────────────────────────────────────────
+
+    def _build_appearance_section(self) -> None:
+        cfg = self._config.get("agentx", {})
+        section = self._make_section("🎨 Appearance", initial_collapsed=False)
+        g = section.content_container
+
+        self._theme_mode_var = self._add_enum_dropdown(
+            g, 0, ["agentx", "theme_mode"],
+            "Theme mode" + self.RESTART_ICON,
+            cfg.get("theme_mode", "Dark Mode"),
+            ["Dark Mode", "Light Mode"],
+            hot_reload=False,
+        )
 
     def _build_ollama_section(self) -> None:
         cfg = self._config.get("agentx", {})
@@ -254,19 +274,28 @@ class SettingsTab:
             self._inner, title,
             initial_collapsed=initial_collapsed,
             font=("Terminal", 10, "bold"),
+            bg=self._bg,
+            fg=self._fg,
         )
         section.get_widget().pack(fill=tk.X, padx=4, pady=(4, 0))
         section.content_container.columnconfigure(1, weight=1)
         return section
 
     def _add_label(self, parent: tk.Widget, row: int, text: str) -> tk.Label:
-        lbl = tk.Label(parent, text=text, anchor="w", bg=self._bg, font=("Terminal", 9))
+        lbl = tk.Label(
+            parent,
+            text=text,
+            anchor="w",
+            bg=self._bg,
+            fg=self._fg,
+            font=("Terminal", 9),
+        )
         lbl.grid(row=row, column=0, sticky="w", padx=(8, 4), pady=2)
         return lbl
 
     def _add_separator(self, parent: tk.Widget, row: int, text: str) -> None:
         sep_lbl = tk.Label(parent, text=text, anchor="w", bg=self._bg,
-                           font=("Terminal", 9, "italic"), foreground="gray")
+                           font=("Terminal", 9, "italic"), foreground=self._muted_fg)
         sep_lbl.grid(row=row, column=0, columnspan=2, sticky="w", padx=(8, 4), pady=(6, 0))
 
     def _add_checkbox(
@@ -285,7 +314,9 @@ class SettingsTab:
 
         display = label + (self.RESTART_ICON if restart else "")
         cb = tk.Checkbutton(parent, text=display, variable=var, command=_on_change,
-                            anchor="w", bg=self._bg, activebackground=self._bg,
+                            anchor="w", bg=self._bg, fg=self._fg,
+                            activebackground=self._bg, activeforeground=self._fg,
+                            selectcolor=self._bg,
                             font=("Terminal", 9))
         cb.grid(row=row, column=0, columnspan=2, sticky="w", padx=(8, 4), pady=2)
         return var
@@ -352,12 +383,16 @@ class SettingsTab:
         label: str,
         initial: str,
         choices: list[str],
+        hot_reload: bool = True,
     ) -> tk.StringVar:
         self._add_label(parent, row, label)
         var = tk.StringVar(value=initial)
 
         def _on_change(*_):
-            self._fire(key_path, var.get())
+            if hot_reload:
+                self._fire(key_path, var.get())
+            else:
+                self._fire_config_only(key_path, var.get())
 
         combo = ttk.Combobox(parent, textvariable=var, values=choices,
                              state="readonly", width=20)
@@ -412,7 +447,9 @@ class SettingsTab:
             self._fire(key_path, [v for v in all_values if v in enabled_set])
 
         cb = tk.Checkbutton(parent, text=value, variable=var, command=_on_change,
-                            anchor="w", bg=self._bg, activebackground=self._bg,
+                            anchor="w", bg=self._bg, fg=self._fg,
+                            activebackground=self._bg, activeforeground=self._fg,
+                            selectcolor=self._bg,
                             font=("Terminal", 9))
         cb.grid(row=row, column=0, columnspan=2, sticky="w", padx=(20, 4), pady=1)
         return var

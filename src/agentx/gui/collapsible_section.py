@@ -15,15 +15,26 @@ class CollapsibleSection:
         title: str,
         initial_collapsed: bool = True,
         font: tuple[str, int, str] = ("Terminal", 10, "bold"),
+        bg: str | None = None,
+        fg: str | None = None,
     ):
         self.parent = parent
         self.title = title
         self.expanded = not initial_collapsed
 
-        self.frame = tk.Frame(parent)
+        frame_kwargs = {"bg": bg} if bg else {}
+        self.frame = tk.Frame(parent, **frame_kwargs)
 
-        self.header = tk.Frame(self.frame)
+        self.header = tk.Frame(self.frame, **frame_kwargs)
         self.header.pack(fill=tk.X)
+
+        button_kwargs = {}
+        if bg:
+            button_kwargs["bg"] = bg
+            button_kwargs["activebackground"] = bg
+        if fg:
+            button_kwargs["fg"] = fg
+            button_kwargs["activeforeground"] = fg
 
         self.toggle_button = tk.Button(
             self.header,
@@ -32,18 +43,26 @@ class CollapsibleSection:
             width=1,
             height=1,
             font=("Terminal", 10),
+            **button_kwargs,
         )
         self.toggle_button.pack(side=tk.LEFT, anchor="w")
+
+        label_kwargs = {}
+        if bg:
+            label_kwargs["bg"] = bg
+        if fg:
+            label_kwargs["fg"] = fg
 
         self.title_label = tk.Label(
             self.header,
             text=title,
             font=font,
             anchor="w",
+            **label_kwargs,
         )
         self.title_label.pack(side=tk.LEFT, anchor="w", padx=(4, 0))
 
-        self.content_container = tk.Frame(self.frame)
+        self.content_container = tk.Frame(self.frame, **frame_kwargs)
         if self.expanded:
             self.content_container.pack(fill=tk.BOTH, expand=True)
 

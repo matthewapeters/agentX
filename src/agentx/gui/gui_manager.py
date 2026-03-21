@@ -65,7 +65,20 @@ class GUIManager(IGUIManager):
         self.root = root
         self.config = config
         self.widgets = WidgetRegistry()
-        self._section_bg = self.root.cget("bg")
+        self._section_bg = self.config.status_bg
+
+        self.COLOR_BG = self.config.status_bg
+        self.COLOR_STATUS_BG = self.config.status_bg
+        self.COLOR_OUTPUT_BG = self.config.output_bg
+        self.COLOR_INPUT_BG = self.config.input_bg
+        self.COLOR_ATTACHMENT_BG = self.config.attachment_bg
+        self.COLOR_ATTACHMENT_HISTORY_BG = self.config.history_attachment_bg
+        self.COLOR_ATTACHMENT_TEXT = self.config.attachment_fg
+        self.COLOR_USER_PROMPT = self.config.user_prompt_fg
+        self.COLOR_AGENT_RESPONSE = self.config.agent_response_fg
+        self.COLOR_AGENT_THINKING = self.config.agent_thinking_fg
+        self.COLOR_AGENT_CLASSIFICATION = self.config.agent_classification_fg
+        self.COLOR_SYSTEM_SPACE = self.config.system_space_fg
 
         # Store callbacks
         self._on_submit = on_submit
@@ -1354,6 +1367,8 @@ class GUIManager(IGUIManager):
             models=models or [],
             system_prompts_dir=system_prompts_dir,
             bg=self._section_bg,
+            fg=self.config.ui_fg,
+            muted_fg=self.config.muted_fg,
         )
         self._settings_tab_widget.frame.pack(fill=tk.BOTH, expand=True)
 
@@ -1407,6 +1422,7 @@ class GUIManager(IGUIManager):
 
     def _setup_window_geometry(self) -> None:
         """Configure window size and position."""
+        self.root.configure(bg=self.config.status_bg)
         # Get screen dimensions
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
@@ -1657,6 +1673,8 @@ class GUIManager(IGUIManager):
             parent=stack,
             title=title,
             initial_collapsed=initial_collapsed,
+            bg=self._section_bg,
+            fg=self.config.ui_fg,
         )
         section.get_widget().pack(fill=tk.X, expand=False, pady=(0, spacing))
         if tab_name.lower() == "session":
@@ -1798,6 +1816,9 @@ class GUIManager(IGUIManager):
             self.widgets.user_input,
             wrap=tk.WORD,
             font=text_font,
+            bg=self.config.input_bg,
+            fg=self.config.input_fg,
+            insertbackground=self.config.input_fg,
             yscrollcommand=self.widgets.input_scrollbar.set,
         )
         original_insert = self.widgets.user_input_text.insert
@@ -1851,16 +1872,32 @@ class GUIManager(IGUIManager):
             return
 
         # Configure text styling tags
-        output.tag_config("gray", font=self.config.gray_text_font)
-        output.tag_config("user_prompt", font=self.config.user_prompt_font)
-        output.tag_config("agent_response", font=self.config.agent_response_font)
-        output.tag_config("agent_thinking", font=self.config.agent_thinking_font)
+        output.tag_config(
+            "gray", font=self.config.gray_text_font, foreground=self.config.muted_fg
+        )
+        output.tag_config(
+            "user_prompt",
+            font=self.config.user_prompt_font,
+            foreground=self.COLOR_USER_PROMPT,
+        )
+        output.tag_config(
+            "agent_response",
+            font=self.config.agent_response_font,
+            foreground=self.COLOR_AGENT_RESPONSE,
+        )
+        output.tag_config(
+            "agent_thinking",
+            font=self.config.agent_thinking_font,
+            foreground=self.COLOR_AGENT_THINKING,
+        )
         output.tag_config(
             "agent_classification",
             font=self.config.agent_thinking_font,
             foreground=self.COLOR_AGENT_CLASSIFICATION,
         )
-        output.tag_config("system_space", font=self.config.default_font)
+        output.tag_config(
+            "system_space", font=self.config.default_font, foreground=self.COLOR_SYSTEM_SPACE
+        )
 
     def _scroll_output_to_end(self) -> None:
         """Scroll structured output view to the newest entry."""
@@ -2094,6 +2131,10 @@ class GUIManager(IGUIManager):
             variable=var,
             command=on_toggle,
             bg=bg,
+            fg=self.COLOR_ATTACHMENT_TEXT,
+            activebackground=bg,
+            activeforeground=self.COLOR_ATTACHMENT_TEXT,
+            selectcolor=bg,
         )
         checkbox.pack(side=tk.LEFT, padx=5, pady=2)
 
