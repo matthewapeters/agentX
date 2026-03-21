@@ -203,10 +203,10 @@ class GUIManager(IGUIManager):
         Returns:
             tkinter Frame representing the history
         """
-        history_frame = tk.Frame(parent)
+        history_frame = tk.Frame(parent, bg=self._section_bg)
 
         if include_header:
-            history_contexts_frame = tk.Frame(history_frame)
+            history_contexts_frame = tk.Frame(history_frame, bg=self._section_bg)
             collapse_expand_button = self.collapse_expand_button(
                 history_frame, history_contexts_frame
             )
@@ -214,6 +214,8 @@ class GUIManager(IGUIManager):
                 history_frame,
                 text=f"{user_name} History ({len(history_obj.sessions)} contexts)",
                 font=("Terminal", 10, "bold"),
+                bg=self._section_bg,
+                fg=self.config.ui_fg,
             )
 
             collapse_expand_button.grid(
@@ -226,7 +228,7 @@ class GUIManager(IGUIManager):
                 row=1, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew"
             )
         else:
-            history_contexts_frame = tk.Frame(history_frame)
+            history_contexts_frame = tk.Frame(history_frame, bg=self._section_bg)
             history_contexts_frame.pack(fill=tk.BOTH, expand=True)
 
         for idx, context in enumerate(history_obj.sessions):
@@ -265,8 +267,8 @@ class GUIManager(IGUIManager):
         Returns:
             tkinter Frame representing the context
         """
-        context_frame = tk.Frame(parent)
-        context_messages_frame = tk.Frame(context_frame)
+        context_frame = tk.Frame(parent, bg=self._section_bg)
+        context_messages_frame = tk.Frame(context_frame, bg=self._section_bg)
 
         if include_header:
             collapse_expand_button = self.collapse_expand_button(
@@ -279,6 +281,8 @@ class GUIManager(IGUIManager):
                     f"({len(context_obj.messages)} messages)"
                 ),
                 font=("Terminal", 10, "bold"),
+                bg=self._section_bg,
+                fg=self.config.ui_fg,
             )
             collapse_expand_button.grid(
                 row=0, column=self.MESSAGE_COLUMNS["exp_button"], sticky="w"
@@ -387,7 +391,12 @@ class GUIManager(IGUIManager):
                 sticky="nsew",
             )
         else:
-            empty_label = tk.Label(parent_frame, width=2)
+            empty_label = tk.Label(
+                parent_frame,
+                width=2,
+                bg=self._section_bg,
+                fg=self.config.ui_fg,
+            )
             empty_label.grid(
                 row=current_row,
                 column=self.MESSAGE_COLUMNS["exp_button"],
@@ -401,7 +410,14 @@ class GUIManager(IGUIManager):
             message_obj.enabled = enabled_var.get()
 
         enabled_checkbox = tk.Checkbutton(
-            parent_frame, variable=enabled_var, command=on_enabled_toggle
+            parent_frame,
+            variable=enabled_var,
+            command=on_enabled_toggle,
+            bg=self._section_bg,
+            fg=self.config.ui_fg,
+            activebackground=self._section_bg,
+            activeforeground=self.config.ui_fg,
+            selectcolor=self._section_bg,
         )
         enabled_checkbox.grid(
             row=current_row, column=self.MESSAGE_COLUMNS["enabled"], sticky="nsew"
@@ -413,6 +429,8 @@ class GUIManager(IGUIManager):
         role_label = tk.Label(
             parent_frame,
             text=self.MESSAGE_ROLES.get(role_key, "⚙️"),
+            bg=self._section_bg,
+            fg=self.config.ui_fg,
         )
         role_label.grid(
             row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew"
@@ -430,7 +448,14 @@ class GUIManager(IGUIManager):
         if has_tools:
             preview_text += f"  [{len(tool_interactions)} tool interaction{'s' if len(tool_interactions) != 1 else ''}]"
         preview = preview_text[:60] + ("..." if len(preview_text) > 60 else "")
-        preview_label = tk.Label(parent_frame, text=preview, anchor="w", width=50)
+        preview_label = tk.Label(
+            parent_frame,
+            text=preview,
+            anchor="w",
+            width=50,
+            bg=self._section_bg,
+            fg=self.config.ui_fg,
+        )
         preview_label.grid(
             row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew"
         )
@@ -450,7 +475,14 @@ class GUIManager(IGUIManager):
                         callback(a, a.enabled)
 
                 att_checkbox = tk.Checkbutton(
-                    parent_frame, variable=att_enabled_var, command=toggle
+                    parent_frame,
+                    variable=att_enabled_var,
+                    command=toggle,
+                    bg=self._section_bg,
+                    fg=self.config.ui_fg,
+                    activebackground=self._section_bg,
+                    activeforeground=self.config.ui_fg,
+                    selectcolor=self._section_bg,
                 )
                 att_checkbox.grid(
                     row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew"
@@ -461,6 +493,8 @@ class GUIManager(IGUIManager):
                     parent_frame,
                     text=f"📁  {getattr(att, 'file_path', '').split('/')[-1]}",
                     anchor="w",
+                    bg=self._section_bg,
+                    fg=self.config.ui_fg,
                 )
                 att_label.grid(
                     row=current_row,
@@ -547,7 +581,13 @@ class GUIManager(IGUIManager):
             )
             header_row_widgets.append(tool_btn)
 
-            tool_icon = tk.Label(parent_frame, text="🔧", anchor="w")
+            tool_icon = tk.Label(
+                parent_frame,
+                text="🔧",
+                anchor="w",
+                bg=self._section_bg,
+                fg=self.config.ui_fg,
+            )
             tool_icon.grid(row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew")
             header_row_widgets.append(tool_icon)
 
@@ -564,8 +604,9 @@ class GUIManager(IGUIManager):
                 parent_frame,
                 text=f"{call_name}{result_preview}",
                 anchor="w",
-                foreground="gray",
+                foreground=self.config.muted_fg,
                 font=("", 9),
+                bg=self._section_bg,
             )
             tool_label.grid(
                 row=current_row,
@@ -583,7 +624,13 @@ class GUIManager(IGUIManager):
                 except Exception:
                     input_str = str(call_input)
 
-                in_icon = tk.Label(parent_frame, text="📥", anchor="w")
+                in_icon = tk.Label(
+                    parent_frame,
+                    text="📥",
+                    anchor="w",
+                    bg=self._section_bg,
+                    fg=self.config.ui_fg,
+                )
                 in_icon.grid(row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nw", padx=(12, 0))
                 in_text = tk.Label(
                     parent_frame,
@@ -593,6 +640,7 @@ class GUIManager(IGUIManager):
                     foreground="#4a9eff",
                     font=("Courier", 8),
                     wraplength=380,
+                    bg=self._section_bg,
                 )
                 in_text.grid(row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew")
                 in_row = [in_icon, in_text]
@@ -609,7 +657,13 @@ class GUIManager(IGUIManager):
                 else:
                     out_str = str(out_raw) if out_raw else ""
 
-                out_icon = tk.Label(parent_frame, text="📤", anchor="w")
+                out_icon = tk.Label(
+                    parent_frame,
+                    text="📤",
+                    anchor="w",
+                    bg=self._section_bg,
+                    fg=self.config.ui_fg,
+                )
                 out_icon.grid(row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nw", padx=(12, 0))
                 out_text = tk.Label(
                     parent_frame,
@@ -619,6 +673,7 @@ class GUIManager(IGUIManager):
                     foreground="#5cb85c",
                     font=("Courier", 8),
                     wraplength=380,
+                    bg=self._section_bg,
                 )
                 out_text.grid(row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew")
                 out_row = [out_icon, out_text]
@@ -1011,6 +1066,7 @@ class GUIManager(IGUIManager):
                 outer,
                 text="No facts stored yet.",
                 bg=self._section_bg,
+                fg=self.config.muted_fg,
                 font=("Terminal", 9),
             ).pack(anchor="w", padx=4, pady=2)
         else:
@@ -1033,6 +1089,7 @@ class GUIManager(IGUIManager):
 
         tk.Label(
             add_frame, text="👤 Add fact:", bg=self._section_bg,
+            fg=self.config.ui_fg,
             font=("Terminal", 9),
         ).grid(row=0, column=0, sticky="w")
 
@@ -1041,6 +1098,7 @@ class GUIManager(IGUIManager):
 
         tk.Label(
             add_frame, text="key", bg=self._section_bg,
+            fg=self.config.ui_fg,
             font=("Terminal", 8),
         ).grid(row=1, column=0, sticky="w")
         tk.Entry(add_frame, textvariable=key_var, width=18, font=("Terminal", 9)).grid(
@@ -1049,6 +1107,7 @@ class GUIManager(IGUIManager):
 
         tk.Label(
             add_frame, text="value", bg=self._section_bg,
+            fg=self.config.ui_fg,
             font=("Terminal", 8),
         ).grid(row=2, column=0, sticky="w")
         tk.Entry(add_frame, textvariable=val_var, width=28, font=("Terminal", 9)).grid(
@@ -1100,6 +1159,9 @@ class GUIManager(IGUIManager):
             command=_on_toggle,
             bg=self._section_bg,
             activebackground=self._section_bg,
+            fg=self.config.ui_fg,
+            activeforeground=self.config.ui_fg,
+            selectcolor=self._section_bg,
         ).grid(row=0, column=0, sticky="w")
 
         # Owner icon — clickable button for agent facts (promote), plain label for user
@@ -1122,6 +1184,7 @@ class GUIManager(IGUIManager):
                 row_frame,
                 text=fact.owner_icon,
                 bg=self._section_bg,
+                fg=self.config.ui_fg,
                 font=("Terminal", 10),
             ).grid(row=0, column=1, sticky="w", padx=(0, 2))
 
@@ -1132,6 +1195,7 @@ class GUIManager(IGUIManager):
             row_frame,
             text=label_text,
             bg=self._section_bg,
+            fg=self.config.ui_fg,
             font=("Terminal", 9),
             anchor="w",
             justify="left",
@@ -1695,15 +1759,16 @@ class GUIManager(IGUIManager):
         return name, description
 
     def _build_tools_content_widget(self, parent: tk.Widget) -> tk.Widget:
-        container = tk.Frame(parent)
+        container = tk.Frame(parent, bg=self._section_bg)
         container.columnconfigure(0, weight=1)
 
         if not self._tool_panel_tools:
             empty = tk.Label(
                 container,
                 text="No tools available",
-                foreground="gray",
+                foreground=self.config.muted_fg,
                 font=("", 9, "italic"),
+                bg=self._section_bg,
             )
             empty.grid(row=0, column=0, sticky="w", pady=10)
             return container
@@ -1714,14 +1779,20 @@ class GUIManager(IGUIManager):
         self._tool_panel_vars = {}
 
         # Scrollable canvas so the list doesn't overflow its section.
-        canvas = tk.Canvas(container, borderwidth=0, highlightthickness=0, height=160)
+        canvas = tk.Canvas(
+            container,
+            borderwidth=0,
+            highlightthickness=0,
+            height=160,
+            bg=self._section_bg,
+        )
         scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
         container.rowconfigure(0, weight=1)
 
-        content = tk.Frame(canvas)
+        content = tk.Frame(canvas, bg=self._section_bg)
         canvas_window = canvas.create_window((0, 0), window=content, anchor="nw")
 
         def _on_content_configure(event):
@@ -1755,6 +1826,11 @@ class GUIManager(IGUIManager):
                 text=name,
                 variable=var,
                 command=lambda n=name, v=var: self._on_tool_toggle(n, v.get()),
+                bg=self._section_bg,
+                fg=self.config.ui_fg,
+                activebackground=self._section_bg,
+                activeforeground=self.config.ui_fg,
+                selectcolor=self._section_bg,
             )
             checkbox.grid(row=idx, column=0, sticky="w", pady=2, padx=(0, 5))
 
@@ -1767,8 +1843,9 @@ class GUIManager(IGUIManager):
                 description_label = tk.Label(
                     content,
                     text=desc_text,
-                    foreground="gray",
+                    foreground=self.config.muted_fg,
                     font=("", 9),
+                    bg=self._section_bg,
                 )
                 description_label.grid(row=idx, column=1, sticky="w")
 
