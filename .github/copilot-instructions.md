@@ -144,6 +144,14 @@ Step status legend (applies to all plan files in this repo):
 
 Never silently skip a failed step. Always surface `[X]` items before closing out a session.
 
+## Reflect on your work and update the Project Version using Semantic Versioning (SemVer)
+
+- the current project version is tracked in `pyproject.toml` under the `[project]` section (`version` key). Update the version there when making changes that should be reflected in the project version:
+  - changes that do not introduce backward-incompatible changes should increment the patch version (third number)
+  - changes that introduce new features in a backward-compatible manner should increment the minor version (second number).  When the minor version is incremented, the patch version must be reset to zero.
+  - changes that introduce backward-incompatible changes should increment the major version (first number) if the major version is not zero; if the major version is zero, increment the minor version instead. When the major version is incremented, the minor and patch versions must be reset to zero.
+
+
 ## Additional Resources
 
 - `docs/architecture.md` — module index with retrieval keywords, designed for AI-assisted reasoning
