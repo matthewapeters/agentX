@@ -138,7 +138,22 @@ class FileExplorer:
             return self.change_directory(parent)
         return False
 
-    def to_gui(self, parent_frame: tk.Frame, on_attach=None, on_edit=None, on_add_folder_to_memory=None) -> tk.Frame:
+    def to_gui(
+        self,
+        parent_frame: tk.Frame,
+        on_attach=None,
+        on_edit=None,
+        on_add_folder_to_memory=None,
+        theme_mode: str = "Dark Mode",
+        bg: str | None = None,
+        panel_bg: str | None = None,
+        fg: str | None = None,
+        muted_fg: str | None = None,
+        tree_bg: str | None = None,
+        tree_fg: str | None = None,
+        selection_bg: str = "#3399ff",
+        selection_fg: str = "#ffffff",
+    ) -> tk.Frame:
         """
         Create a GUI frame for the file explorer.
 
@@ -150,39 +165,104 @@ class FileExplorer:
             ``value`` is the path string chosen by the user (full or relative).
         :return: A Tkinter frame containing the file explorer GUI.
         """
-        frame = tk.Frame(parent_frame, bg="white")
+        if theme_mode == "Light Mode":
+            defaults = {
+                "bg": "#ffffff",
+                "panel_bg": "#f0f4f8",
+                "fg": "#111827",
+                "muted_fg": "#4b5563",
+                "tree_bg": "#ffffff",
+                "tree_fg": "#111827",
+            }
+        else:
+            defaults = {
+                "bg": "#333333",
+                "panel_bg": "#3a3a3a",
+                "fg": "#eeeeee",
+                "muted_fg": "#bbbbbb",
+                "tree_bg": "#2a2a2a",
+                "tree_fg": "#eeeeee",
+            }
+
+        colors = {
+            "bg": bg or defaults["bg"],
+            "panel_bg": panel_bg or defaults["panel_bg"],
+            "fg": fg or defaults["fg"],
+            "muted_fg": muted_fg or defaults["muted_fg"],
+            "tree_bg": tree_bg or defaults["tree_bg"],
+            "tree_fg": tree_fg or defaults["tree_fg"],
+            "selection_bg": selection_bg,
+            "selection_fg": selection_fg,
+        }
+
+        frame = tk.Frame(parent_frame, bg=colors["bg"])
 
         # Top frame for navigation controls and path display
-        top_frame = tk.Frame(frame, bg="lightgray", height=60)
+        top_frame = tk.Frame(frame, bg=colors["panel_bg"], height=60)
         top_frame.pack(side=tk.TOP, fill=tk.X, padx=0, pady=0)
         top_frame.pack_propagate(False)
 
         # Navigation buttons frame
-        button_frame = tk.Frame(top_frame, bg="lightgray")
+        button_frame = tk.Frame(top_frame, bg=colors["panel_bg"])
         button_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
 
         back_btn = tk.Button(
-            button_frame, text="◀ Back", width=6, command=self._on_back_click
+            button_frame,
+            text="◀ Back",
+            width=6,
+            command=self._on_back_click,
+            bg=colors["panel_bg"],
+            fg=colors["fg"],
+            activebackground=colors["bg"],
+            activeforeground=colors["fg"],
         )
         back_btn.pack(side=tk.LEFT, padx=2)
 
         forward_btn = tk.Button(
-            button_frame, text="Forward ▶", width=8, command=self._on_forward_click
+            button_frame,
+            text="Forward ▶",
+            width=8,
+            command=self._on_forward_click,
+            bg=colors["panel_bg"],
+            fg=colors["fg"],
+            activebackground=colors["bg"],
+            activeforeground=colors["fg"],
         )
         forward_btn.pack(side=tk.LEFT, padx=2)
 
         up_btn = tk.Button(
-            button_frame, text="⬆ Up", width=5, command=self._on_up_click
+            button_frame,
+            text="⬆ Up",
+            width=5,
+            command=self._on_up_click,
+            bg=colors["panel_bg"],
+            fg=colors["fg"],
+            activebackground=colors["bg"],
+            activeforeground=colors["fg"],
         )
         up_btn.pack(side=tk.LEFT, padx=2)
 
         home_btn = tk.Button(
-            button_frame, text="🏠 Home", width=7, command=self._on_home_click
+            button_frame,
+            text="🏠 Home",
+            width=7,
+            command=self._on_home_click,
+            bg=colors["panel_bg"],
+            fg=colors["fg"],
+            activebackground=colors["bg"],
+            activeforeground=colors["fg"],
         )
         home_btn.pack(side=tk.LEFT, padx=2)
 
         refresh_btn = tk.Button(
-            button_frame, text="🔄 Refresh", width=8, command=self._on_refresh_click
+            button_frame,
+            text="🔄 Refresh",
+            width=8,
+            command=self._on_refresh_click,
+            bg=colors["panel_bg"],
+            fg=colors["fg"],
+            activebackground=colors["bg"],
+            activeforeground=colors["fg"],
         )
         refresh_btn.pack(side=tk.LEFT, padx=2)
 
@@ -190,8 +270,8 @@ class FileExplorer:
         path_label = tk.Label(
             top_frame,
             text=f"📁 {self.current_path}",
-            bg="lightgray",
-            fg="black",
+            bg=colors["panel_bg"],
+            fg=colors["fg"],
             font=("Terminal", 9),
             justify=tk.LEFT,
         )
@@ -215,12 +295,32 @@ class FileExplorer:
         self._parent_frame = frame
 
         # Create treeview for file listing
-        tree_frame = tk.Frame(frame)
+        tree_frame = tk.Frame(frame, bg=colors["bg"])
         tree_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=0, pady=0)
 
         # Scrollbars
         vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL)
         hsb = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL)
+
+        style = ttk.Style(frame)
+        tree_style_name = f"AgentXFileExplorer{abs(id(self))}.Treeview"
+        tree_heading_style = f"{tree_style_name}.Heading"
+        style.configure(
+            tree_style_name,
+            background=colors["tree_bg"],
+            fieldbackground=colors["tree_bg"],
+            foreground=colors["tree_fg"],
+        )
+        style.map(
+            tree_style_name,
+            background=[("selected", colors["selection_bg"])],
+            foreground=[("selected", colors["selection_fg"])],
+        )
+        style.configure(
+            tree_heading_style,
+            background=colors["panel_bg"],
+            foreground=colors["fg"],
+        )
 
         # Treeview widget
         self.tree = ttk.Treeview(
@@ -229,6 +329,7 @@ class FileExplorer:
             height=15,
             yscrollcommand=vsb.set,
             xscrollcommand=hsb.set,
+            style=tree_style_name,
         )
         vsb.config(command=self.tree.yview)
         hsb.config(command=self.tree.xview)
@@ -246,14 +347,28 @@ class FileExplorer:
         self.tree.bind("<Double-1>", self._on_item_double_click)
 
         # --- Right-click popup menu for files ---
-        self._popup_menu = tk.Menu(self.tree, tearoff=0)
+        self._popup_menu = tk.Menu(
+            self.tree,
+            tearoff=0,
+            bg=colors["panel_bg"],
+            fg=colors["fg"],
+            activebackground=colors["selection_bg"],
+            activeforeground=colors["selection_fg"],
+        )
         self._popup_menu.add_command(label="Attach", command=self._on_attach_selected)
         self._popup_menu.add_command(label="Edit", command=self._on_edit_selected)
         self._on_attach_callback = on_attach
         self._on_edit_callback = on_edit
 
         # --- Right-click popup menu for folders ---
-        self._folder_popup_menu = tk.Menu(self.tree, tearoff=0)
+        self._folder_popup_menu = tk.Menu(
+            self.tree,
+            tearoff=0,
+            bg=colors["panel_bg"],
+            fg=colors["fg"],
+            activebackground=colors["selection_bg"],
+            activeforeground=colors["selection_fg"],
+        )
         self._folder_popup_menu.add_command(label="Add full path to memory", command=self._on_add_full_path_selected)
         self._folder_popup_menu.add_command(label="Add relative path to memory", command=self._on_add_relative_path_selected)
         self._on_add_folder_to_memory_callback = on_add_folder_to_memory

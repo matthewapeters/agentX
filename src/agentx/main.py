@@ -3,6 +3,8 @@ Docstring for agentx.main
 """
 
 import logging
+import os
+import sys
 import tkinter as tk
 from pathlib import Path
 
@@ -30,12 +32,37 @@ def _configure_logging() -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
+def _detect_username() -> str:
+    """Return the best available username for the current process."""
+    return os.getenv("USER") or os.getenv("USERNAME") or "User"
+
+
+def _is_root_user(username: str) -> bool:
+    """Return True when the current process is running as root."""
+    if hasattr(os, "geteuid"):
+        try:
+            return os.geteuid() == 0
+        except OSError:
+            pass
+    return username == "root"
+
+
+def _require_non_root_user() -> str:
+    """Abort startup when running as root, otherwise return the username."""
+    username = _detect_username()
+    if _is_root_user(username):
+        print("AgentX cannot be run as root.", file=sys.stderr)
+        raise SystemExit(1)
+    return username
+
+
 def main():
     """
     Docstring for main
     """
+    username = _require_non_root_user()
     _configure_logging()
-    session = AgentXSession(tk.Tk(), load_config())
+    session = AgentXSession(tk.Tk(), load_config(), username=username)
 
     # Perform service handshake before initializing the layout
     try:

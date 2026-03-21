@@ -5,6 +5,7 @@ Docstring for agentx.session
 import json
 import logging
 import os
+import subprocess
 import threading
 import tkinter as tk
 from datetime import UTC, datetime
@@ -15,7 +16,7 @@ import httpx
 from .attachment_info import AttachmentInfo
 from .output_logger import OutputLogger
 from shared.models.context import Context
-from shared.models.working_memory import WorkingMemory
+from shared.models.working_memory import FactOwner, WorkingMemory
 from .file_explorer import FileExplorer
 from .gui.gui_config import GUIConfig
 from .config import save_config
@@ -120,12 +121,59 @@ class AgentXSession:
         if wm_config.get("enabled", True):
             self.working_memory: Optional[WorkingMemory] = WorkingMemory.load(self.session_folder)
             self.working_memory.set_path(self.session_folder)
+            # Seed startup working directory as a user-owned fact for tool/prompt context.
+            cwd = os.getcwd()
+            self.working_memory.add_fact(FactOwner.USER, "UserName", self.user)
+            self.working_memory.add_fact(FactOwner.USER, "cwd", cwd)
+            project_name = self._detect_git_project_name(cwd)
+            if project_name:
+                self.working_memory.add_fact(FactOwner.USER, "project", project_name)
+            instructions_text = self._load_agentx_instructions(cwd)
+            if instructions_text is not None:
+                self.working_memory.add_fact(
+                    FactOwner.USER,
+                    "agentx-instructions",
+                    instructions_text,
+                )
             self.agentix_adapter.register_working_memory_tools(self.working_memory)
         else:
             self.working_memory = None
 
         # Initialize active model from config
         self._active_model = config["agentx"]["ollama_model"]
+
+    def _detect_git_project_name(self, cwd: str) -> Optional[str]:
+        """Return repo name if cwd is inside a git worktree, otherwise None."""
+        try:
+            result = subprocess.run(
+                ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=2,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+        if result.returncode != 0:
+            return None
+
+        repo_root = (result.stdout or "").strip()
+        if not repo_root:
+            return None
+        return os.path.basename(repo_root).lower()
+
+    def _load_agentx_instructions(self, cwd: str) -> Optional[str]:
+        """Load .agentx/agentx-instructions.md contents when present in cwd."""
+        instructions_path = os.path.join(cwd, ".agentx", "agentx-instructions.md")
+        if not os.path.isfile(instructions_path):
+            return None
+        try:
+            with open(instructions_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError:
+            return None
+        return content
 
     def process_prompt(self, prompt: str) -> Iterator[ResponseChunk]:
         """Process a prompt and yield response chunks (test-friendly API)."""
@@ -661,6 +709,13 @@ class AgentXSession:
             on_attach=self.attach_file,
             on_edit=None,  # You can wire up edit logic here later
             on_add_folder_to_memory=self._on_add_folder_to_memory,
+            theme_mode=self.gui.config.theme_mode,
+            bg=self.gui.config.status_bg,
+            panel_bg=self.gui.config.input_bg,
+            fg=self.gui.config.ui_fg,
+            muted_fg=self.gui.config.muted_fg,
+            tree_bg=self.gui.config.output_bg,
+            tree_fg=self.gui.config.ui_fg,
         )
         # Update via GUIManager
         self.gui.update_files_panel(files_widget)
