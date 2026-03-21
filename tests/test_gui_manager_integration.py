@@ -206,11 +206,28 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
         self.assertEqual(self.gui.widgets.output_text.winfo_manager(), "pack")
         self.assertEqual(self.gui.widgets.output_scrollbar.winfo_manager(), "pack")
 
+    def test_output_text_is_read_only_but_selectable(self):
+        """Output mirror should block typing while still allowing selection actions."""
+        output = self.gui.widgets.output_text
+        self.assertTrue(output.bind("<Key>"))
+        self.assertTrue(output.bind("<Control-a>"))
+        self.assertTrue(output.bind("<Control-c>"))
+
     def test_output_text_has_copy_shortcuts_bound(self):
         """Output text mirror should bind select-all and copy shortcuts."""
         output = self.gui.widgets.output_text
         self.assertTrue(output.bind("<Control-a>"))
         self.assertTrue(output.bind("<Control-c>"))
+
+    def test_output_text_select_all_handler_creates_selection(self):
+        """Select-all handler should create a real selection range in output text."""
+        output = self.gui.widgets.output_text
+        self.gui.display_agent_response("Mouse selection smoke test text")
+
+        self.gui._select_all_output_text()
+
+        sel_ranges = output.tag_ranges(tk.SEL)
+        self.assertTrue(sel_ranges)
 
     def test_output_entries_wraplength_updates_with_resize(self):
         """Structured output labels should re-wrap as output width changes."""
@@ -225,6 +242,45 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
         self.gui._update_output_wraplength(800)
         for label in self.gui._output_wrapped_labels:
             self.assertEqual(int(label.cget("wraplength")), 760)
+
+    def test_user_collapse_hides_children_entries(self):
+        """Collapsing user row should hide thinking/classification/tool child rows."""
+        self.gui.display_user_message("Prompt", attachments=[], timestamp=datetime.now())
+        self.gui.display_agent_thinking("(The agent is thinking...)")
+        self.gui.display_agent_thinking("Reasoning details")
+        self.gui.display_classification({
+            "intent": "simple_action",
+            "next_step": "single_tool",
+            "reasoning_summary": "One step",
+            "needs_clarification": False,
+            "missing_fields": [],
+        })
+        self.gui.display_agent_response("[🔧 Calling tool: read_file]")
+
+        user_entry = self.gui._current_turn_entries["user"]
+        children_frame = self.gui._current_turn_children_frame
+        self.assertIsNotNone(children_frame)
+        self.assertEqual(children_frame.winfo_manager(), "pack")
+
+        user_entry["toggle"]()  # collapse
+        self.assertEqual(children_frame.winfo_manager(), "")
+
+        user_entry["toggle"]()  # expand
+        self.assertEqual(children_frame.winfo_manager(), "pack")
+
+    def test_header_preview_not_driven_by_newline(self):
+        """Header preview should condense newlines and respond to width."""
+        self.gui._update_output_wraplength(220)
+        self.gui.display_user_message("Line one\nLine two\nLine three", attachments=[], timestamp=datetime.now())
+        user_entry = self.gui._current_turn_entries["user"]
+        header_small = user_entry["header_var"].get()
+
+        self.gui._update_output_wraplength(700)
+        self.gui._set_entry_text(user_entry, user_entry["full_text"])
+        header_large = user_entry["header_var"].get()
+
+        self.assertIn("Line one Line two Line three", header_large)
+        self.assertNotEqual(header_small, header_large)
 
     def test_display_error(self):
         """Test displaying error message."""

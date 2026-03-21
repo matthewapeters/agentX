@@ -1644,7 +1644,8 @@ class GUIManager(IGUIManager):
         self.widgets.output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         output_xscrollbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.widgets.output_text.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
-        self.widgets.output_text.config(state=tk.DISABLED)
+        # Keep output read-only while still allowing mouse selection and copy.
+        self.widgets.output_text.bind("<Key>", lambda _event: "break")
         self._bind_output_text_shortcuts()
 
         # Ensure selection highlighting is visible
@@ -1654,30 +1655,38 @@ class GUIManager(IGUIManager):
 
         self.widgets.paned.add(self.widgets.output_display, stretch="always")
 
+    def _select_all_output_text(self, _event=None):
+        """Select all text in the Output Text mirror widget."""
+        output = self.widgets.output_text
+        if output is None:
+            return "break"
+        output.tag_add(tk.SEL, "1.0", tk.END)
+        output.mark_set(tk.INSERT, "1.0")
+        output.see(tk.INSERT)
+        return "break"
+
+    def _copy_output_text_selection(self, _event=None):
+        """Copy current selection from the Output Text mirror widget."""
+        output = self.widgets.output_text
+        if output is None:
+            return "break"
+        output.event_generate("<<Copy>>")
+        return "break"
+
     def _bind_output_text_shortcuts(self) -> None:
         """Bind copy-friendly shortcuts to the selectable output text mirror."""
         output = self.widgets.output_text
         if output is None:
             return
 
-        def _select_all(_event=None):
-            output.tag_add(tk.SEL, "1.0", tk.END)
-            output.mark_set(tk.INSERT, "1.0")
-            output.see(tk.INSERT)
-            return "break"
-
-        def _copy_selection(_event=None):
-            output.event_generate("<<Copy>>")
-            return "break"
-
-        output.bind("<Control-a>", _select_all)
-        output.bind("<Control-A>", _select_all)
-        output.bind("<Command-a>", _select_all)
-        output.bind("<Command-A>", _select_all)
-        output.bind("<Control-c>", _copy_selection)
-        output.bind("<Control-C>", _copy_selection)
-        output.bind("<Command-c>", _copy_selection)
-        output.bind("<Command-C>", _copy_selection)
+        output.bind("<Control-a>", self._select_all_output_text)
+        output.bind("<Control-A>", self._select_all_output_text)
+        output.bind("<Command-a>", self._select_all_output_text)
+        output.bind("<Command-A>", self._select_all_output_text)
+        output.bind("<Control-c>", self._copy_output_text_selection)
+        output.bind("<Control-C>", self._copy_output_text_selection)
+        output.bind("<Command-c>", self._copy_output_text_selection)
+        output.bind("<Command-C>", self._copy_output_text_selection)
 
     def _update_output_wraplength(self, canvas_width: int) -> None:
         """Update output label wrap length when the output panel width changes."""
@@ -2081,17 +2090,18 @@ class GUIManager(IGUIManager):
         output = self.widgets.output_text
         if output is None:
             return
-        output.config(state=tk.NORMAL)
         output.insert(tk.END, text, tags)
         output.see(tk.END)
-        output.config(state=tk.DISABLED)
 
-    def _split_first_line(self, text: str) -> tuple[str, str]:
-        normalized = text.replace("\r\n", "\n")
-        if "\n" in normalized:
-            first, rest = normalized.split("\n", 1)
-            return first, rest
-        return normalized, ""
+    def _header_preview(self, text: str) -> str:
+        """Build a width-responsive one-line preview independent of newlines."""
+        condensed = " ".join((text or "").replace("\r\n", "\n").split())
+        if not condensed:
+            return ""
+        approx_chars = max(20, int(self._output_wraplength / 7))
+        if len(condensed) <= approx_chars:
+            return condensed
+        return condensed[: max(1, approx_chars - 1)] + "…"
 
     def _create_output_entry(
         self,
@@ -2100,18 +2110,18 @@ class GUIManager(IGUIManager):
         icon: str,
         content: str,
         expanded: bool,
+        on_expand_changed: "Callable[[bool], None] | None" = None,
     ) -> dict[str, Any]:
         entry_frame = tk.Frame(parent, bg=self.config.output_bg)
         header_frame = tk.Frame(entry_frame, bg=self.config.output_bg)
         header_frame.pack(fill=tk.X, anchor="w")
 
         full_text = content or ""
-        first_line, rest = self._split_first_line(full_text)
 
         state: dict[str, Any] = {
             "frame": entry_frame,
             "header_var": tk.StringVar(),
-            "detail_var": tk.StringVar(value=rest),
+            "detail_var": tk.StringVar(value=full_text),
             "expanded": expanded,
             "full_text": full_text,
             "role_label": role_label,
@@ -2162,11 +2172,13 @@ class GUIManager(IGUIManager):
                 detail_label.pack(fill=tk.X, anchor="w", padx=(24, 0))
             else:
                 detail_label.pack_forget()
+            if on_expand_changed is not None:
+                on_expand_changed(state["expanded"])
 
         toggle_btn.config(command=_toggle, text=self.EXPAND_COLLAPSE_ICONS[expanded])
         state["toggle"] = _toggle
 
-        state["header_var"].set(f"{icon} {role_label}: {first_line}")
+        state["header_var"].set(f"{icon} {role_label}: {self._header_preview(full_text)}")
         if expanded:
             detail_label.pack(fill=tk.X, anchor="w", padx=(24, 0))
 
@@ -2177,9 +2189,10 @@ class GUIManager(IGUIManager):
         if not chunk:
             return
         entry["full_text"] = f"{entry['full_text']}{chunk}"
-        first_line, rest = self._split_first_line(entry["full_text"])
-        entry["header_var"].set(f"{entry['icon']} {entry['role_label']}: {first_line}")
-        entry["detail_var"].set(rest)
+        entry["header_var"].set(
+            f"{entry['icon']} {entry['role_label']}: {self._header_preview(entry['full_text'])}"
+        )
+        entry["detail_var"].set(entry["full_text"])
 
     def _ensure_turn_started(self, user_content: str) -> None:
         if self.widgets.output_entries_frame is None:
@@ -2187,16 +2200,23 @@ class GUIManager(IGUIManager):
 
         turn_frame = tk.Frame(self.widgets.output_entries_frame, bg=self.config.output_bg)
         turn_frame.pack(fill=tk.X, anchor="w", pady=(4, 6))
+        children = tk.Frame(turn_frame, bg=self.config.output_bg)
+        children.pack(fill=tk.X, anchor="w", padx=(22, 0))
+
+        def _on_user_expand_changed(expanded: bool) -> None:
+            if expanded:
+                children.pack(fill=tk.X, anchor="w", padx=(22, 0))
+            else:
+                children.pack_forget()
+
         user_entry = self._create_output_entry(
             parent=turn_frame,
             role_label="User",
             icon=self.MESSAGE_ROLES["user"],
             content=user_content,
             expanded=True,
+            on_expand_changed=_on_user_expand_changed,
         )
-
-        children = tk.Frame(turn_frame, bg=self.config.output_bg)
-        children.pack(fill=tk.X, anchor="w", padx=(22, 0))
 
         self._current_turn_frame = turn_frame
         self._current_turn_children_frame = children
@@ -2227,9 +2247,10 @@ class GUIManager(IGUIManager):
 
     def _set_entry_text(self, entry: dict[str, Any], text: str) -> None:
         entry["full_text"] = text
-        first_line, rest = self._split_first_line(text)
-        entry["header_var"].set(f"{entry['icon']} {entry['role_label']}: {first_line}")
-        entry["detail_var"].set(rest)
+        entry["header_var"].set(
+            f"{entry['icon']} {entry['role_label']}: {self._header_preview(text)}"
+        )
+        entry["detail_var"].set(text)
 
     def _display_tool_line(self, line: str) -> bool:
         stripped = line.strip()
