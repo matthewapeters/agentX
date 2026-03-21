@@ -1,7 +1,5 @@
 # Session management for Agentix CLI
 
-import glob
-import json
 import os
 import sys
 from datetime import UTC, datetime
@@ -9,13 +7,10 @@ from datetime import UTC, datetime
 from agentix.context.message import Message
 
 from ..agentix_config import AgentixConfig
-from ..api_client import summarize_user_prompt
 from ..constants import (
     CLASSIFICATION_MAX_TOKENS,
     DEFAULT_SESSION_ID,
     PROMPT_CLASSIFICATION,
-    SESSIONS_DIR,
-    SESSIONS_METADATA_FILE,
 )
 from ..file_utils import get_attachments
 from ..query_payload import QueryPayload
@@ -27,26 +22,18 @@ def _get_user_name() -> str:
     return os.getenv("USER") or os.getenv("USERNAME") or "User"
 
 
-def _resolve_sessions_base() -> tuple[str, bool]:
-    """Return (base_dir, is_agentx_mode)."""
+def _resolve_sessions_base() -> str:
+    """Return base sessions directory for AgentX-compatible mode."""
     env_dir = os.getenv("AGENTX_SESSIONS_DIR")
     if env_dir:
-        return env_dir, True
+        return env_dir
 
     cwd_sessions = os.path.join(os.getcwd(), "sessions")
-    if os.path.isdir(cwd_sessions):
-        return cwd_sessions, True
-
-    return SESSIONS_DIR, False
+    return cwd_sessions
 
 
-def _ensure_session_context_dir(args: AgentixConfig) -> tuple[str, bool]:
-    base_dir, agentx_mode = _resolve_sessions_base()
-
-    if not agentx_mode:
-        session_dir = f"{SESSIONS_DIR}{args.session}"
-        os.makedirs(session_dir, exist_ok=True)
-        return session_dir, agentx_mode
+def _ensure_session_context_dir(args: AgentixConfig) -> str:
+    base_dir = _resolve_sessions_base()
 
     user_dir = os.path.join(base_dir, _get_user_name())
     os.makedirs(user_dir, exist_ok=True)
@@ -58,7 +45,7 @@ def _ensure_session_context_dir(args: AgentixConfig) -> tuple[str, bool]:
     session_dir = os.path.join(user_dir, args.session)
     context_dir = os.path.join(session_dir, "context")
     os.makedirs(context_dir, exist_ok=True)
-    return context_dir, agentx_mode
+    return context_dir
 
 
 def _get_latest_session_id(base_dir: str, user_name: str) -> str | None:
@@ -149,15 +136,6 @@ def trim_context(
 ) -> list[Message]:
     """Handle message history with token-based trimming."""
 
-    _, agentx_mode = _resolve_sessions_base()
-
-    if not agentx_mode:
-        session_dir, _ = _ensure_session_context_dir(args)
-        # Checkpoint history
-        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        with open(os.path.join(session_dir, f"{ts}.json"), "w", encoding="utf-8") as f:
-            json.dump(messages, f, indent=2)
-
     # Trim history based on token limits (max_tokens)
     total_tokens = 0
     trimmed_history = []
@@ -190,69 +168,19 @@ def trim_context(
 
 def manage_sessions(args: AgentixConfig) -> list[Message]:
     """Create, retrieve, and manage session state."""
-    # if no specific session is requested, (session == agentix_session) then summarize
-    # the prompt and add it to the sessions metadata file
     history = []
     print((f"Managing session: {args.session}"), file=sys.stderr)
 
-    base_dir, agentx_mode = _resolve_sessions_base()
+    base_dir = _resolve_sessions_base()
 
-    if agentx_mode:
-        if args.session == "__continue":
-            latest = _get_latest_session_id(base_dir, _get_user_name())
-            if latest:
-                args.session = latest
-                history = get_session_history(args)
-        else:
-            _ensure_session_context_dir(args)
+    if args.session == "__continue":
+        latest = _get_latest_session_id(base_dir, _get_user_name())
+        if latest:
+            args.session = latest
+            history = get_session_history(args)
     else:
-        match args.session:
-            case "agentix_session":
-                print("Creating new session...", file=sys.stderr)
-                # summarize_user_prompt is called from api_client.py to avoid circular imports
+        _ensure_session_context_dir(args)
 
-                try:
-                    with open(SESSIONS_METADATA_FILE, "r", encoding="utf-8") as f:
-                        sessions = json.load(f)
-                except FileNotFoundError:
-                    sessions = {"sessions": []}
-
-                print(
-                    "Debug: Calling summarize_user_prompt with args:", args, file=sys.stderr
-                )
-                summarize_user_prompt(args)
-
-                sessions["sessions"].append(
-                    {
-                        "session_id": args.session,
-                        "model": args.model,
-                        "created_at": datetime.now(UTC).isoformat(),
-                    }
-                )
-
-                with open(SESSIONS_METADATA_FILE, "w", encoding="utf-8") as f:
-                    json.dump(sessions, f, indent=2)
-                    print(f"Session {args.session} created.", file=sys.stderr)
-            case "__continue":
-                # continue the session
-                print("Continuing previous session...", file=sys.stderr)
-                try:
-                    with open(SESSIONS_METADATA_FILE, "r", encoding="utf-8") as f:
-                        sessions = json.load(f)
-                except FileNotFoundError:
-                    print("No previous sessions found.", file=sys.stderr)
-                    sessions = {"sessions": []}
-                # get the last session
-                if sessions["sessions"]:
-                    if args.debug:
-                        print(
-                            "Continuing session:", sessions["sessions"][-1], file=sys.stderr
-                        )
-                    args.session = sessions["sessions"][-1]["session_id"]
-                    # Continue with the same model if not specified
-                    if not args.model:
-                        args.model = sessions["sessions"][-1]["model"]
-                    history = get_session_history(args)
     print(f"Debug: args.session = {args.session}", file=sys.stderr)
     print(f"Debug: args = {args}", file=sys.stderr)
     return history
@@ -260,47 +188,18 @@ def manage_sessions(args: AgentixConfig) -> list[Message]:
 
 def update_session(args: AgentixConfig, history: list[Message], response: str):
     """Update session history with the latest interaction."""
-    session_dir, agentx_mode = _ensure_session_context_dir(args)
+    session_dir = _ensure_session_context_dir(args)
 
     # Save each message in the history that hasn't been saved yet
     for message in history:
         if getattr(message, "file_path", None):
             continue
-        if agentx_mode:
-            message.save(session_dir)
-        else:
-            timestamp = datetime.now(UTC).strftime(
-                "%Y%m%d%H%M%S%f"
-            )  # Microsecond precision
-            filename = f"{timestamp}_{message.role}.json"
-            filepath = os.path.join(session_dir, filename)
-
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(message.to_dict(), f, indent=2)
-
-            message.file_path = filepath
+        message.save(session_dir)
 
 
 def get_session_history(args: AgentixConfig) -> list[Message]:
     """Retrieve session history JSON from timestamped files."""
-    session_dir, agentx_mode = _ensure_session_context_dir(args)
-
-    if agentx_mode:
-        context = Context(path=session_dir, session_id=args.session)
-        context.load_from_dir(session_dir)
-        return [entry.message for entry in context.messages]
-
-    # Load all message files and sort them by timestamp
-    message_files = glob.glob(os.path.join(session_dir, "*.json"))
-    message_files.sort()
-
-    history = []
-    for filepath in message_files:
-        with open(filepath, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if data.get("role") == "tool_calls":
-                data["role"] = "system"
-            message = Message.from_dict(data, file_path=filepath)
-            history.append(message)
-
-    return history
+    session_dir = _ensure_session_context_dir(args)
+    context = Context(path=session_dir, session_id=args.session)
+    context.load_from_dir(session_dir)
+    return [entry.message for entry in context.messages]

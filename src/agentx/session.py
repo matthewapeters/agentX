@@ -1040,10 +1040,10 @@ class AgentXSession:
         all_services_started = self.service_manager.ensure_services(services_to_start, timeout=30)
 
         if not all_services_started:
-            print("⚠ Warning: Agentix service did not start successfully")
-            print("  - Check that Agentix dependencies are installed (e.g., libcst)")
-            print("  - Code analysis tools will be unavailable")
-            print("  - Continuing with Ollama only...")
+            raise RuntimeError(
+                "Agentix service did not start successfully. "
+                "AgentX requires Agentix for model interactions."
+            )
 
         # Perform Ollama model handshake and list available models
         url = f"http://{ollama_host}/api/chat"

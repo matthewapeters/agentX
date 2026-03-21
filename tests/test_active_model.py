@@ -271,6 +271,16 @@ class TestActiveModelUsage(unittest.TestCase):
         self.assertEqual(payload['model'], new_model,
                         "perform_service_handshake did not use active_model")
 
+    def test_perform_service_handshake_requires_agentix(self):
+        """Startup should fail if Agentix cannot be started."""
+        session = AgentXSession(root=self.root, config=self.config)
+        session.service_manager.ensure_services = Mock(return_value=False)
+
+        with self.assertRaises(RuntimeError) as exc_info:
+            session.perform_service_handshake()
+
+        self.assertIn("AgentX requires Agentix", str(exc_info.exception))
+
     def test_model_selector_callback_uses_active_model(self):
         """Test that ModelSelector callback properly uses active_model setter."""
         session = AgentXSession(root=self.root, config=self.config)
