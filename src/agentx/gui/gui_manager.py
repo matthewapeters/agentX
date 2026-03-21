@@ -895,6 +895,42 @@ class GUIManager(IGUIManager):
             self._append_output_entry_text(entry, content)
         self._scroll_output_to_end()
 
+    def display_bootstrap_agent_response(self, content: str) -> None:
+        """Display a startup agent response without creating a visible user turn."""
+        if threading.current_thread() is not threading.main_thread():
+            return
+
+        if self.widgets.output_text is None:
+            return
+
+        clean_content = content.strip()
+        if not clean_content:
+            return
+
+        self._legacy_output_insert(
+            f"{self.MESSAGE_ROLES['assistant']} Agent: {clean_content}\n\n",
+            ("agent_response",),
+        )
+
+        if self.widgets.output_entries_frame is not None:
+            container = tk.Frame(
+                self.widgets.output_entries_frame,
+                bg=self.config.output_bg,
+            )
+            container.pack(fill=tk.X, anchor="w", pady=(4, 6))
+            self._create_output_entry(
+                parent=container,
+                role_label="Agent",
+                icon=self.MESSAGE_ROLES["assistant"],
+                content=clean_content,
+                expanded=True,
+            )
+
+        self._current_turn_frame = None
+        self._current_turn_children_frame = None
+        self._current_turn_entries = {}
+        self._scroll_output_to_end()
+
     def display_error(self, message: str) -> None:
         """Display an error message to the user.
 

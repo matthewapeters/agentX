@@ -193,6 +193,14 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
 
         self.assertIn("Here's the answer", content)
 
+    def test_display_bootstrap_agent_response(self):
+        """Bootstrap responses should render without a visible user prompt."""
+        self.gui.display_bootstrap_agent_response("Hello from bootstrap")
+
+        content = self.gui.widgets.output_text.get("1.0", tk.END)
+        self.assertIn("Hello from bootstrap", content)
+        self.assertNotIn("User:", content)
+
     def test_display_error(self):
         """Test displaying error message."""
         self.gui.display_error("Connection failed")

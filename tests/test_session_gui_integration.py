@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from agentx.session import AgentXSession
 from agentx.gui.gui_manager import GUIManager
 from agentx.gui.gui_config import GUIConfig
+from shared.models.response import ChunkType, ResponseChunk
 
 
 class TestAgentXSessionGUIIntegration(unittest.TestCase):
@@ -166,6 +167,39 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
         """Session startup should not add instructions fact when file is absent."""
         instructions_fact = self.session.working_memory.get("user:agentx-instructions")
         self.assertIsNone(instructions_fact)
+
+    def test_layout_runs_bootstrap_prompt_and_shows_only_agent_response(self):
+        """Bootstrap prompt should render only assistant content and not alter context."""
+        bootstrap_dir = os.path.join(self.temp_dir, ".agentx")
+        os.makedirs(bootstrap_dir, exist_ok=True)
+        with open(os.path.join(bootstrap_dir, "bootstrap-prompt.md"), "w", encoding="utf-8") as f:
+            f.write("Hi! Identify yourself!")
+
+        self.session.agentix_adapter.classify_prompt_sync = MagicMock(return_value=None)
+        self.session.agentix_adapter.process_prompt_generator = MagicMock(
+            return_value=iter([
+                ResponseChunk(type=ChunkType.THINKING, content="hidden thinking"),
+                ResponseChunk(type=ChunkType.TOOL_CALL, tool_name="read_file", tool_input={"path": "x"}),
+                ResponseChunk(type=ChunkType.CONTENT, content="Hello! I am AgentX."),
+            ])
+        )
+
+        self.session.layout()
+
+        output_text = self.session.gui.widgets.output_text.get("1.0", tk.END)
+        self.assertIn("Hello! I am AgentX.", output_text)
+        self.assertNotIn("Hi! Identify yourself!", output_text)
+        self.assertNotIn("hidden thinking", output_text)
+        self.assertNotIn("Calling tool", output_text)
+        self.assertEqual(len(self.session.context.messages), 0)
+
+    def test_layout_skips_bootstrap_when_file_missing(self):
+        """No bootstrap response should run when the bootstrap file is absent."""
+        self.session.agentix_adapter.process_prompt_generator = MagicMock(return_value=iter([]))
+
+        self.session.layout()
+
+        self.session.agentix_adapter.process_prompt_generator.assert_not_called()
 
     def test_handle_submit_callback_exists(self):
         """Test that submit callback is defined."""

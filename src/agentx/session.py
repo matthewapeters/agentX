@@ -175,6 +175,76 @@ class AgentXSession:
             return None
         return content
 
+    def _load_bootstrap_prompt(self, cwd: str) -> Optional[str]:
+        """Load .agentx/bootstrap-prompt.md contents when present in cwd."""
+        prompt_path = os.path.join(cwd, ".agentx", "bootstrap-prompt.md")
+        if not os.path.isfile(prompt_path):
+            return None
+        try:
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+        except OSError:
+            return None
+        return content or None
+
+    def _build_stream_shared_context(self) -> Context:
+        """Build prompt context from working memory, history, and enabled session messages."""
+        shared_context = Context()
+
+        wm_config = self.config.get("agentx", {}).get("working_memory", {})
+        if (
+            wm_config.get("enabled", True)
+            and wm_config.get("inject_into_context", True)
+            and self.working_memory is not None
+        ):
+            wm_block = self.working_memory.to_llm_block()
+            if wm_block:
+                wm_msg = Message(role=MessageRole.SYSTEM, content=wm_block)
+                shared_context.add_message(wm_msg, ts=datetime.now())
+
+        history_messages = self.history.get_enabled_messages()
+        for ts, msg in history_messages:
+            if hasattr(msg, "message"):
+                msg = msg.message
+            shared_context.add_message(msg, ts=ts)
+
+        for msg in self.context.messages:
+            if hasattr(msg, "message"):
+                msg = msg.message
+            if getattr(msg, "enabled", False):
+                shared_context.add_message(msg, ts=msg.timestamp)
+
+        return shared_context
+
+    def _run_bootstrap_prompt_if_present(self) -> None:
+        """Run hidden startup bootstrap prompt and render only final assistant content."""
+        prompt = self._load_bootstrap_prompt(os.getcwd())
+        if not prompt:
+            return
+
+        try:
+            shared_context = self._build_stream_shared_context()
+            classification = None
+            if self.config.get("agentix", {}).get("classify_prompts", True):
+                classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context)
+
+            content_parts: list[str] = []
+            for chunk in self.agentix_adapter.process_prompt_generator(
+                prompt,
+                shared_context,
+                classification,
+            ):
+                if chunk.type == ChunkType.CONTENT and chunk.content:
+                    content_parts.append(chunk.content)
+
+            response_text = "".join(content_parts).strip()
+            if response_text:
+                self.gui.display_bootstrap_agent_response(response_text)
+                self._output_logger.log("bootstrap_agent", response_text)
+                self.refresh_working_memory_gui()
+        except Exception:
+            logger.exception("Bootstrap prompt execution failed")
+
     def process_prompt(self, prompt: str) -> Iterator[ResponseChunk]:
         """Process a prompt and yield response chunks (test-friendly API)."""
         shared_context = self._build_shared_context_from_context()
@@ -745,6 +815,7 @@ class AgentXSession:
         # Setup model selector and tool panel if Agentix is available
         # (Must be after layout is created so the widgets exist)
         self._setup_agentix_ui()
+        self._run_bootstrap_prompt_if_present()
 
     def stream_ollama_response_worker(self):
         """
@@ -816,33 +887,7 @@ class AgentXSession:
                     self.message.attachments.append(att)
 
             # Build shared Context from history and current context
-            shared_context = Context()
-
-            # Prepend Working Memory block as a system message when enabled
-            wm_config = config.get("agentx", {}).get("working_memory", {})
-            if (
-                wm_config.get("enabled", True)
-                and wm_config.get("inject_into_context", True)
-                and self.working_memory is not None
-            ):
-                wm_block = self.working_memory.to_llm_block()
-                if wm_block:
-                    wm_msg = Message(role=MessageRole.SYSTEM, content=wm_block)
-                    shared_context.add_message(wm_msg, ts=datetime.now())
-
-            # Add history messages
-            history_messages = self.history.get_enabled_messages()
-            for ts, msg in history_messages:
-                if hasattr(msg, "message"):
-                    msg = msg.message
-                shared_context.add_message(msg, ts=ts)
-
-            # Add current context messages
-            for msg in self.context.messages:
-                if hasattr(msg, "message"):
-                    msg = msg.message
-                if getattr(msg, "enabled", False):
-                    shared_context.add_message(msg, ts=msg.timestamp)
+            shared_context = self._build_stream_shared_context()
 
             # Add current message
             self.add_message_to_context(self.message)
