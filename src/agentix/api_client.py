@@ -31,6 +31,17 @@ def _extract_json_payload(text: str) -> str:
     if lines and lines[0].strip() == "json":
         cleaned = "\n".join(lines[1:]).strip()
 
+    # If there is still non-JSON preamble or postamble (e.g. the model added an
+    # explanation around the JSON object), extract just the first {...} block.
+    # This makes classification robust against models that add natural-language
+    # text before or after the required JSON when given long conversation context.
+    if not cleaned.startswith("{"):
+        start = cleaned.find("{")
+        if start != -1:
+            end = cleaned.rfind("}")
+            if end > start:
+                cleaned = cleaned[start : end + 1]
+
     return cleaned
 
 

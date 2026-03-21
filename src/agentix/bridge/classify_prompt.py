@@ -52,6 +52,13 @@ def classify_prompt(
 
     effective_history = list(history) if history is not None else list(context.get_enabled_messages())
 
+    # Filter to only enabled messages — disabled messages (e.g. soft-deleted turns) must
+    # not influence classification regardless of how history was assembled.
+    effective_history = [
+        msg for msg in effective_history
+        if (msg.enabled if hasattr(msg, "enabled") else msg.get("enabled", True))
+    ]
+
     # Filter to only conversational roles — tool_call/tool_result are not valid LLM API roles
     # and are not needed for intent classification.
     _CLASSIFY_ROLES = {"user", "assistant", "system"}
@@ -59,6 +66,16 @@ def classify_prompt(
         msg for msg in effective_history
         if (msg.role.value if hasattr(msg, "role") and hasattr(msg.role, "value") else msg.get("role", "")) in _CLASSIFY_ROLES
     ]
+
+    # Limit history to the last few *active* turns so that the classification system prompt
+    # is placed close to the head of the message list rather than being buried after a long
+    # conversation.  Without this, models that have seen many prior exchanges tend to
+    # continue the conversational tone and add natural-language preamble around the
+    # required JSON, causing json.loads to fail.  Two prior messages (one exchange) are
+    # enough to give the model context for back-references like "as discussed".
+    CLASSIFICATION_HISTORY_LIMIT = 2
+    if len(effective_history) > CLASSIFICATION_HISTORY_LIMIT:
+        effective_history = effective_history[-CLASSIFICATION_HISTORY_LIMIT:]
 
     # Build classification prompt using Agentix logic
     classification_payload = assemble_prompts(
