@@ -23,6 +23,10 @@ class WidgetRegistry:
         self.output_display: Optional[tk.Frame] = None
         self.output_notebook: Optional[ttk.Notebook] = None
         self.output_tab: Optional[tk.Frame] = None
+        self.output_entries_container: Optional[tk.Frame] = None
+        self.output_entries_canvas: Optional[tk.Canvas] = None
+        self.output_entries_scrollbar: Optional[tk.Scrollbar] = None
+        self.output_entries_frame: Optional[tk.Frame] = None
         self.output_text: Optional[tk.Text] = None
         self.output_scrollbar: Optional[tk.Scrollbar] = None
 
@@ -104,6 +108,14 @@ class WidgetRegistry:
             self.output_scrollbar.destroy()
         if self.output_text is not None:
             self.output_text.destroy()
+        if self.output_entries_scrollbar is not None:
+            self.output_entries_scrollbar.destroy()
+        if self.output_entries_canvas is not None:
+            self.output_entries_canvas.destroy()
+        if self.output_entries_frame is not None:
+            self.output_entries_frame.destroy()
+        if self.output_entries_container is not None:
+            self.output_entries_container.destroy()
         if self.output_tab is not None:
             self.output_tab.destroy()
         if self.output_notebook is not None:

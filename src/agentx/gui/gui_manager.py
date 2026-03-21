@@ -96,6 +96,11 @@ class GUIManager(IGUIManager):
         self._agent_response_started = False
         self._agent_classification_shown = False
 
+        # Structured output state (nested by prompt/turn)
+        self._current_turn_frame: Optional[tk.Frame] = None
+        self._current_turn_children_frame: Optional[tk.Frame] = None
+        self._current_turn_entries: dict[str, dict[str, Any]] = {}
+
     # Layout constants for UI rendering
     EXPAND_COLLAPSE_ICONS = {True: "▼", False: "▶"}
     MESSAGE_ROLES = {
@@ -660,13 +665,13 @@ class GUIManager(IGUIManager):
         if threading.current_thread() is not threading.main_thread():
             return
 
-        output = self.widgets.output_text
-        if output is None:
+        if self.widgets.output_text is None:
             return
 
-        # Insert message with role emoji
-        output.insert(
-            tk.END, f"{self.MESSAGE_ROLES['user']} User: {content}\n", ("user_prompt",)
+        self._ensure_turn_started(content)
+        self._legacy_output_insert(
+            f"{self.MESSAGE_ROLES['user']} User: {content}\n",
+            ("user_prompt",),
         )
 
         # Reset agent display state for a new turn
@@ -676,11 +681,18 @@ class GUIManager(IGUIManager):
 
         # Display attachments
         if attachments:
+            attachment_lines = []
             for filename in attachments:
-                output.insert(tk.END, f"\n[Attached file: {filename}]\n", ("gray",))
+                attachment_line = f"[Attached file: {filename}]"
+                attachment_lines.append(attachment_line)
+                self._legacy_output_insert(f"\n{attachment_line}\n", ("gray",))
+            if "user" in self._current_turn_entries:
+                self._append_output_entry_text(
+                    self._current_turn_entries["user"],
+                    "\n" + "\n".join(attachment_lines),
+                )
 
-        # Auto-scroll
-        output.see(tk.END)
+        self._scroll_output_to_end()
 
     def display_agent_thinking(self, content: str) -> None:
         """Display agent thinking content (streaming).
@@ -691,18 +703,32 @@ class GUIManager(IGUIManager):
         if threading.current_thread() is not threading.main_thread():
             return
 
-        output = self.widgets.output_text
-        if output is None:
+        if self.widgets.output_text is None:
             return
 
-        if not self._agent_thinking_started:
-            self._agent_thinking_started = True
+        self._legacy_output_insert(content, ("agent_thinking",))
 
-        # Append content
-        output.insert(tk.END, content, ("agent_thinking",))
+        if "(The agent is thinking...)" in content:
+            self._ensure_child_entry(
+                key="thinking",
+                role_label="Thinking",
+                icon=self.MESSAGE_ROLES["thinking"],
+                initial_text="",
+                expanded=False,
+            )
+            self._scroll_output_to_end()
+            return
 
-        # Auto-scroll
-        output.see(tk.END)
+        entry = self._ensure_child_entry(
+            key="thinking",
+            role_label="Thinking",
+            icon=self.MESSAGE_ROLES["thinking"],
+            initial_text="",
+            expanded=False,
+        )
+        if entry is not None:
+            self._append_output_entry_text(entry, content)
+        self._scroll_output_to_end()
 
     def display_classification(self, classification: dict) -> None:
         """Display prompt classification metadata block in the output panel.
@@ -727,22 +753,36 @@ class GUIManager(IGUIManager):
         missing_fields: list = classification.get("missing_fields") or []
         next_step = classification.get("next_step", "")
 
+        lines: list[str] = []
+
         # 🤔 analysis block
         if intent:
-            output.insert(tk.END, f"🤔 intent: {intent}\n", tag)
+            lines.append(f"🤔 intent: {intent}")
         if reasoning:
-            output.insert(tk.END, f"   reasoning: {reasoning}\n", tag)
+            lines.append(f"   reasoning: {reasoning}")
         if needs_clarification or missing_fields:
             clarification_line = "   clarification needed: yes"
             if missing_fields:
                 clarification_line += f"  |  missing fields: {', '.join(missing_fields)}"
-            output.insert(tk.END, clarification_line + "\n", tag)
+            lines.append(clarification_line)
 
         # 💡 routing decision
         if next_step:
-            output.insert(tk.END, f"💡 path: {next_step}\n", tag)
+            lines.append(f"💡 path: {next_step}")
 
-        output.see(tk.END)
+        block = "\n".join(lines)
+        if block:
+            self._legacy_output_insert(block + "\n", tag)
+            entry = self._ensure_child_entry(
+                key="classification",
+                role_label="Classification",
+                icon="🤔",
+                initial_text=block,
+                expanded=False,
+            )
+            if entry is not None:
+                self._set_entry_text(entry, block)
+            self._scroll_output_to_end()
 
     def display_agent_response(self, content: str) -> None:
         """Display agent response content (streaming).
@@ -753,17 +793,39 @@ class GUIManager(IGUIManager):
         if threading.current_thread() is not threading.main_thread():
             return
 
-        output = self.widgets.output_text
-        if output is None:
+        if self.widgets.output_text is None:
             return
         if not self._agent_response_started:
             self._agent_response_started = True
 
-        # Append content
-        output.insert(tk.END, content, ("agent_response",))
+        self._legacy_output_insert(content, ("agent_response",))
 
-        # Auto-scroll
-        output.see(tk.END)
+        if self._display_tool_line(content):
+            self._scroll_output_to_end()
+            return
+
+        if f"{self.MESSAGE_ROLES['assistant']} (" in content:
+            # Header marker from session stream; create entry and wait for content chunks.
+            self._ensure_child_entry(
+                key="assistant",
+                role_label="Agent",
+                icon=self.MESSAGE_ROLES["assistant"],
+                initial_text="",
+                expanded=True,
+            )
+            self._scroll_output_to_end()
+            return
+
+        entry = self._ensure_child_entry(
+            key="assistant",
+            role_label="Agent",
+            icon=self.MESSAGE_ROLES["assistant"],
+            initial_text="",
+            expanded=True,
+        )
+        if entry is not None:
+            self._append_output_entry_text(entry, content)
+        self._scroll_output_to_end()
 
     def display_error(self, message: str) -> None:
         """Display an error message to the user.
@@ -774,35 +836,41 @@ class GUIManager(IGUIManager):
         if threading.current_thread() is not threading.main_thread():
             return
 
-        output = self.widgets.output_text
-        if output is None:
+        if self.widgets.output_text is None:
             return
 
-        # Insert error message with emphasis
-        output.insert(tk.END, f"\n⚠️  ERROR: {message}\n\n", ("gray",))
-
-        # Auto-scroll
-        output.see(tk.END)
+        self._legacy_output_insert(f"\n⚠️  ERROR: {message}\n\n", ("gray",))
+        entry = self._ensure_child_entry(
+            key="error",
+            role_label="Error",
+            icon="⚠️",
+            initial_text=message,
+            expanded=True,
+        )
+        if entry is not None:
+            self._set_entry_text(entry, message)
+        self._scroll_output_to_end()
 
     def display_spacing(self) -> None:
         """Display spacing between conversation segments."""
         if threading.current_thread() is not threading.main_thread():
             return
 
-        output = self.widgets.output_text
-        if output is None:
+        if self.widgets.output_text is None:
             return
 
-        # Insert spacing
-        output.insert(tk.END, "\n\n", ("system_space",))
+        # Insert spacing in legacy text and terminate current turn in structured view.
+        self._legacy_output_insert("\n\n", ("system_space",))
+        self._current_turn_frame = None
+        self._current_turn_children_frame = None
+        self._current_turn_entries = {}
 
         # Reset agent display state for next turn
         self._agent_thinking_started = False
         self._agent_response_started = False
         self._agent_classification_shown = False
 
-        # Auto-scroll
-        output.see(tk.END)
+        self._scroll_output_to_end()
 
     # Display Methods - Attachments
 
@@ -1385,7 +1453,54 @@ class GUIManager(IGUIManager):
         )
         self.widgets.output_notebook.add(self.widgets.output_tab, text="Output")
 
-        # Create output text and scrollbar in the Output tab
+        # Structured output view (visible): nested/collapsible entries.
+        self.widgets.output_entries_container = tk.Frame(
+            self.widgets.output_tab,
+            bg=self.config.output_bg,
+        )
+        self.widgets.output_entries_container.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
+
+        self.widgets.output_entries_canvas = tk.Canvas(
+            self.widgets.output_entries_container,
+            bg=self.config.output_bg,
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self.widgets.output_entries_scrollbar = tk.Scrollbar(
+            self.widgets.output_entries_container,
+            command=self.widgets.output_entries_canvas.yview,
+        )
+        self.widgets.output_entries_canvas.configure(
+            yscrollcommand=self.widgets.output_entries_scrollbar.set
+        )
+
+        self.widgets.output_entries_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.widgets.output_entries_canvas.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
+
+        self.widgets.output_entries_frame = tk.Frame(
+            self.widgets.output_entries_canvas,
+            bg=self.config.output_bg,
+        )
+        output_window = self.widgets.output_entries_canvas.create_window(
+            (0, 0),
+            window=self.widgets.output_entries_frame,
+            anchor="nw",
+        )
+
+        def _on_output_frame_configure(_event):
+            if self.widgets.output_entries_canvas is not None:
+                self.widgets.output_entries_canvas.configure(
+                    scrollregion=self.widgets.output_entries_canvas.bbox("all")
+                )
+
+        def _on_output_canvas_configure(event):
+            if self.widgets.output_entries_canvas is not None:
+                self.widgets.output_entries_canvas.itemconfig(output_window, width=event.width)
+
+        self.widgets.output_entries_frame.bind("<Configure>", _on_output_frame_configure)
+        self.widgets.output_entries_canvas.bind("<Configure>", _on_output_canvas_configure)
+
+        # Legacy output text (hidden): keeps compatibility with existing tests/APIs.
         self.widgets.output_scrollbar = tk.Scrollbar(self.widgets.output_tab)
         self.widgets.output_text = tk.Text(
             self.widgets.output_tab,
@@ -1394,8 +1509,8 @@ class GUIManager(IGUIManager):
             yscrollcommand=self.widgets.output_scrollbar.set,
         )
         self.widgets.output_scrollbar.config(command=self.widgets.output_text.yview)
-        self.widgets.output_text.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
-        self.widgets.output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.widgets.output_text.pack_forget()
+        self.widgets.output_scrollbar.pack_forget()
 
         # Ensure selection highlighting is visible
         self.widgets.output_text.tag_config(
@@ -1413,7 +1528,7 @@ class GUIManager(IGUIManager):
         # Create a frame for model selector at the top
         model_frame = tk.Frame(self.widgets.system_status, bg=self._section_bg)
         model_frame.pack(fill=tk.X, padx=5, pady=5)
-        
+
         # Add model selector
         self.model_selector = ModelSelector(
             parent=model_frame,
@@ -1747,6 +1862,199 @@ class GUIManager(IGUIManager):
         )
         output.tag_config("system_space", font=self.config.default_font)
 
+    def _scroll_output_to_end(self) -> None:
+        """Scroll structured output view to the newest entry."""
+        canvas = self.widgets.output_entries_canvas
+        if canvas is None:
+            return
+        canvas.update_idletasks()
+        canvas.yview_moveto(1.0)
+
+    def _legacy_output_insert(self, text: str, tags: tuple[str, ...]) -> None:
+        """Mirror output text for backward compatibility with existing callers/tests."""
+        output = self.widgets.output_text
+        if output is None:
+            return
+        output.insert(tk.END, text, tags)
+        output.see(tk.END)
+
+    def _split_first_line(self, text: str) -> tuple[str, str]:
+        normalized = text.replace("\r\n", "\n")
+        if "\n" in normalized:
+            first, rest = normalized.split("\n", 1)
+            return first, rest
+        return normalized, ""
+
+    def _create_output_entry(
+        self,
+        parent: tk.Widget,
+        role_label: str,
+        icon: str,
+        content: str,
+        expanded: bool,
+    ) -> dict[str, Any]:
+        entry_frame = tk.Frame(parent, bg=self.config.output_bg)
+        header_frame = tk.Frame(entry_frame, bg=self.config.output_bg)
+        header_frame.pack(fill=tk.X, anchor="w")
+
+        full_text = content or ""
+        first_line, rest = self._split_first_line(full_text)
+
+        state: dict[str, Any] = {
+            "frame": entry_frame,
+            "header_var": tk.StringVar(),
+            "detail_var": tk.StringVar(value=rest),
+            "expanded": expanded,
+            "full_text": full_text,
+            "role_label": role_label,
+            "icon": icon,
+        }
+
+        toggle_btn = tk.Button(
+            header_frame,
+            width=1,
+            height=1,
+            font=("Terminal", 10),
+            bd=0,
+            bg=self.config.output_bg,
+            fg=self.COLOR_AGENT_RESPONSE,
+            activebackground=self.config.output_bg,
+            activeforeground=self.COLOR_AGENT_RESPONSE,
+        )
+        toggle_btn.pack(side=tk.LEFT, padx=(0, 4))
+
+        header_label = tk.Label(
+            header_frame,
+            textvariable=state["header_var"],
+            bg=self.config.output_bg,
+            fg=self.COLOR_AGENT_RESPONSE,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1200,
+        )
+        header_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        detail_label = tk.Label(
+            entry_frame,
+            textvariable=state["detail_var"],
+            bg=self.config.output_bg,
+            fg=self.COLOR_AGENT_RESPONSE,
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=1200,
+        )
+        state["detail_label"] = detail_label
+
+        def _toggle() -> None:
+            state["expanded"] = not state["expanded"]
+            toggle_btn.config(text=self.EXPAND_COLLAPSE_ICONS[state["expanded"]])
+            if state["expanded"]:
+                detail_label.pack(fill=tk.X, anchor="w", padx=(24, 0))
+            else:
+                detail_label.pack_forget()
+
+        toggle_btn.config(command=_toggle, text=self.EXPAND_COLLAPSE_ICONS[expanded])
+        state["toggle"] = _toggle
+
+        state["header_var"].set(f"{icon} {role_label}: {first_line}")
+        if expanded:
+            detail_label.pack(fill=tk.X, anchor="w", padx=(24, 0))
+
+        entry_frame.pack(fill=tk.X, anchor="w", pady=(1, 1))
+        return state
+
+    def _append_output_entry_text(self, entry: dict[str, Any], chunk: str) -> None:
+        if not chunk:
+            return
+        entry["full_text"] = f"{entry['full_text']}{chunk}"
+        first_line, rest = self._split_first_line(entry["full_text"])
+        entry["header_var"].set(f"{entry['icon']} {entry['role_label']}: {first_line}")
+        entry["detail_var"].set(rest)
+
+    def _ensure_turn_started(self, user_content: str) -> None:
+        if self.widgets.output_entries_frame is None:
+            return
+
+        turn_frame = tk.Frame(self.widgets.output_entries_frame, bg=self.config.output_bg)
+        turn_frame.pack(fill=tk.X, anchor="w", pady=(4, 6))
+        user_entry = self._create_output_entry(
+            parent=turn_frame,
+            role_label="User",
+            icon=self.MESSAGE_ROLES["user"],
+            content=user_content,
+            expanded=True,
+        )
+
+        children = tk.Frame(turn_frame, bg=self.config.output_bg)
+        children.pack(fill=tk.X, anchor="w", padx=(22, 0))
+
+        self._current_turn_frame = turn_frame
+        self._current_turn_children_frame = children
+        self._current_turn_entries = {"user": user_entry}
+
+    def _ensure_child_entry(
+        self,
+        key: str,
+        role_label: str,
+        icon: str,
+        initial_text: str,
+        expanded: bool,
+    ) -> Optional[dict[str, Any]]:
+        if self._current_turn_children_frame is None:
+            return None
+        if key in self._current_turn_entries:
+            return self._current_turn_entries[key]
+
+        entry = self._create_output_entry(
+            parent=self._current_turn_children_frame,
+            role_label=role_label,
+            icon=icon,
+            content=initial_text,
+            expanded=expanded,
+        )
+        self._current_turn_entries[key] = entry
+        return entry
+
+    def _set_entry_text(self, entry: dict[str, Any], text: str) -> None:
+        entry["full_text"] = text
+        first_line, rest = self._split_first_line(text)
+        entry["header_var"].set(f"{entry['icon']} {entry['role_label']}: {first_line}")
+        entry["detail_var"].set(rest)
+
+    def _display_tool_line(self, line: str) -> bool:
+        stripped = line.strip()
+        if stripped.startswith("[🔧 Calling tool"):
+            entry = self._ensure_child_entry(
+                key="tool_call",
+                role_label="Tool",
+                icon=self.MESSAGE_ROLES["tool_call"],
+                initial_text=stripped,
+                expanded=False,
+            )
+            if entry is not None:
+                if entry["full_text"]:
+                    self._set_entry_text(entry, f"{entry['full_text']}\n{stripped}")
+                else:
+                    self._set_entry_text(entry, stripped)
+            return True
+
+        if stripped.startswith("[📋 Tool result"):
+            entry = self._ensure_child_entry(
+                key="tool_result",
+                role_label="Tool",
+                icon=self.MESSAGE_ROLES["tool_result"],
+                initial_text=stripped,
+                expanded=False,
+            )
+            if entry is not None:
+                if entry["full_text"]:
+                    self._set_entry_text(entry, f"{entry['full_text']}\n{stripped}")
+                else:
+                    self._set_entry_text(entry, stripped)
+            return True
+
+        return False
+
     def _create_attachment_widget(
         self, parent: tk.Frame, info: AttachmentInfo, is_history: bool = False
     ) -> tk.Widget:
@@ -1788,31 +2096,31 @@ class GUIManager(IGUIManager):
             bg=bg,
         )
         checkbox.pack(side=tk.LEFT, padx=5, pady=2)
-        
+
         return att_frame
-    
+
     # Callbacks for model selector and tool panel
-    
+
     def _on_model_change(self, model: str) -> None:
         """Handle model selection change."""
         # This is a placeholder - the actual handler should be set by AgentXSession
         pass
-    
+
     def _on_tool_toggle(self, tool_name: str, enabled: bool) -> None:
         """Handle tool toggle."""
         # This is a placeholder - the actual handler should be set by AgentXSession
         pass
-    
+
     def populate_models(self, models: list[dict], initial_model: str = None) -> None:
         """Populate model selector with available models.
-        
+
         Args:
             models: List of model dictionaries
             initial_model: Model to select initially (if present in list)
         """
         if self.model_selector:
             self.model_selector.populate(models, initial_model=initial_model)
-    
+
     def _on_submit_clicked(self) -> None:
         """Internal handler for submit button/keyboard."""
         if self._on_submit:
