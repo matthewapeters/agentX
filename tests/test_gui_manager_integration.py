@@ -201,6 +201,31 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
         self.assertIn("Hello from bootstrap", content)
         self.assertNotIn("User:", content)
 
+    def test_output_text_surface_is_visible_for_copy(self):
+        """Output text mirror should be packed and readable for copy operations."""
+        self.assertEqual(self.gui.widgets.output_text.winfo_manager(), "pack")
+        self.assertEqual(self.gui.widgets.output_scrollbar.winfo_manager(), "pack")
+
+    def test_output_text_has_copy_shortcuts_bound(self):
+        """Output text mirror should bind select-all and copy shortcuts."""
+        output = self.gui.widgets.output_text
+        self.assertTrue(output.bind("<Control-a>"))
+        self.assertTrue(output.bind("<Control-c>"))
+
+    def test_output_entries_wraplength_updates_with_resize(self):
+        """Structured output labels should re-wrap as output width changes."""
+        self.gui.display_user_message("A sample prompt", attachments=[], timestamp=datetime.now())
+        self.gui.display_agent_response("A long response that should reflow when width changes.")
+
+        self.gui._update_output_wraplength(320)
+        self.assertTrue(self.gui._output_wrapped_labels)
+        for label in self.gui._output_wrapped_labels:
+            self.assertEqual(int(label.cget("wraplength")), 280)
+
+        self.gui._update_output_wraplength(800)
+        for label in self.gui._output_wrapped_labels:
+            self.assertEqual(int(label.cget("wraplength")), 760)
+
     def test_display_error(self):
         """Test displaying error message."""
         self.gui.display_error("Connection failed")

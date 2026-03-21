@@ -113,6 +113,8 @@ class GUIManager(IGUIManager):
         self._current_turn_frame: Optional[tk.Frame] = None
         self._current_turn_children_frame: Optional[tk.Frame] = None
         self._current_turn_entries: dict[str, dict[str, Any]] = {}
+        self._output_wraplength: int = 1200
+        self._output_wrapped_labels: list[tk.Label] = []
 
     # Layout constants for UI rendering
     EXPAND_COLLAPSE_ICONS = {True: "▼", False: "▶"}
@@ -1569,6 +1571,13 @@ class GUIManager(IGUIManager):
         )
         self.widgets.output_notebook.add(self.widgets.output_tab, text="Output")
 
+        # Create plain text tab for selectable/copyable output.
+        output_text_tab = tk.Frame(
+            self.widgets.output_notebook,
+            bg=self.config.output_bg,
+        )
+        self.widgets.output_notebook.add(output_text_tab, text="Output Text")
+
         # Structured output view (visible): nested/collapsible entries.
         self.widgets.output_entries_container = tk.Frame(
             self.widgets.output_tab,
@@ -1612,21 +1621,31 @@ class GUIManager(IGUIManager):
         def _on_output_canvas_configure(event):
             if self.widgets.output_entries_canvas is not None:
                 self.widgets.output_entries_canvas.itemconfig(output_window, width=event.width)
+                self._update_output_wraplength(event.width)
 
         self.widgets.output_entries_frame.bind("<Configure>", _on_output_frame_configure)
         self.widgets.output_entries_canvas.bind("<Configure>", _on_output_canvas_configure)
 
-        # Legacy output text (hidden): keeps compatibility with existing tests/APIs.
-        self.widgets.output_scrollbar = tk.Scrollbar(self.widgets.output_tab)
+        # Legacy output text (visible in dedicated tab): selectable/copyable output mirror.
+        self.widgets.output_scrollbar = tk.Scrollbar(output_text_tab)
+        output_xscrollbar = tk.Scrollbar(output_text_tab, orient=tk.HORIZONTAL)
         self.widgets.output_text = tk.Text(
-            self.widgets.output_tab,
+            output_text_tab,
             wrap=tk.WORD,
             font=text_font,
             yscrollcommand=self.widgets.output_scrollbar.set,
+            xscrollcommand=output_xscrollbar.set,
+            bg=self.config.output_bg,
+            fg=self.config.agent_response_fg,
+            insertbackground=self.config.agent_response_fg,
         )
         self.widgets.output_scrollbar.config(command=self.widgets.output_text.yview)
-        self.widgets.output_text.pack_forget()
-        self.widgets.output_scrollbar.pack_forget()
+        output_xscrollbar.config(command=self.widgets.output_text.xview)
+        self.widgets.output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        output_xscrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.widgets.output_text.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
+        self.widgets.output_text.config(state=tk.DISABLED)
+        self._bind_output_text_shortcuts()
 
         # Ensure selection highlighting is visible
         self.widgets.output_text.tag_config(
@@ -1634,6 +1653,43 @@ class GUIManager(IGUIManager):
         )
 
         self.widgets.paned.add(self.widgets.output_display, stretch="always")
+
+    def _bind_output_text_shortcuts(self) -> None:
+        """Bind copy-friendly shortcuts to the selectable output text mirror."""
+        output = self.widgets.output_text
+        if output is None:
+            return
+
+        def _select_all(_event=None):
+            output.tag_add(tk.SEL, "1.0", tk.END)
+            output.mark_set(tk.INSERT, "1.0")
+            output.see(tk.INSERT)
+            return "break"
+
+        def _copy_selection(_event=None):
+            output.event_generate("<<Copy>>")
+            return "break"
+
+        output.bind("<Control-a>", _select_all)
+        output.bind("<Control-A>", _select_all)
+        output.bind("<Command-a>", _select_all)
+        output.bind("<Command-A>", _select_all)
+        output.bind("<Control-c>", _copy_selection)
+        output.bind("<Control-C>", _copy_selection)
+        output.bind("<Command-c>", _copy_selection)
+        output.bind("<Command-C>", _copy_selection)
+
+    def _update_output_wraplength(self, canvas_width: int) -> None:
+        """Update output label wrap length when the output panel width changes."""
+        self._output_wraplength = max(160, canvas_width - 40)
+        active_labels: list[tk.Label] = []
+        for label in self._output_wrapped_labels:
+            try:
+                label.configure(wraplength=self._output_wraplength)
+                active_labels.append(label)
+            except tk.TclError:
+                continue
+        self._output_wrapped_labels = active_labels
 
     def _create_status_panel(self) -> None:
         """Create status panel with tabs."""
@@ -2025,8 +2081,10 @@ class GUIManager(IGUIManager):
         output = self.widgets.output_text
         if output is None:
             return
+        output.config(state=tk.NORMAL)
         output.insert(tk.END, text, tags)
         output.see(tk.END)
+        output.config(state=tk.DISABLED)
 
     def _split_first_line(self, text: str) -> tuple[str, str]:
         normalized = text.replace("\r\n", "\n")
@@ -2080,9 +2138,10 @@ class GUIManager(IGUIManager):
             fg=self.COLOR_AGENT_RESPONSE,
             anchor="w",
             justify=tk.LEFT,
-            wraplength=1200,
+            wraplength=self._output_wraplength,
         )
         header_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._output_wrapped_labels.append(header_label)
 
         detail_label = tk.Label(
             entry_frame,
@@ -2091,8 +2150,9 @@ class GUIManager(IGUIManager):
             fg=self.COLOR_AGENT_RESPONSE,
             anchor="w",
             justify=tk.LEFT,
-            wraplength=1200,
+            wraplength=self._output_wraplength,
         )
+        self._output_wrapped_labels.append(detail_label)
         state["detail_label"] = detail_label
 
         def _toggle() -> None:
