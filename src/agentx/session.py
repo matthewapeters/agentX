@@ -2,6 +2,7 @@
 Docstring for agentx.session
 """
 
+import json
 import logging
 import os
 import threading
@@ -12,6 +13,7 @@ from typing import Any, Optional, Iterator
 import httpx
 
 from .attachment_info import AttachmentInfo
+from .output_logger import OutputLogger
 from shared.models.context import Context
 from shared.models.working_memory import WorkingMemory
 from .file_explorer import FileExplorer
@@ -80,6 +82,7 @@ class AgentXSession:
         # Session transcript log — mirrors everything written to the output panel
         self._session_log_path = os.path.join(self.session_folder, "session.log")
         self._session_log = open(self._session_log_path, "a", encoding="utf-8", buffering=1)  # line-buffered
+        self._output_logger = OutputLogger(self.session_folder)
         self._history = None  # Placeholder for History object
         self.message = Message(role="user", content="")
         self.enabled_history_attachments = []  # Track enabled attachments from history
@@ -743,6 +746,7 @@ class AgentXSession:
             )
         )
         self._write_log(f"\n👤 User: {prompt}\n")
+        self._output_logger.log("user", prompt)
 
         try:
             # Prepare message
@@ -833,10 +837,13 @@ class AgentXSession:
 
             # Complete the response
             self._safe_root_after(self.gui.display_spacing)
-            self._persist_stream_messages(
-                "".join(thinking_parts),
-                "".join(content_parts),
-            )
+            joined_thinking = "".join(thinking_parts)
+            joined_content = "".join(content_parts)
+            self._persist_stream_messages(joined_thinking, joined_content)
+            if joined_thinking:
+                self._output_logger.log("thinking", joined_thinking)
+            if joined_content:
+                self._output_logger.log("agent", joined_content)
             self._safe_root_after(self.refresh_user_gui)
 
         except Exception as e:
@@ -844,6 +851,7 @@ class AgentXSession:
             err_line = f"\n⚠️  ERROR: {e}\n"
             self._safe_root_after(lambda err=e: self.gui.display_error(f"Error: {err}"))
             self._write_log(err_line)
+            self._output_logger.log("error", str(e))
         finally:
             self._is_streaming.clear()
             self._safe_root_after(lambda: self.gui.set_streaming_state(False))
@@ -884,6 +892,7 @@ class AgentXSession:
                 lines.append(f"💡 path: {filtered['next_step']}")
             if lines:
                 self._write_log("\n".join(lines) + "\n")
+            self._output_logger.log("classification", json.dumps(filtered, ensure_ascii=False))
 
         return _callback
 
@@ -911,6 +920,11 @@ class AgentXSession:
         line = f"\n[🔧 Calling tool{round_label}: {tool_name}]\n"
         self._safe_root_after(lambda: self.gui.display_agent_response(line))
         self._write_log(line)
+        try:
+            input_text = f"{tool_name}: {json.dumps(tool_input, ensure_ascii=False)}"
+        except Exception:
+            input_text = f"{tool_name}: {tool_input}"
+        self._output_logger.log("tool_call", input_text)
         self.context.add_tool_call_message(tool_name, tool_input)
 
     def _display_tool_result(self, tool_name: str, output, round_index: int | None = None, tool_id: str | None = None) -> None:
@@ -924,9 +938,8 @@ class AgentXSession:
         if isinstance(output, str):
             display_text = output
         elif output is not None:
-            import json as _json
             try:
-                display_text = _json.dumps(output)
+                display_text = json.dumps(output)
             except Exception:
                 display_text = str(output)
         else:
@@ -937,6 +950,7 @@ class AgentXSession:
         result_line = f"\n[📋 Tool result{round_label}: {preview}]\n"
         self._safe_root_after(lambda: self.gui.display_agent_response(result_line))
         self._write_log(result_line)
+        self._output_logger.log("tool_result", f"{tool_name}: {display_text}")
         self.context.add_tool_result_message(
             tool_name=tool_name,
             tool_output=output,

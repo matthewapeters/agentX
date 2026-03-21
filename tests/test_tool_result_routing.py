@@ -149,6 +149,7 @@ class TestDisplayToolResult:
         session._display_tool_result = AgentXSession._display_tool_result.__get__(session)
         session._safe_root_after = MagicMock()
         session._write_log = MagicMock()
+        session._output_logger = MagicMock()
         session.context = MagicMock()
         session.refresh_working_memory_gui = MagicMock()
         return session
