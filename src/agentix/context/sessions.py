@@ -88,6 +88,9 @@ def assemble_classification_prompt(
     classification_config.system = [PROMPT_CLASSIFICATION]
     classification_config.user = args.user
     classification_config.debug = args.debug
+    # Reuse the active session ID so classification does not spawn a second
+    # auto-generated session folder in AgentX mode.
+    classification_config.session = args.session
 
     response_max_tokens = (
         args.classification_max_tokens
@@ -146,9 +149,10 @@ def trim_context(
 ) -> list[Message]:
     """Handle message history with token-based trimming."""
 
-    session_dir, agentx_mode = _ensure_session_context_dir(args)
+    _, agentx_mode = _resolve_sessions_base()
 
     if not agentx_mode:
+        session_dir, _ = _ensure_session_context_dir(args)
         # Checkpoint history
         ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         with open(os.path.join(session_dir, f"{ts}.json"), "w", encoding="utf-8") as f:
