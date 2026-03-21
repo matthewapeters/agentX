@@ -7,7 +7,7 @@ import logging
 import os
 import threading
 import tkinter as tk
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional, Iterator
 
 import httpx
@@ -60,10 +60,12 @@ class AgentXSession:
             self.root.withdraw()
         self.config = config
 
+        session_started_at = datetime.now(UTC)
+        self.session_id = f"session_{session_started_at.strftime('%Y-%m-%d_%H-%M-%S')}"
         self.context = Context()
         self.file_explorer = FileExplorer(start_path=os.getcwd())
         self.user = username or os.getenv("USER") or os.getenv("USERNAME") or "User"
-        self.start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.start_time = session_started_at.strftime("%Y-%m-%d %H:%M:%S UTC")
         # Title will be set by GUIManager after initialization
         base_dir = session_dir or os.getcwd()
         self.user_history_folder = os.path.join(
@@ -71,14 +73,12 @@ class AgentXSession:
             "sessions",
             self.user,
         )
-        self.session_folder = os.path.join(
-            self.user_history_folder,
-            f"session_{self.start_time.replace(' ', '_').replace(':', '-')}",
-        )
+        self.session_folder = os.path.join(self.user_history_folder, self.session_id)
         os.makedirs(self.session_folder, exist_ok=True)
         self.context_folder = os.path.join(self.session_folder, "context")
         os.makedirs(self.context_folder, exist_ok=True)
         self.context.path = self.context_folder
+        self.context.session_id = self.session_id
         # Session transcript log — mirrors everything written to the output panel
         self._session_log_path = os.path.join(self.session_folder, "session.log")
         self._session_log = open(self._session_log_path, "a", encoding="utf-8", buffering=1)  # line-buffered
@@ -108,6 +108,7 @@ class AgentXSession:
 
         # Initialize Agentix bridge (always integrated)
         self.agentix_adapter = create_adapter(config)
+        self.agentix_adapter.agentix_config.session = self.session_id
 
         # Initialize tool executors
         self.client_tool_executor = ClientToolExecutor(base_path=os.getcwd())
