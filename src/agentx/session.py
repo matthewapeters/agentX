@@ -33,6 +33,7 @@ from .integration import (
     AdvancedToolRegistry,
 )
 from .integration import agentix_bridge_adapter
+from agentix.prompt_classification_response import PromptClassificationResponse
 
 logger = logging.getLogger(__name__)
 
@@ -208,8 +209,8 @@ class AgentXSession:
                 self._session_log.write(f"   missing: {', '.join(classification.missing_fields)}\n")
 
         # Show Working Memory context if available
-        if self.working_memory and self.working_memory.get_facts():
-            wm_facts = self.working_memory.get_facts(enabled_only=True)
+        if self.working_memory and self.working_memory.all_facts():
+            wm_facts = self.working_memory.get_enabled_facts()
             if wm_facts:
                 key_facts = [f for f in wm_facts if f.key in ("use_tools", "cwd", "project")]
                 if key_facts:

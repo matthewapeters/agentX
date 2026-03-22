@@ -28,7 +28,7 @@ def _format_working_memory_for_classification(wm: WorkingMemory) -> str:
         Formatted string with <working_memory> block
     """
     lines = ["<working_memory>"]
-    for fact in wm.get_facts(enabled_only=True):
+    for fact in wm.get_enabled_facts():
         owner_icon = fact.owner.icon
         # Format value: if it's a string, use as-is; otherwise convert to string
         value_str = fact.value if isinstance(fact.value, str) else str(fact.value)
@@ -73,7 +73,7 @@ def classify_prompt(
             "prompt_length": len(prompt) if prompt else 0,
             "context_message_count": len(context.get_enabled_messages()) if context else 0,
             "has_working_memory": working_memory is not None,
-            "wm_fact_count": len(working_memory.get_facts()) if working_memory else 0,
+            "wm_fact_count": len(working_memory.all_facts()) if working_memory else 0,
         },
     )
 
@@ -86,12 +86,12 @@ def classify_prompt(
 
     # Inject Working Memory into user prompt if available
     enhanced_prompt = prompt
-    if working_memory and working_memory.get_facts():
+    if working_memory and working_memory.all_facts():
         wm_context = _format_working_memory_for_classification(working_memory)
         enhanced_prompt = f"{wm_context}\n\n{prompt}"
         logger.debug(
             "Working Memory injected into classification prompt",
-            extra={"wm_fact_count": len(working_memory.get_facts())},
+            extra={"wm_fact_count": len(working_memory.all_facts())},
         )
 
     classification_config.user = [enhanced_prompt] if enhanced_prompt else (config.user or [])
@@ -158,17 +158,41 @@ def classify_prompt(
             "Classification raw result",
             extra={
                 "result": result,
+                "result_keys": list(result.keys()) if isinstance(result, dict) else None,
                 "duration_ms": (datetime.now() - start_time).total_seconds() * 1000,
             },
         )
 
+        # Validate required fields are present and non-empty
+        if not isinstance(result, dict):
+            raise ValueError(f"Classification result must be a dict, got {type(result).__name__}: {result}")
+
+        # Check for required fields
+        required_fields = ["intent", "next_step", "reasoning_summary"]
+        missing = [f for f in required_fields if f not in result or not result[f]]
+        if missing:
+            logger.error(
+                "Classification missing required fields",
+                extra={
+                    "missing_fields": missing,
+                    "result": result,
+                    "result_repr": repr(result),
+                },
+            )
+            raise ValueError(
+                f"Classification returned incomplete JSON. Missing or empty fields: {missing}. "
+                f"Full result: {result}. This usually means the LLM failed to generate proper classification. "
+                f"Try: (1) switch to a more reliable model like gpt-oss:latest, "
+                f"(2) add format='json' to force JSON output, or (3) lower temperature to 0.1-0.3."
+            )
+
         # Parse result into PromptClassificationResponse
         response = PromptClassificationResponse(
-            intent=Intent[result.get("intent", "conversation")],
+            intent=Intent[result["intent"]],  # No default - will raise KeyError if invalid
             needs_clarification=result.get("needs_clarification", False),
             missing_fields=result.get("missing_fields", []),
-            reasoning_summary=result.get("reasoning_summary", ""),
-            next_step=NextStep[result.get("next_step", "respond_directly")],
+            reasoning_summary=result["reasoning_summary"],  # No default - required
+            next_step=NextStep[result["next_step"]],  # No default - will raise KeyError if invalid
         )
 
         # LOG: Final classification decision

@@ -1,12 +1,12 @@
 [agentx]
 theme_mode = "Dark Mode"
 ollama_host = "localhost:11434"
-ollama_model = "gpt-oss"
+ollama_model = "gpt-oss:latest"
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
 
 [agentix]
-agentix_bench_classification_model = "phi4-mini:3.8b"
+classification_model = "phi4-mini:3.8b"
 available_tools = [ "cst", "ast",]
 max_tool_rounds = 10
 classification_backend = "ollama"

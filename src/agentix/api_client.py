@@ -1,6 +1,7 @@
 # API client for Agentix CLI
 
 import json
+import logging
 import sys
 from typing import Iterator
 
@@ -13,34 +14,65 @@ from .query_payload import QueryPayload
 
 # from .sessions import update_session
 
+logger = logging.getLogger(__name__)
+
 
 def _extract_json_payload(text: str) -> str:
+    """
+    Extract JSON from LLM response, handling markdown code blocks and preamble.
+
+    Common LLM response patterns:
+    1. Raw JSON: {"key": "value"}
+    2. Markdown: ```json\n{"key": "value"}\n```
+    3. With preamble: "Here's the result:\n```\n{...}\n```"
+    4. No start fence: Some text {"key": "value"} more text
+    """
     cleaned = text.strip()
 
+    # Remove special tokens
     if cleaned.startswith("<|assistant|>"):
-        cleaned = cleaned[len("<|assistant|>"):].lstrip()
+        cleaned = cleaned[len("<|assistant|>") :].lstrip()
 
+    # Handle markdown code blocks more robustly
     if "```" in cleaned:
-        parts = cleaned.split("```")
-        if len(parts) >= 3:
-            cleaned = parts[1].strip()
+        # Try to extract content between first ``` and last ```
+        first_fence = cleaned.find("```")
+        last_fence = cleaned.rfind("```")
+
+        if first_fence != -1 and last_fence != -1 and first_fence < last_fence:
+            # Get content between fences
+            between_fences = cleaned[first_fence + 3 : last_fence].strip()
+
+            # Remove language identifier if present (e.g., "json" or "JSON")
+            lines = between_fences.splitlines()
+            if lines and lines[0].strip().lower() in ["json", "jsonc", ""]:
+                between_fences = "\n".join(lines[1:]).strip()
+
+            cleaned = between_fences
         else:
+            # Malformed fences - just remove all backticks
             cleaned = cleaned.replace("```", "").strip()
 
+    # Remove standalone "json" line at start (sometimes appears without fences)
     lines = cleaned.splitlines()
-    if lines and lines[0].strip() == "json":
+    if lines and lines[0].strip().lower() in ["json", "jsonc"]:
         cleaned = "\n".join(lines[1:]).strip()
 
-    # If there is still non-JSON preamble or postamble (e.g. the model added an
-    # explanation around the JSON object), extract just the first {...} block.
-    # This makes classification robust against models that add natural-language
-    # text before or after the required JSON when given long conversation context.
-    if not cleaned.startswith("{"):
+    # Extract just the JSON object if surrounded by text
+    # This handles: "Here is the result: {...} Hope this helps!"
+    if cleaned and not cleaned.startswith("{"):
         start = cleaned.find("{")
         if start != -1:
-            end = cleaned.rfind("}")
-            if end > start:
-                cleaned = cleaned[start : end + 1]
+            # Find matching closing brace by counting depth
+            depth = 0
+            for i in range(start, len(cleaned)):
+                if cleaned[i] == "{":
+                    depth += 1
+                elif cleaned[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        cleaned = cleaned[start : i + 1]
+                        break
 
     return cleaned
 
@@ -73,8 +105,8 @@ def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
         print(json.dumps(payload.to_dict(), indent=2), file=sys.stderr)
 
     # Use configured host or fallback to constant
-    ollama_base = f"http://{args.ollama_host}" if hasattr(args, 'ollama_host') and args.ollama_host else OLLAMA_API_BASE
-    
+    ollama_base = f"http://{args.ollama_host}" if hasattr(args, "ollama_host") and args.ollama_host else OLLAMA_API_BASE
+
     response = requests.post(
         f"{ollama_base}{OLLAMA_CHAT_ENDPOINT}",
         headers=headers,
@@ -102,7 +134,48 @@ def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
 
         # update_session(args, payload["messages"], answer)
         agent_content_clean = _extract_json_payload(answer)
-        return json.loads(agent_content_clean)
+
+        # Log what we're about to parse
+        logger.debug(
+            "Extracted JSON payload for parsing",
+            extra={
+                "raw_answer_length": len(answer),
+                "cleaned_length": len(agent_content_clean),
+                "cleaned_preview": agent_content_clean[:200] if agent_content_clean else "(empty)",
+            },
+        )
+
+        # Handle empty or invalid JSON
+        if not agent_content_clean or not agent_content_clean.strip():
+            logger.error(
+                "Empty JSON payload after extraction",
+                extra={
+                    "raw_answer": answer[:500],
+                    "finish_reason": finish_reason,
+                },
+            )
+            return {}
+
+        try:
+            return json.loads(agent_content_clean)
+        except json.JSONDecodeError as e:
+            logger.error(
+                "JSON parse error",
+                extra={
+                    "error": str(e),
+                    "error_pos": e.pos,
+                    "error_lineno": e.lineno,
+                    "error_colno": e.colno,
+                    "cleaned_payload_length": len(agent_content_clean),
+                    "cleaned_payload_repr": repr(agent_content_clean),
+                    "cleaned_payload_full": agent_content_clean,
+                    "raw_answer_length": len(answer),
+                    "raw_answer_repr": repr(answer),
+                    "raw_answer_first_500": answer[:500],
+                    "raw_answer_last_500": answer[-500:] if len(answer) > 500 else answer,
+                },
+            )
+            raise
     else:
         print("Error:", response.status_code, response.text)
         return {}
@@ -162,23 +235,20 @@ def summarize_user_prompt(args: AgentixConfig) -> str:
     args.session = session_id
 
 
-def query_api_streaming(
-    args: AgentixConfig, 
-    payload: QueryPayload
-) -> Iterator[dict]:
+def query_api_streaming(args: AgentixConfig, payload: QueryPayload) -> Iterator[dict]:
     """
     Stream responses from Ollama API.
-    
+
     This function sends a request to Ollama with streaming enabled
     and yields response chunks as they arrive.
-    
+
     Args:
         args: AgentixConfig with model and settings
         payload: QueryPayload to send to API
-        
+
     Yields:
         Response chunk dictionaries from Ollama
-        
+
     Example:
         for chunk in query_api_streaming(config, payload):
             if chunk.get("done"):
@@ -187,18 +257,18 @@ def query_api_streaming(
             print(content, end="", flush=True)
     """
     headers = {"Content-Type": "application/json"}
-    
+
     # Convert payload to dict and enable streaming
     payload_dict = payload if isinstance(payload, dict) else payload.to_dict()
     payload_dict["stream"] = True
-    
+
     if args.debug:
         print("Streaming payload:", file=sys.stderr)
         print(json.dumps(payload_dict, indent=2), file=sys.stderr)
-    
+
     # Use configured host or fallback to constant
-    ollama_base = f"http://{args.ollama_host}" if hasattr(args, 'ollama_host') and args.ollama_host else OLLAMA_API_BASE
-    
+    ollama_base = f"http://{args.ollama_host}" if hasattr(args, "ollama_host") and args.ollama_host else OLLAMA_API_BASE
+
     try:
         response = requests.post(
             f"{ollama_base}{OLLAMA_CHAT_ENDPOINT}",
@@ -207,7 +277,7 @@ def query_api_streaming(
             timeout=300,
             stream=True,  # Enable streaming mode
         )
-        
+
         if response.status_code == 200:
             # Iterate over lines in the response
             for line in response.iter_lines():
@@ -215,29 +285,34 @@ def query_api_streaming(
                     try:
                         # Decode line
                         line_str = line.decode("utf-8")
-                        
+
                         # Strip SSE "data: " prefix if present
                         if line_str.startswith("data: "):
                             line_str = line_str[6:]  # Remove "data: " prefix
-                        
+
                         # Skip empty lines after stripping prefix
                         if not line_str.strip():
                             continue
-                        
+
                         chunk = json.loads(line_str)
-                        
+
                         if args.debug:
                             print(f"Chunk: {chunk}", file=sys.stderr)
-                        
+
                         yield chunk
-                        
+
                         # Stop if done
                         if chunk.get("done", False):
                             break
                     except json.JSONDecodeError as e:
                         if args.debug:
                             print(f"JSON decode error: {e}", file=sys.stderr)
-                            print(f"Line was: {line_str[:100]}", file=sys.stderr)
+                            print(f"Error position: line {e.lineno}, col {e.colno}", file=sys.stderr)
+                            print(f"Line length: {len(line_str)}", file=sys.stderr)
+                            print(f"Line repr: {repr(line_str)}", file=sys.stderr)
+                            print(f"Line content (first 200): {line_str[:200]}", file=sys.stderr)
+                            if len(line_str) > 200:
+                                print(f"Line content (last 200): {line_str[-200:]}", file=sys.stderr)
                         continue
         else:
             # Yield error chunk

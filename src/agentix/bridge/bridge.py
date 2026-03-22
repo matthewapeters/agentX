@@ -438,7 +438,18 @@ class AgentixBridge:
                     ):
                         try:
                             parsed_args = json.loads(entry["arguments"]) if entry["arguments"] else {}
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as e:
+                            logger.warning(
+                                f"Tool call arguments failed JSON parsing: {e}",
+                                extra={
+                                    "tool_name": entry.get("name"),
+                                    "tool_id": entry.get("id"),
+                                    "error_pos": e.pos,
+                                    "arguments_repr": repr(entry["arguments"]),
+                                    "arguments_length": len(entry["arguments"]) if entry["arguments"] else 0,
+                                    "arguments_content": entry["arguments"],
+                                },
+                            )
                             parsed_args = {"_raw": entry["arguments"]}
                         yield ResponseChunk(
                             type=ChunkType.TOOL_CALL,
