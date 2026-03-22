@@ -159,6 +159,45 @@ def _extract_json_payload(text: str) -> str:
     return cleaned
 
 
+
+def _repair_truncated_json(text: str) -> str:
+    """Close unclosed strings and brackets in a truncated JSON response.
+
+    Walks character-by-character tracking string/bracket state, then appends
+    the missing closing characters.  Validates the result with json.loads and
+    raises json.JSONDecodeError if it still cannot be parsed.
+    """
+    stack: list[str] = []
+    in_string = False
+    escape_next = False
+
+    for ch in text:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+        elif not in_string:
+            if ch == '{':
+                stack.append('}')
+            elif ch == '[':
+                stack.append(']')
+            elif ch in ('}', ']'):
+                if stack and stack[-1] == ch:
+                    stack.pop()
+
+    suffix = '"' if in_string else ''
+    while stack:
+        suffix += stack.pop()
+
+    repaired = text + suffix
+    json.loads(repaired)  # raises JSONDecodeError if still invalid
+    return repaired
+
+
 def _get_latest_user_prompt(payload: QueryPayload | dict) -> str:
     payload_dict = payload if isinstance(payload, dict) else payload.to_dict()
     messages = payload_dict.get("messages", [])
@@ -241,6 +280,22 @@ def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
         try:
             return json.loads(agent_content_clean)
         except json.JSONDecodeError as e:
+            # Attempt to recover from responses truncated by a max_tokens limit.
+            try:
+                repaired = _repair_truncated_json(agent_content_clean)
+                result_repaired = json.loads(repaired)
+                logger.warning(
+                    "JSON parse error recovered via truncation repair",
+                    extra={
+                        "original_error": str(e),
+                        "finish_reason": finish_reason,
+                        "suffix_added": repaired[len(agent_content_clean):],
+                    },
+                )
+                return result_repaired
+            except (json.JSONDecodeError, ValueError):
+                pass
+
             logger.error(
                 "JSON parse error",
                 extra={
