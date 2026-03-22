@@ -31,6 +31,15 @@ def _configure_logging() -> None:
     for noisy in ("urllib3", "httpx", "httpcore", "asyncio"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
+    # Configure Agentix classification logging with JSON output
+    try:
+        from agentix.logging_config import configure_logging as configure_agentix_logging
+
+        configure_agentix_logging(str(log_dir))
+    except ImportError:
+        # Agentix logging config not available
+        pass
+
 
 def _detect_username() -> str:
     """Return the best available username for the current process."""

@@ -8,9 +8,14 @@ from .agentix_config import AgentixConfig
 from .constants import SESSIONS_METADATA_FILE
 from .context.prompts import get_prompts
 from .models import get_models
+from .logging_config import configure_logging
+
+# Configure logging at module import
+configure_logging()
 
 try:
     import agentix.server as _server_mod  # noqa: F401 – check availability only
+
     SERVER_AVAILABLE = True
 except ImportError:
     SERVER_AVAILABLE = False
@@ -33,11 +38,60 @@ def main(args: AgentixConfig) -> None:
             except FileNotFoundError:
                 print("No sessions found", file=sys.stderr)
             return
+        case "classify":
+            from .bridge.classify_prompt import classify_prompt
+            from shared.models.context import Context
+
+            prompt = " ".join(args.user or [])
+            if not prompt:
+                print("Error: --classify requires --user 'prompt text'", file=sys.stderr)
+                return
+
+            context = Context()
+
+            print("=" * 80)
+            print("PROMPT:")
+            print(prompt)
+            print("=" * 80)
+            print()
+
+            try:
+                result = classify_prompt(
+                    args,
+                    prompt,
+                    context,
+                    history=[],
+                    max_tokens=500,
+                )
+
+                print("CLASSIFICATION RESULT:")
+                print(
+                    json.dumps(
+                        {
+                            "intent": result.intent.name,
+                            "next_step": result.next_step.name,
+                            "needs_clarification": result.needs_clarification,
+                            "missing_fields": result.missing_fields,
+                            "reasoning_summary": result.reasoning_summary,
+                        },
+                        indent=2,
+                    )
+                )
+            except Exception as e:
+                print(f"Error during classification: {e}", file=sys.stderr)
+                import traceback
+
+                traceback.print_exc()
+            return
         case "serve":
             if not SERVER_AVAILABLE:
-                print("Server functionality requires fastapi. Install with: uv pip install fastapi uvicorn", file=sys.stderr)
+                print(
+                    "Server functionality requires fastapi. Install with: uv pip install fastapi uvicorn",
+                    file=sys.stderr,
+                )
                 return
             from .server import start_server as _start_server
+
             _start_server(args.port)
             return
         case "run_agentix":

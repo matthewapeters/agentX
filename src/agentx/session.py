@@ -187,6 +187,38 @@ class AgentXSession:
             return None
         return content or None
 
+    def _log_classification(self, classification: Optional[PromptClassificationResponse], prompt: str) -> None:
+        """
+        Log classification decision to session.log.
+
+        Args:
+            classification: Classification result or None if disabled
+            prompt: The user prompt that was classified
+        """
+        if not classification:
+            self._session_log.write("🤔 intent: (classification disabled)\n")
+            return
+
+        self._session_log.write(f"🤔 intent: {classification.intent.name}\n")
+        self._session_log.write(f"   reasoning: {classification.reasoning_summary}\n")
+
+        if classification.needs_clarification:
+            self._session_log.write("   ⚠️  needs clarification\n")
+            if classification.missing_fields:
+                self._session_log.write(f"   missing: {', '.join(classification.missing_fields)}\n")
+
+        # Show Working Memory context if available
+        if self.working_memory and self.working_memory.get_facts():
+            wm_facts = self.working_memory.get_facts(enabled_only=True)
+            if wm_facts:
+                key_facts = [f for f in wm_facts if f.key in ("use_tools", "cwd", "project")]
+                if key_facts:
+                    fact_strs = [f"{f.key}={f.value}" for f in key_facts]
+                    self._session_log.write(f"   🏛️  WM context: {', '.join(fact_strs)}\n")
+
+        self._session_log.write(f"💡 path: {classification.next_step.name}\n\n")
+        self._session_log.flush()
+
     def _build_stream_shared_context(self) -> Context:
         """Build prompt context from working memory, history, and enabled session messages."""
         shared_context = Context()
@@ -226,7 +258,8 @@ class AgentXSession:
             shared_context = self._build_stream_shared_context()
             classification = None
             if self.config.get("agentix", {}).get("classify_prompts", True):
-                classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context)
+                classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context, self.working_memory)
+                self._log_classification(classification, prompt)
 
             content_parts: list[str] = []
             for chunk in self.agentix_adapter.process_prompt_generator(
@@ -255,7 +288,8 @@ class AgentXSession:
 
         classification = None
         if self.config.get("agentix", {}).get("classify_prompts", False):
-            classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context)
+            classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context, self.working_memory)
+            self._log_classification(classification, prompt)
             if classification:
                 yield ResponseChunk(
                     type=ChunkType.THINKING,
@@ -265,9 +299,7 @@ class AgentXSession:
 
         thinking_parts: list[str] = []
         content_parts: list[str] = []
-        for chunk in self.agentix_adapter.process_prompt_generator(
-            prompt, shared_context, classification
-        ):
+        for chunk in self.agentix_adapter.process_prompt_generator(prompt, shared_context, classification):
             if chunk.type == ChunkType.THINKING and chunk.content:
                 thinking_parts.append(chunk.content)
             elif chunk.type == ChunkType.CONTENT and chunk.content:
@@ -394,11 +426,13 @@ class AgentXSession:
 
         # Setup tool callbacks
         original_tool_toggle = self.gui._on_tool_toggle
+
         def on_tool_toggle(tool_name: str, enabled: bool):
             enabled_tools = self.gui.get_enabled_tools()
             self.config["agentix"]["available_tools"] = enabled_tools
             self.agentix_adapter.set_enabled_tools(enabled_tools)
             original_tool_toggle(tool_name, enabled)
+
         self.gui._on_tool_toggle = on_tool_toggle
 
         # Populate tools from Agentix
@@ -430,13 +464,7 @@ class AgentXSession:
             from .integration import CodeAnalysisTool
 
             # Client-side tool names
-            client_tool_names = {
-                "read_file",
-                "list_directory",
-                "write_file",
-                "get_file_info",
-                "search_files"
-            }
+            client_tool_names = {"read_file", "list_directory", "write_file", "get_file_info", "search_files"}
 
             # Try client-side tools first
             if tool_name in client_tool_names:
@@ -485,11 +513,7 @@ class AgentXSession:
             self.add_message_to_context(tool_call_msg)
 
             # Display tool call in GUI
-            self._safe_root_after(
-                lambda: self.gui.display_agent_response(
-                    f"\n[🔧 Calling tool: {tool_name}]\n"
-                )
-            )
+            self._safe_root_after(lambda: self.gui.display_agent_response(f"\n[🔧 Calling tool: {tool_name}]\n"))
 
             # Execute the tool
             result = self.execute_tool(tool_name, tool_input)
@@ -507,9 +531,7 @@ class AgentXSession:
             # Display tool result in GUI
             self._safe_root_after(
                 lambda: self.gui.display_agent_response(
-                    f"[📋 Tool result: {result[:100]}...]\n"
-                    if len(result) > 100
-                    else f"[📋 Tool result: {result}]\n"
+                    f"[📋 Tool result: {result[:100]}...]\n" if len(result) > 100 else f"[📋 Tool result: {result}]\n"
                 )
             )
 
@@ -594,6 +616,7 @@ class AgentXSession:
         if self.working_memory is None:
             return
         from shared.models.working_memory import PromotionStatus
+
         result = self.working_memory.promote_to_user(compound_key)
         if result.status == PromotionStatus.OK:
             self._safe_root_after(self.refresh_working_memory_gui)
@@ -605,6 +628,7 @@ class AgentXSession:
         """Show conflict resolution dialog for promote operation."""
         import tkinter.simpledialog as sd
         from shared.models.working_memory import PromotionStatus
+
         key = compound_key.split(":", 1)[-1] if ":" in compound_key else compound_key
         existing_preview = str(result.conflicting_value)[:60]
         choice = sd.askstring(
@@ -636,6 +660,7 @@ class AgentXSession:
             return
         import json as _json
         from shared.models.working_memory import FactOwner
+
         parsed_value = value_str
         try:
             candidate = _json.loads(value_str)
@@ -745,14 +770,12 @@ class AgentXSession:
             return
         # Convert current message attachments to AttachmentInfo DTOs
         current_attachments = [
-            AttachmentInfo.from_attachment(att, is_from_history=False)
-            for att in self.message.attachments
+            AttachmentInfo.from_attachment(att, is_from_history=False) for att in self.message.attachments
         ]
 
         # Convert enabled history attachments to AttachmentInfo DTOs
         history_attachments = [
-            AttachmentInfo.from_attachment(att, is_from_history=True)
-            for att in self.enabled_history_attachments
+            AttachmentInfo.from_attachment(att, is_from_history=True) for att in self.enabled_history_attachments
         ]
 
         # Update via GUIManager
@@ -763,6 +786,7 @@ class AgentXSession:
         if self.working_memory is None:
             return
         from shared.models.working_memory import FactOwner
+
         self.working_memory.add_fact(FactOwner.USER, key, value)
         self._safe_root_after(self.refresh_working_memory_gui)
 
@@ -864,14 +888,8 @@ class AgentXSession:
                 return
 
         # Display the user prompt and attachments
-        attachment_filenames = [
-            os.path.basename(att.file_path) for att in self.message.attachments
-        ]
-        self._safe_root_after(
-            lambda: self.gui.display_user_message(
-                prompt, attachment_filenames, datetime.now()
-            )
-        )
+        attachment_filenames = [os.path.basename(att.file_path) for att in self.message.attachments]
+        self._safe_root_after(lambda: self.gui.display_user_message(prompt, attachment_filenames, datetime.now()))
         self._write_log(f"\n👤 User: {prompt}\n")
         self._output_logger.log("user", prompt)
 
@@ -899,7 +917,8 @@ class AgentXSession:
             # Classify prompt if enabled
             classification = None
             if config.get("agentix", {}).get("classify_prompts", True):
-                classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context)
+                classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context, self.working_memory)
+                self._log_classification(classification, prompt)
 
             # Reset per-turn display state
             self._assistant_header_shown = False
@@ -913,17 +932,15 @@ class AgentXSession:
                 on_content=lambda text: self._handle_stream_content(text),
                 on_thinking=lambda text: self._display_thinking(text),
                 on_tool_call=lambda name, args, round_i=None: self._display_tool_call(name, args, round_i),
-                on_tool_result=lambda tool_name, output, round_i=None, tool_id=None: self._display_tool_result(tool_name, output, round_i, tool_id=tool_id),
-                on_error=lambda msg, code: self._safe_root_after(
-                    lambda: self.gui.display_error(f"{code}: {msg}")
+                on_tool_result=lambda tool_name, output, round_i=None, tool_id=None: self._display_tool_result(
+                    tool_name, output, round_i, tool_id=tool_id
                 ),
+                on_error=lambda msg, code: self._safe_root_after(lambda: self.gui.display_error(f"{code}: {msg}")),
                 on_classification=self._make_classification_callback(config),
             )
 
             # Stream through Agentix
-            for chunk in self.agentix_adapter.process_prompt_generator(
-                prompt, shared_context, classification
-            ):
+            for chunk in self.agentix_adapter.process_prompt_generator(prompt, shared_context, classification):
                 if not self._is_streaming.is_set():
                     break
 
@@ -1001,9 +1018,7 @@ class AgentXSession:
         """Helper to display thinking text with header on first call."""
         if not getattr(self, "_thinking_header_shown", False):
             header = f"\n{GUIManager.MESSAGE_ROLES['thinking']} ({self.active_model})\t(The agent is thinking...)\n"
-            self._safe_root_after(
-                lambda: self.gui.display_agent_thinking(header)
-            )
+            self._safe_root_after(lambda: self.gui.display_agent_thinking(header))
             self._write_log(header)
             self._thinking_header_shown = True
         self._safe_root_after(lambda: self.gui.display_agent_thinking(text))
@@ -1028,7 +1043,9 @@ class AgentXSession:
         self._output_logger.log("tool_call", input_text)
         self.context.add_tool_call_message(tool_name, tool_input)
 
-    def _display_tool_result(self, tool_name: str, output, round_index: int | None = None, tool_id: str | None = None) -> None:
+    def _display_tool_result(
+        self, tool_name: str, output, round_index: int | None = None, tool_id: str | None = None
+    ) -> None:
         """
         Display a tool result in the GUI and store it in context.
 
@@ -1059,9 +1076,6 @@ class AgentXSession:
         )
         # Refresh Working Memory panel in case the tool mutated it
         self._safe_root_after(self.refresh_working_memory_gui)
-
-
-
 
     def _display_assistant_header(self) -> None:
         """Display the assistant header once per response stream."""
@@ -1115,6 +1129,7 @@ class AgentXSession:
         if self._pending_prompt is None:
             self._pending_prompt = self.gui.get_user_input()
         self._stream_via_agentix()
+
     def perform_service_handshake(self):
         """
         Performs service startup and handshake with required services.
@@ -1128,9 +1143,7 @@ class AgentXSession:
         config = self.config
         ollama_host = config["agentx"]["ollama_host"]
         ollama_model = self.active_model
-        timeout_seconds = config["agentx"].get(
-            "ollama_initial_load_timeout_seconds", 120
-        )
+        timeout_seconds = config["agentx"].get("ollama_initial_load_timeout_seconds", 120)
 
         # Determine which services to ensure are running
         services_to_start = ["ollama", "agentix"]
@@ -1141,8 +1154,7 @@ class AgentXSession:
 
         if not all_services_started:
             raise RuntimeError(
-                "Agentix service did not start successfully. "
-                "AgentX requires Agentix for model interactions."
+                "Agentix service did not start successfully. " "AgentX requires Agentix for model interactions."
             )
 
         # Perform Ollama model handshake and list available models
@@ -1166,6 +1178,7 @@ class AgentXSession:
                     models_response = client.get(f"http://{ollama_host}/api/tags")
                     if models_response.status_code == 200:
                         import json
+
                         models_data = models_response.json()
                         models = models_data.get("models", [])
                         if models:
@@ -1204,9 +1217,7 @@ class AgentXSession:
             self.gui.display_error("No input provided.")
             self._pending_prompt = None
             return
-        self._streaming_thread = threading.Thread(
-            target=self.stream_ollama_response_worker, daemon=True
-        )
+        self._streaming_thread = threading.Thread(target=self.stream_ollama_response_worker, daemon=True)
         self._streaming_thread.start()
 
     def interrupt_streaming(self):

@@ -28,6 +28,7 @@ class AgentixConfig:
     list_models: bool = False
     list_sessions: bool = False
     list_prompts: bool = False
+    classify: bool = False
     session: str = DEFAULT_SESSION_ID
     system: list[str] | None = None
     model: str | None = None
@@ -62,6 +63,8 @@ class AgentixConfig:
             return "list_sessions"
         if self.list_prompts:
             return "list_prompts"
+        if self.classify:
+            return "classify"
         if self.serve:
             return "serve"
         return "run_agentix"
@@ -95,6 +98,13 @@ class AgentixConfig:
             default=False,
             action="store_true",
             help="List all system prompts",
+        )
+        args.add_argument(
+            "--classify",
+            dest="classify",
+            default=False,
+            action="store_true",
+            help="Test classification for a prompt (use with --user)",
         )
         args.add_argument(
             "--session",
@@ -140,9 +150,7 @@ class AgentixConfig:
             action="store_true",
             help="Replace the file contents with the LLM output",
         )
-        args.add_argument(
-            "--debug", type=bool, default=False, help="Enable debug output"
-        )
+        args.add_argument("--debug", type=bool, default=False, help="Enable debug output")
         args.add_argument(
             "--with-front-end",
             dest="with_front_end",
@@ -237,7 +245,7 @@ class AgentixConfig:
         """
         if tomllib is None:
             return {}  # TOML support not available
-        
+
         path = AgentixConfig.find_local_config(filename)
         if path:
             with open(path, "rb") as f:

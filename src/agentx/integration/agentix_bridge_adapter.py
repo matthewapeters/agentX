@@ -5,8 +5,11 @@ AgentX uses tkinter which requires all GUI updates to happen on the main thread,
 while Agentix uses async/await patterns. This adapter bridges the two models.
 """
 
+import json
+import logging
 import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -29,33 +32,35 @@ from agentix.prompt_classification_response import (
 from shared.models.context import Context
 from shared.models.response import ResponseChunk
 
+logger = logging.getLogger("agentx.adapter")
+
 
 class AgentixBridgeAdapter:
     """
     Adapts AgentixBridge for use in AgentX's synchronous threaded model.
-    
+
     This adapter:
     - Converts AgentX config format to AgentixConfig
     - Provides synchronous wrappers for async bridge methods
     - Handles generator-based streaming compatible with tkinter
     - Thread-safe for use in background threads
-    
+
     Example usage:
         adapter = AgentixBridgeAdapter(config)
-        
+
         # Classify prompt
         classification = adapter.classify_prompt_sync(prompt, context)
-        
+
         # Stream response
         for chunk in adapter.process_prompt_generator(prompt, context, classification):
             # Update GUI with chunk
             gui.append_output(chunk.content)
     """
-    
+
     def __init__(self, config: dict):
         """
         Initialize adapter with AgentX configuration.
-        
+
         Args:
             config: AgentX configuration dictionary with structure:
                 {
@@ -81,6 +86,7 @@ class AgentixBridgeAdapter:
                 get_client_tool_implementations,
                 get_client_tool_schemas,
             )
+
             impls = get_client_tool_implementations()
             schemas = get_client_tool_schemas()
             self.bridge.register_tool_implementations(impls, schemas)
@@ -102,45 +108,96 @@ class AgentixBridgeAdapter:
                 WorkingMemoryToolExecutor,
                 get_working_memory_tool_schemas,
             )
+
             executor = WorkingMemoryToolExecutor(working_memory)
             impls = executor.get_tool_implementations()
             schemas = get_working_memory_tool_schemas()
             self.bridge.register_tool_implementations(impls, schemas)
         except Exception as exc:
             print(f"⚠ Could not register working memory tools: {exc}")
-    
+
     def classify_prompt_sync(
-        self, 
-        prompt: str, 
-        context: Context
+        self,
+        prompt: str,
+        context: Context,
+        working_memory: Optional["WorkingMemory"] = None,
     ) -> Optional[PromptClassificationResponse]:
         """
         Synchronously classify user prompt.
-        
+
         This is a blocking call suitable for background threads.
-        
+
         Args:
             prompt: User's input text
             context: Current conversation context
-            
+            working_memory: Optional WorkingMemory instance for context-aware classification
+
         Returns:
             PromptClassificationResponse or None if classification disabled
         """
         if not self.agentix_config.classify_prompts:
             return None
-        
+
         try:
-            return self.bridge.classify_prompt(prompt, context)
-        except Exception as e:
-            print(f"Classification error: {e}")
+            return self.bridge.classify_prompt(prompt, context, working_memory)
+        except json.JSONDecodeError as e:
+            # JSON parsing failed — log raw LLM output
+            logger.error(
+                "Classification JSON parse error",
+                extra={
+                    "error": str(e),
+                    "prompt_preview": prompt[:200] if prompt else "",
+                    "context_size": len(context.get_enabled_messages()) if context else 0,
+                    "model": self.agentix_config.classification_model or self.agentix_config.model,
+                },
+                exc_info=True,
+            )
             return PromptClassificationResponse(
                 intent=Intent.conversation,
                 needs_clarification=False,
                 missing_fields=[],
-                reasoning_summary="Classification unavailable",
+                reasoning_summary=f"JSON parse error: {str(e)[:50]}",
                 next_step=NextStep.respond_directly,
             )
-    
+        except KeyError as e:
+            # Enum lookup failed — invalid intent/next_step from LLM
+            logger.error(
+                "Classification enum error",
+                extra={
+                    "error": str(e),
+                    "prompt_preview": prompt[:200] if prompt else "",
+                    "valid_intents": [i.name for i in Intent],
+                    "valid_next_steps": [n.name for n in NextStep],
+                },
+                exc_info=True,
+            )
+            return PromptClassificationResponse(
+                intent=Intent.conversation,
+                needs_clarification=False,
+                missing_fields=[],
+                reasoning_summary=f"Invalid enum: {str(e)[:50]}",
+                next_step=NextStep.respond_directly,
+            )
+        except Exception as e:
+            # Unknown error — log full traceback
+            logger.error(
+                "Classification unexpected error",
+                extra={
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "prompt_preview": prompt[:200] if prompt else "",
+                    "traceback": traceback.format_exc(),
+                },
+                exc_info=True,
+            )
+            return PromptClassificationResponse(
+                intent=Intent.conversation,
+                needs_clarification=False,
+                missing_fields=[],
+                reasoning_summary=f"Error: {type(e).__name__}",
+                next_step=NextStep.respond_directly,
+            )
+
     def process_prompt_generator(
         self,
         prompt: str,
@@ -149,36 +206,35 @@ class AgentixBridgeAdapter:
     ) -> Iterator[ResponseChunk]:
         """
         Process prompt and yield response chunks.
-        
+
         This generator is compatible with AgentX's streaming loop.
         It yields ResponseChunk objects that can be processed by
         the response handler.
-        
+
         Args:
             prompt: User's input text
             context: Current conversation context
             classification: Optional pre-computed classification
-            
+
         Yields:
             ResponseChunk objects with content, tool calls, etc.
         """
         try:
             # Bridge returns an iterator, so we can yield directly
-            yield from self.bridge.process_prompt_streaming(
-                prompt, context, classification
-            )
+            yield from self.bridge.process_prompt_streaming(prompt, context, classification)
         except Exception as e:
             # Yield error chunk
             from shared.models.response import ChunkType
+
             yield ResponseChunk(
                 type=ChunkType.ERROR,
                 content=f"Error processing prompt: {str(e)}",
             )
-    
+
     def get_models(self) -> list[dict]:
         """
         Get available models from Ollama.
-        
+
         Returns:
             List of model dictionaries with name, size, details
         """
@@ -187,11 +243,11 @@ class AgentixBridgeAdapter:
         except Exception as e:
             print(f"Error fetching models: {e}")
             return []
-    
+
     def get_tools(self) -> list[dict]:
         """
         Get available MCP tools.
-        
+
         Returns:
             List of tool definitions in OpenAI format
         """
@@ -216,26 +272,26 @@ class AgentixBridgeAdapter:
             self.bridge.set_enabled_tools(enabled_tool_names)
         except Exception as exc:
             print(f"⚠ Could not update enabled tools: {exc}")
-    
+
     def _convert_config(self, agentx_config: dict) -> AgentixConfig:
         """
         Convert AgentX config dict to AgentixConfig.
-        
+
         Maps between the two configuration formats:
         - agentx.ollama_model -> model
         - agentx.ollama_host -> ollama_host
         - agentix.classify_prompts -> classify_prompts
         - etc.
-        
+
         Args:
             agentx_config: AgentX configuration dictionary
-            
+
         Returns:
             AgentixConfig instance
         """
         agentx_section = agentx_config.get("agentx", {})
         agentix_section = agentx_config.get("agentix", {})
-        
+
         return AgentixConfig(
             model=agentx_section.get("ollama_model", "llama3.2"),
             temperature=agentx_section.get("temperature", 0.7),
@@ -244,30 +300,22 @@ class AgentixBridgeAdapter:
             debug=agentix_section.get("debug", False),
             ollama_host=agentx_section.get("ollama_host", "localhost:11434"),
             classify_prompts=agentix_section.get("classify_prompts", True),
-            classification_model=agentix_section.get(
-                "agentix_bench_classification_model"
-            ),
-            classification_backend=agentix_section.get(
-                "classification_backend", "ollama"
-            ),
-            classification_torch_model=agentix_section.get(
-                "classification_torch_model"
-            ),
-            classification_torch_device=agentix_section.get(
-                "classification_torch_device"
-            ),
+            classification_model=agentix_section.get("agentix_bench_classification_model"),
+            classification_backend=agentix_section.get("classification_backend", "ollama"),
+            classification_torch_model=agentix_section.get("classification_torch_model"),
+            classification_torch_device=agentix_section.get("classification_torch_device"),
         )
 
 
 def create_adapter(config: dict) -> AgentixBridgeAdapter:
     """
     Create Agentix bridge adapter.
-    
+
     Agentix is always integrated.
-    
+
     Args:
         config: AgentX configuration dictionary
-        
+
     Returns:
         AgentixBridgeAdapter instance
     """

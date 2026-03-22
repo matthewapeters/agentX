@@ -4,6 +4,7 @@ Programmatic API bridge for Agentix.
 This module provides a clean programmatic interface to Agentix functionality
 that can be consumed by AgentX GUI without going through the CLI.
 """
+
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -70,6 +71,7 @@ class AgentixBridge:
         self,
         prompt: str,
         context: Context,
+        working_memory: Optional["WorkingMemory"] = None,
     ) -> PromptClassificationResponse:
         """
         Classify user intent before processing.
@@ -82,6 +84,7 @@ class AgentixBridge:
         Args:
             prompt: User's input text
             context: Current conversation context
+            working_memory: Optional WorkingMemory instance for context-aware classification
 
         Returns:
             PromptClassificationResponse with intent and next_step
@@ -92,6 +95,7 @@ class AgentixBridge:
             context,
             self._context_to_history(context),
             self._get_max_tokens(),
+            working_memory=working_memory,
         )
 
     def process_prompt_streaming(
@@ -208,10 +212,7 @@ class AgentixBridge:
         result.extend(self._extra_tool_schemas)
 
         if self._disabled_tools is not None:
-            result = [
-                t for t in result
-                if t.get("function", {}).get("name") not in self._disabled_tools
-            ]
+            result = [t for t in result if t.get("function", {}).get("name") not in self._disabled_tools]
 
         return result
 
@@ -225,10 +226,7 @@ class AgentixBridge:
         Args:
             enabled_tool_names: Tool names the user wants enabled.
         """
-        all_names = {
-            t.get("function", {}).get("name")
-            for t in (self._extra_tool_schemas or [])
-        }
+        all_names = {t.get("function", {}).get("name") for t in (self._extra_tool_schemas or [])}
         # Determine which tools to disable (those known but not in the enabled list)
         self._disabled_tools = all_names - set(enabled_tool_names)
 
@@ -325,6 +323,7 @@ class AgentixBridge:
             try:
                 import agentix.tools.cst_tools as cst_mod
                 import inspect
+
                 for name, fn in inspect.getmembers(cst_mod, inspect.isfunction):
                     if not name.startswith("_"):
                         self._tool_impl_cache[name] = fn
@@ -334,6 +333,7 @@ class AgentixBridge:
             try:
                 import agentix.tools.ast_tools as ast_mod
                 import inspect
+
                 for name, fn in inspect.getmembers(ast_mod, inspect.isfunction):
                     if not name.startswith("_"):
                         self._tool_impl_cache[name] = fn
@@ -433,7 +433,9 @@ class AgentixBridge:
 
                 # ── Finish: emit accumulated tool calls or DONE ───────────
                 if finish_reason == "tool_calls":
-                    for entry in sorted(pending_tool_calls.values(), key=lambda e: list(pending_tool_calls.values()).index(e)):
+                    for entry in sorted(
+                        pending_tool_calls.values(), key=lambda e: list(pending_tool_calls.values()).index(e)
+                    ):
                         try:
                             parsed_args = json.loads(entry["arguments"]) if entry["arguments"] else {}
                         except json.JSONDecodeError:
@@ -682,11 +684,13 @@ class AgentixBridge:
                         tool_id=tc.tool_id,
                         round_index=round_index,
                     )
-                    tool_result_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.tool_id or f"call_{tc_list.index(tc)}",
-                        "content": result.to_llm_format(),
-                    })
+                    tool_result_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.tool_id or f"call_{tc_list.index(tc)}",
+                            "content": result.to_llm_format(),
+                        }
+                    )
 
             messages.extend(tool_result_messages)
 

@@ -16,6 +16,7 @@ Always evaluate in this exact order:
 4. Routing assignment
 
 If multiple categories seem plausible, apply these tie-breakers:
+
 - If unsafe content is present, choose "safety_issue".
 - Else if the request needs multiple steps OR key details are missing, choose "complex_action".
 - Else if one clear atomic action is requested, choose "simple_action".
@@ -95,6 +96,53 @@ Rules for "next_step" are fixed and non-negotiable:
 
 [ END OF SYSTEM PROMPT ]
 
+## [WORKING MEMORY CONTEXT]
+
+When the user prompt is preceded by a `<working_memory>` block, use those
+facts to inform your classification decisions:
+
+```
+<working_memory>
+👤 cwd: /Projects/agentX
+👤 use_tools: true
+🤖 last_action: created file example.md
+</working_memory>
+```
+
+**Classification Rules for Working Memory Context:**
+
+1. **If `use_tools` is `true`** and the request could be answered with tools,
+   classify as `simple_action` or `complex_action` (NOT `conversation`).
+
+2. **If `cwd` is present** and the user says "working directory", "current
+   directory", "here", or omits a path entirely, do NOT flag `directory_path`
+   as missing — it's available from context.
+
+3. **User-owned facts** (👤) are authoritative preferences; prioritize them
+   over default heuristics.
+
+4. **Agent-owned facts** (🤖) represent session state; use them for
+   disambiguation (e.g., "continue that task" refers to `last_action`).
+
+5. **Project-specific context** (e.g., `project: agentx`) should inform
+   relevance judgments for tool operations.
+
+**Examples:**
+
+- User says: "list the working directory"  
+  WM contains: `cwd: /Projects/agentX`  
+  → intent = "simple_action", next_step = "single_tool", missing_fields = []
+
+- User says: "create a summary of the codebase"  
+  WM contains: `use_tools: true`, `project: agentx`  
+  → intent = "complex_action", next_step = "invoke_planner"
+  (Multi-step: search files, read files, synthesize, write file)
+
+- User says: "what did I just do?"  
+  WM contains: `last_action: created tests/test_example.py`  
+  → intent = "conversation", next_step = "respond_directly"
+  (Can answer from WM without tools)
+
 ## [WORKING MEMORY OPERATIONS]
 
 The agent has a Working Memory store (🏛️) that holds persistent facts across the session.
@@ -119,8 +167,9 @@ Users may ask to add, update, remove, or query facts. Classify these as follows:
 ## [FILE SYSTEM OPERATIONS]
 
 ⚠️ DISAMBIGUATION: "working directory" and "working memory" are DIFFERENT concepts.
-  - "working directory" = a filesystem path (the cwd) → file-system tool operation
-  - "working memory" = the agent's fact store → conversation/WM tool operation
+
+- "working directory" = a filesystem path (the cwd) → file-system tool operation
+- "working memory" = the agent's fact store → conversation/WM tool operation
 
 The agent has file-system tools: `list_directory`, `read_file`, `write_file`,
 `search_files`. Classify file-system requests as follows:
