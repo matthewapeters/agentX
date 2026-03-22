@@ -710,7 +710,25 @@ class AgentixBridge:
         # (e.g. max_rounds exhausted, or LLM retried a tool in the last round),
         # run one final LLM call with NO tool schemas to force a text response.
         if any_tools_called and not got_content:
-            for chunk in self._iter_llm_chunks(messages):
+            # Append a directive so the model synthesises instead of calling tools.
+            # Fine-tuned models sometimes call tools even without tool schemas;
+            # the explicit instruction reliably steers them toward a text answer.
+            synthesis_messages = messages + [
+                {
+                    "role": "user",
+                    "content": (
+                        "You have gathered enough information through your tool calls. "
+                        "Now write your complete response to the original request. "
+                        "Do not call any more tools."
+                    ),
+                }
+            ]
+            for chunk in self._iter_llm_chunks(synthesis_messages):
+                # Don't forward unexpected tool-call chunks from the synthesis
+                # phase: they will not be executed and would leave orphaned
+                # tool-call nodes in the GUI.
+                if chunk.type == ChunkType.TOOL_CALL:
+                    continue
                 yield chunk
                 if chunk.type == ChunkType.CONTENT and chunk.content:
                     got_content = True
