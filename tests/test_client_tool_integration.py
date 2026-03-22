@@ -14,14 +14,15 @@ import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
 
-
 # ---------------------------------------------------------------------------
 # Standalone wrapper function tests
 # ---------------------------------------------------------------------------
 
+
 class TestClientToolFunctions:
     def test_read_file_returns_contents(self, tmp_path):
         from agentx.integration.client_tool_executor import read_file
+
         f = tmp_path / "hello.txt"
         f.write_text("hello world")
         result = read_file(str(f))
@@ -29,6 +30,7 @@ class TestClientToolFunctions:
 
     def test_write_file_creates_file(self, tmp_path):
         from agentx.integration.client_tool_executor import write_file
+
         target = tmp_path / "out.txt"
         result = write_file(str(target), "test content")
         assert target.read_text() == "test content"
@@ -36,6 +38,7 @@ class TestClientToolFunctions:
 
     def test_write_file_append(self, tmp_path):
         from agentx.integration.client_tool_executor import write_file
+
         target = tmp_path / "out.txt"
         write_file(str(target), "line1\n")
         write_file(str(target), "line2\n", append=True)
@@ -43,6 +46,7 @@ class TestClientToolFunctions:
 
     def test_list_directory_returns_files(self, tmp_path):
         from agentx.integration.client_tool_executor import list_directory
+
         (tmp_path / "a.py").write_text("")
         (tmp_path / "b.txt").write_text("")
         result = list_directory(str(tmp_path))
@@ -51,6 +55,7 @@ class TestClientToolFunctions:
 
     def test_list_directory_pattern(self, tmp_path):
         from agentx.integration.client_tool_executor import list_directory
+
         (tmp_path / "a.py").write_text("")
         (tmp_path / "b.txt").write_text("")
         result = list_directory(str(tmp_path), pattern="*.py")
@@ -59,6 +64,7 @@ class TestClientToolFunctions:
 
     def test_get_file_info_returns_json(self, tmp_path):
         from agentx.integration.client_tool_executor import get_file_info
+
         f = tmp_path / "info.txt"
         f.write_text("data")
         result = get_file_info(str(f))
@@ -68,6 +74,7 @@ class TestClientToolFunctions:
 
     def test_search_files_finds_matches(self, tmp_path):
         from agentx.integration.client_tool_executor import search_files
+
         (tmp_path / "main.py").write_text("")
         (tmp_path / "test.py").write_text("")
         (tmp_path / "readme.md").write_text("")
@@ -78,6 +85,7 @@ class TestClientToolFunctions:
 
     def test_read_file_missing_returns_error_string(self, tmp_path):
         from agentx.integration.client_tool_executor import read_file
+
         result = read_file(str(tmp_path / "does_not_exist.txt"))
         assert "Error" in result or "not found" in result.lower()
 
@@ -86,13 +94,15 @@ class TestClientToolFunctions:
 # Schema generation
 # ---------------------------------------------------------------------------
 
+
 class TestClientToolSchemas:
     def setup_method(self):
         from agentx.integration.client_tool_executor import get_client_tool_schemas
+
         self.schemas = get_client_tool_schemas()
 
-    def test_returns_five_schemas(self):
-        assert len(self.schemas) == 5
+    def test_returns_six_schemas(self):
+        assert len(self.schemas) == 6
 
     def test_all_are_function_type(self):
         for s in self.schemas:
@@ -100,7 +110,7 @@ class TestClientToolSchemas:
 
     def test_tool_names_present(self):
         names = {s["function"]["name"] for s in self.schemas}
-        assert names == {"read_file", "write_file", "list_directory", "get_file_info", "search_files"}
+        assert names == {"read_file", "write_file", "list_directory", "get_file_info", "search_files", "grep_files"}
 
     def test_read_file_has_path_required(self):
         schema = next(s for s in self.schemas if s["function"]["name"] == "read_file")
@@ -125,10 +135,12 @@ class TestClientToolSchemas:
 # Bridge registration
 # ---------------------------------------------------------------------------
 
+
 class TestBridgeClientToolRegistration:
     def _make_bridge(self):
         from agentix.bridge.bridge import AgentixBridge
         from agentix.agentix_config import AgentixConfig
+
         config = AgentixConfig(model="llama3.2", tools=[], debug=False)
         return AgentixBridge(config)
 
@@ -150,6 +162,7 @@ class TestBridgeClientToolRegistration:
             get_client_tool_implementations,
             get_client_tool_schemas,
         )
+
         bridge = self._make_bridge()
         bridge.register_tool_implementations(
             get_client_tool_implementations(),
@@ -166,6 +179,7 @@ class TestBridgeClientToolRegistration:
             get_client_tool_implementations,
             get_client_tool_schemas,
         )
+
         bridge = self._make_bridge()
         bridge.register_tool_implementations(
             get_client_tool_implementations(),
@@ -190,6 +204,7 @@ class TestBridgeClientToolRegistration:
 # Adapter auto-registration
 # ---------------------------------------------------------------------------
 
+
 class TestAdapterRegistersClientTools:
     def test_adapter_registers_client_tools_on_init(self):
         """AgentixBridgeAdapter.__init__ should register client tools without error."""
@@ -198,6 +213,7 @@ class TestAdapterRegistersClientTools:
             "agentix": {"classify_prompts": False},
         }
         from agentx.integration.agentix_bridge_adapter import AgentixBridgeAdapter
+
         adapter = AgentixBridgeAdapter(config)
         tools = adapter.bridge.get_available_tools()
         names = {t["function"]["name"] for t in tools}
@@ -210,6 +226,7 @@ class TestAdapterRegistersClientTools:
             "agentix": {"classify_prompts": False},
         }
         from agentx.integration.agentix_bridge_adapter import AgentixBridgeAdapter
+
         adapter = AgentixBridgeAdapter(config)
         test_file = tmp_path / "exec_test.txt"
         test_file.write_text("adapter exec test")
