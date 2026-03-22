@@ -47,6 +47,7 @@ class AgentixConfig:
     classification_backend: str = "ollama"
     classification_torch_model: str | None = None
     classification_torch_device: int | None = None
+    response_format: str | None = None  # For Ollama: "json" enforces JSON-only output
 
     @property
     def action(self) -> str:

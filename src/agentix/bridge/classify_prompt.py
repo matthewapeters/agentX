@@ -142,6 +142,9 @@ def classify_prompt(
     logger.debug("History filtered for classification", extra={"effective_history_length": len(effective_history)})
 
     # Build classification prompt using Agentix logic
+    # Set response_format to 'json' to force JSON-only output from Ollama
+    classification_config.response_format = "json"
+
     classification_payload = assemble_prompts(
         classification_config,
         effective_history,

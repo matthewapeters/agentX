@@ -53,8 +53,7 @@ def _get_latest_session_id(base_dir: str, user_name: str) -> str | None:
     if not os.path.isdir(user_dir):
         return None
     sessions = [
-        d for d in os.listdir(user_dir)
-        if os.path.isdir(os.path.join(user_dir, d)) and d.startswith("session_")
+        d for d in os.listdir(user_dir) if os.path.isdir(os.path.join(user_dir, d)) and d.startswith("session_")
     ]
     if not sessions:
         return None
@@ -62,9 +61,7 @@ def _get_latest_session_id(base_dir: str, user_name: str) -> str | None:
     return sessions[0]
 
 
-def assemble_classification_prompt(
-    args: AgentixConfig, history: list[Message], max_tokens: int
-) -> dict:
+def assemble_classification_prompt(args: AgentixConfig, history: list[Message], max_tokens: int) -> dict:
     """Construct API request payload with messages and configuration for classification prompts."""
 
     # Use the classification prompt to ask the LLM to classify the user input
@@ -80,9 +77,7 @@ def assemble_classification_prompt(
     classification_config.session = args.session
 
     response_max_tokens = (
-        args.classification_max_tokens
-        if args.classification_max_tokens is not None
-        else CLASSIFICATION_MAX_TOKENS
+        args.classification_max_tokens if args.classification_max_tokens is not None else CLASSIFICATION_MAX_TOKENS
     )
 
     return assemble_prompts(
@@ -103,7 +98,10 @@ def assemble_prompts(
 
     # add system prompts if provided
     if args.system:
-        history.append(Message(role="system", content=get_system_prompt(args)))
+        system_content = get_system_prompt(args)
+        history.append(Message(role="system", content=system_content))
+        if args.debug:
+            print(f"Added system message to history (length: {len(system_content)} chars)", file=sys.stderr)
     if args.tools:
         history.append(Message(role="system", content=get_tools_prompt(args)))
     if args.user or args.file_path:
@@ -120,31 +118,55 @@ def assemble_prompts(
     # Convert Message objects to dicts for trim_context
     history_dicts = [msg.to_dict() if hasattr(msg, "to_dict") else msg for msg in history]
 
+    if args.debug:
+        print(f"History before trim_context: {len(history_dicts)} messages", file=sys.stderr)
+        for i, msg in enumerate(history_dicts):
+            role = msg.get("role", "unknown")
+            content_len = len(msg.get("content", "")) if msg.get("content") else 0
+            print(f"  Message {i}: role={role}, content_length={content_len}", file=sys.stderr)
+
     # Trim context based on max_tokens
     contextual_messages = trim_context(args, history_dicts, max_tokens)
+
+    if args.debug:
+        print(f"History after trim_context: {len(contextual_messages)} messages", file=sys.stderr)
+        for i, msg in enumerate(contextual_messages):
+            role = msg.get("role", "unknown")
+            content_len = len(msg.get("content", "")) if msg.get("content") else 0
+            print(f"  Message {i}: role={role}, content_length={content_len}", file=sys.stderr)
+
+    # Add format='json' for classification to enforce JSON output
+    format_constraint = getattr(args, "response_format", None)
 
     return QueryPayload(
         model=args.model,
         messages=contextual_messages,
         temperature=args.temperature,
         max_tokens=response_max_tokens,
+        format=format_constraint,
     )
 
 
-def trim_context(
-    args: AgentixConfig, messages: list[Message], max_tokens: int
-) -> list[Message]:
-    """Handle message history with token-based trimming."""
+def trim_context(args: AgentixConfig, messages: list[Message], max_tokens: int) -> list[Message]:
+    """Handle message history with token-based trimming.
+
+    System messages are ALWAYS preserved as they contain critical instructions.
+    """
+    # Separate system messages from the rest
+    system_messages = [msg for msg in messages if msg.get("role") == "system"]
+    non_system_messages = [msg for msg in messages if msg.get("role") != "system"]
 
     # Trim history based on token limits (max_tokens)
     total_tokens = 0
     trimmed_history = []
 
-    # Iterate over messages from the most recent to the oldest
-    for message in reversed(messages):
+    # Iterate over non-system messages from the most recent to the oldest
+    for message in reversed(non_system_messages):
+        # message.get("content") might be None, so handle that
+        content = message.get("content") or ""
         # Estimate tokens for the current message
         # Assuming 1 token per 4 characters as a rough approximation
-        message_tokens = len(message["content"]) // 4
+        message_tokens = len(content) // 4
         if "attachments" in message:
             for attachment in message["attachments"]:
                 if isinstance(attachment, dict):
@@ -163,7 +185,8 @@ def trim_context(
     # Reverse the trimmed history to maintain chronological order
     trimmed_history.reverse()
 
-    return trimmed_history
+    # Prepend system messages at the beginning (they go first in the message list)
+    return system_messages + trimmed_history
 
 
 def manage_sessions(args: AgentixConfig) -> list[Message]:

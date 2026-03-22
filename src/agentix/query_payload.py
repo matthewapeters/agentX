@@ -21,12 +21,14 @@ class QueryPayload:
         messages: list[Message],
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        format: str | None = None,
     ):
         self.model = model
         self.messages = messages
         self.temperature = temperature
         self.max_tokens = max_tokens
-    
+        self.format = format  # For Ollama: "json" enforces JSON-only output
+
     def to_dict(self) -> dict:
         """Convert QueryPayload to dictionary for JSON serialization."""
         payload = {
@@ -36,4 +38,6 @@ class QueryPayload:
         }
         if self.max_tokens is not None:
             payload["max_tokens"] = self.max_tokens
+        if self.format is not None:
+            payload["format"] = self.format  # Force output format (e.g., "json")
         return payload
