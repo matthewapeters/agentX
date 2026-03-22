@@ -3,6 +3,7 @@
 import os
 import re
 import threading
+import math
 import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox as tk_messagebox
@@ -115,6 +116,7 @@ class GUIManager(IGUIManager):
         self._current_turn_entries: dict[str, dict[str, Any]] = {}
         self._output_wraplength: int = 1200
         self._output_wrapped_labels: list[tk.Label] = []
+        self._output_detail_text_widgets: list[tk.Text] = []
 
     # Layout constants for UI rendering
     EXPAND_COLLAPSE_ICONS = {True: "▼", False: "▶"}
@@ -1571,12 +1573,11 @@ class GUIManager(IGUIManager):
         )
         self.widgets.output_notebook.add(self.widgets.output_tab, text="Output")
 
-        # Create plain text tab for selectable/copyable output.
-        output_text_tab = tk.Frame(
-            self.widgets.output_notebook,
-            bg=self.config.output_bg,
-        )
-        self.widgets.output_notebook.add(output_text_tab, text="Output Text")
+        # Hidden text widget kept for backward compatibility (e.g. tests).  It
+        # is never displayed; copy/select is provided by the per-entry tk.Text
+        # detail widgets created in _create_output_entry().
+        _hidden_text_container = tk.Frame(self.widgets.output_display, bg=self.config.output_bg)
+        # (_hidden_text_container is intentionally never packed/placed)
 
         # Structured output view (visible): nested/collapsible entries.
         self.widgets.output_entries_container = tk.Frame(
@@ -1626,11 +1627,11 @@ class GUIManager(IGUIManager):
         self.widgets.output_entries_frame.bind("<Configure>", _on_output_frame_configure)
         self.widgets.output_entries_canvas.bind("<Configure>", _on_output_canvas_configure)
 
-        # Legacy output text (visible in dedicated tab): selectable/copyable output mirror.
-        self.widgets.output_scrollbar = tk.Scrollbar(output_text_tab)
-        output_xscrollbar = tk.Scrollbar(output_text_tab, orient=tk.HORIZONTAL)
+        # Hidden text mirror — never displayed, kept only for backward compatibility.
+        self.widgets.output_scrollbar = tk.Scrollbar(_hidden_text_container)
+        output_xscrollbar = tk.Scrollbar(_hidden_text_container, orient=tk.HORIZONTAL)
         self.widgets.output_text = tk.Text(
-            output_text_tab,
+            _hidden_text_container,
             wrap=tk.WORD,
             font=text_font,
             yscrollcommand=self.widgets.output_scrollbar.set,
@@ -1699,6 +1700,15 @@ class GUIManager(IGUIManager):
             except tk.TclError:
                 continue
         self._output_wrapped_labels = active_labels
+
+        active_text_widgets: list[tk.Text] = []
+        for detail_text in self._output_detail_text_widgets:
+            try:
+                self._update_detail_text_height(detail_text)
+                active_text_widgets.append(detail_text)
+            except tk.TclError:
+                continue
+        self._output_detail_text_widgets = active_text_widgets
 
     def _create_status_panel(self) -> None:
         """Create status panel with tabs."""
@@ -2094,14 +2104,35 @@ class GUIManager(IGUIManager):
         output.see(tk.END)
 
     def _header_preview(self, text: str) -> str:
-        """Build a width-responsive one-line preview independent of newlines."""
-        condensed = " ".join((text or "").replace("\r\n", "\n").split())
-        if not condensed:
+        """Build a one-line preview restricted to the first 15 words."""
+        words = (text or "").replace("\r\n", "\n").split()
+        if not words:
             return ""
-        approx_chars = max(20, int(self._output_wraplength / 7))
-        if len(condensed) <= approx_chars:
-            return condensed
-        return condensed[: max(1, approx_chars - 1)] + "…"
+        if len(words) <= 15:
+            return " ".join(words)
+        return " ".join(words[:15]) + " …"
+
+    def _update_detail_text_height(self, detail_text: tk.Text) -> None:
+        """Resize a detail text widget to match wrapped display line count."""
+        try:
+            detail_text.update_idletasks()
+            display_lines = detail_text.count("1.0", "end-1c", "displaylines")
+            if display_lines and display_lines[0]:
+                lines = max(1, int(display_lines[0]) + 1)
+            else:
+                text = detail_text.get("1.0", "end-1c")
+                approx_chars = max(20, int(self._output_wraplength / 7))
+                lines = max(1, int(math.ceil(len(text) / approx_chars)) + 1)
+            detail_text.configure(height=lines)
+        except (tk.TclError, ValueError, TypeError):
+            return
+
+    def _schedule_detail_text_height_update(self, detail_text: tk.Text) -> None:
+        """Schedule a post-layout height update to keep streaming output fully visible."""
+        try:
+            detail_text.after_idle(lambda w=detail_text: self._update_detail_text_height(w))
+        except tk.TclError:
+            return
 
     def _create_output_entry(
         self,
@@ -2121,7 +2152,6 @@ class GUIManager(IGUIManager):
         state: dict[str, Any] = {
             "frame": entry_frame,
             "header_var": tk.StringVar(),
-            "detail_var": tk.StringVar(value=full_text),
             "expanded": expanded,
             "full_text": full_text,
             "role_label": role_label,
@@ -2153,25 +2183,58 @@ class GUIManager(IGUIManager):
         header_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._output_wrapped_labels.append(header_label)
 
-        detail_label = tk.Label(
+        text_font = self._text_font or self.config.default_font
+        detail_text = tk.Text(
             entry_frame,
-            textvariable=state["detail_var"],
+            wrap=tk.WORD,
+            font=text_font,
             bg=self.config.output_bg,
             fg=self.COLOR_AGENT_RESPONSE,
-            anchor="w",
-            justify=tk.LEFT,
-            wraplength=self._output_wraplength,
+            insertbackground=self.config.output_bg,
+            borderwidth=0,
+            highlightthickness=0,
+            relief=tk.FLAT,
+            height=max(1, full_text.count("\n") + 1) if full_text else 1,
+            state=tk.NORMAL,
         )
-        self._output_wrapped_labels.append(detail_label)
-        state["detail_label"] = detail_label
+        if full_text:
+            detail_text.insert("1.0", full_text)
+        detail_text.config(state=tk.DISABLED)
+        # Allow mouse selection and Ctrl/Cmd+A / Ctrl/Cmd+C without allowing edits.
+        detail_text.bind("<Key>", lambda _e: "break")
+        detail_text.bind(
+            "<Control-a>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1]
+        )
+        detail_text.bind(
+            "<Control-A>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1]
+        )
+        detail_text.bind(
+            "<Command-a>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1]
+        )
+        detail_text.bind(
+            "<Command-A>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1]
+        )
+        detail_text.bind("<Control-c>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
+        detail_text.bind("<Control-C>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
+        detail_text.bind("<Command-c>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
+        detail_text.bind("<Command-C>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
+        detail_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
+        state["detail_text"] = detail_text
+        self._output_detail_text_widgets.append(detail_text)
+
+        def _on_detail_text_configure(_event) -> None:
+            self._schedule_detail_text_height_update(detail_text)
+
+        detail_text.bind("<Configure>", _on_detail_text_configure)
 
         def _toggle() -> None:
             state["expanded"] = not state["expanded"]
             toggle_btn.config(text=self.EXPAND_COLLAPSE_ICONS[state["expanded"]])
             if state["expanded"]:
-                detail_label.pack(fill=tk.X, anchor="w", padx=(24, 0))
+                detail_text.pack(fill=tk.X, anchor="w", padx=(24, 0))
+                self._schedule_detail_text_height_update(detail_text)
             else:
-                detail_label.pack_forget()
+                detail_text.pack_forget()
             if on_expand_changed is not None:
                 on_expand_changed(state["expanded"])
 
@@ -2180,7 +2243,8 @@ class GUIManager(IGUIManager):
 
         state["header_var"].set(f"{icon} {role_label}: {self._header_preview(full_text)}")
         if expanded:
-            detail_label.pack(fill=tk.X, anchor="w", padx=(24, 0))
+            detail_text.pack(fill=tk.X, anchor="w", padx=(24, 0))
+            self._schedule_detail_text_height_update(detail_text)
 
         entry_frame.pack(fill=tk.X, anchor="w", pady=(1, 1))
         return state
@@ -2192,7 +2256,11 @@ class GUIManager(IGUIManager):
         entry["header_var"].set(
             f"{entry['icon']} {entry['role_label']}: {self._header_preview(entry['full_text'])}"
         )
-        entry["detail_var"].set(entry["full_text"])
+        detail_text: tk.Text = entry["detail_text"]
+        detail_text.config(state=tk.NORMAL)
+        detail_text.insert(tk.END, chunk)
+        detail_text.config(state=tk.DISABLED)
+        self._schedule_detail_text_height_update(detail_text)
 
     def _ensure_turn_started(self, user_content: str) -> None:
         if self.widgets.output_entries_frame is None:
@@ -2250,7 +2318,12 @@ class GUIManager(IGUIManager):
         entry["header_var"].set(
             f"{entry['icon']} {entry['role_label']}: {self._header_preview(text)}"
         )
-        entry["detail_var"].set(text)
+        detail_text: tk.Text = entry["detail_text"]
+        detail_text.config(state=tk.NORMAL)
+        detail_text.delete("1.0", tk.END)
+        detail_text.insert("1.0", text)
+        detail_text.config(state=tk.DISABLED)
+        self._schedule_detail_text_height_update(detail_text)
 
     def _display_tool_line(self, line: str) -> bool:
         stripped = line.strip()
