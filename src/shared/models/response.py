@@ -13,70 +13,78 @@ from typing import Any, Optional
 class ChunkType(str, Enum):
     """
     Types of response chunks in the streaming protocol.
-    
+
     Content types:
         CONTENT: Regular assistant response text
         THINKING: LLM reasoning/thinking text
-        
+
     Tool types:
         TOOL_CALL: Request to execute a tool
         TOOL_RESULT: Result from tool execution
-        
+
     Metadata types:
         CLASSIFICATION: Intent classification result
         MODEL_INFO: Information about the model being used
-        
+
     Control types:
         ERROR: Error message
         DONE: Stream completion signal
     """
+
     # Content types
     CONTENT = "content"
     THINKING = "thinking"
-    
+
     # Tool types
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
-    
+
     # Metadata types
     CLASSIFICATION = "classification"
     MODEL_INFO = "model_info"
-    
+
     # Control types
     ERROR = "error"
     DONE = "done"
+
+    # Hierarchical task execution types (Phase 1)
+    PLAN_START = "plan_start"  # New plan record created; carries plan_id, plan_name
+    TASK_NODE_START = "task_node_start"  # Task/sub-task begins; carries task_id, depth, tbd
+    TASK_NODE_TBD = "task_node_tbd"  # TBD step resolved; carries resolved description
+    TASK_NODE_END = "task_node_end"  # Task/sub-task complete; carries synthesis text
+    ASSERTION_RESULT = "assertion_result"  # Per-assertion verdict
 
 
 @dataclass
 class ResponseChunk:
     """
     A chunk of streaming response from Agentix server.
-    
+
     ResponseChunks are yielded by the Agentix API during streaming responses.
     The AgentX client processes these to update the GUI in real-time.
-    
+
     Attributes:
         type: The type of this chunk
         content: Text content (for CONTENT, THINKING, ERROR types)
-        
+
         # Tool-specific fields
         tool_name: Name of the tool (for TOOL_CALL, TOOL_RESULT)
         tool_input: Arguments for the tool (for TOOL_CALL)
         tool_output: Result from tool execution (for TOOL_RESULT)
         tool_execution_context: Where tool should execute (for TOOL_CALL)
-        
+
         # Classification fields
         classification: Intent classification dict (for CLASSIFICATION)
-        
+
         # Metadata
         model: Model name (for MODEL_INFO)
         done_reason: Reason for completion (for DONE)
     """
-    
+
     type: Optional[ChunkType] = None
     content: str = ""
     chunk_type: Optional[ChunkType] = None
-    
+
     # Tool-specific fields
     tool_name: Optional[str] = None
     tool_input: Optional[dict] = None
@@ -84,15 +92,24 @@ class ResponseChunk:
     tool_execution_context: Optional[str] = None  # "client" or "server"
     tool_id: Optional[str] = None
     round_index: Optional[int] = None  # which tool-loop round emitted this chunk
-    
+
     # Classification fields
     classification: Optional[dict] = None
-    
+
     # Metadata
     model: Optional[str] = None
     done_reason: Optional[str] = None
     error_code: Optional[str] = None
-    
+
+    # Hierarchical task execution fields (Phase 1)
+    plan_id: Optional[str] = None
+    plan_name: Optional[str] = None
+    task_id: Optional[str] = None
+    parent_task_id: Optional[str] = None
+    task_depth: Optional[int] = None
+    tbd: Optional[bool] = None
+    assertions: Optional[list] = None
+
     def __post_init__(self):
         """Ensure type is ChunkType enum."""
         if self.chunk_type and self.type is None:
@@ -102,18 +119,18 @@ class ResponseChunk:
         if isinstance(self.type, str):
             self.type = ChunkType(self.type)
         self.chunk_type = self.type
-    
+
     def to_dict(self) -> dict:
         """
         Serialize chunk for transmission.
-        
+
         Used when streaming over HTTP/WebSocket.
         """
         data = {
             "type": self.type.value,
             "content": self.content,
         }
-        
+
         # Include optional fields if present
         if self.tool_name:
             data["tool_name"] = self.tool_name
@@ -133,9 +150,23 @@ class ResponseChunk:
             data["done_reason"] = self.done_reason
         if self.error_code:
             data["error_code"] = self.error_code
-            
+        if self.plan_id:
+            data["plan_id"] = self.plan_id
+        if self.plan_name:
+            data["plan_name"] = self.plan_name
+        if self.task_id:
+            data["task_id"] = self.task_id
+        if self.parent_task_id:
+            data["parent_task_id"] = self.parent_task_id
+        if self.task_depth is not None:
+            data["task_depth"] = self.task_depth
+        if self.tbd is not None:
+            data["tbd"] = self.tbd
+        if self.assertions is not None:
+            data["assertions"] = self.assertions
+
         return data
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "ResponseChunk":
         """Create ResponseChunk from dictionary."""
@@ -152,17 +183,24 @@ class ResponseChunk:
             model=data.get("model"),
             done_reason=data.get("done_reason"),
             error_code=data.get("error_code"),
+            plan_id=data.get("plan_id"),
+            plan_name=data.get("plan_name"),
+            task_id=data.get("task_id"),
+            parent_task_id=data.get("parent_task_id"),
+            task_depth=data.get("task_depth"),
+            tbd=data.get("tbd"),
+            assertions=data.get("assertions"),
         )
-    
+
     @classmethod
     def from_ollama_chunk(cls, ollama_chunk: dict) -> "ResponseChunk":
         """
         Create ResponseChunk from Ollama streaming response.
-        
+
         Maps Ollama's response format to our unified chunk format.
         """
         message = ollama_chunk.get("message", {})
-        
+
         # Determine chunk type based on content
         if message.get("thinking"):
             return cls(
@@ -188,24 +226,24 @@ class ResponseChunk:
             )
         else:
             return cls(type=ChunkType.CONTENT, content="")
-    
+
     # Convenience properties
-    
+
     @property
     def is_content(self) -> bool:
         """Check if this is a content chunk."""
         return self.type in (ChunkType.CONTENT, ChunkType.THINKING)
-    
+
     @property
     def is_tool(self) -> bool:
         """Check if this is a tool-related chunk."""
         return self.type in (ChunkType.TOOL_CALL, ChunkType.TOOL_RESULT)
-    
+
     @property
     def is_error(self) -> bool:
         """Check if this is an error chunk."""
         return self.type == ChunkType.ERROR
-    
+
     @property
     def is_done(self) -> bool:
         """Check if this signals stream completion."""
@@ -213,6 +251,7 @@ class ResponseChunk:
 
 
 # Factory functions for common chunk types
+
 
 def content_chunk(text: str) -> ResponseChunk:
     """Create a content chunk."""
@@ -224,11 +263,7 @@ def thinking_chunk(text: str) -> ResponseChunk:
     return ResponseChunk(type=ChunkType.THINKING, content=text)
 
 
-def tool_call_chunk(
-    tool_name: str, 
-    tool_input: dict, 
-    execution_context: str = "client"
-) -> ResponseChunk:
+def tool_call_chunk(tool_name: str, tool_input: dict, execution_context: str = "client") -> ResponseChunk:
     """Create a tool call chunk."""
     return ResponseChunk(
         type=ChunkType.TOOL_CALL,
