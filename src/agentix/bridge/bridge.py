@@ -8,6 +8,7 @@ that can be consumed by AgentX GUI without going through the CLI.
 import glob
 import json
 import logging
+import os
 import sys
 import time
 import uuid
@@ -26,7 +27,8 @@ from agentix.prompt_classification_response import (
 from agentix.tools import extract_cst_tools
 from agentix.tools.describe_tools import to_openai_tools
 from shared.models.context import Context
-from shared.models.task_node import PlanRecord, PlanStep, TaskNodeRecord, TaskTree
+from shared.models.task_node import AssertionRecord, PlanRecord, PlanStep, SynthesisAttempt, TaskNodeRecord, TaskTree
+from agentix.bridge.assertion_checker import extract_assertions, verify_assertion
 from shared.models.message import Message
 from shared.models.response import ChunkType, ResponseChunk
 from shared.models.tools import ToolResponse
@@ -977,6 +979,68 @@ class AgentixBridge:
             if not synthesis_text:
                 synthesis_text = "(no synthesis produced)"
 
+        # Assertion extraction and re-synthesis loop (Phase 3)
+        final_synthesis = synthesis_text
+        try:
+            max_retries: int = getattr(self.config, "max_synthesis_retries", 3)
+            for attempt_num in range(max_retries + 1):
+                attempt_epoch = time.time()
+                assertions = extract_assertions(final_synthesis, self._iter_llm_chunks)
+                failed_assertions: list[AssertionRecord] = []
+
+                for a in assertions:
+                    verify_assertion(a, os.getcwd())
+                    node.assertions.append(a)
+                    yield ResponseChunk(
+                        type=ChunkType.ASSERTION_RESULT,
+                        plan_id=plan_id,
+                        task_id=task_id,
+                        assertions=[a.to_dict()],
+                    )
+                    if a.verified is False:
+                        failed_assertions.append(a)
+
+                if not failed_assertions:
+                    node.synthesis_attempts.append(
+                        SynthesisAttempt(epoch=attempt_epoch, status="accepted")
+                    )
+                    break
+
+                node.synthesis_attempts.append(
+                    SynthesisAttempt(epoch=attempt_epoch, status="rejected")
+                )
+                if attempt_num >= max_retries:
+                    break
+
+                failure_details = "\n".join(
+                    f"- {a.fact}: {a.error or 'check failed'}" for a in failed_assertions
+                )
+                resynth_messages = messages + [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Your previous synthesis had the following assertion failures:\n"
+                            f"{failure_details}\n\n"
+                            f"Previous (rejected) synthesis:\n{final_synthesis}\n\n"
+                            "Please write a corrected synthesis that addresses the above "
+                            "failures. Keep it self-contained and 50-200 words. "
+                            "Do not call any tools."
+                        ),
+                    }
+                ]
+                retry_text = ""
+                for chunk in self._iter_llm_chunks(resynth_messages):
+                    if chunk.type in (ChunkType.TOOL_CALL, ChunkType.DONE):
+                        continue
+                    yield chunk
+                    if chunk.type == ChunkType.CONTENT and chunk.content:
+                        retry_text += chunk.content
+                if retry_text:
+                    final_synthesis = retry_text
+
+        except Exception as exc:
+            logger.debug("Assertion loop error (non-fatal): %s", exc)
+
         node.status = "done"
         node.synthesis_epoch = time.time()
         try:
@@ -992,7 +1056,7 @@ class AgentixBridge:
             task_id=task_id,
             parent_task_id=parent_task_id,
             task_depth=depth,
-            content=synthesis_text,
+            content=final_synthesis,
         )
 
     def _run_plan(

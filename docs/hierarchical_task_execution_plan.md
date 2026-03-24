@@ -440,14 +440,14 @@ Sub-tasks indent by `depth × 20px` and draw a branch line back up to their pare
 
 **Goal:** After each sub-task synthesis, structured facts are extracted and mechanically verified.
 
-- [ ] Create `src/agentix/bridge/assertion_checker.py` with `extract_assertions(synthesis_text, config)` — calls LLM with constrained JSON prompt
-- [ ] Implement `verify_assertion(assertion: dict, session_path: str)` — handles `exists`, `value`, `count`, `regex` types
-- [ ] Integrate assertion check into `_run_task_node`: after synthesis, call `extract_assertions` then `verify_assertion` for each
-- [ ] Store assertion results in `task_node.json` `assertions` array
-- [ ] Emit `ASSERTION_RESULT` chunk for each assertion (GUI can display pass/fail live)
-- [ ] Implement re-synthesis loop: on failure, rebuild prompt with bad synthesis as negative example and raw tool results, retry up to `max_synthesis_retries`
-- [ ] Persist each synthesis attempt in `synthesis_attempts` array with status
-- [ ] Write unit tests for assertion extraction and each verification type
+- [✓] Create `src/agentix/bridge/assertion_checker.py` with `extract_assertions(synthesis_text, config)` — calls LLM with constrained JSON prompt
+- [✓] Implement `verify_assertion(assertion: dict, session_path: str)` — handles `exists`, `value`, `count`, `regex` types
+- [✓] Integrate assertion check into `_run_task_node`: after synthesis, call `extract_assertions` then `verify_assertion` for each
+- [✓] Store assertion results in `task_node.json` `assertions` array
+- [✓] Emit `ASSERTION_RESULT` chunk for each assertion (GUI can display pass/fail live)
+- [✓] Implement re-synthesis loop: on failure, rebuild prompt with bad synthesis as negative example and raw tool results, retry up to `max_synthesis_retries`
+- [✓] Persist each synthesis attempt in `synthesis_attempts` array with status
+- [✓] Write unit tests for assertion extraction and each verification type
 
 ---
 
