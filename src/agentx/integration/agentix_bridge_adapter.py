@@ -304,6 +304,9 @@ class AgentixBridgeAdapter:
             classification_backend=agentix_section.get("classification_backend", "ollama"),
             classification_torch_model=agentix_section.get("classification_torch_model"),
             classification_torch_device=agentix_section.get("classification_torch_device"),
+            max_tool_rounds=agentix_section.get("max_tool_rounds", 10),
+            max_task_depth=agentix_section.get("max_task_depth", 10),
+            max_synthesis_retries=agentix_section.get("max_synthesis_retries", 3),
         )
 
 

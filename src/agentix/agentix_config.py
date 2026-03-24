@@ -48,6 +48,9 @@ class AgentixConfig:
     classification_torch_model: str | None = None
     classification_torch_device: int | None = None
     response_format: str | None = None  # For Ollama: "json" enforces JSON-only output
+    max_tool_rounds: int = 10  # Maximum tool-call rounds per agent loop
+    max_task_depth: int = 10  # Maximum recursive task-node depth
+    max_synthesis_retries: int = 3  # Synthesis retry attempts for task nodes
 
     @property
     def action(self) -> str:
