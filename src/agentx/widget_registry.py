@@ -44,6 +44,9 @@ class WidgetRegistry:
         # Input panel widgets
         self.attachments_frame: Optional[tk.Frame] = None
         self.attachment_labels: list = []
+
+        # Plan tab frames keyed by plan_id
+        self.plan_tabs: dict[str, tk.Frame] = {}
         self.user_input: Optional[tk.Frame] = None
         self.user_input_text: Optional[tk.Text] = None
         self.input_scrollbar: Optional[tk.Scrollbar] = None
@@ -102,6 +105,14 @@ class WidgetRegistry:
             self.system_notebook.destroy()
         if self.system_status is not None:
             self.system_status.destroy()
+
+        # Destroy plan tab frames
+        for _tab in list(self.plan_tabs.values()):
+            try:
+                _tab.destroy()
+            except Exception:
+                pass
+        self.plan_tabs.clear()
 
         # Destroy output panel widgets
         if self.output_scrollbar is not None:

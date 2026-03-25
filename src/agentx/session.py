@@ -952,6 +952,57 @@ class AgentXSession:
                 elif chunk.type == ChunkType.CONTENT and chunk.content:
                     content_parts.append(chunk.content)
 
+                # Plan tree chunk routing
+                if chunk.type == ChunkType.PLAN_START and chunk.plan_id:
+                    _pid = chunk.plan_id
+                    _pname = chunk.plan_name or "Plan"
+                    self._safe_root_after(lambda pid=_pid, pn=_pname: (
+                        self.gui.add_plan_tab(pid, pn),
+                        self.gui.focus_plan_tab(pid),
+                    ))
+                elif chunk.type == ChunkType.TASK_NODE_START and chunk.task_id:
+                    _tid = chunk.task_id
+                    _pid = chunk.plan_id or ""
+                    _desc = chunk.content or chunk.task_id
+                    _par = chunk.parent_task_id
+                    _depth = chunk.task_depth or 0
+                    _tbd = bool(chunk.tbd)
+                    if _par:
+                        self._safe_root_after(
+                            lambda tid=_tid, par=_par, desc=_desc, d=_depth:
+                                self.gui.add_plan_subtask_node(tid, par, desc, d)
+                        )
+                    else:
+                        self._safe_root_after(
+                            lambda pid=_pid, tid=_tid, desc=_desc, tb=_tbd:
+                                self.gui.add_plan_step_node(pid, tid, desc, tb)
+                        )
+                elif chunk.type == ChunkType.TASK_NODE_TBD and chunk.task_id:
+                    _tid = chunk.task_id
+                    _desc = chunk.content or ""
+                    self._safe_root_after(
+                        lambda tid=_tid, desc=_desc: self.gui.resolve_plan_tbd_node(tid, desc)
+                    )
+                elif chunk.type == ChunkType.TASK_NODE_END and chunk.task_id:
+                    _tid = chunk.task_id
+                    _synth = chunk.content or ""
+                    _asserts = chunk.assertions or []
+                    self._safe_root_after(
+                        lambda tid=_tid: self.gui.update_plan_node_status(tid, "done")
+                    )
+                    self._safe_root_after(
+                        lambda tid=_tid, s=_synth, a=_asserts:
+                            self.gui.add_plan_synthesis(tid, s, a)
+                    )
+                elif chunk.type == ChunkType.TOOL_CALL and chunk.task_id:
+                    _tid = chunk.task_id
+                    _tname = chunk.tool_name or ""
+                    _tinput = chunk.tool_input or {}
+                    self._safe_root_after(
+                        lambda tid=_tid, tn=_tname, ti=_tinput:
+                            self.gui.add_plan_tool_call(tid, tn, ti)
+                    )
+
                 self._safe_root_after(self.refresh_user_gui)
 
             # Complete the response

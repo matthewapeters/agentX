@@ -326,3 +326,49 @@ class IGUIManager(Protocol):
     def populate_settings_models(self, models: list[dict]) -> None:
         """Refresh model dropdowns in the Settings tab."""
         ...
+
+    # ── Plan tab methods ──────────────────────────────────────────────────────
+
+    def add_plan_tab(self, plan_id: str, plan_name: str) -> tk.Widget:
+        """Create a named tab in output_notebook for the given plan.
+
+        Args:
+            plan_id:   Unique plan identifier (from ``PlanRecord.plan_id``).
+            plan_name: Human-readable plan name used as the tab label.
+
+        Returns:
+            The tab frame widget.
+        """
+        ...
+
+    def get_plan_tab_frame(self, plan_id: str) -> "Optional[tk.Widget]":  # type: ignore[override]
+        """Return the tab frame for an existing plan, or None."""
+        ...
+
+    def focus_plan_tab(self, plan_id: str) -> None:
+        """Switch output notebook focus to the plan tab."""
+        ...
+
+    def add_plan_step_node(self, plan_id: str, task_id: str, description: str, tbd: bool) -> None:
+        """Add a root-level step row to the plan's tree widget."""
+        ...
+
+    def add_plan_subtask_node(self, task_id: str, parent_task_id: str, description: str, depth: int) -> None:
+        """Add an indented sub-task row under its parent in the plan tree."""
+        ...
+
+    def update_plan_node_status(self, task_id: str, status: str) -> None:
+        """Update the status icon for a node in the plan tree."""
+        ...
+
+    def resolve_plan_tbd_node(self, task_id: str, resolved_description: str) -> None:
+        """Replace the TBD placeholder with the resolved description."""
+        ...
+
+    def add_plan_tool_call(self, task_id: str, tool_name: str, tool_input: Any) -> None:
+        """Append a collapsible tool-call row to the node's details frame."""
+        ...
+
+    def add_plan_synthesis(self, task_id: str, synthesis_text: str, assertions: list) -> None:
+        """Append synthesis text and assertion badges to the node."""
+        ...

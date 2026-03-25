@@ -455,21 +455,21 @@ Sub-tasks indent by `depth × 20px` and draw a branch line back up to their pare
 
 **Goal:** Each plan gets its own named tab in `output_notebook` that renders the branch/join tree live.
 
-- [ ] Add `add_plan_tab(plan_id, plan_name) -> tk.Frame` to `GUIManager` — creates a named tab in `output_notebook` using `plan_name` as label; returns the tab frame
-- [ ] Add `plan_tab` frames to `WidgetRegistry` lifecycle; keyed by `plan_id`
-- [ ] Add `add_plan_tab()`, `get_plan_tab_frame(plan_id)`, `focus_plan_tab(plan_id)` to `IGUIManager` protocol
-- [ ] In `session.py` `_stream_via_agentix()`: on `PLAN_START` chunk, call `gui.add_plan_tab(plan_id, plan_name)`; switch focus to the new tab
-- [ ] Add tab toolbar: plan name label + `[Export]` + `[Replay]` buttons
-- [ ] Create `src/agentx/gui/plan_tree_widget.py` — `PlanTreeWidget` class managing the scrollable canvas or frame tree
-- [ ] `PlanTreeWidget.add_step_node(plan_id, task_id, description, tbd)` — renders a main-trunk step row with connector
-- [ ] `PlanTreeWidget.add_subtask_node(task_id, parent_task_id, description, depth)` — renders an indented sub-task row with branch line to parent
-- [ ] `PlanTreeWidget.update_node_status(task_id, status)` — updates status icon live during streaming
-- [ ] `PlanTreeWidget.resolve_tbd_node(task_id, resolved_description)` — replaces `?` placeholder with resolved description
-- [ ] `PlanTreeWidget.add_tool_call_to_node(task_id, tool_name, tool_input)` — appends collapsed tool row under node
-- [ ] `PlanTreeWidget.add_synthesis_to_node(task_id, synthesis_text, assertions)` — appends synthesis block with assertion badges
-- [ ] Draw branch connector lines: sub-tasks indent by `depth × 20 px`; a vertical connector line runs from parent node to child; collapsed by default, expand on click
-- [ ] Wire chunk handlers in `session.py`: `PLAN_START` → `add_plan_tab`, `TASK_NODE_START` → `add_step_node` or `add_subtask_node`, `TASK_NODE_TBD` → `resolve_tbd_node`, `TASK_NODE_END` → `update_node_status + add_synthesis_to_node`, `TOOL_CALL` (with task_id) → `add_tool_call_to_node`
-- [ ] Switch output notebook focus to the plan tab automatically while plan is executing; no forced switch after completion
+- [✓] Add `add_plan_tab(plan_id, plan_name) -> tk.Frame` to `GUIManager` — creates a named tab in `output_notebook` using `plan_name` as label; returns the tab frame
+- [✓] Add `plan_tab` frames to `WidgetRegistry` lifecycle; keyed by `plan_id`
+- [✓] Add `add_plan_tab()`, `get_plan_tab_frame(plan_id)`, `focus_plan_tab(plan_id)` to `IGUIManager` protocol
+- [✓] In `session.py` `_stream_via_agentix()`: on `PLAN_START` chunk, call `gui.add_plan_tab(plan_id, plan_name)`; switch focus to the new tab
+- [✓] Add tab toolbar: plan name label + `[Export]` + `[Replay]` buttons
+- [✓] Create `src/agentx/gui/plan_tree_widget.py` — `PlanTreeWidget` class managing the scrollable canvas or frame tree
+- [✓] `PlanTreeWidget.add_step_node(plan_id, task_id, description, tbd)` — renders a main-trunk step row with connector
+- [✓] `PlanTreeWidget.add_subtask_node(task_id, parent_task_id, description, depth)` — renders an indented sub-task row with branch line to parent
+- [✓] `PlanTreeWidget.update_node_status(task_id, status)` — updates status icon live during streaming
+- [✓] `PlanTreeWidget.resolve_tbd_node(task_id, resolved_description)` — replaces `?` placeholder with resolved description
+- [✓] `PlanTreeWidget.add_tool_call_to_node(task_id, tool_name, tool_input)` — appends collapsed tool row under node
+- [✓] `PlanTreeWidget.add_synthesis_to_node(task_id, synthesis_text, assertions)` — appends synthesis block with assertion badges
+- [✓] Draw branch connector lines: sub-tasks indent by `depth × 20 px`; a vertical connector line runs from parent node to child; collapsed by default, expand on click
+- [✓] Wire chunk handlers in `session.py`: `PLAN_START` → `add_plan_tab`, `TASK_NODE_START` → `add_step_node` or `add_subtask_node`, `TASK_NODE_TBD` → `resolve_tbd_node`, `TASK_NODE_END` → `update_node_status + add_synthesis_to_node`, `TOOL_CALL` (with task_id) → `add_tool_call_to_node`
+- [✓] Switch output notebook focus to the plan tab automatically while plan is executing; no forced switch after completion
 
 ---
 

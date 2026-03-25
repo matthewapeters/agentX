@@ -14,6 +14,7 @@ from ..attachment_info import AttachmentInfo
 from .collapsible_section import CollapsibleSection
 from .gui_config import GUIConfig
 from .settings_tab import SettingsTab
+from .plan_tree_widget import PlanTreeWidget
 from ..history import History
 from ..igui_manager import IGUIManager
 from ..widget_registry import WidgetRegistry
@@ -117,6 +118,11 @@ class GUIManager(IGUIManager):
         self._output_wraplength: int = 1200
         self._output_wrapped_labels: list[tk.Label] = []
         self._output_detail_text_widgets: list[tk.Text] = []
+
+        # Plan tree widgets keyed by plan_id
+        self._plan_trees: dict[str, PlanTreeWidget] = {}
+        # Maps task_id → plan_id for plan tree routing
+        self._task_to_plan: dict[str, str] = {}
 
     # Layout constants for UI rendering
     EXPAND_COLLAPSE_ICONS = {True: "▼", False: "▶"}
@@ -2448,3 +2454,119 @@ class GUIManager(IGUIManager):
         """
         if self._on_attachment_toggle:
             self._on_attachment_toggle(attachment_id, enabled)
+
+    # ── Plan tab methods ──────────────────────────────────────────────────────
+
+    def add_plan_tab(self, plan_id: str, plan_name: str) -> tk.Frame:
+        """Create a plan tab in output_notebook with PlanTreeWidget and toolbar."""
+        if plan_id in self._plan_trees:
+            # Tab already exists — return the existing frame.
+            return self.widgets.plan_tabs[plan_id]
+
+        if self.widgets.output_notebook is None:
+            raise RuntimeError("output_notebook not yet created")
+
+        tab_frame = tk.Frame(self.widgets.output_notebook, bg=self.config.output_bg)
+        self.widgets.output_notebook.add(tab_frame, text=f"📋 {plan_name}")
+        self.widgets.plan_tabs[plan_id] = tab_frame
+
+        # Toolbar: plan name label + Export + Replay buttons.
+        toolbar = tk.Frame(tab_frame, bg=self.config.output_bg)
+        toolbar.pack(fill=tk.X, side=tk.TOP, padx=4, pady=(4, 2))
+        tk.Label(
+            toolbar,
+            text=f"📋 {plan_name}",
+            bg=self.config.output_bg,
+            fg=self.config.agent_response_fg,
+            font=(self.config.default_font[0] if self.config.default_font else "Courier New", 11, "bold"),
+            anchor="w",
+        ).pack(side=tk.LEFT)
+        tk.Button(
+            toolbar, text="Replay", bg=self._section_bg, fg=self.config.ui_fg,
+            relief=tk.FLAT, cursor="hand2", command=lambda: None,
+        ).pack(side=tk.RIGHT, padx=(4, 0))
+        tk.Button(
+            toolbar, text="Export", bg=self._section_bg, fg=self.config.ui_fg,
+            relief=tk.FLAT, cursor="hand2", command=lambda: None,
+        ).pack(side=tk.RIGHT)
+
+        # PlanTreeWidget fills the remaining space.
+        tree = PlanTreeWidget(
+            parent=tab_frame,
+            bg=self.config.output_bg,
+            fg=self.config.agent_response_fg,
+            dim_fg=self.config.system_space_fg,
+            accent_fg=self.config.agent_classification_fg,
+        )
+        tree.get_widget().pack(expand=True, fill=tk.BOTH)
+        self._plan_trees[plan_id] = tree
+
+        return tab_frame
+
+    def get_plan_tab_frame(self, plan_id: str) -> Optional[tk.Frame]:
+        """Return the tab frame for an existing plan, or None."""
+        return self.widgets.plan_tabs.get(plan_id)
+
+    def focus_plan_tab(self, plan_id: str) -> None:
+        """Switch output notebook focus to the plan tab."""
+        tab_frame = self.widgets.plan_tabs.get(plan_id)
+        if tab_frame is not None and self.widgets.output_notebook is not None:
+            self.widgets.output_notebook.select(tab_frame)
+
+    def add_plan_step_node(self, plan_id: str, task_id: str, description: str, tbd: bool) -> None:
+        """Add a root-level step to the plan tree and record plan mapping."""
+        tree = self._plan_trees.get(plan_id)
+        if tree:
+            self._task_to_plan[task_id] = plan_id
+            tree.add_step_node(plan_id, task_id, description, tbd)
+
+    def add_plan_subtask_node(self, task_id: str, parent_task_id: str, description: str, depth: int) -> None:
+        """Add a sub-task row to the plan tree under its parent."""
+        plan_id = self._task_to_plan.get(parent_task_id)
+        if plan_id is None:
+            # Fall back: find which tree contains the parent.
+            for pid, tree in self._plan_trees.items():
+                if parent_task_id in tree._nodes:
+                    plan_id = pid
+                    break
+        if plan_id is None:
+            return
+        tree = self._plan_trees.get(plan_id)
+        if tree:
+            self._task_to_plan[task_id] = plan_id
+            tree.add_subtask_node(task_id, parent_task_id, description, depth)
+
+    def update_plan_node_status(self, task_id: str, status: str) -> None:
+        """Update status icon for a task node across all plan trees."""
+        plan_id = self._task_to_plan.get(task_id)
+        tree = self._plan_trees.get(plan_id) if plan_id else None
+        if tree is None:
+            # Fallback search
+            for t in self._plan_trees.values():
+                if task_id in t._nodes:
+                    tree = t
+                    break
+        if tree:
+            tree.update_node_status(task_id, status)
+
+    def resolve_plan_tbd_node(self, task_id: str, resolved_description: str) -> None:
+        """Resolve a TBD node's description in the plan tree."""
+        plan_id = self._task_to_plan.get(task_id)
+        tree = self._plan_trees.get(plan_id) if plan_id else None
+        if tree:
+            tree.resolve_tbd_node(task_id, resolved_description)
+
+    def add_plan_tool_call(self, task_id: str, tool_name: str, tool_input: Any) -> None:
+        """Add a tool call row to a task node in the plan tree."""
+        plan_id = self._task_to_plan.get(task_id)
+        tree = self._plan_trees.get(plan_id) if plan_id else None
+        if tree:
+            tree.add_tool_call_to_node(task_id, tool_name, tool_input)
+
+    def add_plan_synthesis(self, task_id: str, synthesis_text: str, assertions: list) -> None:
+        """Add a synthesis block to a task node in the plan tree."""
+        plan_id = self._task_to_plan.get(task_id)
+        tree = self._plan_trees.get(plan_id) if plan_id else None
+        if tree:
+            tree.add_synthesis_to_node(task_id, synthesis_text, assertions)
+
