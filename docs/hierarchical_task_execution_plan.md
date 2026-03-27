@@ -477,13 +477,13 @@ Sub-tasks indent by `depth × 20px` and draw a branch line back up to their pare
 
 **Goal:** User can trigger synthesis retry from the Task Tree tab with optional WM hints.
 
-- [ ] Add `[Re-synthesise]` button to each synthesis block in `TaskTreeWidget`
-- [ ] Clicking opens a `ResynthesisDialog` (modal Toplevel): shows current synthesis, assertion failures, hint field
-- [ ] `ResynthesisDialog` on confirm: calls `session.retrigger_synthesis(task_id, hint)` method
-- [ ] Implement `session.retrigger_synthesis(task_id, hint)`: loads raw tool results from session `context/`, optionally adds hint to `WorkingMemory`, re-runs synthesis (no tool calls)
-- [ ] Add `[Add WM hint]` button: opens `WorkingMemory` editor pre-filtered; on save, marks task node as `invalidated` (requires re-synthesis)
-- [ ] Persist the new synthesis attempt alongside previous ones (non-destructive; all attempts kept)
-- [ ] Update `task_tree.json` and `TaskTreeWidget` live to reflect new synthesis result
+- [✓] Add `[Re-synthesise]` button to each synthesis block in `TaskTreeWidget`
+- [✓] Clicking opens a `ResynthesisDialog` (modal Toplevel): shows current synthesis, assertion failures, hint field
+- [✓] `ResynthesisDialog` on confirm: calls `session.retrigger_synthesis(task_id, hint)` method
+- [✓] Implement `session.retrigger_synthesis(task_id, hint)`: loads raw tool results from session `context/`, optionally adds hint to `WorkingMemory`, re-runs synthesis (no tool calls)
+- [✓] Add `[Add WM hint]` button: opens `WorkingMemory` editor pre-filtered; on save, marks task node as `invalidated` (requires re-synthesis)
+- [✓] Persist the new synthesis attempt alongside previous ones (non-destructive; all attempts kept)
+- [✓] Update `task_tree.json` and `TaskTreeWidget` live to reflect new synthesis result
 
 ---
 

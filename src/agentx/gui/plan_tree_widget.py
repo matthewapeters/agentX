@@ -7,7 +7,7 @@ calls, and synthesis text with assertion badges — all updated live as
 
 import json
 import tkinter as tk
-from typing import Any
+from typing import Any, Callable, Optional
 
 _INDENT_PX = 20  # horizontal pixels per depth level
 
@@ -101,11 +101,60 @@ class PlanTreeWidget:
         if node:
             self._create_tool_row(node["details_frame"], tool_name, tool_input)
 
-    def add_synthesis_to_node(self, task_id: str, synthesis_text: str, assertions: list) -> None:
-        """Append synthesis text and assertion badges to the node's details frame."""
+    def add_synthesis_to_node(
+        self,
+        task_id: str,
+        synthesis_text: str,
+        assertions: list,
+        on_resynth: Optional[Callable[[str], None]] = None,
+        on_add_wm_hint: Optional[Callable[[str, str], None]] = None,
+    ) -> None:
+        """Append synthesis text and assertion badges to the node's details frame.
+
+        Args:
+            task_id:          Node to attach the synthesis block to.
+            synthesis_text:   Accepted synthesis prose.
+            assertions:       List of assertion dicts (``fact``, ``verified``, ``error``).
+            on_resynth:       Optional callback ``(hint: str) -> None`` invoked when the
+                              user confirms the Re-synthesise dialog.
+            on_add_wm_hint:   Optional callback ``(key: str, value: str) -> None`` invoked
+                              when the user adds a WM fact from inside the dialog.
+        """
         node = self._nodes.get(task_id)
         if node:
-            self._create_synthesis_block(node["details_frame"], synthesis_text, assertions)
+            synth_widget, badge_frame = self._create_synthesis_block(
+                node["details_frame"],
+                synthesis_text,
+                assertions,
+                on_resynth=on_resynth,
+                on_add_wm_hint=on_add_wm_hint,
+                task_id=task_id,
+            )
+            node["synthesis_widget"] = synth_widget
+            node["synthesis_badge_frame"] = badge_frame
+
+    def update_synthesis_on_node(self, task_id: str, new_synthesis: str, assertions: list) -> None:
+        """Replace the displayed synthesis text and assertion badges in-place.
+
+        Called on the Tkinter main thread after a successful retrigger.
+        """
+        node = self._nodes.get(task_id)
+        if node is None:
+            return
+        synth_widget: Optional[tk.Text] = node.get("synthesis_widget")
+        if synth_widget and synth_widget.winfo_exists():
+            synth_widget.config(state=tk.NORMAL)
+            synth_widget.delete("1.0", tk.END)
+            synth_widget.insert("1.0", new_synthesis)
+            height = max(3, new_synthesis.count("\n") + 2)
+            synth_widget.config(state=tk.DISABLED, height=height)
+        badge_frame: Optional[tk.Frame] = node.get("synthesis_badge_frame")
+        if badge_frame and badge_frame.winfo_exists():
+            for child in badge_frame.winfo_children():
+                child.destroy()
+            for assertion in assertions:
+                self._create_assertion_badge(badge_frame, assertion)
+        self._update_scroll()
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -237,19 +286,67 @@ class PlanTreeWidget:
         detail_text.pack(fill=tk.X, expand=False, padx=(4, 0))
         self._update_scroll()
 
-    def _create_synthesis_block(self, parent: tk.Widget, synthesis_text: str, assertions: list) -> None:
-        """Create the synthesis text block with assertion badge row."""
+    def _create_synthesis_block(
+        self,
+        parent: tk.Widget,
+        synthesis_text: str,
+        assertions: list,
+        on_resynth: Optional[Callable[[str], None]] = None,
+        on_add_wm_hint: Optional[Callable[[str, str], None]] = None,
+        task_id: str = "",
+    ) -> tuple:
+        """Create the synthesis text block with assertion badge row.
+
+        Returns:
+            Tuple of ``(synth_text_widget, badge_frame)`` so callers can store
+            references for later in-place updates.
+        """
+        from .resynthesis_dialog import ResynthesisDialog
+
         block = tk.Frame(parent, bg=self._bg)
         block.pack(fill=tk.X, expand=False, pady=(4, 2))
 
+        header_row = tk.Frame(block, bg=self._bg)
+        header_row.pack(fill=tk.X)
         tk.Label(
-            block,
+            header_row,
             text="📝 Synthesis:",
             bg=self._bg,
             fg=self._accent_fg,
             font=(self._font[0], self._font[1], "bold"),
             anchor="w",
-        ).pack(fill=tk.X)
+        ).pack(side=tk.LEFT)
+
+        if on_resynth is not None:
+            failed = [a for a in assertions if a.get("verified") is False]
+
+            def _open_dialog(
+                synth=synthesis_text,
+                fails=failed,
+                cb=on_resynth,
+                wm_cb=on_add_wm_hint,
+                tid=task_id,
+            ):
+                ResynthesisDialog(
+                    parent=block,
+                    task_id=tid,
+                    synthesis_text=synth,
+                    failed_assertions=fails,
+                    on_confirm=cb,
+                    on_add_wm_hint=wm_cb,
+                )
+
+            tk.Button(
+                header_row,
+                text="↻ Re-synthesise",
+                bg=self._bg,
+                fg=self._accent_fg,
+                font=(self._font[0], max(8, self._font[1] - 1)),
+                relief=tk.FLAT,
+                bd=0,
+                cursor="hand2",
+                command=_open_dialog,
+            ).pack(side=tk.RIGHT, padx=(0, 4))
 
         height = max(3, synthesis_text.count("\n") + 2)
         synth_text = tk.Text(
@@ -266,13 +363,13 @@ class PlanTreeWidget:
         synth_text.config(state=tk.DISABLED)
         synth_text.pack(fill=tk.X, expand=False)
 
-        if assertions:
-            badge_frame = tk.Frame(block, bg=self._bg)
-            badge_frame.pack(fill=tk.X, pady=(2, 0))
-            for assertion in assertions:
-                self._create_assertion_badge(badge_frame, assertion)
+        badge_frame = tk.Frame(block, bg=self._bg)
+        badge_frame.pack(fill=tk.X, pady=(2, 0))
+        for assertion in assertions:
+            self._create_assertion_badge(badge_frame, assertion)
 
         self._update_scroll()
+        return synth_text, badge_frame
 
     def _create_assertion_badge(self, parent: tk.Widget, assertion: dict) -> None:
         """Render a single pass/fail/unknown assertion badge."""

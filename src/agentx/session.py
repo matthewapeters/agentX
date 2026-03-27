@@ -868,6 +868,89 @@ class AgentXSession:
         except Exception:
             pass
 
+    def retrigger_synthesis(self, task_id: str, hint: str = "") -> None:
+        """Re-run synthesis for a completed task node in a background thread.
+
+        Invoked by the ResynthesisDialog confirm handler on the Tkinter main
+        thread.  Loads the TaskNodeRecord and TaskTree from disk, optionally
+        injects a WM hint, then streams the new synthesis on a daemon thread
+        and updates the plan tree widget live.
+
+        Args:
+            task_id: The task node to re-synthesise.
+            hint:    Optional free-text guidance for the LLM.
+        """
+        if self._is_streaming.is_set():
+            self.gui.display_error("Cannot re-synthesise while a response is streaming.")
+            return
+
+        tree = self.context.load_task_tree()
+        if tree is None:
+            self.gui.display_error(f"No task tree found — cannot re-synthesise {task_id}.")
+            return
+        node = tree.nodes.get(task_id)
+        if node is None:
+            self.gui.display_error(f"Task node '{task_id}' not found in task tree.")
+            return
+
+        if hint.strip() and self.working_memory is not None:
+            from shared.models.working_memory import FactOwner
+
+            self.working_memory.add_fact(FactOwner.AGENT, f"resynth_hint_{task_id}", hint)
+            node.wm_hints_added = True
+
+        self.gui.mark_plan_node_invalidated(task_id)
+
+        def _worker(_node=node, _tree=tree, _tid=task_id, _hint=hint):
+            try:
+                self._is_streaming.set()
+                self._safe_root_after(lambda: self.gui.set_streaming_state(True))
+                for chunk in self.agentix_adapter.retrigger_synthesis_generator(_node, self.context, _tree, _hint):
+                    if chunk.type == ChunkType.TASK_NODE_END and chunk.task_id == _tid:
+                        _synth = chunk.content or ""
+                        _asserts = chunk.assertions or []
+                        self._safe_root_after(lambda tid=_tid: self.gui.update_plan_node_status(tid, "done"))
+                        self._safe_root_after(
+                            lambda tid=_tid, s=_synth, a=_asserts: self.gui.update_plan_synthesis(tid, s, a)
+                        )
+            except Exception as exc:
+                logger.exception("retrigger_synthesis worker error")
+                self._safe_root_after(lambda err=exc: self.gui.display_error(f"Re-synthesis error: {err}"))
+            finally:
+                self._is_streaming.clear()
+                self._safe_root_after(lambda: self.gui.set_streaming_state(False))
+                self._safe_root_after(self.refresh_user_gui)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _add_wm_hint_for_task(self, task_id: str, key: str, value: str) -> None:
+        """Store a working-memory fact and mark the task node as invalidated.
+
+        Called from the ResynthesisDialog "Add WM hint" button on the Tkinter
+        main thread.  Does not trigger re-synthesis — the user must still click
+        "Re-synthesise" afterwards.
+
+        Args:
+            task_id: The task node to invalidate.
+            key:     WM fact key.
+            value:   WM fact value.
+        """
+        if self.working_memory is not None:
+            self.working_memory.add_fact(FactOwner.AGENT, key, value)
+
+        tree = self.context.load_task_tree()
+        if tree is not None:
+            node = tree.nodes.get(task_id)
+            if node is not None:
+                node.wm_hints_added = True
+                try:
+                    self.context.save_task_node(node)
+                    self.context.save_task_tree(tree)
+                except Exception:
+                    pass
+
+        self.gui.mark_plan_node_invalidated(task_id)
+
     def _stream_via_agentix(self):
         """Stream response through Agentix middleware."""
         config = self.config
@@ -956,10 +1039,12 @@ class AgentXSession:
                 if chunk.type == ChunkType.PLAN_START and chunk.plan_id:
                     _pid = chunk.plan_id
                     _pname = chunk.plan_name or "Plan"
-                    self._safe_root_after(lambda pid=_pid, pn=_pname: (
-                        self.gui.add_plan_tab(pid, pn),
-                        self.gui.focus_plan_tab(pid),
-                    ))
+                    self._safe_root_after(
+                        lambda pid=_pid, pn=_pname: (
+                            self.gui.add_plan_tab(pid, pn),
+                            self.gui.focus_plan_tab(pid),
+                        )
+                    )
                 elif chunk.type == ChunkType.TASK_NODE_START and chunk.task_id:
                     _tid = chunk.task_id
                     _pid = chunk.plan_id or ""
@@ -969,38 +1054,44 @@ class AgentXSession:
                     _tbd = bool(chunk.tbd)
                     if _par:
                         self._safe_root_after(
-                            lambda tid=_tid, par=_par, desc=_desc, d=_depth:
-                                self.gui.add_plan_subtask_node(tid, par, desc, d)
+                            lambda tid=_tid, par=_par, desc=_desc, d=_depth: self.gui.add_plan_subtask_node(
+                                tid, par, desc, d
+                            )
                         )
                     else:
                         self._safe_root_after(
-                            lambda pid=_pid, tid=_tid, desc=_desc, tb=_tbd:
-                                self.gui.add_plan_step_node(pid, tid, desc, tb)
+                            lambda pid=_pid, tid=_tid, desc=_desc, tb=_tbd: self.gui.add_plan_step_node(
+                                pid, tid, desc, tb
+                            )
                         )
                 elif chunk.type == ChunkType.TASK_NODE_TBD and chunk.task_id:
                     _tid = chunk.task_id
                     _desc = chunk.content or ""
-                    self._safe_root_after(
-                        lambda tid=_tid, desc=_desc: self.gui.resolve_plan_tbd_node(tid, desc)
-                    )
+                    self._safe_root_after(lambda tid=_tid, desc=_desc: self.gui.resolve_plan_tbd_node(tid, desc))
                 elif chunk.type == ChunkType.TASK_NODE_END and chunk.task_id:
                     _tid = chunk.task_id
                     _synth = chunk.content or ""
                     _asserts = chunk.assertions or []
+                    self._safe_root_after(lambda tid=_tid: self.gui.update_plan_node_status(tid, "done"))
+
+                    # Build per-task callbacks for the Re-synthesise dialog.
+                    def _make_callbacks(tid=_tid):
+                        on_resynth = lambda hint: self.retrigger_synthesis(tid, hint)
+                        on_add_wm = lambda key, val: self._add_wm_hint_for_task(tid, key, val)
+                        return on_resynth, on_add_wm
+
+                    _on_resynth, _on_add_wm = _make_callbacks()
                     self._safe_root_after(
-                        lambda tid=_tid: self.gui.update_plan_node_status(tid, "done")
-                    )
-                    self._safe_root_after(
-                        lambda tid=_tid, s=_synth, a=_asserts:
-                            self.gui.add_plan_synthesis(tid, s, a)
+                        lambda tid=_tid, s=_synth, a=_asserts, cb=_on_resynth, wm=_on_add_wm: self.gui.add_plan_synthesis(
+                            tid, s, a, on_resynth=cb, on_add_wm_hint=wm
+                        )
                     )
                 elif chunk.type == ChunkType.TOOL_CALL and chunk.task_id:
                     _tid = chunk.task_id
                     _tname = chunk.tool_name or ""
                     _tinput = chunk.tool_input or {}
                     self._safe_root_after(
-                        lambda tid=_tid, tn=_tname, ti=_tinput:
-                            self.gui.add_plan_tool_call(tid, tn, ti)
+                        lambda tid=_tid, tn=_tname, ti=_tinput: self.gui.add_plan_tool_call(tid, tn, ti)
                     )
 
                 self._safe_root_after(self.refresh_user_gui)

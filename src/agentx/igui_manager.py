@@ -34,9 +34,7 @@ class IGUIManager(Protocol):
 
     # Display Methods - Output
 
-    def display_user_message(
-        self, content: str, attachments: list[str], timestamp: datetime
-    ) -> None:
+    def display_user_message(self, content: str, attachments: list[str], timestamp: datetime) -> None:
         """Display a user message in the output area.
 
         Args:
@@ -369,6 +367,21 @@ class IGUIManager(Protocol):
         """Append a collapsible tool-call row to the node's details frame."""
         ...
 
-    def add_plan_synthesis(self, task_id: str, synthesis_text: str, assertions: list) -> None:
+    def add_plan_synthesis(
+        self,
+        task_id: str,
+        synthesis_text: str,
+        assertions: list,
+        on_resynth: Optional[Callable] = None,
+        on_add_wm_hint: Optional[Callable] = None,
+    ) -> None:
         """Append synthesis text and assertion badges to the node."""
+        ...
+
+    def update_plan_synthesis(self, task_id: str, new_synthesis: str, assertions: list) -> None:
+        """Replace synthesis text and badges in-place after a retrigger."""
+        ...
+
+    def mark_plan_node_invalidated(self, task_id: str) -> None:
+        """Mark a node status as 'invalidated' (needs re-synthesis)."""
         ...

@@ -166,17 +166,13 @@ class GUIManager(IGUIManager):
         def toggle_expand():
             expanded = expanded_var.get()
             expanded_var.set(not expanded)
-            collapse_expand_button.config(
-                text=self.EXPAND_COLLAPSE_ICONS[expanded_var.get()]
-            )
+            collapse_expand_button.config(text=self.EXPAND_COLLAPSE_ICONS[expanded_var.get()])
             if expandable_frame:
                 if expanded:
                     expandable_frame.grid_remove()
                 else:
                     # widget that will be expanded/collapsed indented by one column
-                    expandable_frame.grid(
-                        row=1, column=self.MESSAGE_COLUMNS["enabled"], sticky="w"
-                    )
+                    expandable_frame.grid(row=1, column=self.MESSAGE_COLUMNS["enabled"], sticky="w")
             if attachment_rows:
                 for row_widgets in attachment_rows:
                     for widget in row_widgets:
@@ -217,9 +213,7 @@ class GUIManager(IGUIManager):
 
         if include_header:
             history_contexts_frame = tk.Frame(history_frame, bg=self._section_bg)
-            collapse_expand_button = self.collapse_expand_button(
-                history_frame, history_contexts_frame
-            )
+            collapse_expand_button = self.collapse_expand_button(history_frame, history_contexts_frame)
             history_label = tk.Label(
                 history_frame,
                 text=f"{user_name} History ({len(history_obj.sessions)} contexts)",
@@ -228,15 +222,9 @@ class GUIManager(IGUIManager):
                 fg=self.config.ui_fg,
             )
 
-            collapse_expand_button.grid(
-                row=0, column=self.MESSAGE_COLUMNS["exp_button"], sticky="w"
-            )
-            history_label.grid(
-                row=0, column=self.MESSAGE_COLUMNS["enabled"], sticky="w"
-            )
-            history_contexts_frame.grid(
-                row=1, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew"
-            )
+            collapse_expand_button.grid(row=0, column=self.MESSAGE_COLUMNS["exp_button"], sticky="w")
+            history_label.grid(row=0, column=self.MESSAGE_COLUMNS["enabled"], sticky="w")
+            history_contexts_frame.grid(row=1, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew")
         else:
             history_contexts_frame = tk.Frame(history_frame, bg=self._section_bg)
             history_contexts_frame.pack(fill=tk.BOTH, expand=True)
@@ -251,9 +239,7 @@ class GUIManager(IGUIManager):
                 include_header=True,
             )
             if include_header:
-                c_frame.grid(
-                    row=idx, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew"
-                )
+                c_frame.grid(row=idx, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew")
             else:
                 c_frame.pack(fill=tk.X, expand=False)
 
@@ -281,9 +267,7 @@ class GUIManager(IGUIManager):
         context_messages_frame = tk.Frame(context_frame, bg=self._section_bg)
 
         if include_header:
-            collapse_expand_button = self.collapse_expand_button(
-                context_frame, context_messages_frame
-            )
+            collapse_expand_button = self.collapse_expand_button(context_frame, context_messages_frame)
             context_label = tk.Label(
                 context_frame,
                 text=(
@@ -294,27 +278,17 @@ class GUIManager(IGUIManager):
                 bg=self._section_bg,
                 fg=self.config.ui_fg,
             )
-            collapse_expand_button.grid(
-                row=0, column=self.MESSAGE_COLUMNS["exp_button"], sticky="w"
-            )
+            collapse_expand_button.grid(row=0, column=self.MESSAGE_COLUMNS["exp_button"], sticky="w")
             context_label.grid(row=0, column=1, sticky="w")
-            context_messages_frame.grid(
-                row=1, column=self.MESSAGE_COLUMNS["enabled"], sticky="nsew"
-            )
+            context_messages_frame.grid(row=1, column=self.MESSAGE_COLUMNS["enabled"], sticky="nsew")
         else:
             context_messages_frame.pack(fill=tk.BOTH, expand=True)
 
         # Configure column 0 as indent, then message columns
-        context_messages_frame.columnconfigure(
-            self.MESSAGE_COLUMNS["exp_button"], weight=0
-        )
-        context_messages_frame.columnconfigure(
-            self.MESSAGE_COLUMNS["enabled"], weight=0
-        )
+        context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["exp_button"], weight=0)
+        context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["enabled"], weight=0)
         context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["role"], weight=0)
-        context_messages_frame.columnconfigure(
-            self.MESSAGE_COLUMNS["content"], weight=1
-        )
+        context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["content"], weight=1)
 
         # Group messages: collect TOOL_CALL/TOOL_RESULT entries as children of
         # the nearest preceding non-tool message so they render nested in the UI.
@@ -338,8 +312,11 @@ class GUIManager(IGUIManager):
         current_row = 0
         for message, tool_msgs in grouped:
             current_row = self._render_message_to_grid(
-                message, context_messages_frame, current_row,
-                on_attachment_toggle, tool_msgs,
+                message,
+                context_messages_frame,
+                current_row,
+                on_attachment_toggle,
+                tool_msgs,
             )
 
         # Hide messages frame if not expanded on initial render (header mode only)
@@ -392,9 +369,7 @@ class GUIManager(IGUIManager):
 
         # Column 0: Collapse/Expand button (or empty spacer)
         if is_expandable:
-            collapse_expand_button = self.collapse_expand_button(
-                parent=parent_frame, attachment_rows=collapsible_rows
-            )
+            collapse_expand_button = self.collapse_expand_button(parent=parent_frame, attachment_rows=collapsible_rows)
             collapse_expand_button.grid(
                 row=current_row,
                 column=self.MESSAGE_COLUMNS["exp_button"],
@@ -429,9 +404,7 @@ class GUIManager(IGUIManager):
             activeforeground=self.config.ui_fg,
             selectcolor=self._section_bg,
         )
-        enabled_checkbox.grid(
-            row=current_row, column=self.MESSAGE_COLUMNS["enabled"], sticky="nsew"
-        )
+        enabled_checkbox.grid(row=current_row, column=self.MESSAGE_COLUMNS["enabled"], sticky="nsew")
 
         # Column 2: Role icon
         role_value = getattr(message_obj, "role", "system")
@@ -442,17 +415,14 @@ class GUIManager(IGUIManager):
             bg=self._section_bg,
             fg=self.config.ui_fg,
         )
-        role_label.grid(
-            row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew"
-        )
+        role_label.grid(row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew")
 
         # Column 3: Content preview
         trimmed_content = getattr(message_obj, "content", "").strip()
         lines = [
             line
             for line in trimmed_content.splitlines()
-            if not re.match(r"--- \[Attached file: .+\] ---", line)
-            and not re.match(r"--- \[End of .+\] ---", line)
+            if not re.match(r"--- \[Attached file: .+\] ---", line) and not re.match(r"--- \[End of .+\] ---", line)
         ]
         preview_text = " ".join([l.strip() for l in lines if l.strip()])
         if has_tools:
@@ -466,9 +436,7 @@ class GUIManager(IGUIManager):
             bg=self._section_bg,
             fg=self.config.ui_fg,
         )
-        preview_label.grid(
-            row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew"
-        )
+        preview_label.grid(row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew")
 
         current_row += 1
 
@@ -494,9 +462,7 @@ class GUIManager(IGUIManager):
                     activeforeground=self.config.ui_fg,
                     selectcolor=self._section_bg,
                 )
-                att_checkbox.grid(
-                    row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew"
-                )
+                att_checkbox.grid(row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew")
                 row_widgets.append(att_checkbox)
 
                 att_label = tk.Label(
@@ -521,9 +487,7 @@ class GUIManager(IGUIManager):
 
         # ── Tool interaction sub-rows ────────────────────────────────────────
         if has_tools:
-            current_row = self._render_tool_rows(
-                tool_interactions, parent_frame, current_row, collapsible_rows
-            )
+            current_row = self._render_tool_rows(tool_interactions, parent_frame, current_row, collapsible_rows)
 
         return current_row
 
@@ -581,9 +545,7 @@ class GUIManager(IGUIManager):
 
             # ── Tool-call header row ─────────────────────────────────────────
             # col 0: per-tool expand button
-            tool_btn = self.collapse_expand_button(
-                parent=parent_frame, attachment_rows=detail_rows
-            )
+            tool_btn = self.collapse_expand_button(parent=parent_frame, attachment_rows=detail_rows)
             tool_btn.grid(
                 row=current_row,
                 column=self.MESSAGE_COLUMNS["exp_button"],
@@ -730,9 +692,7 @@ class GUIManager(IGUIManager):
 
     # Display Methods - Output
 
-    def display_user_message(
-        self, content: str, attachments: list[str], timestamp: datetime
-    ) -> None:
+    def display_user_message(self, content: str, attachments: list[str], timestamp: datetime) -> None:
         """Display a user message in the output area.
 
         Args:
@@ -1134,7 +1094,9 @@ class GUIManager(IGUIManager):
         add_frame.pack(fill=tk.X, padx=4, pady=2)
 
         tk.Label(
-            add_frame, text="👤 Add fact:", bg=self._section_bg,
+            add_frame,
+            text="👤 Add fact:",
+            bg=self._section_bg,
             fg=self.config.ui_fg,
             font=("Terminal", 9),
         ).grid(row=0, column=0, sticky="w")
@@ -1143,21 +1105,31 @@ class GUIManager(IGUIManager):
         val_var = tk.StringVar()
 
         tk.Label(
-            add_frame, text="key", bg=self._section_bg,
+            add_frame,
+            text="key",
+            bg=self._section_bg,
             fg=self.config.ui_fg,
             font=("Terminal", 8),
         ).grid(row=1, column=0, sticky="w")
         tk.Entry(add_frame, textvariable=key_var, width=18, font=("Terminal", 9)).grid(
-            row=1, column=1, sticky="ew", padx=2,
+            row=1,
+            column=1,
+            sticky="ew",
+            padx=2,
         )
 
         tk.Label(
-            add_frame, text="value", bg=self._section_bg,
+            add_frame,
+            text="value",
+            bg=self._section_bg,
             fg=self.config.ui_fg,
             font=("Terminal", 8),
         ).grid(row=2, column=0, sticky="w")
         tk.Entry(add_frame, textvariable=val_var, width=28, font=("Terminal", 9)).grid(
-            row=2, column=1, sticky="ew", padx=2,
+            row=2,
+            column=1,
+            sticky="ew",
+            padx=2,
         )
         add_frame.columnconfigure(1, weight=1)
 
@@ -1170,7 +1142,9 @@ class GUIManager(IGUIManager):
                 val_var.set("")
 
         tk.Button(
-            add_frame, text="Add 👤", font=("Terminal", 9),
+            add_frame,
+            text="Add 👤",
+            font=("Terminal", 9),
             command=_submit_add,
         ).grid(row=3, column=1, sticky="e", pady=2)
 
@@ -1212,6 +1186,7 @@ class GUIManager(IGUIManager):
 
         # Owner icon — clickable button for agent facts (promote), plain label for user
         if is_agent:
+
             def _on_promote_click(ck=fact.compound_key):
                 self._confirm_promote(ck, on_promote)
 
@@ -1250,10 +1225,9 @@ class GUIManager(IGUIManager):
 
         # Delete button (agent-owned only)
         if is_agent:
+
             def _on_delete(ck=fact.compound_key):
-                if on_delete and tk_messagebox.askyesno(
-                    "Delete Fact", f"Remove agent fact '{fact.key}'?"
-                ):
+                if on_delete and tk_messagebox.askyesno("Delete Fact", f"Remove agent fact '{fact.key}'?"):
                     on_delete(ck)
 
             tk.Button(
@@ -1334,6 +1308,7 @@ class GUIManager(IGUIManager):
         Args:
             is_streaming: True if streaming in progress, False if idle
         """
+
         def _apply():
             submit = self.widgets.user_submit
             interrupt = self.widgets.user_break
@@ -1357,6 +1332,7 @@ class GUIManager(IGUIManager):
         Args:
             is_busy: True if operation in progress
         """
+
         def _apply():
             # Update cursor
             cursor = "watch" if is_busy else ""
@@ -1559,24 +1535,18 @@ class GUIManager(IGUIManager):
         text_font = self._text_font or self.config.default_font
 
         # Create a PanedWindow for resizable output and system frames
-        self.widgets.paned = tk.PanedWindow(
-            self.root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED
-        )
+        self.widgets.paned = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         self.widgets.paned.place(relx=0.001, rely=0.001, relwidth=0.99, relheight=0.77)
 
         # Output display with scrollbar
-        self.widgets.output_display = tk.Frame(
-            self.widgets.paned, bg=self.config.output_bg
-        )
+        self.widgets.output_display = tk.Frame(self.widgets.paned, bg=self.config.output_bg)
 
         # Create a notebook (tabbed interface) for output
         self.widgets.output_notebook = ttk.Notebook(self.widgets.output_display)
         self.widgets.output_notebook.pack(expand=True, fill=tk.BOTH, padx=0, pady=0)
 
         # Create Output tab
-        self.widgets.output_tab = tk.Frame(
-            self.widgets.output_notebook, bg=self.config.output_bg
-        )
+        self.widgets.output_tab = tk.Frame(self.widgets.output_notebook, bg=self.config.output_bg)
         self.widgets.output_notebook.add(self.widgets.output_tab, text="Output")
 
         # Hidden text widget kept for backward compatibility (e.g. tests).  It
@@ -1602,9 +1572,7 @@ class GUIManager(IGUIManager):
             self.widgets.output_entries_container,
             command=self.widgets.output_entries_canvas.yview,
         )
-        self.widgets.output_entries_canvas.configure(
-            yscrollcommand=self.widgets.output_entries_scrollbar.set
-        )
+        self.widgets.output_entries_canvas.configure(yscrollcommand=self.widgets.output_entries_scrollbar.set)
 
         self.widgets.output_entries_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.widgets.output_entries_canvas.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
@@ -1656,9 +1624,7 @@ class GUIManager(IGUIManager):
         self._bind_output_text_shortcuts()
 
         # Ensure selection highlighting is visible
-        self.widgets.output_text.tag_config(
-            "sel", background="#3399ff", foreground="#ffffff"
-        )
+        self.widgets.output_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
 
         self.widgets.paned.add(self.widgets.output_display, stretch="always")
 
@@ -1718,9 +1684,7 @@ class GUIManager(IGUIManager):
 
     def _create_status_panel(self) -> None:
         """Create status panel with tabs."""
-        self.widgets.system_status = tk.Frame(
-            self.widgets.paned, bg=self._section_bg
-        )
+        self.widgets.system_status = tk.Frame(self.widgets.paned, bg=self._section_bg)
 
         # Create a frame for model selector at the top
         model_frame = tk.Frame(self.widgets.system_status, bg=self._section_bg)
@@ -1738,9 +1702,7 @@ class GUIManager(IGUIManager):
         self.widgets.system_notebook.pack(expand=True, fill=tk.BOTH, padx=0, pady=0)
 
         # Create Session tab
-        self.widgets.session_tab = tk.Frame(
-            self.widgets.system_notebook, bg=self._section_bg
-        )
+        self.widgets.session_tab = tk.Frame(self.widgets.system_notebook, bg=self._section_bg)
         self.widgets.system_notebook.add(self.widgets.session_tab, text="Session")
 
         # Build ordered, reusable section stack for Session tab
@@ -1777,15 +1739,11 @@ class GUIManager(IGUIManager):
         self._refresh_tools_section()
 
         # Create Files tab
-        self.widgets.files_tab = tk.Frame(
-            self.widgets.system_notebook, bg=self._section_bg
-        )
+        self.widgets.files_tab = tk.Frame(self.widgets.system_notebook, bg=self._section_bg)
         self.widgets.system_notebook.add(self.widgets.files_tab, text="Files")
 
         # Create Settings tab
-        self.widgets.settings_tab = tk.Frame(
-            self.widgets.system_notebook, bg=self._section_bg
-        )
+        self.widgets.settings_tab = tk.Frame(self.widgets.system_notebook, bg=self._section_bg)
         self.widgets.system_notebook.add(self.widgets.settings_tab, text="⚙️ Settings")
 
         # Bind tab change event to force widget updates
@@ -1793,9 +1751,7 @@ class GUIManager(IGUIManager):
             self.root.update_idletasks()
             selected_tab = self.widgets.system_notebook.select()
             if selected_tab:
-                self.widgets.system_notebook.nametowidget(
-                    selected_tab
-                ).update_idletasks()
+                self.widgets.system_notebook.nametowidget(selected_tab).update_idletasks()
 
         self.widgets.system_notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
 
@@ -1890,9 +1846,7 @@ class GUIManager(IGUIManager):
             empty.grid(row=0, column=0, sticky="w", pady=10)
             return container
 
-        previous_enabled = {
-            name: var.get() for name, var in self._tool_panel_vars.items()
-        }
+        previous_enabled = {name: var.get() for name, var in self._tool_panel_vars.items()}
         self._tool_panel_vars = {}
 
         # Scrollable canvas so the list doesn't overflow its section.
@@ -1952,11 +1906,7 @@ class GUIManager(IGUIManager):
             checkbox.grid(row=idx, column=0, sticky="w", pady=2, padx=(0, 5))
 
             if description:
-                desc_text = (
-                    f"- {description[:50]}..."
-                    if len(description) > 50
-                    else f"- {description}"
-                )
+                desc_text = f"- {description[:50]}..." if len(description) > 50 else f"- {description}"
                 description_label = tk.Label(
                     content,
                     text=desc_text,
@@ -1983,7 +1933,7 @@ class GUIManager(IGUIManager):
 
     def get_enabled_tools(self) -> list[str]:
         """Get list of currently enabled tools."""
-        if hasattr(self, '_tool_panel_vars'):
+        if hasattr(self, "_tool_panel_vars"):
             return [name for name, var in self._tool_panel_vars.items() if var.get()]
         return []
 
@@ -1995,15 +1945,11 @@ class GUIManager(IGUIManager):
 
         # Add a frame for attachments display
         self.widgets.attachments_frame = tk.Frame(self.root, height=2)
-        self.widgets.attachments_frame.place(
-            relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03
-        )
+        self.widgets.attachments_frame.place(relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03)
 
         # User input with scrollbar
         self.widgets.user_input = tk.Frame(self.root, bg=self.config.input_bg)
-        self.widgets.user_input.place(
-            relx=0.001, rely=0.80, relwidth=1.0, relheight=0.2
-        )
+        self.widgets.user_input.place(relx=0.001, rely=0.80, relwidth=1.0, relheight=0.2)
 
         self.widgets.input_scrollbar = tk.Scrollbar(self.widgets.user_input)
         self.widgets.user_input_text = tk.Text(
@@ -2045,19 +1991,13 @@ class GUIManager(IGUIManager):
             command=self._on_interrupt_clicked,
             state=tk.DISABLED,
         )
-        self.widgets.user_break.place(
-            relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25
-        )
+        self.widgets.user_break.place(relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25)
 
         # Bind Ctrl-Enter to trigger the user_submit button
-        self.widgets.user_input_text.bind(
-            "<Control-Return>", lambda event: self.widgets.user_submit.invoke()
-        )
+        self.widgets.user_input_text.bind("<Control-Return>", lambda event: self.widgets.user_submit.invoke())
 
         # Bind Ctrl-Space globally to trigger the user_break button
-        self.root.bind_all(
-            "<Control-space>", lambda event: self.widgets.user_break.invoke()
-        )
+        self.root.bind_all("<Control-space>", lambda event: self.widgets.user_break.invoke())
 
     def _configure_text_styles(self) -> None:
         """Configure text widget tags for styling."""
@@ -2066,9 +2006,7 @@ class GUIManager(IGUIManager):
             return
 
         # Configure text styling tags
-        output.tag_config(
-            "gray", font=self.config.gray_text_font, foreground=self.config.muted_fg
-        )
+        output.tag_config("gray", font=self.config.gray_text_font, foreground=self.config.muted_fg)
         output.tag_config(
             "user_prompt",
             font=self.config.user_prompt_font,
@@ -2089,9 +2027,7 @@ class GUIManager(IGUIManager):
             font=self.config.agent_thinking_font,
             foreground=self.COLOR_AGENT_CLASSIFICATION,
         )
-        output.tag_config(
-            "system_space", font=self.config.default_font, foreground=self.COLOR_SYSTEM_SPACE
-        )
+        output.tag_config("system_space", font=self.config.default_font, foreground=self.COLOR_SYSTEM_SPACE)
 
     def _scroll_output_to_end(self) -> None:
         """Scroll structured output view to the newest entry."""
@@ -2208,18 +2144,10 @@ class GUIManager(IGUIManager):
         detail_text.config(state=tk.DISABLED)
         # Allow mouse selection and Ctrl/Cmd+A / Ctrl/Cmd+C without allowing edits.
         detail_text.bind("<Key>", lambda _e: "break")
-        detail_text.bind(
-            "<Control-a>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1]
-        )
-        detail_text.bind(
-            "<Control-A>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1]
-        )
-        detail_text.bind(
-            "<Command-a>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1]
-        )
-        detail_text.bind(
-            "<Command-A>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1]
-        )
+        detail_text.bind("<Control-a>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1])
+        detail_text.bind("<Control-A>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1])
+        detail_text.bind("<Command-a>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1])
+        detail_text.bind("<Command-A>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1])
         detail_text.bind("<Control-c>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
         detail_text.bind("<Control-C>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
         detail_text.bind("<Command-c>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
@@ -2259,9 +2187,7 @@ class GUIManager(IGUIManager):
         if not chunk:
             return
         entry["full_text"] = f"{entry['full_text']}{chunk}"
-        entry["header_var"].set(
-            f"{entry['icon']} {entry['role_label']}: {self._header_preview(entry['full_text'])}"
-        )
+        entry["header_var"].set(f"{entry['icon']} {entry['role_label']}: {self._header_preview(entry['full_text'])}")
         detail_text: tk.Text = entry["detail_text"]
         detail_text.config(state=tk.NORMAL)
         detail_text.insert(tk.END, chunk)
@@ -2321,9 +2247,7 @@ class GUIManager(IGUIManager):
 
     def _set_entry_text(self, entry: dict[str, Any], text: str) -> None:
         entry["full_text"] = text
-        entry["header_var"].set(
-            f"{entry['icon']} {entry['role_label']}: {self._header_preview(text)}"
-        )
+        entry["header_var"].set(f"{entry['icon']} {entry['role_label']}: {self._header_preview(text)}")
         detail_text: tk.Text = entry["detail_text"]
         detail_text.config(state=tk.NORMAL)
         detail_text.delete("1.0", tk.END)
@@ -2365,9 +2289,7 @@ class GUIManager(IGUIManager):
 
         return False
 
-    def _create_attachment_widget(
-        self, parent: tk.Frame, info: AttachmentInfo, is_history: bool = False
-    ) -> tk.Widget:
+    def _create_attachment_widget(self, parent: tk.Frame, info: AttachmentInfo, is_history: bool = False) -> tk.Widget:
         """Create a single attachment display widget.
 
         Args:
@@ -2482,12 +2404,22 @@ class GUIManager(IGUIManager):
             anchor="w",
         ).pack(side=tk.LEFT)
         tk.Button(
-            toolbar, text="Replay", bg=self._section_bg, fg=self.config.ui_fg,
-            relief=tk.FLAT, cursor="hand2", command=lambda: None,
+            toolbar,
+            text="Replay",
+            bg=self._section_bg,
+            fg=self.config.ui_fg,
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=lambda: None,
         ).pack(side=tk.RIGHT, padx=(4, 0))
         tk.Button(
-            toolbar, text="Export", bg=self._section_bg, fg=self.config.ui_fg,
-            relief=tk.FLAT, cursor="hand2", command=lambda: None,
+            toolbar,
+            text="Export",
+            bg=self._section_bg,
+            fg=self.config.ui_fg,
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=lambda: None,
         ).pack(side=tk.RIGHT)
 
         # PlanTreeWidget fills the remaining space.
@@ -2563,10 +2495,36 @@ class GUIManager(IGUIManager):
         if tree:
             tree.add_tool_call_to_node(task_id, tool_name, tool_input)
 
-    def add_plan_synthesis(self, task_id: str, synthesis_text: str, assertions: list) -> None:
+    def add_plan_synthesis(
+        self,
+        task_id: str,
+        synthesis_text: str,
+        assertions: list,
+        on_resynth=None,
+        on_add_wm_hint=None,
+    ) -> None:
         """Add a synthesis block to a task node in the plan tree."""
         plan_id = self._task_to_plan.get(task_id)
         tree = self._plan_trees.get(plan_id) if plan_id else None
         if tree:
-            tree.add_synthesis_to_node(task_id, synthesis_text, assertions)
+            tree.add_synthesis_to_node(
+                task_id,
+                synthesis_text,
+                assertions,
+                on_resynth=on_resynth,
+                on_add_wm_hint=on_add_wm_hint,
+            )
 
+    def update_plan_synthesis(self, task_id: str, new_synthesis: str, assertions: list) -> None:
+        """Replace synthesis text and assertion badges in-place."""
+        plan_id = self._task_to_plan.get(task_id)
+        tree = self._plan_trees.get(plan_id) if plan_id else None
+        if tree:
+            tree.update_synthesis_on_node(task_id, new_synthesis, assertions)
+
+    def mark_plan_node_invalidated(self, task_id: str) -> None:
+        """Mark a node as invalidated (requires re-synthesis)."""
+        plan_id = self._task_to_plan.get(task_id)
+        tree = self._plan_trees.get(plan_id) if plan_id else None
+        if tree:
+            tree.update_node_status(task_id, "invalidated")

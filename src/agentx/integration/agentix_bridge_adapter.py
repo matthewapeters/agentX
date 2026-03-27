@@ -231,6 +231,36 @@ class AgentixBridgeAdapter:
                 content=f"Error processing prompt: {str(e)}",
             )
 
+    def retrigger_synthesis_generator(
+        self,
+        node,
+        context: Context,
+        task_tree,
+        hint: str = "",
+    ) -> Iterator[ResponseChunk]:
+        """Yield re-synthesis chunks for a completed task node.
+
+        Delegates to ``AgentixBridge.retrigger_synthesis_streaming``.
+
+        Args:
+            node:       ``TaskNodeRecord`` to re-synthesise.
+            context:    Current session context.
+            task_tree:  The live ``TaskTree``.
+            hint:       Optional user guidance injected into the prompt.
+
+        Yields:
+            ``ResponseChunk`` objects.
+        """
+        try:
+            yield from self.bridge.retrigger_synthesis_streaming(node, context, task_tree, hint)
+        except Exception as e:
+            from shared.models.response import ChunkType
+
+            yield ResponseChunk(
+                type=ChunkType.ERROR,
+                content=f"Error during retrigger synthesis: {str(e)}",
+            )
+
     def get_models(self) -> list[dict]:
         """
         Get available models from Ollama.

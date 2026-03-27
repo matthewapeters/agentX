@@ -34,7 +34,6 @@ from shared.models.response import ChunkType, ResponseChunk
 from shared.models.tools import ToolResponse
 from .classify_prompt import classify_prompt as classifier
 
-
 logger = logging.getLogger("agentix.bridge")
 
 
@@ -275,6 +274,110 @@ class AgentixBridge:
             List of enabled Message dictionaries (Agentix format)
         """
         return list(context.get_enabled_messages())
+
+    def retrigger_synthesis_streaming(
+        self,
+        node: TaskNodeRecord,
+        context: Context,
+        task_tree: TaskTree,
+        hint: str = "",
+    ) -> Iterator[ResponseChunk]:
+        """Re-run synthesis for a completed node without re-running tool calls.
+
+        Reconstructs the message thread for this node (using
+        ``child_message_epochs`` to filter), appends a synthesis instruction
+        with an optional user hint, streams a new synthesis, re-runs assertion
+        checking, appends a non-destructive ``SynthesisAttempt``, persists the
+        updated node and tree, and yields a ``TASK_NODE_END`` chunk with the
+        new synthesis text and assertions.
+
+        Args:
+            node:       ``TaskNodeRecord`` to re-synthesise.
+            context:    Current session context (provides stored messages).
+            task_tree:  Live ``TaskTree`` index (updated in-place).
+            hint:       Optional free-text guidance from the user.
+
+        Yields:
+            ``ResponseChunk`` objects (CONTENT, THINKING, ASSERTION_RESULT,
+            TASK_NODE_END).
+        """
+        # Reconstruct the tool-call/result messages for this task node.
+        all_msgs = context.get_messages(enabled_only=False)
+        epoch_set: set[float] = set(node.child_message_epochs) if node.child_message_epochs else set()
+
+        if epoch_set:
+            task_messages: list[dict] = []
+            for msg in all_msgs:
+                msg_epoch = getattr(msg, "epoch", None)
+                if msg_epoch is not None and msg_epoch in epoch_set:
+                    try:
+                        task_messages.append(msg.to_llm_dict())
+                    except Exception:
+                        pass
+        else:
+            # Fallback: use all LLM-visible messages.
+            task_messages = context.to_llm_messages()
+
+        hint_fragment = f"\n\nAdditional guidance from the user: {hint}" if hint.strip() else ""
+        synthesis_instruction = (
+            "Based on the tool calls and results above, write a concise, self-contained "
+            "synthesis (50–200 words) that summarises the key findings as assertable facts. "
+            "Do not call any tools." + hint_fragment
+        )
+        synthesis_messages = task_messages + [{"role": "user", "content": synthesis_instruction}]
+
+        # Stream the new synthesis.
+        new_synthesis = ""
+        for chunk in self._iter_llm_chunks(synthesis_messages):
+            if chunk.type in (ChunkType.TOOL_CALL, ChunkType.DONE):
+                continue
+            yield chunk
+            if chunk.type == ChunkType.CONTENT and chunk.content:
+                new_synthesis += chunk.content
+
+        if not new_synthesis:
+            new_synthesis = "(no synthesis produced)"
+
+        # Re-run assertions on the new synthesis.
+        attempt_epoch = time.time()
+        node.assertions = []
+        try:
+            assertions = extract_assertions(new_synthesis, self._iter_llm_chunks)
+            for a in assertions:
+                verify_assertion(a, os.getcwd())
+                node.assertions.append(a)
+                yield ResponseChunk(
+                    type=ChunkType.ASSERTION_RESULT,
+                    plan_id=node.plan_id,
+                    task_id=node.task_id,
+                    assertions=[a.to_dict()],
+                )
+            failed = [a for a in assertions if a.verified is False]
+            attempt_status = "rejected" if failed else "accepted"
+        except Exception as exc:
+            logger.debug("Assertion loop error during retrigger (non-fatal): %s", exc)
+            attempt_status = "accepted"
+
+        node.synthesis_attempts.append(SynthesisAttempt(epoch=attempt_epoch, status=attempt_status))
+        node.status = "done"
+        node.synthesis_epoch = attempt_epoch
+
+        try:
+            context.save_task_node(node)
+            task_tree.nodes[node.task_id] = node
+            context.save_task_tree(task_tree)
+        except Exception as exc:
+            logger.debug("Could not persist re-synthesised node %s: %s", node.task_id, exc)
+
+        yield ResponseChunk(
+            type=ChunkType.TASK_NODE_END,
+            plan_id=node.plan_id,
+            task_id=node.task_id,
+            parent_task_id=node.parent_task_id,
+            task_depth=node.depth,
+            content=new_synthesis,
+            assertions=[a.to_dict() for a in node.assertions],
+        )
 
     def _get_max_tokens(self) -> int:
         """
@@ -737,12 +840,10 @@ class AgentixBridge:
         plan_name: str,
     ) -> str:
         """Ask the LLM to resolve a TBD step using prerequisite syntheses."""
-        context_block = "\n".join(
-            f"Result from {dep}: {synth}" for dep, synth in zip(step.depends_on, dep_syntheses)
-        )
+        context_block = "\n".join(f"Result from {dep}: {synth}" for dep, synth in zip(step.depends_on, dep_syntheses))
         resolve_prompt = (
-            f"You are executing plan \'{plan_name}\'."
-            f" Step \'{step.step_id}\' is TBD. Its placeholder: \"{step.description}\""
+            f"You are executing plan '{plan_name}'."
+            f" Step '{step.step_id}' is TBD. Its placeholder: \"{step.description}\""
             f"\n\nPrerequisite results:\n{context_block}"
             "\n\nWrite a single concrete description (<=15 words) for what this step should do."
             " Output ONLY the description string — no JSON, no explanation."
@@ -803,9 +904,7 @@ class AgentixBridge:
         messages: list[dict] = list(initial_messages)
         task_exec_text = self._load_prompt_file("task_execution")
         if task_exec_text:
-            task_exec_text = task_exec_text.replace("{depth}", str(depth)).replace(
-                "{max_depth}", str(max_task_depth)
-            )
+            task_exec_text = task_exec_text.replace("{depth}", str(depth)).replace("{max_depth}", str(max_task_depth))
             messages.insert(0, {"role": "system", "content": task_exec_text})
         if not messages or messages[-1].get("content") != task_description:
             messages.append({"role": "user", "content": task_description})
@@ -813,15 +912,9 @@ class AgentixBridge:
         available_tools = self.get_available_tools()
         max_task_depth: int = getattr(self.config, "max_task_depth", 10)
         if depth >= max_task_depth:
-            available_tools = [
-                t for t in available_tools
-                if t.get("function", {}).get("name") != "run_subtask"
-            ]
+            available_tools = [t for t in available_tools if t.get("function", {}).get("name") != "run_subtask"]
         if depth >= max_task_depth:
-            available_tools = [
-                t for t in available_tools
-                if t.get("function", {}).get("name") != "run_subtask"
-            ]
+            available_tools = [t for t in available_tools if t.get("function", {}).get("name") != "run_subtask"]
 
         any_tools_called = False
         got_content = False
@@ -913,11 +1006,13 @@ class AgentixBridge:
                     plan_id=plan_id,
                     task_id=task_id,
                 )
-                tool_result_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.tool_id or f"call_{sub_task_id}",
-                    "content": sub_synthesis,
-                })
+                tool_result_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.tool_id or f"call_{sub_task_id}",
+                        "content": sub_synthesis,
+                    }
+                )
 
             if regular_calls:
                 tc_list = list(regular_calls)
@@ -947,11 +1042,13 @@ class AgentixBridge:
                             plan_id=plan_id,
                             task_id=task_id,
                         )
-                        tool_result_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.tool_id or f"call_{tc_list.index(tc)}",
-                            "content": result.to_llm_format(),
-                        })
+                        tool_result_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.tool_id or f"call_{tc_list.index(tc)}",
+                                "content": result.to_llm_format(),
+                            }
+                        )
 
             messages.extend(tool_result_messages)
 
@@ -1001,20 +1098,14 @@ class AgentixBridge:
                         failed_assertions.append(a)
 
                 if not failed_assertions:
-                    node.synthesis_attempts.append(
-                        SynthesisAttempt(epoch=attempt_epoch, status="accepted")
-                    )
+                    node.synthesis_attempts.append(SynthesisAttempt(epoch=attempt_epoch, status="accepted"))
                     break
 
-                node.synthesis_attempts.append(
-                    SynthesisAttempt(epoch=attempt_epoch, status="rejected")
-                )
+                node.synthesis_attempts.append(SynthesisAttempt(epoch=attempt_epoch, status="rejected"))
                 if attempt_num >= max_retries:
                     break
 
-                failure_details = "\n".join(
-                    f"- {a.fact}: {a.error or 'check failed'}" for a in failed_assertions
-                )
+                failure_details = "\n".join(f"- {a.fact}: {a.error or 'check failed'}" for a in failed_assertions)
                 resynth_messages = messages + [
                     {
                         "role": "user",
@@ -1077,7 +1168,8 @@ class AgentixBridge:
             if unsatisfied:
                 logger.warning(
                     "Step %s deps not yet completed: %s; skipping",
-                    step.step_id, unsatisfied,
+                    step.step_id,
+                    unsatisfied,
                 )
                 continue
 
@@ -1103,15 +1195,15 @@ class AgentixBridge:
             step_messages = list(base_messages)
             if step.depends_on:
                 dep_context = "\n".join(
-                    f"Result from {dep}: {step_syntheses[dep]}"
-                    for dep in step.depends_on
-                    if dep in step_syntheses
+                    f"Result from {dep}: {step_syntheses[dep]}" for dep in step.depends_on if dep in step_syntheses
                 )
                 if dep_context:
-                    step_messages.append({
-                        "role": "system",
-                        "content": f"Context from completed prerequisite steps:\n{dep_context}",
-                    })
+                    step_messages.append(
+                        {
+                            "role": "system",
+                            "content": f"Context from completed prerequisite steps:\n{dep_context}",
+                        }
+                    )
 
             step_synthesis = ""
             for chunk in self._run_task_node(
@@ -1135,17 +1227,12 @@ class AgentixBridge:
 
         # Final cross-step synthesis emitted as regular CONTENT stream
         if step_syntheses:
-            combined = "\n\n".join(
-                f"Step {sid}:\n{synth}" for sid, synth in step_syntheses.items()
-            )
+            combined = "\n\n".join(f"Step {sid}:\n{synth}" for sid, synth in step_syntheses.items())
             final_messages = list(base_messages) + [
                 {"role": "user", "content": original_prompt},
                 {
                     "role": "assistant",
-                    "content": (
-                        "I have gathered the following information through my research:\n\n"
-                        + combined
-                    ),
+                    "content": ("I have gathered the following information through my research:\n\n" + combined),
                 },
                 {
                     "role": "user",
@@ -1161,7 +1248,6 @@ class AgentixBridge:
                 if chunk.type == ChunkType.DONE:
                     continue
                 yield chunk
-
 
     def _run_tool_loop(
         self,
@@ -1339,7 +1425,6 @@ class AgentixBridge:
                 yield ResponseChunk(type=ChunkType.CONTENT, content="\n")
 
         yield ResponseChunk(type=ChunkType.DONE, done_reason="stop")
-
 
 
 def run_subtask(task: str, scratch_file: Optional[str] = None) -> str:
