@@ -19,7 +19,7 @@ import time
 
 import pytest
 
-from src.shared.models.task_node import (
+from shared.models.task_node import (
     AssertionRecord,
     PlanRecord,
     PlanStep,
@@ -27,8 +27,8 @@ from src.shared.models.task_node import (
     TaskNodeRecord,
     TaskTree,
 )
-from src.shared.models.context import Context
-from src.shared.models.message import Message, MessageRole
+from shared.models.context import Context
+from shared.models.message import Message, MessageRole
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -383,7 +383,7 @@ class TestContextToLlmMessages:
 
         def _add(role, content):
             from datetime import datetime
-            from src.shared.models.context import MessageEntry
+            from shared.models.context import MessageEntry
 
             msg = Message(role=role, content=content)
             msg.enabled = True
