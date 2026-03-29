@@ -134,6 +134,8 @@ class GUIManager(IGUIManager):
         "tool_call": "🔧",
         "tool_result": "📋",
         "tools": "🛠️",
+        "plan": "📋",
+        "task_node": "🌿",
     }
     MESSAGE_COLUMNS = {
         "exp_button": 0,
@@ -253,6 +255,7 @@ class GUIManager(IGUIManager):
         parent,
         on_attachment_toggle=None,
         include_header: bool = False,
+        on_plan_click=None,
     ):
         """
         Render a Context object as a tkinter widget (Frame), replicating Context.to_gui logic.
@@ -290,9 +293,10 @@ class GUIManager(IGUIManager):
         context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["role"], weight=0)
         context_messages_frame.columnconfigure(self.MESSAGE_COLUMNS["content"], weight=1)
 
-        # Group messages: collect TOOL_CALL/TOOL_RESULT entries as children of
-        # the nearest preceding non-tool message so they render nested in the UI.
-        _TOOL_ROLES = {"tool_call", "tool_result"}
+        # Group messages: collect TOOL_CALL/TOOL_RESULT/PLAN/TASK_NODE entries as
+        # children of the nearest preceding non-collapsible message so they render
+        # nested in the UI.
+        _TOOL_ROLES = {"tool_call", "tool_result", "plan", "task_node"}
 
         def _role_str(msg) -> str:
             r = getattr(msg, "role", "")
@@ -317,6 +321,7 @@ class GUIManager(IGUIManager):
                 current_row,
                 on_attachment_toggle,
                 tool_msgs,
+                on_plan_click=on_plan_click,
             )
 
         # Hide messages frame if not expanded on initial render (header mode only)
@@ -332,6 +337,7 @@ class GUIManager(IGUIManager):
         start_row: int,
         on_attachment_toggle=None,
         tool_interactions: list | None = None,
+        on_plan_click=None,
     ) -> int:
         """
         Render a Message object directly into the parent frame's grid.
@@ -356,9 +362,20 @@ class GUIManager(IGUIManager):
         current_row = start_row
         tool_interactions = tool_interactions or []
 
+        def _role_str_inner(m) -> str:
+            r = getattr(m, "role", "")
+            return r.value if hasattr(r, "value") else str(r)
+
+        _PLAN_ROLES = {"plan", "task_node"}
+        _REAL_TOOL_ROLES = {"tool_call", "tool_result"}
+        real_tool_msgs = [m for m in tool_interactions if _role_str_inner(m) in _REAL_TOOL_ROLES]
+        plan_msgs = [m for m in tool_interactions if _role_str_inner(m) == "plan"]
+        task_node_msgs = [m for m in tool_interactions if _role_str_inner(m) == "task_node"]
+
         has_attachments = bool(getattr(message_obj, "attachments", []))
-        has_tools = bool(tool_interactions)
-        is_expandable = has_attachments or has_tools
+        has_tools = bool(real_tool_msgs)
+        has_plans = bool(plan_msgs or task_node_msgs)
+        is_expandable = has_attachments or has_tools or has_plans
 
         # Rows that will be toggled by the expand/collapse button.
         # Each inner list is one visual row's widgets.
@@ -426,7 +443,9 @@ class GUIManager(IGUIManager):
         ]
         preview_text = " ".join([l.strip() for l in lines if l.strip()])
         if has_tools:
-            preview_text += f"  [{len(tool_interactions)} tool interaction{'s' if len(tool_interactions) != 1 else ''}]"
+            preview_text += f"  [{len(real_tool_msgs)} tool interaction{'s' if len(real_tool_msgs) != 1 else ''}]"
+        if has_plans:
+            preview_text += f"  [{len(plan_msgs)} plan{'s' if len(plan_msgs) != 1 else ''}]"
         preview = preview_text[:60] + ("..." if len(preview_text) > 60 else "")
         preview_label = tk.Label(
             parent_frame,
@@ -487,7 +506,13 @@ class GUIManager(IGUIManager):
 
         # ── Tool interaction sub-rows ────────────────────────────────────────
         if has_tools:
-            current_row = self._render_tool_rows(tool_interactions, parent_frame, current_row, collapsible_rows)
+            current_row = self._render_tool_rows(real_tool_msgs, parent_frame, current_row, collapsible_rows)
+
+        # ── Plan / task-node sub-rows ────────────────────────────────────────
+        if has_plans:
+            current_row = self._render_plan_rows(
+                plan_msgs, task_node_msgs, parent_frame, current_row, collapsible_rows, on_plan_click
+            )
 
         return current_row
 
@@ -655,6 +680,194 @@ class GUIManager(IGUIManager):
                 current_row += 1
 
             # All header + detail rows start hidden (collapsed under parent)
+            for w in header_row_widgets:
+                w.grid_remove()
+            parent_collapsible.append(header_row_widgets)
+
+        return current_row
+
+    def _render_plan_rows(
+        self,
+        plan_msgs: list,
+        task_node_msgs: list,
+        parent_frame: tk.Frame,
+        start_row: int,
+        parent_collapsible: list[list[tk.Widget]],
+        on_plan_click=None,
+    ) -> int:
+        """Render PLAN and TASK_NODE messages as collapsible nested sub-rows.
+
+        Each PLAN message is rendered as a header row (📋 plan_name [N steps])
+        that is clickable when ``on_plan_click`` is provided.  TASK_NODE messages
+        for the same plan are shown as depth-indented rows revealed by the plan
+        header's own expand button.  All plan header rows start hidden under the
+        parent message's expand button.
+
+        Args:
+            plan_msgs: List of PLAN role Message objects.
+            task_node_msgs: List of TASK_NODE role Message objects.
+            parent_frame: The grid frame to place rows into.
+            start_row: First grid row to use.
+            parent_collapsible: The parent message's collapsible_rows list.
+            on_plan_click: Optional callable(plan_id: str) invoked on plan click.
+
+        Returns:
+            Next available grid row after all plan sub-rows.
+        """
+        current_row = start_row
+
+        # Index task nodes by plan_id for quick lookup
+        nodes_by_plan: dict[str, list] = {}
+        for msg in task_node_msgs:
+            pid = getattr(msg, "plan_id", None) or ""
+            nodes_by_plan.setdefault(pid, []).append(msg)
+
+        for plan_msg in plan_msgs:
+            plan_id = getattr(plan_msg, "plan_id", None) or ""
+            plan_name = getattr(plan_msg, "plan_name", None) or getattr(plan_msg, "content", None) or "Plan"
+            plan_nodes = nodes_by_plan.get(plan_id, [])
+            enabled = getattr(plan_msg, "enabled", True)
+
+            # Widgets revealed by this plan's own expand button (task node rows)
+            detail_rows: list[list[tk.Widget]] = []
+            # Widgets toggled by the parent message's expand button (this header row)
+            header_row_widgets: list[tk.Widget] = []
+
+            # ── Plan expand button (col 0) ───────────────────────────────────
+            plan_expand_btn = self.collapse_expand_button(parent=parent_frame, attachment_rows=detail_rows)
+            plan_expand_btn.grid(row=current_row, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew")
+            header_row_widgets.append(plan_expand_btn)
+
+            # ── Enabled checkbox (col 1) ─────────────────────────────────────
+            plan_enabled_var = tk.BooleanVar(value=enabled)
+
+            def _on_plan_enabled(var=plan_enabled_var, msg=plan_msg):
+                msg.enabled = var.get()
+
+            plan_checkbox = tk.Checkbutton(
+                parent_frame,
+                variable=plan_enabled_var,
+                command=_on_plan_enabled,
+                bg=self._section_bg,
+                fg=self.config.ui_fg,
+                activebackground=self._section_bg,
+                activeforeground=self.config.ui_fg,
+                selectcolor=self._section_bg,
+            )
+            plan_checkbox.grid(row=current_row, column=self.MESSAGE_COLUMNS["enabled"], sticky="nsew")
+            header_row_widgets.append(plan_checkbox)
+
+            # ── Plan icon (col 2) ────────────────────────────────────────────
+            plan_icon = tk.Label(
+                parent_frame,
+                text="📋",
+                anchor="w",
+                bg=self._section_bg,
+                fg=self.config.ui_fg,
+            )
+            plan_icon.grid(row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew")
+            header_row_widgets.append(plan_icon)
+
+            # ── Plan label (col 3) — clickable button if callback provided ───
+            step_count = len(plan_nodes)
+            badge = f"  [{step_count} step{'s' if step_count != 1 else ''}]" if step_count else ""
+            plan_label_text = f"{plan_name}{badge}"
+
+            if on_plan_click and plan_id:
+                plan_label: tk.Widget = tk.Button(
+                    parent_frame,
+                    text=plan_label_text,
+                    anchor="w",
+                    cursor="hand2",
+                    relief=tk.FLAT,
+                    font=("", 10, "bold"),
+                    bg=self._section_bg,
+                    fg=self.config.agent_classification_fg,
+                    activebackground=self._section_bg,
+                    activeforeground=self.config.agent_classification_fg,
+                    command=lambda pid=plan_id: on_plan_click(pid),
+                )
+            else:
+                plan_label = tk.Label(
+                    parent_frame,
+                    text=plan_label_text,
+                    anchor="w",
+                    font=("", 10, "bold"),
+                    bg=self._section_bg,
+                    fg=self.config.ui_fg,
+                )
+            plan_label.grid(row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew")
+            header_row_widgets.append(plan_label)
+
+            current_row += 1
+
+            # ── Task node rows nested under plan ─────────────────────────────
+            for node_msg in plan_nodes:
+                node_row_widgets: list[tk.Widget] = []
+                depth = getattr(node_msg, "task_depth", 0) or 0
+                task_id = getattr(node_msg, "task_id", "") or ""
+                synth = (getattr(node_msg, "content", "") or "").strip()
+                node_enabled = getattr(node_msg, "enabled", True)
+
+                # Check if this was originally a TBD node
+                task_data = getattr(node_msg, "task_data", None) or {}
+                is_tbd = bool(task_data.get("tbd", False))
+                icon = "?" if is_tbd else "🌿"
+
+                # Depth indentation via padx
+                indent = 4 + depth * 8
+
+                # Enabled checkbox for the task node
+                node_enabled_var = tk.BooleanVar(value=node_enabled)
+
+                def _on_node_enabled(var=node_enabled_var, msg=node_msg):
+                    msg.enabled = var.get()
+
+                node_checkbox = tk.Checkbutton(
+                    parent_frame,
+                    variable=node_enabled_var,
+                    command=_on_node_enabled,
+                    bg=self._section_bg,
+                    fg=self.config.ui_fg,
+                    activebackground=self._section_bg,
+                    activeforeground=self.config.ui_fg,
+                    selectcolor=self._section_bg,
+                )
+                node_checkbox.grid(
+                    row=current_row, column=self.MESSAGE_COLUMNS["enabled"], sticky="nsew", padx=(indent, 0)
+                )
+                node_row_widgets.append(node_checkbox)
+
+                node_icon_label = tk.Label(
+                    parent_frame,
+                    text=icon,
+                    anchor="w",
+                    bg=self._section_bg,
+                    fg=self.config.muted_fg,
+                )
+                node_icon_label.grid(row=current_row, column=self.MESSAGE_COLUMNS["role"], sticky="nsew")
+                node_row_widgets.append(node_icon_label)
+
+                desc_preview = synth[:50] + ("..." if len(synth) > 50 else "")
+                node_font = ("", 9, "italic") if is_tbd else ("", 9)
+                node_label = tk.Label(
+                    parent_frame,
+                    text=f"{task_id[-6:] if task_id else '?'} — \"{desc_preview}\"",
+                    anchor="w",
+                    font=node_font,
+                    bg=self._section_bg,
+                    fg=self.config.muted_fg,
+                )
+                node_label.grid(row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew")
+                node_row_widgets.append(node_label)
+
+                # Initially hidden; revealed by plan header expand button
+                for w in node_row_widgets:
+                    w.grid_remove()
+                detail_rows.append(node_row_widgets)
+                current_row += 1
+
+            # Plan header row starts hidden (controlled by parent message expand)
             for w in header_row_widgets:
                 w.grid_remove()
             parent_collapsible.append(header_row_widgets)

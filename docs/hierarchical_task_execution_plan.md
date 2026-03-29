@@ -491,11 +491,11 @@ Sub-tasks indent by `depth × 20px` and draw a branch line back up to their pare
 
 **Goal:** The system pane context panel shows plan records as first-class elements; clicking opens the named tab.
 
-- [ ] Add `PLAN` role rendering in `GUIManager.render_message_row()` — renders as **plan element row**: `📋 Explore Bridge Architecture  [3 steps ✓]`; placed at the same level as tool calls and attachments under the assistant message that triggered it
-- [ ] Plan element row click → `gui.focus_plan_tab(plan_id)`; if reloading from history and tab doesn't exist yet → reconstruct tab from `plan.json` + `task_node.json` records (read-only replay)
-- [ ] Add `TASK_NODE` role rendering — compact row: `🌿 step-1 [✓] — "List bridge files"` with child count badge and indentation based on depth; shown nested under its plan element row
-- [ ] Task node rows have an `enabled` toggle (checkbox): disabled nodes are dimmed; their nested tool_call/tool_result messages are suppressed from LLM context re-submissions
-- [ ] TBD task node rows render with `?` icon and italic description until resolved; update in-place on `TASK_NODE_TBD` chunk
+- [✓] Add `PLAN` role rendering in `GUIManager.render_message_row()` — renders as **plan element row**: `📋 Explore Bridge Architecture  [3 steps ✓]`; placed at the same level as tool calls and attachments under the assistant message that triggered it
+- [✓] Plan element row click → `gui.focus_plan_tab(plan_id)`; if reloading from history and tab doesn't exist yet → reconstruct tab from `plan.json` + `task_node.json` records (read-only replay)
+- [✓] Add `TASK_NODE` role rendering — compact row: `🌿 step-1 [✓] — "List bridge files"` with child count badge and indentation based on depth; shown nested under its plan element row
+- [✓] Task node rows have an `enabled` toggle (checkbox): disabled nodes are dimmed; their nested tool_call/tool_result messages are suppressed from LLM context re-submissions
+- [✓] TBD task node rows render with `?` icon and italic description until resolved; update in-place on `TASK_NODE_TBD` chunk
 
 ---
 

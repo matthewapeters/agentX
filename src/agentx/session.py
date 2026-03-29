@@ -305,6 +305,23 @@ class AgentXSession:
                 thinking_parts.append(chunk.content)
             elif chunk.type == ChunkType.CONTENT and chunk.content:
                 content_parts.append(chunk.content)
+            elif chunk.type == ChunkType.PLAN_START and chunk.plan_id:
+                _plan_msg = Message(
+                    role=MessageRole.PLAN,
+                    content=chunk.plan_name or "Plan",
+                    plan_id=chunk.plan_id,
+                    plan_name=chunk.plan_name or "Plan",
+                )
+                self.context.add_message(_plan_msg)
+            elif chunk.type == ChunkType.TASK_NODE_END and chunk.task_id:
+                _node_msg = Message(
+                    role=MessageRole.TASK_NODE,
+                    content=chunk.content or "",
+                    plan_id=chunk.plan_id or "",
+                    task_id=chunk.task_id,
+                    task_depth=chunk.task_depth or 0,
+                )
+                self.context.add_message(_node_msg)
             yield chunk
 
         self._persist_stream_messages(
@@ -554,6 +571,46 @@ class AgentXSession:
                 self.enabled_history_attachments.remove(attachment)
         self.refresh_user_gui()
 
+    def _on_plan_row_click(self, plan_id: str) -> None:
+        """Handle a click on a plan row in the context panel.
+
+        If the plan tab already exists in the output notebook, focus it.
+        Otherwise reconstruct the tab from persisted plan/task-node records.
+        """
+        tab = self.gui.get_plan_tab_frame(plan_id)
+        if tab is not None:
+            self.gui.focus_plan_tab(plan_id)
+        else:
+            self._replay_plan_tab(plan_id)
+
+    def _replay_plan_tab(self, plan_id: str) -> None:
+        """Reconstruct a read-only plan tab from persisted JSON records.
+
+        Loads the matching PlanRecord and all associated TaskNodeRecords from
+        the session directory, creates the tab, and populates it with nodes
+        and their synthesis text exactly as they appeared during execution.
+        """
+        plans = self.context.load_plans()
+        plan_record = next((p for p in plans if p.plan_id == plan_id), None)
+        if plan_record is None:
+            return
+
+        self.gui.add_plan_tab(plan_id, plan_record.plan_name)
+        self.gui.focus_plan_tab(plan_id)
+
+        task_nodes = self.context.load_task_nodes()
+        plan_nodes = [n for n in task_nodes if n.plan_id == plan_id]
+        plan_nodes.sort(key=lambda n: (n.depth, n.epoch))
+
+        for node in plan_nodes:
+            if node.parent_task_id:
+                self.gui.add_plan_subtask_node(node.task_id, node.parent_task_id, node.task_description, node.depth)
+            else:
+                self.gui.add_plan_step_node(plan_id, node.task_id, node.task_description, node.tbd)
+
+            if node.status == "done":
+                self.gui.update_plan_node_status(node.task_id, "done")
+
     def refresh_context_gui(self):
         """
         Refreshes the context GUI in the Session tab of the system status notebook.
@@ -576,6 +633,7 @@ class AgentXSession:
             self.context,
             self.gui.get_context_parent(),
             on_attachment_toggle=self.on_history_attachment_toggle,
+            on_plan_click=self._on_plan_row_click,
         )
         self.gui.update_context_panel(context_widget)
 
@@ -1045,6 +1103,14 @@ class AgentXSession:
                             self.gui.focus_plan_tab(pid),
                         )
                     )
+                    # Store PLAN message so it shows in the context panel
+                    _plan_msg = Message(
+                        role=MessageRole.PLAN,
+                        content=_pname,
+                        plan_id=_pid,
+                        plan_name=_pname,
+                    )
+                    self.context.add_message(_plan_msg)
                 elif chunk.type == ChunkType.TASK_NODE_START and chunk.task_id:
                     _tid = chunk.task_id
                     _pid = chunk.plan_id or ""
@@ -1072,6 +1138,8 @@ class AgentXSession:
                     _tid = chunk.task_id
                     _synth = chunk.content or ""
                     _asserts = chunk.assertions or []
+                    _node_pid = chunk.plan_id or ""
+                    _node_depth = chunk.task_depth or 0
                     self._safe_root_after(lambda tid=_tid: self.gui.update_plan_node_status(tid, "done"))
 
                     # Build per-task callbacks for the Re-synthesise dialog.
@@ -1086,6 +1154,15 @@ class AgentXSession:
                             tid, s, a, on_resynth=cb, on_add_wm_hint=wm
                         )
                     )
+                    # Store TASK_NODE message so it shows in the context panel
+                    _node_msg = Message(
+                        role=MessageRole.TASK_NODE,
+                        content=_synth,
+                        plan_id=_node_pid,
+                        task_id=_tid,
+                        task_depth=_node_depth,
+                    )
+                    self.context.add_message(_node_msg)
                 elif chunk.type == ChunkType.TOOL_CALL and chunk.task_id:
                     _tid = chunk.task_id
                     _tname = chunk.tool_name or ""
