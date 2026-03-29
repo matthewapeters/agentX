@@ -379,6 +379,52 @@ class AgentixBridge:
             assertions=[a.to_dict() for a in node.assertions],
         )
 
+    def replay_task_node_streaming(
+        self,
+        node: "TaskNodeRecord",
+        context: "Context",
+        task_tree: "TaskTree",
+    ) -> "Iterator[ResponseChunk]":
+        """Re-run a task node completely from scratch — new tool loop + synthesis.
+
+        Excludes the node's original child messages from the initial context so
+        the LLM starts fresh, then delegates to ``_run_task_node``.  A new
+        ``TaskNodeRecord`` epoch is **not** created — the existing ``task_id``
+        is reused so the GUI updates the same row in-place.
+
+        Args:
+            node:       ``TaskNodeRecord`` to replay.
+            context:    Current session context (provides base conversation history).
+            task_tree:  Live ``TaskTree`` index (updated in-place).
+
+        Yields:
+            ``ResponseChunk`` objects exactly as ``_run_task_node`` does.
+        """
+        excluded: set[float] = set(node.child_message_epochs or [])
+        base_messages: list[dict] = []
+        for msg in context.get_messages(enabled_only=False):
+            epoch = getattr(msg, "epoch", None)
+            if epoch is not None and epoch in excluded:
+                continue
+            try:
+                base_messages.append(msg.to_llm_dict())
+            except Exception:
+                pass
+
+        description = node.tbd_resolved_description or node.task_description
+        yield from self._run_task_node(
+            plan_id=node.plan_id,
+            task_id=node.task_id,
+            task_description=description,
+            parent_task_id=node.parent_task_id,
+            depth=node.depth,
+            plan_step_index=node.plan_step_index,
+            tbd=False,
+            context=context,
+            task_tree=task_tree,
+            initial_messages=base_messages,
+        )
+
     def _get_max_tokens(self) -> int:
         """
         Get max tokens for current model.

@@ -2592,7 +2592,7 @@ class GUIManager(IGUIManager):
 
     # ── Plan tab methods ──────────────────────────────────────────────────────
 
-    def add_plan_tab(self, plan_id: str, plan_name: str) -> tk.Frame:
+    def add_plan_tab(self, plan_id: str, plan_name: str, on_export: Optional[Callable[[], None]] = None) -> tk.Frame:
         """Create a plan tab in output_notebook with PlanTreeWidget and toolbar."""
         if plan_id in self._plan_trees:
             # Tab already exists — return the existing frame.
@@ -2632,7 +2632,7 @@ class GUIManager(IGUIManager):
             fg=self.config.ui_fg,
             relief=tk.FLAT,
             cursor="hand2",
-            command=lambda: None,
+            command=on_export or (lambda: None),
         ).pack(side=tk.RIGHT)
 
         # PlanTreeWidget fills the remaining space.
@@ -2658,14 +2658,23 @@ class GUIManager(IGUIManager):
         if tab_frame is not None and self.widgets.output_notebook is not None:
             self.widgets.output_notebook.select(tab_frame)
 
-    def add_plan_step_node(self, plan_id: str, task_id: str, description: str, tbd: bool) -> None:
+    def add_plan_step_node(
+        self, plan_id: str, task_id: str, description: str, tbd: bool, on_replay: Optional[Callable[[str], None]] = None
+    ) -> None:
         """Add a root-level step to the plan tree and record plan mapping."""
         tree = self._plan_trees.get(plan_id)
         if tree:
             self._task_to_plan[task_id] = plan_id
-            tree.add_step_node(plan_id, task_id, description, tbd)
+            tree.add_step_node(plan_id, task_id, description, tbd, on_replay=on_replay)
 
-    def add_plan_subtask_node(self, task_id: str, parent_task_id: str, description: str, depth: int) -> None:
+    def add_plan_subtask_node(
+        self,
+        task_id: str,
+        parent_task_id: str,
+        description: str,
+        depth: int,
+        on_replay: Optional[Callable[[str], None]] = None,
+    ) -> None:
         """Add a sub-task row to the plan tree under its parent."""
         plan_id = self._task_to_plan.get(parent_task_id)
         if plan_id is None:
@@ -2679,7 +2688,7 @@ class GUIManager(IGUIManager):
         tree = self._plan_trees.get(plan_id)
         if tree:
             self._task_to_plan[task_id] = plan_id
-            tree.add_subtask_node(task_id, parent_task_id, description, depth)
+            tree.add_subtask_node(task_id, parent_task_id, description, depth, on_replay=on_replay)
 
     def update_plan_node_status(self, task_id: str, status: str) -> None:
         """Update status icon for a task node across all plan trees."""

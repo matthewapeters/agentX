@@ -2,8 +2,10 @@ import json
 import os
 import tkinter as tk
 from datetime import datetime
+from typing import Optional
 
 from shared.models.context import Context
+from shared.models.task_node import TaskTree
 
 
 class History:
@@ -35,14 +37,10 @@ class History:
         try:
             print("Loading history from:", user_history_path)
             context_folders = [
-                d
-                for d in os.listdir(user_history_path)
-                if os.path.isdir(os.path.join(user_history_path, d))
+                d for d in os.listdir(user_history_path) if os.path.isdir(os.path.join(user_history_path, d))
             ]
         except OSError as e:
-            print(
-                f"Could not access user history path: {user_history_path}. Error: {e }"
-            )
+            print(f"Could not access user history path: {user_history_path}. Error: {e }")
             return
 
         # Sort alphabetically
@@ -51,14 +49,10 @@ class History:
 
         # Load each context
         for context_folder_name in context_folders:
-            context_folder_path = os.path.join(
-                user_history_path, context_folder_name, "context"
-            )
+            context_folder_path = os.path.join(user_history_path, context_folder_name, "context")
             # Skip the current session folder if specified
             session_folder = os.path.join(user_history_path, context_folder_name)
-            if exclude_session and os.path.normpath(session_folder) == os.path.normpath(
-                exclude_session
-            ):
+            if exclude_session and os.path.normpath(session_folder) == os.path.normpath(exclude_session):
                 print("Skipping current session folder in history:", exclude_session)
                 continue
 
@@ -71,9 +65,7 @@ class History:
                 #  print("  Loading context from:", context_folder_path)
                 context.load_from_dir(context.path)
             except OSError as e:
-                print(
-                    f"Could not load messages from context folder: {context_folder_name}. Error: {e}"
-                )
+                print(f"Could not load messages from context folder: {context_folder_name}. Error: {e}")
                 continue
 
             # Add context to history if it contains messages
@@ -81,6 +73,30 @@ class History:
                 # start with contexts collapsed
                 context.expanded = False
                 self.sessions.append(context)
+
+    @staticmethod
+    def open_task_tree(session_path: str) -> "Optional[TaskTree]":
+        """Load the TaskTree from a prior session directory.
+
+        Args:
+            session_path: Absolute path to the session folder (the directory that
+                          contains ``context/``, ``plans/``, ``task_nodes/``,
+                          and optionally ``task_tree.json``).
+
+        Returns:
+            A ``TaskTree`` instance if ``task_tree.json`` is found and valid;
+            ``None`` otherwise.
+        """
+        import os
+
+        task_tree_path = os.path.join(session_path, "task_tree.json")
+        if not os.path.isfile(task_tree_path):
+            return None
+        try:
+            return TaskTree.load(session_path)
+        except Exception as exc:
+            print(f"Warning: could not load task_tree.json from {session_path}: {exc}")
+            return None
 
     def get_enabled_messages(self) -> list:
         """
@@ -93,17 +109,11 @@ class History:
                 if getattr(message, "enabled", False):
                     # Filter attachments to only include enabled ones
                     if hasattr(message, "attachments"):
-                        message.attachments = [
-                            a
-                            for a in message.attachments
-                            if getattr(a, "enabled", False)
-                        ]
+                        message.attachments = [a for a in message.attachments if getattr(a, "enabled", False)]
                     enabled_messages.append((message.timestamp, message))
         return enabled_messages
 
-    def to_gui(
-        self, parent_frame: tk.Frame, user_name: str, on_attachment_toggle=None
-    ) -> tk.Frame:
+    def to_gui(self, parent_frame: tk.Frame, user_name: str, on_attachment_toggle=None) -> tk.Frame:
         """
         Docstring for to_gui
 
@@ -171,9 +181,7 @@ class History:
         history_contexts_frame.grid_remove()  # Start collapsed
 
         for idx, context in enumerate(self.sessions):
-            c_frame = context.to_gui(
-                history_contexts_frame, on_attachment_toggle=on_attachment_toggle
-            )
+            c_frame = context.to_gui(history_contexts_frame, on_attachment_toggle=on_attachment_toggle)
             c_frame.grid(row=idx, column=0, sticky="w", padx=(20, 0))
 
         return history_frame

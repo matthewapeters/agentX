@@ -595,7 +595,7 @@ class AgentXSession:
         if plan_record is None:
             return
 
-        self.gui.add_plan_tab(plan_id, plan_record.plan_name)
+        self.gui.add_plan_tab(plan_id, plan_record.plan_name, on_export=lambda: self._export_task_tree(plan_id))
         self.gui.focus_plan_tab(plan_id)
 
         task_nodes = self.context.load_task_nodes()
@@ -603,13 +603,125 @@ class AgentXSession:
         plan_nodes.sort(key=lambda n: (n.depth, n.epoch))
 
         for node in plan_nodes:
+            _on_replay = lambda tid=node.task_id: self._replay_subtask(tid)
             if node.parent_task_id:
-                self.gui.add_plan_subtask_node(node.task_id, node.parent_task_id, node.task_description, node.depth)
+                self.gui.add_plan_subtask_node(
+                    node.task_id, node.parent_task_id, node.task_description, node.depth, on_replay=_on_replay
+                )
             else:
-                self.gui.add_plan_step_node(plan_id, node.task_id, node.task_description, node.tbd)
+                self.gui.add_plan_step_node(
+                    plan_id, node.task_id, node.task_description, node.tbd, on_replay=_on_replay
+                )
 
             if node.status == "done":
                 self.gui.update_plan_node_status(node.task_id, "done")
+
+    def _export_task_tree(self, plan_id: str) -> None:
+        """Export the plan's task tree to a markdown file in the session folder.
+
+        Loads the plan and its task nodes from disk, formats them as a nested
+        markdown list (plan → steps → sub-tasks with synthesis), and writes
+        the result to ``<session_folder>/task_tree_export.md``.
+
+        Args:
+            plan_id: ID of the plan to export.
+        """
+        from shared.models.task_node import TaskNodeRecord
+
+        plans = self.context.load_plans()
+        plan = next((p for p in plans if p.plan_id == plan_id), None)
+        if plan is None:
+            self.gui.display_error(f"Cannot export: plan '{plan_id}' not found.")
+            return
+
+        task_nodes = self.context.load_task_nodes()
+        plan_nodes = [n for n in task_nodes if n.plan_id == plan_id]
+
+        lines: list[str] = [
+            f"# Plan: {plan.plan_name}",
+            f"",
+            f"Status: {plan.status}  |  Plan ID: {plan_id}",
+            f"",
+        ]
+
+        def _format_node(node: TaskNodeRecord, level: int) -> None:
+            indent = "  " * level
+            status_icon = {"done": "✓", "failed": "✗", "running": "●", "pending": "○"}.get(node.status, "?")
+            desc = node.tbd_resolved_description or (
+                "[TBD] " + node.task_description if node.tbd else node.task_description
+            )
+            lines.append(f"{indent}- [{status_icon}] {desc}")
+            for a in node.assertions:
+                icon = "✓" if a.verified else ("✗" if a.verified is False else "?")
+                lines.append(f"{indent}  - [{icon}] {a.fact}")
+            children = sorted(
+                [n for n in plan_nodes if n.parent_task_id == node.task_id],
+                key=lambda n: n.epoch,
+            )
+            for child in children:
+                _format_node(child, level + 1)
+
+        root_nodes = sorted(
+            [n for n in plan_nodes if not n.parent_task_id],
+            key=lambda n: n.epoch,
+        )
+        for root in root_nodes:
+            _format_node(root, 0)
+
+        export_path = os.path.join(self.session_folder, "task_tree_export.md")
+        try:
+            with open(export_path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
+            self.gui.display_error(f"Task tree exported to: {export_path}")
+        except Exception as exc:
+            self.gui.display_error(f"Export failed: {exc}")
+
+    def _replay_subtask(self, task_id: str) -> None:
+        """Re-run a task node from scratch on a background thread.
+
+        Loads the TaskNodeRecord and TaskTree from disk, spawns a background thread
+        that calls ``AgentixBridgeAdapter.replay_task_node_generator``, and updates
+        the plan tree widget live as chunks arrive.
+
+        Args:
+            task_id: The task node to replay.
+        """
+        if self._is_streaming.is_set():
+            self.gui.display_error("Cannot replay while a response is streaming.")
+            return
+
+        tree = self.context.load_task_tree()
+        if tree is None:
+            self.gui.display_error(f"No task tree found — cannot replay {task_id}.")
+            return
+        node = tree.nodes.get(task_id)
+        if node is None:
+            self.gui.display_error(f"Task node '{task_id}' not found in task tree.")
+            return
+
+        self._safe_root_after(lambda tid=task_id: self.gui.update_plan_node_status(tid, "running"))
+
+        def _worker(_node=node, _tree=tree, _tid=task_id):
+            try:
+                self._is_streaming.set()
+                self._safe_root_after(lambda: self.gui.set_streaming_state(True))
+                for chunk in self.agentix_adapter.replay_task_node_generator(_node, self.context, _tree):
+                    if chunk.type == ChunkType.TASK_NODE_END and chunk.task_id == _tid:
+                        _synth = chunk.content or ""
+                        _asserts = chunk.assertions or []
+                        self._safe_root_after(lambda tid=_tid: self.gui.update_plan_node_status(tid, "done"))
+                        self._safe_root_after(
+                            lambda tid=_tid, s=_synth, a=_asserts: self.gui.update_plan_synthesis(tid, s, a)
+                        )
+            except Exception as exc:
+                logger.exception("replay_subtask worker error")
+                self._safe_root_after(lambda err=exc: self.gui.display_error(f"Replay error: {err}"))
+            finally:
+                self._is_streaming.clear()
+                self._safe_root_after(lambda: self.gui.set_streaming_state(False))
+                self._safe_root_after(self.refresh_user_gui)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def refresh_context_gui(self):
         """
@@ -1097,9 +1209,10 @@ class AgentXSession:
                 if chunk.type == ChunkType.PLAN_START and chunk.plan_id:
                     _pid = chunk.plan_id
                     _pname = chunk.plan_name or "Plan"
+                    _on_export = lambda pid=_pid: self._export_task_tree(pid)
                     self._safe_root_after(
-                        lambda pid=_pid, pn=_pname: (
-                            self.gui.add_plan_tab(pid, pn),
+                        lambda pid=_pid, pn=_pname, exp=_on_export: (
+                            self.gui.add_plan_tab(pid, pn, on_export=exp),
                             self.gui.focus_plan_tab(pid),
                         )
                     )
@@ -1118,16 +1231,17 @@ class AgentXSession:
                     _par = chunk.parent_task_id
                     _depth = chunk.task_depth or 0
                     _tbd = bool(chunk.tbd)
+                    _on_replay = lambda tid=_tid: self._replay_subtask(tid)
                     if _par:
                         self._safe_root_after(
-                            lambda tid=_tid, par=_par, desc=_desc, d=_depth: self.gui.add_plan_subtask_node(
-                                tid, par, desc, d
+                            lambda tid=_tid, par=_par, desc=_desc, d=_depth, rep=_on_replay: self.gui.add_plan_subtask_node(
+                                tid, par, desc, d, on_replay=rep
                             )
                         )
                     else:
                         self._safe_root_after(
-                            lambda pid=_pid, tid=_tid, desc=_desc, tb=_tbd: self.gui.add_plan_step_node(
-                                pid, tid, desc, tb
+                            lambda pid=_pid, tid=_tid, desc=_desc, tb=_tbd, rep=_on_replay: self.gui.add_plan_step_node(
+                                pid, tid, desc, tb, on_replay=rep
                             )
                         )
                 elif chunk.type == ChunkType.TASK_NODE_TBD and chunk.task_id:

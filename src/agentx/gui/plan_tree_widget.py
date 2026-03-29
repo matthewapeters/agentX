@@ -73,15 +73,39 @@ class PlanTreeWidget:
         """Return the outer frame to pack inside the plan tab."""
         return self._outer
 
-    def add_step_node(self, plan_id: str, task_id: str, description: str, tbd: bool) -> None:
+    def add_step_node(
+        self,
+        plan_id: str,
+        task_id: str,
+        description: str,
+        tbd: bool,
+        on_replay: Optional[Callable[[str], None]] = None,
+    ) -> None:
         """Add a root-level (depth=0) plan step row to the tree."""
-        self._add_node(task_id, description, depth=0, tbd=tbd, parent=self._content, initially_expanded=True)
+        self._add_node(
+            task_id, description, depth=0, tbd=tbd, parent=self._content, initially_expanded=True, on_replay=on_replay
+        )
 
-    def add_subtask_node(self, task_id: str, parent_task_id: str, description: str, depth: int) -> None:
+    def add_subtask_node(
+        self,
+        task_id: str,
+        parent_task_id: str,
+        description: str,
+        depth: int,
+        on_replay: Optional[Callable[[str], None]] = None,
+    ) -> None:
         """Add an indented sub-task row under its parent's details frame."""
         parent_node = self._nodes.get(parent_task_id)
         parent_frame = parent_node["details_frame"] if parent_node else self._content
-        self._add_node(task_id, description, depth=depth, tbd=False, parent=parent_frame, initially_expanded=False)
+        self._add_node(
+            task_id,
+            description,
+            depth=depth,
+            tbd=False,
+            parent=parent_frame,
+            initially_expanded=False,
+            on_replay=on_replay,
+        )
 
     def update_node_status(self, task_id: str, status: str) -> None:
         """Update the status icon (○ ● ✓ etc.) for an existing node."""
@@ -166,6 +190,7 @@ class PlanTreeWidget:
         tbd: bool,
         parent: tk.Widget,
         initially_expanded: bool,
+        on_replay: Optional[Callable[[str], None]] = None,
     ) -> None:
         indent = depth * _INDENT_PX + 4
         container = tk.Frame(parent, bg=self._bg)
@@ -224,6 +249,19 @@ class PlanTreeWidget:
             cursor="hand2",
         )
         toggle_btn.pack(side=tk.RIGHT, padx=(0, 4))
+
+        if on_replay is not None:
+            tk.Button(
+                row,
+                text="↺ Replay",
+                bg=self._bg,
+                fg=self._accent_fg,
+                font=(self._font[0], max(8, self._font[1] - 1)),
+                relief=tk.FLAT,
+                bd=0,
+                cursor="hand2",
+                command=lambda tid=task_id: on_replay(tid),
+            ).pack(side=tk.RIGHT, padx=(4, 0))
 
         self._nodes[task_id] = {
             "container": container,

@@ -327,12 +327,13 @@ class IGUIManager(Protocol):
 
     # ── Plan tab methods ──────────────────────────────────────────────────────
 
-    def add_plan_tab(self, plan_id: str, plan_name: str) -> tk.Widget:
+    def add_plan_tab(self, plan_id: str, plan_name: str, on_export: Optional[Callable[[], None]] = None) -> tk.Widget:
         """Create a named tab in output_notebook for the given plan.
 
         Args:
             plan_id:   Unique plan identifier (from ``PlanRecord.plan_id``).
             plan_name: Human-readable plan name used as the tab label.
+            on_export: Optional callback invoked when the Export button is clicked.
 
         Returns:
             The tab frame widget.
@@ -347,11 +348,20 @@ class IGUIManager(Protocol):
         """Switch output notebook focus to the plan tab."""
         ...
 
-    def add_plan_step_node(self, plan_id: str, task_id: str, description: str, tbd: bool) -> None:
+    def add_plan_step_node(
+        self, plan_id: str, task_id: str, description: str, tbd: bool, on_replay: Optional[Callable[[str], None]] = None
+    ) -> None:
         """Add a root-level step row to the plan's tree widget."""
         ...
 
-    def add_plan_subtask_node(self, task_id: str, parent_task_id: str, description: str, depth: int) -> None:
+    def add_plan_subtask_node(
+        self,
+        task_id: str,
+        parent_task_id: str,
+        description: str,
+        depth: int,
+        on_replay: Optional[Callable[[str], None]] = None,
+    ) -> None:
         """Add an indented sub-task row under its parent in the plan tree."""
         ...
 

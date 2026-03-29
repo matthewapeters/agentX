@@ -5,17 +5,20 @@ Author: GitHub Copilot Chat Assistant (for maintainers' review)
 
 Summary
 -------
+
 This document describes the high-level architecture and main functional components of the AgentX application (branch: smolagents). It is written and structured to be assistant-friendly: it contains short module summaries, a searchable index of key files and entrypoints, recommended retrieval keywords, and suggested prompts for automated agents to reason about the repo.
 
 Quick links
 -----------
-- Repository: https://github.com/matthewapeters/agentX
+
+- Repository: <https://github.com/matthewapeters/agentX>
 - Branch scanned: smolagents
 
 NOTE: The repository scan used to generate this document was programmatic and limited to the top-level and several src files. The scan may be incomplete — view the repository in GitHub for the complete file tree.
 
 Index (high-level)
 -------------------
+
 1. Entrypoints
    - src/agentx/__main__.py  — app launch wrapper
    - src/agentx/main.py      — GUI application main()
@@ -44,6 +47,7 @@ Index (high-level)
 
 Module summaries (concise)
 --------------------------
+
 - agentx.__main__ / agentx.main
   - Purpose: Launch the AgentX Tkinter GUI application. Creates AgentXSession and runs the main loop.
   - Key behavior: Calls session.perform_service_handshake() then session.layout() and mainloop(); ensures ServiceManager shutdown on exit.
@@ -80,6 +84,7 @@ Module summaries (concise)
 
 Assistant-friendly features included in this document
 ----------------------------------------------------
+
 - Short summaries (1–3 lines) for each major module to allow quick retrieval.
 - Index mapping file paths to functional descriptions so an assistant can locate code to answer questions (e.g., "Where is service startup logic?").
 - Suggested retrieval keywords for each module (see next section).
@@ -87,6 +92,7 @@ Assistant-friendly features included in this document
 
 Suggested retrieval keywords (examples)
 --------------------------------------
+
 - service startup, health check -> src/agentx/service_manager.py
 - session lifecycle, GUI wiring -> src/agentx/session.py
 - open file, file explorer -> src/agentx/file_explorer.py
@@ -96,6 +102,7 @@ Suggested retrieval keywords (examples)
 
 Suggested prompts for an assistant (templates)
 ----------------------------------------------
+
 - "Summarize the responsibilities of src/agentx/service_manager.py in 3 bullet points."
 - "List functions that start subprocesses or call external services across the repo."
 - "Find functions that read/write files under sessions/ and summarize their formats."
@@ -103,6 +110,7 @@ Suggested prompts for an assistant (templates)
 
 Practical next steps to make it more assistant-friendly
 -------------------------------------------------------
+
 1. Add a docs/index.md (topic-based table of contents) with permalinks to each module and short descriptions.
 2. Store short one-line summaries as module-level docstrings (where missing); they are easy to extract programmatically.
 3. Add a small metadata file .repo_index.json that maps keywords -> file paths and includes concise summaries; used by search/routers.
@@ -110,21 +118,25 @@ Practical next steps to make it more assistant-friendly
 
 Files created/updated
 ---------------------
+
 - docs/architecture.md  (created)
 - smolagentx.md         (already present and updated earlier)
 
 Actions performed
 -----------------
+
 - Programmatic review of top-level files and src/agentx components on branch `smolagents` to generate this architecture summary.
 - Note: The automated scan focused on several core modules and may not cover every file in the repository. For a full index, I can run a complete file tree scan and produce a machine-readable mapping (.repo_index.json) if you’d like.
 
 Commit
 ------
-This document will be committed to docs/architecture.md on branch smolagents.
+
+This document will be committed to docs/architecture.md on branch smolagents
 ---
 
 Tool Pipeline (added 2026-03-08)
 ---------------------------------
+
 The agentic tool-usage pipeline was implemented across Phases 1-6 of
 docs/tool_usage_plan.md. The key components are:
 
@@ -135,7 +147,7 @@ docs/tool_usage_plan.md. The key components are:
                 ├── RESPOND_DIRECTLY   →  _stream_direct_response()
                 ├── SINGLE_TOOL        →  _stream_tool_response()   ─┐
                 ├── INVOKE_PLANNER     →  _stream_planned_response() ─┤
-                └── ESCALATE           →  _stream_direct_response()  │
+                └── ESCALATE           →_stream_direct_response()  │
                                                                       │
                     All tool routes call _run_tool_loop(max_rounds=N)─┘
                       ├── _iter_llm_chunks()  — OpenAI-compat stream
@@ -151,8 +163,8 @@ Key tool pipeline files:
   src/shared/models/message.py               — to_llm_dict() with TOOL_CALL/TOOL_RESULT wire format
   src/shared/models/context.py               — add_tool_call_message(), add_tool_result_message()
   src/agentx/integration/client_tool_executor.py — file tool wrappers + get_client_tool_schemas()
-  src/agentx/integration/agentix_bridge_adapter.py — _register_client_tools() on init
-  src/agentx/session.py                      — _display_tool_call(), _display_tool_result()
+  src/agentx/integration/agentix_bridge_adapter.py —_register_client_tools() on init
+  src/agentx/session.py                      — _display_tool_call(),_display_tool_result()
   system_prompts/tool_use.md                 — LLM guidance for tool use
 
 Tool message wire format (Ollama/OpenAI):
@@ -164,3 +176,85 @@ Tests added (tool pipeline):
   tests/test_message_wire_format.py                (24 tests)
   tests/test_client_tool_integration.py            (21 tests)
   tests/integration/test_ollama_tool_stream.py     (13 tests)
+
+---
+
+Hierarchical Task Execution (added 2026-03-29)
+-----------------------------------------------
+
+Implemented across Phases 1–7 of docs/hierarchical_task_execution_plan.md.
+
+Key files:
+  src/shared/models/task_node.py                — PlanRecord, PlanStep, TaskNodeRecord, SynthesisAttempt, AssertionRecord, TaskTree
+  src/agentix/bridge/bridge.py                  —_create_plan,_run_plan,_run_task_node, retrigger_synthesis_streaming, replay_task_node_streaming
+  src/agentx/gui/plan_tree_widget.py            — PlanTreeWidget: scrollable tree with step/sub-task nodes, synthesis, assertions
+  src/agentx/gui/resynthesis_dialog.py          — ResynthesisDialog: modal UI for re-synthesis with WM hint
+  system_prompts/task_execution.md              — injected by _run_task_node only (role, synthesis contract, scope rules)
+
+Session-folder layout:
+  sessions/<user>/<session>/
+    context/                   ← message files (existing)
+    plans/                     ← <epoch>_<plan_id>.json  (one PlanRecord each)
+    task_nodes/                ← <epoch>_<task_id>.json  (one TaskNodeRecord each)
+    task_tree.json             ← TaskTree index (single file, updated in-place)
+    scratch/                   ← ephemeral per-task scratch files
+    task_tree_export.md        ← generated by [Export] button in plan tab toolbar
+
+task_node.json schema (TaskNodeRecord):
+  {
+    "plan_id":                  string,          // parent plan
+    "task_id":                  string,          // unique node id
+    "parent_task_id":           string | null,   // null for root steps
+    "depth":                    int,             // 0 = root, max 10
+    "plan_step_index":          int,             // index in parent plan.steps[]
+    "task_description":         string,
+    "tbd":                      bool,            // placeholder step
+    "tbd_resolved_description": string | null,   // resolved at runtime
+    "status":                   "pending"|"running"|"done"|"failed",
+    "child_message_epochs":     float[],         // epoch refs for context messages
+    "child_task_ids":           string[],        // spawned sub-task IDs
+    "synthesis_epoch":          float | null,    // epoch of accepted synthesis message
+    "scratch_file":             string | null,   // relative path inside scratch/
+    "assertions": [
+      {
+        "fact":     string,
+        "type":     "pre"|"post"|"invariant",
+        "check":    string | null,
+        "verified": bool | null,
+        "error":    string | null
+      }
+    ],
+    "synthesis_attempts": [
+      { "epoch": float, "status": "accepted"|"rejected"|"pending", "rejected_epochs": float[] }
+    ],
+    "wm_hints_added":           bool,
+    "epoch":                    float,           // creation timestamp
+    "enabled":                  bool
+  }
+
+task_tree.json schema (TaskTree):
+  {
+    "session_id":          string,
+    "created_epoch":       float,
+    "last_updated_epoch":  float,
+    "plans": {
+      "<plan_id>": {
+        "plan_id":            string,
+        "plan_name":          string,
+        "session_plan_index": int,
+        "steps": [
+          { "step_id": string, "description": string, "tbd": bool, "depends_on": string[] }
+        ],
+        "root_task_ids":  string[],
+        "status":         "pending"|"running"|"done"|"failed",
+        "epoch":          float
+      }
+    },
+    "nodes": {
+      "<task_id>": { ... }    // same schema as task_node.json above
+    }
+  }
+
+Retrieval keywords:
+  PlanRecord, TaskNodeRecord, TaskTree, task_tree.json, plan tab, replay, export task tree
+  → src/shared/models/task_node.py, src/agentx/gui/plan_tree_widget.py, src/agentx/session.py

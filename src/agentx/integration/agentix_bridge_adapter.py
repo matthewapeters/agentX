@@ -261,6 +261,34 @@ class AgentixBridgeAdapter:
                 content=f"Error during retrigger synthesis: {str(e)}",
             )
 
+    def replay_task_node_generator(
+        self,
+        node,
+        context: Context,
+        task_tree,
+    ) -> Iterator[ResponseChunk]:
+        """Yield all chunks for a full task-node replay from scratch.
+
+        Delegates to ``AgentixBridge.replay_task_node_streaming``.
+
+        Args:
+            node:       ``TaskNodeRecord`` to replay.
+            context:    Current session context.
+            task_tree:  The live ``TaskTree``.
+
+        Yields:
+            ``ResponseChunk`` objects.
+        """
+        try:
+            yield from self.bridge.replay_task_node_streaming(node, context, task_tree)
+        except Exception as e:
+            from shared.models.response import ChunkType
+
+            yield ResponseChunk(
+                type=ChunkType.ERROR,
+                content=f"Error during task node replay: {str(e)}",
+            )
+
     def get_models(self) -> list[dict]:
         """
         Get available models from Ollama.
