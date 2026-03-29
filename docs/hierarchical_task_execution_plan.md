@@ -503,10 +503,10 @@ Sub-tasks indent by `depth × 20px` and draw a branch line back up to their pare
 
 **Goal:** A full plan run can be replayed or exported for reproducibility.
 
-- [/] Add `[Export Task Tree]` button in the Task Tree tab toolbar — writes `task_tree_export.md` to session folder in human-readable form (plan → sub-tasks → tool calls → synthesis → assertions)
-- [/] Add `[Replay Sub-task]` button per node — re-runs the child loop from scratch (new tool calls), appends new synthesis attempt alongside old
-- [/] Add `open_task_tree(session_path)` to `HistoryLoader` — allows loading and inspecting task trees from prior sessions
-- [/] Document the `task_node.json` / `task_tree.json` schema in `docs/architecture.md`
+- [✓] Add `[Export Task Tree]` button in the Task Tree tab toolbar — writes `task_tree_export.md` to session folder in human-readable form (plan → sub-tasks → tool calls → synthesis → assertions)
+- [✓] Add `[Replay Sub-task]` button per node — re-runs the child loop from scratch (new tool calls), appends new synthesis attempt alongside old
+- [✓] Add `open_task_tree(session_path)` to `HistoryLoader` — allows loading and inspecting task trees from prior sessions
+- [✓] Document the `task_node.json` / `task_tree.json` schema in `docs/architecture.md`
 
 ---
 
