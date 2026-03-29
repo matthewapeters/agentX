@@ -6,10 +6,11 @@ No explanations.
 No prose.
 No reasoning.
 
-Your output is a JSON object with two top-level keys:
+Your output is a JSON object with three top-level keys:
 
-1. "steps": an ordered list of deterministic execution steps
-2. "tool_calls": a list of tool invocations referenced by step ID
+1. "plan_name": a 3-6 word human-readable title for this plan (e.g. "Analyse Bridge Architecture")
+2. "steps": an ordered list of deterministic execution steps
+3. "tool_calls": a list of tool invocations referenced by step ID
 
 ## [PLAN FORMAT]
 
@@ -17,18 +18,43 @@ Your output is a JSON object with two top-level keys:
 
 {
   "id": "step-1",
+  "description": "<concise human-readable summary of what this step does>",
   "action": "tool" | "internal",
   "tool": "<tool-name or null>",
   "inputs": { <machine-readable inputs> },
   "expected_outputs": { <machine-readable outputs> },
+  "tbd": false,
+  "depends_on": [],
   "assertions": [
     { "assert": "<assertion-type>", "on": "<output-field>", "condition": "<machine-evaluable condition>" }
   ],
   "next": ["step-2", "step-3"]  // DAG or linear sequence
 }
 
+### [TBD STEPS]
+
+A step may be marked `"tbd": true` when its description cannot be determined
+until one or more prerequisite steps complete. Use `"depends_on"` to list the
+prerequisite step IDs. The system will call you again with the predecessors'
+synthesis results to resolve the description before that step is executed.
+
+Example TBD step:
+{
+  "id": "step-3",
+  "description": "TBD — determine from findings in step-1 and step-2",
+  "action": "internal",
+  "tool": null,
+  "inputs": {},
+  "expected_outputs": {},
+  "tbd": true,
+  "depends_on": ["step-1", "step-2"],
+  "assertions": [],
+  "next": []
+}
+
 ### [PLAN FORMAT RULES]
 
+- "description" MUST be a concise plain English summary (5-15 words)
 - "inputs" MUST reference only:
   - user prompt data
   - attachments
@@ -38,9 +64,11 @@ Your output is a JSON object with two top-level keys:
 - If "action" = "internal", it's an LLM-internal transform with no tool.
 - "assertions" MUST be machine-checkable comparisons.
   Example assertion types: "exists", "not_empty", "gte", "lte", "equals", "regex"
-- No text descriptions allowed in any field.
+- No text descriptions allowed in "inputs" or "expected_outputs".
 - Every step must be deterministic.
 - Do not hallucinate tools.
+- "tbd" defaults to false; omit it for concrete steps.
+- "depends_on" defaults to []; omit it when there are no dependencies.
 
 ## [TOOL CALL FORMAT]
 

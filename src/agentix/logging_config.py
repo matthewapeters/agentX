@@ -60,6 +60,69 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_obj)
 
 
+class DetailedFormatter(logging.Formatter):
+    """
+    Format log records with extra fields displayed in human-readable format.
+
+    This formatter automatically displays all extra fields from structured logging,
+    which is critical for debugging JSON parsing errors where we need to see the
+    actual raw strings that failed.
+    """
+
+    def format(self, record):
+        """Format a log record with extra fields displayed."""
+        # Standard formatting
+        base_message = super().format(record)
+
+        # Collect extra fields (anything not in standard log record attributes)
+        extra_fields = []
+        standard_attrs = {
+            "name",
+            "msg",
+            "args",
+            "created",
+            "filename",
+            "funcName",
+            "levelname",
+            "levelno",
+            "lineno",
+            "module",
+            "msecs",
+            "message",
+            "pathname",
+            "process",
+            "processName",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "asctime",
+            "taskName",
+        }
+
+        for key, value in record.__dict__.items():
+            if key not in standard_attrs:
+                # Special handling for raw content - show repr() and truncate smartly
+                if any(keyword in key.lower() for keyword in ["raw", "content", "payload", "answer"]):
+                    value_str = repr(value) if isinstance(value, str) else str(value)
+                    # For very long strings, show beginning and end
+                    if len(value_str) > 500:
+                        extra_fields.append(f"\n    {key} (first 250 chars): {value_str[:250]}")
+                        extra_fields.append(f"\n    {key} (last 250 chars): {value_str[-250:]}")
+                        extra_fields.append(f"\n    {key} (total length): {len(value_str)} chars")
+                    else:
+                        extra_fields.append(f"\n    {key}: {value_str}")
+                else:
+                    extra_fields.append(f"\n    {key}: {value}")
+
+        if extra_fields:
+            base_message += "".join(extra_fields)
+
+        return base_message
+
+
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -67,7 +130,12 @@ LOGGING_CONFIG = {
         "json": {
             "()": "agentix.logging_config.JSONFormatter",
         },
-        "console": {"format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s"},
+        "console": {
+            "()": "agentix.logging_config.DetailedFormatter",
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+        "simple": {"format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s"},
     },
     "handlers": {
         "console": {

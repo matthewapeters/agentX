@@ -34,9 +34,7 @@ class IGUIManager(Protocol):
 
     # Display Methods - Output
 
-    def display_user_message(
-        self, content: str, attachments: list[str], timestamp: datetime
-    ) -> None:
+    def display_user_message(self, content: str, attachments: list[str], timestamp: datetime) -> None:
         """Display a user message in the output area.
 
         Args:
@@ -325,4 +323,75 @@ class IGUIManager(Protocol):
 
     def populate_settings_models(self, models: list[dict]) -> None:
         """Refresh model dropdowns in the Settings tab."""
+        ...
+
+    # ── Plan tab methods ──────────────────────────────────────────────────────
+
+    def add_plan_tab(self, plan_id: str, plan_name: str, on_export: Optional[Callable[[], None]] = None) -> tk.Widget:
+        """Create a named tab in output_notebook for the given plan.
+
+        Args:
+            plan_id:   Unique plan identifier (from ``PlanRecord.plan_id``).
+            plan_name: Human-readable plan name used as the tab label.
+            on_export: Optional callback invoked when the Export button is clicked.
+
+        Returns:
+            The tab frame widget.
+        """
+        ...
+
+    def get_plan_tab_frame(self, plan_id: str) -> "Optional[tk.Widget]":  # type: ignore[override]
+        """Return the tab frame for an existing plan, or None."""
+        ...
+
+    def focus_plan_tab(self, plan_id: str) -> None:
+        """Switch output notebook focus to the plan tab."""
+        ...
+
+    def add_plan_step_node(
+        self, plan_id: str, task_id: str, description: str, tbd: bool, on_replay: Optional[Callable[[str], None]] = None
+    ) -> None:
+        """Add a root-level step row to the plan's tree widget."""
+        ...
+
+    def add_plan_subtask_node(
+        self,
+        task_id: str,
+        parent_task_id: str,
+        description: str,
+        depth: int,
+        on_replay: Optional[Callable[[str], None]] = None,
+    ) -> None:
+        """Add an indented sub-task row under its parent in the plan tree."""
+        ...
+
+    def update_plan_node_status(self, task_id: str, status: str) -> None:
+        """Update the status icon for a node in the plan tree."""
+        ...
+
+    def resolve_plan_tbd_node(self, task_id: str, resolved_description: str) -> None:
+        """Replace the TBD placeholder with the resolved description."""
+        ...
+
+    def add_plan_tool_call(self, task_id: str, tool_name: str, tool_input: Any) -> None:
+        """Append a collapsible tool-call row to the node's details frame."""
+        ...
+
+    def add_plan_synthesis(
+        self,
+        task_id: str,
+        synthesis_text: str,
+        assertions: list,
+        on_resynth: Optional[Callable] = None,
+        on_add_wm_hint: Optional[Callable] = None,
+    ) -> None:
+        """Append synthesis text and assertion badges to the node."""
+        ...
+
+    def update_plan_synthesis(self, task_id: str, new_synthesis: str, assertions: list) -> None:
+        """Replace synthesis text and badges in-place after a retrigger."""
+        ...
+
+    def mark_plan_node_invalidated(self, task_id: str) -> None:
+        """Mark a node status as 'invalidated' (needs re-synthesis)."""
         ...

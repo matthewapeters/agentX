@@ -305,6 +305,23 @@ class AgentXSession:
                 thinking_parts.append(chunk.content)
             elif chunk.type == ChunkType.CONTENT and chunk.content:
                 content_parts.append(chunk.content)
+            elif chunk.type == ChunkType.PLAN_START and chunk.plan_id:
+                _plan_msg = Message(
+                    role=MessageRole.PLAN,
+                    content=chunk.plan_name or "Plan",
+                    plan_id=chunk.plan_id,
+                    plan_name=chunk.plan_name or "Plan",
+                )
+                self.context.add_message(_plan_msg)
+            elif chunk.type == ChunkType.TASK_NODE_END and chunk.task_id:
+                _node_msg = Message(
+                    role=MessageRole.TASK_NODE,
+                    content=chunk.content or "",
+                    plan_id=chunk.plan_id or "",
+                    task_id=chunk.task_id,
+                    task_depth=chunk.task_depth or 0,
+                )
+                self.context.add_message(_node_msg)
             yield chunk
 
         self._persist_stream_messages(
@@ -554,6 +571,158 @@ class AgentXSession:
                 self.enabled_history_attachments.remove(attachment)
         self.refresh_user_gui()
 
+    def _on_plan_row_click(self, plan_id: str) -> None:
+        """Handle a click on a plan row in the context panel.
+
+        If the plan tab already exists in the output notebook, focus it.
+        Otherwise reconstruct the tab from persisted plan/task-node records.
+        """
+        tab = self.gui.get_plan_tab_frame(plan_id)
+        if tab is not None:
+            self.gui.focus_plan_tab(plan_id)
+        else:
+            self._replay_plan_tab(plan_id)
+
+    def _replay_plan_tab(self, plan_id: str) -> None:
+        """Reconstruct a read-only plan tab from persisted JSON records.
+
+        Loads the matching PlanRecord and all associated TaskNodeRecords from
+        the session directory, creates the tab, and populates it with nodes
+        and their synthesis text exactly as they appeared during execution.
+        """
+        plans = self.context.load_plans()
+        plan_record = next((p for p in plans if p.plan_id == plan_id), None)
+        if plan_record is None:
+            return
+
+        self.gui.add_plan_tab(plan_id, plan_record.plan_name, on_export=lambda: self._export_task_tree(plan_id))
+        self.gui.focus_plan_tab(plan_id)
+
+        task_nodes = self.context.load_task_nodes()
+        plan_nodes = [n for n in task_nodes if n.plan_id == plan_id]
+        plan_nodes.sort(key=lambda n: (n.depth, n.epoch))
+
+        for node in plan_nodes:
+            _on_replay = lambda tid=node.task_id: self._replay_subtask(tid)
+            if node.parent_task_id:
+                self.gui.add_plan_subtask_node(
+                    node.task_id, node.parent_task_id, node.task_description, node.depth, on_replay=_on_replay
+                )
+            else:
+                self.gui.add_plan_step_node(
+                    plan_id, node.task_id, node.task_description, node.tbd, on_replay=_on_replay
+                )
+
+            if node.status == "done":
+                self.gui.update_plan_node_status(node.task_id, "done")
+
+    def _export_task_tree(self, plan_id: str) -> None:
+        """Export the plan's task tree to a markdown file in the session folder.
+
+        Loads the plan and its task nodes from disk, formats them as a nested
+        markdown list (plan → steps → sub-tasks with synthesis), and writes
+        the result to ``<session_folder>/task_tree_export.md``.
+
+        Args:
+            plan_id: ID of the plan to export.
+        """
+        from shared.models.task_node import TaskNodeRecord
+
+        plans = self.context.load_plans()
+        plan = next((p for p in plans if p.plan_id == plan_id), None)
+        if plan is None:
+            self.gui.display_error(f"Cannot export: plan '{plan_id}' not found.")
+            return
+
+        task_nodes = self.context.load_task_nodes()
+        plan_nodes = [n for n in task_nodes if n.plan_id == plan_id]
+
+        lines: list[str] = [
+            f"# Plan: {plan.plan_name}",
+            f"",
+            f"Status: {plan.status}  |  Plan ID: {plan_id}",
+            f"",
+        ]
+
+        def _format_node(node: TaskNodeRecord, level: int) -> None:
+            indent = "  " * level
+            status_icon = {"done": "✓", "failed": "✗", "running": "●", "pending": "○"}.get(node.status, "?")
+            desc = node.tbd_resolved_description or (
+                "[TBD] " + node.task_description if node.tbd else node.task_description
+            )
+            lines.append(f"{indent}- [{status_icon}] {desc}")
+            for a in node.assertions:
+                icon = "✓" if a.verified else ("✗" if a.verified is False else "?")
+                lines.append(f"{indent}  - [{icon}] {a.fact}")
+            children = sorted(
+                [n for n in plan_nodes if n.parent_task_id == node.task_id],
+                key=lambda n: n.epoch,
+            )
+            for child in children:
+                _format_node(child, level + 1)
+
+        root_nodes = sorted(
+            [n for n in plan_nodes if not n.parent_task_id],
+            key=lambda n: n.epoch,
+        )
+        for root in root_nodes:
+            _format_node(root, 0)
+
+        export_path = os.path.join(self.session_folder, "task_tree_export.md")
+        try:
+            with open(export_path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
+            self.gui.display_error(f"Task tree exported to: {export_path}")
+        except Exception as exc:
+            self.gui.display_error(f"Export failed: {exc}")
+
+    def _replay_subtask(self, task_id: str) -> None:
+        """Re-run a task node from scratch on a background thread.
+
+        Loads the TaskNodeRecord and TaskTree from disk, spawns a background thread
+        that calls ``AgentixBridgeAdapter.replay_task_node_generator``, and updates
+        the plan tree widget live as chunks arrive.
+
+        Args:
+            task_id: The task node to replay.
+        """
+        if self._is_streaming.is_set():
+            self.gui.display_error("Cannot replay while a response is streaming.")
+            return
+
+        tree = self.context.load_task_tree()
+        if tree is None:
+            self.gui.display_error(f"No task tree found — cannot replay {task_id}.")
+            return
+        node = tree.nodes.get(task_id)
+        if node is None:
+            self.gui.display_error(f"Task node '{task_id}' not found in task tree.")
+            return
+
+        self._safe_root_after(lambda tid=task_id: self.gui.update_plan_node_status(tid, "running"))
+
+        def _worker(_node=node, _tree=tree, _tid=task_id):
+            try:
+                self._is_streaming.set()
+                self._safe_root_after(lambda: self.gui.set_streaming_state(True))
+                for chunk in self.agentix_adapter.replay_task_node_generator(_node, self.context, _tree):
+                    if chunk.type == ChunkType.TASK_NODE_END and chunk.task_id == _tid:
+                        _synth = chunk.content or ""
+                        _asserts = chunk.assertions or []
+                        self._safe_root_after(lambda tid=_tid: self.gui.update_plan_node_status(tid, "done"))
+                        self._safe_root_after(
+                            lambda tid=_tid, s=_synth, a=_asserts: self.gui.update_plan_synthesis(tid, s, a)
+                        )
+            except Exception as exc:
+                logger.exception("replay_subtask worker error")
+                self._safe_root_after(lambda err=exc: self.gui.display_error(f"Replay error: {err}"))
+            finally:
+                self._is_streaming.clear()
+                self._safe_root_after(lambda: self.gui.set_streaming_state(False))
+                self._safe_root_after(self.refresh_user_gui)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
     def refresh_context_gui(self):
         """
         Refreshes the context GUI in the Session tab of the system status notebook.
@@ -576,6 +745,7 @@ class AgentXSession:
             self.context,
             self.gui.get_context_parent(),
             on_attachment_toggle=self.on_history_attachment_toggle,
+            on_plan_click=self._on_plan_row_click,
         )
         self.gui.update_context_panel(context_widget)
 
@@ -868,6 +1038,89 @@ class AgentXSession:
         except Exception:
             pass
 
+    def retrigger_synthesis(self, task_id: str, hint: str = "") -> None:
+        """Re-run synthesis for a completed task node in a background thread.
+
+        Invoked by the ResynthesisDialog confirm handler on the Tkinter main
+        thread.  Loads the TaskNodeRecord and TaskTree from disk, optionally
+        injects a WM hint, then streams the new synthesis on a daemon thread
+        and updates the plan tree widget live.
+
+        Args:
+            task_id: The task node to re-synthesise.
+            hint:    Optional free-text guidance for the LLM.
+        """
+        if self._is_streaming.is_set():
+            self.gui.display_error("Cannot re-synthesise while a response is streaming.")
+            return
+
+        tree = self.context.load_task_tree()
+        if tree is None:
+            self.gui.display_error(f"No task tree found — cannot re-synthesise {task_id}.")
+            return
+        node = tree.nodes.get(task_id)
+        if node is None:
+            self.gui.display_error(f"Task node '{task_id}' not found in task tree.")
+            return
+
+        if hint.strip() and self.working_memory is not None:
+            from shared.models.working_memory import FactOwner
+
+            self.working_memory.add_fact(FactOwner.AGENT, f"resynth_hint_{task_id}", hint)
+            node.wm_hints_added = True
+
+        self.gui.mark_plan_node_invalidated(task_id)
+
+        def _worker(_node=node, _tree=tree, _tid=task_id, _hint=hint):
+            try:
+                self._is_streaming.set()
+                self._safe_root_after(lambda: self.gui.set_streaming_state(True))
+                for chunk in self.agentix_adapter.retrigger_synthesis_generator(_node, self.context, _tree, _hint):
+                    if chunk.type == ChunkType.TASK_NODE_END and chunk.task_id == _tid:
+                        _synth = chunk.content or ""
+                        _asserts = chunk.assertions or []
+                        self._safe_root_after(lambda tid=_tid: self.gui.update_plan_node_status(tid, "done"))
+                        self._safe_root_after(
+                            lambda tid=_tid, s=_synth, a=_asserts: self.gui.update_plan_synthesis(tid, s, a)
+                        )
+            except Exception as exc:
+                logger.exception("retrigger_synthesis worker error")
+                self._safe_root_after(lambda err=exc: self.gui.display_error(f"Re-synthesis error: {err}"))
+            finally:
+                self._is_streaming.clear()
+                self._safe_root_after(lambda: self.gui.set_streaming_state(False))
+                self._safe_root_after(self.refresh_user_gui)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _add_wm_hint_for_task(self, task_id: str, key: str, value: str) -> None:
+        """Store a working-memory fact and mark the task node as invalidated.
+
+        Called from the ResynthesisDialog "Add WM hint" button on the Tkinter
+        main thread.  Does not trigger re-synthesis — the user must still click
+        "Re-synthesise" afterwards.
+
+        Args:
+            task_id: The task node to invalidate.
+            key:     WM fact key.
+            value:   WM fact value.
+        """
+        if self.working_memory is not None:
+            self.working_memory.add_fact(FactOwner.AGENT, key, value)
+
+        tree = self.context.load_task_tree()
+        if tree is not None:
+            node = tree.nodes.get(task_id)
+            if node is not None:
+                node.wm_hints_added = True
+                try:
+                    self.context.save_task_node(node)
+                    self.context.save_task_tree(tree)
+                except Exception:
+                    pass
+
+        self.gui.mark_plan_node_invalidated(task_id)
+
     def _stream_via_agentix(self):
         """Stream response through Agentix middleware."""
         config = self.config
@@ -951,6 +1204,86 @@ class AgentXSession:
                     thinking_parts.append(chunk.content)
                 elif chunk.type == ChunkType.CONTENT and chunk.content:
                     content_parts.append(chunk.content)
+
+                # Plan tree chunk routing
+                if chunk.type == ChunkType.PLAN_START and chunk.plan_id:
+                    _pid = chunk.plan_id
+                    _pname = chunk.plan_name or "Plan"
+                    _on_export = lambda pid=_pid: self._export_task_tree(pid)
+                    self._safe_root_after(
+                        lambda pid=_pid, pn=_pname, exp=_on_export: (
+                            self.gui.add_plan_tab(pid, pn, on_export=exp),
+                            self.gui.focus_plan_tab(pid),
+                        )
+                    )
+                    # Store PLAN message so it shows in the context panel
+                    _plan_msg = Message(
+                        role=MessageRole.PLAN,
+                        content=_pname,
+                        plan_id=_pid,
+                        plan_name=_pname,
+                    )
+                    self.context.add_message(_plan_msg)
+                elif chunk.type == ChunkType.TASK_NODE_START and chunk.task_id:
+                    _tid = chunk.task_id
+                    _pid = chunk.plan_id or ""
+                    _desc = chunk.content or chunk.task_id
+                    _par = chunk.parent_task_id
+                    _depth = chunk.task_depth or 0
+                    _tbd = bool(chunk.tbd)
+                    _on_replay = lambda tid=_tid: self._replay_subtask(tid)
+                    if _par:
+                        self._safe_root_after(
+                            lambda tid=_tid, par=_par, desc=_desc, d=_depth, rep=_on_replay: self.gui.add_plan_subtask_node(
+                                tid, par, desc, d, on_replay=rep
+                            )
+                        )
+                    else:
+                        self._safe_root_after(
+                            lambda pid=_pid, tid=_tid, desc=_desc, tb=_tbd, rep=_on_replay: self.gui.add_plan_step_node(
+                                pid, tid, desc, tb, on_replay=rep
+                            )
+                        )
+                elif chunk.type == ChunkType.TASK_NODE_TBD and chunk.task_id:
+                    _tid = chunk.task_id
+                    _desc = chunk.content or ""
+                    self._safe_root_after(lambda tid=_tid, desc=_desc: self.gui.resolve_plan_tbd_node(tid, desc))
+                elif chunk.type == ChunkType.TASK_NODE_END and chunk.task_id:
+                    _tid = chunk.task_id
+                    _synth = chunk.content or ""
+                    _asserts = chunk.assertions or []
+                    _node_pid = chunk.plan_id or ""
+                    _node_depth = chunk.task_depth or 0
+                    self._safe_root_after(lambda tid=_tid: self.gui.update_plan_node_status(tid, "done"))
+
+                    # Build per-task callbacks for the Re-synthesise dialog.
+                    def _make_callbacks(tid=_tid):
+                        on_resynth = lambda hint: self.retrigger_synthesis(tid, hint)
+                        on_add_wm = lambda key, val: self._add_wm_hint_for_task(tid, key, val)
+                        return on_resynth, on_add_wm
+
+                    _on_resynth, _on_add_wm = _make_callbacks()
+                    self._safe_root_after(
+                        lambda tid=_tid, s=_synth, a=_asserts, cb=_on_resynth, wm=_on_add_wm: self.gui.add_plan_synthesis(
+                            tid, s, a, on_resynth=cb, on_add_wm_hint=wm
+                        )
+                    )
+                    # Store TASK_NODE message so it shows in the context panel
+                    _node_msg = Message(
+                        role=MessageRole.TASK_NODE,
+                        content=_synth,
+                        plan_id=_node_pid,
+                        task_id=_tid,
+                        task_depth=_node_depth,
+                    )
+                    self.context.add_message(_node_msg)
+                elif chunk.type == ChunkType.TOOL_CALL and chunk.task_id:
+                    _tid = chunk.task_id
+                    _tname = chunk.tool_name or ""
+                    _tinput = chunk.tool_input or {}
+                    self._safe_root_after(
+                        lambda tid=_tid, tn=_tname, ti=_tinput: self.gui.add_plan_tool_call(tid, tn, ti)
+                    )
 
                 self._safe_root_after(self.refresh_user_gui)
 

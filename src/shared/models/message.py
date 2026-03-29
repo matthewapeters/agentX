@@ -18,23 +18,30 @@ from .attachment import Attachment
 class MessageRole(Enum):
     """
     Roles for messages in the conversation.
-    
+
     Standard roles:
         USER: User input
         ASSISTANT: LLM response
         SYSTEM: System prompts
-        
+
     Extended roles for agent functionality:
         THINKING: LLM reasoning (may be hidden from user)
         TOOL_CALL: Request to execute a tool
         TOOL_RESULT: Result from tool execution
     """
+
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
     THINKING = "thinking"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+
+    # Hierarchical task execution roles (Phase 1)
+    PLAN = "plan"  # Top-level plan record
+    TASK_NODE = "task_node"  # Individual task/sub-task node
+    SYNTHESIS = "synthesis"  # Versioned synthesis attempt
+    ASSERTION = "assertion"  # Per-assertion verdict record
 
     def __eq__(self, other):
         if isinstance(other, str):
@@ -56,6 +63,10 @@ ROLE_ICONS = {
     MessageRole.THINKING: "💭",
     MessageRole.TOOL_CALL: "🔧",
     MessageRole.TOOL_RESULT: "📋",
+    MessageRole.PLAN: "📋",
+    MessageRole.TASK_NODE: "🌿",
+    MessageRole.SYNTHESIS: "💡",
+    MessageRole.ASSERTION: "✅",
 }
 
 
@@ -63,11 +74,11 @@ ROLE_ICONS = {
 class Message:
     """
     Represents a message in the conversation context.
-    
+
     Messages are stored client-side in JSON files within the session folder.
     When sending context to Agentix server, messages are serialized and
     included in the request payload.
-    
+
     Attributes:
         role: The role of the message sender
         content: The text content of the message
@@ -75,77 +86,85 @@ class Message:
         enabled: Whether this message is included in LLM context
         timestamp: When the message was created
         file_path: Path to the persisted JSON file (client-side only)
-        
+
         # Tool-specific fields
         tool_name: Name of the tool (for TOOL_CALL and TOOL_RESULT)
         tool_input: Arguments passed to the tool (for TOOL_CALL)
         tool_output: Result from tool execution (for TOOL_RESULT)
-        
+
         # Classification metadata (for USER messages)
         classification: Intent classification from Agentix
     """
-    
+
     role: MessageRole
     content: str
     attachments: list[Attachment] = field(default_factory=list)
     enabled: bool = True
     timestamp: datetime = field(default_factory=datetime.now)
     file_path: Optional[str] = None
-    
+
     # Tool-specific fields
     tool_name: Optional[str] = None
     tool_input: Optional[dict] = None
     tool_output: Optional[Any] = None
     tool_id: Optional[str] = None
-    
+
     # Classification metadata
     classification: Optional[dict] = None
-    
+
+    # Plan / task-node metadata (Phase 1)
+    plan_id: Optional[str] = None
+    plan_name: Optional[str] = None
+    task_id: Optional[str] = None
+    parent_task_id: Optional[str] = None
+    task_depth: Optional[int] = None
+    task_data: Optional[dict] = None  # full PlanRecord or TaskNodeRecord dict
+
     def __post_init__(self):
         """Ensure role is MessageRole enum."""
         if isinstance(self.role, str):
             self.role = MessageRole(self.role)
-    
+
     @property
     def icon(self) -> str:
         """Get display icon for this message's role."""
         return ROLE_ICONS.get(self.role, "❓")
-    
+
     @property
     def epoch(self) -> float:
         """Get timestamp as epoch float."""
         return self.timestamp.timestamp()
-    
+
     def attach(self, file_path: str) -> None:
         """
         Attach a file to this message.
-        
+
         Args:
             file_path: Path to the file to attach
         """
         attachment = Attachment.from_file(file_path)
         self.attachments.append(attachment)
         self._auto_save()
-    
+
     def detach(self, file_path: str) -> None:
         """
         Remove an attachment from this message.
-        
+
         Args:
             file_path: Path of the attachment to remove
         """
         self.attachments = [a for a in self.attachments if a.file_path != file_path]
         self._auto_save()
-    
+
     def _auto_save(self) -> None:
         """Save message if it has a file path."""
         if self.file_path:
             self.save(os.path.dirname(self.file_path))
-    
+
     def to_dict(self) -> dict:
         """
         Serialize message for storage or transmission.
-        
+
         This format is used for:
         - Persisting to JSON files (client-side)
         - Sending to Agentix server in request payloads
@@ -157,7 +176,7 @@ class Message:
             "epoch": self.epoch,
             "attachments": [a.to_dict() for a in (self.attachments or [])],
         }
-        
+
         # Include optional fields if present
         if self.file_path:
             data["file"] = self.file_path
@@ -171,38 +190,50 @@ class Message:
             data["tool_id"] = self.tool_id
         if self.classification:
             data["classification"] = self.classification
-            
+        if self.plan_id:
+            data["plan_id"] = self.plan_id
+        if self.plan_name:
+            data["plan_name"] = self.plan_name
+        if self.task_id:
+            data["task_id"] = self.task_id
+        if self.parent_task_id:
+            data["parent_task_id"] = self.parent_task_id
+        if self.task_depth is not None:
+            data["task_depth"] = self.task_depth
+        if self.task_data is not None:
+            data["task_data"] = self.task_data
+
         return data
-    
+
     # Alias for backward compatibility with AgentX
     def serialize(self) -> dict:
         """Alias for to_dict() for backward compatibility."""
         return self.to_dict()
-    
+
     @classmethod
     def from_dict(cls, data: dict, file_path: Optional[str] = None) -> "Message":
         """
         Create Message from dictionary.
-        
+
         Args:
             data: Dictionary containing message data
             file_path: Optional file path override
-            
+
         Returns:
             Message instance
         """
         # Parse attachments (guard against null stored in JSON)
         attachments = []
-        for a in (data.get("attachments") or []):
+        for a in data.get("attachments") or []:
             if isinstance(a, dict):
                 attachments.append(Attachment.from_dict(a))
             elif isinstance(a, Attachment):
                 attachments.append(a)
-        
+
         # Parse timestamp
         epoch = data.get("epoch", 0)
         timestamp = datetime.fromtimestamp(epoch) if epoch else datetime.now()
-        
+
         return cls(
             role=MessageRole(data.get("role", "user")),
             content=data.get("content", ""),
@@ -215,8 +246,14 @@ class Message:
             tool_output=data.get("tool_output"),
             tool_id=data.get("tool_id"),
             classification=data.get("classification"),
+            plan_id=data.get("plan_id"),
+            plan_name=data.get("plan_name"),
+            task_id=data.get("task_id"),
+            parent_task_id=data.get("parent_task_id"),
+            task_depth=data.get("task_depth"),
+            task_data=data.get("task_data"),
         )
-    
+
     def to_llm_dict(self) -> dict:
         """
         Format message for LLM API (Ollama/OpenAI wire format).
@@ -261,6 +298,15 @@ class Message:
                 "tool_call_id": self.tool_id or "call_0",
             }
 
+        # --- Internal-only roles: must never reach the LLM API ---
+        _internal_roles = {MessageRole.PLAN, MessageRole.TASK_NODE, MessageRole.SYNTHESIS, MessageRole.ASSERTION}
+        if self.role in _internal_roles:
+            raise ValueError(
+                f"Message with role {self.role!r} is an internal task-execution record "
+                "and must not be serialised for the LLM API. "
+                "Filter these messages before calling to_llm_dict()."
+            )
+
         # --- Standard roles (user / assistant / system / thinking) ---
         role_mapping = {
             MessageRole.THINKING: "assistant",
@@ -280,16 +326,16 @@ class Message:
             "role": api_role,
             "content": full_content,
         }
-    
+
     # Alias for backward compatibility with AgentX
     def llm_message_dict(self) -> dict:
         """Alias for to_llm_dict() for backward compatibility."""
         return self.to_llm_dict()
-    
+
     def save(self, context_path: str) -> None:
         """
         Save message to JSON file in context folder.
-        
+
         Args:
             context_path: Directory to save the message file
         """
@@ -298,18 +344,18 @@ class Message:
             self.file_path = os.path.join(context_path, filename)
 
         os.makedirs(context_path, exist_ok=True)
-        
+
         with open(self.file_path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
-    
+
     @classmethod
     def load(cls, file_path: str) -> "Message":
         """
         Load message from JSON file.
-        
+
         Args:
             file_path: Path to the JSON file
-            
+
         Returns:
             Message instance
         """
@@ -320,10 +366,11 @@ class Message:
 
 # Factory functions for common message types
 
+
 def user_message(content: str, attachments: list[Any] = None) -> Message:
     """Create a user message with optional file attachments."""
     msg = Message(role=MessageRole.USER, content=content)
-    for item in (attachments or []):
+    for item in attachments or []:
         if isinstance(item, Attachment):
             msg.attachments.append(item)
         else:

@@ -231,6 +231,64 @@ class AgentixBridgeAdapter:
                 content=f"Error processing prompt: {str(e)}",
             )
 
+    def retrigger_synthesis_generator(
+        self,
+        node,
+        context: Context,
+        task_tree,
+        hint: str = "",
+    ) -> Iterator[ResponseChunk]:
+        """Yield re-synthesis chunks for a completed task node.
+
+        Delegates to ``AgentixBridge.retrigger_synthesis_streaming``.
+
+        Args:
+            node:       ``TaskNodeRecord`` to re-synthesise.
+            context:    Current session context.
+            task_tree:  The live ``TaskTree``.
+            hint:       Optional user guidance injected into the prompt.
+
+        Yields:
+            ``ResponseChunk`` objects.
+        """
+        try:
+            yield from self.bridge.retrigger_synthesis_streaming(node, context, task_tree, hint)
+        except Exception as e:
+            from shared.models.response import ChunkType
+
+            yield ResponseChunk(
+                type=ChunkType.ERROR,
+                content=f"Error during retrigger synthesis: {str(e)}",
+            )
+
+    def replay_task_node_generator(
+        self,
+        node,
+        context: Context,
+        task_tree,
+    ) -> Iterator[ResponseChunk]:
+        """Yield all chunks for a full task-node replay from scratch.
+
+        Delegates to ``AgentixBridge.replay_task_node_streaming``.
+
+        Args:
+            node:       ``TaskNodeRecord`` to replay.
+            context:    Current session context.
+            task_tree:  The live ``TaskTree``.
+
+        Yields:
+            ``ResponseChunk`` objects.
+        """
+        try:
+            yield from self.bridge.replay_task_node_streaming(node, context, task_tree)
+        except Exception as e:
+            from shared.models.response import ChunkType
+
+            yield ResponseChunk(
+                type=ChunkType.ERROR,
+                content=f"Error during task node replay: {str(e)}",
+            )
+
     def get_models(self) -> list[dict]:
         """
         Get available models from Ollama.
@@ -304,6 +362,9 @@ class AgentixBridgeAdapter:
             classification_backend=agentix_section.get("classification_backend", "ollama"),
             classification_torch_model=agentix_section.get("classification_torch_model"),
             classification_torch_device=agentix_section.get("classification_torch_device"),
+            max_tool_rounds=agentix_section.get("max_tool_rounds", 10),
+            max_task_depth=agentix_section.get("max_task_depth", 10),
+            max_synthesis_retries=agentix_section.get("max_synthesis_retries", 3),
         )
 
 

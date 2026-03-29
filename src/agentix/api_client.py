@@ -26,41 +26,67 @@ def _extract_json_payload(text: str) -> str:
     2. Markdown: ```json\n{"key": "value"}\n```
     3. With preamble: "Here's the result:\n```\n{...}\n```"
     4. No start fence: Some text {"key": "value"} more text
+    5. Pretty-printed with leading newlines: \n{\n  "key": "value"\n}
+    6. Markdown without newline: ```json{"key":"value"}```
+    7. Combined: \n```json\n{...}\n```
+
+    Returns the extracted JSON string, or raises ValueError if no valid JSON found.
     """
+    # Step 1: Strip ALL leading/trailing whitespace (including newlines)
     cleaned = text.strip()
 
     # Remove special tokens
     if cleaned.startswith("<|assistant|>"):
         cleaned = cleaned[len("<|assistant|>") :].lstrip()
 
-    # Handle markdown code blocks more robustly
+    # Step 2: Handle markdown code blocks more flexibly
     if "```" in cleaned:
         # Try to extract content between first ``` and last ```
         first_fence = cleaned.find("```")
         last_fence = cleaned.rfind("```")
 
         if first_fence != -1 and last_fence != -1 and first_fence < last_fence:
-            # Get content between fences
-            between_fences = cleaned[first_fence + 3 : last_fence].strip()
+            # Get content between fences (may have language identifier immediately after opening fence)
+            between_fences = cleaned[first_fence + 3 : last_fence]
 
-            # Remove language identifier if present (e.g., "json" or "JSON")
-            lines = between_fences.splitlines()
-            if lines and lines[0].strip().lower() in ["json", "jsonc", ""]:
-                between_fences = "\n".join(lines[1:]).strip()
+            # Aggressively strip whitespace
+            between_fences = between_fences.strip()
 
-            cleaned = between_fences
+            # Check if first line is a language identifier
+            # Handle both:
+            #   ```json\n{...}     (identifier on same line as fence)
+            #   ```\njson\n{...}   (identifier on next line - rare but possible)
+            first_word = between_fences.split()[0] if between_fences.split() else ""
+            first_word_lower = first_word.lower()
+
+            # Known code languages to skip
+            if first_word_lower in ["bash", "python", "py", "sh", "shell", "javascript", "js", "typescript", "ts"]:
+                logger.debug(
+                    f"Skipping {first_word_lower} code block, not JSON", extra={"code_block_language": first_word_lower}
+                )
+                # Fall through to try finding JSON in the raw text
+                cleaned = text.strip()
+            elif first_word_lower in ["json", "jsonc"]:
+                # Remove the language identifier and keep the rest
+                cleaned = between_fences[len(first_word) :].lstrip()
+            else:
+                # No language identifier, or unknown - treat as potential JSON
+                cleaned = between_fences
         else:
             # Malformed fences - just remove all backticks
             cleaned = cleaned.replace("```", "").strip()
 
-    # Remove standalone "json" line at start (sometimes appears without fences)
-    lines = cleaned.splitlines()
-    if lines and lines[0].strip().lower() in ["json", "jsonc"]:
-        cleaned = "\n".join(lines[1:]).strip()
+    # Step 3: Remove standalone "json" or "jsonc" line at start (sometimes appears without fences)
+    # This handles: json\n{\n  "key": "value"\n}
+    if cleaned and not cleaned.startswith(("{", "[")):
+        lines = cleaned.splitlines()
+        if lines and lines[0].strip().lower() in ["json", "jsonc"]:
+            cleaned = "\n".join(lines[1:]).strip()
 
-    # Extract just the JSON object if surrounded by text
+    # Step 4: Extract just the JSON object if surrounded by text
     # This handles: "Here is the result: {...} Hope this helps!"
-    if cleaned and not cleaned.startswith("{"):
+    # Be aggressive about finding JSON even if prefix text exists
+    if cleaned and not cleaned.startswith(("{", "[")):
         start = cleaned.find("{")
         if start != -1:
             # Find matching closing brace by counting depth
@@ -73,8 +99,103 @@ def _extract_json_payload(text: str) -> str:
                     if depth == 0:
                         cleaned = cleaned[start : i + 1]
                         break
+        else:
+            # Try array syntax
+            start = cleaned.find("[")
+            if start != -1:
+                depth = 0
+                for i in range(start, len(cleaned)):
+                    if cleaned[i] == "[":
+                        depth += 1
+                    elif cleaned[i] == "]":
+                        depth -= 1
+                        if depth == 0:
+                            cleaned = cleaned[start : i + 1]
+                            break
+
+    # Step 5: Final aggressive whitespace strip (handles pretty-printed JSON with leading newlines)
+    cleaned = cleaned.strip()
+
+    # Step 6: Validate the result looks like JSON
+    if not cleaned:
+        logger.error(
+            "Empty string after extraction",
+            extra={"original_text_length": len(text), "original_text_preview": text[:200]},
+        )
+        raise ValueError("No JSON found in LLM response (empty after extraction)")
+
+    if not (cleaned.startswith("{") or cleaned.startswith("[")):
+        logger.error(
+            "Extracted text does not look like JSON",
+            extra={
+                "extracted_text_preview": cleaned[:200],
+                "extracted_text_length": len(cleaned),
+                "starts_with": cleaned[0] if cleaned else None,
+            },
+        )
+        # Last resort: try to find any JSON in the original text
+        json_start = text.find("{")
+        if json_start != -1:
+            logger.info("Attempting last-resort JSON extraction from original text")
+            depth = 0
+            for i in range(json_start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        cleaned = text[json_start : i + 1]
+                        logger.info("Extracted JSON from original text", extra={"extracted_length": len(cleaned)})
+                        break
+
+        # Final check
+        if not (cleaned.startswith("{") or cleaned.startswith("[")):
+            raise ValueError(
+                f"No valid JSON found in LLM response. "
+                f"Response appears to be conversational text instead of structured JSON. "
+                f"First 100 chars: {text[:100]}"
+            )
 
     return cleaned
+
+
+
+def _repair_truncated_json(text: str) -> str:
+    """Close unclosed strings and brackets in a truncated JSON response.
+
+    Walks character-by-character tracking string/bracket state, then appends
+    the missing closing characters.  Validates the result with json.loads and
+    raises json.JSONDecodeError if it still cannot be parsed.
+    """
+    stack: list[str] = []
+    in_string = False
+    escape_next = False
+
+    for ch in text:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+        elif not in_string:
+            if ch == '{':
+                stack.append('}')
+            elif ch == '[':
+                stack.append(']')
+            elif ch in ('}', ']'):
+                if stack and stack[-1] == ch:
+                    stack.pop()
+
+    suffix = '"' if in_string else ''
+    while stack:
+        suffix += stack.pop()
+
+    repaired = text + suffix
+    json.loads(repaired)  # raises JSONDecodeError if still invalid
+    return repaired
 
 
 def _get_latest_user_prompt(payload: QueryPayload | dict) -> str:
@@ -159,6 +280,22 @@ def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
         try:
             return json.loads(agent_content_clean)
         except json.JSONDecodeError as e:
+            # Attempt to recover from responses truncated by a max_tokens limit.
+            try:
+                repaired = _repair_truncated_json(agent_content_clean)
+                result_repaired = json.loads(repaired)
+                logger.warning(
+                    "JSON parse error recovered via truncation repair",
+                    extra={
+                        "original_error": str(e),
+                        "finish_reason": finish_reason,
+                        "suffix_added": repaired[len(agent_content_clean):],
+                    },
+                )
+                return result_repaired
+            except (json.JSONDecodeError, ValueError):
+                pass
+
             logger.error(
                 "JSON parse error",
                 extra={

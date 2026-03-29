@@ -18,15 +18,42 @@ def _configure_logging() -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "agentx.log"
 
-    fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format=fmt,
-        handlers=[
-            logging.FileHandler(log_file, encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
-    )
+    # Import DetailedFormatter for console output with extra fields
+    try:
+        from agentix.logging_config import DetailedFormatter
+
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(
+            DetailedFormatter(
+                fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setFormatter(
+            logging.Formatter(
+                fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+
+        logging.basicConfig(
+            level=logging.DEBUG,
+            handlers=[file_handler, console_handler],
+        )
+    except ImportError:
+        # Fallback to basic config if DetailedFormatter not available
+        fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format=fmt,
+            handlers=[
+                logging.FileHandler(log_file, encoding="utf-8"),
+                logging.StreamHandler(),
+            ],
+        )
+
     # Silence noisy third-party loggers.
     for noisy in ("urllib3", "httpx", "httpcore", "asyncio"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
