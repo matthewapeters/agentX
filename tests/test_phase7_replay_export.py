@@ -182,10 +182,8 @@ class TestBridgeReplayTaskNodeStreaming(unittest.TestCase):
         from shared.models.message import Message, MessageRole
 
         ctx = Context()
-        msg_keep = Message(role=MessageRole.USER, content="hello",
-                           timestamp=datetime.fromtimestamp(0.5))
-        msg_exclude = Message(role=MessageRole.ASSISTANT, content="tool result",
-                              timestamp=datetime.fromtimestamp(1.0))
+        msg_keep = Message(role=MessageRole.USER, content="hello", timestamp=datetime.fromtimestamp(0.5))
+        msg_exclude = Message(role=MessageRole.ASSISTANT, content="tool result", timestamp=datetime.fromtimestamp(1.0))
         ctx.add_message(msg_keep)
         ctx.add_message(msg_exclude)
 
@@ -370,7 +368,9 @@ class TestGUIManagerAddPlanTabExport(unittest.TestCase):
         self.assertIsNotNone(tab_frame)
         # Toolbar is first child
         toolbar = tab_frame.winfo_children()[0]
-        export_btn = next(w for w in toolbar.winfo_children() if isinstance(w, tk.Button) and "Export" in str(w.cget("text")))
+        export_btn = next(
+            w for w in toolbar.winfo_children() if isinstance(w, tk.Button) and "Export" in str(w.cget("text"))
+        )
         export_btn.invoke()
         self.assertEqual(called, [True])
 
@@ -379,7 +379,9 @@ class TestGUIManagerAddPlanTabExport(unittest.TestCase):
         self.gui.add_plan_tab("p2", "Plan 2")  # no on_export
         tab_frame = self.gui.get_plan_tab_frame("p2")
         toolbar = tab_frame.winfo_children()[0]
-        export_btn = next(w for w in toolbar.winfo_children() if isinstance(w, tk.Button) and "Export" in str(w.cget("text")))
+        export_btn = next(
+            w for w in toolbar.winfo_children() if isinstance(w, tk.Button) and "Export" in str(w.cget("text"))
+        )
         # Should not raise
         export_btn.invoke()
 
@@ -523,8 +525,18 @@ class TestSessionExportTaskTree(unittest.TestCase):
     def test_export_nested_subtasks_indented(self):
         session, _ = _make_session(self.tmp)
         plan = PlanRecord(plan_id="p_nest", plan_name="Nested Plan", root_task_ids=["root1"], status="done")
-        root_node = TaskNodeRecord(plan_id="p_nest", task_id="root1", depth=0, task_description="Root step", status="done", epoch=1.0)
-        child_node = TaskNodeRecord(plan_id="p_nest", task_id="child1", parent_task_id="root1", depth=1, task_description="Child step", status="done", epoch=2.0)
+        root_node = TaskNodeRecord(
+            plan_id="p_nest", task_id="root1", depth=0, task_description="Root step", status="done", epoch=1.0
+        )
+        child_node = TaskNodeRecord(
+            plan_id="p_nest",
+            task_id="child1",
+            parent_task_id="root1",
+            depth=1,
+            task_description="Child step",
+            status="done",
+            epoch=2.0,
+        )
         session.context.save_plan(plan)
         session.context.save_task_node(root_node)
         session.context.save_task_node(child_node)
@@ -571,9 +583,13 @@ class TestSessionReplaySubtask(unittest.TestCase):
 
         def _side_effect(*a, **kw):
             done.set()
-            return iter([
-                ResponseChunk(type=ChunkType.TASK_NODE_END, task_id="t1", plan_id="p1", content="synthesis", assertions=[]),
-            ])
+            return iter(
+                [
+                    ResponseChunk(
+                        type=ChunkType.TASK_NODE_END, task_id="t1", plan_id="p1", content="synthesis", assertions=[]
+                    ),
+                ]
+            )
 
         adapter.replay_task_node_generator.side_effect = _side_effect
         session.gui.update_plan_node_status = MagicMock()
