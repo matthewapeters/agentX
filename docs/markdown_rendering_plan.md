@@ -215,11 +215,11 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** New packages declared; graceful fallback when unavailable.
 
-- [ ] Add `tkinterweb>=3.24` and `Markdown>=3.7` to `dependencies` in `pyproject.toml`
-- [ ] Add `markdown_render_enabled = true` under `[agentx]` in `agentx.toml`
-- [ ] Add `markdown_render_enabled: bool = True` field to `GUIConfig` dataclass in `src/agentx/gui/gui_config.py`
-- [ ] Wire `markdown_render_enabled` into `GUIConfig.from_dict()` (reads from `agentx` section)
-- [ ] Create `src/agentx/gui/markdown_renderer.py` with soft-import guard at the top:
+- [✓] Add `tkinterweb>=3.24` and `Markdown>=3.7` to `dependencies` in `pyproject.toml`
+- [✓] Add `markdown_render_enabled = true` under `[agentx]` in `agentx.toml`
+- [✓] Add `markdown_render_enabled: bool = True` field to `GUIConfig` dataclass in `src/agentx/gui/gui_config.py`
+- [✓] Wire `markdown_render_enabled` into `GUIConfig.from_dict()` (reads from `agentx` section)
+- [✓] Create `src/agentx/gui/markdown_renderer.py` with soft-import guard at the top:
 
   ```python
   try:
@@ -235,9 +235,9 @@ This re-binds the existing button with zero widget-graph changes.
       MARKDOWN_AVAILABLE = False
   ```
 
-- [ ] Expose `TKINTERWEB_AVAILABLE` and `MARKDOWN_AVAILABLE` as public constants from the module
-- [ ] Write unit test: importing `markdown_renderer` with neither package installed (mock `ImportError`) sets both flags to `False` and does not raise
-- [ ] Run `uv sync` to install new packages and confirm no version conflicts
+- [✓] Expose `TKINTERWEB_AVAILABLE` and `MARKDOWN_AVAILABLE` as public constants from the module
+- [✓] Write unit test: importing `markdown_renderer` with neither package installed (mock `ImportError`) sets both flags to `False` and does not raise
+- [✓] Run `uv sync` to install new packages and confirm no version conflicts
 
 ---
 
@@ -245,7 +245,7 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** `GUIConfig` colors map cleanly to a CSS stylesheet embedded in every rendered HTML document.
 
-- [ ] Implement `build_markdown_css(config: "GUIConfig") -> str` in `markdown_renderer.py`; covers:
+- [✓] Implement `build_markdown_css(config: "GUIConfig") -> str` in `markdown_renderer.py`; covers:
   - `body` — `background-color`, `color`, `font-family: monospace`, `font-size`, `margin`, `padding`
   - `h1`–`h6` — sizing scale (h1: 1.5em → h6: 0.85em), `color` from `config.ui_fg`, `border-bottom` on h1/h2
   - `code` — inline code: `background-color` slightly lighter than `output_bg`, `border-radius`, `padding`
@@ -257,7 +257,7 @@ This re-binds the existing button with zero widget-graph changes.
   - `a` — `color: #4a9eff` (dark) or `#1d4ed8` (light), no underline by default
   - `img` — `max-width: 100%`, `height: auto`
   - `hr` — `border-color` muted
-- [ ] Implement `markdown_to_html(text: str, css: str) -> str`:
+- [✓] Implement `markdown_to_html(text: str, css: str) -> str`:
 
   ```python
   body = _md_lib.markdown(
@@ -267,11 +267,11 @@ This re-binds the existing button with zero widget-graph changes.
   return f"<html><head><style>{css}</style></head><body>{body}</body></html>"
   ```
 
-- [ ] Write unit tests for `build_markdown_css`:
+- [✓] Write unit tests for `build_markdown_css`:
   - Dark Mode config produces CSS body containing `#222222`
   - Light Mode config produces CSS body containing `#ffffff`
   - CSS string is non-empty and contains `table`, `pre`, `h1`
-- [ ] Write unit tests for `markdown_to_html`:
+- [✓] Write unit tests for `markdown_to_html`:
   - `# Hello` → HTML contains `<h1>Hello</h1>`
   - `**bold**` → HTML contains `<strong>bold</strong>`
   - Table markdown `| a | b |\n|---|---|\n| 1 | 2 |` → HTML contains `<table>`
@@ -284,9 +284,9 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** Short plain-text responses are not replaced with `HtmlFrame`s unnecessarily.
 
-- [ ] Implement `has_markdown(text: str) -> bool` in `markdown_renderer.py` using `MARKDOWN_PATTERNS` regex (full pattern documented in Architecture Overview above)
-- [ ] Expose `MARKDOWN_PATTERNS` as a module-level compiled `re.Pattern`
-- [ ] Write unit tests for `has_markdown`:
+- [✓] Implement `has_markdown(text: str) -> bool` in `markdown_renderer.py` using `MARKDOWN_PATTERNS` regex (full pattern documented in Architecture Overview above)
+- [✓] Expose `MARKDOWN_PATTERNS` as a module-level compiled `re.Pattern`
+- [✓] Write unit tests for `has_markdown`:
   - `"# Hello"` → `True`
   - `"**bold text**"` → `True`
   - `"| col1 | col2 |"` → `True`
@@ -304,7 +304,7 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** Each output entry state dict carries the new fields needed for post-stream finalization; the toggle button can be rebound without structural changes.
 
-- [ ] In `_create_output_entry()` in `gui_manager.py`, add `toggle_btn` to the `state` dict immediately after `toggle_btn` is constructed:
+- [✓] In `_create_output_entry()` in `gui_manager.py`, add `toggle_btn` to the `state` dict immediately after `toggle_btn` is constructed:
 
   ```python
   state["toggle_btn"] = toggle_btn
@@ -312,9 +312,9 @@ This re-binds the existing button with zero widget-graph changes.
   state["is_finalized"] = False
   ```
 
-- [ ] Verify that no existing code reads `state["toggle_btn"]` (there should be none — this is a new key)
-- [ ] Write unit test: `_create_output_entry()` returns a state dict containing keys `toggle_btn`, `html_frame`, `is_finalized`
-- [ ] Write unit test: calling `state["toggle_btn"].invoke()` still toggles `state["expanded"]` correctly
+- [✓] Verify that no existing code reads `state["toggle_btn"]` (there should be none — this is a new key)
+- [✓] Write unit test: `_create_output_entry()` returns a state dict containing keys `toggle_btn`, `html_frame`, `is_finalized`
+- [✓] Write unit test: calling `state["toggle_btn"].invoke()` still toggles `state["expanded"]` correctly
 
 ---
 
@@ -322,7 +322,7 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** A completed entry's `tk.Text` is destroyed and replaced with a correctly sized, themed `HtmlFrame`.
 
-- [ ] Implement `_finalize_entry_markdown(self, entry: dict[str, Any]) -> None` in `GUIManager`:
+- [✓] Implement `_finalize_entry_markdown(self, entry: dict[str, Any]) -> None` in `GUIManager`:
 
   ```
   Guard 1: return if not TKINTERWEB_AVAILABLE or not MARKDOWN_AVAILABLE
@@ -358,11 +358,11 @@ This re-binds the existing button with zero widget-graph changes.
       entry["toggle"] = _html_toggle
   ```
 
-- [ ] Implement `_update_html_frame_height(self, html_frame: "HtmlFrame") -> None`:
+- [✓] Implement `_update_html_frame_height(self, html_frame: "HtmlFrame") -> None`:
   - Calls `html_frame.update_idletasks()`, reads `html_frame.winfo_reqheight()`, configures height
   - Schedules scroll-region update on `output_entries_canvas`
-- [ ] Implement `_schedule_html_height_update(self, html_frame: "HtmlFrame") -> None` using `after_idle`
-- [ ] Write unit tests for `_finalize_entry_markdown`:
+- [✓] Implement `_schedule_html_height_update(self, html_frame: "HtmlFrame") -> None` using `after_idle`
+- [✓] Write unit tests for `_finalize_entry_markdown`:
   - With real Tkinter root: create an entry with markdown text, finalize, verify `entry["is_finalized"] == True` and `entry["html_frame"] is not None` and `entry["detail_text"] is None`
   - Entry with no markdown markers → heuristic returns `False` → `is_finalized` stays `False`
   - Entry with `role_label="Tool"` → skipped, `is_finalized` stays `False`
@@ -378,7 +378,7 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** Finalization is triggered automatically at the natural end of every turn.
 
-- [ ] Implement `_finalize_current_turn_markdown(self) -> None`:
+- [✓] Implement `_finalize_current_turn_markdown(self) -> None`:
 
   ```python
   for key, entry in self._current_turn_entries.items():
@@ -386,10 +386,10 @@ This re-binds the existing button with zero widget-graph changes.
           self._finalize_entry_markdown(entry)
   ```
 
-- [ ] Call `self._finalize_current_turn_markdown()` at the **start** of `display_spacing()`, before `_current_turn_entries = {}`
-- [ ] Ensure `display_spacing()` still resets all state fields as before (no regression)
-- [ ] Handle bootstrap turn: `display_bootstrap_agent_response()` does not create `_current_turn_entries`; `_finalize_current_turn_markdown()` handles empty dict safely (no-op)
-- [ ] Write unit tests:
+- [✓] Call `self._finalize_current_turn_markdown()` at the **start** of `display_spacing()`, before `_current_turn_entries = {}`
+- [✓] Ensure `display_spacing()` still resets all state fields as before (no regression)
+- [✓] Handle bootstrap turn: `display_bootstrap_agent_response()` does not create `_current_turn_entries`; `_finalize_current_turn_markdown()` handles empty dict safely (no-op)
+- [✓] Write unit tests:
   - Call `display_user_message()` + `display_agent_response("# Title\n\n**bold** text")` + `display_spacing()` → `_current_turn_entries["assistant"]["is_finalized"] == True`
   - Same flow with plain text response → `is_finalized == False`
   - `_current_turn_entries` is reset to `{}` after `display_spacing()` regardless of finalization
@@ -401,7 +401,7 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** HtmlFrame height stays correct after the output panel is resized.
 
-- [ ] In `_update_output_wraplength()`, after the existing `tk.Text` resize loop, add a second loop over a new `self._output_html_frames: list["HtmlFrame"]` list:
+- [✓] In `_update_output_wraplength()`, after the existing `tk.Text` resize loop, add a second loop over a new `self._output_html_frames: list["HtmlFrame"]` list:
 
   ```python
   active_html_frames = []
@@ -414,10 +414,10 @@ This re-binds the existing button with zero widget-graph changes.
   self._output_html_frames = active_html_frames
   ```
 
-- [ ] In `_finalize_entry_markdown()`, append the new `html_frame` to `self._output_html_frames`
-- [ ] Initialise `self._output_html_frames: list = []` in `GUIManager.__init__()`
-- [ ] Write unit test: after finalization, `html_frame` is present in `_output_html_frames`; calling `_update_output_wraplength(800)` does not raise
-- [ ] Write unit test: destroyed `HtmlFrame` is pruned from `_output_html_frames` during next resize event
+- [✓] In `_finalize_entry_markdown()`, append the new `html_frame` to `self._output_html_frames`
+- [✓] Initialise `self._output_html_frames: list = []` in `GUIManager.__init__()`
+- [✓] Write unit test: after finalization, `html_frame` is present in `_output_html_frames`; calling `_update_output_wraplength(800)` does not raise
+- [✓] Write unit test: destroyed `HtmlFrame` is pruned from `_output_html_frames` during next resize event
 
 ---
 
@@ -425,7 +425,7 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** The `IGUIManager` protocol reflects the new public capability surface; business logic can call `finalize_current_turn_markdown()` directly if needed.
 
-- [ ] Add `finalize_current_turn_markdown(self) -> None` to `IGUIManager` in `src/agentx/igui_manager.py` with docstring:
+- [✓] Add `finalize_current_turn_markdown(self) -> None` to `IGUIManager` in `src/agentx/igui_manager.py` with docstring:
 
   ```
   Finalise all completed entries in the current turn by replacing streaming
@@ -434,8 +434,8 @@ This re-binds the existing button with zero widget-graph changes.
   explicit control (e.g. bootstrap turn, plan-tab finalization).
   ```
 
-- [ ] Verify `GUIManager` satisfies the updated protocol (run `mypy src/` — no new errors)
-- [ ] Write unit test: `GUIManager` is an instance of `IGUIManager` (protocol runtime check via `isinstance(..., IGUIManager)` or structural check)
+- [✓] Verify `GUIManager` satisfies the updated protocol (run `mypy src/` — no new errors)
+- [✓] Write unit test: `GUIManager` is an instance of `IGUIManager` (protocol runtime check via `isinstance(..., IGUIManager)` or structural check)
 
 ---
 
@@ -443,11 +443,11 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** The user can enable/disable markdown rendering without restarting the application.
 
-- [ ] Add a "Render Markdown" `tk.BooleanVar` checkbox to `src/agentx/gui/settings_tab.py` in the "Output" or "Appearance" section
-- [ ] On toggle: update `self.config.markdown_render_enabled`; if `tkinterweb` is not installed, show an inline "(requires tkinterweb)" label and keep the checkbox disabled
-- [ ] Persist the new value to `agentx.toml` using the existing settings-save mechanism
-- [ ] Write unit test: checkbox is disabled (greyed) when `TKINTERWEB_AVAILABLE == False`
-- [ ] Write unit test: toggling the checkbox updates `gui.config.markdown_render_enabled`
+- [✓] Add a "Render Markdown" `tk.BooleanVar` checkbox to `src/agentx/gui/settings_tab.py` in the "Output" or "Appearance" section
+- [✓] On toggle: update `self.config.markdown_render_enabled`; if `tkinterweb` is not installed, show an inline "(requires tkinterweb)" label and keep the checkbox disabled
+- [✓] Persist the new value to `agentx.toml` using the existing settings-save mechanism
+- [✓] Write unit test: checkbox is disabled (greyed) when `TKINTERWEB_AVAILABLE == False`
+- [✓] Write unit test: toggling the checkbox updates `gui.config.markdown_render_enabled`
 
 ---
 
@@ -455,7 +455,7 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** End-to-end flow works with real Tkinter; rendered HTML is visible and correct.
 
-- [ ] Write an integration test (`tests/test_markdown_rendering.py`) tagged `@pytest.mark.live` (requires display) OR skipped if `DISPLAY` env var is unset:
+- [✓] Write an integration test (`tests/test_markdown_rendering.py`) tagged `@pytest.mark.live` (requires display) OR skipped if `DISPLAY` env var is unset:
 
   ```
   Setup: create GUIManager with create_layout()
@@ -469,14 +469,14 @@ This re-binds the existing button with zero widget-graph changes.
   Assert: "html_frame" in entry and entry["html_frame"].winfo_exists()
   ```
 
-- [ ] Write a headless unit test that exercises the full path with `HtmlFrame` mocked:
+- [✓] Write a headless unit test that exercises the full path with `HtmlFrame` mocked:
 
   ```python
   with patch("agentx.gui.markdown_renderer.HtmlFrame", FakeHtmlFrame):
       # same assertions as above but no display required
   ```
 
-- [ ] Confirm `python -m pytest tests/test_markdown_rendering.py -m "not live"` passes in CI
+- [✓] Confirm `python -m pytest tests/test_markdown_rendering.py -m "not live"` passes in CI
 
 ---
 
@@ -484,13 +484,13 @@ This re-binds the existing button with zero widget-graph changes.
 
 **Goal:** Package version reflects the new feature; lockfile is updated.
 
-- [ ] Increment version in `pyproject.toml` from `0.17.0` → `0.18.0` (new feature, backward-compatible: minor version bump, patch reset to zero)
-- [ ] Run `uv sync` and confirm `uv.lock` updated with `tkinterweb` and `Markdown` entries
-- [ ] Run `python -m pytest -m "not live"` — full test suite passes
-- [ ] Run `mypy src/` — no new type errors
-- [ ] Run `flake8 src/ tests/` — no new lint errors
-- [ ] Run `black src/ tests/ --line-length=120 --check` — no formatting violations
-- [ ] Run `isort src/ tests/ --profile=black --line-length=120 --check` — no import-order violations
+- [✓] Increment version in `pyproject.toml` from `0.17.0` → `0.18.0` (new feature, backward-compatible: minor version bump, patch reset to zero)
+- [✓] Run `uv sync` and confirm `uv.lock` updated with `tkinterweb` and `Markdown` entries
+- [✓] Run `python -m pytest -m "not live"` — full test suite passes
+- [✓] Run `mypy src/` — no new type errors
+- [✓] Run `flake8 src/ tests/` — no new lint errors
+- [✓] Run `black src/ tests/ --line-length=120 --check` — no formatting violations
+- [✓] Run `isort src/ tests/ --profile=black --line-length=120 --check` — no import-order violations
 
 ---
 

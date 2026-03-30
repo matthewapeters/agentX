@@ -1,9 +1,9 @@
 """GUI Manager implementation."""
 
+import math
 import os
 import re
 import threading
-import math
 import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox as tk_messagebox
@@ -11,14 +11,22 @@ from tkinter import ttk
 from typing import Any, Callable, Optional
 
 from ..attachment_info import AttachmentInfo
-from .collapsible_section import CollapsibleSection
-from .gui_config import GUIConfig
-from .settings_tab import SettingsTab
-from .plan_tree_widget import PlanTreeWidget
 from ..history import History
 from ..igui_manager import IGUIManager
-from ..widget_registry import WidgetRegistry
 from ..integration import ModelSelector
+from ..widget_registry import WidgetRegistry
+from .collapsible_section import CollapsibleSection
+from .gui_config import GUIConfig
+from .markdown_renderer import (
+    MARKDOWN_AVAILABLE,
+    TKINTERWEB_AVAILABLE,
+    HtmlFrame,
+    build_markdown_css,
+    has_markdown,
+    markdown_to_html,
+)
+from .plan_tree_widget import PlanTreeWidget
+from .settings_tab import SettingsTab
 
 
 class GUIManager(IGUIManager):
@@ -118,6 +126,7 @@ class GUIManager(IGUIManager):
         self._output_wraplength: int = 1200
         self._output_wrapped_labels: list[tk.Label] = []
         self._output_detail_text_widgets: list[tk.Text] = []
+        self._output_html_frames: list = []  # HtmlFrame instances added after finalization
 
         # Plan tree widgets keyed by plan_id
         self._plan_trees: dict[str, PlanTreeWidget] = {}
@@ -1146,6 +1155,9 @@ class GUIManager(IGUIManager):
         if self.widgets.output_text is None:
             return
 
+        # Finalise completed entries before clearing the turn state.
+        self.finalize_current_turn_markdown()
+
         # Insert spacing in legacy text and terminate current turn in structured view.
         self._legacy_output_insert("\n\n", ("system_space",))
         self._current_turn_frame = None
@@ -1158,6 +1170,12 @@ class GUIManager(IGUIManager):
         self._agent_classification_shown = False
 
         self._scroll_output_to_end()
+
+    def finalize_current_turn_markdown(self) -> None:
+        """Finalise all eligible entries in the current turn by replacing tk.Text with HtmlFrame."""
+        for entry in self._current_turn_entries.values():
+            if entry is not None:
+                self._finalize_entry_markdown(entry)
 
     # Display Methods - Attachments
 
@@ -1895,6 +1913,17 @@ class GUIManager(IGUIManager):
                 continue
         self._output_detail_text_widgets = active_text_widgets
 
+        active_html_frames: list = []
+        for hf in self._output_html_frames:
+            try:
+                if not hf.winfo_exists():
+                    continue  # widget was destroyed; prune
+                self._update_html_frame_height(hf)
+                active_html_frames.append(hf)
+            except tk.TclError:
+                continue  # widget was destroyed; auto-prune
+        self._output_html_frames = active_html_frames
+
     def _create_status_panel(self) -> None:
         """Create status panel with tabs."""
         self.widgets.system_status = tk.Frame(self.widgets.paned, bg=self._section_bg)
@@ -2289,6 +2318,92 @@ class GUIManager(IGUIManager):
         except tk.TclError:
             return
 
+    # ------------------------------------------------------------------
+    # Markdown finalization helpers
+    # ------------------------------------------------------------------
+
+    def _update_html_frame_height(self, html_frame: Any) -> None:
+        """Resize *html_frame* to its rendered content height and refresh scroll region."""
+        try:
+            html_frame.update_idletasks()
+            height = html_frame.winfo_reqheight()
+            if height > 1:
+                html_frame.configure(height=height)
+            canvas = self.widgets.output_entries_canvas
+            if canvas is not None:
+                canvas.configure(scrollregion=canvas.bbox("all"))
+        except tk.TclError:
+            return
+
+    def _schedule_html_height_update(self, html_frame: Any) -> None:
+        """Schedule a post-layout height update for *html_frame*."""
+        try:
+            html_frame.after_idle(lambda hf=html_frame: self._update_html_frame_height(hf))
+        except tk.TclError:
+            return
+
+    _FINALIZE_SKIP_ROLES = {"Tool", "Error", "Classification"}
+
+    def _finalize_entry_markdown(self, entry: dict[str, Any]) -> None:
+        """Replace a completed entry's tk.Text with a rendered HtmlFrame.
+
+        Guards (any failing → early return, no side effects):
+          1. tkinterweb or markdown package unavailable
+          2. markdown_render_enabled is False in config
+          3. entry already finalized
+          4. role_label is Tool / Error / Classification
+          5. full_text contains no markdown markers
+        """
+        if not TKINTERWEB_AVAILABLE or not MARKDOWN_AVAILABLE:
+            return
+        if not self.config.markdown_render_enabled:
+            return
+        if entry.get("is_finalized"):
+            return
+        if entry.get("role_label") in self._FINALIZE_SKIP_ROLES:
+            return
+        full_text = entry.get("full_text", "")
+        if not has_markdown(full_text):
+            return
+
+        css = build_markdown_css(self.config)
+        html = markdown_to_html(full_text, css)
+
+        detail_text: tk.Text = entry["detail_text"]
+        parent = detail_text.master
+
+        # Remove from the tracked list (prune by identity).
+        self._output_detail_text_widgets = [w for w in self._output_detail_text_widgets if w is not detail_text]
+
+        detail_text.destroy()
+        entry["detail_text"] = None
+
+        html_frame = HtmlFrame(parent, messages_enabled=False)
+        html_frame.load_html(html)
+
+        entry["html_frame"] = html_frame
+        entry["is_finalized"] = True
+        self._output_html_frames.append(html_frame)
+
+        if entry.get("expanded", True):
+            html_frame.pack(fill=tk.X, anchor="w", padx=(24, 0))
+        self._schedule_html_height_update(html_frame)
+
+        # Rebind the toggle button to show/hide the HtmlFrame.
+        toggle_btn: tk.Button = entry["toggle_btn"]
+
+        def _html_toggle(e: dict = entry) -> None:
+            e["expanded"] = not e["expanded"]
+            toggle_btn.config(text=self.EXPAND_COLLAPSE_ICONS[e["expanded"]])
+            if e["expanded"]:
+                e["html_frame"].pack(fill=tk.X, anchor="w", padx=(24, 0))
+                self._schedule_html_height_update(e["html_frame"])
+            else:
+                e["html_frame"].pack_forget()
+
+        toggle_btn.config(command=_html_toggle)
+        entry["toggle"] = _html_toggle
+
     def _create_output_entry(
         self,
         parent: tk.Widget,
@@ -2325,6 +2440,10 @@ class GUIManager(IGUIManager):
             activeforeground=self.COLOR_AGENT_RESPONSE,
         )
         toggle_btn.pack(side=tk.LEFT, padx=(0, 4))
+
+        state["toggle_btn"] = toggle_btn
+        state["html_frame"] = None
+        state["is_finalized"] = False
 
         header_label = tk.Label(
             header_frame,

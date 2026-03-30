@@ -8,7 +8,7 @@ from tkinter import ttk
 from typing import Any, Callable
 
 from .collapsible_section import CollapsibleSection
-
+from .markdown_renderer import TKINTERWEB_AVAILABLE
 
 # System-prompt files that should be excluded from user selection (internal only).
 _EXCLUDED_SYSTEM_PROMPTS = {"prompt_classification", "structured_response"}
@@ -17,7 +17,7 @@ _EXCLUDED_SYSTEM_PROMPTS = {"prompt_classification", "structured_response"}
 # is restarted. Each entry is a tuple (section, key) matching the TOML path.
 _RESTART_REQUIRED: set[tuple] = {
     ("agentx", "ollama_host"),
-    ("agentx", "ollama_model"),          # runtime model controlled by toolbar selector
+    ("agentx", "ollama_model"),  # runtime model controlled by toolbar selector
     ("agentx", "ollama_initial_load_timeout_seconds"),
     ("agentx", "screen_side"),
     ("agentx", "theme_mode"),
@@ -141,56 +141,107 @@ class SettingsTab:
         g = section.content_container
 
         self._theme_mode_var = self._add_enum_dropdown(
-            g, 0, ["agentx", "theme_mode"],
+            g,
+            0,
+            ["agentx", "theme_mode"],
             "Theme mode" + self.RESTART_ICON,
             cfg.get("theme_mode", "Dark Mode"),
             ["Dark Mode", "Light Mode"],
             hot_reload=False,
         )
 
+        # Render Markdown toggle — disabled with an explanatory label when tkinterweb
+        # is not installed so users understand why the option is greyed out.
+        md_initial = cfg.get("markdown_render_enabled", True)
+        self._markdown_render_var = tk.BooleanVar(value=md_initial if TKINTERWEB_AVAILABLE else False)
+
+        def _on_markdown_toggle():
+            self._fire(["agentx", "markdown_render_enabled"], self._markdown_render_var.get())
+
+        md_cb = tk.Checkbutton(
+            g,
+            text="Render Markdown",
+            variable=self._markdown_render_var,
+            command=_on_markdown_toggle,
+            anchor="w",
+            bg=self._bg,
+            fg=self._fg,
+            activebackground=self._bg,
+            activeforeground=self._fg,
+            selectcolor=self._bg,
+            font=("Terminal", 9),
+        )
+        md_cb.grid(row=1, column=0, columnspan=2, sticky="w", padx=(8, 4), pady=2)
+
+        if not TKINTERWEB_AVAILABLE:
+            md_cb.config(state=tk.DISABLED)
+            tk.Label(
+                g,
+                text="(requires tkinterweb)",
+                bg=self._bg,
+                fg=self._muted_fg,
+                font=("Terminal", 8, "italic"),
+            ).grid(row=1, column=2, sticky="w", padx=(0, 4), pady=2)
+
     def _build_ollama_section(self) -> None:
         cfg = self._config.get("agentx", {})
         section = self._make_section("🤖 Ollama", initial_collapsed=False)
         g = section.content_container
 
-        self._add_text_entry(g, 0, ["agentx", "ollama_host"],
-                             "Host", cfg.get("ollama_host", "localhost:11434"), restart=True)
+        self._add_text_entry(
+            g, 0, ["agentx", "ollama_host"], "Host", cfg.get("ollama_host", "localhost:11434"), restart=True
+        )
 
         # Default model: dropdown but NOT wired to active_model at runtime.
-        self._add_model_dropdown(g, 1, ["agentx", "ollama_model"],
-                                 "Default model" + self.RESTART_ICON,
-                                 cfg.get("ollama_model", ""),
-                                 hot_reload=False)
+        self._add_model_dropdown(
+            g,
+            1,
+            ["agentx", "ollama_model"],
+            "Default model" + self.RESTART_ICON,
+            cfg.get("ollama_model", ""),
+            hot_reload=False,
+        )
 
-        self._add_spinbox(g, 2, ["agentx", "ollama_initial_load_timeout_seconds"],
-                          "Load timeout (s)", cfg.get("ollama_initial_load_timeout_seconds", 120),
-                          from_=5, to=600, restart=True)
+        self._add_spinbox(
+            g,
+            2,
+            ["agentx", "ollama_initial_load_timeout_seconds"],
+            "Load timeout (s)",
+            cfg.get("ollama_initial_load_timeout_seconds", 120),
+            from_=5,
+            to=600,
+            restart=True,
+        )
 
-        self._add_enum_dropdown(g, 3, ["agentx", "screen_side"],
-                                "Screen side" + self.RESTART_ICON,
-                                cfg.get("screen_side", "left"),
-                                ["left", "right"])
+        self._add_enum_dropdown(
+            g,
+            3,
+            ["agentx", "screen_side"],
+            "Screen side" + self.RESTART_ICON,
+            cfg.get("screen_side", "left"),
+            ["left", "right"],
+        )
 
     def _build_agentix_section(self) -> None:
         cfg = self._config.get("agentix", {})
         section = self._make_section("🧠 Agentix", initial_collapsed=False)
         g = section.content_container
 
-        self._add_text_entry(g, 0, ["agentix", "host"],
-                             "Host" + self.RESTART_ICON,
-                             cfg.get("host", "localhost:8000"), restart=True)
+        self._add_text_entry(
+            g, 0, ["agentix", "host"], "Host" + self.RESTART_ICON, cfg.get("host", "localhost:8000"), restart=True
+        )
 
-        self._add_checkbox(g, 1, ["agentix", "classify_prompts"],
-                           "Classify prompts", cfg.get("classify_prompts", True))
+        self._add_checkbox(g, 1, ["agentix", "classify_prompts"], "Classify prompts", cfg.get("classify_prompts", True))
 
-        self._add_checkbox(g, 2, ["agentix", "debug"],
-                           "Debug logging", cfg.get("debug", False))
+        self._add_checkbox(g, 2, ["agentix", "debug"], "Debug logging", cfg.get("debug", False))
 
         # Classification sub-group
         self._add_separator(g, 3, "Classification")
 
         backend_var = self._add_enum_dropdown(
-            g, 4, ["agentix", "classification_backend"],
+            g,
+            4,
+            ["agentix", "classification_backend"],
             "Backend",
             cfg.get("classification_backend", "ollama"),
             ["ollama", "torch"],
@@ -198,24 +249,36 @@ class SettingsTab:
         self._torch_state_var = backend_var
         backend_var.trace_add("write", lambda *_: self._apply_torch_greyout())
 
-        self._add_model_dropdown(g, 5, ["agentix", "agentix_bench_classification_model"],
-                                 "Classification model",
-                                 cfg.get("agentix_bench_classification_model", ""),
-                                 hot_reload=True)
+        self._add_model_dropdown(
+            g,
+            5,
+            ["agentix", "agentix_bench_classification_model"],
+            "Classification model",
+            cfg.get("agentix_bench_classification_model", ""),
+            hot_reload=True,
+        )
 
         torch_lbl_a, torch_entry_a = self._add_text_entry(
-            g, 6, ["agentix", "classification_torch_model"],
+            g,
+            6,
+            ["agentix", "classification_torch_model"],
             "Torch model" + self.RESTART_ICON,
             cfg.get("classification_torch_model", ""),
-            restart=True, return_widgets=True,
+            restart=True,
+            return_widgets=True,
         )
         self._torch_widgets.append((torch_lbl_a, torch_entry_a))
 
         torch_lbl_b, torch_spin_b = self._add_spinbox(
-            g, 7, ["agentix", "classification_torch_device"],
+            g,
+            7,
+            ["agentix", "classification_torch_device"],
             "Torch device" + self.RESTART_ICON,
             cfg.get("classification_torch_device", -1),
-            from_=-1, to=16, restart=True, return_widgets=True,
+            from_=-1,
+            to=16,
+            restart=True,
+            return_widgets=True,
         )
         self._torch_widgets.append((torch_lbl_b, torch_spin_b))
 
@@ -226,8 +289,11 @@ class SettingsTab:
         row = 9
         for prompt_name in available:
             self._add_list_checkbox(
-                g, row, ["agentix", "default_system_prompts"],
-                prompt_name, prompt_name in enabled_set,
+                g,
+                row,
+                ["agentix", "default_system_prompts"],
+                prompt_name,
+                prompt_name in enabled_set,
                 all_values=available,
                 current_enabled=enabled_set,
             )
@@ -246,24 +312,39 @@ class SettingsTab:
             ("show_next_step", "Show routing path"),
         ]
         for row, (key, label) in enumerate(fields):
-            self._add_checkbox(g, row, ["agentix", "classification_display", key],
-                               label, cfg.get(key, True))
+            self._add_checkbox(g, row, ["agentix", "classification_display", key], label, cfg.get(key, True))
 
     def _build_working_memory_section(self) -> None:
         cfg = self._config.get("agentx", {}).get("working_memory", {})
         section = self._make_section("🏛️ Working Memory", initial_collapsed=True)
         g = section.content_container
 
-        self._add_checkbox(g, 0, ["agentx", "working_memory", "enabled"],
-                           "Enabled" + self.RESTART_ICON, cfg.get("enabled", True),
-                           restart=True)
+        self._add_checkbox(
+            g,
+            0,
+            ["agentx", "working_memory", "enabled"],
+            "Enabled" + self.RESTART_ICON,
+            cfg.get("enabled", True),
+            restart=True,
+        )
 
-        self._add_checkbox(g, 1, ["agentx", "working_memory", "inject_into_context"],
-                           "Inject into LLM context", cfg.get("inject_into_context", True))
+        self._add_checkbox(
+            g,
+            1,
+            ["agentx", "working_memory", "inject_into_context"],
+            "Inject into LLM context",
+            cfg.get("inject_into_context", True),
+        )
 
-        self._add_spinbox(g, 2, ["agentx", "working_memory", "max_facts"],
-                          "Max facts (0 = unlimited)", cfg.get("max_facts", 50),
-                          from_=0, to=500)
+        self._add_spinbox(
+            g,
+            2,
+            ["agentx", "working_memory", "max_facts"],
+            "Max facts (0 = unlimited)",
+            cfg.get("max_facts", 50),
+            from_=0,
+            to=500,
+        )
 
     # ──────────────────────────────────────────────────────────────────────────
     # Widget factory helpers
@@ -271,7 +352,8 @@ class SettingsTab:
 
     def _make_section(self, title: str, initial_collapsed: bool = True) -> CollapsibleSection:
         section = CollapsibleSection(
-            self._inner, title,
+            self._inner,
+            title,
             initial_collapsed=initial_collapsed,
             font=("Terminal", 10, "bold"),
             bg=self._bg,
@@ -294,8 +376,9 @@ class SettingsTab:
         return lbl
 
     def _add_separator(self, parent: tk.Widget, row: int, text: str) -> None:
-        sep_lbl = tk.Label(parent, text=text, anchor="w", bg=self._bg,
-                           font=("Terminal", 9, "italic"), foreground=self._muted_fg)
+        sep_lbl = tk.Label(
+            parent, text=text, anchor="w", bg=self._bg, font=("Terminal", 9, "italic"), foreground=self._muted_fg
+        )
         sep_lbl.grid(row=row, column=0, columnspan=2, sticky="w", padx=(8, 4), pady=(6, 0))
 
     def _add_checkbox(
@@ -313,11 +396,19 @@ class SettingsTab:
             self._fire(key_path, var.get())
 
         display = label + (self.RESTART_ICON if restart else "")
-        cb = tk.Checkbutton(parent, text=display, variable=var, command=_on_change,
-                            anchor="w", bg=self._bg, fg=self._fg,
-                            activebackground=self._bg, activeforeground=self._fg,
-                            selectcolor=self._bg,
-                            font=("Terminal", 9))
+        cb = tk.Checkbutton(
+            parent,
+            text=display,
+            variable=var,
+            command=_on_change,
+            anchor="w",
+            bg=self._bg,
+            fg=self._fg,
+            activebackground=self._bg,
+            activeforeground=self._fg,
+            selectcolor=self._bg,
+            font=("Terminal", 9),
+        )
         cb.grid(row=row, column=0, columnspan=2, sticky="w", padx=(8, 4), pady=2)
         return var
 
@@ -366,8 +457,7 @@ class SettingsTab:
             except ValueError:
                 pass
 
-        spin = ttk.Spinbox(parent, from_=from_, to=to, textvariable=var,
-                           width=8, command=_commit)
+        spin = ttk.Spinbox(parent, from_=from_, to=to, textvariable=var, width=8, command=_commit)
         spin.grid(row=row, column=1, sticky="w", padx=(0, 8), pady=2)
         spin.bind("<FocusOut>", _commit)
         spin.bind("<Return>", _commit)
@@ -394,8 +484,7 @@ class SettingsTab:
             else:
                 self._fire_config_only(key_path, var.get())
 
-        combo = ttk.Combobox(parent, textvariable=var, values=choices,
-                             state="readonly", width=20)
+        combo = ttk.Combobox(parent, textvariable=var, values=choices, state="readonly", width=20)
         combo.grid(row=row, column=1, sticky="w", padx=(0, 8), pady=2)
         var.trace_add("write", _on_change)
         return var
@@ -419,8 +508,7 @@ class SettingsTab:
                 # Config-only: write to disk but do NOT change active runtime state.
                 self._fire_config_only(key_path, var.get())
 
-        combo = ttk.Combobox(parent, textvariable=var, values=self._models,
-                             state="readonly", width=25)
+        combo = ttk.Combobox(parent, textvariable=var, values=self._models, state="readonly", width=25)
         combo.grid(row=row, column=1, sticky="w", padx=(0, 8), pady=2)
         self._model_dropdowns.append(combo)
         var.trace_add("write", _on_change)
@@ -446,11 +534,19 @@ class SettingsTab:
                 enabled_set.discard(value)
             self._fire(key_path, [v for v in all_values if v in enabled_set])
 
-        cb = tk.Checkbutton(parent, text=value, variable=var, command=_on_change,
-                            anchor="w", bg=self._bg, fg=self._fg,
-                            activebackground=self._bg, activeforeground=self._fg,
-                            selectcolor=self._bg,
-                            font=("Terminal", 9))
+        cb = tk.Checkbutton(
+            parent,
+            text=value,
+            variable=var,
+            command=_on_change,
+            anchor="w",
+            bg=self._bg,
+            fg=self._fg,
+            activebackground=self._bg,
+            activeforeground=self._fg,
+            selectcolor=self._bg,
+            font=("Terminal", 9),
+        )
         cb.grid(row=row, column=0, columnspan=2, sticky="w", padx=(20, 4), pady=1)
         return var
 
