@@ -9,31 +9,32 @@ import subprocess
 import threading
 import tkinter as tk
 from datetime import UTC, datetime
-from typing import Any, Optional, Iterator
+from typing import Any, Iterator, Optional
 
 import httpx
 
-from .attachment_info import AttachmentInfo
-from .output_logger import OutputLogger
+from agentix.prompt_classification_response import PromptClassificationResponse
 from shared.models.context import Context
+from shared.models.message import Message, MessageRole
+from shared.models.response import ChunkType, ResponseChunk
 from shared.models.working_memory import FactOwner, WorkingMemory
+
+from .attachment_info import AttachmentInfo
+from .config import save_config
 from .file_explorer import FileExplorer
 from .gui.gui_config import GUIConfig
-from .config import save_config
 from .gui.gui_manager import GUIManager
 from .history import History
-from shared.models.message import Message, MessageRole
-from shared.models.response import ResponseChunk, ChunkType
-from .service_manager import ServiceManager
 from .integration import (
-    AgentixBridgeAdapter,
-    ResponseHandler,
-    ClientToolExecutor,
-    ServerToolExecutor,
     AdvancedToolRegistry,
+    AgentixBridgeAdapter,
+    ClientToolExecutor,
+    ResponseHandler,
+    ServerToolExecutor,
+    agentix_bridge_adapter,
 )
-from .integration import agentix_bridge_adapter
-from agentix.prompt_classification_response import PromptClassificationResponse
+from .output_logger import OutputLogger
+from .service_manager import ServiceManager
 
 logger = logging.getLogger(__name__)
 
@@ -798,6 +799,7 @@ class AgentXSession:
     def _handle_wm_promote_conflict(self, compound_key: str, result) -> None:
         """Show conflict resolution dialog for promote operation."""
         import tkinter.simpledialog as sd
+
         from shared.models.working_memory import PromotionStatus
 
         key = compound_key.split(":", 1)[-1] if ":" in compound_key else compound_key
@@ -830,6 +832,7 @@ class AgentXSession:
         if self.working_memory is None:
             return
         import json as _json
+
         from shared.models.working_memory import FactOwner
 
         parsed_value = value_str
@@ -921,6 +924,9 @@ class AgentXSession:
                     agentix_cfg.system = value
                 # classify_prompts / classification_display / host — all config-dict
                 # reads, no explicit adapter call needed.
+            elif section == "agentx":
+                if leaf == "markdown_render_enabled":
+                    self.gui.config.markdown_render_enabled = bool(value)
         except AttributeError:
             pass  # Agentix not available
 

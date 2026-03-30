@@ -85,6 +85,9 @@ class GUIConfig:
     agent_thinking_font: tuple[str, int, str] = ("Terminal", 10, "italic")
     gray_text_font: tuple[str, int, str] = ("Terminal", 10, "italic")
 
+    # Markdown Rendering Configuration
+    markdown_render_enabled: bool = True
+
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> "GUIConfig":
         """Create GUIConfig from application config dictionary.
@@ -143,4 +146,5 @@ class GUIConfig:
             gray_text_font=tuple(
                 agentx.get("gray_text_font", ["Terminal", 10, "italic"])
             ),
+            markdown_render_enabled=agentx.get("markdown_render_enabled", True),
         )

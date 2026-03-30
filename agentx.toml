@@ -1,5 +1,6 @@
 [agentx]
 theme_mode = "Dark Mode"
+markdown_render_enabled = true
 ollama_host = "localhost:11434"
 ollama_model = "gpt-oss:latest"
 ollama_initial_load_timeout_seconds = 120

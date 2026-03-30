@@ -113,6 +113,15 @@ class IGUIManager(Protocol):
         """
         ...
 
+    def finalize_current_turn_markdown(self) -> None:
+        """Finalise all completed entries in the current turn by replacing streaming
+        tk.Text widgets with rendered HtmlFrame widgets where markdown is detected.
+
+        Called automatically by display_spacing(); exposed here for callers that need
+        explicit control (e.g. bootstrap turn, plan-tab finalization).
+        """
+        ...
+
     # Display Methods - Attachments
 
     def update_attachment_bar(
