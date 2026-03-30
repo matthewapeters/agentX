@@ -201,13 +201,16 @@ class AgentXSession:
             self._session_log.write("🤔 intent: (classification disabled)\n")
             return
 
-        self._session_log.write(f"🤔 intent: {classification.intent.name}\n")
+        intent_str = getattr(classification.intent, "name", classification.intent)
+        next_step_str = getattr(classification.next_step, "name", classification.next_step)
+        self._session_log.write(f"🤔 intent: {intent_str}\n")
         self._session_log.write(f"   reasoning: {classification.reasoning_summary}\n")
 
-        if classification.needs_clarification:
+        if getattr(classification, "needs_clarification", False):
             self._session_log.write("   ⚠️  needs clarification\n")
-            if classification.missing_fields:
-                self._session_log.write(f"   missing: {', '.join(classification.missing_fields)}\n")
+            missing = getattr(classification, "missing_fields", [])
+            if missing:
+                self._session_log.write(f"   missing: {', '.join(missing)}\n")
 
         # Show Working Memory context if available
         if self.working_memory and self.working_memory.all_facts():
@@ -218,7 +221,7 @@ class AgentXSession:
                     fact_strs = [f"{f.key}={f.value}" for f in key_facts]
                     self._session_log.write(f"   🏛️  WM context: {', '.join(fact_strs)}\n")
 
-        self._session_log.write(f"💡 path: {classification.next_step.name}\n\n")
+        self._session_log.write(f"💡 path: {next_step_str}\n\n")
         self._session_log.flush()
 
     def _build_stream_shared_context(self) -> Context:

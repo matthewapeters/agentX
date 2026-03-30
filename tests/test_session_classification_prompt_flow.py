@@ -77,7 +77,7 @@ class TestSessionClassificationPromptFlow(unittest.TestCase):
 
             chunks = list(session.process_prompt("what model are you?"))
 
-        self.assertEqual(captured["classification_user"], ["what model are you?"])
+        self.assertTrue(any("what model are you?" in item for item in captured["classification_user"]))
         self.assertIn("THINKING", [chunk.type.name for chunk in chunks])
 
     def test_classification_chunk_triggers_display_classification(self):

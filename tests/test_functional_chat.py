@@ -162,6 +162,7 @@ class TestChatWorkflow(unittest.TestCase):
                 "ollama_host": "localhost:11434",
                 "ollama_model": "test-model",
                 "ollama_timeout": 30,
+                "working_memory": {"enabled": False},
             },
             "agentix": {
                 "server_url": "http://localhost:11434",
