@@ -66,3 +66,8 @@ line_length = 120
 [tool.flake8]
 max-line-length = 120
 extend-ignore = ["E203", "W503"]
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.1.0",
+]

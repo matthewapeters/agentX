@@ -213,9 +213,6 @@ class AgentixBridge:
             if tool_name == "cst":
                 cst_tools = extract_cst_tools()
                 tools.extend(cst_tools)
-            elif tool_name == "ast":
-                # AST tools would be added here
-                pass
 
         result = to_openai_tools(tools) if tools else []
         result.extend(self._extra_tool_schemas)
@@ -1514,7 +1511,7 @@ def create_bridge(
 
     Args:
         model: Model name (default: llama3.2)
-        tools: List of tool names (default: ["cst", "ast"])
+        tools: List of tool names (default: ["cst"])
         debug: Enable debug output
 
     Returns:
@@ -1522,7 +1519,7 @@ def create_bridge(
     """
     config = AgentixConfig(
         model=model,
-        tools=tools or ["cst", "ast"],
+        tools=tools or ["cst"],
         debug=debug,
     )
     return AgentixBridge(config)

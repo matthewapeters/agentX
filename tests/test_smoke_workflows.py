@@ -16,12 +16,12 @@ import threading
 import time
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from agentx.session import AgentXSession
 from agentx.gui.gui_manager import GUIManager
-from agentx.message import Message
-from agentx.context import Context
+from shared.models.message import Message
+from shared.models.context import Context
 
 
 class TestAgentXWorkflow(unittest.TestCase):
@@ -36,17 +36,16 @@ class TestAgentXWorkflow(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
         # Patch os.getcwd
-        self.patcher_getcwd = patch('os.getcwd')
+        self.patcher_getcwd = patch("os.getcwd")
         self.mock_getcwd = self.patcher_getcwd.start()
         self.mock_getcwd.return_value = self.temp_dir
 
         # Patch os.getenv
-        self.patcher_getenv = patch('os.getenv')
+        self.patcher_getenv = patch("os.getenv")
         self.mock_getenv = self.patcher_getenv.start()
-        self.mock_getenv.side_effect = lambda key, default=None: {
-            "USER": "testuser",
-            "USERNAME": "testuser"
-        }.get(key, default)
+        self.mock_getenv.side_effect = lambda key, default=None: {"USER": "testuser", "USERNAME": "testuser"}.get(
+            key, default
+        )
 
         config = {
             "agentx": {
@@ -58,13 +57,10 @@ class TestAgentXWorkflow(unittest.TestCase):
                 "server_url": "http://localhost:11434",
                 "classify_prompts": False,
                 "debug": False,
-            }
+            },
         }
 
-        self.session = AgentXSession(
-            root=self.root,
-            config=config
-        )
+        self.session = AgentXSession(root=self.root, config=config)
 
         # Create layout
         self.session.gui.create_layout()
@@ -95,11 +91,7 @@ class TestAgentXWorkflow(unittest.TestCase):
         self.assertEqual(user_input, "Hello, agent!")
 
         # Step 3: Display user message
-        self.session.gui.display_user_message(
-            user_input,
-            attachments=[],
-            timestamp=datetime.now()
-        )
+        self.session.gui.display_user_message(user_input, attachments=[], timestamp=datetime.now())
 
         # Step 4: Simulate agent thinking
         self.session.gui.display_agent_thinking("Analyzing...")
@@ -148,9 +140,7 @@ class TestAgentXWorkflow(unittest.TestCase):
         """Test attachment display workflow."""
         # Step 1: Display user message with attachments
         self.session.gui.display_user_message(
-            "Please analyze this data",
-            attachments=["data.csv", "report.pdf"],
-            timestamp=datetime.now()
+            "Please analyze this data", attachments=["data.csv", "report.pdf"], timestamp=datetime.now()
         )
 
         # Step 2: Verify attachments displayed
@@ -178,6 +168,7 @@ class TestAgentXWorkflow(unittest.TestCase):
         msg2.enabled = True
 
         from datetime import datetime
+
         self.session.context.add_message(datetime.now(), msg1)
         self.session.context.add_message(datetime.now(), msg2)
 
@@ -194,7 +185,7 @@ class TestAgentXWorkflow(unittest.TestCase):
                 shared_msg = SharedMessage(
                     role=MessageRole[msg.role.upper()] if hasattr(MessageRole, msg.role.upper()) else MessageRole.USER,
                     content=msg.content,
-                    enabled=msg.enabled
+                    enabled=msg.enabled,
                 )
                 shared_context.add_message(shared_msg)
 
@@ -209,7 +200,7 @@ class TestAgentXWorkflow(unittest.TestCase):
             # MessageRole is a str Enum, so isinstance(msg.role, str) is True
             # Just verify it's the enum type we expect
             self.assertTrue(isinstance(msg.role.value, str))
-            self.assertTrue(hasattr(msg, 'to_dict'))
+            self.assertTrue(hasattr(msg, "to_dict"))
 
         # Step 5: Verify to_dict() works
         for msg in shared_messages:
@@ -253,21 +244,17 @@ class TestAgentXWorkflow(unittest.TestCase):
         # This is the exact conversion code from session.py _stream_via_agentix
         for _, msg in self.session.context.messages:
             # Verify msg is a Message object, not a dict
-            self.assertNotIsInstance(msg, dict,
-                f"Found dict in context.messages instead of Message object: {msg}")
-            self.assertTrue(hasattr(msg, 'role'),
-                f"Message object missing 'role' attribute: {type(msg)}")
-            self.assertTrue(hasattr(msg, 'content'),
-                f"Message object missing 'content' attribute: {type(msg)}")
-            self.assertTrue(hasattr(msg, 'enabled'),
-                f"Message object missing 'enabled' attribute: {type(msg)}")
+            self.assertNotIsInstance(msg, dict, f"Found dict in context.messages instead of Message object: {msg}")
+            self.assertTrue(hasattr(msg, "role"), f"Message object missing 'role' attribute: {type(msg)}")
+            self.assertTrue(hasattr(msg, "content"), f"Message object missing 'content' attribute: {type(msg)}")
+            self.assertTrue(hasattr(msg, "enabled"), f"Message object missing 'enabled' attribute: {type(msg)}")
 
             if getattr(msg, "enabled", False):
                 # This should not raise AttributeError
                 shared_msg = SharedMessage(
                     role=MessageRole[msg.role.upper()] if hasattr(MessageRole, msg.role.upper()) else MessageRole.USER,
                     content=msg.content,
-                    enabled=msg.enabled
+                    enabled=msg.enabled,
                 )
                 shared_context.add_message(shared_msg)
 
@@ -293,7 +280,7 @@ class TestAgentXWorkflow(unittest.TestCase):
         from shared.models.response import ResponseChunk, ChunkType
 
         # Mock the Agentix adapter to return chunks
-        with patch.object(self.session.agentix_adapter, 'process_prompt_generator') as mock_gen:
+        with patch.object(self.session.agentix_adapter, "process_prompt_generator") as mock_gen:
             # Simulate a response with thinking, content, and done
             def mock_stream(*args, **kwargs):
                 yield ResponseChunk(type=ChunkType.THINKING, content="Let me think...")
@@ -331,29 +318,25 @@ class TestAgentXWorkflow(unittest.TestCase):
             self.session.stream_ollama_response_worker()
 
             # Verify thinking was displayed
-            self.assertGreater(len(thinking_displayed), 0,
-                "Thinking should be displayed")
-            self.assertTrue(any("Let me think" in t for t in thinking_displayed),
-                "Thinking content should include 'Let me think...'")
+            self.assertGreater(len(thinking_displayed), 0, "Thinking should be displayed")
+            self.assertTrue(
+                any("Let me think" in t for t in thinking_displayed),
+                "Thinking content should include 'Let me think...'",
+            )
 
             # Verify content was displayed
-            self.assertGreater(len(content_displayed), 0,
-                "Content should be displayed")
+            self.assertGreater(len(content_displayed), 0, "Content should be displayed")
             full_content = "".join(content_displayed)
-            self.assertIn("gpt-oss", full_content,
-                "Response should include 'gpt-oss'")
+            self.assertIn("gpt-oss", full_content, "Response should include 'gpt-oss'")
 
             # Verify response was added to context
             final_context_size = len(self.session.context.messages)
-            self.assertGreater(final_context_size, initial_context_size,
-                "Response message should be added to context")
+            self.assertGreater(final_context_size, initial_context_size, "Response message should be added to context")
 
             # Verify the last message is the assistant's response
             _, last_msg = self.session.context.messages[-1]
-            self.assertEqual(last_msg.role, "assistant",
-                "Last message should be from assistant")
-            self.assertIn("gpt-oss", last_msg.content,
-                "Last message should contain the response content")
+            self.assertEqual(last_msg.role, "assistant", "Last message should be from assistant")
+            self.assertIn("gpt-oss", last_msg.content, "Last message should contain the response content")
 
     def test_history_messages_are_not_dicts(self):
         """
@@ -378,11 +361,11 @@ class TestAgentXWorkflow(unittest.TestCase):
                 "enabled": True,
                 "file": None,
                 "epoch": datetime.now().timestamp(),
-                "attachments": []
+                "attachments": [],
             }
 
             msg_file = os.path.join(session_path, "test_message.json")
-            with open(msg_file, 'w') as f:
+            with open(msg_file, "w") as f:
                 json.dump(test_message_data, f)
 
             # Load messages from disk (simulating session restoration)
@@ -394,14 +377,10 @@ class TestAgentXWorkflow(unittest.TestCase):
             self.assertEqual(len(test_context.messages), 1)
             _, msg = test_context.messages[0]
 
-            self.assertIsInstance(msg, Message,
-                f"Message should be Message object, got {type(msg)}")
-            self.assertNotIsInstance(msg, dict,
-                "Message should not be a dict")
-            self.assertTrue(hasattr(msg, 'role'),
-                f"Message should have 'role' attribute")
-            self.assertTrue(hasattr(msg, 'content'),
-                f"Message should have 'content' attribute")
+            self.assertIsInstance(msg, Message, f"Message should be Message object, got {type(msg)}")
+            self.assertNotIsInstance(msg, dict, "Message should not be a dict")
+            self.assertTrue(hasattr(msg, "role"), f"Message should have 'role' attribute")
+            self.assertTrue(hasattr(msg, "content"), f"Message should have 'content' attribute")
 
             # Verify we can access role as attribute (not dict key)
             self.assertEqual(msg.role, "user")
@@ -411,11 +390,7 @@ class TestAgentXWorkflow(unittest.TestCase):
             from shared.models.message import Message as SharedMessage, MessageRole
 
             # This should not raise AttributeError
-            shared_msg = SharedMessage(
-                role=MessageRole[msg.role.upper()],
-                content=msg.content,
-                enabled=msg.enabled
-            )
+            shared_msg = SharedMessage(role=MessageRole[msg.role.upper()], content=msg.content, enabled=msg.enabled)
             self.assertIsInstance(shared_msg.role, MessageRole)
 
     def test_model_selection_updates_active_model(self):
@@ -439,9 +414,11 @@ class TestAgentXWorkflow(unittest.TestCase):
         # Setup the callback wrapper (this is what _setup_agentix_ui does)
         if self.session.gui.model_selector:
             original_callback = self.session.gui.model_selector.on_model_change
+
             def on_model_change(model: str):
                 self.session.active_model = model
                 original_callback(model)
+
             self.session.gui.model_selector.on_model_change = on_model_change
 
         # Simulate user selecting a different model
@@ -452,40 +429,41 @@ class TestAgentXWorkflow(unittest.TestCase):
         # Simulate selection change by directly calling _on_selection
         # (event_generate doesn't work in tests)
         # Use the actual display name from _models
-        qwen_display_name = [k for k in model_selector._models.keys() if 'qwen3-coder' in k][0]
+        qwen_display_name = [k for k in model_selector._models.keys() if "qwen3-coder" in k][0]
         dropdown.set(qwen_display_name)
         model_selector._on_selection(None)  # Trigger the selection handler
 
         # Verify active_model was updated
-        self.assertEqual(self.session.active_model, "qwen3-coder",
-            "Session.active_model should be updated when model selector changes")
+        self.assertEqual(
+            self.session.active_model,
+            "qwen3-coder",
+            "Session.active_model should be updated when model selector changes",
+        )
 
         # Verify config was updated
-        self.assertEqual(self.session.config["agentx"]["ollama_model"], "qwen3-coder",
-            "Config should be updated when model selector changes")
+        self.assertEqual(
+            self.session.config["agentx"]["ollama_model"],
+            "qwen3-coder",
+            "Config should be updated when model selector changes",
+        )
 
         # Verify agentix config was updated
-        self.assertEqual(self.session.agentix_adapter.agentix_config.model, "qwen3-coder",
-            "Agentix config should be updated when model selector changes")
+        self.assertEqual(
+            self.session.agentix_adapter.agentix_config.model,
+            "qwen3-coder",
+            "Agentix config should be updated when model selector changes",
+        )
 
     def test_error_handling_workflow(self):
         """Test error display workflow."""
         # Step 1: Display normal message
-        self.session.gui.display_user_message(
-            "Connect to server",
-            attachments=[],
-            timestamp=datetime.now()
-        )
+        self.session.gui.display_user_message("Connect to server", attachments=[], timestamp=datetime.now())
 
         # Step 2: Display error
         self.session.gui.display_error("Connection timeout")
 
         # Step 3: Continue with recovery
-        self.session.gui.display_user_message(
-            "Try again",
-            attachments=[],
-            timestamp=datetime.now()
-        )
+        self.session.gui.display_user_message("Try again", attachments=[], timestamp=datetime.now())
 
         # Verify all content visible
         output_text = self.session.gui.widgets.output_text
@@ -607,6 +585,7 @@ class TestGuiManagerRobustness(unittest.TestCase):
         }
 
         from agentx.gui.gui_config import GUIConfig
+
         config = GUIConfig.from_dict(config_dict)
 
         self.gui = GUIManager(
@@ -614,7 +593,7 @@ class TestGuiManagerRobustness(unittest.TestCase):
             config=config,
             on_submit=MagicMock(),
             on_interrupt=MagicMock(),
-            on_attachment_toggle=MagicMock()
+            on_attachment_toggle=MagicMock(),
         )
 
         self.gui.create_layout()
@@ -662,5 +641,5 @@ class TestGuiManagerRobustness(unittest.TestCase):
         self.assertIn("Special:", output)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

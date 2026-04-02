@@ -17,7 +17,7 @@ import tempfile
 import shutil
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from agentx.session import AgentXSession
 
@@ -34,17 +34,16 @@ class TestActiveModelProperty(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
         # Patch os.getcwd to use temp directory
-        self.patcher_getcwd = patch('os.getcwd')
+        self.patcher_getcwd = patch("os.getcwd")
         self.mock_getcwd = self.patcher_getcwd.start()
         self.mock_getcwd.return_value = self.temp_dir
 
         # Patch os.getenv for user
-        self.patcher_getenv = patch('os.getenv')
+        self.patcher_getenv = patch("os.getenv")
         self.mock_getenv = self.patcher_getenv.start()
-        self.mock_getenv.side_effect = lambda key, default=None: {
-            "USER": "testuser",
-            "USERNAME": "testuser"
-        }.get(key, default)
+        self.mock_getenv.side_effect = lambda key, default=None: {"USER": "testuser", "USERNAME": "testuser"}.get(
+            key, default
+        )
 
         # Base config with initial model
         self.initial_model = "llama3.2"
@@ -56,7 +55,7 @@ class TestActiveModelProperty(unittest.TestCase):
             },
             "agentix": {
                 "host": "localhost:8000",
-            }
+            },
         }
 
     def tearDown(self):
@@ -118,12 +117,9 @@ class TestActiveModelProperty(unittest.TestCase):
         session.active_model = new_model
 
         # Verify all three are updated
-        self.assertEqual(session._active_model, new_model,
-                        "Internal _active_model not updated")
-        self.assertEqual(session.active_model, new_model,
-                        "Property getter doesn't return new model")
-        self.assertEqual(session.config["agentx"]["ollama_model"], new_model,
-                        "Config dict not updated")
+        self.assertEqual(session._active_model, new_model, "Internal _active_model not updated")
+        self.assertEqual(session.active_model, new_model, "Property getter doesn't return new model")
+        self.assertEqual(session.config["agentx"]["ollama_model"], new_model, "Config dict not updated")
 
     def test_active_model_setter_updates_agentix_config(self):
         """Test that property setter updates agentix adapter config."""
@@ -135,7 +131,7 @@ class TestActiveModelProperty(unittest.TestCase):
         }
 
         # Create session with mocked agentix adapter
-        with patch('agentx.session.create_adapter') as mock_create_adapter:
+        with patch("agentx.session.create_adapter") as mock_create_adapter:
             mock_adapter = Mock()
             mock_adapter.agentix_config = Mock()
             mock_adapter.agentix_config.model = self.initial_model
@@ -147,8 +143,7 @@ class TestActiveModelProperty(unittest.TestCase):
             session.active_model = new_model
 
             # Verify agentix config was updated
-            self.assertEqual(mock_adapter.agentix_config.model, new_model,
-                           "Agentix adapter config not updated")
+            self.assertEqual(mock_adapter.agentix_config.model, new_model, "Agentix adapter config not updated")
 
     def test_active_model_setter_handles_agentix(self):
         """Test that property setter works with agentix integration."""
@@ -189,17 +184,16 @@ class TestActiveModelUsage(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
         # Patch os.getcwd to use temp directory
-        self.patcher_getcwd = patch('os.getcwd')
+        self.patcher_getcwd = patch("os.getcwd")
         self.mock_getcwd = self.patcher_getcwd.start()
         self.mock_getcwd.return_value = self.temp_dir
 
         # Patch os.getenv for user
-        self.patcher_getenv = patch('os.getenv')
+        self.patcher_getenv = patch("os.getenv")
         self.mock_getenv = self.patcher_getenv.start()
-        self.mock_getenv.side_effect = lambda key, default=None: {
-            "USER": "testuser",
-            "USERNAME": "testuser"
-        }.get(key, default)
+        self.mock_getenv.side_effect = lambda key, default=None: {"USER": "testuser", "USERNAME": "testuser"}.get(
+            key, default
+        )
 
         self.config = {
             "agentx": {
@@ -209,7 +203,7 @@ class TestActiveModelUsage(unittest.TestCase):
             },
             "agentix": {
                 "host": "localhost:8000",
-            }
+            },
         }
 
     def tearDown(self):
@@ -228,18 +222,7 @@ class TestActiveModelUsage(unittest.TestCase):
         except:
             pass
 
-    def test_stream_direct_ollama_delegates_to_agentix_path(self):
-        """Test that deprecated _stream_direct_ollama delegates to canonical Agentix path."""
-        session = AgentXSession(root=self.root, config=self.config)
-
-        session.gui.get_user_input = Mock(return_value="test prompt")
-        with patch.object(session, "_stream_via_agentix") as stream_mock:
-            session._stream_direct_ollama()
-
-        stream_mock.assert_called_once()
-        self.assertEqual(session._pending_prompt, "test prompt")
-
-    @patch('agentx.session.httpx.Client')
+    @patch("agentx.session.httpx.Client")
     def test_perform_service_handshake_uses_active_model(self, mock_httpx_client_class):
         """Test that perform_service_handshake uses active_model instead of config."""
         session = AgentXSession(root=self.root, config=self.config)
@@ -267,9 +250,8 @@ class TestActiveModelUsage(unittest.TestCase):
         # Verify the POST request used active_model
         mock_httpx_client.post.assert_called()
         call_args = mock_httpx_client.post.call_args
-        payload = call_args[1]['json']
-        self.assertEqual(payload['model'], new_model,
-                        "perform_service_handshake did not use active_model")
+        payload = call_args[1]["json"]
+        self.assertEqual(payload["model"], new_model, "perform_service_handshake did not use active_model")
 
     def test_perform_service_handshake_requires_agentix(self):
         """Startup should fail if Agentix cannot be started."""
@@ -341,17 +323,16 @@ class TestActiveModelPropagation(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
         # Patch os.getcwd to use temp directory
-        self.patcher_getcwd = patch('os.getcwd')
+        self.patcher_getcwd = patch("os.getcwd")
         self.mock_getcwd = self.patcher_getcwd.start()
         self.mock_getcwd.return_value = self.temp_dir
 
         # Patch os.getenv for user
-        self.patcher_getenv = patch('os.getenv')
+        self.patcher_getenv = patch("os.getenv")
         self.mock_getenv = self.patcher_getenv.start()
-        self.mock_getenv.side_effect = lambda key, default=None: {
-            "USER": "testuser",
-            "USERNAME": "testuser"
-        }.get(key, default)
+        self.mock_getenv.side_effect = lambda key, default=None: {"USER": "testuser", "USERNAME": "testuser"}.get(
+            key, default
+        )
 
     def tearDown(self):
         """Clean up after tests."""
@@ -378,7 +359,7 @@ class TestActiveModelPropagation(unittest.TestCase):
             },
             "agentix": {
                 "host": "localhost:8000",
-            }
+            },
         }
 
         session = AgentXSession(root=self.root, config=config)
@@ -397,8 +378,7 @@ class TestActiveModelPropagation(unittest.TestCase):
         }
 
         for location_name, value in locations.items():
-            self.assertEqual(value, "model-v2",
-                           f"Model not propagated to {location_name}")
+            self.assertEqual(value, "model-v2", f"Model not propagated to {location_name}")
 
     def test_initial_model_consistent_across_locations(self):
         """Test that initial model is consistent everywhere on startup."""
@@ -410,7 +390,7 @@ class TestActiveModelPropagation(unittest.TestCase):
             },
             "agentix": {
                 "host": "localhost:8000",
-            }
+            },
         }
 
         session = AgentXSession(root=self.root, config=config)
@@ -421,7 +401,7 @@ class TestActiveModelPropagation(unittest.TestCase):
         self.assertEqual(session.config["agentx"]["ollama_model"], initial_model)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
 
 
@@ -437,17 +417,16 @@ class TestModelSelectorInitialization(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
         # Patch os.getcwd to use temp directory
-        self.patcher_getcwd = patch('os.getcwd')
+        self.patcher_getcwd = patch("os.getcwd")
         self.mock_getcwd = self.patcher_getcwd.start()
         self.mock_getcwd.return_value = self.temp_dir
 
         # Patch os.getenv for user
-        self.patcher_getenv = patch('os.getenv')
+        self.patcher_getenv = patch("os.getenv")
         self.mock_getenv = self.patcher_getenv.start()
-        self.mock_getenv.side_effect = lambda key, default=None: {
-            "USER": "testuser",
-            "USERNAME": "testuser"
-        }.get(key, default)
+        self.mock_getenv.side_effect = lambda key, default=None: {"USER": "testuser", "USERNAME": "testuser"}.get(
+            key, default
+        )
 
     def tearDown(self):
         """Clean up after tests."""
@@ -471,15 +450,12 @@ class TestModelSelectorInitialization(unittest.TestCase):
 
         # Create a model selector
         selected_model = None
+
         def on_change(model):
             nonlocal selected_model
             selected_model = model
 
-        selector = ModelSelector(
-            parent=self.root,
-            on_model_change=on_change,
-            initial_model=""
-        )
+        selector = ModelSelector(parent=self.root, on_model_change=on_change, initial_model="")
 
         # Models list
         models = [
@@ -503,11 +479,7 @@ class TestModelSelectorInitialization(unittest.TestCase):
         """Test that populate_models falls back to first if initial_model not in list."""
         from agentx.gui.model_selector import ModelSelector
 
-        selector = ModelSelector(
-            parent=self.root,
-            on_model_change=lambda m: None,
-            initial_model=""
-        )
+        selector = ModelSelector(parent=self.root, on_model_change=lambda m: None, initial_model="")
 
         models = [
             {"name": "model-a", "size": 1000000},
@@ -521,7 +493,7 @@ class TestModelSelectorInitialization(unittest.TestCase):
         actual_model = selector.get_selected_model()
         self.assertEqual(actual_model, "model-a")
 
-    @patch('agentx.session.httpx.Client')
+    @patch("agentx.session.httpx.Client")
     def test_session_populates_models_with_active_model(self, mock_httpx_client_class):
         """Test that session passes active_model when populating models."""
         config = {
@@ -531,7 +503,7 @@ class TestModelSelectorInitialization(unittest.TestCase):
             },
             "agentix": {
                 "host": "localhost:8000",
-            }
+            },
         }
 
         # Mock httpx client
@@ -554,9 +526,10 @@ class TestModelSelectorInitialization(unittest.TestCase):
         # Mock the gui.populate_models to capture what's passed
         populate_called_with = {}
         original_populate = session.gui.populate_models
+
         def mock_populate(models, initial_model=None):
-            populate_called_with['models'] = models
-            populate_called_with['initial_model'] = initial_model
+            populate_called_with["models"] = models
+            populate_called_with["initial_model"] = initial_model
             original_populate(models, initial_model)
 
         session.gui.populate_models = mock_populate
@@ -565,8 +538,8 @@ class TestModelSelectorInitialization(unittest.TestCase):
         session._setup_agentix_ui()
 
         # Verify populate_models was called with active_model
-        self.assertIn('initial_model', populate_called_with)
-        self.assertEqual(populate_called_with['initial_model'], "configured-model")
+        self.assertIn("initial_model", populate_called_with)
+        self.assertEqual(populate_called_with["initial_model"], "configured-model")
 
 
 class TestModelNameInOutput(unittest.TestCase):
@@ -581,17 +554,16 @@ class TestModelNameInOutput(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
         # Patch os.getcwd to use temp directory
-        self.patcher_getcwd = patch('os.getcwd')
+        self.patcher_getcwd = patch("os.getcwd")
         self.mock_getcwd = self.patcher_getcwd.start()
         self.mock_getcwd.return_value = self.temp_dir
 
         # Patch os.getenv for user
-        self.patcher_getenv = patch('os.getenv')
+        self.patcher_getenv = patch("os.getenv")
         self.mock_getenv = self.patcher_getenv.start()
-        self.mock_getenv.side_effect = lambda key, default=None: {
-            "USER": "testuser",
-            "USERNAME": "testuser"
-        }.get(key, default)
+        self.mock_getenv.side_effect = lambda key, default=None: {"USER": "testuser", "USERNAME": "testuser"}.get(
+            key, default
+        )
 
         self.config = {
             "agentx": {
@@ -600,7 +572,7 @@ class TestModelNameInOutput(unittest.TestCase):
             },
             "agentix": {
                 "host": "localhost:8000",
-            }
+            },
         }
 
     def tearDown(self):
@@ -645,9 +617,7 @@ class TestModelNameInOutput(unittest.TestCase):
         session.gui.display_agent_response = lambda text: displayed_text.append(text)
 
         # Simulate the assistant header display from _stream_via_agentix
-        session.gui.display_agent_response(
-            f"\n\n{session.gui.MESSAGE_ROLES['assistant']} ({session.active_model})\t"
-        )
+        session.gui.display_agent_response(f"\n\n{session.gui.MESSAGE_ROLES['assistant']} ({session.active_model})\t")
 
         # Verify header includes model name
         header = displayed_text[0]
@@ -655,5 +625,5 @@ class TestModelNameInOutput(unittest.TestCase):
         self.assertIn("🤖", header)  # Assistant emoji
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

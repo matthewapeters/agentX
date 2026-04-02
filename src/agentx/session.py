@@ -26,7 +26,6 @@ from .gui.gui_config import GUIConfig
 from .gui.gui_manager import GUIManager
 from .history import History
 from .integration import (
-    AdvancedToolRegistry,
     AgentixBridgeAdapter,
     ClientToolExecutor,
     ResponseHandler,
@@ -116,7 +115,6 @@ class AgentXSession:
         # Initialize tool executors
         self.client_tool_executor = ClientToolExecutor(base_path=os.getcwd())
         self.server_tool_executor = ServerToolExecutor(agentix_bridge=self.agentix_adapter.bridge)
-        self.advanced_tools = AdvancedToolRegistry(agentix_bridge=self.agentix_adapter.bridge)
 
         # Initialize Working Memory — loaded from session folder (or empty on new session)
         wm_config = config.get("agentx", {}).get("working_memory", {})
@@ -1465,13 +1463,6 @@ class AgentXSession:
                 self.add_message_to_context(assistant_message)
             else:
                 self.context.add_message(assistant_message, ts=datetime.now())
-
-    def _stream_direct_ollama(self):
-        """Deprecated compatibility shim that delegates to canonical Agentix stream path."""
-        print("[AgentX] _stream_direct_ollama is deprecated; delegating to _stream_via_agentix")
-        if self._pending_prompt is None:
-            self._pending_prompt = self.gui.get_user_input()
-        self._stream_via_agentix()
 
     def perform_service_handshake(self):
         """
