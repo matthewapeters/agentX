@@ -1,8 +1,13 @@
 [agentx]
+<<<<<<< Updated upstream
 theme_mode = "Dark Mode"
 markdown_render_enabled = true
 ollama_host = "localhost:11434"
 ollama_model = "gpt-oss:latest"
+=======
+ollama_host = "localhost:11434"
+ollama_model = "gpt-oss"
+>>>>>>> Stashed changes
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
 

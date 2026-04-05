@@ -465,6 +465,8 @@ class TestSessionRetriggerSynthesis(unittest.TestCase):
         session.agentix_adapter = MagicMock()
         session._safe_root_after = lambda fn: fn()  # call immediately on same thread
         session.refresh_user_gui = MagicMock()
+        from agentx.streaming_controller import StreamingController
+        session._streaming_controller = StreamingController(session)
         return session
 
     def test_does_nothing_when_already_streaming(self):
@@ -623,6 +625,8 @@ class TestSessionAddWMHintForTask(unittest.TestCase):
         session._is_streaming = threading.Event()
         session._safe_root_after = lambda fn: fn()
         session.refresh_user_gui = MagicMock()
+        from agentx.streaming_controller import StreamingController
+        session._streaming_controller = StreamingController(session)
         return session
 
     def test_adds_wm_fact(self):

@@ -14,7 +14,7 @@ import tempfile
 import shutil
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from agentx.session import AgentXSession
 from agentx.gui.gui_manager import GUIManager
@@ -34,17 +34,16 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
         # Patch os.getcwd to use temp directory
-        self.patcher_getcwd = patch('os.getcwd')
+        self.patcher_getcwd = patch("os.getcwd")
         self.mock_getcwd = self.patcher_getcwd.start()
         self.mock_getcwd.return_value = self.temp_dir
 
         # Patch os.getenv for user
-        self.patcher_getenv = patch('os.getenv')
+        self.patcher_getenv = patch("os.getenv")
         self.mock_getenv = self.patcher_getenv.start()
-        self.mock_getenv.side_effect = lambda key, default=None: {
-            "USER": "testuser",
-            "USERNAME": "testuser"
-        }.get(key, default)
+        self.mock_getenv.side_effect = lambda key, default=None: {"USER": "testuser", "USERNAME": "testuser"}.get(
+            key, default
+        )
 
         config = {
             "agentx": {
@@ -54,13 +53,10 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
             },
             "agentix": {
                 "host": "localhost:8000",
-            }
+            },
         }
 
-        self.session = AgentXSession(
-            root=self.root,
-            config=config
-        )
+        self.session = AgentXSession(root=self.root, config=config)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -85,18 +81,9 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
 
     def test_gui_manager_stores_session_callbacks(self):
         """Test that GUIManager has callbacks from session."""
-        self.assertEqual(
-            self.session.gui._on_submit,
-            self.session._handle_submit
-        )
-        self.assertEqual(
-            self.session.gui._on_interrupt,
-            self.session._handle_interrupt
-        )
-        self.assertEqual(
-            self.session.gui._on_attachment_toggle,
-            self.session._handle_attachment_toggle
-        )
+        self.assertEqual(self.session.gui._on_submit, self.session._handle_submit)
+        self.assertEqual(self.session.gui._on_interrupt, self.session._handle_interrupt)
+        self.assertEqual(self.session.gui._on_attachment_toggle, self.session._handle_attachment_toggle)
 
     def test_window_title_set_correctly(self):
         """Test that window title is set with session info."""
@@ -133,7 +120,7 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
 
     def test_startup_adds_project_when_git_repo_detected(self):
         """Session startup should add project fact when cwd is inside a git repo."""
-        with patch("agentx.session.subprocess.run") as mock_run:
+        with patch("agentx.session_state.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="/tmp/AgentX\n")
             session = AgentXSession(root=self.root, config=self.session.config)
 
@@ -177,11 +164,13 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
 
         self.session.agentix_adapter.classify_prompt_sync = MagicMock(return_value=None)
         self.session.agentix_adapter.process_prompt_generator = MagicMock(
-            return_value=iter([
-                ResponseChunk(type=ChunkType.THINKING, content="hidden thinking"),
-                ResponseChunk(type=ChunkType.TOOL_CALL, tool_name="read_file", tool_input={"path": "x"}),
-                ResponseChunk(type=ChunkType.CONTENT, content="Hello! I am AgentX."),
-            ])
+            return_value=iter(
+                [
+                    ResponseChunk(type=ChunkType.THINKING, content="hidden thinking"),
+                    ResponseChunk(type=ChunkType.TOOL_CALL, tool_name="read_file", tool_input={"path": "x"}),
+                    ResponseChunk(type=ChunkType.CONTENT, content="Hello! I am AgentX."),
+                ]
+            )
         )
 
         self.session.layout()
@@ -203,17 +192,17 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
 
     def test_handle_submit_callback_exists(self):
         """Test that submit callback is defined."""
-        self.assertTrue(hasattr(self.session, '_handle_submit'))
+        self.assertTrue(hasattr(self.session, "_handle_submit"))
         self.assertTrue(callable(self.session._handle_submit))
 
     def test_handle_interrupt_callback_exists(self):
         """Test that interrupt callback is defined."""
-        self.assertTrue(hasattr(self.session, '_handle_interrupt'))
+        self.assertTrue(hasattr(self.session, "_handle_interrupt"))
         self.assertTrue(callable(self.session._handle_interrupt))
 
     def test_handle_attachment_toggle_callback_exists(self):
         """Test that attachment toggle callback is defined."""
-        self.assertTrue(hasattr(self.session, '_handle_attachment_toggle'))
+        self.assertTrue(hasattr(self.session, "_handle_attachment_toggle"))
         self.assertTrue(callable(self.session._handle_attachment_toggle))
 
 
@@ -229,17 +218,16 @@ class TestAgentXSessionGuiDelegation(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
         # Patch os.getcwd to use temp directory
-        self.patcher_getcwd = patch('os.getcwd')
+        self.patcher_getcwd = patch("os.getcwd")
         self.mock_getcwd = self.patcher_getcwd.start()
         self.mock_getcwd.return_value = self.temp_dir
 
         # Patch os.getenv for user
-        self.patcher_getenv = patch('os.getenv')
+        self.patcher_getenv = patch("os.getenv")
         self.mock_getenv = self.patcher_getenv.start()
-        self.mock_getenv.side_effect = lambda key, default=None: {
-            "USER": "testuser",
-            "USERNAME": "testuser"
-        }.get(key, default)
+        self.mock_getenv.side_effect = lambda key, default=None: {"USER": "testuser", "USERNAME": "testuser"}.get(
+            key, default
+        )
 
         config = {
             "agentx": {
@@ -249,13 +237,10 @@ class TestAgentXSessionGuiDelegation(unittest.TestCase):
             },
             "agentix": {
                 "host": "localhost:8000",
-            }
+            },
         }
 
-        self.session = AgentXSession(
-            root=self.root,
-            config=config
-        )
+        self.session = AgentXSession(root=self.root, config=config)
 
         # Create layout so widgets exist
         self.session.gui.create_layout()
@@ -278,17 +263,17 @@ class TestAgentXSessionGuiDelegation(unittest.TestCase):
 
     def test_refresh_user_gui_method_exists(self):
         """Test that refresh_user_gui method exists."""
-        self.assertTrue(hasattr(self.session, 'refresh_user_gui'))
+        self.assertTrue(hasattr(self.session, "refresh_user_gui"))
         self.assertTrue(callable(self.session.refresh_user_gui))
 
     def test_refresh_context_gui_method_exists(self):
         """Test that refresh_context_gui method exists."""
-        self.assertTrue(hasattr(self.session, 'refresh_context_gui'))
+        self.assertTrue(hasattr(self.session, "refresh_context_gui"))
         self.assertTrue(callable(self.session.refresh_context_gui))
 
     def test_refresh_files_gui_method_exists(self):
         """Test that refresh_files_gui method exists."""
-        self.assertTrue(hasattr(self.session, 'refresh_files_gui'))
+        self.assertTrue(hasattr(self.session, "refresh_files_gui"))
         self.assertTrue(callable(self.session.refresh_files_gui))
 
     def test_session_message_attribute_exists(self):
@@ -334,7 +319,7 @@ class TestGuiManagerCleanInterface(unittest.TestCase):
             config=self.config,
             on_submit=MagicMock(),
             on_interrupt=MagicMock(),
-            on_attachment_toggle=MagicMock()
+            on_attachment_toggle=MagicMock(),
         )
 
         self.gui.create_layout()
@@ -401,5 +386,5 @@ class TestGuiManagerCleanInterface(unittest.TestCase):
         self.assertEqual(result, "")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

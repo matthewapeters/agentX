@@ -553,6 +553,9 @@ class TestSessionRetriggerSynthesis(unittest.TestCase):
         import logging
 
         session._logger = logging.getLogger("test_session")
+        from agentx.streaming_controller import StreamingController
+
+        session._streaming_controller = StreamingController(session)
         return session, root, gui
 
     def test_retrigger_blocked_when_streaming(self):

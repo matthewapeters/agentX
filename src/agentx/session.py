@@ -1,11 +1,16 @@
 """
-Docstring for agentx.session
+AgentXSession — thin coordinator that wires together the GUI, streaming,
+tool execution, and session state.
+
+The heavy lifting is delegated to three focused classes:
+- ``SessionState``       — mutable session data (model, history, current message)
+- ``ToolDispatcher``     — routes tool calls to client/server executors
+- ``StreamingController`` — owns all LLM streaming and display logic
 """
 
 import json
 import logging
 import os
-import subprocess
 import threading
 import tkinter as tk
 from datetime import UTC, datetime
@@ -29,12 +34,14 @@ from .history import History
 from .integration import (
     AgentixBridgeAdapter,
     ClientToolExecutor,
-    ResponseHandler,
     ServerToolExecutor,
     agentix_bridge_adapter,
 )
 from .output_logger import OutputLogger
 from .service_manager import ServiceManager
+from .session_state import SessionState
+from .streaming_controller import StreamingController
+from .tool_dispatcher import ToolDispatcher
 
 logger = logging.getLogger(__name__)
 
@@ -64,36 +71,51 @@ class AgentXSession:
         self.config = config
 
         session_started_at = datetime.now(UTC)
-        self.session_id = f"session_{session_started_at.strftime('%Y-%m-%d_%H-%M-%S')}"
-        self.context = Context()
-        self.file_explorer = FileExplorer(start_path=os.getcwd())
-        self.user = username or os.getenv("USER") or os.getenv("USERNAME") or "User"
-        self.start_time = session_started_at.strftime("%Y-%m-%d %H:%M:%S UTC")
-        # Title will be set by GUIManager after initialization
+        session_id = f"session_{session_started_at.strftime('%Y-%m-%d_%H-%M-%S')}"
+        user = username or os.getenv("USER") or os.getenv("USERNAME") or "User"
         base_dir = session_dir or os.getcwd()
-        self.user_history_folder = os.path.join(
-            base_dir,
-            "sessions",
-            self.user,
+        user_history_folder = os.path.join(base_dir, "sessions", user)
+        session_folder = os.path.join(user_history_folder, session_id)
+        os.makedirs(session_folder, exist_ok=True)
+        context_folder = os.path.join(session_folder, "context")
+        os.makedirs(context_folder, exist_ok=True)
+        session_log_path = os.path.join(session_folder, "session.log")
+
+        # --- SessionState: all mutable session data ---
+        self._state = SessionState(
+            config=config,
+            session_id=session_id,
+            session_folder=session_folder,
+            context_folder=context_folder,
+            session_log_path=session_log_path,
+            user=user,
+            user_history_folder=user_history_folder,
         )
-        self.session_folder = os.path.join(self.user_history_folder, self.session_id)
-        os.makedirs(self.session_folder, exist_ok=True)
-        self.context_folder = os.path.join(self.session_folder, "context")
-        os.makedirs(self.context_folder, exist_ok=True)
-        self.context.path = self.context_folder
-        self.context.session_id = self.session_id
-        # Session transcript log — mirrors everything written to the output panel
-        self._session_log_path = os.path.join(self.session_folder, "session.log")
-        self._session_log = open(self._session_log_path, "a", encoding="utf-8", buffering=1)  # line-buffered
-        self._output_logger = OutputLogger(self.session_folder)
-        self._history = None  # Placeholder for History object
-        self.message = Message(role="user", content="")
-        self.enabled_history_attachments = []  # Track enabled attachments from history
+
+        # Expose session-identity attributes directly for backward compatibility
+        # (tests and other modules read these from the session instance)
+        self.session_id = session_id
+        self.session_folder = session_folder
+        self.user = user
+        self.start_time = self._state.start_time
+        self.user_history_folder = user_history_folder
+        self.context_folder = context_folder
+
+        # Context lives on session directly (tests mock session.context)
+        self.context = Context(path=context_folder, session_id=session_id)
+        self.file_explorer = FileExplorer(start_path=os.getcwd())
+
+        # Per-turn streaming state (stays on session — tests set these directly)
         self._is_streaming = threading.Event()
-        self._streaming_thread = None
+        self._streaming_thread: Optional[threading.Thread] = None
         self._pending_prompt: Optional[str] = None
-        self._last_synthesis_thread: threading.Thread | None = None
-        self._last_replay_thread: threading.Thread | None = None
+        self._last_synthesis_thread: Optional[threading.Thread] = None
+        self._last_replay_thread: Optional[threading.Thread] = None
+
+        # Session transcript log
+        self._session_log_path = session_log_path
+        self._session_log = open(session_log_path, "a", encoding="utf-8", buffering=1)
+        self._output_logger = OutputLogger(session_folder)
 
         # Initialize service manager for external services
         self.service_manager = ServiceManager(config)
@@ -109,121 +131,53 @@ class AgentXSession:
         )
 
         # Set window title with session info
-        self.gui.set_window_title(f"{self.user} - AgentX Session - {self.start_time}")
+        self.gui.set_window_title(f"{user} - AgentX Session - {self.start_time}")
 
         # Initialize Agentix bridge (always integrated)
         self.agentix_adapter = create_adapter(config)
-        self.agentix_adapter.agentix_config.session = self.session_id
+        self.agentix_adapter.agentix_config.session = session_id
 
-        # Initialize tool executors
+        # Initialize tool executors and dispatcher
         self.client_tool_executor = ClientToolExecutor(base_path=os.getcwd())
         self.server_tool_executor = ServerToolExecutor(agentix_bridge=self.agentix_adapter.bridge)
+        self._tool_dispatcher = ToolDispatcher(self.client_tool_executor, self.server_tool_executor)
 
         # Initialize Working Memory — loaded from session folder (or empty on new session)
         wm_config = config.get("agentx", {}).get("working_memory", {})
         if wm_config.get("enabled", True):
-            self.working_memory: Optional[WorkingMemory] = WorkingMemory.load(self.session_folder)
-            self.working_memory.set_path(self.session_folder)
-            # Seed startup working directory as a user-owned fact for tool/prompt context.
+            self.working_memory: Optional[WorkingMemory] = WorkingMemory.load(session_folder)
+            self.working_memory.set_path(session_folder)
             cwd = os.getcwd()
-            self.working_memory.add_fact(FactOwner.USER, "UserName", self.user)
+            self.working_memory.add_fact(FactOwner.USER, "UserName", user)
             self.working_memory.add_fact(FactOwner.USER, "cwd", cwd)
-            project_name = self._detect_git_project_name(cwd)
+            project_name = SessionState.detect_git_project_name(cwd)
             if project_name:
                 self.working_memory.add_fact(FactOwner.USER, "project", project_name)
-            instructions_text = self._load_agentx_instructions(cwd)
+            instructions_text = SessionState.load_agentx_instructions(cwd)
             if instructions_text is not None:
-                self.working_memory.add_fact(
-                    FactOwner.USER,
-                    "agentx-instructions",
-                    instructions_text,
-                )
+                self.working_memory.add_fact(FactOwner.USER, "agentx-instructions", instructions_text)
             self.agentix_adapter.register_working_memory_tools(self.working_memory)
         else:
             self.working_memory = None
 
-        # Initialize active model from config
+        # Initialize active model (kept on session for backward compat with tests)
         self._active_model = config["agentx"]["ollama_model"]
 
-    def _detect_git_project_name(self, cwd: str) -> Optional[str]:
-        """Return repo name if cwd is inside a git worktree, otherwise None."""
-        try:
-            result = subprocess.run(
-                ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=2,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return None
+        # Per-turn message and history (reset after each sent message)
+        self._history: Optional["History"] = None
+        self.message: Message = Message(role="user", content="")
+        self.enabled_history_attachments: list = []
 
-        if result.returncode != 0:
-            return None
+        # Initialize per-turn display flags
+        self._assistant_header_shown: bool = False
+        self._thinking_header_shown: bool = False
 
-        repo_root = (result.stdout or "").strip()
-        if not repo_root:
-            return None
-        return os.path.basename(repo_root).lower()
-
-    def _load_agentx_instructions(self, cwd: str) -> Optional[str]:
-        """Load .agentx/agentx-instructions.md contents when present in cwd."""
-        instructions_path = os.path.join(cwd, ".agentx", "agentx-instructions.md")
-        if not os.path.isfile(instructions_path):
-            return None
-        try:
-            with open(instructions_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except OSError:
-            return None
-        return content
-
-    def _load_bootstrap_prompt(self, cwd: str) -> Optional[str]:
-        """Load .agentx/bootstrap-prompt.md contents when present in cwd."""
-        prompt_path = os.path.join(cwd, ".agentx", "bootstrap-prompt.md")
-        if not os.path.isfile(prompt_path):
-            return None
-        try:
-            with open(prompt_path, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-        except OSError:
-            return None
-        return content or None
+        # --- StreamingController: owns the streaming loop and display logic ---
+        self._streaming_controller = StreamingController(self)
 
     def _log_classification(self, classification: Optional[PromptClassificationResponse], prompt: str) -> None:
-        """
-        Log classification decision to session.log.
-
-        Args:
-            classification: Classification result or None if disabled
-            prompt: The user prompt that was classified
-        """
-        if not classification:
-            self._session_log.write("🤔 intent: (classification disabled)\n")
-            return
-
-        intent_str = getattr(classification.intent, "name", classification.intent)
-        next_step_str = getattr(classification.next_step, "name", classification.next_step)
-        self._session_log.write(f"🤔 intent: {intent_str}\n")
-        self._session_log.write(f"   reasoning: {classification.reasoning_summary}\n")
-
-        if getattr(classification, "needs_clarification", False):
-            self._session_log.write("   ⚠️  needs clarification\n")
-            missing = getattr(classification, "missing_fields", [])
-            if missing:
-                self._session_log.write(f"   missing: {', '.join(missing)}\n")
-
-        # Show Working Memory context if available
-        if self.working_memory and self.working_memory.all_facts():
-            wm_facts = self.working_memory.get_enabled_facts()
-            if wm_facts:
-                key_facts = [f for f in wm_facts if f.key in ("use_tools", "cwd", "project")]
-                if key_facts:
-                    fact_strs = [f"{f.key}={f.value}" for f in key_facts]
-                    self._session_log.write(f"   🏛️  WM context: {', '.join(fact_strs)}\n")
-
-        self._session_log.write(f"💡 path: {next_step_str}\n\n")
-        self._session_log.flush()
+        """Delegate to StreamingController."""
+        self._streaming_controller._log_classification(classification, prompt)
 
     def _build_shared_context(self) -> Context:
         """Build prompt context from working memory, history, and enabled session messages."""
@@ -256,7 +210,7 @@ class AgentXSession:
 
     def _run_bootstrap_prompt_if_present(self) -> None:
         """Run hidden startup bootstrap prompt and render only final assistant content."""
-        prompt = self._load_bootstrap_prompt(os.getcwd())
+        prompt = SessionState.load_bootstrap_prompt(os.getcwd())
         if not prompt:
             return
 
@@ -474,32 +428,10 @@ class AgentXSession:
         Returns:
             Tool execution result as string
         """
-        try:
-            from .integration import CodeAnalysisTool
-
-            # Client-side tool names
-            client_tool_names = {"read_file", "list_directory", "write_file", "get_file_info", "search_files"}
-
-            # Try client-side tools first
-            if tool_name in client_tool_names:
-                return self.client_tool_executor.execute(tool_name, tool_input)
-
-            # Check if it's a code analysis tool
-            if CodeAnalysisTool.is_code_analysis_tool(tool_name):
-                if self.server_tool_executor.is_available():
-                    return self.server_tool_executor.execute(tool_name, tool_input)
-                return f"Code analysis tool '{tool_name}' not available - Agentix not connected"
-
-            # Try server-side tools
-            if self.server_tool_executor.is_available():
-                return self.server_tool_executor.execute(tool_name, tool_input)
-
-            # Unknown tool
-            return f"Unknown tool: {tool_name}"
-
-        except Exception as e:
-            logger.exception("Error executing tool '%s'", tool_name)
-            return f"Error executing tool '{tool_name}': {str(e)}"
+        # Keep dispatcher in sync with current executor references (tests may replace them)
+        self._tool_dispatcher._client = self.client_tool_executor
+        self._tool_dispatcher._server = self.server_tool_executor
+        return self._tool_dispatcher.execute_tool(tool_name, tool_input)
 
     def handle_tool_call(self, tool_name: str, tool_input: dict) -> None:
         """
@@ -697,29 +629,7 @@ class AgentXSession:
             return
 
         self._safe_root_after(lambda tid=task_id: self.gui.update_plan_node_status(tid, "running"))
-
-        def _worker(_node=node, _tree=tree, _tid=task_id):
-            try:
-                self._is_streaming.set()
-                self._safe_root_after(lambda: self.gui.set_streaming_state(True))
-                for chunk in self.agentix_adapter.replay_task_node_generator(_node, self.context, _tree):
-                    if chunk.type == ChunkType.TASK_NODE_END and chunk.task_id == _tid:
-                        _synth = chunk.content or ""
-                        _asserts = chunk.assertions or []
-                        self._safe_root_after(lambda tid=_tid: self.gui.update_plan_node_status(tid, "done"))
-                        self._safe_root_after(
-                            lambda tid=_tid, s=_synth, a=_asserts: self.gui.update_plan_synthesis(tid, s, a)
-                        )
-            except Exception as exc:
-                logger.exception("replay_subtask worker error")
-                self._safe_root_after(lambda err=exc: self.gui.display_error(f"Replay error: {err}"))
-            finally:
-                self._is_streaming.clear()
-                self._safe_root_after(lambda: self.gui.set_streaming_state(False))
-                self._safe_root_after(self.refresh_user_gui)
-
-        self._last_replay_thread = threading.Thread(target=_worker, daemon=True)
-        self._last_replay_thread.start()
+        self._streaming_controller._run_replay_subtask_worker(node, tree, task_id)
 
     def refresh_context_gui(self):
         """
@@ -1073,29 +983,7 @@ class AgentXSession:
             node.wm_hints_added = True
 
         self.gui.mark_plan_node_invalidated(task_id)
-
-        def _worker(_node=node, _tree=tree, _tid=task_id, _hint=hint):
-            try:
-                self._is_streaming.set()
-                self._safe_root_after(lambda: self.gui.set_streaming_state(True))
-                for chunk in self.agentix_adapter.retrigger_synthesis_generator(_node, self.context, _tree, _hint):
-                    if chunk.type == ChunkType.TASK_NODE_END and chunk.task_id == _tid:
-                        _synth = chunk.content or ""
-                        _asserts = chunk.assertions or []
-                        self._safe_root_after(lambda tid=_tid: self.gui.update_plan_node_status(tid, "done"))
-                        self._safe_root_after(
-                            lambda tid=_tid, s=_synth, a=_asserts: self.gui.update_plan_synthesis(tid, s, a)
-                        )
-            except Exception as exc:
-                logger.exception("retrigger_synthesis worker error")
-                self._safe_root_after(lambda err=exc: self.gui.display_error(f"Re-synthesis error: {err}"))
-            finally:
-                self._is_streaming.clear()
-                self._safe_root_after(lambda: self.gui.set_streaming_state(False))
-                self._safe_root_after(self.refresh_user_gui)
-
-        self._last_synthesis_thread = threading.Thread(target=_worker, daemon=True)
-        self._last_synthesis_thread.start()
+        self._streaming_controller._run_retrigger_synthesis_worker(node, tree, task_id, hint)
 
     def _add_wm_hint_for_task(self, task_id: str, key: str, value: str) -> None:
         """Store a working-memory fact and mark the task node as invalidated.
@@ -1127,307 +1015,33 @@ class AgentXSession:
 
     def _stream_via_agentix(self):
         """Stream response through Agentix middleware."""
-        config = self.config
-
-        self._is_streaming.set()
-        self._safe_root_after(lambda: self.gui.set_streaming_state(True))
-        self._safe_root_after(self.refresh_user_gui)
-
-        # Use captured prompt from submit; fall back to cached input for tests.
-        prompt = self._pending_prompt or ""
-        self._pending_prompt = None
-
-        if not prompt and not self.message.attachments:
-            prompt = self.gui.get_cached_user_input()
-            if not prompt:
-                self._safe_root_after(lambda: self.gui.display_error("No input provided."))
-                self._is_streaming.clear()
-                self._safe_root_after(lambda: self.gui.set_streaming_state(False))
-                return
-
-        # Display the user prompt and attachments
-        attachment_filenames = [os.path.basename(att.file_path) for att in self.message.attachments]
-        self._safe_root_after(lambda: self.gui.display_user_message(prompt, attachment_filenames, datetime.now()))
-        self._write_log(f"\n👤 User: {prompt}\n")
-        self._output_logger.log("user", prompt)
-
-        try:
-            # Prepare message
-            self.message.content = prompt
-            self.message.enabled = True
-            self._safe_root_after(self.refresh_context_gui)
-
-            # Add enabled history attachments
-            for att in self.enabled_history_attachments:
-                if att not in self.message.attachments:
-                    self.message.attachments.append(att)
-
-            # Build shared Context from history and current context
-            shared_context = self._build_shared_context()
-
-            # Add current message
-            self.add_message_to_context(self.message)
-
-            # Reset message and history attachments
-            self.message = Message(role="user", content="")
-            self.enabled_history_attachments = []
-
-            # Classify prompt if enabled
-            classification = None
-            if config.get("agentix", {}).get("classify_prompts", True):
-                classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context, self.working_memory)
-                self._log_classification(classification, prompt)
-
-            # Reset per-turn display state
-            self._assistant_header_shown = False
-            self._thinking_header_shown = False
-
-            # Create response handler
-            thinking_parts: list[str] = []
-            content_parts: list[str] = []
-
-            handler = ResponseHandler(
-                on_content=lambda text: self._handle_stream_content(text),
-                on_thinking=lambda text: self._display_thinking(text),
-                on_tool_call=lambda name, args, round_i=None: self._display_tool_call(name, args, round_i),
-                on_tool_result=lambda tool_name, output, round_i=None, tool_id=None: self._display_tool_result(
-                    tool_name, output, round_i, tool_id=tool_id
-                ),
-                on_error=lambda msg, code: self._safe_root_after(lambda: self.gui.display_error(f"{code}: {msg}")),
-                on_classification=self._make_classification_callback(config),
-            )
-
-            # Stream through Agentix
-            for chunk in self.agentix_adapter.process_prompt_generator(prompt, shared_context, classification):
-                if not self._is_streaming.is_set():
-                    break
-
-                handler.process_chunk(chunk)
-
-                if chunk.type == ChunkType.THINKING and chunk.content:
-                    thinking_parts.append(chunk.content)
-                elif chunk.type == ChunkType.CONTENT and chunk.content:
-                    content_parts.append(chunk.content)
-
-                # Plan tree chunk routing
-                if chunk.type == ChunkType.PLAN_START and chunk.plan_id:
-                    _pid = chunk.plan_id
-                    _pname = chunk.plan_name or "Plan"
-                    _on_export = lambda pid=_pid: self._export_task_tree(pid)
-                    self._safe_root_after(
-                        lambda pid=_pid, pn=_pname, exp=_on_export: (
-                            self.gui.add_plan_tab(pid, pn, on_export=exp),
-                            self.gui.focus_plan_tab(pid),
-                        )
-                    )
-                    # Store PLAN message so it shows in the context panel
-                    _plan_msg = Message(
-                        role=MessageRole.PLAN,
-                        content=_pname,
-                        plan_id=_pid,
-                        plan_name=_pname,
-                    )
-                    self.context.add_message(_plan_msg)
-                elif chunk.type == ChunkType.TASK_NODE_START and chunk.task_id:
-                    _tid = chunk.task_id
-                    _pid = chunk.plan_id or ""
-                    _desc = chunk.content or chunk.task_id
-                    _par = chunk.parent_task_id
-                    _depth = chunk.task_depth or 0
-                    _tbd = bool(chunk.tbd)
-                    _on_replay = lambda tid=_tid: self._replay_subtask(tid)
-                    if _par:
-                        self._safe_root_after(
-                            lambda tid=_tid, par=_par, desc=_desc, d=_depth, rep=_on_replay: self.gui.add_plan_subtask_node(
-                                tid, par, desc, d, on_replay=rep
-                            )
-                        )
-                    else:
-                        self._safe_root_after(
-                            lambda pid=_pid, tid=_tid, desc=_desc, tb=_tbd, rep=_on_replay: self.gui.add_plan_step_node(
-                                pid, tid, desc, tb, on_replay=rep
-                            )
-                        )
-                elif chunk.type == ChunkType.TASK_NODE_TBD and chunk.task_id:
-                    _tid = chunk.task_id
-                    _desc = chunk.content or ""
-                    self._safe_root_after(lambda tid=_tid, desc=_desc: self.gui.resolve_plan_tbd_node(tid, desc))
-                elif chunk.type == ChunkType.TASK_NODE_END and chunk.task_id:
-                    _tid = chunk.task_id
-                    _synth = chunk.content or ""
-                    _asserts = chunk.assertions or []
-                    _node_pid = chunk.plan_id or ""
-                    _node_depth = chunk.task_depth or 0
-                    self._safe_root_after(lambda tid=_tid: self.gui.update_plan_node_status(tid, "done"))
-
-                    # Build per-task callbacks for the Re-synthesise dialog.
-                    def _make_callbacks(tid=_tid):
-                        on_resynth = lambda hint: self.retrigger_synthesis(tid, hint)
-                        on_add_wm = lambda key, val: self._add_wm_hint_for_task(tid, key, val)
-                        return on_resynth, on_add_wm
-
-                    _on_resynth, _on_add_wm = _make_callbacks()
-                    self._safe_root_after(
-                        lambda tid=_tid, s=_synth, a=_asserts, cb=_on_resynth, wm=_on_add_wm: self.gui.add_plan_synthesis(
-                            tid, s, a, on_resynth=cb, on_add_wm_hint=wm
-                        )
-                    )
-                    # Store TASK_NODE message so it shows in the context panel
-                    _node_msg = Message(
-                        role=MessageRole.TASK_NODE,
-                        content=_synth,
-                        plan_id=_node_pid,
-                        task_id=_tid,
-                        task_depth=_node_depth,
-                    )
-                    self.context.add_message(_node_msg)
-                elif chunk.type == ChunkType.TOOL_CALL and chunk.task_id:
-                    _tid = chunk.task_id
-                    _tname = chunk.tool_name or ""
-                    _tinput = chunk.tool_input or {}
-                    self._safe_root_after(
-                        lambda tid=_tid, tn=_tname, ti=_tinput: self.gui.add_plan_tool_call(tid, tn, ti)
-                    )
-
-                self._safe_root_after(self.refresh_user_gui)
-
-            # Complete the response
-            self._safe_root_after(self.gui.display_spacing)
-            joined_thinking = "".join(thinking_parts)
-            joined_content = "".join(content_parts)
-            self._persist_stream_messages(joined_thinking, joined_content)
-            if joined_thinking:
-                self._output_logger.log("thinking", joined_thinking)
-            if joined_content:
-                self._output_logger.log("agent", joined_content)
-            self._safe_root_after(self.refresh_user_gui)
-
-        except Exception as e:
-            logger.exception("Request error during streaming")
-            err_line = f"\n⚠️  ERROR: {e}\n"
-            self._safe_root_after(lambda err=e: self.gui.display_error(f"Error: {err}"))
-            self._write_log(err_line)
-            self._output_logger.log("error", str(e))
-        finally:
-            self._is_streaming.clear()
-            self._safe_root_after(lambda: self.gui.set_streaming_state(False))
+        self._streaming_controller.stream_via_agentix()
 
     def _make_classification_callback(self, config: dict):
-        """Build the on_classification callback respecting field-level display config."""
-        cd = config.get("agentix", {}).get("classification_display", {})
-        if not cd.get("enabled", True):
-            return lambda meta: None
+        """Delegate to StreamingController."""
+        return self._streaming_controller._make_classification_callback(config)
 
-        show_intent = cd.get("show_intent", True)
-        show_reasoning = cd.get("show_reasoning", True)
-        show_clarification = cd.get("show_clarification", True)
-        show_next_step = cd.get("show_next_step", True)
-
-        def _callback(meta: dict) -> None:
-            filtered = {
-                "intent": meta.get("intent", "") if show_intent else "",
-                "reasoning_summary": meta.get("reasoning_summary", "") if show_reasoning else "",
-                "needs_clarification": meta.get("needs_clarification", False) if show_clarification else False,
-                "missing_fields": meta.get("missing_fields") if show_clarification else [],
-                "next_step": meta.get("next_step", "") if show_next_step else "",
-            }
-            self._safe_root_after(lambda m=filtered: self.gui.display_classification(m))
-            # Mirror classification to session log
-            lines = []
-            if filtered.get("intent"):
-                lines.append(f"🤔 intent: {filtered['intent']}")
-            if filtered.get("reasoning_summary"):
-                lines.append(f"   reasoning: {filtered['reasoning_summary']}")
-            if filtered.get("needs_clarification") or filtered.get("missing_fields"):
-                cl = "   clarification needed: yes"
-                mf = filtered.get("missing_fields") or []
-                if mf:
-                    cl += f"  |  missing fields: {', '.join(mf)}"
-                lines.append(cl)
-            if filtered.get("next_step"):
-                lines.append(f"💡 path: {filtered['next_step']}")
-            if lines:
-                self._write_log("\n".join(lines) + "\n")
-            self._output_logger.log("classification", json.dumps(filtered, ensure_ascii=False))
-
-        return _callback
-
-    def _display_thinking(self, text: str):
-        """Helper to display thinking text with header on first call."""
-        if not getattr(self, "_thinking_header_shown", False):
-            header = f"\n\U0001f4ad ({self.active_model})\t(The agent is thinking...)\n"
-            self._safe_root_after(lambda: self.gui.display_agent_thinking(header))
-            self._write_log(header)
-            self._thinking_header_shown = True
-        self._safe_root_after(lambda: self.gui.display_agent_thinking(text))
-        self._write_log(text)
+    def _display_thinking(self, text: str) -> None:
+        """Delegate to StreamingController."""
+        self._streaming_controller._display_thinking(text)
 
     def _display_tool_call(self, tool_name: str, tool_input: dict, round_index: int | None = None) -> None:
-        """
-        Display a tool call in the GUI and store it in context.
-
-        The bridge handles tool execution; this method is display-only.
-        Storing the TOOL_CALL message ensures the tool interaction is visible
-        in the session history and can be re-serialized in future turns.
-        """
-        round_label = f" [round {round_index + 1}]" if round_index is not None else ""
-        line = f"\n[🔧 Calling tool{round_label}: {tool_name}]\n"
-        self._safe_root_after(lambda: self.gui.display_agent_response(line))
-        self._write_log(line)
-        try:
-            input_text = f"{tool_name}: {json.dumps(tool_input, ensure_ascii=False)}"
-        except Exception:
-            input_text = f"{tool_name}: {tool_input}"
-        self._output_logger.log("tool_call", input_text)
-        self.context.add_tool_call_message(tool_name, tool_input)
+        """Delegate to StreamingController."""
+        self._streaming_controller._display_tool_call(tool_name, tool_input, round_index)
 
     def _display_tool_result(
         self, tool_name: str, output, round_index: int | None = None, tool_id: str | None = None
     ) -> None:
-        """
-        Display a tool result in the GUI and store it in context.
-
-        The bridge has already executed the tool and produced ``output``.
-        This method records the result in context so it persists across
-        sessions and is included in future LLM history.
-        """
-        if isinstance(output, str):
-            display_text = output
-        elif output is not None:
-            try:
-                display_text = json.dumps(output)
-            except Exception:
-                display_text = str(output)
-        else:
-            display_text = ""
-
-        round_label = f" [round {round_index + 1}]" if round_index is not None else ""
-        preview = display_text[:100] + "..." if len(display_text) > 100 else display_text
-        result_line = f"\n[📋 Tool result{round_label}: {preview}]\n"
-        self._safe_root_after(lambda: self.gui.display_agent_response(result_line))
-        self._write_log(result_line)
-        self._output_logger.log("tool_result", f"{tool_name}: {display_text}")
-        self.context.add_tool_result_message(
-            tool_name=tool_name,
-            tool_output=output,
-            tool_id=tool_id,
-        )
-        # Refresh Working Memory panel in case the tool mutated it
-        self._safe_root_after(self.refresh_working_memory_gui)
+        """Delegate to StreamingController."""
+        self._streaming_controller._display_tool_result(tool_name, output, round_index, tool_id=tool_id)
 
     def _display_assistant_header(self) -> None:
-        """Display the assistant header once per response stream."""
-        if not getattr(self, "_assistant_header_shown", False):
-            self._assistant_header_shown = True
-            header = f"\n\n\U0001f916 ({self.active_model})\t"
-            self._safe_root_after(lambda: self.gui.display_agent_response(header))
-            self._write_log(header)
+        """Delegate to StreamingController."""
+        self._streaming_controller._display_assistant_header()
 
     def _handle_stream_content(self, text: str) -> None:
-        """Ensure header is shown before streaming content chunks."""
-        self._display_assistant_header()
-        self._safe_root_after(lambda: self.gui.display_agent_response(text))
-        self._write_log(text)
+        """Delegate to StreamingController."""
+        self._streaming_controller._handle_stream_content(text)
 
     def _persist_stream_messages(
         self,
@@ -1435,22 +1049,8 @@ class AgentXSession:
         content_text: str,
         refresh_gui: bool = True,
     ) -> None:
-        """Persist streamed thinking and assistant content to context."""
-        if thinking_text:
-            thinking_message = Message(role=MessageRole.THINKING, content=thinking_text)
-            thinking_message.enabled = False
-            if refresh_gui:
-                self.add_message_to_context(thinking_message)
-            else:
-                self.context.add_message(thinking_message, ts=datetime.now())
-
-        if content_text:
-            assistant_message = Message(role=MessageRole.ASSISTANT, content=content_text)
-            assistant_message.enabled = True
-            if refresh_gui:
-                self.add_message_to_context(assistant_message)
-            else:
-                self.context.add_message(assistant_message, ts=datetime.now())
+        """Delegate to StreamingController."""
+        self._streaming_controller._persist_stream_messages(thinking_text, content_text, refresh_gui)
 
     def perform_service_handshake(self):
         """
