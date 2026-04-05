@@ -1,32 +1,34 @@
 # Model management for Agentix CLI
 
 import json
+import logging
 import sys
 
 import requests
 
 from .constants import OLLAMA_API_BASE, OLLAMA_MODELS_ENDPOINT
 
+logger = logging.getLogger(__name__)
+
 
 def get_models(args, filter_by_model=True):
     """
     Fetch available models from Ollama API.
-    
+
     Args:
         args: AgentixConfig with model and ollama_host settings
         filter_by_model: If True, filter to models matching args.model; if False, return all models
     """
     # Use configured host or fallback to constant
-    ollama_base = f"http://{args.ollama_host}" if hasattr(args, 'ollama_host') and args.ollama_host else OLLAMA_API_BASE
-    
+    ollama_base = f"http://{args.ollama_host}" if hasattr(args, "ollama_host") and args.ollama_host else OLLAMA_API_BASE
+
     result = requests.get(f"{ollama_base}{OLLAMA_MODELS_ENDPOINT}")
     models_json = result.json()
 
     if args.debug:
-        print("Available models:", file=sys.stderr)
-        print(json.dumps(models_json, indent=2), file=sys.stderr)
+        logger.debug("Available models: %s", json.dumps(models_json, indent=2))
         if filter_by_model:
-            print(f"Filtering models with prefix: {args.model}", file=sys.stderr)
+            logger.debug("Filtering models with prefix: %s", args.model)
 
     # Only filter if requested and model is configured
     if filter_by_model and args.model:
@@ -72,22 +74,21 @@ def get_model(args) -> int:
     models = get_models(args)
     if len(models) > 1:
         if args.debug:
-            print(
-                f"Multiple models found matching '{args.model}':\n{json.dumps(models, indent=2)}",
-                file=sys.stderr,
+            logger.debug(
+                "Multiple models found matching '%s':\n%s",
+                args.model,
+                json.dumps(models, indent=2),
             )
-            print(f"Using the first model found: {models[0]['name']}", file=sys.stderr)
+            logger.debug("Using the first model found: %s", models[0]["name"])
     model = models[0]
     if args.debug:
-        print(f"Using model:\n{json.dumps(model, indent=2)}", file=sys.stderr)
+        logger.debug("Using model:\n%s", json.dumps(model, indent=2))
     # Convert parameter_size to max_tokens
     try:
         max_tokens = parse_parameter_size(model["details"]["parameter_size"])
     except Exception as e:
         if args.debug:
-            print(json.dumps(model, indent=2), file=sys.stderr)
-        raise ValueError(
-            f"Invalid parameter size format: {model['details']['parameter_size']}"
-        )
+            logger.debug("%s", json.dumps(model, indent=2))
+        raise ValueError(f"Invalid parameter size format: {model['details']['parameter_size']}")
     args.model = model["name"]
     return max_tokens

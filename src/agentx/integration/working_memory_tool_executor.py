@@ -13,8 +13,10 @@ Usage:
 """
 
 import json
-import sys
+import logging
 from typing import Callable
+
+logger = logging.getLogger(__name__)
 
 from shared.models.working_memory import FactEntry, FactOwner, FactValue, WorkingMemory
 
@@ -94,9 +96,7 @@ class WorkingMemoryToolExecutor:
         user_key = f"{FactOwner.USER.value}:{key}"
 
         if self._wm.get(user_key) is not None:
-            return (
-                f"Error: '{key}' is a user-owned fact and cannot be removed by the agent."
-            )
+            return f"Error: '{key}' is a user-owned fact and cannot be removed by the agent."
 
         if self._wm.remove_fact(agent_key):
             return f"✓ Removed agent fact: {key}"
@@ -149,6 +149,7 @@ class WorkingMemoryToolExecutor:
 # Schema generation (module-level, no instance needed)
 # ---------------------------------------------------------------------------
 
+
 def get_working_memory_tool_schemas() -> list[dict]:
     """Return OpenAI-format tool schemas for Working Memory tools."""
     from agentix.tools.schema import SchemaGenerationError, extract_tool_schema
@@ -160,5 +161,5 @@ def get_working_memory_tool_schemas() -> list[dict]:
         try:
             schemas.append(extract_tool_schema(fn))
         except SchemaGenerationError as exc:
-            print(f"Schema generation failed for {fn.__name__}: {exc}", file=sys.stderr)
+            logger.error("Schema generation failed for %s: %s", fn.__name__, exc)
     return schemas

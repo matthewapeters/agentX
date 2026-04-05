@@ -1676,7 +1676,7 @@ class GUIManager(IGUIManager):
             try:
                 self._settings_tab_widget.frame.destroy()
             except Exception:
-                pass
+                logger.debug("Could not destroy previous SettingsTab widget (already gone)", exc_info=True)
         self._settings_tab_widget = SettingsTab(
             parent,
             config=config,
@@ -2678,6 +2678,30 @@ class GUIManager(IGUIManager):
         """Handle tool toggle."""
         # This is a placeholder - the actual handler should be set by AgentXSession
         pass
+
+    def set_model_change_callback(self, callback: Callable[[str], None]) -> None:
+        """Register the callback invoked whenever the active model changes.
+
+        Replaces the placeholder ``_on_model_change`` and also propagates the
+        callback to the underlying ``ModelSelector`` widget so the two stay in sync.
+        """
+        self._on_model_change = callback  # type: ignore[method-assign]
+        if self.model_selector:
+            self.model_selector.on_model_change = callback
+
+    def set_tool_toggle_callback(self, callback: Callable[[str, bool], None]) -> None:
+        """Register the callback invoked whenever a tool is enabled/disabled.
+
+        Replaces the placeholder ``_on_tool_toggle``.
+        """
+        self._on_tool_toggle = callback  # type: ignore[method-assign]
+
+    def get_cached_user_input(self) -> str:
+        """Return the most-recently submitted user input string.
+
+        Used as a fallback in tests where the submit pipeline is bypassed.
+        """
+        return self._cached_user_input or ""
 
     def populate_models(self, models: list[dict], initial_model: str = None) -> None:
         """Populate model selector with available models.

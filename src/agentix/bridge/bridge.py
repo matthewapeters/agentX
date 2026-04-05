@@ -16,16 +16,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterator, Optional
 
 from agentix.agentix_config import AgentixConfig
-from agentix.api_client import query_api_streaming
-from agentix.models import get_model, get_models
+from agentix.models import get_models
 from agentix.prompt_classification_response import (
     NextStep,
     PromptClassificationResponse,
 )
 
-# Direct imports to avoid circular dependencies
-from agentix.tools import extract_cst_tools
-from agentix.tools.describe_tools import to_openai_tools
 from shared.models.context import Context
 from shared.models.task_node import AssertionRecord, PlanRecord, PlanStep, SynthesisAttempt, TaskNodeRecord, TaskTree
 from agentix.bridge.assertion_checker import extract_assertions, verify_assertion
@@ -33,6 +29,7 @@ from shared.models.message import Message
 from shared.models.response import ChunkType, ResponseChunk
 from shared.models.tools import ToolResponse
 from .classify_prompt import classify_prompt as classifier
+from .tool_loop import SUBTASK_TOOL_NAME, ToolLoopRunner
 
 logger = logging.getLogger("agentix.bridge")
 
@@ -68,13 +65,8 @@ class AgentixBridge:
         """
         self.config = config
         self._model_cache: Optional[list[dict]] = None
-        self._max_tokens: Optional[int] = None
-        # Extra tool implementations registered externally (e.g. client-side file tools)
-        self._tool_impl_cache: dict[str, callable] = {}
-        # Extra OpenAI-format schemas for tools registered externally
-        self._extra_tool_schemas: list[dict] = []
-        # Tool names the user has disabled via the GUI; None means "all enabled"
-        self._disabled_tools: Optional[set[str]] = None
+        # Tool-loop state and LLM streaming are delegated to ToolLoopRunner
+        self._tool_runner = ToolLoopRunner(config)
 
     def classify_prompt(
         self,
@@ -207,20 +199,7 @@ class AgentixBridge:
         Returns:
             List of tool definitions in OpenAI tools format
         """
-
-        tools = []
-        for tool_name in self.config.tools or []:
-            if tool_name == "cst":
-                cst_tools = extract_cst_tools()
-                tools.extend(cst_tools)
-
-        result = to_openai_tools(tools) if tools else []
-        result.extend(self._extra_tool_schemas)
-
-        if self._disabled_tools is not None:
-            result = [t for t in result if t.get("function", {}).get("name") not in self._disabled_tools]
-
-        return result
+        return self._tool_runner.get_available_tools()
 
     def set_enabled_tools(self, enabled_tool_names: list[str]) -> None:
         """
@@ -232,9 +211,7 @@ class AgentixBridge:
         Args:
             enabled_tool_names: Tool names the user wants enabled.
         """
-        all_names = {t.get("function", {}).get("name") for t in (self._extra_tool_schemas or [])}
-        # Determine which tools to disable (those known but not in the enabled list)
-        self._disabled_tools = all_names - set(enabled_tool_names)
+        self._tool_runner.set_enabled_tools(enabled_tool_names)
 
     def register_tool_implementations(
         self,
@@ -256,21 +233,11 @@ class AgentixBridge:
                      omitted the tools are executable but not advertised to
                      the LLM.
         """
-        self._tool_impl_cache.update(impls)
-        if schemas:
-            self._extra_tool_schemas.extend(schemas)
+        self._tool_runner.register_tool_implementations(impls, schemas)
 
     def _context_to_history(self, context: Context) -> list[Message]:
-        """
-        Convert AgentX Context to Agentix history format.
-
-        Args:
-            context: AgentX Context with messages
-
-        Returns:
-            List of enabled Message dictionaries (Agentix format)
-        """
-        return list(context.get_enabled_messages())
+        """Convert AgentX Context to Agentix history format."""
+        return self._tool_runner._context_to_history(context)
 
     def retrigger_synthesis_streaming(
         self,
@@ -422,226 +389,30 @@ class AgentixBridge:
             initial_messages=base_messages,
         )
 
+    # ── Delegation wrappers for ToolLoopRunner ────────────────────────────────
+    # These preserve the existing call sites within AgentixBridge (and existing
+    # test patches on the bridge instance) while the real implementations live
+    # in ToolLoopRunner for independent testability.
+
     def _get_max_tokens(self) -> int:
-        """
-        Get max tokens for current model.
-
-        Caches the result after first call.
-
-        Returns:
-            Maximum token count for model
-        """
-        if self._max_tokens is None:
-            self._max_tokens = get_model(self.config)
-        return self._max_tokens
+        """Return max tokens for the current model (cached)."""
+        return self._tool_runner._get_max_tokens()
 
     def execute_tool(self, tool_name: str, arguments: dict, tool_id: Optional[str] = None) -> ToolResponse:
-        """
-        Execute a named tool with the given arguments.
-
-        Looks up the tool in the registered tool implementations, calls it, and
-        returns a ToolResponse.  Exceptions are caught and returned as error
-        responses (error-as-result pattern — the agentic loop never crashes due
-        to a single tool failure).
-
-        Args:
-            tool_name: Name of the tool to invoke.
-            arguments: Keyword arguments to pass to the tool implementation.
-            tool_id: Optional tool call ID from the LLM for correlation.
-
-        Returns:
-            ToolResponse with success=True and output, or success=False and error.
-        """
-        # run_subtask must be intercepted inline inside _run_task_node BEFORE
-        # execute_tool is called. If it reaches here it means the tool was invoked
-        # outside the hierarchical task engine; return a clear error so the LLM
-        # can handle it gracefully.
-        if tool_name == "run_subtask":
-            return ToolResponse.error_response(
-                "run_subtask cannot be called directly. It is intercepted by the "
-                "hierarchical task engine and re-routed to a recursive _run_task_node "
-                "call. Ensure you are inside a planned response flow.",
-                request_id=tool_id,
-            )
-
-        impl = self._get_tool_implementations().get(tool_name)
-        if impl is None:
-            return ToolResponse.error_response(
-                f"Unknown tool: '{tool_name}'. Available tools: {list(self._get_tool_implementations())}",
-                request_id=tool_id,
-            )
-        try:
-            result = impl(**arguments)
-            return ToolResponse.success_response(result, request_id=tool_id)
-        except TypeError as exc:
-            return ToolResponse.error_response(
-                f"Invalid arguments for tool '{tool_name}': {exc}",
-                request_id=tool_id,
-            )
-        except Exception as exc:
-            return ToolResponse.error_response(str(exc), request_id=tool_id)
+        """Execute a named tool — delegates to ToolLoopRunner."""
+        return self._tool_runner.execute_tool(tool_name, arguments, tool_id)
 
     def _get_tool_implementations(self) -> dict[str, callable]:
-        """
-        Return a mapping of tool name → callable for all tools available through
-        this bridge.  Results are cached after the first call.
-        """
-        if not self._tool_impl_cache:
-            # Register CST tools by importing the module and binding functions
-            try:
-                import agentix.tools.cst_tools as cst_mod
-                import inspect
-
-                for name, fn in inspect.getmembers(cst_mod, inspect.isfunction):
-                    if not name.startswith("_"):
-                        self._tool_impl_cache[name] = fn
-            except Exception:
-                pass
-            # Register AST tools
-            try:
-                import agentix.tools.ast_tools as ast_mod
-                import inspect
-
-                for name, fn in inspect.getmembers(ast_mod, inspect.isfunction):
-                    if not name.startswith("_"):
-                        self._tool_impl_cache[name] = fn
-            except Exception:
-                pass
-        return self._tool_impl_cache
+        """Return tool name → callable mapping — delegates to ToolLoopRunner."""
+        return self._tool_runner._get_tool_implementations()
 
     def _iter_llm_chunks(
         self,
         messages: list[dict],
         tools: Optional[list[dict]] = None,
     ) -> Iterator[ResponseChunk]:
-        """
-        Low-level streaming iterator over the OpenAI-compat Ollama endpoint.
-
-        Handles all chunk types from the ``/v1/chat/completions`` streaming
-        format:
-        - content delta  → CONTENT chunk
-        - reasoning/thinking delta → THINKING chunk
-        - tool_calls deltas → accumulated, emitted as TOOL_CALL chunk(s) on
-          ``finish_reason == "tool_calls"``
-        - finish_reason "stop" → DONE chunk
-
-        OpenAI streaming tool-call format (arguments arrive incrementally)::
-
-            {"choices": [{"delta": {"tool_calls": [
-                {"index": 0, "id": "call_abc", "type": "function",
-                 "function": {"name": "read_file", "arguments": ""}}
-            ]}, "finish_reason": null}]}
-            {"choices": [{"delta": {"tool_calls": [
-                {"index": 0, "function": {"arguments": "{\"path\":"}}
-            ]}}]}
-            {"choices": [{"delta": {"tool_calls": [
-                {"index": 0, "function": {"arguments": " \"/tmp/x\"}"}}
-            ]}}]}
-            {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]}
-
-        Args:
-            messages: Full chat history in OpenAI message format.
-            tools: Optional list of OpenAI-format tool schemas to include.
-
-        Yields:
-            ResponseChunk objects.
-        """
-        payload: dict = {
-            "model": self.config.model,
-            "messages": messages,
-            "temperature": self.config.temperature,
-        }
-        if tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = "auto"
-
-        # Accumulate tool call fragments keyed by index.
-        # Structure: {index: {"id": str, "name": str, "arguments": str}}
-        pending_tool_calls: dict[int, dict] = {}
-
-        try:
-            for chunk in query_api_streaming(self.config, payload):
-                if chunk.get("error"):
-                    yield ResponseChunk(type=ChunkType.ERROR, content=chunk["error"])
-                    return
-
-                choices = chunk.get("choices", [])
-                if not choices:
-                    if chunk.get("done"):
-                        yield ResponseChunk(type=ChunkType.DONE, done_reason="stop")
-                    continue
-
-                choice = choices[0]
-                delta = choice.get("delta", {})
-                finish_reason = choice.get("finish_reason")
-
-                # ── Thinking / reasoning ──────────────────────────────────
-                reasoning = delta.get("reasoning") or delta.get("thinking")
-                if reasoning:
-                    yield ResponseChunk(type=ChunkType.THINKING, content=reasoning)
-
-                # ── Regular content ───────────────────────────────────────
-                content = delta.get("content", "")
-                if content:
-                    yield ResponseChunk(type=ChunkType.CONTENT, content=content)
-
-                # ── Tool call deltas (accumulate fragments) ───────────────
-                for tc_delta in delta.get("tool_calls", []):
-                    idx = tc_delta.get("index", 0)
-                    if idx not in pending_tool_calls:
-                        pending_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
-                    entry = pending_tool_calls[idx]
-                    if tc_delta.get("id"):
-                        entry["id"] = tc_delta["id"]
-                    fn = tc_delta.get("function", {})
-                    if fn.get("name"):
-                        entry["name"] += fn["name"]
-                    if fn.get("arguments"):
-                        entry["arguments"] += fn["arguments"]
-
-                # ── Finish: emit accumulated tool calls or DONE ───────────
-                if finish_reason == "tool_calls":
-                    for entry in sorted(
-                        pending_tool_calls.values(), key=lambda e: list(pending_tool_calls.values()).index(e)
-                    ):
-                        try:
-                            parsed_args = json.loads(entry["arguments"]) if entry["arguments"] else {}
-                        except json.JSONDecodeError as e:
-                            logger.warning(
-                                f"Tool call arguments failed JSON parsing: {e}",
-                                extra={
-                                    "tool_name": entry.get("name"),
-                                    "tool_id": entry.get("id"),
-                                    "error_pos": e.pos,
-                                    "arguments_repr": repr(entry["arguments"]),
-                                    "arguments_length": len(entry["arguments"]) if entry["arguments"] else 0,
-                                    "arguments_content": entry["arguments"],
-                                },
-                            )
-                            parsed_args = {"_raw": entry["arguments"]}
-                        yield ResponseChunk(
-                            type=ChunkType.TOOL_CALL,
-                            tool_name=entry["name"],
-                            tool_input=parsed_args,
-                            tool_id=entry["id"] or None,
-                        )
-                    pending_tool_calls.clear()
-
-                elif finish_reason:
-                    yield ResponseChunk(type=ChunkType.DONE, done_reason=finish_reason)
-                    return
-
-                if chunk.get("done"):
-                    yield ResponseChunk(type=ChunkType.DONE, done_reason="stop")
-                    return
-
-                # Top-level thinking (some providers)
-                top_thinking = chunk.get("thinking") or chunk.get("reasoning")
-                if top_thinking:
-                    yield ResponseChunk(type=ChunkType.THINKING, content=top_thinking)
-
-        except Exception as exc:
-            yield ResponseChunk(type=ChunkType.ERROR, content=f"Error generating response: {exc}")
+        """Low-level LLM streaming — delegates to ToolLoopRunner."""
+        return self._tool_runner._iter_llm_chunks(messages, tools)
 
     def _stream_direct_response(
         self,
@@ -955,9 +726,9 @@ class AgentixBridge:
         available_tools = self.get_available_tools()
         max_task_depth: int = getattr(self.config, "max_task_depth", 10)
         if depth >= max_task_depth:
-            available_tools = [t for t in available_tools if t.get("function", {}).get("name") != "run_subtask"]
+            available_tools = [t for t in available_tools if t.get("function", {}).get("name") != SUBTASK_TOOL_NAME]
         if depth >= max_task_depth:
-            available_tools = [t for t in available_tools if t.get("function", {}).get("name") != "run_subtask"]
+            available_tools = [t for t in available_tools if t.get("function", {}).get("name") != SUBTASK_TOOL_NAME]
 
         any_tools_called = False
         got_content = False
@@ -1005,8 +776,8 @@ class AgentixBridge:
             }
             messages.append(assistant_msg)
 
-            subtask_calls = [tc for tc in tool_calls_this_round if tc.tool_name == "run_subtask"]
-            regular_calls = [tc for tc in tool_calls_this_round if tc.tool_name != "run_subtask"]
+            subtask_calls = [tc for tc in tool_calls_this_round if tc.tool_name == SUBTASK_TOOL_NAME]
+            regular_calls = [tc for tc in tool_calls_this_round if tc.tool_name != SUBTASK_TOOL_NAME]
             tool_result_messages: list[dict] = []
 
             for tc in subtask_calls:

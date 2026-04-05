@@ -667,14 +667,6 @@ def get_client_tool_schemas() -> list:
     Returns:
         List of dicts in the ``{"type": "function", "function": {...}}`` format.
     """
-    import sys
-    from pathlib import Path
-
-    # Ensure agentix is importable (sibling src directory)
-    src = str(Path(__file__).resolve().parents[2])
-    if src not in sys.path:
-        sys.path.insert(0, src)
-
     from agentix.tools.schema import extract_tool_schema, SchemaGenerationError
 
     schemas = []

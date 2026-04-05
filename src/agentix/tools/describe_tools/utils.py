@@ -1,9 +1,12 @@
 """Utility functions for extracting docstrings from functions."""
 
 import ast as pyast
+import logging
 from typing import Optional
 
 import libcst as cst
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_docstring_from_function(fn: cst.FunctionDef) -> Optional[str]:
@@ -29,7 +32,7 @@ def _extract_docstring_from_function(fn: cst.FunctionDef) -> Optional[str]:
             # Fallback: manually process multi-line strings
             lines = raw_value.strip("'\"").splitlines()
             processed_lines = [line.strip() for line in lines if line.strip()]
-            print(f"Processed lines: {processed_lines}")  # Debug log
+            logger.debug("Processed lines: %s", processed_lines)
             return "\n".join(processed_lines)
     return None
 
@@ -66,7 +69,7 @@ def _extract_docstring_from_function(fn: cst.FunctionDef) -> Optional[str]:
             unescaped_docstring = pyast.literal_eval(raw)
             return unescaped_docstring.strip()
         except Exception as e:
-            print(f"Error parsing docstring: {e}")  # Debug log
+            logger.error("Error parsing docstring: %s", e)
             # Fallback: return raw string with stripped quotes
             return raw.strip("'\"")
     return None

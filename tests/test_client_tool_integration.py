@@ -147,7 +147,7 @@ class TestBridgeClientToolRegistration:
     def test_register_tool_implementations_adds_to_cache(self):
         bridge = self._make_bridge()
         bridge.register_tool_implementations({"my_tool": lambda x: x})
-        assert "my_tool" in bridge._tool_impl_cache
+        assert "my_tool" in bridge._tool_runner._tool_impl_cache
 
     def test_register_tool_schemas_appear_in_get_available_tools(self):
         bridge = self._make_bridge()

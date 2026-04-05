@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Backup files
+*.toml.bak
+*.bak
+
 # C extensions
 *.so
 

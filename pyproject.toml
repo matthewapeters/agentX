@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentx"
-version = "0.18.0"
+version = "0.18.14"
 description = "agentX is a framework for building and deploying AI agents that can perform a wide range of tasks, from simple automation to complex problem-solving. It provides a flexible and extensible architecture that allows developers to create custom agents tailored to their specific needs."
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
 #    "smolagents[litellm]>=1.24.0",
 dependencies = [
     "asyncio>=4.0.0",
@@ -55,6 +55,7 @@ agentx = [
 markers = [
     "live: live integration tests that require external services"
 ]
+addopts = "--cov=src --cov-report=term-missing"
 
 [tool.black]
 line-length = 120

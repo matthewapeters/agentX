@@ -8,7 +8,6 @@ from .agentix_config import AgentixConfig
 from .api_client import query_classification
 from .context.sessions import assemble_classification_prompt, manage_sessions
 from .models import get_model
-from .next_steps import take_steps
 from .prompt_classification_response import PromptClassificationResponse
 
 
@@ -29,9 +28,7 @@ def agentix(args: AgentixConfig) -> Optional[dict]:
     classification: dict = query_classification(args, initial_prompt)
     if args.debug:
         print(
-            json.dumps(classification, indent=2)
-            .encode("utf-8")
-            .decode("unicode_escape"),
+            json.dumps(classification, indent=2).encode("utf-8").decode("unicode_escape"),
             file=sys.stderr,
         )
     prompt_classiication: PromptClassificationResponse = None
@@ -42,5 +39,5 @@ def agentix(args: AgentixConfig) -> Optional[dict]:
         if args.debug:
             print(classification, file=sys.stderr)
 
-    # take the steps indicated from the LLM
-    take_steps(args, prompt_classiication.next_step, history, max_tokens)
+    # Next-step dispatch for the CLI is not yet implemented.
+    # The streaming equivalents live in bridge/_stream_*_response() for the GUI path.

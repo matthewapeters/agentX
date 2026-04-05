@@ -546,6 +546,10 @@ class TestSessionRetriggerSynthesis(unittest.TestCase):
         session.session_folder = tmp_path
         session.working_memory = None
         session.agentix_adapter = MagicMock()
+        session._last_synthesis_thread = None
+        # Bypass root.after() thread-safety mechanism so background thread calls
+        # gui methods directly on the MagicMock — avoids TclError/SIGABRT
+        session._safe_root_after = lambda cb: cb()
         import logging
 
         session._logger = logging.getLogger("test_session")
@@ -588,8 +592,9 @@ class TestSessionRetriggerSynthesis(unittest.TestCase):
             session.agentix_adapter.retrigger_synthesis_generator.return_value = iter([])
 
             session.retrigger_synthesis("task-1")
-            # Give the background thread a moment to schedule the GUI call
-            time.sleep(0.05)
+            # Join the background thread to avoid race with root.destroy()
+            if session._last_synthesis_thread is not None:
+                session._last_synthesis_thread.join(timeout=2.0)
             root.update()
 
             gui.mark_plan_node_invalidated.assert_called_with("task-1")
@@ -612,8 +617,9 @@ class TestSessionRetriggerSynthesis(unittest.TestCase):
             session.refresh_user_gui = MagicMock()
 
             session.retrigger_synthesis("task-1")
-            # Wait for background thread
-            time.sleep(0.1)
+            # Join the background thread to avoid race with root.destroy()
+            if session._last_synthesis_thread is not None:
+                session._last_synthesis_thread.join(timeout=2.0)
             root.update()
 
             gui.update_plan_node_status.assert_called()
@@ -631,11 +637,13 @@ class TestSessionRetriggerSynthesis(unittest.TestCase):
             session.agentix_adapter.retrigger_synthesis_generator.return_value = iter([])
 
             session.retrigger_synthesis("task-1", hint="use error path")
-            time.sleep(0.05)
+            # Join the background thread to avoid race with root.destroy()
+            if session._last_synthesis_thread is not None:
+                session._last_synthesis_thread.join(timeout=2.0)
             root.update()
 
             wm_facts = session.working_memory.all_facts()
-            hint_keys = [k for k in wm_facts if "resynth_hint" in k]
+            hint_keys = [f.key for f in wm_facts if "resynth_hint" in f.key]
             self.assertGreater(len(hint_keys), 0)
         root.destroy()
 

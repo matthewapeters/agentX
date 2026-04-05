@@ -1,8 +1,10 @@
 # Session management for Agentix CLI
 
+import logging
 import os
-import sys
 from datetime import UTC, datetime
+
+logger = logging.getLogger(__name__)
 
 from agentix.context.message import Message
 
@@ -101,7 +103,7 @@ def assemble_prompts(
         system_content = get_system_prompt(args)
         history.append(Message(role="system", content=system_content))
         if args.debug:
-            print(f"Added system message to history (length: {len(system_content)} chars)", file=sys.stderr)
+            logger.debug("Added system message to history (length: %d chars)", len(system_content))
     if args.tools:
         history.append(Message(role="system", content=get_tools_prompt(args)))
     if args.user or args.file_path:
@@ -119,21 +121,21 @@ def assemble_prompts(
     history_dicts = [msg.to_dict() if hasattr(msg, "to_dict") else msg for msg in history]
 
     if args.debug:
-        print(f"History before trim_context: {len(history_dicts)} messages", file=sys.stderr)
+        logger.debug("History before trim_context: %d messages", len(history_dicts))
         for i, msg in enumerate(history_dicts):
             role = msg.get("role", "unknown")
             content_len = len(msg.get("content", "")) if msg.get("content") else 0
-            print(f"  Message {i}: role={role}, content_length={content_len}", file=sys.stderr)
+            logger.debug("  Message %d: role=%s, content_length=%d", i, role, content_len)
 
     # Trim context based on max_tokens
     contextual_messages = trim_context(args, history_dicts, max_tokens)
 
     if args.debug:
-        print(f"History after trim_context: {len(contextual_messages)} messages", file=sys.stderr)
+        logger.debug("History after trim_context: %d messages", len(contextual_messages))
         for i, msg in enumerate(contextual_messages):
             role = msg.get("role", "unknown")
             content_len = len(msg.get("content", "")) if msg.get("content") else 0
-            print(f"  Message {i}: role={role}, content_length={content_len}", file=sys.stderr)
+            logger.debug("  Message %d: role=%s, content_length=%d", i, role, content_len)
 
     # Add format='json' for classification to enforce JSON output
     format_constraint = getattr(args, "response_format", None)
@@ -192,7 +194,7 @@ def trim_context(args: AgentixConfig, messages: list[Message], max_tokens: int) 
 def manage_sessions(args: AgentixConfig) -> list[Message]:
     """Create, retrieve, and manage session state."""
     history = []
-    print((f"Managing session: {args.session}"), file=sys.stderr)
+    logger.debug("Managing session: %s", args.session)
 
     base_dir = _resolve_sessions_base()
 
@@ -204,8 +206,8 @@ def manage_sessions(args: AgentixConfig) -> list[Message]:
     else:
         _ensure_session_context_dir(args)
 
-    print(f"Debug: args.session = {args.session}", file=sys.stderr)
-    print(f"Debug: args = {args}", file=sys.stderr)
+    logger.debug("args.session = %s", args.session)
+    logger.debug("args = %s", args)
     return history
 
 

@@ -1,8 +1,11 @@
 # File I/O utilities for Agentix CLI
 
+import logging
 import sys
 
 from shared.models.attachment import Attachment
+
+logger = logging.getLogger(__name__)
 
 
 def load_file(file_path: str) -> str:
@@ -17,7 +20,7 @@ def get_file(file_path: str) -> str:
         content = load_file(file_path)
         return f"[FILE: {file_path}]\n{content}\n[END OF FILE]\n\n"
     except Exception as e:
-        print(f"Error loading file {file_path}: {e}", file=sys.stderr)
+        logger.error("Error loading file %s: %s", file_path, e)
         return ""
 
 
@@ -28,7 +31,7 @@ def get_attachments(args) -> list:
         try:
             attachments.append(Attachment.from_file(attachment_path))
         except Exception as e:
-            print(f"Error loading attachment {attachment_path}: {e}", file=sys.stderr)
+            logger.error("Error loading attachment %s: %s", attachment_path, e)
     return attachments
 
 
@@ -38,6 +41,6 @@ def replace_file_content(args, attachment: dict) -> None:
     language = attachment.get("language", "text")
     name = attachment.get("name", args.file_path[0] if args.file_path else "")
     data = attachment.get("data", "")
-    print(f"Replacing content of {language} file: {name}", file=sys.stderr)
+    logger.debug("Replacing content of %s file: %s", language, name)
     with open(name, "w", encoding=encoding) as f:
         f.write(data.decode(encoding))

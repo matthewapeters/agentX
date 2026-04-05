@@ -1,7 +1,9 @@
 """agentix/transforms.py"""
 
 import json
-import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def transform_ollama_tags_to_openai_engines(ollama_tags, filter_tag=None):
@@ -27,7 +29,7 @@ def transform_ollama_tags_to_openai_engines(ollama_tags, filter_tag=None):
                 ]
             }
     """
-    print(json.dumps(ollama_tags, indent=2), file=sys.stderr)
+    logger.debug("ollama_tags: %s", json.dumps(ollama_tags, indent=2))
     return {
         "data": [
             {"id": tag["name"], "object": "engine", "owner": "ollama", "ready": True}

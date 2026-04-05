@@ -23,7 +23,8 @@ from .attachment_info import AttachmentInfo
 from .config import save_config
 from .file_explorer import FileExplorer
 from .gui.gui_config import GUIConfig
-from .gui.gui_manager import GUIManager
+from .gui.gui_manager import GUIManager  # concrete class — used only for construction in __init__
+from .igui_manager import IGUIManager
 from .history import History
 from .integration import (
     AgentixBridgeAdapter,
@@ -91,13 +92,15 @@ class AgentXSession:
         self._is_streaming = threading.Event()
         self._streaming_thread = None
         self._pending_prompt: Optional[str] = None
+        self._last_synthesis_thread: threading.Thread | None = None
+        self._last_replay_thread: threading.Thread | None = None
 
         # Initialize service manager for external services
         self.service_manager = ServiceManager(config)
 
         # Initialize GUIManager
         gui_config = GUIConfig.from_dict(config)
-        self.gui = GUIManager(
+        self.gui: IGUIManager = GUIManager(
             root=self.root,
             config=gui_config,
             on_submit=self._handle_submit,
@@ -222,7 +225,7 @@ class AgentXSession:
         self._session_log.write(f"💡 path: {next_step_str}\n\n")
         self._session_log.flush()
 
-    def _build_stream_shared_context(self) -> Context:
+    def _build_shared_context(self) -> Context:
         """Build prompt context from working memory, history, and enabled session messages."""
         shared_context = Context()
 
@@ -258,7 +261,7 @@ class AgentXSession:
             return
 
         try:
-            shared_context = self._build_stream_shared_context()
+            shared_context = self._build_shared_context()
             classification = None
             if self.config.get("agentix", {}).get("classify_prompts", True):
                 classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context, self.working_memory)
@@ -283,7 +286,7 @@ class AgentXSession:
 
     def process_prompt(self, prompt: str) -> Iterator[ResponseChunk]:
         """Process a prompt and yield response chunks (test-friendly API)."""
-        shared_context = self._build_shared_context_from_context()
+        shared_context = self._build_shared_context()
 
         user_message = Message(role=MessageRole.USER, content=prompt)
         user_message.enabled = True
@@ -421,20 +424,14 @@ class AgentXSession:
 
     def _setup_agentix_ui(self) -> None:
         """Setup model selector and tool panel from Agentix."""
-        # Setup model change callback by updating the ModelSelector's callback directly
-        # (Since ModelSelector was already created with a reference to the old callback)
-        original_callback = self.gui._on_model_change
 
+        # Register model-change callback through the protocol interface.
         def on_model_change(model: str):
-            print(f"Model selector changed to: {model}")
+            logger.debug("Model selector changed to: %s", model)
             self.active_model = model  # Use property setter for 3-way sync
-            print(f"Session.active_model updated to: {self.active_model}")
-            if callable(original_callback):
-                original_callback(model)
+            logger.debug("Session.active_model updated to: %s", self.active_model)
 
-        self.gui._on_model_change = on_model_change
-        if self.gui.model_selector:
-            self.gui.model_selector.on_model_change = on_model_change
+        self.gui.set_model_change_callback(on_model_change)
 
         # Always populate models from Agentix (integrated and always available)
         try:
@@ -442,18 +439,15 @@ class AgentXSession:
             if models:
                 self.gui.populate_models(models, initial_model=self.active_model)
         except Exception as e:
-            print(f"Error loading models: {e}")
+            logger.exception("Error loading models: %s", e)
 
-        # Setup tool callbacks
-        original_tool_toggle = self.gui._on_tool_toggle
-
+        # Register tool-toggle callback through the protocol interface.
         def on_tool_toggle(tool_name: str, enabled: bool):
             enabled_tools = self.gui.get_enabled_tools()
             self.config["agentix"]["available_tools"] = enabled_tools
             self.agentix_adapter.set_enabled_tools(enabled_tools)
-            original_tool_toggle(tool_name, enabled)
 
-        self.gui._on_tool_toggle = on_tool_toggle
+        self.gui.set_tool_toggle_callback(on_tool_toggle)
 
         # Populate tools from Agentix
         try:
@@ -461,7 +455,7 @@ class AgentXSession:
             if tools:
                 self.gui.populate_tools(tools)
         except Exception as e:
-            print(f"Error loading tools: {e}")
+            logger.exception("Error loading tools: %s", e)
 
     def execute_tool(self, tool_name: str, tool_input: dict) -> str:
         """
@@ -504,6 +498,7 @@ class AgentXSession:
             return f"Unknown tool: {tool_name}"
 
         except Exception as e:
+            logger.exception("Error executing tool '%s'", tool_name)
             return f"Error executing tool '{tool_name}': {str(e)}"
 
     def handle_tool_call(self, tool_name: str, tool_input: dict) -> None:
@@ -558,7 +553,7 @@ class AgentXSession:
         except Exception as e:
             error_msg = f"Error handling tool call: {e}"
             self._safe_root_after(lambda: self.gui.display_error(error_msg))
-            print(error_msg)
+            logger.exception("Error handling tool call")
 
     def on_history_attachment_toggle(self, attachment, enabled: bool):
         """
@@ -723,7 +718,8 @@ class AgentXSession:
                 self._safe_root_after(lambda: self.gui.set_streaming_state(False))
                 self._safe_root_after(self.refresh_user_gui)
 
-        threading.Thread(target=_worker, daemon=True).start()
+        self._last_replay_thread = threading.Thread(target=_worker, daemon=True)
+        self._last_replay_thread.start()
 
     def refresh_context_gui(self):
         """
@@ -858,8 +854,8 @@ class AgentXSession:
             models: list[dict] = []
             try:
                 models = self.agentix_adapter.get_models()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not load models for settings panel: %s", exc)
             self.gui.render_settings_tab(
                 config=self.config,
                 on_change=self._on_setting_change,
@@ -1035,7 +1031,7 @@ class AgentXSession:
                 callback()
             else:
                 self.root.after(0, callback)
-        except RuntimeError:
+        except (RuntimeError, tk.TclError):
             pass
 
     def _write_log(self, text: str) -> None:
@@ -1098,7 +1094,8 @@ class AgentXSession:
                 self._safe_root_after(lambda: self.gui.set_streaming_state(False))
                 self._safe_root_after(self.refresh_user_gui)
 
-        threading.Thread(target=_worker, daemon=True).start()
+        self._last_synthesis_thread = threading.Thread(target=_worker, daemon=True)
+        self._last_synthesis_thread.start()
 
     def _add_wm_hint_for_task(self, task_id: str, key: str, value: str) -> None:
         """Store a working-memory fact and mark the task node as invalidated.
@@ -1124,7 +1121,7 @@ class AgentXSession:
                     self.context.save_task_node(node)
                     self.context.save_task_tree(tree)
                 except Exception:
-                    pass
+                    logger.warning("Failed to persist task-node WM hint state", exc_info=True)
 
         self.gui.mark_plan_node_invalidated(task_id)
 
@@ -1141,7 +1138,7 @@ class AgentXSession:
         self._pending_prompt = None
 
         if not prompt and not self.message.attachments:
-            prompt = self.gui._cached_user_input or ""
+            prompt = self.gui.get_cached_user_input()
             if not prompt:
                 self._safe_root_after(lambda: self.gui.display_error("No input provided."))
                 self._is_streaming.clear()
@@ -1166,7 +1163,7 @@ class AgentXSession:
                     self.message.attachments.append(att)
 
             # Build shared Context from history and current context
-            shared_context = self._build_stream_shared_context()
+            shared_context = self._build_shared_context()
 
             # Add current message
             self.add_message_to_context(self.message)
@@ -1358,7 +1355,7 @@ class AgentXSession:
     def _display_thinking(self, text: str):
         """Helper to display thinking text with header on first call."""
         if not getattr(self, "_thinking_header_shown", False):
-            header = f"\n{GUIManager.MESSAGE_ROLES['thinking']} ({self.active_model})\t(The agent is thinking...)\n"
+            header = f"\n\U0001f4ad ({self.active_model})\t(The agent is thinking...)\n"
             self._safe_root_after(lambda: self.gui.display_agent_thinking(header))
             self._write_log(header)
             self._thinking_header_shown = True
@@ -1422,7 +1419,7 @@ class AgentXSession:
         """Display the assistant header once per response stream."""
         if not getattr(self, "_assistant_header_shown", False):
             self._assistant_header_shown = True
-            header = f"\n\n{GUIManager.MESSAGE_ROLES['assistant']} ({self.active_model})\t"
+            header = f"\n\n\U0001f916 ({self.active_model})\t"
             self._safe_root_after(lambda: self.gui.display_agent_response(header))
             self._write_log(header)
 
@@ -1431,15 +1428,6 @@ class AgentXSession:
         self._display_assistant_header()
         self._safe_root_after(lambda: self.gui.display_agent_response(text))
         self._write_log(text)
-
-    def _build_shared_context_from_context(self) -> Context:
-        """Build shared context from currently enabled messages."""
-        shared_context = Context()
-        for entry in self.context.messages:
-            msg = entry.message if hasattr(entry, "message") else entry
-            if getattr(msg, "enabled", False):
-                shared_context.add_message(msg, ts=msg.timestamp)
-        return shared_context
 
     def _persist_stream_messages(
         self,
@@ -1483,7 +1471,7 @@ class AgentXSession:
         services_to_start = ["ollama", "agentix"]
 
         # Start services
-        print(f"Ensuring services are running: {', '.join(services_to_start)}")
+        logger.info("Ensuring services are running: %s", ", ".join(services_to_start))
         all_services_started = self.service_manager.ensure_services(services_to_start, timeout=30)
 
         if not all_services_started:
@@ -1499,13 +1487,13 @@ class AgentXSession:
             "prompt": "",
         }  # Empty prompt to trigger model load
 
-        print(f"Connecting to Ollama at {url}")
+        logger.info("Connecting to Ollama at %s", url)
 
         try:
             with httpx.Client(timeout=timeout_seconds) as client:
                 response = client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
-                print("✓ Service handshake and model invocation successful.")
+                logger.info("Service handshake and model invocation successful.")
 
                 # List available models
                 try:
@@ -1516,26 +1504,24 @@ class AgentXSession:
                         models_data = models_response.json()
                         models = models_data.get("models", [])
                         if models:
-                            print(f"\n✓ Available Ollama models ({len(models)}):")
+                            logger.info("Available Ollama models (%d):", len(models))
                             for model in models:
                                 model_name = model.get("name", "unknown")
                                 # Show simplified name without tag
                                 display_name = model_name.split(":")[0] if ":" in model_name else model_name
-                                print(f"  • {display_name}")
+                                logger.info("  %s", display_name)
                         else:
-                            print("\n⚠ No models available in Ollama")
+                            logger.warning("No models available in Ollama")
                 except Exception as e:
-                    print(f"\n⚠ Could not fetch model list: {e}")
+                    logger.warning("Could not fetch model list: %s", e)
 
                 # Show service status
-                print()
-                print("Service Status:")
-                print(f"  ✓ Ollama: Ready")
+                logger.info("Service Status:")
+                logger.info("  Ollama: Ready")
                 if all_services_started:
-                    print("  ✓ Agentix: Ready (code analysis available)")
+                    logger.info("  Agentix: Ready (code analysis available)")
                 else:
-                    print("  ✗ Agentix: Failed (code analysis unavailable)")
-                print()
+                    logger.warning("  Agentix: Failed (code analysis unavailable)")
 
         except httpx.RequestError as e:
             raise RuntimeError(f"Failed to connect to Ollama at {url}") from e
@@ -1543,7 +1529,7 @@ class AgentXSession:
     def stream_ollama_response(self) -> None:
         """Start streaming response in a background thread."""
         if self._streaming_thread and self._streaming_thread.is_alive():
-            print("Streaming already in progress")
+            logger.warning("Streaming already in progress")
             return
         # Capture and clear input before starting the worker.
         self._pending_prompt = self.gui.get_user_input()
@@ -1554,9 +1540,38 @@ class AgentXSession:
         self._streaming_thread = threading.Thread(target=self.stream_ollama_response_worker, daemon=True)
         self._streaming_thread.start()
 
+    def close(self) -> None:
+        """Gracefully shut down background threads and release file handles.
+
+        Safe to call multiple times; subsequent calls are no-ops for closed resources.
+        Intended to be called from the window-close handler or the ``finally`` block
+        in :func:`main` so that all file handles are flushed and daemon threads have
+        a chance to finish their current I/O before the process exits.
+        """
+        # Signal the streaming worker to stop (idempotent).
+        self._is_streaming.clear()
+
+        # Give each active background thread up to 2 s to finish gracefully.
+        for thread in (
+            self._streaming_thread,
+            self._last_synthesis_thread,
+            self._last_replay_thread,
+        ):
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=2.0)
+
+        # Flush and close the plain-text session transcript.
+        try:
+            self._session_log.close()
+        except Exception:
+            pass
+
+        # Flush and close the structured JSON-lines log.
+        self._output_logger.close()
+
     def interrupt_streaming(self):
         """
         Interrupts the ongoing streaming process.
         """
-        print("Interrupting streaming...")
+        logger.info("Interrupting streaming...")
         self._is_streaming.clear()

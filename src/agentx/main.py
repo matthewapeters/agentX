@@ -4,12 +4,13 @@ Docstring for agentx.main
 
 import logging
 import os
-import sys
 import tkinter as tk
 from pathlib import Path
 
 from .config import load_config
 from .session import AgentXSession
+
+logger = logging.getLogger(__name__)
 
 
 def _configure_logging() -> None:
@@ -87,7 +88,7 @@ def _require_non_root_user() -> str:
     """Abort startup when running as root, otherwise return the username."""
     username = _detect_username()
     if _is_root_user(username):
-        print("AgentX cannot be run as root.", file=sys.stderr)
+        logger.error("AgentX cannot be run as root.")
         raise SystemExit(1)
     return username
 
@@ -104,7 +105,7 @@ def main():
     try:
         session.perform_service_handshake()
     except RuntimeError as e:
-        print(e)
+        logger.error("%s", e)
         # Cleanup services even on error
         session.service_manager.shutdown()
         return
@@ -113,5 +114,7 @@ def main():
         session.layout()
         session.root.mainloop()
     finally:
+        # Flush logs and join background threads before process exit.
+        session.close()
         # Cleanup services on exit
         session.service_manager.shutdown()

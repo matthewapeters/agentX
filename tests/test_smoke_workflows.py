@@ -169,8 +169,8 @@ class TestAgentXWorkflow(unittest.TestCase):
 
         from datetime import datetime
 
-        self.session.context.add_message(datetime.now(), msg1)
-        self.session.context.add_message(datetime.now(), msg2)
+        self.session.context.add_message(msg1, ts=datetime.now())
+        self.session.context.add_message(msg2, ts=datetime.now())
 
         # Step 2: Convert to SharedContext (simulate what _stream_via_agentix does)
         from shared.models.context import Context as SharedContext
@@ -225,12 +225,12 @@ class TestAgentXWorkflow(unittest.TestCase):
         # Turn 1: User asks a question
         msg1_user = Message(role="user", content="What is 2+2?")
         msg1_user.enabled = True
-        self.session.context.add_message(datetime.now(), msg1_user)
+        self.session.context.add_message(msg1_user, ts=datetime.now())
 
         # Turn 1: Assistant responds
         msg1_assistant = Message(role="assistant", content="The answer is 4.")
         msg1_assistant.enabled = True
-        self.session.context.add_message(datetime.now(), msg1_assistant)
+        self.session.context.add_message(msg1_assistant, ts=datetime.now())
 
         # Verify context has 2 messages
         self.assertEqual(len(self.session.context.messages), 2)

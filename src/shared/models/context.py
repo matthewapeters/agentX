@@ -6,6 +6,7 @@ client-side in the AgentX session folder and passed to Agentix server
 in request payloads.
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,8 @@ import json
 import os
 import threading
 from glob import glob
+
+logger = logging.getLogger(__name__)
 
 from .message import Message, MessageRole, tool_call_message, tool_result_message
 from .task_node import PlanRecord, TaskNodeRecord, TaskTree
@@ -74,9 +77,6 @@ class Context:
             message: The message to add
             ts: Optional timestamp (uses message.timestamp if not provided)
         """
-        if isinstance(message, datetime) and isinstance(ts, Message):
-            message, ts = ts, message
-
         timestamp = ts or message.timestamp
         message.timestamp = timestamp
 
@@ -195,7 +195,7 @@ class Context:
                     att.enabled = False
                 self.messages.append(MessageEntry(timestamp=msg.timestamp, message=msg))
             except Exception as e:
-                print(f"Warning: Could not load message from {file_path}: {e}")
+                logger.warning("Could not load message from %s: %s", file_path, e)
 
     @classmethod
     def load(cls, path: str) -> "Context":
@@ -456,7 +456,7 @@ class Context:
                 try:
                     records.append(PlanRecord.load(os.path.join(plans_dir, filename)))
                 except Exception as exc:
-                    print(f"Warning: could not load plan {filename}: {exc}")
+                    logger.warning("Could not load plan %s: %s", filename, exc)
         return records
 
     def save_task_node(self, node: TaskNodeRecord) -> str:
@@ -483,7 +483,7 @@ class Context:
                 try:
                     records.append(TaskNodeRecord.load(os.path.join(task_nodes_dir, filename)))
                 except Exception as exc:
-                    print(f"Warning: could not load task node {filename}: {exc}")
+                    logger.warning("Could not load task node %s: %s", filename, exc)
         return records
 
     def save_task_tree(self, tree: TaskTree) -> str:
@@ -510,7 +510,7 @@ class Context:
         try:
             return TaskTree.load(root)
         except Exception as exc:
-            print(f"Warning: could not load task_tree.json: {exc}")
+            logger.warning("Could not load task_tree.json: %s", exc)
             return None
 
     # Backward compatibility aliases

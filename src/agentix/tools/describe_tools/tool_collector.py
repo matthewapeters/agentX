@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import sys
+import logging
 from typing import Dict, List, Optional
 
 import libcst as cst
+
+logger = logging.getLogger(__name__)
 
 from .tool_spec import ToolSpec
 from .utils import _docstring_summary, _extract_docstring_from_function
@@ -25,16 +27,12 @@ class _ToolCollector(cst.CSTVisitor):
 
     def visit_FunctionDef(self, node: cst.FunctionDef) -> Optional[bool]:
         if self.debug:
-            print(f"Visiting function: {node.name.value}", file=sys.stderr)
+            logger.debug("Visiting function: %s", node.name.value)
         # Only collect top-level functions and class methods (not nested functions)
         if self._func_depth == 0:
             is_method = len(self._class_stack) > 0
             class_name = self._class_stack[-1] if is_method else None
-            qname = (
-                ".".join(self._class_stack + [node.name.value])
-                if is_method
-                else node.name.value
-            )
+            qname = ".".join(self._class_stack + [node.name.value]) if is_method else node.name.value
 
             doc = _extract_docstring_from_function(node)
             desc = _docstring_summary(doc)
@@ -73,9 +71,7 @@ class _ToolCollector(cst.CSTVisitor):
         for param in node.params.params:
             param_name = param.name.value
             annotation = param.annotation.annotation if param.annotation else None
-            param_type = (
-                self.module.code_for_node(annotation) if annotation else "string"
-            )
+            param_type = self.module.code_for_node(annotation) if annotation else "string"
             params[param_name] = {"type": param_type}
         return {"properties": params}
 

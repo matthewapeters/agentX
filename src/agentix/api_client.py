@@ -2,7 +2,6 @@
 
 import json
 import logging
-import sys
 from typing import Iterator
 
 import requests
@@ -159,7 +158,6 @@ def _extract_json_payload(text: str) -> str:
     return cleaned
 
 
-
 def _repair_truncated_json(text: str) -> str:
     """Close unclosed strings and brackets in a truncated JSON response.
 
@@ -181,15 +179,15 @@ def _repair_truncated_json(text: str) -> str:
         if ch == '"':
             in_string = not in_string
         elif not in_string:
-            if ch == '{':
-                stack.append('}')
-            elif ch == '[':
-                stack.append(']')
-            elif ch in ('}', ']'):
+            if ch == "{":
+                stack.append("}")
+            elif ch == "[":
+                stack.append("]")
+            elif ch in ("}", "]"):
                 if stack and stack[-1] == ch:
                     stack.pop()
 
-    suffix = '"' if in_string else ''
+    suffix = '"' if in_string else ""
     while stack:
         suffix += stack.pop()
 
@@ -222,8 +220,7 @@ def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
     }
 
     if args.debug:
-        print("Payload:", file=sys.stderr)
-        print(json.dumps(payload.to_dict(), indent=2), file=sys.stderr)
+        logger.debug("Payload: %s", json.dumps(payload.to_dict(), indent=2))
 
     # Use configured host or fallback to constant
     ollama_base = f"http://{args.ollama_host}" if hasattr(args, "ollama_host") and args.ollama_host else OLLAMA_API_BASE
@@ -239,19 +236,16 @@ def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
         result = response.json()
 
         if args.debug:
-            print("Raw response:", file=sys.stderr)
-            print(json.dumps(result, indent=2), file=sys.stderr)
+            logger.debug("Raw response: %s", json.dumps(result, indent=2))
 
         answer = result["choices"][0]["message"]["content"]
         reasoning = result["choices"][0]["message"].get("reasoning", "")
         finish_reason = result["choices"][0].get("finish_reason", "")
 
         if args.debug:
-            print("Finish reason:", finish_reason, file=sys.stderr)
-            print("Response:", file=sys.stderr)
-            print(answer, file=sys.stderr)
-            print("\nReasoning:", file=sys.stderr)
-            print(reasoning, file=sys.stderr)
+            logger.debug("Finish reason: %s", finish_reason)
+            logger.debug("Response: %s", answer)
+            logger.debug("Reasoning: %s", reasoning)
 
         # update_session(args, payload["messages"], answer)
         agent_content_clean = _extract_json_payload(answer)
@@ -289,7 +283,7 @@ def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
                     extra={
                         "original_error": str(e),
                         "finish_reason": finish_reason,
-                        "suffix_added": repaired[len(agent_content_clean):],
+                        "suffix_added": repaired[len(agent_content_clean) :],
                     },
                 )
                 return result_repaired
@@ -314,7 +308,7 @@ def query_api(args: AgentixConfig, payload: QueryPayload) -> dict:
             )
             raise
     else:
-        print("Error:", response.status_code, response.text)
+        logger.error("HTTP %s: %s", response.status_code, response.text)
         return {}
 
 
@@ -400,8 +394,7 @@ def query_api_streaming(args: AgentixConfig, payload: QueryPayload) -> Iterator[
     payload_dict["stream"] = True
 
     if args.debug:
-        print("Streaming payload:", file=sys.stderr)
-        print(json.dumps(payload_dict, indent=2), file=sys.stderr)
+        logger.debug("Streaming payload: %s", json.dumps(payload_dict, indent=2))
 
     # Use configured host or fallback to constant
     ollama_base = f"http://{args.ollama_host}" if hasattr(args, "ollama_host") and args.ollama_host else OLLAMA_API_BASE
@@ -434,7 +427,7 @@ def query_api_streaming(args: AgentixConfig, payload: QueryPayload) -> Iterator[
                         chunk = json.loads(line_str)
 
                         if args.debug:
-                            print(f"Chunk: {chunk}", file=sys.stderr)
+                            logger.debug("Chunk: %s", chunk)
 
                         yield chunk
 
@@ -443,13 +436,14 @@ def query_api_streaming(args: AgentixConfig, payload: QueryPayload) -> Iterator[
                             break
                     except json.JSONDecodeError as e:
                         if args.debug:
-                            print(f"JSON decode error: {e}", file=sys.stderr)
-                            print(f"Error position: line {e.lineno}, col {e.colno}", file=sys.stderr)
-                            print(f"Line length: {len(line_str)}", file=sys.stderr)
-                            print(f"Line repr: {repr(line_str)}", file=sys.stderr)
-                            print(f"Line content (first 200): {line_str[:200]}", file=sys.stderr)
-                            if len(line_str) > 200:
-                                print(f"Line content (last 200): {line_str[-200:]}", file=sys.stderr)
+                            logger.debug(
+                                "JSON decode error at line %s col %s (len=%s): %s ... %s",
+                                e.lineno,
+                                e.colno,
+                                len(line_str),
+                                line_str[:200],
+                                line_str[-200:] if len(line_str) > 200 else "",
+                            )
                         continue
         else:
             # Yield error chunk

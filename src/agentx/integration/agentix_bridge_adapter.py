@@ -11,12 +11,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Iterator, Optional
-
-# Add parent directories to path for imports
-parent_dir = str(Path(__file__).parent.parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+from typing import Callable, Iterator, Optional
 
 # Set AGENTIX_HOME to project root for local system_prompts
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -30,7 +25,7 @@ from agentix.prompt_classification_response import (
     NextStep,
 )
 from shared.models.context import Context
-from shared.models.response import ResponseChunk
+from shared.models.response import ResponseChunk, ChunkType
 
 logger = logging.getLogger("agentx.adapter")
 
@@ -91,7 +86,7 @@ class AgentixBridgeAdapter:
             schemas = get_client_tool_schemas()
             self.bridge.register_tool_implementations(impls, schemas)
         except Exception as exc:
-            print(f"⚠ Could not register client tools: {exc}")
+            logger.warning("Could not register client tools: %s", exc)
 
     def register_working_memory_tools(self, working_memory) -> None:
         """Register Working Memory tools with the bridge.
@@ -114,7 +109,33 @@ class AgentixBridgeAdapter:
             schemas = get_working_memory_tool_schemas()
             self.bridge.register_tool_implementations(impls, schemas)
         except Exception as exc:
-            print(f"⚠ Could not register working memory tools: {exc}")
+            logger.warning("Could not register working memory tools: %s", exc)
+
+    def _iter_safe(
+        self, gen_factory: Callable[[], Iterator[ResponseChunk]], error_prefix: str
+    ) -> Iterator[ResponseChunk]:
+        """Yield all chunks from the iterator produced by *gen_factory*.
+
+        Calling *gen_factory* and iterating its result are both wrapped in a
+        single ``try`` block so that exceptions raised either at call time
+        (e.g. a mock ``side_effect``) or during iteration are converted to an
+        ERROR ``ResponseChunk`` rather than propagating into Tkinter.
+
+        This is the single canonical streaming wrapper used by every generator
+        method in this adapter, replacing per-method ``try / yield from / except``
+        boilerplate.
+
+        Args:
+            gen_factory:  Zero-argument callable that returns an
+                          ``Iterator[ResponseChunk]`` — typically a lambda over
+                          a bridge streaming method call.
+            error_prefix: Human-readable prefix prepended to the error message
+                          in the ERROR chunk content.
+        """
+        try:
+            yield from gen_factory()
+        except Exception as e:
+            yield ResponseChunk(type=ChunkType.ERROR, content=f"{error_prefix}: {str(e)}")
 
     def classify_prompt_sync(
         self,
@@ -219,17 +240,10 @@ class AgentixBridgeAdapter:
         Yields:
             ResponseChunk objects with content, tool calls, etc.
         """
-        try:
-            # Bridge returns an iterator, so we can yield directly
-            yield from self.bridge.process_prompt_streaming(prompt, context, classification)
-        except Exception as e:
-            # Yield error chunk
-            from shared.models.response import ChunkType
-
-            yield ResponseChunk(
-                type=ChunkType.ERROR,
-                content=f"Error processing prompt: {str(e)}",
-            )
+        yield from self._iter_safe(
+            lambda: self.bridge.process_prompt_streaming(prompt, context, classification),
+            "Error processing prompt",
+        )
 
     def retrigger_synthesis_generator(
         self,
@@ -251,15 +265,10 @@ class AgentixBridgeAdapter:
         Yields:
             ``ResponseChunk`` objects.
         """
-        try:
-            yield from self.bridge.retrigger_synthesis_streaming(node, context, task_tree, hint)
-        except Exception as e:
-            from shared.models.response import ChunkType
-
-            yield ResponseChunk(
-                type=ChunkType.ERROR,
-                content=f"Error during retrigger synthesis: {str(e)}",
-            )
+        yield from self._iter_safe(
+            lambda: self.bridge.retrigger_synthesis_streaming(node, context, task_tree, hint),
+            "Error during retrigger synthesis",
+        )
 
     def replay_task_node_generator(
         self,
@@ -279,15 +288,10 @@ class AgentixBridgeAdapter:
         Yields:
             ``ResponseChunk`` objects.
         """
-        try:
-            yield from self.bridge.replay_task_node_streaming(node, context, task_tree)
-        except Exception as e:
-            from shared.models.response import ChunkType
-
-            yield ResponseChunk(
-                type=ChunkType.ERROR,
-                content=f"Error during task node replay: {str(e)}",
-            )
+        yield from self._iter_safe(
+            lambda: self.bridge.replay_task_node_streaming(node, context, task_tree),
+            "Error during task node replay",
+        )
 
     def get_models(self) -> list[dict]:
         """
@@ -299,7 +303,7 @@ class AgentixBridgeAdapter:
         try:
             return self.bridge.get_available_models()
         except Exception as e:
-            print(f"Error fetching models: {e}")
+            logger.exception("Error fetching models: %s", e)
             return []
 
     def get_tools(self) -> list[dict]:
@@ -312,7 +316,7 @@ class AgentixBridgeAdapter:
         try:
             return self.bridge.get_available_tools()
         except Exception as e:
-            print(f"Error fetching tools: {e}")
+            logger.exception("Error fetching tools: %s", e)
             return []
 
     def set_enabled_tools(self, enabled_tool_names: list[str]) -> None:
@@ -329,7 +333,7 @@ class AgentixBridgeAdapter:
         try:
             self.bridge.set_enabled_tools(enabled_tool_names)
         except Exception as exc:
-            print(f"⚠ Could not update enabled tools: {exc}")
+            logger.warning("Could not update enabled tools: %s", exc)
 
     def _convert_config(self, agentx_config: dict) -> AgentixConfig:
         """
@@ -383,10 +387,10 @@ def create_adapter(config: dict) -> AgentixBridgeAdapter:
     try:
         return AgentixBridgeAdapter(config)
     except ImportError as e:
-        print(f"⚠ Agentix import error (missing dependency): {e}")
-        print("  Install missing dependencies to enable code analysis tools")
-        print(f"  Command: pip install libcst")
+        logger.error("Agentix import error (missing dependency): %s", e)
+        logger.error("  Install missing dependencies to enable code analysis tools")
+        logger.error("  Command: pip install libcst")
         raise
     except Exception as e:
-        print(f"⚠ Failed to initialize Agentix bridge: {e}")
+        logger.exception("Failed to initialize Agentix bridge: %s", e)
         raise

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import tkinter as tk
 from datetime import datetime
@@ -6,6 +7,8 @@ from typing import Optional
 
 from shared.models.context import Context
 from shared.models.task_node import TaskTree
+
+logger = logging.getLogger(__name__)
 
 
 class History:
@@ -35,12 +38,12 @@ class History:
 
         # Get all folders under user_history_path
         try:
-            print("Loading history from:", user_history_path)
+            logger.info("Loading history from: %s", user_history_path)
             context_folders = [
                 d for d in os.listdir(user_history_path) if os.path.isdir(os.path.join(user_history_path, d))
             ]
         except OSError as e:
-            print(f"Could not access user history path: {user_history_path}. Error: {e }")
+            logger.error("Could not access user history path: %s. Error: %s", user_history_path, e)
             return
 
         # Sort alphabetically
@@ -53,7 +56,7 @@ class History:
             # Skip the current session folder if specified
             session_folder = os.path.join(user_history_path, context_folder_name)
             if exclude_session and os.path.normpath(session_folder) == os.path.normpath(exclude_session):
-                print("Skipping current session folder in history:", exclude_session)
+                logger.debug("Skipping current session folder in history: %s", exclude_session)
                 continue
 
             context = Context()
@@ -65,7 +68,7 @@ class History:
                 #  print("  Loading context from:", context_folder_path)
                 context.load_from_dir(context.path)
             except OSError as e:
-                print(f"Could not load messages from context folder: {context_folder_name}. Error: {e}")
+                logger.error("Could not load messages from context folder: %s. Error: %s", context_folder_name, e)
                 continue
 
             # Add context to history if it contains messages
@@ -95,7 +98,7 @@ class History:
         try:
             return TaskTree.load(session_path)
         except Exception as exc:
-            print(f"Warning: could not load task_tree.json from {session_path}: {exc}")
+            logger.warning("Could not load task_tree.json from %s: %s", session_path, exc)
             return None
 
     def get_enabled_messages(self) -> list:

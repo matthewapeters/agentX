@@ -1,7 +1,7 @@
 """agentix main module"""
 
 import json
-import sys
+import logging
 
 from .agent import agentix
 from .agentix_config import AgentixConfig
@@ -12,6 +12,8 @@ from .logging_config import configure_logging
 
 # Configure logging at module import
 configure_logging()
+
+logger = logging.getLogger(__name__)
 
 try:
     import agentix.server as _server_mod  # noqa: F401 – check availability only
@@ -36,7 +38,7 @@ def main(args: AgentixConfig) -> None:
                     for line in f.readlines():
                         print(line.strip())
             except FileNotFoundError:
-                print("No sessions found", file=sys.stderr)
+                logger.warning("No sessions found")
             return
         case "classify":
             from .bridge.classify_prompt import classify_prompt
@@ -44,7 +46,7 @@ def main(args: AgentixConfig) -> None:
 
             prompt = " ".join(args.user or [])
             if not prompt:
-                print("Error: --classify requires --user 'prompt text'", file=sys.stderr)
+                logger.error("--classify requires --user 'prompt text'")
                 return
 
             context = Context()
@@ -78,17 +80,11 @@ def main(args: AgentixConfig) -> None:
                     )
                 )
             except Exception as e:
-                print(f"Error during classification: {e}", file=sys.stderr)
-                import traceback
-
-                traceback.print_exc()
+                logger.exception("Error during classification: %s", e)
             return
         case "serve":
             if not SERVER_AVAILABLE:
-                print(
-                    "Server functionality requires fastapi. Install with: uv pip install fastapi uvicorn",
-                    file=sys.stderr,
-                )
+                logger.error("Server functionality requires fastapi. Install with: uv pip install fastapi uvicorn")
                 return
             from .server import start_server as _start_server
 
@@ -98,7 +94,7 @@ def main(args: AgentixConfig) -> None:
             agentix(args)
             return
         case _:
-            print(f"Unknown action: {args.action}", file=sys.stderr)
+            logger.error("Unknown action: %s", args.action)
             return
 
 

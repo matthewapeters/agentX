@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Callable, Optional, Protocol
 
 from .attachment_info import AttachmentInfo
+from .gui.gui_config import GUIConfig
 
 
 class IGUIManager(Protocol):
@@ -13,6 +14,15 @@ class IGUIManager(Protocol):
     This protocol defines the contract between the business logic layer
     (AgentXSession) and the presentation layer (GUIManager). All communication
     between layers flows through this interface.
+    """
+
+    # Configuration
+
+    config: GUIConfig
+    """The GUI configuration (theme colours, markdown flag, etc.).
+
+    Session may read colour values for embedding into child widgets, and may
+    write ``config.markdown_render_enabled`` when the setting changes.
     """
 
     # Lifecycle Methods
@@ -403,4 +413,37 @@ class IGUIManager(Protocol):
 
     def mark_plan_node_invalidated(self, task_id: str) -> None:
         """Mark a node status as 'invalidated' (needs re-synthesis)."""
+        ...
+
+    # Callback Registration
+
+    def set_model_change_callback(self, callback: Callable[[str], None]) -> None:
+        """Register the callback invoked whenever the active model changes.
+
+        Args:
+            callback: Receives the new model name string.
+
+        Replaces any previously registered callback.  GUIManager also propagates
+        the callback down into the ``ModelSelector`` widget so the two stay in sync.
+        """
+        ...
+
+    def set_tool_toggle_callback(self, callback: Callable[[str, bool], None]) -> None:
+        """Register the callback invoked whenever a tool is enabled/disabled.
+
+        Args:
+            callback: Receives (tool_name, enabled_flag).
+
+        Replaces any previously registered callback.
+        """
+        ...
+
+    def get_cached_user_input(self) -> str:
+        """Return the most-recently submitted user input string.
+
+        Returns:
+            The cached prompt string, or an empty string if nothing has been
+            submitted yet.  Used as a fallback in tests where the submit
+            pipeline is bypassed.
+        """
         ...

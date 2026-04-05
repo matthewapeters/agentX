@@ -8,7 +8,7 @@ for programmatic analysis, particularly for classification decisions.
 import logging
 import logging.config
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -18,7 +18,7 @@ class JSONFormatter(logging.Formatter):
     def format(self, record):
         """Format a log record as JSON."""
         log_obj = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
