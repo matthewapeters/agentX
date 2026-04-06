@@ -1,38 +1,5 @@
 [agentx]
-<<<<<<< Updated upstream
-theme_mode = "Dark Mode"
-markdown_render_enabled = true
-ollama_host = "localhost:11434"
-ollama_model = "gpt-oss:latest"
-=======
 ollama_host = "localhost:11434"
 ollama_model = "gpt-oss"
->>>>>>> Stashed changes
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
-
-[agentix]
-classification_model = "phi4-mini:3.8b"
-available_tools = [ "cst", "ast",]
-max_tool_rounds = 10
-max_task_depth = 10
-max_synthesis_retries = 3
-classification_backend = "ollama"
-classification_torch_device = -1
-classification_torch_model = "typeform/distilbert-base-uncased-mnli"
-classify_prompts = true
-debug = false
-default_system_prompts = [ "tool_use",]
-host = "localhost:8000"
-
-[agentx.working_memory]
-enabled = true
-inject_into_context = true
-max_facts = 50
-
-[agentix.classification_display]
-enabled = true
-show_intent = true
-show_reasoning = true
-show_clarification = true
-show_next_step = true
