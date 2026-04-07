@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 import tkinter as tk
-import time
 
 # Add src to path
 project_root = str(Path(__file__).parent.parent)
@@ -86,14 +85,15 @@ class TestProgressUpdate:
     """Tests for progress update objects."""
 
     def test_progress_update_creation(self):
-        """Test creating progress updates."""
-        update = ProgressUpdate(
-            type=ProgressType.PROGRESS.value, tool_name="test_tool", current=50, total=100, percent=50.0
-        )
+        """Test creating progress updates — timestamp is set deterministically via time.time()."""
+        with patch("time.time", return_value=1000.0):
+            update = ProgressUpdate(
+                type=ProgressType.PROGRESS.value, tool_name="test_tool", current=50, total=100, percent=50.0
+            )
 
         assert update.tool_name == "test_tool"
         assert update.percent == 50.0
-        assert update.timestamp is not None
+        assert update.timestamp == 1000.0
         print("✅ ProgressUpdate creation works")
 
     def test_progress_update_to_dict(self):
@@ -299,9 +299,10 @@ def test_phase7_integration():
     executor = StreamingExecutor()
     assert executor.max_chunk_size > 0
 
-    # Test 2: Progress updates
-    update = ProgressUpdate(type=ProgressType.PROGRESS.value, tool_name="test")
-    assert update.timestamp is not None
+    # Test 2: Progress updates — timestamp set by time.time(); mock for determinism
+    with patch("time.time", return_value=1234.5):
+        update = ProgressUpdate(type=ProgressType.PROGRESS.value, tool_name="test")
+    assert update.timestamp == 1234.5
 
     # Test 3: Progress tracker
     tracker = ProgressTracker()

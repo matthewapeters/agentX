@@ -9,7 +9,7 @@ from agentix.prompt_classification_response import (
     NextStep,
     PromptClassificationResponse,
 )
-from agentix.context.sessions import assemble_prompts
+from agentix.bridge.prompt_assembly import assemble_prompts
 from agentix.constants import PROMPT_CLASSIFICATION, CLASSIFICATION_MAX_TOKENS
 from agentix.api_client import query_classification
 from agentix.agentix_config import AgentixConfig

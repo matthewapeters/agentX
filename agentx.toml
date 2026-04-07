@@ -3,3 +3,9 @@ ollama_host = "localhost:11434"
 ollama_model = "gpt-oss"
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
+
+[agentix]
+# Directory (relative to project root) that contains system prompt .md files.
+# Changing this lets you point AgentX at a different set of prompts without
+# modifying any source code.
+system_prompts_dir = "system_prompts"

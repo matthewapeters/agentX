@@ -154,14 +154,14 @@ class TestGetLatestSessionId:
 
 class TestTrimContext:
     def test_empty_history_returns_empty(self):
-        from agentix.context.sessions import trim_context
+        from agentix.bridge.prompt_assembly import trim_context
 
         cfg = _make_config()
         result = trim_context(cfg, [], max_tokens=1000)
         assert result == []
 
     def test_system_messages_always_preserved(self):
-        from agentix.context.sessions import trim_context
+        from agentix.bridge.prompt_assembly import trim_context
 
         cfg = _make_config()
         messages = [
@@ -173,7 +173,7 @@ class TestTrimContext:
         assert "system" in roles
 
     def test_older_messages_trimmed_when_over_limit(self):
-        from agentix.context.sessions import trim_context
+        from agentix.bridge.prompt_assembly import trim_context
 
         cfg = _make_config()
         messages = [
@@ -186,7 +186,7 @@ class TestTrimContext:
         assert any("new message" in c for c in contents)
 
     def test_message_with_null_content_is_handled(self):
-        from agentix.context.sessions import trim_context
+        from agentix.bridge.prompt_assembly import trim_context
 
         cfg = _make_config()
         messages = [{"role": "user", "content": None}]
@@ -195,7 +195,7 @@ class TestTrimContext:
         assert len(result) == 1
 
     def test_message_with_attachments_counted(self):
-        from agentix.context.sessions import trim_context
+        from agentix.bridge.prompt_assembly import trim_context
 
         cfg = _make_config()
         msg = {
@@ -208,8 +208,8 @@ class TestTrimContext:
         assert result == []
 
     def test_non_dict_attachment_counted(self):
-        """Covers line 177 — len(attachment) // 4 for non-dict attachments."""
-        from agentix.context.sessions import trim_context
+        """Covers the len(attachment) // 4 branch for non-dict attachments."""
+        from agentix.bridge.prompt_assembly import trim_context
 
         cfg = _make_config()
         msg = {
@@ -228,25 +228,25 @@ class TestTrimContext:
 
 class TestAssemblePrompts:
     def test_adds_system_message(self):
-        from agentix.context.sessions import assemble_prompts
+        from agentix.bridge.prompt_assembly import assemble_prompts
 
         cfg = _make_config(system=["tool_use"])
-        with patch("agentix.context.sessions.get_system_prompt", return_value="You are helpful."):
+        with patch("agentix.bridge.prompt_assembly.get_system_prompt", return_value="You are helpful."):
             result = assemble_prompts(cfg, [], max_tokens=1000)
         roles = [m["role"] for m in result.messages]
         assert "system" in roles
 
     def test_adds_tools_message(self):
-        from agentix.context.sessions import assemble_prompts
+        from agentix.bridge.prompt_assembly import assemble_prompts
 
         cfg = _make_config(tools=["read_file"])
-        with patch("agentix.context.sessions.get_tools_prompt", return_value="Tools: read_file"):
+        with patch("agentix.bridge.prompt_assembly.get_tools_prompt", return_value="Tools: read_file"):
             result = assemble_prompts(cfg, [], max_tokens=1000)
         roles = [m["role"] for m in result.messages]
         assert "system" in roles  # tools are added as system messages
 
     def test_adds_user_message(self):
-        from agentix.context.sessions import assemble_prompts
+        from agentix.bridge.prompt_assembly import assemble_prompts
 
         cfg = _make_config(user=["Hello"])
         result = assemble_prompts(cfg, [], max_tokens=1000)
@@ -254,33 +254,33 @@ class TestAssemblePrompts:
         assert "user" in roles
 
     def test_debug_logging_does_not_crash(self):
-        from agentix.context.sessions import assemble_prompts
+        from agentix.bridge.prompt_assembly import assemble_prompts
 
         cfg = _make_config(system=["tool_use"], user=["Hi"], debug=True)
         with (
-            patch("agentix.context.sessions.get_system_prompt", return_value="Sys"),
-            patch("agentix.context.sessions.get_user_prompt", return_value="Hi"),
+            patch("agentix.bridge.prompt_assembly.get_system_prompt", return_value="Sys"),
+            patch("agentix.bridge.prompt_assembly.get_user_prompt", return_value="Hi"),
         ):
             result = assemble_prompts(cfg, [], max_tokens=1000)
         assert result is not None
 
     def test_returns_query_payload_with_model(self):
-        from agentix.context.sessions import assemble_prompts
+        from agentix.bridge.prompt_assembly import assemble_prompts
 
         cfg = _make_config(model="ollama3")
         result = assemble_prompts(cfg, [], max_tokens=500)
         assert result.model == "ollama3"
 
     def test_file_path_adds_attachment(self):
-        """Covers line 117 — attachment = get_attachments(args)."""
-        from agentix.context.sessions import assemble_prompts
+        """Covers the attachment = get_attachments(args) code path."""
+        from agentix.bridge.prompt_assembly import assemble_prompts
 
         cfg = _make_config(user=["hi"], file_path="/tmp/test.txt")
         mock_attachment = MagicMock()
         mock_attachment.to_dict.return_value = {"content": "file data"}
         with (
-            patch("agentix.context.sessions.get_user_prompt", return_value="hi"),
-            patch("agentix.context.sessions.get_attachments", return_value=[mock_attachment]),
+            patch("agentix.bridge.prompt_assembly.get_user_prompt", return_value="hi"),
+            patch("agentix.bridge.prompt_assembly.get_attachments", return_value=[mock_attachment]),
         ):
             result = assemble_prompts(cfg, [], max_tokens=1000)
         assert result is not None
@@ -298,8 +298,8 @@ class TestAssembleClassificationPrompt:
         cfg = _make_config(user=["Classify me"], model="test-model")
         cfg.classification_max_tokens = 100
         with (
-            patch("agentix.context.sessions.get_system_prompt", return_value="Classify sys"),
-            patch("agentix.context.sessions.get_user_prompt", return_value="Classify me"),
+            patch("agentix.bridge.prompt_assembly.get_system_prompt", return_value="Classify sys"),
+            patch("agentix.bridge.prompt_assembly.get_user_prompt", return_value="Classify me"),
         ):
             result = assemble_classification_prompt(cfg, [], max_tokens=500)
         assert result is not None
@@ -309,8 +309,8 @@ class TestAssembleClassificationPrompt:
 
         cfg = _make_config(user=["x"], model="big-model", classification_model="small-model")
         with (
-            patch("agentix.context.sessions.get_system_prompt", return_value="sys"),
-            patch("agentix.context.sessions.get_user_prompt", return_value="x"),
+            patch("agentix.bridge.prompt_assembly.get_system_prompt", return_value="sys"),
+            patch("agentix.bridge.prompt_assembly.get_user_prompt", return_value="x"),
         ):
             result = assemble_classification_prompt(cfg, [], max_tokens=500)
         assert result.model == "small-model"

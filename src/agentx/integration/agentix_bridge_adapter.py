@@ -369,6 +369,7 @@ class AgentixBridgeAdapter:
             max_tool_rounds=agentix_section.get("max_tool_rounds", 10),
             max_task_depth=agentix_section.get("max_task_depth", 10),
             max_synthesis_retries=agentix_section.get("max_synthesis_retries", 3),
+            system_prompts_dir=str(PROJECT_ROOT / agentix_section.get("system_prompts_dir", "system_prompts")),
         )
 
 

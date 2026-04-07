@@ -543,15 +543,11 @@ class AgentixBridge:
     # ── Hierarchical task execution helpers (Phase 2) ─────────────────────────
 
     def _load_prompt_file(self, name: str) -> "Optional[str]":
-        """Load a system prompt by name (without extension) from SYSTEM_PROMPTS_DIR."""
+        """Load a system prompt by name (without extension) using :class:`PromptLoader`."""
         try:
-            from agentix.constants import SYSTEM_PROMPTS_DIR
+            from agentix.prompt_loader import PromptLoader
 
-            matches = glob.glob(f"{SYSTEM_PROMPTS_DIR}{name}.*")
-            if not matches:
-                return None
-            with open(matches[0], "r", encoding="utf-8") as fh:
-                return fh.read()
+            return PromptLoader(getattr(self.config, "system_prompts_dir", None)).load(name)
         except Exception:
             return None
 

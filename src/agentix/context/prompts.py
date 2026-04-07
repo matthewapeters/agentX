@@ -1,30 +1,18 @@
 # Prompt management for Agentix CLI
 
-import glob
 import json
 import logging
-import sys
 
 from ..agentix_config import AgentixConfig
-from ..constants import SYSTEM_PROMPTS_DIR
-from ..file_utils import get_file
+from ..prompt_loader import PromptLoader
 
 logger = logging.getLogger(__name__)
 
 
 def get_system_prompt(args: AgentixConfig) -> str:
     """Load system prompts from files and return formatted."""
-    systemprompt = ""
-    # get the system prompts and map their paths to their friendly names (no dir, no ext)
-    prompts = {p.replace(SYSTEM_PROMPTS_DIR, "").split(".")[0]: p for p in glob.glob(f"{SYSTEM_PROMPTS_DIR}*.*")}
-    if args.debug:
-        logger.debug("Available system prompts: %s", json.dumps(prompts, indent=2))
-    for canned_system_prompt_path in args.system or []:
-        prompt_path = prompts[canned_system_prompt_path]
-        if args.debug:
-            logger.debug("Loading system prompt from: %s", prompt_path)
-        systemprompt += get_file(prompt_path)
-    return f"[SYSTEM]\n{systemprompt}\n[END SYSTEM]\n\n"
+    loader = PromptLoader(getattr(args, "system_prompts_dir", None))
+    return loader.get_formatted_system_prompt(args.system or [], debug=args.debug)
 
 
 def get_user_prompt(args: AgentixConfig) -> str:
@@ -67,14 +55,5 @@ def get_tools_prompt(args: AgentixConfig) -> str:
 
 def get_prompts(args: AgentixConfig) -> dict:
     """List available system prompts with preview lines."""
-    prompts = {}
-    for prompt_glob in [glob.glob(f"{SYSTEM_PROMPTS_DIR}*.*")]:
-        if args.debug:
-            logger.debug("Prompt: %s", prompt_glob)
-        if prompt_glob and isinstance(prompt_glob, list):
-            for prompt in prompt_glob:
-                with open(prompt, "r", encoding="utf8") as f:
-                    lines = [l for l in f.readlines() if l != "\n" and l != ""]
-                first_lines = lines[:2]
-                prompts[prompt.replace(SYSTEM_PROMPTS_DIR, "").split(".")[0]] = first_lines
-    return prompts
+    loader = PromptLoader(getattr(args, "system_prompts_dir", None))
+    return loader.preview()

@@ -24,11 +24,10 @@ from .models import get_model, get_models
 
 # Import context modules (now safe since Message is available)
 from .context.prompts import get_prompts, get_system_prompt, get_user_prompt
+from .bridge.prompt_assembly import assemble_prompts, trim_context
 from .context.sessions import (
-    assemble_prompts,
     get_session_history,
     manage_sessions,
-    trim_context,
 )
 
 # Import modules that depend on context

@@ -39,6 +39,18 @@ class StreamingController:
         self._s = session
 
     # ------------------------------------------------------------------
+    # Streaming state callbacks (named to avoid repeated inline lambdas)
+    # ------------------------------------------------------------------
+
+    def _on_stream_start(self) -> None:
+        """Set the GUI streaming state to active."""
+        self._s.gui.set_streaming_state(True)
+
+    def _on_stream_end(self) -> None:
+        """Set the GUI streaming state to idle."""
+        self._s.gui.set_streaming_state(False)
+
+    # ------------------------------------------------------------------
     # Thinking / content display helpers
     # ------------------------------------------------------------------
 
@@ -247,7 +259,7 @@ class StreamingController:
         config = s.config
 
         s._is_streaming.set()
-        s._safe_root_after(lambda: s.gui.set_streaming_state(True))
+        s._safe_root_after(self._on_stream_start)
         s._safe_root_after(s.refresh_user_gui)
 
         # Use captured prompt from submit; fall back to cached input for tests.
@@ -259,7 +271,7 @@ class StreamingController:
             if not prompt:
                 s._safe_root_after(lambda: s.gui.display_error("No input provided."))
                 s._is_streaming.clear()
-                s._safe_root_after(lambda: s.gui.set_streaming_state(False))
+                s._safe_root_after(self._on_stream_end)
                 return
 
         import os
@@ -412,7 +424,7 @@ class StreamingController:
             s._output_logger.log("error", str(e))
         finally:
             s._is_streaming.clear()
-            s._safe_root_after(lambda: s.gui.set_streaming_state(False))
+            s._safe_root_after(self._on_stream_end)
 
     # ------------------------------------------------------------------
     # Background worker: retrigger synthesis
@@ -429,7 +441,7 @@ class StreamingController:
         def _worker(_node=node, _tree=tree, _tid=task_id, _hint=hint):
             try:
                 s._is_streaming.set()
-                s._safe_root_after(lambda: s.gui.set_streaming_state(True))
+                s._safe_root_after(self._on_stream_start)
                 for chunk in s.agentix_adapter.retrigger_synthesis_generator(_node, s.context, _tree, _hint):
                     if chunk.type == ChunkType.TASK_NODE_END and chunk.task_id == _tid:
                         _synth = chunk.content or ""
@@ -445,7 +457,7 @@ class StreamingController:
                 s._safe_root_after(lambda err=exc: s.gui.display_error(f"Re-synthesis error: {err}"))
             finally:
                 s._is_streaming.clear()
-                s._safe_root_after(lambda: s.gui.set_streaming_state(False))
+                s._safe_root_after(self._on_stream_end)
                 s._safe_root_after(s.refresh_user_gui)
 
         s._last_synthesis_thread = threading.Thread(target=_worker, daemon=True)
@@ -465,7 +477,7 @@ class StreamingController:
         def _worker(_node=node, _tree=tree, _tid=task_id):
             try:
                 s._is_streaming.set()
-                s._safe_root_after(lambda: s.gui.set_streaming_state(True))
+                s._safe_root_after(self._on_stream_start)
                 for chunk in s.agentix_adapter.replay_task_node_generator(_node, s.context, _tree):
                     if chunk.type == ChunkType.TASK_NODE_END and chunk.task_id == _tid:
                         _synth = chunk.content or ""
@@ -481,7 +493,7 @@ class StreamingController:
                 s._safe_root_after(lambda err=exc: s.gui.display_error(f"Replay error: {err}"))
             finally:
                 s._is_streaming.clear()
-                s._safe_root_after(lambda: s.gui.set_streaming_state(False))
+                s._safe_root_after(self._on_stream_end)
                 s._safe_root_after(s.refresh_user_gui)
 
         s._last_replay_thread = threading.Thread(target=_worker, daemon=True)

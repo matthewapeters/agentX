@@ -51,6 +51,7 @@ class AgentixConfig:
     max_tool_rounds: int = 10  # Maximum tool-call rounds per agent loop
     max_task_depth: int = 10  # Maximum recursive task-node depth
     max_synthesis_retries: int = 3  # Synthesis retry attempts for task nodes
+    system_prompts_dir: str | None = None  # Absolute path; None → SYSTEM_PROMPTS_DIR constant
 
     @property
     def action(self) -> str:

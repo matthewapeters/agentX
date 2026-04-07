@@ -517,29 +517,29 @@ class TestReplayTaskNodeMorePaths:
 
 class TestLoadPromptFile:
     def test_returns_none_when_no_matches(self):
-        """Lines 550-551: no glob matches → None."""
+        """No glob matches → None."""
         bridge = _make_bridge()
-        with patch("agentix.bridge.bridge.glob.glob", return_value=[]):
+        with patch("agentix.prompt_loader._glob.glob", return_value=[]):
             result = bridge._load_prompt_file("nonexistent_prompt")
         assert result is None
 
     def test_returns_file_content_when_found(self):
-        """Lines 552-553: file found → reads and returns content."""
+        """File found → reads and returns content."""
         import unittest.mock as um
 
         bridge = _make_bridge()
         mock_open = um.mock_open(read_data="prompt text")
         with (
-            patch("agentix.bridge.bridge.glob.glob", return_value=["/fake/prompt.md"]),
+            patch("agentix.prompt_loader._glob.glob", return_value=["/fake/prompt.md"]),
             patch("builtins.open", mock_open),
         ):
             result = bridge._load_prompt_file("task_execution")
         assert result == "prompt text"
 
     def test_returns_none_on_exception(self):
-        """Lines 555-556: exception → None."""
+        """Exception from glob → None."""
         bridge = _make_bridge()
-        with patch("agentix.bridge.bridge.glob.glob", side_effect=Exception("glob error")):
+        with patch("agentix.prompt_loader._glob.glob", side_effect=Exception("glob error")):
             result = bridge._load_prompt_file("bad_prompt")
         assert result is None
 
