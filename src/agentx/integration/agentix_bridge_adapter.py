@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import sys
-import traceback
 from pathlib import Path
 from typing import Callable, Iterator, Optional
 
@@ -161,36 +160,34 @@ class AgentixBridgeAdapter:
 
         try:
             return self.bridge.classify_prompt(prompt, context, working_memory)
-        except json.JSONDecodeError as e:
-            # JSON parsing failed — log raw LLM output
-            logger.error(
-                "Classification JSON parse error",
+        except (json.JSONDecodeError, ValueError) as e:
+            # LLM returned non-JSON (conversational text or malformed output) — recoverable; fall back to defaults
+            logger.warning(
+                "Classification skipped: LLM returned non-JSON response",
                 extra={
                     "error": str(e),
                     "prompt_preview": prompt[:200] if prompt else "",
                     "context_size": len(context.get_enabled_messages()) if context else 0,
                     "model": self.agentix_config.classification_model or self.agentix_config.model,
                 },
-                exc_info=True,
             )
             return PromptClassificationResponse(
                 intent=Intent.conversation,
                 needs_clarification=False,
                 missing_fields=[],
-                reasoning_summary=f"JSON parse error: {str(e)[:50]}",
+                reasoning_summary=f"Non-JSON response: {str(e)[:50]}",
                 next_step=NextStep.respond_directly,
             )
         except KeyError as e:
-            # Enum lookup failed — invalid intent/next_step from LLM
-            logger.error(
-                "Classification enum error",
+            # Enum lookup failed — invalid intent/next_step from LLM; recoverable
+            logger.warning(
+                "Classification skipped: invalid enum value in LLM response",
                 extra={
                     "error": str(e),
                     "prompt_preview": prompt[:200] if prompt else "",
                     "valid_intents": [i.name for i in Intent],
                     "valid_next_steps": [n.name for n in NextStep],
                 },
-                exc_info=True,
             )
             return PromptClassificationResponse(
                 intent=Intent.conversation,
@@ -200,14 +197,13 @@ class AgentixBridgeAdapter:
                 next_step=NextStep.respond_directly,
             )
         except Exception as e:
-            # Unknown error — log full traceback
-            logger.error(
+            # Genuinely unexpected error — log full traceback at WARNING (still recoverable)
+            logger.warning(
                 "Classification unexpected error",
                 extra={
                     "error": str(e),
                     "error_type": type(e).__name__,
                     "prompt_preview": prompt[:200] if prompt else "",
-                    "traceback": traceback.format_exc(),
                 },
                 exc_info=True,
             )
