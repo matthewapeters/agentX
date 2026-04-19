@@ -1,42 +1,123 @@
-# GUIManager Architecture Design
+# GUIManager — Current Architecture
 
-## Executive Summary
+Version: 2026-04-19
 
-This document defines the architectural design for refactoring `AgentXSession` to separate GUI concerns from business logic by introducing a `GUIManager` class. The goal is to achieve proper encapsulation, improve testability, and enable independent evolution of presentation and business layers.
+This document describes the **current implementation** of the GUI layer in AgentX.
+For UX mockups and user flows, see [docs/ux/](docs/ux/).
+For the full system architecture, see [docs/architecture.md](docs/architecture.md).
 
-## Problem Statement
+---
 
-### Current Issues
+## Summary
 
-The `AgentXSession` class currently violates the Single Responsibility Principle by mixing:
-- **Business Logic**: Session state, message management, LLM communication, history tracking
-- **GUI Management**: Widget creation, layout, styling, event binding
-- **Presentation Logic**: Rendering messages, updating displays, managing widget state
+The original monolithic `GUIManager` that mixed widget creation, business logic and
+state management has been fully refactored.  The GUI layer is now decomposed into a
+thin coordinator (`GUIManager`) and four focused panel classes, all behind an
+`IGUIManager` `Protocol` interface that `AgentXSession` depends on exclusively.
 
-This tight coupling results in:
-- Inability to test business logic without tkinter runtime
-- Difficulty maintaining and modifying UI independently
-- Widget state scattered across `self.root` with `hasattr()` checks
-- Complex methods that mix GUI updates with business operations
-- No clear API boundary between layers
+---
 
-## Architectural Goals
+## Layer Structure
 
-### Primary Objectives
+```
+AgentXSession
+  └── IGUIManager   (Protocol interface — src/agentx/igui_manager.py)
+        └── GUIManager  (src/agentx/gui/gui_manager.py)
+              ├── ContextRenderer  stateless widget factory
+              ├── ChatPanel        output notebook + plan tabs
+              ├── InputPanel       text input + attachment bar
+              └── SidePanel        model selector + Session/Files/Settings tabs
+```
 
-1. **Separation of Concerns**: Clear boundary between business logic and presentation
-2. **Testability**: Business logic testable without GUI runtime
-3. **Maintainability**: UI changes isolated from business logic changes
-4. **Flexibility**: Support multiple UI implementations or themes
-5. **Type Safety**: Strong typing for interfaces and data exchange
-6. **Single Source of Truth**: Centralized widget management
+## IGUIManager Protocol
 
-### Design Principles
+Defined in `src/agentx/igui_manager.py`.  All session/business logic code
+depends **only** on this protocol — never on `GUIManager` directly.  This
+makes business logic fully testable without a Tkinter runtime.
 
-- **Dependency Inversion**: Session depends on GUI abstraction, not concrete implementation
-- **Encapsulation**: Widget lifecycle and state managed entirely by GUI layer
-- **Loose Coupling**: Communication through well-defined interfaces with primitive types
-- **Command-Query Separation**: Clear distinction between state-modifying and query operations
+Key method groups:
+
+| Group | Methods |
+|-------|---------|
+| Lifecycle | `create_layout()`, `destroy()` |
+| Display | `display_user_message()`, `display_agent_thinking()`, `display_agent_response()`, `display_classification()`, `display_error()` |
+| Context | `render_context_widget()`, `render_history_widget()`, `render_working_memory_widget()` |
+| Panels | `update_context_panel()`, `update_history_panel()`, `update_working_memory_panel()` |
+| Attachments | `update_attachment_bar()` |
+| Plan tree | `add_plan_tab()`, `add_plan_step_node()`, `add_plan_subtask_node()`, `update_plan_node_status()` |
+| State | `get_user_input()`, `clear_user_input()`, `set_streaming_state()` |
+
+## GUIManager (thin coordinator)
+
+Source: `src/agentx/gui/gui_manager.py`
+
+- Implements `IGUIManager`
+- Creates the four panel objects in `__init__`; they hold `self._g` back-ref
+- `create_layout()` delegates to each panel's `create()` method
+- All `display_*` and `render_*` methods forward to the appropriate panel
+- Exposes forwarding `@property` stubs for backward-compatibility with tests
+- Owns `GUIConfig`, `WidgetRegistry`, and color-alias constants
+- Does **not** own any widgets directly; all widget lifecycle is in panels and `WidgetRegistry`
+
+## Panel Classes
+
+### ChatPanel (`gui/chat_panel.py`)
+
+Owns the right-side output `ttk.Notebook`.  Creates one `Chat` tab at startup;
+appends additional `Plan: <name>` tabs dynamically as plans are created.  All
+streaming display methods (`display_user_message`, `display_agent_response`,
+etc.) live here.  Manages `PlanTreeWidget` instances keyed by `plan_id`.
+
+### InputPanel (`gui/input_panel.py`)
+
+Owns the bottom input area (rely 0.80–1.0) plus attachment bar (rely 0.77–0.80).
+Builds the `tk.Text` widget, Send/Stop buttons, and the attachment chip row.
+
+### SidePanel (`gui/side_panel.py`)
+
+Owns the left pane.  Creates `ModelSelector` at the top, then a
+`ttk.Notebook` with three tabs:
+
+- **Session**: `CollapsibleSection` for Working Memory + Context panel
+- **Files**: `FileExplorer` widget
+- **Settings**: `SettingsTab` widget
+
+### ContextRenderer (`gui/context_renderer.py`)
+
+Stateless widget factory — no mutable state of its own.  Constructs the
+message-grid, working-memory, and history sub-widgets on demand.  All methods
+accept a parent widget and return the constructed widget.
+
+---
+
+## Widget Registry
+
+`WidgetRegistry` (`src/agentx/widget_registry.py`) is the single owner of all
+widget references.  Widgets are registered by name at creation time and
+destroyed via `registry.destroy_all()` on session close.  This prevents leaked
+Tkinter resources.
+
+---
+
+## Color Constants and Theming
+
+All colors are defined in `GUIConfig` (`src/agentx/gui/gui_config.py`) and
+loaded from `agentx.toml`.  `GUIManager` copies them into `COLOR_*` instance
+attributes so panels can read `self._g.COLOR_OUTPUT_BG` etc.  Switching
+`theme_mode` in the settings tab requires an app restart.
+
+---
+
+## Separation of Concerns — Achieved State
+
+| Concern | Owner | Testable without Tkinter? |
+|---------|-------|---------------------------|
+| Session lifecycle, routing | `AgentXSession` | ✅ (mock `IGUIManager`) |
+| LLM streaming, display callbacks | `StreamingController` | ✅ (mock session) |
+| Tool routing | `ToolDispatcher` | ✅ (unit) |
+| Widget creation and layout | Panel classes | ❌ (requires Tkinter) |
+| Widget lifecycle | `WidgetRegistry` | ✅ (stub Tkinter) |
+| Context/WM rendering | `ContextRenderer` | ❌ (requires Tkinter) |
 
 ## Architecture Overview
 
@@ -83,6 +164,7 @@ This tight coupling results in:
 ### Data Flow
 
 #### User Input Flow
+
 ```
 User Action (GUI) → GUIManager → Callback → AgentXSession
                                            → Business Logic
@@ -91,6 +173,7 @@ User Action (GUI) → GUIManager → Callback → AgentXSession
 ```
 
 #### State Update Flow
+
 ```
 Business Logic → State Change → GUIManager.update_*()
                               → Widget Update
@@ -701,6 +784,7 @@ def get_files_parent(self) -> tk.Widget:
 **Purpose**: Allow Context, History, and FileExplorer to render themselves without knowing GUI structure.
 
 **Usage Pattern**:
+
 ```python
 # In AgentXSession
 context_widget = self.context.to_gui(
@@ -804,6 +888,7 @@ class GUIManager:
 ### State Ownership
 
 **Business State** (owned by AgentXSession):
+
 - Current message being composed
 - Message history (context)
 - Session history
@@ -811,6 +896,7 @@ class GUIManager:
 - Streaming status
 
 **Display State** (owned by GUIManager):
+
 - Widget references
 - Scroll positions
 - Expanded/collapsed panels
@@ -835,11 +921,13 @@ def add_message_to_context(self, message: Message):
 ```
 
 **Benefits**:
+
 - Clear data flow
 - Session controls when updates occur
 - No polling or watching required
 
 **Tradeoffs**:
+
 - Session must remember to update GUI
 - Risk of state divergence if update forgotten
 
@@ -992,6 +1080,7 @@ def test_message_handling():
 **Decision**: Use simplified GUIManager pattern
 
 **Rationale**:
+
 - MVC adds circular dependencies (view ↔ controller)
 - Application is relatively simple - doesn't need full framework
 - One-way data flow (session → GUI) is sufficient
@@ -1004,6 +1093,7 @@ def test_message_handling():
 **Decision**: Session generates widget, passes to GUI
 
 **Rationale**:
+
 - Context rendering requires business callbacks (attachment toggle)
 - Session knows correct callbacks to pass
 - Keeps Context/History independent of Session
@@ -1016,6 +1106,7 @@ def test_message_handling():
 **Decision**: Direct callbacks
 
 **Rationale**:
+
 - Simpler - fewer abstractions
 - Clear call graph for debugging
 - Type-safe with modern Python
@@ -1028,6 +1119,7 @@ def test_message_handling():
 **Decision**: Use DTO (Data Transfer Object)
 
 **Rationale**:
+
 - Decouples GUI from business objects
 - GUI only needs display information
 - Prevents GUI from modifying business state

@@ -1,7 +1,12 @@
 # AgentX-Agentix Integration Architecture Overview
 
+> **Last updated**: 2026-04-19  
+> For the full system architecture, see [../architecture.md](../architecture.md).
+
 ## Document Purpose
-This document provides architectural guidance for agents and developers implementing the integration between AgentX (GUI frontend) and Agentix (agent middleware). It describes the current state of each system, their responsibilities, and the target integrated architecture.
+
+This document provides architectural guidance for developers and agents working on the
+integration between AgentX (GUI frontend) and Agentix (agent middleware).
 
 ---
 
@@ -9,68 +14,110 @@ This document provides architectural guidance for agents and developers implemen
 
 ### 1.1 AgentX (GUI Frontend)
 
-**Purpose:** A tkinter-based GUI chat application providing superior session management and user experience.
+**Purpose:** A Tkinter-based GUI chat application with session management, working memory,
+and hierarchical task execution.
 
 **Core Components:**
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| `AgentXSession` | `src/agentx/session.py` | Orchestrates session lifecycle, manages context, coordinates GUI and Ollama communication |
-| `GUIManager` | `src/agentx/gui_manager.py` | Presentation logic, widget management, separation from business logic |
-| `Context` | `src/agentx/context.py` | Maintains conversation context, message history per session |
-| `Message` | `src/agentx/message.py` | Message data structure with attachments, serialization, LLM formatting |
-| `History` | `src/agentx/history.py` | Cross-session history management, enables message reuse |
+| `AgentXSession` | `src/agentx/session.py` | Thin coordinator — wires all subsystems |
+| `SessionState` | `src/agentx/session_state.py` | Mutable session data (model, folder, user) |
+| `StreamingController` | `src/agentx/streaming_controller.py` | All LLM streaming and display logic |
+| `ToolDispatcher` | `src/agentx/tool_dispatcher.py` | Routes tool calls to client/server executor |
+| `GUIManager` | `src/agentx/gui/gui_manager.py` | Thin coordinator; delegates to 4 panels |
+| `IGUIManager` | `src/agentx/igui_manager.py` | `Protocol` interface — session depends only on this |
+| `Context` | `src/shared/models/context.py` | Conversation history — single source of truth |
+| `Message` | `src/shared/models/message.py` | Message dataclass with `MessageRole` enum |
+| `WorkingMemory` | `src/shared/models/working_memory.py` | Per-session key-value fact store |
+| `History` | `src/agentx/history.py` | Cross-session history management |
 | `FileExplorer` | `src/agentx/file_explorer.py` | File browsing and attachment capabilities |
+| `AgentixBridgeAdapter` | `src/agentx/integration/agentix_bridge_adapter.py` | Bridges async Agentix → sync/generator |
+| `ClientToolExecutor` | `src/agentx/integration/client_tool_executor.py` | File-system tools (read/write/list/search) |
+| `WorkingMemoryToolExecutor` | `src/agentx/integration/working_memory_tool_executor.py` | WM tools for the agent |
+| `ResponseHandler` | `src/agentx/integration/response_handler.py` | Translates `ResponseChunk` → GUI callbacks |
 
 **Key Characteristics:**
-- Uses Python `ollama` library directly for LLM communication
-- Session-based folder structure (`sessions/<user>/session_<timestamp>/`)
+
+- Uses `AgentixBridgeAdapter` (not `ollama` directly) for all LLM calls
+- Session-based folder structure (`sessions/<user>/<session_YYYY-MM-DD_HH-MM-SS>/`)
 - Supports streaming responses with interrupt capability
 - Message enable/disable for context management
 - Attachment system for file context injection
+- Working Memory with user/agent ownership enforcement
+- Hierarchical Task Execution with PlanTreeWidget
 
 **Current Data Flow:**
+
 ```
-User Input → GUIManager → AgentXSession → ollama.Client.chat() → Stream Response → GUIManager
-                              ↓
-                          Context (save messages)
+User Input → InputPanel → AgentXSession._handle_submit()
+                              │
+                              ├── Context.add_message(USER)
+                              ├── GUIManager.display_user_message()
+                              └── StreamingController.run_streaming_loop()
+                                        │
+                                        └── AgentixBridgeAdapter.process_prompt_generator()
+                                                  │
+                                                  └── AgentixBridge.process_prompt_streaming()
+                                                            │
+                                            ┌─────────────┴──────────────┐
+                                     classify_prompt()        ToolLoopRunner
+                                            │                      │
+                                    Ollama REST API          Ollama REST API
 ```
 
 ### 1.2 Agentix (Agent Middleware)
 
-**Purpose:** Middleware providing prompt classification, intent analysis, MCP tooling, and REST-based Ollama communication.
+**Purpose:** Middleware providing prompt classification, intent analysis, tool loop execution, and
+REST-based Ollama communication.
 
 **Core Components:**
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| `agentix()` | `src/agentix/agent.py` | Main agent entry point, orchestrates classification and next steps |
-| `AgentixConfig` | `src/agentix/agentix_config.py` | Configuration management via CLI/TOML |
-| `api_client` | `src/agentix/api_client.py` | REST-based Ollama API communication |
-| `sessions.py` | `src/agentix/context/sessions.py` | Session management, context assembly, token trimming |
-| `prompts.py` | `src/agentix/context/prompts.py` | System/user/tool prompt management |
-| `PromptClassificationResponse` | `src/agentix/prompt_classification_response.py` | Intent classification data structure |
-| `next_steps/` | `src/agentix/next_steps/` | Action handlers based on classification |
-| `tools/` | `src/agentix/tools/` | MCP tooling (AST, CST analysis) |
-| `server.py` | `src/agentix/server.py` | FastAPI server for OpenAI-compatible API |
+| `AgentixBridge` | `src/agentix/bridge/bridge.py` | Main entry point; orchestrates classify → route → stream |
+| `ToolLoopRunner` | `src/agentix/bridge/tool_loop.py` | Core agentic loop (LLM chunks + tool dispatch) |
+| `classify_prompt` | `src/agentix/bridge/classify_prompt.py` | Intent classification before routing |
+| `assemble_prompts` | `src/agentix/bridge/prompt_assembly.py` | Builds messages list for API call |
+| `AssertionChecker` | `src/agentix/bridge/assertion_checker.py` | Pre/post/invariant assertion verification |
+| `AgentixConfig` | `src/agentix/agentix_config.py` | Configuration management |
+| `ApiClient` | `src/agentix/api_client.py` | REST calls to `/v1/chat/completions` |
+| `QueryPayload` | `src/agentix/query_payload.py` | API request model (emits `response_format: json_object`) |
+| `PromptLoader` | `src/agentix/prompt_loader.py` | Loads system prompt `.md` files |
+| `PromptClassificationResponse` | `src/agentix/prompt_classification_response.py` | Intent + next_step data model |
+| `next_steps/` | `src/agentix/next_steps/` | Action handlers per `NextStep` variant |
+| `tools/schema.py` | `src/agentix/tools/schema.py` | `extract_tool_schema()` — function → OpenAI schema |
+| `tools/cst_tools.py` | `src/agentix/tools/cst_tools.py` | CST-based code analysis |
+| `tools/ast_tools.py` | `src/agentix/tools/ast_tools.py` | AST-based code analysis |
+| `context/sessions.py` | `src/agentix/context/sessions.py` | Session management, token trimming |
 
 **Key Characteristics:**
-- REST-based communication with Ollama (`requests` library)
-- Prompt classification before processing (intent detection)
-- Supports multiple next-step actions: `respond_directly`, `single_tool`, `invoke_planner`, `escalate`
-- Tool extraction and OpenAI-compatible tool formatting
-- FastAPI server for API compatibility layer
+
+- REST-based communication with Ollama (`requests` library via `api_client.py`)
+- Prompt classification before processing (intent detection) with dedicated `phi4-mini` model
+- Supports `respond_directly`, `single_tool`, `invoke_planner`, `escalate` next steps
+- Tool schema extraction and OpenAI-compatible tool formatting
 - Token-based context trimming
+- `response_format: {"type": "json_object"}` enforced via `QueryPayload`
 
 **Current Data Flow:**
+
 ```
-CLI Args → AgentixConfig → agentix() → manage_sessions() → assemble_classification_prompt()
-                                              ↓
-                                       query_api() (REST)
-                                              ↓
-                                  PromptClassificationResponse
-                                              ↓
-                                       take_steps() → [respond_directly | single_tool | invoke_planner | escalate]
+AgentixBridge.process_prompt_streaming(prompt, context, …)
+    │
+    ├── classify_prompt() → PromptClassificationResponse
+    │         {intent, next_step, needs_clarification}
+    │
+    └── route on next_step:
+          respond_directly  → _stream_direct_response()
+          single_tool       → _stream_tool_response()
+          invoke_planner    → _stream_planned_response()
+          escalate          → _stream_direct_response()
+                │
+                └── _run_tool_loop() via ToolLoopRunner
+                      ├── _iter_llm_chunks()   OpenAI streaming
+                      ├── execute_tool(name)   client + server tools
+                      └── yields ResponseChunk objects
 ```
 
 ---
@@ -133,6 +180,7 @@ CLI Args → AgentixConfig → agentix() → manage_sessions() → assemble_clas
 #### A. User Prompt Processing Pipeline
 
 **Before Integration (AgentX):**
+
 ```python
 # session.py - stream_ollama_response_worker()
 prompt = self.gui.get_user_input()
@@ -142,6 +190,7 @@ for part in client.chat(model=ollama_model, messages=llm_messages, stream=True):
 ```
 
 **After Integration:**
+
 ```python
 # session.py - stream_ollama_response_worker()
 prompt = self.gui.get_user_input()
@@ -154,10 +203,12 @@ async for part in response_handler.execute(prompt, context=self.context, stream=
 #### B. Context Unification
 
 **Current State:**
+
 - AgentX: `Context` class with `messages: list[Message]` stored in session folder
 - Agentix: `Message` class stored in `~/.agentix/sessions/`
 
 **Target State:**
+
 - Unified `Context` class used by both systems
 - Single session storage location (AgentX's `sessions/<user>/session_<timestamp>/`)
 - Agentix references AgentX's context for classification and processing
@@ -165,21 +216,25 @@ async for part in response_handler.execute(prompt, context=self.context, stream=
 #### C. Model Management
 
 **Current State:**
+
 - AgentX: Reads from `agentx.toml` configuration
 - Agentix: Fetches from Ollama `/api/tags` endpoint
 
 **Target State:**
-- Agentix provides model list via `get_models()` 
+
+- Agentix provides model list via `get_models()`
 - AgentX GUI displays model selector in system bar
 - Model selection stored in session context
 
 #### D. Tool Integration
 
 **Current State:**
+
 - Agentix: Extracts tools from Python files, formats for OpenAI compatibility
 - AgentX: Prints tool calls to console (not integrated in GUI)
 
 **Target State:**
+
 - Tool calls rendered in AgentX output with expandable details
 - Tool results added to context as message objects
 - Tools can be enabled/disabled via GUI checkboxes
@@ -189,6 +244,7 @@ async for part in response_handler.execute(prompt, context=self.context, stream=
 **Key Insight:** Agentix server may be remote from AgentX client. Tools must be classified by execution context.
 
 **Tool Execution Flow:**
+
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
 │                              AgentX Client                                 │
@@ -398,18 +454,23 @@ src/
 ## 7. Key Design Decisions
 
 ### Decision 1: AgentX as Primary Session Manager
+
 **Rationale:** AgentX has superior session management with user folders, timestamps, and GUI integration. Agentix should reference AgentX sessions rather than maintain parallel storage.
 
 ### Decision 2: Agentix Provides Intent Classification
+
 **Rationale:** Agentix's prompt classification infrastructure (intent detection, next-step routing) adds intelligence before response generation. All user prompts should pass through classification.
 
 ### Decision 3: REST with Streaming for LLM Communication
+
 **Rationale:** Agentix uses REST for flexibility and OpenAI compatibility. Adding streaming support allows GUI responsiveness while maintaining API compatibility.
 
 ### Decision 4: Tool Outputs as First-Class Messages
+
 **Rationale:** Tool calls and results should be rendered in the GUI and stored in context for transparency and replayability.
 
 ### Decision 5: Shared Data Models
+
 **Rationale:** Create a `shared/` module with unified models to avoid duplication and ensure consistency.
 
 ---

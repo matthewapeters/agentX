@@ -1,4 +1,879 @@
-# AgentX — Architecture and Assistant-Friendly Index
+# AgentX — Architecture Reference
+
+Version: 2026-04-19  
+Branch: main  
+Project version: 0.18.22
+
+---
+
+## Contents
+
+1. [System Overview](#1-system-overview)
+2. [Startup Flow](#2-startup-flow)
+3. [Module Map](#3-module-map)
+4. [Class Relationships](#4-class-relationships)
+5. [Session Decomposition](#5-session-decomposition)
+6. [GUI Decomposition](#6-gui-decomposition)
+7. [Classification Pipeline](#7-classification-pipeline)
+8. [Tool Pipeline](#8-tool-pipeline)
+9. [Hierarchical Task Execution](#9-hierarchical-task-execution)
+10. [Working Memory](#10-working-memory)
+11. [Data Models](#11-data-models)
+12. [Tool Schemas and Usage](#12-tool-schemas-and-usage)
+13. [Threading Model](#13-threading-model)
+14. [Persistence Layout](#14-persistence-layout)
+15. [Configuration Reference](#15-configuration-reference)
+16. [Retrieval Keywords](#16-retrieval-keywords)
+
+---
+
+## 1. System Overview
+
+AgentX is a local-first AI agent framework with a Tkinter GUI.  It connects to
+**Ollama** (LLM inference) and optionally **Agentix** (code-analysis
+middleware).  Users interact through the GUI; the app streams LLM responses,
+executes tools, and persists conversations to `sessions/` on disk.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Tkinter GUI  (main thread)                                  │
+│  ┌─────────────┐  ┌──────────────────────────────────────┐  │
+│  │  SidePanel  │  │  ChatPanel  (output notebook)        │  │
+│  │  - Model    │  │  - Chat tab  (streaming messages)     │  │
+│  │  - Session  │  │  - Plan tabs (PlanTreeWidget × N)     │  │
+│  │  - Files    │  └──────────────────────────────────────┘  │
+│  │  - Settings │  ┌──────────────────────────────────────┐  │
+│  └─────────────┘  │  InputPanel (text + buttons)         │  │
+└──────────────────────────────────────────────────────────────┘
+          │                          │
+          │ IGUIManager interface    │
+          ▼                          ▼
+┌────────────────────────────────────────────────────────────────┐
+│  AgentXSession  (main thread coordinator)                      │
+│  ├─ SessionState        mutable session data                   │
+│  ├─ StreamingController LLM stream + display logic             │
+│  ├─ ToolDispatcher      routes tool calls                      │
+│  ├─ Context             conversation history (disk-backed)     │
+│  ├─ WorkingMemory       per-session key-value fact store       │
+│  └─ AgentixBridgeAdapter  ──────────────────────────────────┐  │
+└────────────────────────────────────────────────────────────┬┘  │
+                                                             │    │
+                     background thread ───────────────────────   │
+                          │                                       │
+          ┌───────────────▼──────────────┐                       │
+          │  AgentixBridge               │                       │
+          │  ├─ classify_prompt()        │                       │
+          │  ├─ _stream_direct_response()│                       │
+          │  ├─ _stream_tool_response()  │                       │
+          │  ├─ _stream_planned_response │                       │
+          │  └─ ToolLoopRunner           │                       │
+          └──────────┬───────────────────┘                       │
+                     │                                           │
+          ┌──────────▼───────────┐   ┌────────────────────────┐ │
+          │  Ollama              │   │  Agentix (optional)    │ │
+          │  /v1/chat/completions│   │  code-analysis tools   │ │
+          └──────────────────────┘   └────────────────────────┘ │
+```
+
+---
+
+## 2. Startup Flow
+
+```
+main.py
+  └── src/agentx/main.py → main()
+        ├── load agentx.toml  (config.py)
+        ├── AgentXSession(root, config)
+        │     ├── SessionState(...)             mutable session data
+        │     ├── Context(path, session_id)     load/create on-disk context
+        │     ├── FileExplorer(start_path)
+        │     ├── ServiceManager(config)        Ollama + Agentix health checks
+        │     ├── GUIManager(root, config, …)   build panel objects (no widgets yet)
+        │     ├── AgentixBridgeAdapter(config)  async→sync bridge, registers client tools
+        │     ├── ClientToolExecutor            file-system tools
+        │     ├── ServerToolExecutor            Agentix server tools
+        │     ├── ToolDispatcher               routes tool calls
+        │     ├── WorkingMemory.load()          load or create fact store
+        │     └── StreamingController(self)     owns all streaming logic
+        ├── session.perform_service_handshake()
+        │     ├── ServiceManager.start_services()
+        │     └── ServiceManager.wait_for_services()
+        ├── session.layout()
+        │     └── gui.create_layout()
+        │           ├── _setup_fonts()
+        │           ├── _setup_window_geometry()
+        │           ├── ChatPanel.create()
+        │           ├── SidePanel.create()
+        │           └── InputPanel.create()
+        └── root.mainloop()
+```
+
+---
+
+## 3. Module Map
+
+### src/agentx/ — Application layer
+
+| Module | Path | Role |
+|--------|------|------|
+| `AgentXSession` | `session.py` | Central coordinator — wires all subsystems |
+| `SessionState` | `session_state.py` | Mutable session data (model, history, message) |
+| `StreamingController` | `streaming_controller.py` | All LLM streaming and display logic |
+| `ToolDispatcher` | `tool_dispatcher.py` | Routes tool calls to client/server executor |
+| `ServiceManager` | `service_manager.py` | External service lifecycle (Ollama, Agentix) |
+| `IGUIManager` | `igui_manager.py` | `Protocol` defining the GUI boundary |
+| `OutputLogger` | `output_logger.py` | Session transcript file writer |
+| `AttachmentInfo` | `attachment_info.py` | File attachment metadata dataclass |
+| `History` | `history.py` | Loads prior sessions from disk for GUI display |
+| `FileExplorer` | `file_explorer.py` | File navigation widget (list, open, history) |
+| `WidgetRegistry` | `widget_registry.py` | Centralised widget lifecycle and cleanup |
+| `AgentXConfig` | `config.py` | Loads/saves `agentx.toml` |
+
+### src/agentx/gui/ — Presentation layer
+
+| Module | Path | Role |
+|--------|------|------|
+| `GUIManager` | `gui/gui_manager.py` | Thin coordinator; delegates to four panel objects |
+| `ChatPanel` | `gui/chat_panel.py` | Output notebook, structured entries, plan tree tabs |
+| `InputPanel` | `gui/input_panel.py` | User text input, submit/interrupt buttons, attachment bar |
+| `SidePanel` | `gui/side_panel.py` | System-status pane, model selector, tabbed notebook |
+| `ContextRenderer` | `gui/context_renderer.py` | Stateless widget factory for context/history/WM |
+| `PlanTreeWidget` | `gui/plan_tree_widget.py` | Scrollable collapsible plan-step/sub-task tree |
+| `ResynthesisDialog` | `gui/resynthesis_dialog.py` | Modal dialog for re-synthesis with WM hint |
+| `ModelSelector` | `gui/model_selector.py` | Toolbar combo for switching active Ollama model |
+| `SettingsTab` | `gui/settings_tab.py` | Interactive `agentx.toml` editor inside a notebook tab |
+| `ToolPanel` | `gui/tool_panel.py` | Collapsible list of tool toggles (enable/disable per tool) |
+| `MarkdownRenderer` | `gui/markdown_renderer.py` | HTML/Markdown rendering via `tkinterweb` |
+| `CollapsibleSection` | `gui/collapsible_section.py` | Expand/collapse wrapper widget |
+| `ProgressWidgets` | `gui/progress_widgets.py` | Loading spinners and progress indicators |
+| `GUIConfig` | `gui/gui_config.py` | Theme colours, fonts, layout ratios |
+
+### src/agentx/integration/ — Bridge layer
+
+| Module | Path | Role |
+|--------|------|------|
+| `AgentixBridgeAdapter` | `integration/agentix_bridge_adapter.py` | Converts async Agentix → sync/generator for Tkinter |
+| `ClientToolExecutor` | `integration/client_tool_executor.py` | File-system tools (read/write/list/search) |
+| `ServerToolExecutor` | `integration/server_tool_executor.py` | Agentix server-side code-analysis tools |
+| `WorkingMemoryToolExecutor` | `integration/working_memory_tool_executor.py` | `remember_fact`, `forget_fact`, `list_facts` agent tools |
+| `ResponseHandler` | `integration/response_handler.py` | Translates `ResponseChunk` → GUI callback calls |
+| `StreamingExecutor` | `integration/streaming_executor.py` | Background-thread streaming with progress tracking |
+| `CodeAnalysis` | `integration/code_analysis.py` | CST/AST-based code analysis helper |
+
+### src/agentix/ — Agentix middleware
+
+| Module | Path | Role |
+|--------|------|------|
+| `AgentixBridge` | `bridge/bridge.py` | Tool loop, streaming, tool execution orchestration |
+| `ToolLoopRunner` | `bridge/tool_loop.py` | Core agentic loop (LLM chunks, tool dispatch) |
+| `classify_prompt` | `bridge/classify_prompt.py` | Intent classification before routing |
+| `assemble_prompts` | `bridge/prompt_assembly.py` | Builds message list for API call |
+| `AssertionChecker` | `bridge/assertion_checker.py` | Pre/post/invariant assertion verification |
+| `QueryPayload` | `query_payload.py` | API request model → `response_format: json_object` |
+| `PromptLoader` | `prompt_loader.py` | Loads system-prompt `.md` files from `system_prompts/` |
+| `AgentixConfig` | `agentix_config.py` | Runtime config (model, temperature, hosts) |
+| `ApiClient` | `api_client.py` | REST calls to `/v1/chat/completions` |
+| `LocalClassifier` | `local_classifier.py` | Optional Torch-based local classification |
+| `CstTools` | `tools/cst_tools.py` | Concrete-Syntax-Tree code analysis tools |
+| `AstTools` | `tools/ast_tools.py` | Abstract-Syntax-Tree code analysis tools |
+| `extract_tool_schema` | `tools/schema.py` | Python function → OpenAI JSON schema |
+
+### src/shared/models/ — Shared data models
+
+| Module | Path | Role |
+|--------|------|------|
+| `Context` | `models/context.py` | Conversation history — single source of truth, disk-backed |
+| `Message` | `models/message.py` | `Message` dataclass with `MessageRole` enum |
+| `ResponseChunk` | `models/response.py` | `ResponseChunk` / `ChunkType` enum |
+| `WorkingMemory` | `models/working_memory.py` | Per-session key-value fact store with ownership |
+| `TaskNodeRecord` | `models/task_node.py` | `PlanRecord`, `TaskNodeRecord`, `TaskTree`, `SynthesisAttempt` |
+| `ToolDefinition` | `models/tools.py` | `ToolDefinition`, `ToolRegistry`, `ToolResponse` |
+| `Attachment` | `models/attachment.py` | File attachment dataclass |
+
+### System prompts (`system_prompts/`)
+
+| File | Purpose |
+|------|---------|
+| `tool_use.md` | Instructs LLM how to call tools in OpenAI wire format |
+| `planner_prompt.md` | Instructs LLM to decompose requests into plan steps |
+| `python_coder.md` | Instructs LLM for Python coding tasks |
+| `prompt_classification.md` | **Classification-only** — JSON schema instruction for `classify_prompt()` |
+| `task_execution.md` | Injected per-task by `_run_task_node`; defines scope and synthesis contract |
+| `structured_response.md` | Instructs LLM to emit structured JSON (internal) |
+| `modifier_class_decorator.md` | Code-gen helper for class decorator patterns |
+
+---
+
+## 4. Class Relationships
+
+```mermaid
+classDiagram
+    class AgentXSession {
+        +session_id: str
+        +context: Context
+        +working_memory: WorkingMemory
+        +gui: IGUIManager
+        +client_tool_executor: ClientToolExecutor
+        +server_tool_executor: ServerToolExecutor
+        +execute_tool(name, input)
+        +_handle_submit()
+    }
+
+    class SessionState {
+        +active_model: str
+        +session_folder: str
+        +user: str
+    }
+
+    class StreamingController {
+        +_s: AgentXSession
+        +run_streaming_loop(prompt, context)
+        +_display_tool_call()
+        +_display_tool_result()
+    }
+
+    class ToolDispatcher {
+        +_client: ClientToolExecutor
+        +_server: ServerToolExecutor
+        +execute_tool(name, input)
+    }
+
+    class GUIManager {
+        +config: GUIConfig
+        +widgets: WidgetRegistry
+        +create_layout()
+        +display_user_message()
+        +display_agent_response()
+    }
+
+    class ChatPanel {
+        +_g: GUIManager
+        +_plan_trees: dict
+        +display_user_message()
+        +display_agent_response()
+    }
+
+    class InputPanel {
+        +_g: GUIManager
+        +create()
+        +get_user_input()
+    }
+
+    class SidePanel {
+        +_g: GUIManager
+        +model_selector: ModelSelector
+        +create()
+        +update_context_panel()
+    }
+
+    class ContextRenderer {
+        +_g: GUIManager
+        +render_context_widget()
+        +render_working_memory_widget()
+    }
+
+    class AgentixBridgeAdapter {
+        +bridge: AgentixBridge
+        +process_prompt_generator()
+    }
+
+    class AgentixBridge {
+        +config: AgentixConfig
+        +classify_prompt()
+        +process_prompt_streaming()
+        +_run_tool_loop()
+    }
+
+    class ToolLoopRunner {
+        +config: AgentixConfig
+        +_tool_impl_cache: dict
+        +_iter_llm_chunks()
+        +execute_tool()
+    }
+
+    AgentXSession --> SessionState : owns
+    AgentXSession --> StreamingController : owns
+    AgentXSession --> ToolDispatcher : owns
+    AgentXSession --> "IGUIManager" : uses
+    AgentXSession --> Context : owns
+    AgentXSession --> WorkingMemory : owns
+    AgentXSession --> AgentixBridgeAdapter : owns
+    GUIManager ..|> "IGUIManager" : implements
+    GUIManager --> ChatPanel : owns
+    GUIManager --> InputPanel : owns
+    GUIManager --> SidePanel : owns
+    GUIManager --> ContextRenderer : owns
+    SidePanel --> ModelSelector : owns
+    SidePanel --> SettingsTab : owns
+    SidePanel --> ToolPanel : owns
+    ChatPanel --> PlanTreeWidget : "one per plan"
+    AgentixBridgeAdapter --> AgentixBridge : wraps
+    AgentixBridge --> ToolLoopRunner : uses
+    ToolDispatcher --> ClientToolExecutor : delegates
+    ToolDispatcher --> ServerToolExecutor : delegates
+```
+
+---
+
+## 5. Session Decomposition
+
+`AgentXSession` was decomposed into three focused collaborators.  The session
+retains thin delegation stubs so the existing public API is unchanged.
+
+```
+AgentXSession
+  ├── SessionState          All mutable data (model, history, folder paths)
+  │     ├── active_model    property with getter/setter
+  │     ├── session_folder  str
+  │     ├── user            str
+  │     └── detect_git_project_name() / load_agentx_instructions()  (static)
+  │
+  ├── StreamingController   All LLM streaming and display logic
+  │     ├── run_streaming_loop(prompt, context)
+  │     ├── _display_thinking(text)
+  │     ├── _display_assistant_header()
+  │     ├── _display_tool_call(name, input, round)
+  │     ├── _display_tool_result(name, output, round, tool_id)
+  │     ├── _persist_stream_messages(thinking, content)
+  │     ├── _run_bootstrap_prompt_if_present()
+  │     └── Workers: retrigger_synthesis_streaming / replay_task_node_streaming
+  │
+  └── ToolDispatcher        Tool routing
+        ├── execute_tool(name, input)
+        │     ├── client tools  → ClientToolExecutor.execute()
+        │     ├── code analysis → ServerToolExecutor.execute()
+        │     └── other         → ServerToolExecutor (fallback)
+        └── WM tools are registered on AgentixBridgeAdapter (not here)
+```
+
+**Back-reference pattern**: `StreamingController` holds `self._s` (the session)
+and accesses all session state through it, so tests can patch individual
+attributes on a partial session object.
+
+---
+
+## 6. GUI Decomposition
+
+`GUIManager` is a thin coordinator that delegates all widget creation and state
+management to four panel objects.  Each panel holds `self._g = gui_manager` and
+reads shared config/widgets from there.
+
+```
+GUIManager (implements IGUIManager)
+  │
+  ├── ContextRenderer      Stateless widget factory
+  │     render_context_widget()
+  │     render_history_widget()
+  │     render_working_memory_widget()
+  │     _render_message_to_grid()
+  │     _render_tool_rows()
+  │     _render_plan_rows()
+  │
+  ├── ChatPanel            Output notebook + plan tabs
+  │     create()           builds ttk.Notebook with Chat tab
+  │     display_user_message()
+  │     display_agent_thinking()
+  │     display_classification()
+  │     display_agent_response()
+  │     display_error()
+  │     finalize_current_turn_markdown()
+  │     add_plan_tab(plan_id, name)    → inserts PlanTreeWidget tab
+  │     add_plan_step_node(…)
+  │     add_plan_subtask_node(…)
+  │     update_plan_node_status(…)
+  │
+  ├── SidePanel            Left status pane
+  │     create()           builds PanedWindow left sash
+  │     ├── ModelSelector  toolbar combo (top of pane)
+  │     └── ttk.Notebook   with three tabs:
+  │           ├── Session tab
+  │           │     ├── CollapsibleSection: Working Memory
+  │           │     └── CollapsibleSection: Context (message list)
+  │           ├── Files tab
+  │           │     └── FileExplorer widget
+  │           └── Settings tab
+  │                 └── SettingsTab widget
+  │
+  └── InputPanel           Bottom input area
+        create()
+        ├── attachment bar (relx 0.001, rely 0.77, relheight 0.03)
+        ├── text area      (relx 0.001, rely 0.80, relheight 0.20)
+        └── submit / interrupt buttons
+```
+
+**Window geometry** (absolute placement via `.place(relx, rely, …)`):
+
+| Zone | rely | relheight | Content |
+|------|------|-----------|---------|
+| Main paned area | 0.00 | 0.77 | PanedWindow: SidePanel + ChatPanel |
+| Attachment bar | 0.77 | 0.03 | Current + history attachments |
+| Input area | 0.80 | 0.20 | Text widget + submit/interrupt |
+
+---
+
+## 7. Classification Pipeline
+
+Every user prompt is classified before routing.  The endpoint is
+`/v1/chat/completions` (OpenAI-compatible).
+
+```
+User prompt
+  │
+  ▼
+classify_prompt(config, prompt, context, history, wm)
+  │
+  ├── Filter context to user/assistant roles only
+  │     (_CLASSIFY_ROLES = {"user", "assistant"} — system messages excluded
+  │      to prevent working-memory identity from contaminating the call)
+  │
+  ├── assemble_prompts(classification_config, messages)
+  │     └── Injects prompt_classification.md as [SYSTEM] block
+  │         (loaded via PromptLoader from system_prompts_dir)
+  │
+  ├── QueryPayload(model=classification_model, format="json")
+  │     └── to_dict() → {"response_format": {"type": "json_object"}, …}
+  │         (OpenAI-compat key; Ollama-native "format" is ignored by endpoint)
+  │
+  └── Returns PromptClassificationResponse
+        ├── intent:         conversation | simple_action | complex_action | safety_issue
+        ├── next_step:      respond_directly | single_tool | invoke_planner | escalate
+        ├── needs_clarification: bool
+        └── reasoning_summary: str
+
+Routing decision (AgentixBridge.process_prompt_streaming):
+  respond_directly  → _stream_direct_response()
+  single_tool       → _stream_tool_response()   ──┐
+  invoke_planner    → _stream_planned_response()──┤
+  escalate          → _stream_direct_response()   │
+                                                   │
+                    All tool routes call _run_tool_loop()
+
+Classification model: agentix_bench_classification_model (agentx.toml)
+  default: "phi4-mini:3.8b"  (neutral model; agent persona model unsuitable)
+```
+
+**Key files**:
+
+- `src/agentix/bridge/classify_prompt.py` — `classify_prompt()` function
+- `src/agentix/query_payload.py` — `QueryPayload.to_dict()` (response_format)
+- `system_prompts/prompt_classification.md` — classification instruction
+- `src/agentix/agentix_config.py` — `AgentixConfig.classification_model`
+
+---
+
+## 8. Tool Pipeline
+
+```
+AgentixBridge._run_tool_loop(max_rounds=N)
+  │
+  ├── ToolLoopRunner._iter_llm_chunks()
+  │     └── query_api_streaming() → /v1/chat/completions (stream=True)
+  │           Accumulates OpenAI delta chunks, yields ResponseChunk objects:
+  │             ChunkType.CONTENT   → text fragment
+  │             ChunkType.THINKING  → reasoning fragment
+  │             ChunkType.TOOL_CALL → {tool_call_id, name, arguments_json}
+  │             ChunkType.DONE
+  │
+  ├── On TOOL_CALL chunks:
+  │     execute_tool(name, arguments_dict)
+  │       ├── CST/AST tools     → ToolLoopRunner._tool_impl_cache[name]
+  │       ├── Registered tools  → _extra_tool_schemas implementations
+  │       └── Yields ChunkType.TOOL_RESULT
+  │
+  └── ThreadPoolExecutor — runs multiple tool calls in parallel within a round
+
+Wire format (Ollama/OpenAI):
+  TOOL_CALL:   role=assistant, tool_calls=[{id, function:{name, arguments}}]
+  TOOL_RESULT: role=tool,      content="...", tool_call_id="..."
+
+Registering client-side tools:
+  AgentixBridgeAdapter._register_client_tools()
+    └── bridge.register_tool_implementations(impls, schemas)
+          ├── impls:   dict[str, Callable]  (e.g. read_file → fn)
+          └── schemas: list[dict]           (OpenAI tool schema per tool)
+
+Available client tools (ClientToolExecutor):
+  read_file        Read file contents (path, optional start/end lines)
+  list_directory   List directory contents (path, optional pattern)
+  write_file       Write or append to a file (path, content, mode)
+  get_file_info    Get file metadata (size, mtime, type)
+  search_files     Glob search under a directory (path, pattern)
+
+Available Working Memory tools (WorkingMemoryToolExecutor):
+  remember_fact    Store/update an agent-owned fact (key, value)
+  forget_fact      Disable an agent-owned fact (key)
+  list_facts       List all facts with ownership and enabled status
+
+Available CST/AST tools (src/agentix/tools/):
+  Registered via extract_cst_tools() and to_openai_tools()
+  (names depend on the CST/AST modules loaded at runtime)
+```
+
+**Schema generation**: `extract_tool_schema(fn)` in `src/agentix/tools/schema.py`
+converts any Python function with a typed signature + docstring into a valid
+OpenAI JSON schema automatically.
+
+---
+
+## 9. Hierarchical Task Execution
+
+Implemented across Phases 1–7 of `docs/hierarchical_task_execution_plan.md`.
+
+```
+invoke_planner route:
+  AgentixBridge._stream_planned_response(prompt, context, classification)
+    │
+    ├── _create_plan(prompt, context)
+    │     └── LLM call → JSON plan {steps: [{description, tbd, depends_on}]}
+    │         Stored as PlanRecord in sessions/<user>/<session>/plans/
+    │
+    └── _run_plan(plan, context)
+          for each step:
+            _run_task_node(step, plan_context)
+              ├── Injects task_execution.md as system prompt
+              ├── Runs tool loop for this node
+              ├── Synthesises result → SynthesisAttempt
+              ├── Checks assertions (AssertionChecker)
+              └── Stores TaskNodeRecord in sessions/…/task_nodes/
+```
+
+**PlanTreeWidget**: Live tree rendered in the GUI as execution proceeds.
+
+- Root steps at depth 0; spawned sub-tasks at depth 1–10
+- Each node shows status icon, tool calls, and synthesis text
+- [Re-synth] button opens `ResynthesisDialog` for re-synthesis with WM hint
+- [Export] button exports the plan tree to markdown
+
+**Session-folder layout (extended)**:
+
+```
+sessions/<user>/<session>/
+  context/                 message JSON files (one per message)
+  plans/                   <epoch>_<plan_id>.json
+  task_nodes/              <epoch>_<task_id>.json
+  task_tree.json           TaskTree index (single file, updated in-place)
+  scratch/                 ephemeral per-task scratch files
+  task_tree_export.md      generated by [Export] button
+  working_memory.json      WorkingMemory fact store
+  session.log              full session transcript
+```
+
+---
+
+## 10. Working Memory
+
+Per-session key-value fact store with ownership enforcement.
+
+```
+WorkingMemory
+  ├── FactOwner.USER  — user can create/mutate; agent can read only
+  └── FactOwner.AGENT — agent can create/update/disable; user can promote to USER
+
+Facts injected at session start (SessionState._load_agentx_instructions):
+  user:UserName          → OS username
+  user:cwd               → current working directory
+  user:project           → git project name (if in a git repo)
+  user:agentx-instructions → .agentx/agentx-instructions.md (agent identity)
+
+Serialisation to LLM:
+  _build_shared_context() in session.py produces a SYSTEM message:
+    <working_memory>
+    👤 UserName: alice
+    👤 cwd: /Projects/my-project
+    🤖 current_task: implement login feature
+    </working_memory>
+
+Agent-callable tools (WorkingMemoryToolExecutor):
+  remember_fact(key, value)   add/update agent-owned fact
+  forget_fact(key)            disable agent-owned fact
+  list_facts()                enumerate all facts with status
+```
+
+Persistence: `{session_dir}/working_memory.json` — loaded at startup, saved
+after every mutation.
+
+---
+
+## 11. Data Models
+
+### Message
+
+```python
+@dataclass
+class Message:
+    role: MessageRole        # USER | ASSISTANT | SYSTEM | THINKING | TOOL | PLAN | TASK_NODE
+    content: str
+    epoch: float             # creation timestamp (time.time())
+    enabled: bool = True     # False → excluded from LLM context
+    attachments: list[Attachment] = []
+    tool_calls: list[dict] = []      # role=ASSISTANT tool_call wire format
+    tool_call_id: str | None = None  # role=TOOL result wire format
+    tool_name: str | None = None
+    # Plan/task fields
+    plan_id: str | None = None
+    plan_name: str | None = None
+    task_id: str | None = None
+
+# Wire format helpers
+to_llm_dict()   → {"role": "user"|"assistant"|"tool", "content": "…"}
+user_message(content) → Message(role=USER, …)
+```
+
+### Context
+
+```python
+class Context:
+    # Main API
+    add_message(message)
+    get_enabled_messages() → list[Message]
+    to_llm_messages()      → list[dict]  (PLAN/TASK_NODE excluded)
+    add_tool_call_message(tool_name, tool_input, tool_call_id, round_index)
+    add_tool_result_message(tool_name, tool_output, tool_call_id, tool_id, round_index)
+    # Plan/task persistence
+    save_plan(plan_record)
+    load_plans() → list[PlanRecord]
+    save_task_node(node_record)
+    load_task_nodes() → list[TaskNodeRecord]
+```
+
+### ResponseChunk
+
+```python
+class ChunkType(str, Enum):
+    CONTENT         # text fragment
+    THINKING        # reasoning fragment
+    TOOL_CALL       # {tool_name, tool_input, tool_call_id, round_index}
+    TOOL_RESULT     # {tool_name, tool_output, tool_id, round_index}
+    CLASSIFICATION  # {intent, next_step, needs_clarification, …}
+    PLAN            # {plan_id, plan_name, steps}
+    TASK_NODE_START # {task_id, plan_id, description, depth}
+    TASK_NODE_DONE  # {task_id, synthesis_text}
+    SYNTHESIS       # {task_id, content}
+    ASSERTION       # {fact, type, verified, error}
+    ERROR           # {content}
+    DONE            #
+```
+
+### TaskNodeRecord (task_node.json schema)
+
+```json
+{
+  "plan_id":                  "string",
+  "task_id":                  "string",
+  "parent_task_id":           "string | null",
+  "depth":                    0,
+  "plan_step_index":          0,
+  "task_description":         "string",
+  "tbd":                      false,
+  "tbd_resolved_description": "string | null",
+  "status":                   "pending|running|done|failed",
+  "child_message_epochs":     [],
+  "child_task_ids":           [],
+  "synthesis_epoch":          null,
+  "scratch_file":             "string | null",
+  "assertions": [
+    {"fact": "…", "type": "pre|post|invariant", "check": null, "verified": null, "error": null}
+  ],
+  "synthesis_attempts": [
+    {"epoch": 0.0, "status": "accepted|rejected|pending", "rejected_epochs": []}
+  ],
+  "wm_hints_added":           false,
+  "epoch":                    0.0,
+  "enabled":                  true
+}
+```
+
+---
+
+## 12. Tool Schemas and Usage
+
+### Schema generation
+
+```python
+from agentix.tools.schema import extract_tool_schema
+
+def read_file(path: str, start_line: int = 0, end_line: int = -1) -> str:
+    """Read a file and return its contents.
+
+    Args:
+        path: Absolute path to the file.
+        start_line: First line to read (0-indexed, inclusive).
+        end_line: Last line to read (-1 = until EOF).
+    """
+    ...
+
+schema = extract_tool_schema(read_file)
+# Returns:
+# {
+#   "type": "function",
+#   "function": {
+#     "name": "read_file",
+#     "description": "Read a file and return its contents.",
+#     "parameters": {
+#       "type": "object",
+#       "properties": {
+#         "path":       {"type": "string", "description": "Absolute path to the file."},
+#         "start_line": {"type": "integer", "description": "First line to read (0-indexed, inclusive)."},
+#         "end_line":   {"type": "integer", "description": "Last line to read (-1 = until EOF)."}
+#       },
+#       "required": ["path"]
+#     }
+#   }
+# }
+```
+
+### Registering new tools
+
+```python
+# In AgentixBridgeAdapter or after bridge creation:
+bridge.register_tool_implementations(
+    implementations={"my_tool": my_tool_fn},
+    schemas=[extract_tool_schema(my_tool_fn)],
+)
+```
+
+### Client tool schemas (reference)
+
+| Tool | Required params | Optional params | Returns |
+|------|-----------------|-----------------|---------|
+| `read_file` | `path: str` | `start_line: int`, `end_line: int` | `str` (file contents) |
+| `list_directory` | `path: str` | `pattern: str` | `str` (JSON array of entries) |
+| `write_file` | `path: str`, `content: str` | `mode: str` ("w"\|"a") | `str` (confirmation) |
+| `get_file_info` | `path: str` | — | `str` (JSON metadata) |
+| `search_files` | `path: str`, `pattern: str` | — | `str` (JSON array of paths) |
+
+### Working Memory tool schemas (reference)
+
+| Tool | Required params | Optional params | Returns |
+|------|-----------------|-----------------|---------|
+| `remember_fact` | `key: str`, `value: str` | — | `str` (confirmation or error) |
+| `forget_fact` | `key: str` | — | `str` (confirmation or error) |
+| `list_facts` | — | — | `str` (JSON array of fact entries) |
+
+---
+
+## 13. Threading Model
+
+Tkinter must run on the main thread.  LLM streaming runs on a background thread.
+
+```
+Main thread (Tkinter)
+  ├── session._handle_submit()
+  │     ├── reads GUI input
+  │     ├── adds user message to context
+  │     └── starts StreamingController.run_streaming_loop() on background thread
+  │
+  └── root.after() callbacks
+        └── All GUI updates from background threads scheduled via
+            session._safe_root_after(lambda: …)
+
+Background thread (started by StreamingController)
+  └── StreamingExecutor iterates process_prompt_generator()
+        ├── AgentixBridgeAdapter.process_prompt_generator()
+        │     └── AgentixBridge.process_prompt_streaming()  (sync wrapper)
+        └── For each ResponseChunk:
+              session._safe_root_after(lambda: gui.display_*(…))
+
+Coordination:
+  session._is_streaming    threading.Event — set while stream is active
+  session._handle_interrupt() sets interrupt flag and clears event
+```
+
+`AgentixBridgeAdapter` wraps async Agentix methods with sync calls and returns
+generators.  `StreamingExecutor` iterates them on the background thread.
+Never call `gui.*` directly from the background thread — always use
+`_safe_root_after`.
+
+---
+
+## 14. Persistence Layout
+
+```
+sessions/
+  _logs/                           (reserved)
+  <username>/
+    <session_YYYY-MM-DD_HH-MM-SS>/
+      context/
+        <epoch>_<role>.json        one per message
+      plans/
+        <epoch>_<plan_id>.json     PlanRecord (JSON)
+      task_nodes/
+        <epoch>_<task_id>.json     TaskNodeRecord (JSON)
+      task_tree.json               TaskTree index
+      working_memory.json          WorkingMemory fact store
+      session.log                  full session transcript (plain text)
+      task_tree_export.md          generated on [Export] click
+
+agentx.toml                        project configuration (root)
+.agentx/
+  agentx-instructions.md           agent identity → injected into working memory
+  bootstrap-prompt.md              first prompt sent on session start (optional)
+```
+
+---
+
+## 15. Configuration Reference
+
+`agentx.toml` (project root):
+
+```toml
+[agentx]
+ollama_host     = "localhost:11434"
+ollama_model    = "gpt-oss:latest"          # chat model
+screen_side     = "right"                   # window placement
+theme_mode      = "dark"
+
+[agentix]
+host                              = "localhost:8000"
+system_prompts_dir                = "system_prompts"
+agentix_bench_classification_model = "phi4-mini:3.8b"  # neutral classification model
+classify_prompts                  = true
+classification_backend            = "api"   # "api" | "torch"
+```
+
+Runtime config class: `AgentixConfig` (`src/agentix/agentix_config.py`)  
+GUI config class: `GUIConfig` (`src/agentx/gui/gui_config.py`)  
+App config loader: `AgentXConfig` (`src/agentx/config.py`)
+
+---
+
+## 16. Retrieval Keywords
+
+| Keyword | Location |
+|---------|----------|
+| session lifecycle, coordinator | `src/agentx/session.py` |
+| mutable session data, active model | `src/agentx/session_state.py` |
+| streaming, LLM stream, display logic | `src/agentx/streaming_controller.py` |
+| tool routing, execute_tool | `src/agentx/tool_dispatcher.py` |
+| service startup, health check, Ollama, Agentix | `src/agentx/service_manager.py` |
+| GUI interface, protocol, IGUIManager | `src/agentx/igui_manager.py` |
+| GUI coordinator, panels | `src/agentx/gui/gui_manager.py` |
+| chat output, plan tabs, streaming display | `src/agentx/gui/chat_panel.py` |
+| input box, submit, attachment bar | `src/agentx/gui/input_panel.py` |
+| side panel, model selector, context tab | `src/agentx/gui/side_panel.py` |
+| context rendering, message grid, working memory widget | `src/agentx/gui/context_renderer.py` |
+| plan tree, task node widget, re-synthesis | `src/agentx/gui/plan_tree_widget.py` |
+| settings tab, toml editor | `src/agentx/gui/settings_tab.py` |
+| open file, file explorer, navigation | `src/agentx/file_explorer.py` |
+| config load/save | `src/agentx/config.py` |
+| agentix bridge, async to sync | `src/agentx/integration/agentix_bridge_adapter.py` |
+| file tools, read_file, write_file, list_directory | `src/agentx/integration/client_tool_executor.py` |
+| working memory tools, remember_fact | `src/agentx/integration/working_memory_tool_executor.py` |
+| response chunk processing, GUI callback | `src/agentx/integration/response_handler.py` |
+| tool loop, agentic loop, LLM chunks | `src/agentix/bridge/tool_loop.py` |
+| classification, intent, next_step | `src/agentix/bridge/classify_prompt.py` |
+| prompt assembly, system prompt injection | `src/agentix/bridge/prompt_assembly.py` |
+| assertion check, pre/post/invariant | `src/agentix/bridge/assertion_checker.py` |
+| API request, response_format, json_object | `src/agentix/query_payload.py` |
+| system prompt loading, PromptLoader | `src/agentix/prompt_loader.py` |
+| conversation history, to_llm_messages | `src/shared/models/context.py` |
+| message dataclass, MessageRole | `src/shared/models/message.py` |
+| chunk type, ResponseChunk | `src/shared/models/response.py` |
+| working memory, fact store, ownership | `src/shared/models/working_memory.py` |
+| plan record, task node, synthesis, assertion | `src/shared/models/task_node.py` |
+| tool schema, extract_tool_schema, OpenAI schema | `src/agentix/tools/schema.py` |
+| CST tools, AST tools, code analysis | `src/agentix/tools/cst_tools.py`, `ast_tools.py` |
+| diagnostics, health check CLI | `agentx_diagnostics.py` |
 
 Version: 2026-02-17
 Author: GitHub Copilot Chat Assistant (for maintainers' review)
@@ -20,7 +895,7 @@ Index (high-level)
 -------------------
 
 1. Entrypoints
-   - src/agentx/__main__.py  — app launch wrapper
+   - src/agentx/**main**.py  — app launch wrapper
    - src/agentx/main.py      — GUI application main()
    - agentx_diagnostics.py   — CLI health checks for dependencies and services
 2. Core runtime components
@@ -48,7 +923,7 @@ Index (high-level)
 Module summaries (concise)
 --------------------------
 
-- agentx.__main__ / agentx.main
+- agentx.**main** / agentx.main
   - Purpose: Launch the AgentX Tkinter GUI application. Creates AgentXSession and runs the main loop.
   - Key behavior: Calls session.perform_service_handshake() then session.layout() and mainloop(); ensures ServiceManager shutdown on exit.
 
