@@ -296,13 +296,14 @@ sequenceDiagram
     participant InputPanel
     participant Session as AgentXSession
     participant Controller as StreamingController
+    participant Chat as ChatPanel
 
     User->>InputPanel: clicks Stop button
     InputPanel->>Session: on_interrupt()
     Session->>Controller: interrupt()
     Controller->>Controller: _interrupt_flag = True
     Controller->>Controller: _is_streaming.clear()
-    Note right of Controller: generator yields nothing\non next iteration;\nstream terminates gracefully
+    Note right of Controller: generator yields nothing on next iteration — stream terminates gracefully
     Session->>Chat: display partial response (up to interrupt point)
     Session->>Session: persist partial message to Context
 ```

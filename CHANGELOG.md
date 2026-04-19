@@ -7,6 +7,28 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.18.22-d] - 2026-04-19
+
+### Code Changes
+
+#### Changed
+
+- No source code changes in this release (documentation only).
+
+### Test Changes
+
+#### Changed
+
+- No test changes in this release.
+
+### Documentation Changes
+
+#### Fixed
+
+- `docs/ux/02_USER_FLOWS.md` — UF-10 Mermaid parse error: added missing `participant Chat as ChatPanel` declaration and replaced `\n`-delimited `Note` text with a single-line string (inline `\n` escapes in `Note` blocks are not supported by all Mermaid versions and caused a NEWLINE parse error).
+
+---
+
 ## [0.18.22-c] - 2026-04-19
 
 ### Code Changes
