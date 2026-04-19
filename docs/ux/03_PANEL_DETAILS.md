@@ -11,8 +11,7 @@ wiring to session logic.
 ## PD-01: ChatPanel
 
 **Class**: `ChatPanel` (`src/agentx/gui/chat_panel.py`)  
-**Position**: Right ~75% of window, from top to rely=0.77  
-**Purpose**: Displays the live conversation and plan-tree tabs.
+**Position**: Left ~66% of window (PanedWindow left pane), height rely 0.00–0.77
 
 ### Tabs
 
@@ -99,8 +98,7 @@ wiring to session logic.
 ## PD-03: SidePanel
 
 **Class**: `SidePanel` (`src/agentx/gui/side_panel.py`)  
-**Position**: Left ~25% of window (PanedWindow left sash), full height 0–77%  
-**Purpose**: System-status, model selection, session/file/settings management.
+**Position**: Right ~34% of window (PanedWindow right pane), height rely 0.00–0.77
 
 ### Sub-widgets
 
