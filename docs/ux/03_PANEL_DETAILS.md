@@ -135,30 +135,11 @@ Contains two `CollapsibleSection` widgets:
 
 ### Files Tab
 
-`FileExplorer` widget — see `src/agentx/file_explorer.py`:
-
-| Control | Action |
-|---------|--------|
-| Directory tree | Navigate folders |
-| File click | Add file as attachment |
-| `[↑]` up-dir button | Navigate to parent directory |
-| `[⟳]` refresh button | Reload current directory |
+`FileExplorer` widget — full detail: [PD-11](#pd-11-fileexplorer).
 
 ### Settings Tab
 
-`SettingsTab` widget — interactive `agentx.toml` editor:
-
-| Widget type | Used for |
-|-------------|---------|
-| `tk.Checkbutton` | Boolean settings |
-| `ttk.Spinbox` | Integer settings |
-| `ttk.Combobox` | Enum or model-name settings |
-| `ttk.Entry` | Free-text string settings |
-| `tk.Checkbutton` per value | `list[str]` flag arrays |
-
-- **🔁** label suffix: setting requires app restart to take effect.
-- Torch-specific fields (`classification_torch_device`, `classification_torch_model`)
-  are greyed unless `classification_backend == "torch"`.
+`SettingsTab` widget — full detail: [PD-07](#pd-07-settingstab-detail).
 
 ---
 
@@ -243,23 +224,103 @@ Contains two `CollapsibleSection` widgets:
 
 ## PD-07: SettingsTab (Detail)
 
-**Class**: `SettingsTab` (`src/agentx/gui/settings_tab.py`)  
-**Position**: Third tab of SidePanel notebook  
-**Purpose**: Interactive `agentx.toml` editor.
+**Class**: `SettingsTab` (`src/agentx/gui/settings_tab.py`)
+**Position**: Third tab of SidePanel notebook (`⚙️ Settings`)
+**Purpose**: Interactive `agentx.toml` editor. All changes are persisted to disk immediately on interaction. Settings marked 🔁 require a full app restart; a tooltip is shown on modification.
 
-### Key Sections
+### Widget Conventions
 
-| Section | Settings | Widget Type |
-|---------|----------|-------------|
-| `[agentx]` | `ollama_host`, `ollama_model`, `screen_side`, `theme_mode` | Entry / Combobox |
-| `[agentx]` | `ollama_initial_load_timeout_seconds` | Spinbox |
-| `[agentix]` | `host`, `classify_prompts`, `classification_backend` | Entry / Checkbox / Combobox |
-| `[agentix]` | `agentix_bench_classification_model` | Combobox (populated from Ollama) |
-| `[agentix]` | `classification_torch_device`, `classification_torch_model` | Entry (greyed if backend≠torch) |
-| `working_memory` | `enabled` | Checkbox (restart required) |
+| Value type | Widget | Notes |
+|------------|--------|-------|
+| `bool` | `tk.Checkbutton` | Fires immediately on toggle |
+| `int` | `ttk.Spinbox` | Fires on value change |
+| `str` (enum) | `ttk.Combobox` (fixed choices) | Fires on selection |
+| `str` (model name) | `ttk.Combobox` (populated at runtime) | Refreshed via `populate_models()` |
+| `str` (free text) | `ttk.Entry` | Fires on focus-out or Enter |
+| `list[str]` (flags) | One `tk.Checkbutton` per known value | Fires on each toggle |
 
-Settings marked 🔁 require a full app restart to take effect; a tooltip is
-shown when the user modifies them.
+### Sections
+
+#### 🎨 Appearance (expanded by default)
+
+| Setting key | Label | Widget | Restart? |
+|-------------|-------|--------|----------|
+| `agentx.theme_mode` | Theme mode | Combobox: `Dark Mode` / `Light Mode` | Yes 🔁 |
+| `agentx.markdown_render_enabled` | Render Markdown | Checkbutton (greyed if `tkinterweb` not installed) | No |
+
+#### 🤖 Ollama (expanded by default)
+
+| Setting key | Label | Widget | Restart? |
+|-------------|-------|--------|----------|
+| `agentx.ollama_host` | Host | Entry | Yes 🔁 |
+| `agentx.ollama_model` | Default model | Combobox (from `/api/tags`) | Yes 🔁 |
+| `agentx.ollama_initial_load_timeout_seconds` | Load timeout (s) | Spinbox 5–600 | Yes 🔁 |
+| `agentx.screen_side` | Screen side | Combobox: `left` / `right` | Yes 🔁 |
+
+#### 🧠 Agentix (expanded by default)
+
+| Setting key | Label | Widget | Restart? |
+|-------------|-------|--------|----------|
+| `agentix.host` | Host | Entry | Yes 🔁 |
+| `agentix.classify_prompts` | Classify prompts | Checkbutton | No |
+| `agentix.debug` | Debug logging | Checkbutton | No |
+| `agentix.classification_backend` | Backend | Combobox: `ollama` / `torch` | No |
+| `agentix.agentix_bench_classification_model` | Classification model | Combobox (from `/api/tags`) | No (hot-reload) |
+| `agentix.classification_torch_model` | Torch model | Entry (greyed unless backend=torch) | Yes 🔁 |
+| `agentix.classification_torch_device` | Torch device | Spinbox −1–16 (greyed unless backend=torch) | Yes 🔁 |
+| `agentix.default_system_prompts` | System prompts | One Checkbutton per discovered `.md` file | No |
+
+#### 📊 Classification Display (collapsed by default)
+
+| Setting key | Label | Widget |
+|-------------|-------|--------|
+| `agentix.classification_display.enabled` | Show classification block | Checkbutton |
+| `agentix.classification_display.show_intent` | Show intent | Checkbutton |
+| `agentix.classification_display.show_reasoning` | Show reasoning | Checkbutton |
+| `agentix.classification_display.show_clarification` | Show clarification info | Checkbutton |
+| `agentix.classification_display.show_next_step` | Show routing path | Checkbutton |
+
+#### 🏛️ Working Memory (collapsed by default)
+
+| Setting key | Label | Widget | Restart? |
+|-------------|-------|--------|----------|
+| `agentx.working_memory.enabled` | Enabled | Checkbutton | Yes 🔁 |
+| `agentx.working_memory.inject_into_context` | Inject into LLM context | Checkbutton | No |
+| `agentx.working_memory.max_facts` | Max facts (0 = unlimited) | Spinbox 0–500 | No |
+
+### ASCII Mockup
+
+```
+⚙️ Settings tab (scrollable)
+│
+├── ▼ 🎨 Appearance
+│     Theme mode:          [ Dark Mode    ▾]  🔁
+│     [✓] Render Markdown
+│
+├── ▼ 🤖 Ollama
+│     Host:                [ localhost:11434  ]  🔁
+│     Default model:       [ phi4-mini:3.8b ▾]  🔁
+│     Load timeout (s):    [  120  ↑↓ ]  🔁
+│     Screen side:         [ right ▾]  🔁
+│
+├── ▼ 🧠 Agentix
+│     Host:                [ localhost:8000   ]  🔁
+│     [✓] Classify prompts
+│     [ ] Debug logging
+│     ── Classification ──────────────────────
+│     Backend:             [ ollama ▾]
+│     Classification model:[ phi4-mini:3.8b ▾]
+│     Torch model:         [ (greyed)         ]  🔁
+│     Torch device:        [ (greyed)  ↑↓ ]  🔁
+│     ── System prompts ─────────────────────
+│     [✓] planner_prompt
+│     [✓] python_coder
+│     [✓] tool_use
+│
+├── ▶ 📊 Classification Display   (collapsed)
+│
+└── ▶ 🏛️ Working Memory          (collapsed)
+```
 
 ---
 
@@ -334,3 +395,89 @@ Used in:
 
 Disabled tools are passed as `_disabled_tools` to `ToolLoopRunner` and excluded
 from the `tools=[…]` array in the API request.
+
+---
+
+## PD-11: FileExplorer
+
+**Class**: `FileExplorer` (`src/agentx/file_explorer.py`)
+**Position**: Second tab (`Files`) of SidePanel notebook
+**Purpose**: Browse the local filesystem, attach files to the current message, open files for editing, and pin folder paths to Working Memory.
+
+### Layout
+
+```
+Files tab
+│
+├── Navigation bar (top strip)
+│     [ ◀ Back ]  [ Forward ▶ ]  [ ⬆ Up ]  [ 🏠 Home ]  [ 🔄 Refresh ]
+│     📁 /Projects/agentX/src/agentx
+│
+└── File listing (fills remaining height)
+      ┌─────────────────────────────────────┬──────────┬──────────┐
+      │ Name                                │ Type     │ Size     │
+      ├─────────────────────────────────────┼──────────┼──────────┤
+      │ 📁 gui/                             │ dir      │          │
+      │ 📁 bridge/                          │ dir      │          │
+      │ 📄 session.py                       │ .py      │ 48.2 KB  │
+      │ 📄 file_explorer.py                 │ .py      │ 12.1 KB  │
+      └─────────────────────────────────────┴──────────┴──────────┘
+```
+
+### Navigation Controls
+
+| Control | Action | Callback |
+|---------|--------|---------|
+| `◀ Back` | Navigate to previous directory in history | `navigate_back()` |
+| `Forward ▶` | Navigate to next directory in history | `navigate_forward()` |
+| `⬆ Up` | Navigate to parent directory | `navigate_parent()` |
+| `🏠 Home` | Navigate to user home directory | `navigate_home()` |
+| `🔄 Refresh` | Reload current directory listing | `_populate_tree()` |
+
+- `◀ Back` and `Forward ▶` are greyed when at the start/end of the navigation history.
+- The path label below the buttons always shows the full absolute path of the current directory.
+
+### Tree Columns
+
+| Column | Width | Content |
+|--------|-------|---------|
+| Name | 250 px | File/folder name with icon |
+| Type | 80 px | Extension (e.g. `.py`) or `dir` |
+| Size | 100 px | File size in human-readable form; blank for directories |
+
+### Interactions
+
+| Interaction | Target | Action |
+|-------------|--------|--------|
+| Double-click | Directory row | Enter that directory (`change_directory()`) |
+| Double-click | File row | Opens file for editing (`on_edit` callback) |
+| Right-click (or Ctrl+click) | File row | Shows file context menu |
+| Right-click (or Ctrl+click) | Directory row | Shows folder context menu |
+| `Escape` / focus lost | Any | Dismisses open context menu |
+
+### File Context Menu (right-click on a file)
+
+| Item | Action | Callback |
+|------|--------|---------|
+| Attach | Add file as attachment chip in InputPanel | `on_attach(path)` |
+| Edit | Open file content for editing/viewing | `on_edit(path)` |
+
+### Folder Context Menu (right-click on a directory)
+
+| Item | Action | Callback |
+|------|--------|---------|
+| Add full path to memory | Saves `folder_name → /abs/path` as a Working Memory fact | `on_add_folder_to_memory(key, full_path)` |
+| Add relative path to memory | Saves `folder_name → relative/path` as a Working Memory fact | `on_add_folder_to_memory(key, rel_path)` |
+
+### State
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `current_path` | `str` | Absolute path currently displayed |
+| `history` | `list[str]` | Navigation history stack |
+| `history_index` | `int` | Current position in history stack |
+
+### Related User Flow
+
+See [UF-05: File Attachment](02_USER_FLOWS.md#uf-05-file-attachment) for the end-to-end flow from clicking a file to it appearing as an attachment chip.
+See [UF-11: File Explorer Navigation](02_USER_FLOWS.md#uf-11-file-explorer-navigation) for directory browsing and folder-to-memory flows.

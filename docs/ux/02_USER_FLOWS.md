@@ -307,3 +307,45 @@ sequenceDiagram
     Session->>Chat: display partial response
     Session->>Session: persist partial message to Context
 ```
+
+---
+
+## UF-11: File Explorer Navigation
+
+**Trigger**: User opens the `Files` tab in the SidePanel and browses the local filesystem.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant SidePanel
+    participant FileExplorer
+    participant Session as AgentXSession
+    participant InputPanel
+
+    User->>SidePanel: selects Files tab
+    SidePanel->>FileExplorer: to_gui() renders tree at current_path
+    User->>FileExplorer: double-clicks a directory
+    FileExplorer->>FileExplorer: change_directory(path)
+    FileExplorer->>FileExplorer: update history stack
+    FileExplorer->>FileExplorer: refresh tree listing
+    FileExplorer->>FileExplorer: update path label
+
+    alt User attaches a file
+        User->>FileExplorer: right-clicks file, selects Attach
+        FileExplorer->>Session: on_attach(path)
+        Session->>InputPanel: add attachment chip
+    else User edits a file
+        User->>FileExplorer: right-clicks file, selects Edit
+        FileExplorer->>Session: on_edit(path)
+        Session->>Session: load file into chat context
+    else User pins a folder to Working Memory
+        User->>FileExplorer: right-clicks directory
+        User->>FileExplorer: selects Add full path to memory
+        FileExplorer->>Session: on_add_folder_to_memory(key, path)
+        Session->>Session: store fact in working_memory
+    else User navigates history
+        User->>FileExplorer: clicks Back or Forward
+        FileExplorer->>FileExplorer: navigate_back() or navigate_forward()
+        FileExplorer->>FileExplorer: refresh tree listing
+    end
+```

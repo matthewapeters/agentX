@@ -7,6 +7,57 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.18.22-h] - 2026-04-19
+
+### Code Changes
+
+#### Added
+
+- None
+
+#### Changed
+
+- None
+
+#### Fixed
+
+- None
+
+### Documentation Changes
+
+#### Added
+
+- `docs/ux/03_PANEL_DETAILS.md`: new **PD-11: FileExplorer** section documenting the Files tab widget — navigation bar (Back, Forward, Up, Home, Refresh), path label, three-column treeview, file/folder context menus (Attach, Edit, Add to memory), navigation history state, and related user flow references.
+- `docs/ux/03_PANEL_DETAILS.md`: fully expanded **PD-07: SettingsTab** section — replaces the thin key-sections table with complete per-section widget inventories for all five collapsible groups (Appearance, Ollama, Agentix, Classification Display, Working Memory), ASCII mockup, and widget convention table.
+- `docs/ux/02_USER_FLOWS.md`: **UF-11: File Explorer Navigation** sequence diagram covering directory navigation, file attach, file edit, folder pin to Working Memory, and history traversal (Back/Forward).
+- `docs/ux/01_MAIN_LAYOUT.md`: Detail Diagram References table — added rows linking **Files Tab → PD-11** and **Settings Tab → PD-07**.
+- `docs/ux/01_MAIN_LAYOUT.md`: Component Index — added `[→ PD-11]` and `[→ PD-07]` inline links on the Files tab and Settings tab rows.
+- `docs/ux/03_PANEL_DETAILS.md`: PD-03 SidePanel — replaced the inline Files Tab and Settings Tab affordance tables with concise `[→ PD-11]` / `[→ PD-07]` forward-references to avoid duplication.
+
+---
+
+## [0.18.22-g] - 2026-04-19
+
+### Code Changes
+
+#### Changed
+
+- No source code changes in this release (documentation / workspace config only).
+
+### Test Changes
+
+#### Changed
+
+- No test changes in this release.
+
+### Documentation Changes
+
+#### Added
+
+- `.vscode/extensions.json` — workspace extension recommendations. Marks `vstirbu.vscode-mermaid-preview` and `mermaidchart.vscode-mermaid-chart` as `unwantedRecommendations` because both register Markdown preview renderers that conflict with `bierner.markdown-mermaid`, producing the double-nested "No diagram type detected" error in the Markdown preview. Only `bierner.markdown-mermaid` should be active in this workspace for Mermaid rendering.
+
+---
+
 ## [0.18.22-f] - 2026-04-19
 
 ### Code Changes

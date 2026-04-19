@@ -51,6 +51,8 @@ arrangement.
 | Side Panel | [§4 / PD-03](#4-layout-detail-sidepanel) | [03_PANEL_DETAILS.md — PD-03](03_PANEL_DETAILS.md#pd-03-sidepanel) |
 | Model Selector | [§4 excerpt / PD-04](#4-layout-detail-sidepanel) | [03_PANEL_DETAILS.md — PD-04](03_PANEL_DETAILS.md#pd-04-modelselector) |
 | Attachment Bar + Input Panel | [§6 / PD-02](#6-layout-detail-inputpanel) | [03_PANEL_DETAILS.md — PD-02](03_PANEL_DETAILS.md#pd-02-inputpanel) |
+| Files Tab (FileExplorer) | — | [03_PANEL_DETAILS.md — PD-11](03_PANEL_DETAILS.md#pd-11-fileexplorer) |
+| Settings Tab (SettingsTab) | — | [03_PANEL_DETAILS.md — PD-07](03_PANEL_DETAILS.md#pd-07-settingstab-detail) |
 
 ---
 
@@ -84,8 +86,8 @@ The main paned area is split horizontally (sash at `output_panel_ratio` = 0.66):
 | Session/Files/Settings tabs | `SidePanel._notebook` | `gui/side_panel.py` |
 | Session tab: Working Memory | `ContextRenderer.render_working_memory_widget()` | `gui/context_renderer.py` |
 | Session tab: Context messages | `ContextRenderer.render_context_widget()` | `gui/context_renderer.py` |
-| Files tab | `FileExplorer` | `file_explorer.py` |
-| Settings tab | `SettingsTab` | `gui/settings_tab.py` |
+| Files tab | `FileExplorer` | `file_explorer.py` [→ PD-11](03_PANEL_DETAILS.md#pd-11-fileexplorer) |
+| Settings tab | `SettingsTab` | `gui/settings_tab.py` [→ PD-07](03_PANEL_DETAILS.md#pd-07-settingstab-detail) |
 | Left output area | `ChatPanel._notebook` | `gui/chat_panel.py` |
 | Chat tab | `ChatPanel` streaming entries | `gui/chat_panel.py` |
 | Plan tabs | `PlanTreeWidget` | `gui/plan_tree_widget.py` |
