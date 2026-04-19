@@ -7,6 +7,37 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.18.22-i] - 2026-04-19
+
+### Code Changes
+
+#### Added
+
+- None
+
+#### Changed
+
+- None
+
+#### Fixed
+
+- None
+
+### Documentation Changes
+
+#### Added
+
+- `docs/architecture.md`: new **§12 Context Construction Pipeline** section documenting all five filter layers applied before any message reaches the LLM API:
+  - **Layer 0** — `_build_shared_context()` assembly order (WM injection, history, current session)
+  - **Layer 1** — `Message.enabled` flag mechanics, including non-obvious `load_from_dir()` default of `False`, the `MessageEntry.__getattr__` proxy pattern, and per-role enabled defaults
+  - **Layer 2** — `to_llm_messages()` internal-role exclusion set (`PLAN`, `TASK_NODE`, `SYNTHESIS`, `ASSERTION`) with per-role LLM-sent table
+  - **Layer 3** — `to_llm_dict()` attachment filtering (`attachment.enabled == True`)
+  - Full pipeline ASCII diagram showing the complete flow from `_build_shared_context` through wire-format output
+  - Classification path note showing `classify_prompt()`'s independent `enabled`-only filter
+- `docs/architecture.md`: Contents table updated with §12 entry; old §12–16 renumbered to §13–17
+
+---
+
 ## [0.18.22-h] - 2026-04-19
 
 ### Code Changes

@@ -19,11 +19,12 @@ Project version: 0.18.22
 9. [Hierarchical Task Execution](#9-hierarchical-task-execution)
 10. [Working Memory](#10-working-memory)
 11. [Data Models](#11-data-models)
-12. [Tool Schemas and Usage](#12-tool-schemas-and-usage)
-13. [Threading Model](#13-threading-model)
-14. [Persistence Layout](#14-persistence-layout)
-15. [Configuration Reference](#15-configuration-reference)
-16. [Retrieval Keywords](#16-retrieval-keywords)
+12. [Context Construction Pipeline](#12-context-construction-pipeline)
+13. [Tool Schemas and Usage](#13-tool-schemas-and-usage)
+14. [Threading Model](#14-threading-model)
+15. [Persistence Layout](#15-persistence-layout)
+16. [Configuration Reference](#16-configuration-reference)
+17. [Retrieval Keywords](#17-retrieval-keywords)
 
 ---
 
@@ -685,7 +686,154 @@ class ChunkType(str, Enum):
 
 ---
 
-## 12. Tool Schemas and Usage
+## 12. Context Construction Pipeline
+
+Before any prompt reaches Ollama, a five-layer filter pipeline transforms the
+raw `messages` list into the final wire-format array.  Understanding all five
+layers is necessary to predict which messages a model actually sees.
+
+### Layer 0 — Assembly (`_build_shared_context`)
+
+`AgentXSession._build_shared_context()` (`session.py`) constructs a fresh
+`Context` object from **three sources in priority order**:
+
+```
+_build_shared_context() → shared_context: Context
+│
+├── 1. Working Memory injection (optional)
+│     Condition: working_memory.enabled AND working_memory.inject_into_context
+│     Effect:    prepends a SYSTEM message containing all WM facts
+│
+├── 2. Prior-session history
+│     Source:    self.history.get_enabled_messages()
+│     Effect:    appends every *enabled* message from previous sessions
+│
+└── 3. Current-session messages
+      Source:    self.context.messages  (current session on disk)
+      Condition: msg.enabled == True  (checked inline — not via get_messages())
+      Effect:    appends each enabled message of the live session
+```
+
+The assembled `shared_context` is then passed to `classify_prompt()` and
+`process_prompt_generator()`.
+
+### Layer 1 — `Message.enabled` flag
+
+Every `Message` carries an `enabled: bool` field (default `True` for new
+messages).
+
+| Scenario | `enabled` at rest |
+|----------|-------------------|
+| Normal turn (user/assistant/tool) | `True` |
+| Message loaded from disk | `False` ← **non-obvious default** |
+| `THINKING` block | `False` (hidden by default) |
+| `CLASSIFICATION` metadata | `False` |
+| User soft-deletes via Context panel ☑ | toggled to `False` |
+
+The `MessageEntry` wrapper (`context.py`) delegates attribute access to the
+inner `Message` via `__getattr__`, so `entry.enabled` reads
+`entry.message.enabled`.  This means `get_messages(enabled_only=True)` and
+`get_enabled_messages()` both work through this proxy rather than a direct
+field on `MessageEntry`.
+
+> **On-disk load default**: `load_from_dir()` sets `msg.enabled = False` and
+> `att.enabled = False` for every loaded message and attachment.  The caller
+> (e.g. `_build_shared_context`) must explicitly re-enable messages it wants
+> in context.  New messages added via `add_message()` are **not** touched —
+> they keep whatever `enabled` value was set before calling `add_message()`.
+
+### Layer 2 — Internal role exclusion (`to_llm_messages`)
+
+`Context.to_llm_messages()` unconditionally strips four roles regardless of
+their `enabled` flag:
+
+```python
+_internal = {MessageRole.PLAN, MessageRole.TASK_NODE,
+             MessageRole.SYNTHESIS, MessageRole.ASSERTION}
+return [msg.to_llm_dict()
+        for msg in self.get_enabled_messages()
+        if msg.role not in _internal]
+```
+
+| Role | Sent to LLM? | Reason |
+|------|-------------|--------|
+| `USER` | Yes | |
+| `ASSISTANT` | Yes | |
+| `SYSTEM` | Yes | |
+| `THINKING` | Yes (as `"assistant"`) | role remapped in `to_llm_dict()` |
+| `TOOL_CALL` | Yes (via `tool_calls[]`) | |
+| `TOOL_RESULT` | Yes (role `"tool"`) | |
+| `PLAN` | **No** | task-execution metadata only |
+| `TASK_NODE` | **No** | task-execution metadata only |
+| `SYNTHESIS` | **No** | task-execution metadata only |
+| `ASSERTION` | **No** | task-execution metadata only |
+| `CLASSIFICATION` | **No** | `enabled=False` by construction |
+
+### Layer 3 — Attachment filtering (`to_llm_dict`)
+
+Inside `Message.to_llm_dict()`, only attachments with `attachment.enabled ==
+True` are appended to `content`:
+
+```python
+enabled_attachments = [a for a in self.attachments if a.enabled]
+if enabled_attachments:
+    full_content += "\n\n--- Attached Files ---"
+    for attachment in enabled_attachments:
+        full_content += attachment.to_llm_format()
+```
+
+Attachments loaded from disk start with `enabled = False` (see Layer 1).  A
+user removes an attachment chip to set it to `False`; the history chip (greyed)
+is informational and its attachment is also `False`.
+
+### Full pipeline diagram
+
+```
+AgentXSession._build_shared_context()
+│
+│  [WM SYSTEM msg?]  [history enabled msgs]  [current session enabled msgs]
+│        │                    │                          │
+│        └────────────────────┴──────────────────────────┘
+│                             ▼
+│                     shared_context: Context
+│
+│                             │ .to_llm_messages()
+│                             ▼
+│             ┌───────────────────────────────┐
+│             │  get_enabled_messages()        │ ← Layer 1: msg.enabled == True
+│             └───────────────┬───────────────┘
+│                             │
+│             ┌───────────────▼───────────────┐
+│             │  role not in _internal         │ ← Layer 2: strip PLAN/TASK_NODE/
+│             └───────────────┬───────────────┘            SYNTHESIS/ASSERTION
+│                             │
+│             ┌───────────────▼───────────────┐
+│             │  msg.to_llm_dict()             │ ← Layer 3: att.enabled == True
+│             └───────────────┬───────────────┘
+│                             │
+│                     list[dict]  (wire format)
+│                             │
+└──────────── passed to Ollama /v1/chat/completions
+```
+
+### Classification path
+
+`classify_prompt()` (`agentix/bridge/classify_prompt.py`) receives the same
+`shared_context` but builds its own `effective_history`:
+
+```python
+effective_history = list(history) if history is not None \
+                    else list(context.get_enabled_messages())
+# Then applies a second enabled-only pass regardless:
+effective_history = [m for m in effective_history if getattr(m, "enabled", True)]
+```
+
+This means classification sees only enabled messages and respects
+user-toggled soft-deletes consistently with the LLM path.
+
+---
+
+## 13. Tool Schemas and Usage
 
 ### Schema generation
 
@@ -752,7 +900,7 @@ bridge.register_tool_implementations(
 
 ---
 
-## 13. Threading Model
+## 14. Threading Model
 
 Tkinter must run on the main thread.  LLM streaming runs on a background thread.
 
@@ -786,7 +934,7 @@ Never call `gui.*` directly from the background thread — always use
 
 ---
 
-## 14. Persistence Layout
+## 15. Persistence Layout
 
 ```
 sessions/
@@ -812,7 +960,7 @@ agentx.toml                        project configuration (root)
 
 ---
 
-## 15. Configuration Reference
+## 16. Configuration Reference
 
 `agentx.toml` (project root):
 
@@ -837,7 +985,7 @@ App config loader: `AgentXConfig` (`src/agentx/config.py`)
 
 ---
 
-## 16. Retrieval Keywords
+## 17. Retrieval Keywords
 
 | Keyword | Location |
 |---------|----------|
