@@ -7,7 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.18.22-i] - 2026-04-19
+## [0.18.23] - 2026-04-19
+
+### Code Changes
+
+#### Fixed
+
+- `pyproject.toml`: version tag format changed from PEP 440-incompatible `-letter` suffix (e.g. `0.18.22-i`) to PEP 440-compliant `.postN` post-release form (e.g. `0.18.22.post9`). The old format caused `uv build` to fail with a TOML parse error.
+- `.github/copilot-instructions.md`: Semantic Versioning section updated — doc-only version examples changed from `2.3.1-a` / `2.3.1-b` to `2.3.1.post1` / `2.3.1.post2`. All references to the `-letter` alpha tag scheme replaced with `.postN` language.
+
+---
+
+## [0.18.22.post9] - 2026-04-19
 
 ### Code Changes
 
@@ -38,7 +49,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.18.22-h] - 2026-04-19
+## [0.18.22.post8] - 2026-04-19
 
 ### Code Changes
 
@@ -67,7 +78,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.18.22-g] - 2026-04-19
+## [0.18.22.post7] - 2026-04-19
 
 ### Code Changes
 
@@ -89,7 +100,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.18.22-f] - 2026-04-19
+## [0.18.22.post6] - 2026-04-19
 
 ### Code Changes
 
@@ -111,7 +122,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.18.22-e] - 2026-04-19
+## [0.18.22.post5] - 2026-04-19
 
 ### Code Changes
 
@@ -133,7 +144,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.18.22-d] - 2026-04-19
+## [0.18.22.post4] - 2026-04-19
 
 ### Code Changes
 
@@ -155,7 +166,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.18.22-c] - 2026-04-19
+## [0.18.22.post3] - 2026-04-19
 
 ### Code Changes
 
@@ -177,7 +188,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.18.22-b] - 2026-04-19
+## [0.18.22.post2] - 2026-04-19
 
 ### Code Changes
 
@@ -207,7 +218,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.18.22-a] - 2026-04-19
+## [0.18.22.post1] - 2026-04-19
 
 ### Code Changes
 
