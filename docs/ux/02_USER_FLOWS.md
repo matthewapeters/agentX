@@ -303,7 +303,7 @@ sequenceDiagram
     Session->>Controller: interrupt()
     Controller->>Controller: _interrupt_flag = True
     Controller->>Controller: _is_streaming.clear()
-    Note right of Controller: generator yields nothing on next iteration — stream terminates gracefully
+    Note right of Controller: generator yields nothing on next iteration - stream terminates gracefully
     Session->>Chat: display partial response (up to interrupt point)
     Session->>Session: persist partial message to Context
 ```
