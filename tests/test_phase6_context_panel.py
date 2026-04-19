@@ -548,7 +548,13 @@ class TestReplayPlanTab(unittest.TestCase):
 
         session._replay_plan_tab("plan_rp")
 
-        session.gui.add_plan_tab.assert_called_once_with("plan_rp", "Replay Plan")
+        session.gui.add_plan_tab.assert_called_once()
+        args, kwargs = session.gui.add_plan_tab.call_args
+        assert args == ("plan_rp", "Replay Plan") or (
+            kwargs.get("plan_id") == "plan_rp" and kwargs.get("plan_name") == "Replay Plan"
+        )
+        assert list(args[:2]) == ["plan_rp", "Replay Plan"]
+        assert "on_export" in kwargs  # production code now passes an export callback
         session.gui.focus_plan_tab.assert_called_once_with("plan_rp")
 
     def test_replay_adds_step_nodes(self):
@@ -565,7 +571,10 @@ class TestReplayPlanTab(unittest.TestCase):
 
         session._replay_plan_tab("plan_rp2")
 
-        session.gui.add_plan_step_node.assert_called_once_with("plan_rp2", "task_rp2_1", "List files", False)
+        session.gui.add_plan_step_node.assert_called_once()
+        args, kwargs = session.gui.add_plan_step_node.call_args
+        assert args == ("plan_rp2", "task_rp2_1", "List files", False)
+        assert "on_replay" in kwargs  # production code now passes a replay callback
 
     def test_replay_marks_done_nodes(self):
         session, _ = _make_session(self.test_dir, [])
@@ -615,8 +624,15 @@ class TestReplayPlanTab(unittest.TestCase):
         session._replay_plan_tab("plan_sub")
 
         # root uses add_plan_step_node, child uses add_plan_subtask_node
-        session.gui.add_plan_step_node.assert_called_once_with("plan_sub", "task_root", "Root task", False)
-        session.gui.add_plan_subtask_node.assert_called_once_with("task_child", "task_root", "Child task", 1)
+        session.gui.add_plan_step_node.assert_called_once()
+        step_args, step_kwargs = session.gui.add_plan_step_node.call_args
+        assert step_args == ("plan_sub", "task_root", "Root task", False)
+        assert "on_replay" in step_kwargs
+
+        session.gui.add_plan_subtask_node.assert_called_once()
+        sub_args, sub_kwargs = session.gui.add_plan_subtask_node.call_args
+        assert sub_args == ("task_child", "task_root", "Child task", 1)
+        assert "on_replay" in sub_kwargs
 
 
 # ---------------------------------------------------------------------------

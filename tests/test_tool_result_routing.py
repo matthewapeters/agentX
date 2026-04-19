@@ -20,7 +20,6 @@ sys.path.insert(0, os.path.join(project_root, "src"))
 from shared.models.response import ResponseChunk, ChunkType
 from agentx.integration.response_handler import ResponseHandler
 
-
 # ---------------------------------------------------------------------------
 # ResponseHandler tests
 # ---------------------------------------------------------------------------
@@ -123,6 +122,7 @@ class TestResponseHandlerToolResult:
     def test_regression_tool_name_not_used_as_tool_id(self):
         """Regression guard: tool_id arg must not equal tool_name when both provided."""
         bad_calls = []
+
         def on_result(name, out, round_i=None, tool_id=None):
             if name == tool_id:
                 bad_calls.append((name, tool_id))
@@ -152,6 +152,18 @@ class TestDisplayToolResult:
         session._output_logger = MagicMock()
         session.context = MagicMock()
         session.refresh_working_memory_gui = MagicMock()
+        # _display_tool_result now delegates to _streaming_controller; wire it so
+        # calls to context.add_tool_result_message are captured through the controller.
+        sc = MagicMock()
+        sc._display_tool_result.side_effect = lambda tool_name, output, round_index=None, tool_id=None: (
+            session.context.add_tool_result_message(
+                tool_name=tool_name,
+                tool_output=output,
+                round_index=round_index,
+                tool_id=tool_id,
+            )
+        )
+        session._streaming_controller = sc
         return session
 
     def test_add_tool_result_message_receives_correct_tool_name(self):

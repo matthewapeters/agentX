@@ -140,7 +140,7 @@ class TestClassifyPromptSync:
         result = adapter.classify_prompt_sync("hi", Context())
         assert result is not None
         assert result.next_step == NextStep.respond_directly
-        assert "JSON parse error" in result.reasoning_summary
+        assert "Non-JSON response" in result.reasoning_summary
 
     def test_key_error_returns_fallback(self):
         """KeyError is caught and returns respond_directly fallback."""

@@ -2,17 +2,17 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from shared.models.context import Context
-from shared.models.working_memory import WorkingMemory
+from agentix.agentix_config import AgentixConfig
+from agentix.api_client import query_classification
+from agentix.bridge.prompt_assembly import assemble_prompts
+from agentix.constants import CLASSIFICATION_MAX_TOKENS, PROMPT_CLASSIFICATION
 from agentix.prompt_classification_response import (
     Intent,
     NextStep,
     PromptClassificationResponse,
 )
-from agentix.bridge.prompt_assembly import assemble_prompts
-from agentix.constants import PROMPT_CLASSIFICATION, CLASSIFICATION_MAX_TOKENS
-from agentix.api_client import query_classification
-from agentix.agentix_config import AgentixConfig
+from shared.models.context import Context
+from shared.models.working_memory import WorkingMemory
 
 logger = logging.getLogger("agentix.classification")
 
@@ -83,6 +83,13 @@ def classify_prompt(
     classification_config = AgentixConfig()
     classification_config.model = config.classification_model or config.model
     classification_config.system = [PROMPT_CLASSIFICATION]
+    # Inherit the prompt directory from the caller's config so PromptLoader
+    # resolves prompt_classification.md from the project's system_prompts/
+    # folder rather than falling back to the default ~/.agentix/system_prompts/
+    # path (which typically does not contain the file, causing the model to
+    # receive an empty system block and respond in its native persona).
+    if hasattr(config, "system_prompts_dir") and config.system_prompts_dir:
+        classification_config.system_prompts_dir = config.system_prompts_dir
 
     # Inject Working Memory into user prompt if available
     enhanced_prompt = prompt
@@ -119,9 +126,13 @@ def classify_prompt(
         msg for msg in effective_history if (msg.enabled if hasattr(msg, "enabled") else msg.get("enabled", True))
     ]
 
-    # Filter to only conversational roles — tool_call/tool_result are not valid LLM API roles
-    # and are not needed for intent classification.
-    _CLASSIFY_ROLES = {"user", "assistant", "system"}
+    # Filter to user/assistant roles only.  System messages (working memory
+    # injection, main-agent system prompt) must not be forwarded to the
+    # classification model: they carry the agent's identity and tool-use context
+    # which compete with the classification system prompt that assemble_prompts
+    # will inject, causing the model to answer in its agent persona instead of
+    # producing the required JSON schema.
+    _CLASSIFY_ROLES: set[str] = {"user", "assistant"}
     effective_history = [
         msg
         for msg in effective_history

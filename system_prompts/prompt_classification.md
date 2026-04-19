@@ -111,8 +111,10 @@ facts to inform your classification decisions:
 
 **Classification Rules for Working Memory Context:**
 
-1. **If `use_tools` is `true`** and the request could be answered with tools,
-   classify as `simple_action` or `complex_action` (NOT `conversation`).
+1. **If `use_tools` is `true`** and the request explicitly asks for a file,
+   directory, or system operation, classify as `simple_action` or
+   `complex_action`. Greeting, identity, or general knowledge questions are
+   **always** `conversation` regardless of `use_tools`.
 
 2. **If `cwd` is present** and the user says "working directory", "current
    directory", "here", or omits a path entirely, do NOT flag `directory_path`

@@ -9,3 +9,8 @@ screen_side = "left"
 # Changing this lets you point AgentX at a different set of prompts without
 # modifying any source code.
 system_prompts_dir = "system_prompts"
+
+# Use a small, instruction-following model for intent classification.
+# gpt-oss:latest has a baked-in AgentX persona and ignores the classification
+# system prompt, producing {"response": "..."} instead of the required schema.
+agentix_bench_classification_model = "phi4-mini:3.8b"
