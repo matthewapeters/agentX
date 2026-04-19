@@ -7,6 +7,28 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.18.22-c] - 2026-04-19
+
+### Code Changes
+
+#### Changed
+
+- No source code changes in this release (documentation only).
+
+### Test Changes
+
+#### Changed
+
+- No test changes in this release.
+
+### Documentation Changes
+
+#### Fixed
+
+- `docs/ux/02_USER_FLOWS.md` — replaced `actor User` with `participant User` in all 9 Mermaid sequence diagrams (UF-01 through UF-10 excluding UF-09). The `actor` keyword is not supported by the Mermaid version bundled with VS Code's markdown preview, causing "No diagram type detected" errors.
+
+---
+
 ## [0.18.22-b] - 2026-04-19
 
 ### Code Changes

@@ -13,7 +13,7 @@ user actions map to system behaviour.
 
 ```mermaid
 sequenceDiagram
-    actor User
+    participant User
     participant InputPanel
     participant Session as AgentXSession
     participant Bridge as AgentixBridgeAdapter
@@ -51,7 +51,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    actor User
+    participant User
     participant Session as AgentXSession
     participant Bridge as AgentixBridgeAdapter
     participant ToolLoop as ToolLoopRunner
@@ -91,7 +91,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    actor User
+    participant User
     participant Session as AgentXSession
     participant Bridge as AgentixBridge
     participant LLM as Ollama
@@ -138,7 +138,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    actor User
+    participant User
     participant Tree as PlanTreeWidget
     participant Dialog as ResynthesisDialog
     participant Session as AgentXSession
@@ -168,7 +168,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    actor User
+    participant User
     participant Explorer as FileExplorer
     participant Session as AgentXSession
     participant InputPanel
@@ -199,7 +199,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    actor User
+    participant User
     participant Selector as ModelSelector
     participant Session as AgentXSession
     participant State as SessionState
@@ -221,7 +221,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    actor User
+    participant User
     participant Settings as SettingsTab
     participant Session as AgentXSession
     participant Config as AgentXConfig
@@ -245,7 +245,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    actor User
+    participant User
     participant SidePanel
     participant Session as AgentXSession
     participant History
@@ -292,7 +292,7 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-    actor User
+    participant User
     participant InputPanel
     participant Session as AgentXSession
     participant Controller as StreamingController
