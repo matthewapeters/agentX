@@ -301,9 +301,9 @@ sequenceDiagram
     User->>InputPanel: clicks Stop button
     InputPanel->>Session: on_interrupt()
     Session->>Controller: interrupt()
-    Controller->>Controller: _interrupt_flag = True
-    Controller->>Controller: _is_streaming.clear()
-    Note right of Controller: generator yields nothing on next iteration - stream terminates gracefully
-    Session->>Chat: display partial response (up to interrupt point)
+    Controller->>Controller: set interrupt flag = True
+    Controller->>Controller: clear is_streaming event
+    Note right of Controller: generator stops on next iteration
+    Session->>Chat: display partial response
     Session->>Session: persist partial message to Context
 ```

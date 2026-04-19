@@ -7,6 +7,28 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.18.22-f] - 2026-04-19
+
+### Code Changes
+
+#### Changed
+
+- No source code changes in this release (documentation only).
+
+### Test Changes
+
+#### Changed
+
+- No test changes in this release.
+
+### Documentation Changes
+
+#### Fixed
+
+- `docs/ux/02_USER_FLOWS.md` — UF-10: rewrote self-referential arrow labels to remove leading underscores (`_interrupt_flag`, `_is_streaming`). Mermaid processes label text as Markdown, so `_word_` patterns are interpreted as italic markers, corrupting the token stream and causing "No diagram type detected". Replaced with plain descriptive text: `set interrupt flag = True` and `clear is_streaming event`. Also simplified the Note and partial-response label text.
+
+---
+
 ## [0.18.22-e] - 2026-04-19
 
 ### Code Changes
