@@ -168,12 +168,19 @@ def markdown_to_html(text: str, css: str) -> str:
     """Convert *text* (markdown) to a full HTML document with *css* embedded.
 
     Requires MARKDOWN_AVAILABLE to be True; callers must check before calling.
+    If *_md_lib* is unavailable at runtime (e.g. in test environments where
+    MARKDOWN_AVAILABLE is patched but the library is not installed) the text is
+    wrapped in a ``<pre>`` block so the caller still receives valid HTML.
     Extensions used: tables, fenced_code, nl2br, sane_lists.
     """
-    body = _md_lib.markdown(  # type: ignore[union-attr]
-        text,
-        extensions=["tables", "fenced_code", "nl2br", "sane_lists"],
-    )
+    if _md_lib is None:
+        escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        body = f"<pre>{escaped}</pre>"
+    else:
+        body = _md_lib.markdown(  # type: ignore[union-attr]
+            text,
+            extensions=["tables", "fenced_code", "nl2br", "sane_lists"],
+        )
     return f"<html><head><style>{css}</style></head><body>{body}</body></html>"
 
 

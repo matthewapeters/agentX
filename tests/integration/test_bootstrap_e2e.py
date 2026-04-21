@@ -178,7 +178,8 @@ class TestBootstrapDefaults:
         WHEN the agentx.ollama_model key is read
         THEN it must be non-empty and contain 'gpt-oss'
         """
-        model = agentx.get("ollama_model", "")
+        agentx_cfg = toml_config.get("agentx", {})
+        model = agentx_cfg.get("ollama_model", "")
         assert model, "agentx.ollama_model must be set in agentx.toml"
         assert "gpt-oss" in model, f"Expected chat model to start with 'gpt-oss', got '{model}'"
 
@@ -190,6 +191,7 @@ class TestBootstrapDefaults:
         THEN it must be non-empty and contain 'phi4-mini' so that
              the classification call does not use the agent's persona model
         """
+        cm = toml_config.get("agentix", {}).get("agentix_bench_classification_model", "")
         assert cm, (
             "agentix.agentix_bench_classification_model must be set in agentx.toml "
             "so that classification uses a neutral model instead of the agent model"
@@ -203,6 +205,9 @@ class TestBootstrapDefaults:
         WHEN the resolved path is checked on the filesystem
         THEN the directory must exist so PromptLoader can find prompt files
         """
+        agentx_cfg = toml_config.get("agentx", {})
+        prompts_dir = PROJECT_ROOT / agentx_cfg.get("system_prompts_dir", "system_prompts")
+        assert prompts_dir.is_dir(), f"system_prompts_dir not found at '{prompts_dir}'"
 
     def test_classification_prompt_file_exists(self, toml_config: dict) -> None:
         """Verify prompt_classification.* exists in system_prompts_dir.
@@ -212,6 +217,9 @@ class TestBootstrapDefaults:
         THEN at least one match must exist so the classification model
              receives its JSON-schema instruction instead of an empty system block
         """
+        agentx_cfg = toml_config.get("agentx", {})
+        prompts_dir = PROJECT_ROOT / agentx_cfg.get("system_prompts_dir", "system_prompts")
+        candidates = list(prompts_dir.glob("prompt_classification.*"))
         assert candidates, (
             f"No 'prompt_classification.*' file found in '{prompts_dir}'. "
             "The classification system prompt is missing."
@@ -224,6 +232,7 @@ class TestBootstrapDefaults:
         WHEN bootstrap-prompt.md is read
         THEN it must exist and contain non-whitespace text
         """
+        prompt_path = PROJECT_ROOT / ".agentx" / "bootstrap-prompt.md"
         assert prompt_path.is_file(), f"Bootstrap prompt not found at '{prompt_path}'"
         assert prompt_path.read_text(encoding="utf-8").strip(), "Bootstrap prompt file is empty"
 
@@ -236,6 +245,7 @@ class TestBootstrapDefaults:
              adopts the correct identity when the instructions are injected
              into working memory at session start
         """
+        instructions_path = PROJECT_ROOT / ".agentx" / "agentx-instructions.md"
         assert instructions_path.is_file(), (
             f"AgentX instructions not found at '{instructions_path}'. "
             "This file provides the AgentX identity injected into working memory at startup."

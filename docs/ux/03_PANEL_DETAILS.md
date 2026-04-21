@@ -1,6 +1,6 @@
 # AgentX — Panel Details
 
-Version: 2026-04-19
+Version: 2026-04-19 (updated 2026-04-19 — conversation-turn widget hierarchy documented)
 
 Detailed affordance specifications for each GUI panel/widget.  Each section
 documents the widget's purpose, all user-visible controls, and the callback
@@ -45,6 +45,7 @@ wiring to session logic.
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `_current_turn_frame` | `tk.Frame` | Outer container for the active turn (owns user entry + children frame) |
 | `_current_turn_entries` | `dict[str, dict]` | Active streaming entry refs by role |
 | `_current_turn_children_frame` | `tk.Frame` | Container for current turn's child widgets |
 | `_plan_trees` | `dict[str, PlanTreeWidget]` | plan_id → tree widget |
@@ -53,6 +54,45 @@ wiring to session logic.
 | `_agent_response_started` | `bool` | True after first response chunk |
 | `_agent_classification_shown` | `bool` | True after classification shown |
 | `_output_wrapped_labels` | `list` | Labels that need wraplength updates on resize |
+
+### Conversation-Turn Widget Hierarchy
+
+Each user submission creates a **turn frame** that owns exactly two direct children,
+packed in this order (top → bottom):
+
+```
+turn_frame (tk.Frame, parent: output_entries_frame)
+  ├── user_entry_frame  ← packed FIRST  (👤 user message + collapse toggle)
+  └── children_frame    ← packed SECOND (22 px left-indent)
+        ├── classification_entry_frame  (🤔, collapsed)
+        ├── thinking_entry_frame        (💭, collapsed)
+        ├── tool_call_entry_frame       (🔧, collapsed)   — if tool used
+        └── assistant_entry_frame       (🤖, expanded)
+```
+
+**Critical invariant**: `children_frame` must be packed into `turn_frame` **after**
+`user_entry_frame`.  Tkinter's `pack` geometry manager renders slaves in the order they
+were packed; packing `children_frame` first would cause all response widgets to appear
+*above* the user prompt.
+
+> **Bug history (fixed 2026-04-19):** `_ensure_turn_started()` previously called
+> `children.pack(...)` before `_create_output_entry()`, which packed the user entry
+> frame.  This reversed the visual order on first render.  Collapsing then expanding the
+> user entry accidentally "fixed" the order because `pack_forget()` + `pack()` appends
+> the frame to the end of the slave list.  The fix was to defer `children.pack()` until
+> after the user entry frame has been packed.
+
+### Collapse / Expand Behaviour
+
+When the user clicks the `▶/▼` toggle on the user entry:
+
+| Action | Effect on `children_frame` |
+|--------|--------------------------|
+| Collapse (▼ → ▶) | `children_frame.pack_forget()` — hidden |
+| Expand (▶ → ▼) | `children_frame.pack(...)` — re-appended after user entry |
+
+Because the user entry was packed first, `children_frame` always re-appears **below**
+the user entry after re-packing, regardless of how many collapse/expand cycles occur.
 
 ---
 

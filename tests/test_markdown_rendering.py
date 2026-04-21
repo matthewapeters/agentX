@@ -863,31 +863,41 @@ class TestMarkdownRenderingHeadless(unittest.TestCase):
             gm_mod.TKINTERWEB_AVAILABLE = True
             gm_mod.MARKDOWN_AVAILABLE = True
 
-            gui = GUIManager(
-                root=self.root,
-                config=GUIConfig.from_dict({}),
-                on_submit=MagicMock(),
-                on_interrupt=MagicMock(),
-                on_attachment_toggle=MagicMock(),
-            )
-            gui.create_layout()
+            # markdown_to_html calls _md_lib (which is None when the markdown
+            # package is not installed).  Patch the function itself so the test
+            # is self-contained regardless of whether the package is present.
+            fake_html = "<html><body><table><tr><td>A</td><td>B</td></tr></table></body></html>"
+            with patch("agentx.gui.chat_panel.markdown_to_html", return_value=fake_html):
+                gui = GUIManager(
+                    root=self.root,
+                    config=GUIConfig.from_dict({}),
+                    on_submit=MagicMock(),
+                    on_interrupt=MagicMock(),
+                    on_attachment_toggle=MagicMock(),
+                )
+                gui.create_layout()
 
-            gui.display_user_message("hello", attachments=[], timestamp=dt.now())
-            for ch in _TABLE_MD:
-                gui.display_agent_response(ch)
-            self.root.update_idletasks()
+                gui.display_user_message("hello", attachments=[], timestamp=dt.now())
+                for ch in _TABLE_MD:
+                    gui.display_agent_response(ch)
+                self.root.update_idletasks()
 
-            entry = gui._current_turn_entries.get("assistant")
-            self.assertIsNotNone(entry)
+                entry = gui._current_turn_entries.get("assistant")
+                self.assertIsNotNone(entry)
 
-            gui.display_spacing()
-            self.root.update_idletasks()
+                gui.display_spacing()
+                self.root.update_idletasks()
 
-            self.assertTrue(entry["is_finalized"])
-            self.assertIsNotNone(entry["html_frame"])
-            self.assertIsNone(entry["detail_text"])
-            self.assertIsInstance(entry["html_frame"], FakeHtmlFrame)
-            self.assertIn("<table>", entry["html_frame"].loaded_html)
+                self.assertTrue(entry["is_finalized"])
+                self.assertIsNotNone(entry["html_frame"])
+                self.assertIsNone(entry["detail_text"])
+                self.assertIsInstance(entry["html_frame"], FakeHtmlFrame)
+    
+                self.assertTrue(entry["is_finalized"])
+                self.assertIsNotNone(entry["html_frame"])
+                self.assertIsNone(entry["detail_text"])
+                self.assertIsInstance(entry["html_frame"], FakeHtmlFrame)
+                self.assertIn("<table>", entry["html_frame"].loaded_html)
         finally:
             gm_mod.HtmlFrame = original_hf
             gm_mod.TKINTERWEB_AVAILABLE = original_avail

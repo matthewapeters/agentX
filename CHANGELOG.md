@@ -7,6 +7,143 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.18.24] - 2026-04-20
+
+### Code Changes
+
+#### Added
+
+- `tests/test_chat_panel_turn_rendering.py`: 10 new integration tests verifying correct pack-order of conversation-turn widgets in `ChatPanel`.  Tests cover: first-render order, full turn sequence (user → classify → think → respond), collapse/expand cycle, and multiple consecutive turns (parametrized: 1, 2, 3 turns).
+
+#### Fixed
+
+- `src/agentx/gui/chat_panel.py` — `_ensure_turn_started()`: moved `children.pack(fill=tk.X, …)` to *after* `_create_output_entry()` so Tkinter packs the user-entry frame before the children frame.  Previously `children` was packed first (index 0 in the slave list), causing all classification/thinking/tool/assistant entries to render *above* the user prompt on first render.  Collapse → expand accidentally "fixed" this because `pack_forget()` + `pack()` appended children to the end of the list.
+- `src/agentx/gui/markdown_renderer.py` — `markdown_to_html()`: added guard for `_md_lib is None` so the function produces valid HTML (`<pre>` fallback) even when the `markdown` package is not installed.  Previously any call with `MARKDOWN_AVAILABLE=True` but missing library raised `AttributeError`.
+- `tests/test_markdown_rendering.py` — `test_full_path_with_mocked_html_frame`: patched `agentx.gui.chat_panel.markdown_to_html` with a stub that returns `<table>` HTML so the test is self-contained regardless of whether the `markdown` package is installed.
+- `tests/test_gui_manager_integration.py` — `test_header_preview_not_driven_by_newline`: removed incorrect assertion that header preview text varies by pixel width; the `_header_preview()` method truncates by word count (>15 words), not pixel width.
+- `tests/integration/test_bootstrap_e2e.py` — `TestBootstrapDefaults`: fixed 6 methods that referenced undefined bare variables (`agentx`, `cm`, `candidates`, `prompt_path`, `instructions_path`); replaced with correct `toml_config` fixture access.
+
+#### Changed
+
+- `pyproject.toml`: added pytest markers `unit`, `functional`, `integration` to the `[tool.pytest.ini_options]` markers list.
+
+### Test Changes
+
+#### Added
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestConversationTurnRenderingOrder::test_user_entry_packed_before_children_frame_on_first_render`
+
+  ```gherkin
+  GIVEN a GUIManager with a chat panel
+  WHEN a user message is sent (first render)
+  THEN the user entry frame appears before the children frame in Tkinter's pack slave list
+  ```
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestConversationTurnRenderingOrder::test_children_frame_packed_after_user_entry`
+
+  ```gherkin
+  GIVEN a conversation turn has been started
+  WHEN inspecting pack order of turn_frame children
+  THEN user entry pack-index < children frame pack-index
+  ```
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestConversationTurnRenderingOrder::test_classify_entry_appended_to_children_not_turn_frame`
+
+  ```gherkin
+  GIVEN a user message has been displayed
+  WHEN display_classify is called
+  THEN the classification entry is a child of the children_frame, not the turn_frame
+  ```
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestConversationTurnRenderingOrder::test_assistant_entry_appended_to_children_not_turn_frame`
+
+  ```gherkin
+  GIVEN a user message has been displayed
+  WHEN display_agent_response is called
+  THEN the assistant entry is parented to the children_frame
+  ```
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestConversationTurnRenderingOrder::test_children_frame_is_indented`
+
+  ```gherkin
+  GIVEN a conversation turn
+  WHEN inspecting the children_frame's pack configuration
+  THEN padx has a non-zero left indent to visually nest responses under the user message
+  ```
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestConversationTurnRenderingOrder::test_full_turn_sequence_pack_order`
+
+  ```gherkin
+  GIVEN a GUIManager with a fully laid-out chat panel
+  WHEN a user message, classification, thinking, and agent response are all displayed
+  THEN user_entry_frame is the first child of turn_frame, children_frame is the second
+  ```
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestConversationTurnRenderingOrder::test_expand_after_collapse_preserves_correct_order`
+
+  ```gherkin
+  GIVEN a conversation turn has been rendered correctly
+  WHEN the user entry is collapsed then expanded
+  THEN the children_frame remains below the user_entry_frame in pack order
+  ```
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestConversationTurnRenderingOrder::test_new_turn_starts_fresh_frame`
+
+  ```gherkin
+  GIVEN a first conversation turn is complete
+  WHEN a second user message is displayed
+  THEN a new turn_frame is created and the children_frame is correct within that new frame
+  ```
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestMultipleTurnsRenderingOrder::test_multiple_turns_correct_order[1 turn]`
+
+  ```gherkin
+  GIVEN 1 user message and agent response
+  WHEN rendered
+  THEN user entry is before children frame in the turn's pack slave list
+  ```
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestMultipleTurnsRenderingOrder::test_multiple_turns_correct_order[2 turns]`
+
+  ```gherkin
+  GIVEN 2 consecutive user messages each with an agent response
+  WHEN rendered
+  THEN every turn has user entry before children frame
+  ```
+
+- **Integration** `test_chat_panel_turn_rendering.py::TestMultipleTurnsRenderingOrder::test_multiple_turns_correct_order[3 turns]`
+
+  ```gherkin
+  GIVEN 3 consecutive user messages each with an agent response
+  WHEN rendered
+  THEN every turn has user entry before children frame
+  ```
+
+#### Fixed
+
+- **Integration** `test_markdown_rendering.py::TestMarkdownRenderingHeadless::test_full_path_with_mocked_html_frame`
+
+  ```gherkin
+  BEFORE: AttributeError on _md_lib.markdown when markdown package is not installed
+  AFTER:  markdown_to_html is patched so the test asserts <table> regardless of package availability
+  ```
+
+- **Integration** `test_gui_manager_integration.py::TestGUIManagerDisplay::test_header_preview_not_driven_by_newline`
+
+  ```gherkin
+  BEFORE: AssertionError — test incorrectly assumed header text varies by pixel width
+  AFTER:  Test only asserts that newlines are condensed to spaces; truncation threshold is word-count-based
+  ```
+
+- **Integration** `tests/integration/test_bootstrap_e2e.py::TestBootstrapDefaults` (6 methods)
+
+  ```gherkin
+  BEFORE: NameError: name 'agentx' / 'cm' / 'candidates' / 'prompt_path' / 'instructions_path' is not defined
+  AFTER:  All references replaced with correct toml_config fixture access
+  ```
+
+---
+
 ## [0.18.23] - 2026-04-19
 
 ### Code Changes

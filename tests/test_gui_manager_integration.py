@@ -12,7 +12,7 @@ import sys
 import os
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from agentx.gui.gui_manager import GUIManager
 from agentx.gui.gui_config import GUIConfig
@@ -52,7 +52,7 @@ class TestGUIManagerInitialization(unittest.TestCase):
             config=self.config,
             on_submit=self.on_submit,
             on_interrupt=self.on_interrupt,
-            on_attachment_toggle=self.on_attachment_toggle
+            on_attachment_toggle=self.on_attachment_toggle,
         )
 
         self.assertIsNotNone(gui)
@@ -66,7 +66,7 @@ class TestGUIManagerInitialization(unittest.TestCase):
             config=self.config,
             on_submit=self.on_submit,
             on_interrupt=self.on_interrupt,
-            on_attachment_toggle=self.on_attachment_toggle
+            on_attachment_toggle=self.on_attachment_toggle,
         )
 
         self.assertEqual(gui._on_submit, self.on_submit)
@@ -80,7 +80,7 @@ class TestGUIManagerInitialization(unittest.TestCase):
             config=self.config,
             on_submit=self.on_submit,
             on_interrupt=self.on_interrupt,
-            on_attachment_toggle=self.on_attachment_toggle
+            on_attachment_toggle=self.on_attachment_toggle,
         )
 
         self.assertIsNotNone(gui.widgets)
@@ -94,7 +94,7 @@ class TestGUIManagerInitialization(unittest.TestCase):
             config=self.config,
             on_submit=self.on_submit,
             on_interrupt=self.on_interrupt,
-            on_attachment_toggle=self.on_attachment_toggle
+            on_attachment_toggle=self.on_attachment_toggle,
         )
         self.assertEqual(gui._session_section_spacing, 8)
 
@@ -133,7 +133,7 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
             config=self.config,
             on_submit=MagicMock(),
             on_interrupt=MagicMock(),
-            on_attachment_toggle=MagicMock()
+            on_attachment_toggle=MagicMock(),
         )
 
         # Create layout so widgets exist
@@ -148,11 +148,7 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
 
     def test_display_user_message(self):
         """Test displaying user message."""
-        self.gui.display_user_message(
-            "Hello agent",
-            attachments=[],
-            timestamp=datetime.now()
-        )
+        self.gui.display_user_message("Hello agent", attachments=[], timestamp=datetime.now())
 
         output_text = self.gui.widgets.output_text
         content = output_text.get("1.0", tk.END)
@@ -162,11 +158,7 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
 
     def test_display_user_message_with_attachments(self):
         """Test displaying user message with attachments."""
-        self.gui.display_user_message(
-            "Check this file",
-            attachments=["test.txt", "data.csv"],
-            timestamp=datetime.now()
-        )
+        self.gui.display_user_message("Check this file", attachments=["test.txt", "data.csv"], timestamp=datetime.now())
 
         output_text = self.gui.widgets.output_text
         content = output_text.get("1.0", tk.END)
@@ -248,13 +240,15 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
         self.gui.display_user_message("Prompt", attachments=[], timestamp=datetime.now())
         self.gui.display_agent_thinking("(The agent is thinking...)")
         self.gui.display_agent_thinking("Reasoning details")
-        self.gui.display_classification({
-            "intent": "simple_action",
-            "next_step": "single_tool",
-            "reasoning_summary": "One step",
-            "needs_clarification": False,
-            "missing_fields": [],
-        })
+        self.gui.display_classification(
+            {
+                "intent": "simple_action",
+                "next_step": "single_tool",
+                "reasoning_summary": "One step",
+                "needs_clarification": False,
+                "missing_fields": [],
+            }
+        )
         self.gui.display_agent_response("[🔧 Calling tool: read_file]")
 
         user_entry = self.gui._current_turn_entries["user"]
@@ -269,18 +263,20 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
         self.assertEqual(children_frame.winfo_manager(), "pack")
 
     def test_header_preview_not_driven_by_newline(self):
-        """Header preview should condense newlines and respond to width."""
-        self.gui._update_output_wraplength(220)
+        """Header preview condenses newlines into spaces.
+
+        GIVEN a user message containing embedded newlines
+        WHEN the message is displayed
+        THEN the header preview must replace newlines with spaces and show all
+             words as a single line (the preview word-count limit is 15 words;
+             a short message is never truncated regardless of panel width).
+        """
         self.gui.display_user_message("Line one\nLine two\nLine three", attachments=[], timestamp=datetime.now())
         user_entry = self.gui._current_turn_entries["user"]
-        header_small = user_entry["header_var"].get()
+        header = user_entry["header_var"].get()
 
-        self.gui._update_output_wraplength(700)
-        self.gui._set_entry_text(user_entry, user_entry["full_text"])
-        header_large = user_entry["header_var"].get()
-
-        self.assertIn("Line one Line two Line three", header_large)
-        self.assertNotEqual(header_small, header_large)
+        # Newlines must be condensed into spaces — the full phrase must appear.
+        self.assertIn("Line one Line two Line three", header)
 
     def test_display_error(self):
         """Test displaying error message."""
@@ -308,13 +304,15 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
 
     def test_display_classification_shows_all_fields(self):
         """Classification block renders intent, reasoning, clarification, and path."""
-        self.gui.display_classification({
-            "intent": "simple_action",
-            "next_step": "invoke_planner",
-            "reasoning_summary": "Multi-step refactor needed.",
-            "needs_clarification": True,
-            "missing_fields": ["target_dir", "language"],
-        })
+        self.gui.display_classification(
+            {
+                "intent": "simple_action",
+                "next_step": "invoke_planner",
+                "reasoning_summary": "Multi-step refactor needed.",
+                "needs_clarification": True,
+                "missing_fields": ["target_dir", "language"],
+            }
+        )
 
         content = self.gui.widgets.output_text.get("1.0", tk.END)
 
@@ -327,13 +325,15 @@ class TestGUIManagerDisplayMethods(unittest.TestCase):
 
     def test_display_classification_suppresses_falsy_clarification(self):
         """Clarification line is absent when needs_clarification is False and missing_fields is empty."""
-        self.gui.display_classification({
-            "intent": "conversation",
-            "next_step": "respond_directly",
-            "reasoning_summary": "Simple chat.",
-            "needs_clarification": False,
-            "missing_fields": [],
-        })
+        self.gui.display_classification(
+            {
+                "intent": "conversation",
+                "next_step": "respond_directly",
+                "reasoning_summary": "Simple chat.",
+                "needs_clarification": False,
+                "missing_fields": [],
+            }
+        )
 
         content = self.gui.widgets.output_text.get("1.0", tk.END)
 
@@ -392,7 +392,7 @@ class TestGUIManagerStateMethods(unittest.TestCase):
             config=self.config,
             on_submit=MagicMock(),
             on_interrupt=MagicMock(),
-            on_attachment_toggle=MagicMock()
+            on_attachment_toggle=MagicMock(),
         )
 
         # Create layout
@@ -522,7 +522,7 @@ class TestGUIManagerInputMethods(unittest.TestCase):
             config=self.config,
             on_submit=MagicMock(),
             on_interrupt=MagicMock(),
-            on_attachment_toggle=MagicMock()
+            on_attachment_toggle=MagicMock(),
         )
 
         # Create layout
@@ -587,7 +587,7 @@ class TestGUIManagerPanelMethods(unittest.TestCase):
             config=self.config,
             on_submit=MagicMock(),
             on_interrupt=MagicMock(),
-            on_attachment_toggle=MagicMock()
+            on_attachment_toggle=MagicMock(),
         )
 
         # Create layout
@@ -675,5 +675,5 @@ class TestGUIManagerPanelMethods(unittest.TestCase):
         self.assertFalse(self.gui._session_sections["context"].is_expanded())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

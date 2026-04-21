@@ -832,7 +832,6 @@ class ChatPanel:
         turn_frame = tk.Frame(self._widgets.output_entries_frame, bg=self._config.output_bg)
         turn_frame.pack(fill=tk.X, anchor="w", pady=(4, 6))
         children = tk.Frame(turn_frame, bg=self._config.output_bg)
-        children.pack(fill=tk.X, anchor="w", padx=(22, 0))
 
         def _on_user_expand_changed(expanded: bool) -> None:
             if expanded:
@@ -848,6 +847,14 @@ class ChatPanel:
             expanded=True,
             on_expand_changed=_on_user_expand_changed,
         )
+
+        # Pack children AFTER the user entry so Tkinter's pack manager renders
+        # them below the user message.  Previously this line appeared before
+        # _create_output_entry(), which caused child entries (classification,
+        # thinking, agent response) to stack above the user prompt on first
+        # render.  Collapsing then expanding "fixed" it accidentally because
+        # pack_forget()/pack() re-inserts the frame at the end of the list.
+        children.pack(fill=tk.X, anchor="w", padx=(22, 0))
 
         self._current_turn_frame = turn_frame
         self._current_turn_children_frame = children
