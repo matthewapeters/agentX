@@ -17,6 +17,7 @@ A local-first AI agent desktop application with a **Tkinter GUI**, streaming LLM
 | 📋 **Session history** | conversations persisted to disk; prior sessions are browsable in the sidebar; capture past conversations for current session |  |
 | 🏷️ **Prompt classification** | optional Agentix middleware classifies each prompt to choose the best response strategy |  |
 | ⚙️ **Model selector** | switch Ollama models at runtime without restarting the agent | ![settings](docs/settings.png) |
+
 ---
 
 ## Prerequisites
@@ -118,6 +119,11 @@ python agentx_diagnostics.py
 The script checks Ollama connectivity, lists available models, verifies optional dependencies (`libcst`, `agentix`, etc.), and reports any configuration problems.
 
 ---
+
+## Example Session
+
+![session screenshot](./docs/Screenshot%20From%202026-04-22%2007-46-28.png)
+[session log](./docs/session.log)
 
 ## Development
 

@@ -32,19 +32,19 @@ AgentX is a local-first AI agent framework with a Tkinter GUI. It connects to **
 ### Semantic Versioning
 
 - When the agent introduces changes, update the .pyproject.yaml version with the next semantic version given the new changes.  The semantic version increase logic is as follows:
-  - When a project change is made to non-code elements such as documentation, architectural diagrams, or UX mockups, and there are no code changes, the patch version should be retained, but an alpha value should be added to indicate a non-code change.  Examples:
-    - 2.3.1 --> 2.3.1-a
-    - 2.3.1-a --> 2.3.1-b
-  - If the change is a fix to existing code, increase the patch version.  Example: 2.3.1 --> 2.3.2
-  - If the change is a new feature, and does not introduce a backwards-compatibility breaking change, increase the minor value by 1 and set the patch value to 0.  Any alpha value tags should be removed.
+  - When a project change is made to non-code elements such as documentation, architectural diagrams, or UX mockups, and there are no code changes, the patch version should be retained, but a **post-release counter** (`.postN`) should be appended to indicate a non-code change.  This format is PEP 440-compliant and accepted by `uv`, `pip`, and PyPI.  Examples:
+    - 2.3.1 --> 2.3.1.post1
+    - 2.3.1.post1 --> 2.3.1.post2
+  - If the change is a fix to existing code, increase the patch version and drop any `.postN` suffix.  Example: 2.3.1 --> 2.3.2
+  - If the change is a new feature, and does not introduce a backwards-compatibility breaking change, increase the minor value by 1 and set the patch value to 0.  Any `.postN` suffix should be removed.
     - Examples:
       - 2.3.2 --> 2.4.0
-      - 2.3.1-a --> 2.4.0
+      - 2.3.1.post2 --> 2.4.0
 
-  - If the change introduces a breaking change for backwards compatibility, increase the major value by 1 and set the minor and patch values to 0.  Any alpha value tags should be removed.  If the major version is currently 0, increase the minor version instead and set the patch to 0 (since 0.x versions are considered pre-release and may have breaking changes without a major version bump).
+  - If the change introduces a breaking change for backwards compatibility, increase the major value by 1 and set the minor and patch values to 0.  Any `.postN` suffix should be removed.  If the major version is currently 0, increase the minor version instead and set the patch to 0 (since 0.x versions are considered pre-release and may have breaking changes without a major version bump).
      - Examples:
-       - 2.4.0.c --> 3.0.0
-       - 0.4.0.b --> 0.5.0
+       - 2.4.0.post3 --> 3.0.0
+       - 0.4.0.post2 --> 0.5.0
        - 0.4.0 --> 1.0.0 (if we want to signal a major milestone with the 1.0 release, even if there are breaking changes in the 0.4.0 release that would normally warrant a minor version bump to 0.5.0)
 
 
