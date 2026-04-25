@@ -135,6 +135,9 @@ class Message:
     task_depth: Optional[int] = None
     task_data: Optional[dict] = None  # full PlanRecord or TaskNodeRecord dict
     message_id: Optional[str] = None
+    cloned_from: Optional[str] = None
+    superseded_by: Optional[str] = None
+    synthesis_of: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         """Ensure role and message identity fields are valid."""
@@ -197,6 +200,8 @@ class Message:
             "enabled": self.enabled,
             "epoch": self.epoch,
             "attachments": [a.to_dict() for a in (self.attachments or [])],
+            "message_id": self.message_id,
+            "synthesis_of": self.synthesis_of,
         }
 
         # Include optional fields if present
@@ -224,6 +229,10 @@ class Message:
             data["task_depth"] = self.task_depth
         if self.task_data is not None:
             data["task_data"] = self.task_data
+        if self.cloned_from:
+            data["cloned_from"] = self.cloned_from
+        if self.superseded_by:
+            data["superseded_by"] = self.superseded_by
 
         return data
 
@@ -256,6 +265,10 @@ class Message:
         epoch = data.get("epoch", 0)
         timestamp = datetime.fromtimestamp(epoch) if epoch else datetime.now()
 
+        message_id = data.get("message_id")
+        if not isinstance(message_id, str):
+            raise ValueError("Missing required message_id in serialized message")
+
         return cls(
             role=MessageRole(data.get("role", "user")),
             content=data.get("content", ""),
@@ -263,6 +276,7 @@ class Message:
             enabled=data.get("enabled", True),
             timestamp=timestamp,
             file_path=file_path or data.get("file"),
+            message_id=message_id,
             tool_name=data.get("tool_name"),
             tool_input=data.get("tool_input"),
             tool_output=data.get("tool_output"),
@@ -274,6 +288,9 @@ class Message:
             parent_task_id=data.get("parent_task_id"),
             task_depth=data.get("task_depth"),
             task_data=data.get("task_data"),
+            cloned_from=data.get("cloned_from"),
+            superseded_by=data.get("superseded_by"),
+            synthesis_of=data.get("synthesis_of") or [],
         )
 
     def to_llm_dict(self) -> dict:

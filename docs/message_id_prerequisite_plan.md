@@ -461,7 +461,7 @@ Failure-path tests:
 ## Suggested Implementation Sequence
 
 1. [/] Add `message_id` field and generation/validation in `Message`.
-2. [ ] Add strict serialization/deserialization support in `Message` and `Context`.
+2. [/] Add strict serialization/deserialization support in `Message` and `Context`.
 3. [ ] Add context ID indexing and duplicate detection helpers.
 4. [ ] Verify all message creation paths in session/streaming use generated IDs.
 5. [ ] Add unit tests first, then integration/functional tests.

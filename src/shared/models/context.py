@@ -18,7 +18,7 @@ from glob import glob
 
 logger = logging.getLogger(__name__)
 
-from .message import Message, MessageRole, tool_call_message, tool_result_message
+from .message import Message, MessageRole, is_valid_message_id, tool_call_message, tool_result_message
 from .task_node import PlanRecord, TaskNodeRecord, TaskTree
 
 
@@ -79,6 +79,9 @@ class Context:
         """
         timestamp = ts or message.timestamp
         message.timestamp = timestamp
+
+        if not message.message_id or not is_valid_message_id(message.message_id):
+            raise ValueError(f"Invalid message_id on add_message: {message.message_id!r}")
 
         # Save to disk if path is set (safe from any thread — writes unique filenames)
         if self.path and message.file_path is None:
@@ -190,12 +193,18 @@ class Context:
         for file_path in files:
             try:
                 msg = Message.load(file_path)
+                if not msg.message_id or not is_valid_message_id(msg.message_id):
+                    raise ValueError(f"Invalid message_id in file {file_path}: {msg.message_id!r}")
                 msg.enabled = False
                 for att in msg.attachments:
                     att.enabled = False
                 self.messages.append(MessageEntry(timestamp=msg.timestamp, message=msg))
-            except Exception as e:
-                logger.warning("Could not load message from %s: %s", file_path, e)
+            except ValueError as exc:
+                if "message_id" in str(exc):
+                    raise
+                logger.warning("Could not load message from %s: %s", file_path, exc)
+            except Exception as exc:
+                logger.warning("Could not load message from %s: %s", file_path, exc)
 
     @classmethod
     def load(cls, path: str) -> "Context":
