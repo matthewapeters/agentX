@@ -1,5 +1,7 @@
 """Unit tests for message identifier behavior."""
 
+import os
+
 import pytest
 
 from shared.models.message import Message, MessageRole, is_valid_message_id
@@ -79,3 +81,16 @@ def test_from_dict_round_trips_identity_fields() -> None:
     assert msg.cloned_from == payload["cloned_from"]
     assert msg.superseded_by == payload["superseded_by"]
     assert msg.synthesis_of == payload["synthesis_of"]
+
+
+@pytest.mark.unit
+def test_save_uses_filename_with_message_id(tmp_path) -> None:
+    """GIVEN a new message WHEN saved THEN filename contains epoch, role, and message_id."""
+    msg = Message(role=MessageRole.USER, content="save me")
+
+    msg.save(str(tmp_path))
+
+    assert msg.file_path is not None
+    filename = os.path.basename(msg.file_path)
+    assert filename.endswith(f"_{msg.message_id}.json")
+    assert f"_{MessageRole.USER.value}_" in filename

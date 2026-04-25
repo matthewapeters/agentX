@@ -379,7 +379,7 @@ class Message:
             context_path: Directory to save the message file
         """
         if self.file_path is None:
-            filename = f"{self.epoch}_{self.role.value}.json"
+            filename = f"{self.epoch}_{self.role.value}_{self.message_id}.json"
             self.file_path = os.path.join(context_path, filename)
 
         os.makedirs(context_path, exist_ok=True)
