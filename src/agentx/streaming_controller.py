@@ -84,7 +84,13 @@ class StreamingController:
     # Tool call / result display helpers
     # ------------------------------------------------------------------
 
-    def _display_tool_call(self, tool_name: str, tool_input: dict, round_index: int | None = None) -> None:
+    def _display_tool_call(
+        self,
+        tool_name: str,
+        tool_input: dict,
+        round_index: int | None = None,
+        tool_id: str | None = None,
+    ) -> str:
         """
         Display a tool call in the GUI and store it in context.
 
@@ -102,7 +108,8 @@ class StreamingController:
         except Exception:
             input_text = f"{tool_name}: {tool_input}"
         s._output_logger.log("tool_call", input_text)
-        s.context.add_tool_call_message(tool_name, tool_input)
+        msg = s.context.add_tool_call_message(tool_name, tool_input, tool_id=tool_id)
+        return msg.message_id
 
     def _display_tool_result(
         self,
@@ -110,7 +117,7 @@ class StreamingController:
         output,
         round_index: int | None = None,
         tool_id: str | None = None,
-    ) -> None:
+    ) -> str:
         """
         Display a tool result in the GUI and store it in context.
 
@@ -135,12 +142,13 @@ class StreamingController:
         s._safe_root_after(lambda: s.gui.display_agent_response(result_line))
         s._write_log(result_line)
         s._output_logger.log("tool_result", f"{tool_name}: {display_text}")
-        s.context.add_tool_result_message(
+        msg = s.context.add_tool_result_message(
             tool_name=tool_name,
             tool_output=output,
             tool_id=tool_id,
         )
         s._safe_root_after(s.refresh_working_memory_gui)
+        return msg.message_id
 
     # ------------------------------------------------------------------
     # Message persistence
@@ -150,6 +158,7 @@ class StreamingController:
         self,
         thinking_text: str,
         content_text: str,
+        synthesis_of: list[str] | None = None,
         refresh_gui: bool = True,
     ) -> None:
         """Persist streamed thinking and assistant content to context."""
@@ -167,6 +176,7 @@ class StreamingController:
         if content_text:
             assistant_message = Message(role=MessageRole.ASSISTANT, content=content_text)
             assistant_message.enabled = True
+            assistant_message.synthesis_of = synthesis_of or []
             if refresh_gui:
                 s.add_message_to_context(assistant_message)
             else:
@@ -306,13 +316,16 @@ class StreamingController:
 
             thinking_parts: list[str] = []
             content_parts: list[str] = []
+            stream_tool_result_ids: list[str] = []
 
             handler = ResponseHandler(
                 on_content=lambda text: self._handle_stream_content(text),
                 on_thinking=lambda text: self._display_thinking(text),
-                on_tool_call=lambda name, args, round_i=None: self._display_tool_call(name, args, round_i),
-                on_tool_result=lambda tool_name, output, round_i=None, tool_id=None: self._display_tool_result(
-                    tool_name, output, round_i, tool_id=tool_id
+                on_tool_call=lambda name, args, round_i=None, tool_id=None: self._display_tool_call(
+                    name, args, round_i, tool_id=tool_id
+                ),
+                on_tool_result=lambda tool_name, output, round_i=None, tool_id=None: stream_tool_result_ids.append(
+                    self._display_tool_result(tool_name, output, round_i, tool_id=tool_id)
                 ),
                 on_error=lambda msg, code: s._safe_root_after(lambda: s.gui.display_error(f"{code}: {msg}")),
                 on_classification=self._make_classification_callback(config),
@@ -409,7 +422,7 @@ class StreamingController:
             s._safe_root_after(s.gui.display_spacing)
             joined_thinking = "".join(thinking_parts)
             joined_content = "".join(content_parts)
-            self._persist_stream_messages(joined_thinking, joined_content)
+            self._persist_stream_messages(joined_thinking, joined_content, synthesis_of=stream_tool_result_ids)
             if joined_thinking:
                 s._output_logger.log("thinking", joined_thinking)
             if joined_content:
@@ -475,13 +488,33 @@ class StreamingController:
         s = self._s
 
         def _worker(_node=node, _tree=tree, _tid=task_id):
+            replay_tool_result_ids: list[str] = []
             try:
                 s._is_streaming.set()
                 s._safe_root_after(self._on_stream_start)
                 for chunk in s.agentix_adapter.replay_task_node_generator(_node, s.context, _tree):
+                    if chunk.type == ChunkType.TOOL_CALL and chunk.tool_name:
+                        self._display_tool_call(
+                            chunk.tool_name,
+                            chunk.tool_input or {},
+                            chunk.round_index,
+                            tool_id=chunk.tool_id,
+                        )
+                    elif chunk.type == ChunkType.TOOL_RESULT and chunk.tool_name:
+                        tool_result_id = self._display_tool_result(
+                            chunk.tool_name,
+                            chunk.tool_output,
+                            chunk.round_index,
+                            tool_id=chunk.tool_id,
+                        )
+                        replay_tool_result_ids.append(tool_result_id)
+
                     if chunk.type == ChunkType.TASK_NODE_END and chunk.task_id == _tid:
                         _synth = chunk.content or ""
                         _asserts = chunk.assertions or []
+                        replay_synthesis = Message(role=MessageRole.ASSISTANT, content=_synth)
+                        replay_synthesis.synthesis_of = replay_tool_result_ids
+                        s.context.add_message(replay_synthesis)
                         s._safe_root_after(lambda tid=_tid: s.gui.update_plan_node_status(tid, "done"))
                         s._safe_root_after(
                             lambda tid=_tid, synth=_synth, asserts=_asserts: s.gui.update_plan_synthesis(

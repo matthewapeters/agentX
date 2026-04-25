@@ -463,7 +463,7 @@ Failure-path tests:
 1. [/] Add `message_id` field and generation/validation in `Message`.
 2. [/] Add strict serialization/deserialization support in `Message` and `Context`.
 3. [/] Add context ID indexing and duplicate detection helpers.
-4. [ ] Verify all message creation paths in session/streaming use generated IDs.
+4. [/] Verify all message creation paths in session/streaming use generated IDs.
 5. [ ] Add unit tests first, then integration/functional tests.
 6. [ ] Update filename strategy to `{epoch}_{role}_{message_id}.json` — required, not optional.
 7. [ ] Remove any pre-message-id test/session artifacts before rollout to enforce strict no-compat assumptions.
