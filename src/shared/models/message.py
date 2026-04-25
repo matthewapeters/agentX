@@ -11,6 +11,8 @@ from enum import Enum
 from typing import Any, Optional
 import json
 import os
+import re
+import uuid
 
 from .attachment import Attachment
 
@@ -70,6 +72,19 @@ ROLE_ICONS = {
 }
 
 
+MESSAGE_ID_PATTERN = re.compile(r"^msg_[0-9a-f]{32}$")
+
+
+def _new_message_id() -> str:
+    """Generate a new message identifier."""
+    return f"msg_{uuid.uuid4().hex}"
+
+
+def is_valid_message_id(message_id: str) -> bool:
+    """Return True when ``message_id`` matches the expected format."""
+    return bool(MESSAGE_ID_PATTERN.match(message_id))
+
+
 @dataclass
 class Message:
     """
@@ -119,11 +134,18 @@ class Message:
     parent_task_id: Optional[str] = None
     task_depth: Optional[int] = None
     task_data: Optional[dict] = None  # full PlanRecord or TaskNodeRecord dict
+    message_id: Optional[str] = None
 
     def __post_init__(self):
-        """Ensure role is MessageRole enum."""
+        """Ensure role and message identity fields are valid."""
         if isinstance(self.role, str):
             self.role = MessageRole(self.role)
+
+        if self.message_id is None:
+            self.message_id = _new_message_id()
+
+        if not is_valid_message_id(self.message_id):
+            raise ValueError(f"Invalid message_id format: {self.message_id!r}")
 
     @property
     def icon(self) -> str:
