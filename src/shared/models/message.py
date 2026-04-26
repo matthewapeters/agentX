@@ -150,6 +150,11 @@ class Message:
         if not is_valid_message_id(self.message_id):
             raise ValueError(f"Invalid message_id format: {self.message_id!r}")
 
+        if not isinstance(self.synthesis_of, list):
+            raise ValueError(
+                f"synthesis_of must be a list[str], got {type(self.synthesis_of).__name__!r}: {self.synthesis_of!r}"
+            )
+
     @property
     def icon(self) -> str:
         """Get display icon for this message's role."""
@@ -290,7 +295,7 @@ class Message:
             task_data=data.get("task_data"),
             cloned_from=data.get("cloned_from"),
             superseded_by=data.get("superseded_by"),
-            synthesis_of=data.get("synthesis_of") or [],
+            synthesis_of=data.get("synthesis_of") if isinstance(data.get("synthesis_of"), list) else [],
         )
 
     def to_llm_dict(self) -> dict:

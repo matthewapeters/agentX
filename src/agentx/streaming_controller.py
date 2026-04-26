@@ -92,6 +92,7 @@ class StreamingController:
         round_index: int | None = None,
         tool_id: str | None = None,
         cloned_from: str | None = None,
+        task_id: str | None = None,
     ) -> str:
         """
         Display a tool call in the GUI and store it in context.
@@ -111,10 +112,15 @@ class StreamingController:
             input_text = f"{tool_name}: {tool_input}"
         s._output_logger.log("tool_call", input_text)
         msg = s.context.add_tool_call_message(tool_name, tool_input, tool_id=tool_id)
+        dirty = False
         if cloned_from:
             msg.cloned_from = cloned_from
-            if msg.file_path:
-                msg.save(os.path.dirname(msg.file_path))
+            dirty = True
+        if task_id:
+            msg.task_id = task_id
+            dirty = True
+        if dirty and msg.file_path:
+            msg.save(os.path.dirname(msg.file_path))
         return msg.message_id
 
     def _display_tool_result(
@@ -124,6 +130,7 @@ class StreamingController:
         round_index: int | None = None,
         tool_id: str | None = None,
         cloned_from: str | None = None,
+        task_id: str | None = None,
     ) -> str:
         """
         Display a tool result in the GUI and store it in context.
@@ -154,10 +161,15 @@ class StreamingController:
             tool_output=output,
             tool_id=tool_id,
         )
+        dirty = False
         if cloned_from:
             msg.cloned_from = cloned_from
-            if msg.file_path:
-                msg.save(os.path.dirname(msg.file_path))
+            dirty = True
+        if task_id:
+            msg.task_id = task_id
+            dirty = True
+        if dirty and msg.file_path:
+            msg.save(os.path.dirname(msg.file_path))
         s._safe_root_after(s.refresh_working_memory_gui)
         return msg.message_id
 
@@ -328,15 +340,18 @@ class StreamingController:
             thinking_parts: list[str] = []
             content_parts: list[str] = []
             stream_tool_result_ids: list[str] = []
+            # Mutable box so on_tool_call/on_tool_result closures pick up the
+            # task_id that was set by the most recent TASK_NODE_START chunk.
+            _current_task_id: list[str | None] = [None]
 
             handler = ResponseHandler(
                 on_content=lambda text: self._handle_stream_content(text),
                 on_thinking=lambda text: self._display_thinking(text),
                 on_tool_call=lambda name, args, round_i=None, tool_id=None: self._display_tool_call(
-                    name, args, round_i, tool_id=tool_id
+                    name, args, round_i, tool_id=tool_id, task_id=_current_task_id[0]
                 ),
                 on_tool_result=lambda tool_name, output, round_i=None, tool_id=None: stream_tool_result_ids.append(
-                    self._display_tool_result(tool_name, output, round_i, tool_id=tool_id)
+                    self._display_tool_result(tool_name, output, round_i, tool_id=tool_id, task_id=_current_task_id[0])
                 ),
                 on_error=lambda msg, code: s._safe_root_after(lambda: s.gui.display_error(f"{code}: {msg}")),
                 on_classification=self._make_classification_callback(config),
@@ -373,6 +388,7 @@ class StreamingController:
                     s.context.add_message(_plan_msg)
                 elif chunk.type == ChunkType.TASK_NODE_START and chunk.task_id:
                     _tid = chunk.task_id
+                    _current_task_id[0] = _tid  # stamp subsequent tool calls with this task
                     _pid = chunk.plan_id or ""
                     _desc = chunk.content or chunk.task_id
                     _par = chunk.parent_task_id
@@ -506,17 +522,17 @@ class StreamingController:
             original_tool_calls: list[Message] = [
                 msg
                 for msg in s.context.get_messages(enabled_only=False)
-                if msg.role == MessageRole.TOOL_CALL and msg.enabled
+                if msg.role == MessageRole.TOOL_CALL and msg.enabled and msg.task_id == _tid
             ]
             original_tool_results: list[Message] = [
                 msg
                 for msg in s.context.get_messages(enabled_only=False)
-                if msg.role == MessageRole.TOOL_RESULT and msg.enabled
+                if msg.role == MessageRole.TOOL_RESULT and msg.enabled and msg.task_id == _tid
             ]
             original_assistants: list[Message] = [
                 msg
                 for msg in s.context.get_messages(enabled_only=False)
-                if msg.role == MessageRole.ASSISTANT and msg.enabled
+                if msg.role == MessageRole.ASSISTANT and msg.enabled and msg.task_id == _tid
             ]
             original_tool_call_index = 0
             original_tool_result_index = 0
@@ -535,6 +551,7 @@ class StreamingController:
                             chunk.round_index,
                             tool_id=chunk.tool_id,
                             cloned_from=cloned_from,
+                            task_id=_tid,
                         )
                         if cloned_from:
                             replay_tool_call_pairs.append((cloned_from, replay_tool_call_id))
@@ -549,6 +566,7 @@ class StreamingController:
                             chunk.round_index,
                             tool_id=chunk.tool_id,
                             cloned_from=cloned_from,
+                            task_id=_tid,
                         )
                         replay_tool_result_ids.append(tool_result_id)
                         if cloned_from:
@@ -559,6 +577,7 @@ class StreamingController:
                         _asserts = chunk.assertions or []
                         replay_synthesis = Message(role=MessageRole.ASSISTANT, content=_synth)
                         replay_synthesis.synthesis_of = replay_tool_result_ids
+                        replay_synthesis.task_id = _tid
                         if original_assistants:
                             replay_synthesis.cloned_from = original_assistants[-1].message_id
                         s.context.add_message(replay_synthesis)
