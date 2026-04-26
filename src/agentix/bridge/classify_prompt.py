@@ -182,7 +182,11 @@ def classify_prompt(
             raise ValueError(f"Classification result must be a dict, got {type(result).__name__}: {result}")
 
         # Check for required fields
-        required_fields = ["intent", "next_step", "reasoning_summary"]
+        # intent may be empty when needs_clarification is True (LLM legitimately cannot determine intent)
+        needs_clarification = result.get("needs_clarification", False)
+        required_fields = ["next_step", "reasoning_summary"]
+        if not needs_clarification:
+            required_fields.append("intent")
         missing = [f for f in required_fields if f not in result or not result[f]]
         if missing:
             logger.error(
@@ -201,8 +205,10 @@ def classify_prompt(
             )
 
         # Parse result into PromptClassificationResponse
+        # When needs_clarification is True, intent may be empty — fall back to "conversation"
+        raw_intent = result.get("intent") or "conversation"
         response = PromptClassificationResponse(
-            intent=Intent[result["intent"]],  # No default - will raise KeyError if invalid
+            intent=Intent[raw_intent],  # Raises KeyError if invalid non-empty value
             needs_clarification=result.get("needs_clarification", False),
             missing_fields=result.get("missing_fields", []),
             reasoning_summary=result["reasoning_summary"],  # No default - required
