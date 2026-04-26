@@ -11,6 +11,8 @@ from enum import Enum
 from typing import Any, Optional
 import json
 import os
+import re
+import uuid
 
 from .attachment import Attachment
 
@@ -70,6 +72,19 @@ ROLE_ICONS = {
 }
 
 
+MESSAGE_ID_PATTERN = re.compile(r"^msg_[0-9a-f]{32}$")
+
+
+def _new_message_id() -> str:
+    """Generate a new message identifier."""
+    return f"msg_{uuid.uuid4().hex}"
+
+
+def is_valid_message_id(message_id: str) -> bool:
+    """Return True when ``message_id`` matches the expected format."""
+    return bool(MESSAGE_ID_PATTERN.match(message_id))
+
+
 @dataclass
 class Message:
     """
@@ -119,11 +134,21 @@ class Message:
     parent_task_id: Optional[str] = None
     task_depth: Optional[int] = None
     task_data: Optional[dict] = None  # full PlanRecord or TaskNodeRecord dict
+    message_id: Optional[str] = None
+    cloned_from: Optional[str] = None
+    superseded_by: Optional[str] = None
+    synthesis_of: list[str] = field(default_factory=list)
 
     def __post_init__(self):
-        """Ensure role is MessageRole enum."""
+        """Ensure role and message identity fields are valid."""
         if isinstance(self.role, str):
             self.role = MessageRole(self.role)
+
+        if self.message_id is None:
+            self.message_id = _new_message_id()
+
+        if not is_valid_message_id(self.message_id):
+            raise ValueError(f"Invalid message_id format: {self.message_id!r}")
 
     @property
     def icon(self) -> str:
@@ -175,6 +200,8 @@ class Message:
             "enabled": self.enabled,
             "epoch": self.epoch,
             "attachments": [a.to_dict() for a in (self.attachments or [])],
+            "message_id": self.message_id,
+            "synthesis_of": self.synthesis_of,
         }
 
         # Include optional fields if present
@@ -202,6 +229,10 @@ class Message:
             data["task_depth"] = self.task_depth
         if self.task_data is not None:
             data["task_data"] = self.task_data
+        if self.cloned_from:
+            data["cloned_from"] = self.cloned_from
+        if self.superseded_by:
+            data["superseded_by"] = self.superseded_by
 
         return data
 
@@ -234,6 +265,10 @@ class Message:
         epoch = data.get("epoch", 0)
         timestamp = datetime.fromtimestamp(epoch) if epoch else datetime.now()
 
+        message_id = data.get("message_id")
+        if not isinstance(message_id, str):
+            raise ValueError("Missing required message_id in serialized message")
+
         return cls(
             role=MessageRole(data.get("role", "user")),
             content=data.get("content", ""),
@@ -241,6 +276,7 @@ class Message:
             enabled=data.get("enabled", True),
             timestamp=timestamp,
             file_path=file_path or data.get("file"),
+            message_id=message_id,
             tool_name=data.get("tool_name"),
             tool_input=data.get("tool_input"),
             tool_output=data.get("tool_output"),
@@ -252,6 +288,9 @@ class Message:
             parent_task_id=data.get("parent_task_id"),
             task_depth=data.get("task_depth"),
             task_data=data.get("task_data"),
+            cloned_from=data.get("cloned_from"),
+            superseded_by=data.get("superseded_by"),
+            synthesis_of=data.get("synthesis_of") or [],
         )
 
     def to_llm_dict(self) -> dict:
@@ -340,7 +379,7 @@ class Message:
             context_path: Directory to save the message file
         """
         if self.file_path is None:
-            filename = f"{self.epoch}_{self.role.value}.json"
+            filename = f"{self.epoch}_{self.role.value}_{self.message_id}.json"
             self.file_path = os.path.join(context_path, filename)
 
         os.makedirs(context_path, exist_ok=True)

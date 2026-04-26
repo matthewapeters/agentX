@@ -18,7 +18,7 @@ from glob import glob
 
 logger = logging.getLogger(__name__)
 
-from .message import Message, MessageRole, tool_call_message, tool_result_message
+from .message import Message, MessageRole, is_valid_message_id, tool_call_message, tool_result_message
 from .task_node import PlanRecord, TaskNodeRecord, TaskTree
 
 
@@ -79,6 +79,11 @@ class Context:
         """
         timestamp = ts or message.timestamp
         message.timestamp = timestamp
+
+        if not message.message_id or not is_valid_message_id(message.message_id):
+            raise ValueError(f"Invalid message_id on add_message: {message.message_id!r}")
+        if self.get_message_by_id(message.message_id) is not None:
+            raise ValueError(f"Duplicate message_id in context: {message.message_id}")
 
         # Save to disk if path is set (safe from any thread — writes unique filenames)
         if self.path and message.file_path is None:
@@ -171,6 +176,8 @@ class Context:
 
         for msg_data in data.get("messages", []):
             msg = Message.from_dict(msg_data)
+            if context.get_message_by_id(msg.message_id) is not None:
+                raise ValueError(f"Duplicate message_id in serialized context: {msg.message_id}")
             context.messages.append(MessageEntry(timestamp=msg.timestamp, message=msg))
 
         return context
@@ -190,12 +197,20 @@ class Context:
         for file_path in files:
             try:
                 msg = Message.load(file_path)
+                if not msg.message_id or not is_valid_message_id(msg.message_id):
+                    raise ValueError(f"Invalid message_id in file {file_path}: {msg.message_id!r}")
+                if self.get_message_by_id(msg.message_id) is not None:
+                    raise ValueError(f"Duplicate message_id while loading context dir: {msg.message_id}")
                 msg.enabled = False
                 for att in msg.attachments:
                     att.enabled = False
                 self.messages.append(MessageEntry(timestamp=msg.timestamp, message=msg))
-            except Exception as e:
-                logger.warning("Could not load message from %s: %s", file_path, e)
+            except ValueError as exc:
+                if "message_id" in str(exc):
+                    raise
+                logger.warning("Could not load message from %s: %s", file_path, exc)
+            except Exception as exc:
+                logger.warning("Could not load message from %s: %s", file_path, exc)
 
     @classmethod
     def load(cls, path: str) -> "Context":
@@ -309,6 +324,48 @@ class Context:
             for entry in self.messages
             if entry.message.role in (MessageRole.TOOL_CALL, MessageRole.TOOL_RESULT)
         ]
+
+    def index_by_message_id(self) -> dict[str, Message]:
+        """Return a message index keyed by ``message_id``."""
+        return {entry.message.message_id: entry.message for entry in self.messages}
+
+    def get_message_by_id(self, message_id: str) -> Optional[Message]:
+        """Return message by ``message_id`` or ``None`` if missing."""
+        return self.index_by_message_id().get(message_id)
+
+    def require_message_by_id(self, message_id: str) -> Message:
+        """Return message by ID or raise ``KeyError`` if not found."""
+        message = self.get_message_by_id(message_id)
+        if message is None:
+            raise KeyError(f"message_id not found in context: {message_id}")
+        return message
+
+    def supersede_message(self, original_id: str, replacement_id: str) -> None:
+        """Mark an original message as superseded by a replacement message."""
+        original = self.require_message_by_id(original_id)
+        self.require_message_by_id(replacement_id)
+        original.superseded_by = replacement_id
+        original.enabled = False
+        if original.file_path:
+            original.save(os.path.dirname(original.file_path))
+
+    def get_ancestry(self, message_id: str) -> list[Message]:
+        """Return replay ancestry from root original to the specified message."""
+        lineage: list[Message] = []
+        visited: set[str] = set()
+        current = self.get_message_by_id(message_id)
+        while current is not None and current.message_id not in visited:
+            lineage.append(current)
+            visited.add(current.message_id)
+            if not current.cloned_from:
+                break
+            next_message = self.get_message_by_id(current.cloned_from)
+            if next_message is None:
+                logger.warning("Ancestry chain missing cloned_from target: %s", current.cloned_from)
+                break
+            current = next_message
+        lineage.reverse()
+        return lineage
 
     def get_last_user_message(self) -> Optional[Message]:
         """Get the most recent user message."""
