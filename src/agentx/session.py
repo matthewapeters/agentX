@@ -1047,10 +1047,16 @@ class AgentXSession:
         self,
         thinking_text: str,
         content_text: str,
+        synthesis_of: list[str] | None = None,
         refresh_gui: bool = True,
     ) -> None:
         """Delegate to StreamingController."""
-        self._streaming_controller._persist_stream_messages(thinking_text, content_text, refresh_gui)
+        self._streaming_controller._persist_stream_messages(
+            thinking_text=thinking_text,
+            content_text=content_text,
+            synthesis_of=synthesis_of,
+            refresh_gui=refresh_gui,
+        )
 
     def perform_service_handshake(self):
         """

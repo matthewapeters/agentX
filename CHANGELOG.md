@@ -7,6 +7,76 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.18.26] - 2026-04-26
+
+### Code Changes
+
+#### Fixed
+
+- **F-1 (HIGH)** `src/agentx/streaming_controller.py` — replay candidate lists (`original_tool_calls`, `original_tool_results`, `original_assistants`) now scoped to the replaying `task_id` via `and msg.task_id == _tid` filter, preventing cross-turn message contamination.
+- **F-1 (HIGH)** `src/agentx/streaming_controller.py` — `_display_tool_call` and `_display_tool_result` now accept `task_id: str | None = None` and stamp it on persisted messages; streaming path passes the current task_id via a mutable box (`_current_task_id`); replay path passes `_tid` explicitly.
+- **F-2 (HIGH)** `src/agentx/session.py` — `_persist_stream_messages` delegate restored missing `synthesis_of: list[str] | None = None` parameter and switched to keyword-based delegation to avoid positional argument corruption (the `refresh_gui` bool was being received as `synthesis_of`).
+- **F-3 (MEDIUM)** `src/shared/models/message.py` — `from_dict` coerces non-list `synthesis_of` values to `[]` instead of storing them; `__post_init__` raises `ValueError` if `synthesis_of` is not a `list`.
+
+### Test Changes
+
+#### Added
+
+- **Integration** `tests/test_replay_message_lineage_e2e.py` — T-1: `test_replay_does_not_supersede_prior_turn_messages` — verifies replay of a second task leaves prior-turn messages untouched.
+
+  ```gherkin
+  GIVEN a context with a prior turn (task_id=prior) and a replay target (task_id=target)
+  WHEN the replay worker runs for task_id=target
+  THEN messages from the prior turn (task_id=prior) are not superseded or modified
+  ```
+
+- **Integration** `tests/test_replay_message_lineage_e2e.py` — T-2: `test_replay_does_not_supersede_concurrent_plan_step_messages` — verifies replay of Step A in a two-step plan leaves Step B messages untouched.
+
+  ```gherkin
+  GIVEN a context with two plan steps (step_a_task_id, step_b_task_id)
+  WHEN the replay worker runs for step_a_task_id
+  THEN messages belonging to step_b_task_id are not superseded or modified
+  ```
+
+- **Integration** `tests/test_streaming_message_id_integration.py` — T-3: `test_persist_stream_messages_synthesis_of_is_list_type` — verifies the assistant message created by `_persist_stream_messages` has `isinstance(synthesis_of, list) == True`.
+
+  ```gherkin
+  GIVEN a StreamingController with a real Context
+  WHEN _persist_stream_messages is called with synthesis_of=["msg_abc..."]
+  THEN the persisted ASSISTANT message has synthesis_of as a list type
+  ```
+
+- **Integration** `tests/test_streaming_message_id_integration.py` — T-4: `test_session_delegate_forwards_synthesis_of_by_keyword` — verifies `session._persist_stream_messages` forwards `synthesis_of` and `refresh_gui` as keyword arguments to the controller.
+
+  ```gherkin
+  GIVEN a partially-initialized AgentXSession with a spy StreamingController
+  WHEN session._persist_stream_messages(thinking, content, synthesis_of=[...], refresh_gui=False) is called
+  THEN the spy records synthesis_of=[...] and refresh_gui=False (not positionally swapped)
+  ```
+
+- **Unit** `tests/test_message_model_ids.py` — T-5 (parametrized × 5): `test_from_dict_coerces_non_list_synthesis_of_to_empty_list` — verifies `Message.from_dict` coerces `True`, `False`, a bare string, `42`, and a dict to `[]`.
+
+  ```gherkin
+  GIVEN a message payload with synthesis_of=<non-list value>
+  WHEN Message.from_dict(payload)
+  THEN message.synthesis_of == [] and isinstance(message.synthesis_of, list) is True
+  Permutations: True, False, "msg_a1b2c3...", 42, {"key": "value"}
+  ```
+
+- **Unit** `tests/test_message_model_ids.py` — `test_post_init_rejects_non_list_synthesis_of` — verifies `Message(..., synthesis_of=True)` raises `ValueError` mentioning `synthesis_of`.
+
+  ```gherkin
+  GIVEN synthesis_of=True (a boolean, not a list)
+  WHEN Message(role=..., content=..., synthesis_of=True)
+  THEN ValueError is raised with a message about synthesis_of type
+  ```
+
+#### Changed
+
+- `tests/test_replay_message_lineage_e2e.py` — `_make_original_group` now stamps `task_id="task-1"` on all original messages so the scoped replay filter matches them correctly.
+
+---
+
 ## [0.18.25] - 2026-04-25
 
 ### Code Changes

@@ -94,3 +94,77 @@ def test_save_uses_filename_with_message_id(tmp_path) -> None:
     filename = os.path.basename(msg.file_path)
     assert filename.endswith(f"_{msg.message_id}.json")
     assert f"_{MessageRole.USER.value}_" in filename
+
+
+# ---------------------------------------------------------------------------
+# F-4 / T-5: synthesis_of boolean corruption rejected at deserialization
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "bad_synthesis_of",
+    [
+        True,
+        False,
+        "msg_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+        42,
+        {"key": "value"},
+    ],
+)
+def test_from_dict_coerces_non_list_synthesis_of_to_empty_list(bad_synthesis_of) -> None:
+    """GIVEN a JSON message payload where synthesis_of contains a non-list truthy value.
+
+    WHEN Message.from_dict is called with that payload.
+
+    THEN message.synthesis_of equals [] (coerced to empty list, not storing the bad value),
+    AND isinstance(message.synthesis_of, list) is True.
+
+    Gherkin:
+    GIVEN payload = {"role": "assistant", "content": "...", "message_id": "msg_abc...",
+                     "synthesis_of": <bad_value>}
+    WHEN Message.from_dict(payload)
+    THEN resulting message.synthesis_of == []
+     AND isinstance(message.synthesis_of, list) is True
+
+    Permutations:
+        - bad_synthesis_of=True  (boolean True from F-2 scenario E corruption)
+        - bad_synthesis_of=False (boolean False from F-2 scenario D corruption)
+        - bad_synthesis_of="msg_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" (stray string instead of list)
+        - bad_synthesis_of=42 (integer)
+        - bad_synthesis_of={"key": "value"} (dict instead of list)
+    """
+    payload = {
+        "role": "assistant",
+        "content": "answer",
+        "message_id": "msg_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+        "synthesis_of": bad_synthesis_of,
+    }
+
+    msg = Message.from_dict(payload)
+
+    assert (
+        msg.synthesis_of == []
+    ), f"Expected synthesis_of=[] when input is {bad_synthesis_of!r}, got {msg.synthesis_of!r}"
+    assert isinstance(msg.synthesis_of, list)
+
+
+@pytest.mark.unit
+def test_post_init_rejects_non_list_synthesis_of() -> None:
+    """GIVEN a Message is constructed with a non-list synthesis_of value.
+
+    WHEN the dataclass __post_init__ runs.
+
+    THEN a ValueError is raised.
+
+    Gherkin:
+    GIVEN synthesis_of = True (a boolean, not a list)
+    WHEN Message(role=..., content=..., synthesis_of=True)
+    THEN ValueError is raised with a message about synthesis_of type
+    """
+    with pytest.raises(ValueError, match="synthesis_of"):
+        Message(
+            role=MessageRole.ASSISTANT,
+            content="bad",
+            synthesis_of=True,  # type: ignore[arg-type]
+        )
