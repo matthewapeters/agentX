@@ -7,6 +7,57 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.18.25] - 2026-04-25
+
+### Code Changes
+
+#### Changed
+
+- `src/agentx/streaming_controller.py` — replay worker now persists lineage for replayed messages: replay `TOOL_CALL`/`TOOL_RESULT` messages set `cloned_from`, replay synthesis `ASSISTANT` sets `cloned_from` and `synthesis_of`, and supersession is applied only after replay outputs are fully persisted.
+- `src/agentx/streaming_controller.py` — replay completion now applies `Context.supersede_message(...)` mappings so originals are disabled and point to replacements via `superseded_by`.
+
+### Test Changes
+
+#### Added
+
+- **Integration/Functional** `tests/test_replay_message_lineage_e2e.py`: 20 parametrized tests covering replay lineage and supersession behavior end-to-end.
+
+  ```gherkin
+  GIVEN a replayed message group
+  WHEN replay succeeds
+  THEN replacements set cloned_from and originals set superseded_by
+  ```
+
+  ```gherkin
+  GIVEN a replay attempt fails at any persistence stage
+  WHEN replay exits with error
+  THEN originals remain enabled and no superseded_by links are applied
+  ```
+
+  ```gherkin
+  GIVEN replay emits tool results
+  WHEN replay synthesis is persisted
+  THEN synthesis_of references replay TOOL_RESULT message_ids only
+  ```
+
+  ```gherkin
+  GIVEN replay replacement generation is persisted
+  WHEN supersession completes
+  THEN originals are disabled and replacements are enabled
+  ```
+
+  ```gherkin
+  GIVEN multi-generation replay lineage
+  WHEN get_ancestry is requested for the latest generation
+  THEN ancestry is root-to-leaf and complete
+  ```
+
+  ```gherkin
+  GIVEN replay supersession updates under interleaving patterns
+  WHEN mappings are applied
+  THEN supersession targets remain deterministic and lineage-safe
+  ```
+
 ## [0.18.24] - 2026-04-20
 
 ### Code Changes

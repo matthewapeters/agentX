@@ -12,6 +12,7 @@ and patch individual attributes still work correctly.
 
 import json
 import logging
+import os
 import threading
 from typing import TYPE_CHECKING, Callable, Optional
 
@@ -90,6 +91,7 @@ class StreamingController:
         tool_input: dict,
         round_index: int | None = None,
         tool_id: str | None = None,
+        cloned_from: str | None = None,
     ) -> str:
         """
         Display a tool call in the GUI and store it in context.
@@ -109,6 +111,10 @@ class StreamingController:
             input_text = f"{tool_name}: {tool_input}"
         s._output_logger.log("tool_call", input_text)
         msg = s.context.add_tool_call_message(tool_name, tool_input, tool_id=tool_id)
+        if cloned_from:
+            msg.cloned_from = cloned_from
+            if msg.file_path:
+                msg.save(os.path.dirname(msg.file_path))
         return msg.message_id
 
     def _display_tool_result(
@@ -117,6 +123,7 @@ class StreamingController:
         output,
         round_index: int | None = None,
         tool_id: str | None = None,
+        cloned_from: str | None = None,
     ) -> str:
         """
         Display a tool result in the GUI and store it in context.
@@ -147,6 +154,10 @@ class StreamingController:
             tool_output=output,
             tool_id=tool_id,
         )
+        if cloned_from:
+            msg.cloned_from = cloned_from
+            if msg.file_path:
+                msg.save(os.path.dirname(msg.file_path))
         s._safe_root_after(s.refresh_working_memory_gui)
         return msg.message_id
 
@@ -489,32 +500,79 @@ class StreamingController:
 
         def _worker(_node=node, _tree=tree, _tid=task_id):
             replay_tool_result_ids: list[str] = []
+            replay_tool_call_pairs: list[tuple[str, str]] = []
+            replay_tool_result_pairs: list[tuple[str, str]] = []
+            replay_assistant_pair: tuple[str, str] | None = None
+            original_tool_calls: list[Message] = [
+                msg
+                for msg in s.context.get_messages(enabled_only=False)
+                if msg.role == MessageRole.TOOL_CALL and msg.enabled
+            ]
+            original_tool_results: list[Message] = [
+                msg
+                for msg in s.context.get_messages(enabled_only=False)
+                if msg.role == MessageRole.TOOL_RESULT and msg.enabled
+            ]
+            original_assistants: list[Message] = [
+                msg
+                for msg in s.context.get_messages(enabled_only=False)
+                if msg.role == MessageRole.ASSISTANT and msg.enabled
+            ]
+            original_tool_call_index = 0
+            original_tool_result_index = 0
             try:
                 s._is_streaming.set()
                 s._safe_root_after(self._on_stream_start)
                 for chunk in s.agentix_adapter.replay_task_node_generator(_node, s.context, _tree):
                     if chunk.type == ChunkType.TOOL_CALL and chunk.tool_name:
-                        self._display_tool_call(
+                        cloned_from = None
+                        if original_tool_call_index < len(original_tool_calls):
+                            cloned_from = original_tool_calls[original_tool_call_index].message_id
+                            original_tool_call_index += 1
+                        replay_tool_call_id = self._display_tool_call(
                             chunk.tool_name,
                             chunk.tool_input or {},
                             chunk.round_index,
                             tool_id=chunk.tool_id,
+                            cloned_from=cloned_from,
                         )
+                        if cloned_from:
+                            replay_tool_call_pairs.append((cloned_from, replay_tool_call_id))
                     elif chunk.type == ChunkType.TOOL_RESULT and chunk.tool_name:
+                        cloned_from = None
+                        if original_tool_result_index < len(original_tool_results):
+                            cloned_from = original_tool_results[original_tool_result_index].message_id
+                            original_tool_result_index += 1
                         tool_result_id = self._display_tool_result(
                             chunk.tool_name,
                             chunk.tool_output,
                             chunk.round_index,
                             tool_id=chunk.tool_id,
+                            cloned_from=cloned_from,
                         )
                         replay_tool_result_ids.append(tool_result_id)
+                        if cloned_from:
+                            replay_tool_result_pairs.append((cloned_from, tool_result_id))
 
                     if chunk.type == ChunkType.TASK_NODE_END and chunk.task_id == _tid:
                         _synth = chunk.content or ""
                         _asserts = chunk.assertions or []
                         replay_synthesis = Message(role=MessageRole.ASSISTANT, content=_synth)
                         replay_synthesis.synthesis_of = replay_tool_result_ids
+                        if original_assistants:
+                            replay_synthesis.cloned_from = original_assistants[-1].message_id
                         s.context.add_message(replay_synthesis)
+                        if replay_synthesis.cloned_from:
+                            replay_assistant_pair = (replay_synthesis.cloned_from, replay_synthesis.message_id)
+
+                        # Apply supersession only after replay outputs are fully persisted.
+                        for original_id, replacement_id in replay_tool_call_pairs:
+                            s.context.supersede_message(original_id, replacement_id)
+                        for original_id, replacement_id in replay_tool_result_pairs:
+                            s.context.supersede_message(original_id, replacement_id)
+                        if replay_assistant_pair is not None:
+                            s.context.supersede_message(replay_assistant_pair[0], replay_assistant_pair[1])
+
                         s._safe_root_after(lambda tid=_tid: s.gui.update_plan_node_status(tid, "done"))
                         s._safe_root_after(
                             lambda tid=_tid, synth=_synth, asserts=_asserts: s.gui.update_plan_synthesis(
