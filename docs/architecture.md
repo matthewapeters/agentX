@@ -1,8 +1,8 @@
 # AgentX — Architecture Reference
 
-Version: 2026-04-19  
+Version: 2026-04-27  
 Branch: main  
-Project version: 0.18.22
+Project version: 0.19.1
 
 ---
 
@@ -124,6 +124,7 @@ main.py
 | `ServiceManager` | `service_manager.py` | External service lifecycle (Ollama, Agentix) |
 | `IGUIManager` | `igui_manager.py` | `Protocol` defining the GUI boundary |
 | `OutputLogger` | `output_logger.py` | Session transcript file writer |
+| `IMeterSession` | `protocols.py` | Runtime-checkable protocol for context-meter callbacks |
 | `AttachmentInfo` | `attachment_info.py` | File attachment metadata dataclass |
 | `History` | `history.py` | Loads prior sessions from disk for GUI display |
 | `FileExplorer` | `file_explorer.py` | File navigation widget (list, open, history) |
@@ -199,12 +200,21 @@ main.py
 | `ToolDefinition` | `models/tools.py` | `ToolDefinition`, `ToolRegistry`, `ToolResponse` |
 | `Attachment` | `models/attachment.py` | File attachment dataclass |
 
+### src/shared/ — Shared utilities
+
+| Module | Path | Role |
+|--------|------|------|
+| `token_utils` | `token_utils.py` | TOK-02 token estimation helpers (`chars_per_token`, `estimate_text_tokens`) |
+
 ### PRE-02 runtime flow notes
 
 - `AgentXSession.__init__` creates `OllamaServiceProvider` and `ModelMetadataStore`.
-- `ModelMetadataStore.populate()` runs at startup before interactive streaming begins.
+- `ModelMetadataStore.populate()` is started on a background daemon thread at startup.
 - Cached metadata is persisted at `sessions/_model_cache.json` and reused when the
   model set from provider `list_models()` is unchanged.
+- `ModelMetadataStore.populated` is a `threading.Event` that is set after populate
+  completes (including failure paths), and `invalidate()` can trigger asynchronous
+  selective/full refreshes mid-session.
 - Meter redraw calls use `ModelMetadataStore.get_context_length()` and are scheduled on
   the Tk main thread via `root.after(0, ...)` through session helper methods.
 

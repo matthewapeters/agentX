@@ -9,7 +9,17 @@ class ILLMServiceProvider(Protocol):
 
     Implementations must never raise from public methods and should return
     safe defaults when upstream calls fail.
+
+    Attributes:
+        provider_id: A stable string identifier for this backend
+            (e.g. ``"ollama"``).  Used in cache keys and log messages so
+            that multi-provider setups remain distinguishable.
     """
+
+    @property
+    def provider_id(self) -> str:
+        """Return a stable string identifier for this provider backend."""
+        ...
 
     def list_models(self) -> list[str]:
         """Return the available model names."""

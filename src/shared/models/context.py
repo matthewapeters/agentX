@@ -7,7 +7,6 @@ in request payloads.
 """
 
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +19,7 @@ from glob import glob
 logger = logging.getLogger(__name__)
 
 from .message import Message, MessageRole, is_valid_message_id, tool_call_message, tool_result_message
+from ..token_utils import chars_per_token, estimate_text_tokens
 from .task_node import PlanRecord, TaskNodeRecord, TaskTree
 
 
@@ -406,25 +406,38 @@ class Context:
 
     @staticmethod
     def _chars_per_token(model_name: str) -> float:
-        """Return the TOK-02 char/token ratio for a model name."""
-        lowered = (model_name or "").strip().lower()
-        if lowered.startswith("llama"):
-            return 3.5
-        if lowered.startswith("mistral"):
-            return 3.8
-        if lowered.startswith("phi"):
-            return 4.0
-        return 4.0
+        """Return the TOK-02 char/token ratio for a model name.
+
+        .. deprecated::
+            Use :func:`shared.token_utils.chars_per_token` directly.
+            This shim is retained for backward compatibility with code that
+            calls ``Context._chars_per_token(model)``.
+        """
+        return chars_per_token(model_name)
 
     @staticmethod
     def _estimate_text_tokens(text: str, ratio: float) -> int:
-        if not text:
-            return 0
-        return int(math.ceil(len(text) / ratio))
+        """Estimate token count for ``text``.
+
+        .. deprecated::
+            Use :func:`shared.token_utils.estimate_text_tokens` directly.
+            This shim is retained for backward compatibility.
+        """
+        return estimate_text_tokens(text, ratio)
 
     def token_breakdown(self, model_name: str = "") -> dict[str, int]:
-        """Return estimated token counts split by context-meter categories."""
-        ratio = self._chars_per_token(model_name)
+        """Return estimated token counts split by context-meter categories.
+
+        Args:
+            model_name: Model identifier used to select the TOK-02
+                chars-per-token ratio (e.g. ``"llama3.2"``).  Defaults to an
+                empty string which maps to the generic 4.0 ratio.
+
+        Returns:
+            Dict with keys ``working_memory``, ``system``, ``user``,
+            ``attachments``, ``thinking``, ``assistant``, and ``tool``.
+        """
+        ratio = chars_per_token(model_name)
         breakdown = {
             "working_memory": 0,
             "system": 0,
@@ -436,7 +449,7 @@ class Context:
         }
 
         for msg in self.get_enabled_messages():
-            content_tokens = self._estimate_text_tokens(msg.content, ratio)
+            content_tokens = estimate_text_tokens(msg.content, ratio)
 
             if msg.role == MessageRole.SYSTEM:
                 if msg.metadata.get("is_working_memory", False):
@@ -447,14 +460,16 @@ class Context:
                 breakdown["user"] += content_tokens
             elif msg.role == MessageRole.THINKING:
                 breakdown["thinking"] += content_tokens
-            elif msg.role == MessageRole.ASSISTANT:
+            elif msg.role in (MessageRole.ASSISTANT, MessageRole.SYNTHESIS):
+                # SYNTHESIS is an agent-generated response variant; count it
+                # in the assistant band so the meter reflects all LLM output.
                 breakdown["assistant"] += content_tokens
             elif msg.role in (MessageRole.TOOL_CALL, MessageRole.TOOL_RESULT):
                 breakdown["tool"] += content_tokens
 
             for attachment in msg.attachments:
                 if attachment.enabled:
-                    breakdown["attachments"] += self._estimate_text_tokens(attachment.content, ratio)
+                    breakdown["attachments"] += estimate_text_tokens(attachment.content, ratio)
 
         return breakdown
 

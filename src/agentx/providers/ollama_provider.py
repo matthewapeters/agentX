@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 import requests
 
-from agentix.constants import FALLBACK_CONTEXT_WINDOW, OLLAMA_MODELS_ENDPOINT, OLLAMA_SHOW_ENDPOINT
-
 from .base import ILLMServiceProvider
+from .constants import FALLBACK_CONTEXT_WINDOW, OLLAMA_MODELS_ENDPOINT, OLLAMA_SHOW_ENDPOINT
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +16,23 @@ logger = logging.getLogger(__name__)
 class OllamaServiceProvider(ILLMServiceProvider):
     """Adapter around Ollama HTTP endpoints used by AgentX."""
 
-    def __init__(self, host: str) -> None:
+    #: Stable backend identifier — used by :class:`~agentx.model_metadata_store.ModelMetadataStore`
+    #: when writing cache files so different provider backends remain distinguishable.
+    provider_id: str = "ollama"
+
+    def __init__(self, host: Optional[str] = None) -> None:
         self._host = self._normalize_host(host)
 
     @staticmethod
-    def _normalize_host(host: str) -> str:
+    def _normalize_host(host: Optional[str]) -> str:
+        """Normalise *host* to a full ``http://...`` URL without trailing slash.
+
+        Args:
+            host: Raw host string (may be ``None``, empty, or already a URL).
+
+        Returns:
+            Fully qualified base URL string.
+        """
         if not host:
             return "http://localhost:11434"
         if host.startswith("http://") or host.startswith("https://"):

@@ -20,7 +20,7 @@ from typing import Any, Iterator, Optional
 import httpx
 
 from agentix.prompt_classification_response import PromptClassificationResponse
-from agentix.constants import FALLBACK_CONTEXT_WINDOW
+from .providers.constants import FALLBACK_CONTEXT_WINDOW
 from shared.models.context import Context
 from shared.models.message import Message, MessageRole
 from shared.models.response import ChunkType, ResponseChunk
@@ -112,10 +112,9 @@ class AgentXSession:
             provider=self._llm_provider,
             cache_path=Path(base_dir) / "sessions" / "_model_cache.json",
         )
-        try:
-            self._model_store.populate()
-        except Exception:
-            logger.exception("Failed to populate model metadata store at startup")
+        # Populate asynchronously so the Tk main-thread is not blocked at startup.
+        # get_context_length() returns FALLBACK_CONTEXT_WINDOW until this completes.
+        threading.Thread(target=self._model_store.populate, daemon=True).start()
 
         # Context lives on session directly (tests mock session.context)
         self.context = Context(path=context_folder, session_id=session_id)
@@ -343,21 +342,49 @@ class AgentXSession:
         self._schedule_meter_redraw(max_tokens, breakdown)
 
     def _context_meter_payload(self, model_name: Optional[str] = None) -> tuple[int, dict[str, int]]:
-        """Build denominator and token-band payload for context-meter redraws."""
-        active_model = model_name or self._active_model
-        max_tokens = FALLBACK_CONTEXT_WINDOW
-        try:
-            max_tokens = self._model_store.get_context_length(active_model)
-        except Exception:
-            logger.exception("Failed to resolve context length for model '%s'", active_model)
+        """Build denominator and token-band payload for context-meter redraws.
+
+        Args:
+            model_name: Optional model override.  When ``None`` the current
+                :attr:`active_model` is used.
+
+        Returns:
+            ``(max_tokens, breakdown)`` where *max_tokens* is the context-window
+            capacity and *breakdown* is a per-band token-count mapping.
+        """
+        # Explicit None check — an empty string is a valid (if unusual) model name.
+        if model_name is None:
+            model_name = self._active_model
+
+        # get_context_length() never raises; it returns FALLBACK_CONTEXT_WINDOW on error.
+        max_tokens: int = self._model_store.get_context_length(model_name)
 
         breakdown: dict[str, int] = {}
         try:
-            breakdown = self.context.token_breakdown(model_name=active_model)
+            breakdown = self.context.token_breakdown(model_name=model_name)
         except Exception:
-            logger.exception("Failed to build context token breakdown for model '%s'", active_model)
+            logger.exception("Failed to build context token breakdown for model '%s'", model_name)
 
         return max_tokens, breakdown
+
+    def on_context_assembled(self, shared_context: "Context") -> None:
+        """Update the context meter from the fully assembled shared context.
+
+        Called by :class:`~agentx.streaming_controller.StreamingController`
+        immediately after :meth:`_build_shared_context` so the meter reflects
+        working memory and history as well as the session's own messages.
+
+        Args:
+            shared_context: The assembled :class:`~shared.models.context.Context`
+                ready to be sent to the LLM.
+        """
+        max_tokens: int = self._model_store.get_context_length(self._active_model)
+        try:
+            breakdown = shared_context.token_breakdown(model_name=self._active_model)
+        except Exception:
+            logger.exception("Failed to build context token breakdown for on_context_assembled")
+            breakdown = {}
+        self._schedule_meter_redraw(max_tokens, breakdown)
 
     def _schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
         """Schedule a context-meter redraw safely on the Tk main thread."""

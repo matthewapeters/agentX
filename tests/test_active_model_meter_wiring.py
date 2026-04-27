@@ -5,14 +5,13 @@ WHEN setter executes
 THEN denominator and breakdown are pushed to GUI update hook.
 """
 
-import os
-import sys
 from unittest.mock import Mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+import pytest
 
-from agentix.constants import FALLBACK_CONTEXT_WINDOW
+from agentx.providers.constants import FALLBACK_CONTEXT_WINDOW
 from agentx.session import AgentXSession
+from shared.models.context import Context
 
 
 def _build_session_stub() -> AgentXSession:
@@ -30,6 +29,7 @@ def _build_session_stub() -> AgentXSession:
     return session
 
 
+@pytest.mark.unit
 def test_active_model_change_triggers_meter_redraw() -> None:
     """GIVEN new active model WHEN setter runs THEN GUI meter update is called once."""
     session = _build_session_stub()
@@ -41,6 +41,7 @@ def test_active_model_change_triggers_meter_redraw() -> None:
     assert session.agentix_adapter.agentix_config.model == "new-model"
 
 
+@pytest.mark.unit
 def test_active_model_noop_when_unchanged() -> None:
     """GIVEN identical active model WHEN setter runs THEN no redraw happens."""
     session = _build_session_stub()
@@ -51,6 +52,7 @@ def test_active_model_noop_when_unchanged() -> None:
     session.gui.update_context_meter.assert_not_called()
 
 
+@pytest.mark.unit
 def test_active_model_uses_fallback_value() -> None:
     """GIVEN missing model capacity WHEN setter runs THEN fallback denominator is used."""
     session = _build_session_stub()
@@ -61,4 +63,20 @@ def test_active_model_uses_fallback_value() -> None:
     session.gui.update_context_meter.assert_called_once_with(
         max_tokens=FALLBACK_CONTEXT_WINDOW,
         breakdown={"assistant": 10},
+    )
+
+
+@pytest.mark.unit
+def test_on_context_assembled_updates_meter() -> None:
+    """GIVEN a shared context WHEN on_context_assembled is called THEN meter is redrawn using shared_context breakdown."""
+    session = _build_session_stub()
+    shared_ctx = Mock(spec=Context)
+    shared_ctx.token_breakdown.return_value = {"user": 50, "assistant": 20}
+    session._model_store.get_context_length.return_value = 16384
+
+    session.on_context_assembled(shared_ctx)
+
+    session.gui.update_context_meter.assert_called_once_with(
+        max_tokens=16384,
+        breakdown={"user": 50, "assistant": 20},
     )

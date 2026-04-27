@@ -69,8 +69,25 @@ def parse_parameter_size(param_size: str) -> int:
         raise ValueError(f"Invalid parameter size format: {param_size}")
 
 
-def get_model(args) -> int:
-    """Select a model and extract parameter information. Returns max tokens."""
+def get_model(args, max_tokens: int | None = None) -> int:
+    """Select a model and extract parameter information.  Returns max tokens.
+
+    When *max_tokens* is supplied (non-``None``) the function skips the live
+    HTTP call to Ollama and returns that value directly.  This lets callers
+    that already hold the context length (e.g. via
+    :class:`~agentx.model_metadata_store.ModelMetadataStore`) avoid a
+    redundant network round-trip.
+
+    Args:
+        args: Parsed argument namespace.  Must have at least ``model`` and
+            ``debug`` attributes.
+        max_tokens: Optional context-window override.  When ``None`` (default)
+            the context length is fetched from the Ollama ``/api/show``
+            endpoint.
+
+    Returns:
+        Maximum token count for the selected model.
+    """
     # Local import avoids import-time dependency loops between the two source trees.
     from agentx.providers.ollama_provider import OllamaServiceProvider
 
@@ -86,13 +103,17 @@ def get_model(args) -> int:
     model = models[0]
     if args.debug:
         logger.debug("Using model:\n%s", json.dumps(model, indent=2))
+    args.model = model["name"]
+
+    # Fast path: caller already knows the context length.
+    if max_tokens is not None:
+        return max_tokens
+
     ollama_host = args.ollama_host if hasattr(args, "ollama_host") else "localhost:11434"
     provider = OllamaServiceProvider(host=ollama_host)
-    max_tokens = provider.get_context_length(model["name"])
-    if max_tokens == FALLBACK_CONTEXT_WINDOW:
+    resolved = provider.get_context_length(model["name"])
+    if resolved == FALLBACK_CONTEXT_WINDOW:
         logger.debug("Using FALLBACK_CONTEXT_WINDOW for model '%s'", model["name"])
     elif args.debug:
-        logger.debug("Resolved context length for model '%s': %d", model["name"], max_tokens)
-
-    args.model = model["name"]
-    return max_tokens
+        logger.debug("Resolved context length for model '%s': %d", model["name"], resolved)
+    return resolved

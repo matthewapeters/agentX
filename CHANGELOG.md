@@ -7,6 +7,63 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.19.1] - 2026-04-27
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/providers/constants.py` introducing provider-scoped constants (`OLLAMA_MODELS_ENDPOINT`, `OLLAMA_SHOW_ENDPOINT`, `FALLBACK_CONTEXT_WINDOW`) to remove cross-tree imports.
+- `src/agentx/protocols.py` introducing runtime-checkable `IMeterSession` for explicit context-meter contracts.
+- `src/shared/token_utils.py` with module-level `chars_per_token()` and `estimate_text_tokens()` utilities.
+
+#### Changed
+
+- `src/agentx/providers/base.py` adds required `provider_id` contract to `ILLMServiceProvider`.
+- `src/agentx/providers/ollama_provider.py` now exposes `provider_id = "ollama"`, accepts optional host values, and normalizes `None`/empty hosts safely.
+- `src/agentx/model_metadata_store.py` now uses provider `provider_id` in cache payloads, exposes `populated: threading.Event`, unifies cache parsing with `_parse_cache_data()`, and adds `invalidate(model_name: str | None = None)` background refresh support.
+- `src/agentx/session.py` now imports provider constants from `agentx.providers.constants`, starts model-store population asynchronously at startup, adds `on_context_assembled(shared_context)`, and simplifies `_context_meter_payload()` error-handling and model-name fallback semantics.
+- `src/agentx/streaming_controller.py` replaces `hasattr` meter guards with `isinstance(..., IMeterSession)` checks and delegates assembled-context meter redraw via `on_context_assembled()`.
+- `src/shared/models/context.py` now routes `MessageRole.SYNTHESIS` into the assistant meter band and uses shared token utilities while retaining compatibility shims.
+- `src/agentix/models.py` adds optional fast-path `max_tokens` argument to avoid redundant live context-length HTTP calls.
+- `pyproject.toml` test config now includes `pythonpath = ["src"]` to eliminate per-test `sys.path` mutation.
+
+#### Fixed
+
+- Addressed all 15 PR #5 review findings (A1-A7, P1-P8), including provider abstraction, cache semantics, meter protocol boundaries, startup threading behavior, and context-meter correctness.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_token_utils.py` (Unit):
+  - GIVEN model-name families and text samples
+  - WHEN token utility helpers run
+  - THEN family ratios and ceiling token estimates are validated.
+- `tests/test_protocols.py` (Unit):
+  - GIVEN full and partial structural implementations
+  - WHEN runtime protocol checks execute
+  - THEN `IMeterSession` compatibility is correctly enforced.
+
+#### Changed
+
+- `tests/test_llm_service_provider.py`:
+  - Removed `sys.path.insert` usage and switched constants import to `agentx.providers.constants`.
+  - Added `provider_id` assertion and parametrized host-normalization coverage (`None`, empty, bare host, http/https variants).
+- `tests/test_model_metadata_store.py`:
+  - Removed `sys.path.insert`, updated constants import, and added `provider_id` to test provider.
+  - Added coverage for `populated` event behavior, failure-path event setting, `invalidate()` single/all flows, provider-id cache serialization, and `_parse_cache_data()`.
+- `tests/test_context_token_breakdown.py`:
+  - Removed `sys.path.insert`.
+  - Added explicit `SYNTHESIS` role routing assertions into `assistant` band.
+- `tests/test_active_model_meter_wiring.py`:
+  - Removed `sys.path.insert`, updated constants import.
+  - Added `on_context_assembled()` meter-redraw behavior coverage.
+
+#### Fixed
+
+- New/updated targeted tests for PR #5 review scope now pass (`50 passed, 0 failed`).
+
 ## [0.19.0] - 2026-04-26
 
 ### Code Changes
