@@ -503,6 +503,10 @@ class GUIManager(IGUIManager):
     def mark_plan_node_invalidated(self, task_id: str) -> None:
         self._chat_panel.mark_plan_node_invalidated(task_id)
 
+    def update_context_meter(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+        """Stub implementation until ContextMeterWidget is introduced."""
+        logger.debug("update_context_meter: max_tokens=%d breakdown=%s", max_tokens, breakdown)
+
     # ── Placeholder callbacks (replaced at runtime via set_*_callback) ────────
 
     def _on_model_change(self, model: str) -> None:

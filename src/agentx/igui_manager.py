@@ -415,6 +415,17 @@ class IGUIManager(Protocol):
         """Mark a node status as 'invalidated' (needs re-synthesis)."""
         ...
 
+    def update_context_meter(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+        """Trigger a context-meter redraw with denominator and band data.
+
+        Args:
+            max_tokens: Active-model context-window denominator.
+            breakdown: Per-band token estimates from ``Context.token_breakdown``.
+
+        Implementations must be safe to call from non-main threads.
+        """
+        ...
+
     # Callback Registration
 
     def set_model_change_callback(self, callback: Callable[[str], None]) -> None:

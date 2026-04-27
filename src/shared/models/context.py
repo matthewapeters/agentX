@@ -7,6 +7,7 @@ in request payloads.
 """
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -402,6 +403,60 @@ class Context:
                 if att.enabled:
                     total += len(att.content) // 4
         return total
+
+    @staticmethod
+    def _chars_per_token(model_name: str) -> float:
+        """Return the TOK-02 char/token ratio for a model name."""
+        lowered = (model_name or "").strip().lower()
+        if lowered.startswith("llama"):
+            return 3.5
+        if lowered.startswith("mistral"):
+            return 3.8
+        if lowered.startswith("phi"):
+            return 4.0
+        return 4.0
+
+    @staticmethod
+    def _estimate_text_tokens(text: str, ratio: float) -> int:
+        if not text:
+            return 0
+        return int(math.ceil(len(text) / ratio))
+
+    def token_breakdown(self, model_name: str = "") -> dict[str, int]:
+        """Return estimated token counts split by context-meter categories."""
+        ratio = self._chars_per_token(model_name)
+        breakdown = {
+            "working_memory": 0,
+            "system": 0,
+            "user": 0,
+            "attachments": 0,
+            "thinking": 0,
+            "assistant": 0,
+            "tool": 0,
+        }
+
+        for msg in self.get_enabled_messages():
+            content_tokens = self._estimate_text_tokens(msg.content, ratio)
+
+            if msg.role == MessageRole.SYSTEM:
+                if msg.metadata.get("is_working_memory", False):
+                    breakdown["working_memory"] += content_tokens
+                else:
+                    breakdown["system"] += content_tokens
+            elif msg.role == MessageRole.USER:
+                breakdown["user"] += content_tokens
+            elif msg.role == MessageRole.THINKING:
+                breakdown["thinking"] += content_tokens
+            elif msg.role == MessageRole.ASSISTANT:
+                breakdown["assistant"] += content_tokens
+            elif msg.role in (MessageRole.TOOL_CALL, MessageRole.TOOL_RESULT):
+                breakdown["tool"] += content_tokens
+
+            for attachment in msg.attachments:
+                if attachment.enabled:
+                    breakdown["attachments"] += self._estimate_text_tokens(attachment.content, ratio)
+
+        return breakdown
 
     def trim_to_tokens(self, max_tokens: int) -> list[Message]:
         """

@@ -129,6 +129,14 @@ main.py
 | `FileExplorer` | `file_explorer.py` | File navigation widget (list, open, history) |
 | `WidgetRegistry` | `widget_registry.py` | Centralised widget lifecycle and cleanup |
 | `AgentXConfig` | `config.py` | Loads/saves `agentx.toml` |
+| `ModelMetadataStore` | `model_metadata_store.py` | Startup-populated model capacity/metadata cache (memory + disk) |
+
+### src/agentx/providers/ — LLM provider abstraction
+
+| Module | Path | Role |
+|--------|------|------|
+| `ILLMServiceProvider` | `providers/base.py` | Provider protocol for model listing + context length lookup |
+| `OllamaServiceProvider` | `providers/ollama_provider.py` | Ollama HTTP adapter for `/api/tags` + `/api/show` |
 
 ### src/agentx/gui/ — Presentation layer
 
@@ -190,6 +198,15 @@ main.py
 | `TaskNodeRecord` | `models/task_node.py` | `PlanRecord`, `TaskNodeRecord`, `TaskTree`, `SynthesisAttempt` |
 | `ToolDefinition` | `models/tools.py` | `ToolDefinition`, `ToolRegistry`, `ToolResponse` |
 | `Attachment` | `models/attachment.py` | File attachment dataclass |
+
+### PRE-02 runtime flow notes
+
+- `AgentXSession.__init__` creates `OllamaServiceProvider` and `ModelMetadataStore`.
+- `ModelMetadataStore.populate()` runs at startup before interactive streaming begins.
+- Cached metadata is persisted at `sessions/_model_cache.json` and reused when the
+  model set from provider `list_models()` is unchanged.
+- Meter redraw calls use `ModelMetadataStore.get_context_length()` and are scheduled on
+  the Tk main thread via `root.after(0, ...)` through session helper methods.
 
 ### System prompts (`system_prompts/`)
 

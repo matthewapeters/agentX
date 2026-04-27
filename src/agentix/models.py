@@ -6,7 +6,7 @@ import sys
 
 import requests
 
-from .constants import OLLAMA_API_BASE, OLLAMA_MODELS_ENDPOINT
+from .constants import FALLBACK_CONTEXT_WINDOW, OLLAMA_API_BASE, OLLAMA_MODELS_ENDPOINT
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,9 @@ def parse_parameter_size(param_size: str) -> int:
 
 def get_model(args) -> int:
     """Select a model and extract parameter information. Returns max tokens."""
+    # Local import avoids import-time dependency loops between the two source trees.
+    from agentx.providers.ollama_provider import OllamaServiceProvider
+
     models = get_models(args)
     if len(models) > 1:
         if args.debug:
@@ -83,12 +86,13 @@ def get_model(args) -> int:
     model = models[0]
     if args.debug:
         logger.debug("Using model:\n%s", json.dumps(model, indent=2))
-    # Convert parameter_size to max_tokens
-    try:
-        max_tokens = parse_parameter_size(model["details"]["parameter_size"])
-    except Exception as e:
-        if args.debug:
-            logger.debug("%s", json.dumps(model, indent=2))
-        raise ValueError(f"Invalid parameter size format: {model['details']['parameter_size']}")
+    ollama_host = args.ollama_host if hasattr(args, "ollama_host") else "localhost:11434"
+    provider = OllamaServiceProvider(host=ollama_host)
+    max_tokens = provider.get_context_length(model["name"])
+    if max_tokens == FALLBACK_CONTEXT_WINDOW:
+        logger.debug("Using FALLBACK_CONTEXT_WINDOW for model '%s'", model["name"])
+    elif args.debug:
+        logger.debug("Resolved context length for model '%s': %d", model["name"], max_tokens)
+
     args.model = model["name"]
     return max_tokens

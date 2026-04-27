@@ -7,6 +7,66 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.19.0] - 2026-04-26
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/providers/base.py` with `ILLMServiceProvider` protocol.
+- `src/agentx/providers/ollama_provider.py` implementing model enumeration and context-length lookup via Ollama endpoints.
+- `src/agentx/model_metadata_store.py` for startup-populated, disk-backed model capacity metadata (`sessions/_model_cache.json`).
+
+#### Changed
+
+- `src/agentix/constants.py` adds `OLLAMA_SHOW_ENDPOINT` and `FALLBACK_CONTEXT_WINDOW`.
+- `src/agentix/models.py` now derives `max_tokens` from provider context-length lookup instead of `parameter_size` proxy.
+- `src/agentx/session.py` now initializes provider/store at startup, tags working-memory system messages via metadata, adds meter payload/scheduling helpers, and triggers redraw on model change, submit, and attachment-toggle events.
+- `src/agentx/streaming_controller.py` now schedules meter redraw on submit-context assembly and after stream completion.
+- `src/agentx/igui_manager.py` and `src/agentx/gui/gui_manager.py` now include `update_context_meter(max_tokens, breakdown)` contract/stub.
+- `src/shared/models/message.py` now includes serializable `metadata` map.
+- `src/shared/models/context.py` adds `token_breakdown(model_name)` with TOK-02 model-family ratios.
+- `docs/context_size_prerequisite_plan.md` updated with Phase 1 audit findings and implementation progress tracking.
+- `docs/ux/context_visualizer.md` marks PRE-02 complete and updates dynamic-context definition notes.
+- `docs/architecture.md` module map updated with provider abstraction and metadata-store runtime flow.
+
+#### Fixed
+
+- Context-meter denominator source now aligns with active-model context window semantics instead of parameter-size heuristics.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_llm_service_provider.py` (Unit):
+  - GIVEN Ollama tag/show payloads
+  - WHEN provider methods are called
+  - THEN model names, key-probe ordering, and fallback behavior are validated.
+- `tests/test_model_metadata_store.py` (Unit):
+  - GIVEN cache/no-cache startup conditions
+  - WHEN `populate()` executes
+  - THEN fetch/cached/fallback behavior is validated.
+- `tests/test_context_token_breakdown.py` (Unit):
+  - GIVEN enabled context messages and attachments
+  - WHEN `token_breakdown()` executes
+  - THEN role-band and attachment token estimates are correctly routed.
+- `tests/test_active_model_meter_wiring.py` (Integration):
+  - GIVEN active-model changes in session
+  - WHEN setter logic runs
+  - THEN GUI meter updates receive denominator and breakdown, including no-op and fallback paths.
+
+#### Changed
+
+- No existing tests removed; new PRE-02 tests run alongside the existing suite.
+
+#### Fixed
+
+- N/A
+
+#### Removed
+
+- N/A
+
 ## [0.18.26] - 2026-04-26
 
 ### Code Changes

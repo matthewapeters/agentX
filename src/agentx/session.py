@@ -14,11 +14,13 @@ import os
 import threading
 import tkinter as tk
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import httpx
 
 from agentix.prompt_classification_response import PromptClassificationResponse
+from agentix.constants import FALLBACK_CONTEXT_WINDOW
 from shared.models.context import Context
 from shared.models.message import Message, MessageRole
 from shared.models.response import ChunkType, ResponseChunk
@@ -42,6 +44,8 @@ from .service_manager import ServiceManager
 from .session_state import SessionState
 from .streaming_controller import StreamingController
 from .tool_dispatcher import ToolDispatcher
+from .model_metadata_store import ModelMetadataStore
+from .providers import ILLMServiceProvider, OllamaServiceProvider
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +104,18 @@ class AgentXSession:
         self.start_time = self._state.start_time
         self.user_history_folder = user_history_folder
         self.context_folder = context_folder
+
+        # Startup model-capacity store used by context-meter redraws.
+        ollama_host = self.config.get("agentx", {}).get("ollama_host", "localhost:11434")
+        self._llm_provider: ILLMServiceProvider = OllamaServiceProvider(host=ollama_host)
+        self._model_store = ModelMetadataStore(
+            provider=self._llm_provider,
+            cache_path=Path(base_dir) / "sessions" / "_model_cache.json",
+        )
+        try:
+            self._model_store.populate()
+        except Exception:
+            logger.exception("Failed to populate model metadata store at startup")
 
         # Context lives on session directly (tests mock session.context)
         self.context = Context(path=context_folder, session_id=session_id)
@@ -192,6 +208,7 @@ class AgentXSession:
             wm_block = self.working_memory.to_llm_block()
             if wm_block:
                 wm_msg = Message(role=MessageRole.SYSTEM, content=wm_block)
+                wm_msg.metadata["is_working_memory"] = True
                 shared_context.add_message(wm_msg, ts=datetime.now())
 
         history_messages = self.history.get_enabled_messages()
@@ -313,11 +330,38 @@ class AgentXSession:
         Args:
             model: Model name to use
         """
+        if model == self._active_model:
+            return
+
         self._active_model = model
         self.config["agentx"]["ollama_model"] = model
 
         # Update the bridge's config
         self.agentix_adapter.agentix_config.model = model
+
+        max_tokens, breakdown = self._context_meter_payload(model_name=model)
+        self._schedule_meter_redraw(max_tokens, breakdown)
+
+    def _context_meter_payload(self, model_name: Optional[str] = None) -> tuple[int, dict[str, int]]:
+        """Build denominator and token-band payload for context-meter redraws."""
+        active_model = model_name or self._active_model
+        max_tokens = FALLBACK_CONTEXT_WINDOW
+        try:
+            max_tokens = self._model_store.get_context_length(active_model)
+        except Exception:
+            logger.exception("Failed to resolve context length for model '%s'", active_model)
+
+        breakdown: dict[str, int] = {}
+        try:
+            breakdown = self.context.token_breakdown(model_name=active_model)
+        except Exception:
+            logger.exception("Failed to build context token breakdown for model '%s'", active_model)
+
+        return max_tokens, breakdown
+
+    def _schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+        """Schedule a context-meter redraw safely on the Tk main thread."""
+        self._safe_root_after(lambda: self.gui.update_context_meter(max_tokens=max_tokens, breakdown=breakdown))
 
     @property
     def history(self) -> "History":
@@ -375,6 +419,8 @@ class AgentXSession:
 
         # Refresh display
         self.refresh_user_gui()
+        max_tokens, breakdown = self._context_meter_payload(model_name=self.active_model)
+        self._schedule_meter_redraw(max_tokens, breakdown)
 
     def _setup_agentix_ui(self) -> None:
         """Setup model selector and tool panel from Agentix."""
@@ -1143,6 +1189,8 @@ class AgentXSession:
             self.gui.display_error("No input provided.")
             self._pending_prompt = None
             return
+        max_tokens, breakdown = self._context_meter_payload(model_name=self.active_model)
+        self._schedule_meter_redraw(max_tokens, breakdown)
         self._streaming_thread = threading.Thread(target=self.stream_ollama_response_worker, daemon=True)
         self._streaming_thread.start()
 
