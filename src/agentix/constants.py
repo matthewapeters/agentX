@@ -18,7 +18,11 @@ SESSIONS_METADATA_FILE = f"{AGENTIX_HOME}/agentix_sessions.json"
 # API configuration
 OLLAMA_API_BASE = "http://localhost:11434"
 OLLAMA_MODELS_ENDPOINT = "/api/tags"
+OLLAMA_SHOW_ENDPOINT = "/api/show"
 OLLAMA_CHAT_ENDPOINT = "/v1/chat/completions"
+
+# Context-window fallback when provider metadata cannot be resolved.
+FALLBACK_CONTEXT_WINDOW = 4096
 
 # Default values
 DEFAULT_TEMPERATURE = 0.2

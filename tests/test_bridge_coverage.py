@@ -204,6 +204,15 @@ class TestSetEnabledTools:
         bridge.set_enabled_tools(["read_file"])
         bridge._tool_runner.set_enabled_tools.assert_called_once_with(["read_file"])
 
+    def test_invalidate_max_tokens_delegates_to_tool_runner(self):
+        """invalidate_max_tokens delegates to the tool runner cache reset."""
+        bridge = _make_bridge()
+        bridge._tool_runner.invalidate_max_tokens = MagicMock()
+
+        bridge.invalidate_max_tokens()
+
+        bridge._tool_runner.invalidate_max_tokens.assert_called_once_with()
+
 
 # ---------------------------------------------------------------------------
 # _stream_planned_response — plan=None fallback (lines 524-525)

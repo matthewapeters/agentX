@@ -246,6 +246,21 @@ class TestBridgeMethodExceptions:
         # Should not raise
         adapter.set_enabled_tools(["read_file"])
 
+    def test_invalidate_max_tokens_delegates_to_bridge(self):
+        """invalidate_max_tokens forwards to the bridge when the bridge is healthy."""
+        adapter = _make_adapter()
+
+        adapter.invalidate_max_tokens()
+
+        adapter.bridge.invalidate_max_tokens.assert_called_once_with()
+
+    def test_invalidate_max_tokens_swallows_exception(self):
+        """invalidate_max_tokens does not propagate bridge failures."""
+        adapter = _make_adapter()
+        adapter.bridge.invalidate_max_tokens.side_effect = RuntimeError("bad cache")
+
+        adapter.invalidate_max_tokens()
+
 
 # ---------------------------------------------------------------------------
 # create_adapter — ImportError and Exception handlers (lines 378-387)

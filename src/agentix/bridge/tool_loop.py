@@ -138,8 +138,12 @@ class ToolLoopRunner:
     def _get_max_tokens(self) -> int:
         """Return max tokens for the current model (cached)."""
         if self._max_tokens is None:
-            self._max_tokens = get_model(self.config)
+            self._max_tokens = get_model(self.config, max_tokens=self.config.model_max_tokens)
         return self._max_tokens
+
+    def invalidate_max_tokens(self) -> None:
+        """Clear the cached max-token value after a model or capacity change."""
+        self._max_tokens = None
 
     def _iter_llm_chunks(
         self,

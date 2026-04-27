@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 from shared.models.message import Message, MessageRole
 from shared.models.response import ChunkType, ResponseChunk
+from .protocols import IMeterSession
 
 if TYPE_CHECKING:
     from .session import AgentXSession
@@ -324,6 +325,8 @@ class StreamingController:
                     s.message.attachments.append(att)
 
             shared_context = s._build_shared_context()
+            if isinstance(s, IMeterSession):
+                s.on_context_assembled(shared_context)
             s.add_message_to_context(s.message)
 
             s.message = Message(role="user", content="")
@@ -464,6 +467,9 @@ class StreamingController:
             s._output_logger.log("error", str(e))
         finally:
             s._is_streaming.clear()
+            if isinstance(s, IMeterSession):
+                max_tokens, breakdown = s.context_meter_payload(model_name=s.active_model)
+                s.schedule_meter_redraw(max_tokens, breakdown)
             s._safe_root_after(self._on_stream_end)
 
     # ------------------------------------------------------------------

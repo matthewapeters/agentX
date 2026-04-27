@@ -126,6 +126,7 @@ class Message:
 
     # Classification metadata
     classification: Optional[dict] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # Plan / task-node metadata (Phase 1)
     plan_id: Optional[str] = None
@@ -222,6 +223,8 @@ class Message:
             data["tool_id"] = self.tool_id
         if self.classification:
             data["classification"] = self.classification
+        if self.metadata:
+            data["metadata"] = self.metadata
         if self.plan_id:
             data["plan_id"] = self.plan_id
         if self.plan_name:
@@ -287,6 +290,7 @@ class Message:
             tool_output=data.get("tool_output"),
             tool_id=data.get("tool_id"),
             classification=data.get("classification"),
+            metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else {},
             plan_id=data.get("plan_id"),
             plan_name=data.get("plan_name"),
             task_id=data.get("task_id"),

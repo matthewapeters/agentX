@@ -7,6 +7,181 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.19.3] - 2026-04-27
+
+### Code Changes
+
+#### Changed
+
+- `src/agentix/models.py` now returns supplied cached `max_tokens` before any live model discovery so cached context-length lookups remain usable even when Ollama tag enumeration is unavailable.
+- `src/agentix/bridge/tool_loop.py`, `src/agentix/bridge/bridge.py`, `src/agentx/integration/agentix_bridge_adapter.py`, and `src/agentx/session.py` now explicitly invalidate the bridge max-token cache when the active model changes, keeping prompt trimming aligned with the selected model.
+
+#### Fixed
+
+- Fixed the review regression where `get_model(..., max_tokens=...)` still hit `/api/tags` before honoring the cached value.
+- Fixed stale tool-loop max-token caching after model switches, which could leave Agentix trimming against the previous model's context window.
+
+### Test Changes
+
+#### Added
+
+- Hermetic regression tests proving cached `max_tokens` bypasses live model discovery and proving model changes invalidate the bridge/tool-loop max-token cache.
+
+#### Fixed
+
+- Targeted regression coverage for the corrected model-selection path remains at 98% for `agentix.models` with new cache-invalidation behaviors covered by hermetic unit tests.
+
+## [0.19.2] - 2026-04-27
+
+### Code Changes
+
+#### Added
+
+- `src/shared/providers/` introducing a shared provider boundary so `agentix` and `agentx` can both consume the same `ILLMServiceProvider`, constants, and Ollama adapter without reverse imports.
+- `tests/test_agentix_models.py` and `tests/test_tool_loop_max_tokens.py` covering model-selection failures, cached max-token reuse, and tool-loop max-token wiring.
+
+#### Changed
+
+- `src/agentix/models.py` now hardens Ollama model enumeration, rejects malformed payloads, raises a clear error when no models match, and uses cached `max_tokens` when supplied.
+- `src/agentix/bridge/tool_loop.py`, `src/agentix/agentix_config.py`, and `src/agentx/session.py` now propagate cached context-length values into the tool loop so Agentix avoids redundant live lookups when AgentX already knows model capacity.
+- `src/agentx/protocols.py`, `src/agentx/session.py`, and `src/agentx/streaming_controller.py` now expose public context-meter protocol methods while keeping compatibility wrappers for existing call sites.
+- `src/agentx/model_metadata_store.py` now exposes `population_failed` alongside `populated` so callers can distinguish completion from successful population.
+- `src/agentx/providers/*` now act as compatibility wrappers over the shared provider implementation.
+
+#### Fixed
+
+- Removed the reverse dependency from `agentix` into `agentx.providers`, eliminating the reviewed layering violation.
+- Fixed unhandled request/JSON failures and malformed response handling in Ollama model discovery.
+- Fixed weak parameter-size validation and empty-model handling in Agentix model selection.
+- Fixed the bridge max-token path so cached context lengths are actually consumed by the tool loop.
+
+### Test Changes
+
+#### Added
+
+- Hermetic unit coverage for malformed Ollama payloads, fallback provider paths, model metadata cache failure semantics, public/compatibility meter APIs, and cached max-token routing into the tool loop.
+
+#### Fixed
+
+- Targeted hermetic coverage for the repaired core modules now reaches 98% (`agentix.models`, `agentx.model_metadata_store`, `shared.providers.ollama_provider`).
+
+## [0.19.1] - 2026-04-27
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/providers/constants.py` introducing provider-scoped constants (`OLLAMA_MODELS_ENDPOINT`, `OLLAMA_SHOW_ENDPOINT`, `FALLBACK_CONTEXT_WINDOW`) to remove cross-tree imports.
+- `src/agentx/protocols.py` introducing runtime-checkable `IMeterSession` for explicit context-meter contracts.
+- `src/shared/token_utils.py` with module-level `chars_per_token()` and `estimate_text_tokens()` utilities.
+
+#### Changed
+
+- `src/agentx/providers/base.py` adds required `provider_id` contract to `ILLMServiceProvider`.
+- `src/agentx/providers/ollama_provider.py` now exposes `provider_id = "ollama"`, accepts optional host values, and normalizes `None`/empty hosts safely.
+- `src/agentx/model_metadata_store.py` now uses provider `provider_id` in cache payloads, exposes `populated: threading.Event`, unifies cache parsing with `_parse_cache_data()`, and adds `invalidate(model_name: str | None = None)` background refresh support.
+- `src/agentx/session.py` now imports provider constants from `agentx.providers.constants`, starts model-store population asynchronously at startup, adds `on_context_assembled(shared_context)`, and simplifies `_context_meter_payload()` error-handling and model-name fallback semantics.
+- `src/agentx/streaming_controller.py` replaces `hasattr` meter guards with `isinstance(..., IMeterSession)` checks and delegates assembled-context meter redraw via `on_context_assembled()`.
+- `src/shared/models/context.py` now routes `MessageRole.SYNTHESIS` into the assistant meter band and uses shared token utilities while retaining compatibility shims.
+- `src/agentix/models.py` adds optional fast-path `max_tokens` argument to avoid redundant live context-length HTTP calls.
+- `pyproject.toml` test config now includes `pythonpath = ["src"]` to eliminate per-test `sys.path` mutation.
+
+#### Fixed
+
+- Addressed all 15 PR #5 review findings (A1-A7, P1-P8), including provider abstraction, cache semantics, meter protocol boundaries, startup threading behavior, and context-meter correctness.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_token_utils.py` (Unit):
+  - GIVEN model-name families and text samples
+  - WHEN token utility helpers run
+  - THEN family ratios and ceiling token estimates are validated.
+- `tests/test_protocols.py` (Unit):
+  - GIVEN full and partial structural implementations
+  - WHEN runtime protocol checks execute
+  - THEN `IMeterSession` compatibility is correctly enforced.
+
+#### Changed
+
+- `tests/test_llm_service_provider.py`:
+  - Removed `sys.path.insert` usage and switched constants import to `agentx.providers.constants`.
+  - Added `provider_id` assertion and parametrized host-normalization coverage (`None`, empty, bare host, http/https variants).
+- `tests/test_model_metadata_store.py`:
+  - Removed `sys.path.insert`, updated constants import, and added `provider_id` to test provider.
+  - Added coverage for `populated` event behavior, failure-path event setting, `invalidate()` single/all flows, provider-id cache serialization, and `_parse_cache_data()`.
+- `tests/test_context_token_breakdown.py`:
+  - Removed `sys.path.insert`.
+  - Added explicit `SYNTHESIS` role routing assertions into `assistant` band.
+- `tests/test_active_model_meter_wiring.py`:
+  - Removed `sys.path.insert`, updated constants import.
+  - Added `on_context_assembled()` meter-redraw behavior coverage.
+
+#### Fixed
+
+- New/updated targeted tests for PR #5 review scope now pass (`50 passed, 0 failed`).
+
+## [0.19.0] - 2026-04-26
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/providers/base.py` with `ILLMServiceProvider` protocol.
+- `src/agentx/providers/ollama_provider.py` implementing model enumeration and context-length lookup via Ollama endpoints.
+- `src/agentx/model_metadata_store.py` for startup-populated, disk-backed model capacity metadata (`sessions/_model_cache.json`).
+
+#### Changed
+
+- `src/agentix/constants.py` adds `OLLAMA_SHOW_ENDPOINT` and `FALLBACK_CONTEXT_WINDOW`.
+- `src/agentix/models.py` now derives `max_tokens` from provider context-length lookup instead of `parameter_size` proxy.
+- `src/agentx/session.py` now initializes provider/store at startup, tags working-memory system messages via metadata, adds meter payload/scheduling helpers, and triggers redraw on model change, submit, and attachment-toggle events.
+- `src/agentx/streaming_controller.py` now schedules meter redraw on submit-context assembly and after stream completion.
+- `src/agentx/igui_manager.py` and `src/agentx/gui/gui_manager.py` now include `update_context_meter(max_tokens, breakdown)` contract/stub.
+- `src/shared/models/message.py` now includes serializable `metadata` map.
+- `src/shared/models/context.py` adds `token_breakdown(model_name)` with TOK-02 model-family ratios.
+- `docs/context_size_prerequisite_plan.md` updated with Phase 1 audit findings and implementation progress tracking.
+- `docs/ux/context_visualizer.md` marks PRE-02 complete and updates dynamic-context definition notes.
+- `docs/architecture.md` module map updated with provider abstraction and metadata-store runtime flow.
+
+#### Fixed
+
+- Context-meter denominator source now aligns with active-model context window semantics instead of parameter-size heuristics.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_llm_service_provider.py` (Unit):
+  - GIVEN Ollama tag/show payloads
+  - WHEN provider methods are called
+  - THEN model names, key-probe ordering, and fallback behavior are validated.
+- `tests/test_model_metadata_store.py` (Unit):
+  - GIVEN cache/no-cache startup conditions
+  - WHEN `populate()` executes
+  - THEN fetch/cached/fallback behavior is validated.
+- `tests/test_context_token_breakdown.py` (Unit):
+  - GIVEN enabled context messages and attachments
+  - WHEN `token_breakdown()` executes
+  - THEN role-band and attachment token estimates are correctly routed.
+- `tests/test_active_model_meter_wiring.py` (Integration):
+  - GIVEN active-model changes in session
+  - WHEN setter logic runs
+  - THEN GUI meter updates receive denominator and breakdown, including no-op and fallback paths.
+
+#### Changed
+
+- No existing tests removed; new PRE-02 tests run alongside the existing suite.
+
+#### Fixed
+
+- N/A
+
+#### Removed
+
+- N/A
+
 ## [0.18.26] - 2026-04-26
 
 ### Code Changes

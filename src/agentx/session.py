@@ -14,11 +14,13 @@ import os
 import threading
 import tkinter as tk
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import httpx
 
 from agentix.prompt_classification_response import PromptClassificationResponse
+from shared.providers.constants import FALLBACK_CONTEXT_WINDOW
 from shared.models.context import Context
 from shared.models.message import Message, MessageRole
 from shared.models.response import ChunkType, ResponseChunk
@@ -42,6 +44,8 @@ from .service_manager import ServiceManager
 from .session_state import SessionState
 from .streaming_controller import StreamingController
 from .tool_dispatcher import ToolDispatcher
+from .model_metadata_store import ModelMetadataStore
+from shared.providers import ILLMServiceProvider, OllamaServiceProvider
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +104,17 @@ class AgentXSession:
         self.start_time = self._state.start_time
         self.user_history_folder = user_history_folder
         self.context_folder = context_folder
+
+        # Startup model-capacity store used by context-meter redraws.
+        ollama_host = self.config.get("agentx", {}).get("ollama_host", "localhost:11434")
+        self._llm_provider: ILLMServiceProvider = OllamaServiceProvider(host=ollama_host)
+        self._model_store = ModelMetadataStore(
+            provider=self._llm_provider,
+            cache_path=Path(base_dir) / "sessions" / "_model_cache.json",
+        )
+        # Populate asynchronously so the Tk main-thread is not blocked at startup.
+        # get_context_length() returns FALLBACK_CONTEXT_WINDOW until this completes.
+        threading.Thread(target=self._model_store.populate, daemon=True).start()
 
         # Context lives on session directly (tests mock session.context)
         self.context = Context(path=context_folder, session_id=session_id)
@@ -162,6 +177,7 @@ class AgentXSession:
 
         # Initialize active model (kept on session for backward compat with tests)
         self._active_model = config["agentx"]["ollama_model"]
+        self._sync_agentix_model_capacity()
 
         # Per-turn message and history (reset after each sent message)
         self._history: Optional["History"] = None
@@ -192,6 +208,7 @@ class AgentXSession:
             wm_block = self.working_memory.to_llm_block()
             if wm_block:
                 wm_msg = Message(role=MessageRole.SYSTEM, content=wm_block)
+                wm_msg.metadata["is_working_memory"] = True
                 shared_context.add_message(wm_msg, ts=datetime.now())
 
         history_messages = self.history.get_enabled_messages()
@@ -216,6 +233,7 @@ class AgentXSession:
 
         try:
             shared_context = self._build_shared_context()
+            self._sync_agentix_model_capacity()
             classification = None
             if self.config.get("agentix", {}).get("classify_prompts", True):
                 classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context, self.working_memory)
@@ -241,6 +259,7 @@ class AgentXSession:
     def process_prompt(self, prompt: str) -> Iterator[ResponseChunk]:
         """Process a prompt and yield response chunks (test-friendly API)."""
         shared_context = self._build_shared_context()
+        self._sync_agentix_model_capacity()
 
         user_message = Message(role=MessageRole.USER, content=prompt)
         user_message.enabled = True
@@ -313,11 +332,80 @@ class AgentXSession:
         Args:
             model: Model name to use
         """
+        if model == self._active_model:
+            return
+
         self._active_model = model
         self.config["agentx"]["ollama_model"] = model
 
         # Update the bridge's config
         self.agentix_adapter.agentix_config.model = model
+        self._sync_agentix_model_capacity()
+        self.agentix_adapter.invalidate_max_tokens()
+
+        max_tokens, breakdown = self.context_meter_payload(model_name=model)
+        self.schedule_meter_redraw(max_tokens, breakdown)
+
+    def _sync_agentix_model_capacity(self) -> None:
+        """Refresh Agentix config with the best-known context length for the active model."""
+        self.agentix_adapter.agentix_config.model_max_tokens = self._model_store.get_context_length(self._active_model)
+
+    def context_meter_payload(self, model_name: Optional[str] = None) -> tuple[int, dict[str, int]]:
+        """Build denominator and token-band payload for context-meter redraws.
+
+        Args:
+            model_name: Optional model override.  When ``None`` the current
+                :attr:`active_model` is used.
+
+        Returns:
+            ``(max_tokens, breakdown)`` where *max_tokens* is the context-window
+            capacity and *breakdown* is a per-band token-count mapping.
+        """
+        # Explicit None check — an empty string is a valid (if unusual) model name.
+        if model_name is None:
+            model_name = self._active_model
+
+        # get_context_length() never raises; it returns FALLBACK_CONTEXT_WINDOW on error.
+        max_tokens: int = self._model_store.get_context_length(model_name)
+
+        breakdown: dict[str, int] = {}
+        try:
+            breakdown = self.context.token_breakdown(model_name=model_name)
+        except Exception:
+            logger.exception("Failed to build context token breakdown for model '%s'", model_name)
+
+        return max_tokens, breakdown
+
+    def _context_meter_payload(self, model_name: Optional[str] = None) -> tuple[int, dict[str, int]]:
+        """Backward-compatible wrapper for the public meter payload API."""
+        return self.context_meter_payload(model_name=model_name)
+
+    def on_context_assembled(self, shared_context: "Context") -> None:
+        """Update the context meter from the fully assembled shared context.
+
+        Called by :class:`~agentx.streaming_controller.StreamingController`
+        immediately after :meth:`_build_shared_context` so the meter reflects
+        working memory and history as well as the session's own messages.
+
+        Args:
+            shared_context: The assembled :class:`~shared.models.context.Context`
+                ready to be sent to the LLM.
+        """
+        max_tokens: int = self._model_store.get_context_length(self._active_model)
+        try:
+            breakdown = shared_context.token_breakdown(model_name=self._active_model)
+        except Exception:
+            logger.exception("Failed to build context token breakdown for on_context_assembled")
+            breakdown = {}
+        self.schedule_meter_redraw(max_tokens, breakdown)
+
+    def schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+        """Schedule a context-meter redraw safely on the Tk main thread."""
+        self._safe_root_after(lambda: self.gui.update_context_meter(max_tokens=max_tokens, breakdown=breakdown))
+
+    def _schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+        """Backward-compatible wrapper for the public redraw API."""
+        self.schedule_meter_redraw(max_tokens=max_tokens, breakdown=breakdown)
 
     @property
     def history(self) -> "History":
@@ -375,6 +463,8 @@ class AgentXSession:
 
         # Refresh display
         self.refresh_user_gui()
+        max_tokens, breakdown = self._context_meter_payload(model_name=self.active_model)
+        self._schedule_meter_redraw(max_tokens, breakdown)
 
     def _setup_agentix_ui(self) -> None:
         """Setup model selector and tool panel from Agentix."""
@@ -1143,6 +1233,8 @@ class AgentXSession:
             self.gui.display_error("No input provided.")
             self._pending_prompt = None
             return
+        max_tokens, breakdown = self._context_meter_payload(model_name=self.active_model)
+        self._schedule_meter_redraw(max_tokens, breakdown)
         self._streaming_thread = threading.Thread(target=self.stream_ollama_response_worker, daemon=True)
         self._streaming_thread.start()
 
