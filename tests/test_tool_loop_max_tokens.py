@@ -39,3 +39,20 @@ def test_tool_loop_caches_first_max_token_lookup() -> None:
     assert first == 8192
     assert second == 8192
     mock_get_model.assert_called_once_with(config, max_tokens=8192)
+
+
+@pytest.mark.unit
+def test_invalidate_max_tokens_forces_fresh_lookup() -> None:
+    """GIVEN an invalidated runner cache WHEN _get_max_tokens is called again THEN get_model reruns."""
+    config = AgentixConfig(model="llama3.2", tools=[], model_max_tokens=8192)
+    runner = ToolLoopRunner(config)
+
+    with patch("agentix.bridge.tool_loop.get_model", side_effect=[8192, 16384]) as mock_get_model:
+        first = runner._get_max_tokens()
+        runner.invalidate_max_tokens()
+        config.model_max_tokens = 16384
+        second = runner._get_max_tokens()
+
+    assert first == 8192
+    assert second == 16384
+    assert mock_get_model.call_count == 2

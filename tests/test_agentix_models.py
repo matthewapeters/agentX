@@ -137,13 +137,14 @@ def test_get_model_uses_cached_max_tokens_without_provider_lookup() -> None:
     """GIVEN a cached max token count WHEN get_model is called THEN provider lookup is skipped."""
     args = _args(model="llama")
 
-    with patch("agentix.models.get_models", return_value=[{"name": "llama3.2"}]):
+    with patch("agentix.models.get_models") as mock_get_models:
         with patch("shared.providers.ollama_provider.OllamaServiceProvider.get_context_length") as mock_context_length:
             resolved = get_model(args, max_tokens=16384)
 
     assert resolved == 16384
+    mock_get_models.assert_not_called()
     mock_context_length.assert_not_called()
-    assert args.model == "llama3.2"
+    assert args.model == "llama"
 
 
 @pytest.mark.unit

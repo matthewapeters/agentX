@@ -100,6 +100,10 @@ def get_model(args, max_tokens: int | None = None) -> int:
     Returns:
         Maximum token count for the selected model.
     """
+    # Fast path: caller already knows the context length and active model.
+    if max_tokens is not None:
+        return max_tokens
+
     models = get_models(args)
     if not models:
         requested = getattr(args, "model", None)
@@ -117,10 +121,6 @@ def get_model(args, max_tokens: int | None = None) -> int:
     if args.debug:
         logger.debug("Using model:\n%s", json.dumps(model, indent=2))
     args.model = model["name"]
-
-    # Fast path: caller already knows the context length.
-    if max_tokens is not None:
-        return max_tokens
 
     from shared.providers.ollama_provider import OllamaServiceProvider
 

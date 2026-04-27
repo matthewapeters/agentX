@@ -398,6 +398,10 @@ class AgentixBridge:
         """Return max tokens for the current model (cached)."""
         return self._tool_runner._get_max_tokens()
 
+    def invalidate_max_tokens(self) -> None:
+        """Clear the cached model context length used by the tool loop."""
+        self._tool_runner.invalidate_max_tokens()
+
     def execute_tool(self, tool_name: str, arguments: dict, tool_id: Optional[str] = None) -> ToolResponse:
         """Execute a named tool — delegates to ToolLoopRunner."""
         return self._tool_runner.execute_tool(tool_name, arguments, tool_id)

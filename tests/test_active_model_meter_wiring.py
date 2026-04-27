@@ -40,6 +40,7 @@ def test_active_model_change_triggers_meter_redraw() -> None:
     assert session.config["agentx"]["ollama_model"] == "new-model"
     assert session.agentix_adapter.agentix_config.model == "new-model"
     assert session.agentix_adapter.agentix_config.model_max_tokens == 8192
+    session.agentix_adapter.invalidate_max_tokens.assert_called_once_with()
 
 
 @pytest.mark.unit

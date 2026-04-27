@@ -331,6 +331,13 @@ class AgentixBridgeAdapter:
         except Exception as exc:
             logger.warning("Could not update enabled tools: %s", exc)
 
+    def invalidate_max_tokens(self) -> None:
+        """Clear any cached model context length held by the Agentix bridge."""
+        try:
+            self.bridge.invalidate_max_tokens()
+        except Exception as exc:
+            logger.warning("Could not invalidate Agentix max token cache: %s", exc)
+
     def _convert_config(self, agentx_config: dict) -> AgentixConfig:
         """
         Convert AgentX config dict to AgentixConfig.

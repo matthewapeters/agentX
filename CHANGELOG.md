@@ -7,6 +7,30 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.19.3] - 2026-04-27
+
+### Code Changes
+
+#### Changed
+
+- `src/agentix/models.py` now returns supplied cached `max_tokens` before any live model discovery so cached context-length lookups remain usable even when Ollama tag enumeration is unavailable.
+- `src/agentix/bridge/tool_loop.py`, `src/agentix/bridge/bridge.py`, `src/agentx/integration/agentix_bridge_adapter.py`, and `src/agentx/session.py` now explicitly invalidate the bridge max-token cache when the active model changes, keeping prompt trimming aligned with the selected model.
+
+#### Fixed
+
+- Fixed the review regression where `get_model(..., max_tokens=...)` still hit `/api/tags` before honoring the cached value.
+- Fixed stale tool-loop max-token caching after model switches, which could leave Agentix trimming against the previous model's context window.
+
+### Test Changes
+
+#### Added
+
+- Hermetic regression tests proving cached `max_tokens` bypasses live model discovery and proving model changes invalidate the bridge/tool-loop max-token cache.
+
+#### Fixed
+
+- Targeted regression coverage for the corrected model-selection path remains at 98% for `agentix.models` with new cache-invalidation behaviors covered by hermetic unit tests.
+
 ## [0.19.2] - 2026-04-27
 
 ### Code Changes

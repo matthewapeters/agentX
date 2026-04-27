@@ -341,6 +341,7 @@ class AgentXSession:
         # Update the bridge's config
         self.agentix_adapter.agentix_config.model = model
         self._sync_agentix_model_capacity()
+        self.agentix_adapter.invalidate_max_tokens()
 
         max_tokens, breakdown = self.context_meter_payload(model_name=model)
         self.schedule_meter_redraw(max_tokens, breakdown)
