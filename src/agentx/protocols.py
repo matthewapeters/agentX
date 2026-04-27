@@ -22,7 +22,7 @@ class IMeterSession(Protocol):
     dependency is explicit and testable.
     """
 
-    def _context_meter_payload(self, model_name: str | None = None) -> tuple[int, dict[str, int]]:
+    def context_meter_payload(self, model_name: str | None = None) -> tuple[int, dict[str, int]]:
         """Return ``(max_tokens, breakdown)`` for the context meter.
 
         Args:
@@ -33,7 +33,7 @@ class IMeterSession(Protocol):
         """
         ...
 
-    def _schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+    def schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
         """Schedule a context-meter redraw on the Tk main thread.
 
         Args:

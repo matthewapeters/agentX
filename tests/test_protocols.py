@@ -13,10 +13,10 @@ from agentx.protocols import IMeterSession
 class _FullImpl:
     """A class that fully implements the IMeterSession protocol."""
 
-    def _context_meter_payload(self, model_name: str | None = None) -> tuple[int, dict[str, int]]:
+    def context_meter_payload(self, model_name: str | None = None) -> tuple[int, dict[str, int]]:
         return (4096, {})
 
-    def _schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+    def schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
         pass
 
     def on_context_assembled(self, shared_context: object) -> None:
@@ -26,10 +26,10 @@ class _FullImpl:
 class _MissingMethod:
     """A class that is missing on_context_assembled."""
 
-    def _context_meter_payload(self, model_name: str | None = None) -> tuple[int, dict[str, int]]:
+    def context_meter_payload(self, model_name: str | None = None) -> tuple[int, dict[str, int]]:
         return (4096, {})
 
-    def _schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+    def schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
         pass
 
 

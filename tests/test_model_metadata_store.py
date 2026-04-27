@@ -99,7 +99,7 @@ def test_populated_event_is_set_after_populate(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_populated_event_set_even_on_provider_failure(tmp_path: Path) -> None:
-    """GIVEN a provider that raises WHEN populate is called THEN .populated event is still set.
+    """GIVEN a provider that raises WHEN populate is called THEN .populated is set and failure is recorded.
 
     This ensures the background thread never leaves callers waiting indefinitely.
     """
@@ -119,6 +119,43 @@ def test_populated_event_set_even_on_provider_failure(tmp_path: Path) -> None:
     store = ModelMetadataStore(provider=BrokenProvider(), cache_path=tmp_path / "cache.json")
     store.populate()  # must not raise, must set event
     assert store.populated.is_set()
+    assert store.population_failed.is_set()
+
+
+@pytest.mark.unit
+def test_population_failed_clears_after_successful_retry(tmp_path: Path) -> None:
+    """GIVEN a failed populate followed by a successful one WHEN populate reruns THEN failure state is cleared."""
+
+    class FlakyProvider:
+        """Provider double that fails once and then succeeds."""
+
+        provider_id = "flaky"
+
+        def __init__(self) -> None:
+            self._attempts = 0
+
+        def list_models(self) -> list[str]:
+            self._attempts += 1
+            if self._attempts == 1:
+                raise RuntimeError("first failure")
+            return ["ok"]
+
+        def get_context_length(self, model_name: str) -> int:
+            return 2048
+
+        def get_model_metadata(self, model_name: str) -> dict[str, str | int]:
+            return {"family": "test"}
+
+    store = ModelMetadataStore(provider=FlakyProvider(), cache_path=tmp_path / "cache.json")
+
+    store.populate()
+    assert store.population_failed.is_set()
+
+    store.populate(force=True)
+
+    assert store.populated.is_set()
+    assert not store.population_failed.is_set()
+    assert store.get_context_length("ok") == 2048
 
 
 @pytest.mark.unit
@@ -173,3 +210,72 @@ def test_parse_cache_data_returns_both_dicts(tmp_path: Path) -> None:
     capacities, metadata = ModelMetadataStore._parse_cache_data(raw)
     assert capacities == {"m": 1234}
     assert metadata == {"m": {"family": "test"}}
+
+
+@pytest.mark.unit
+def test_populate_uses_cached_capacity_for_partial_hit(tmp_path: Path) -> None:
+    """GIVEN cached capacities for a subset WHEN populate runs THEN cached values are reused and missing ones are fetched."""
+    cache_path = tmp_path / "cache.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "models": ["a", "b", "c"],
+                "capacities": {"a": 1024},
+                "metadata": {"a": {"family": "cached"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    provider = FakeProvider(models=["a", "b"], capacities={"a": 9999, "b": 2048})
+    store = ModelMetadataStore(provider=provider, cache_path=cache_path)
+
+    store.populate()
+
+    assert store.get_context_length("a") == 1024
+    assert store.get_context_length("b") == 2048
+    assert provider.context_calls == ["b"]
+
+
+@pytest.mark.unit
+def test_get_metadata_returns_copy_and_model_names_are_sorted(tmp_path: Path) -> None:
+    """GIVEN populated metadata WHEN retrieved THEN returned metadata is copied and model names are sorted."""
+    provider = FakeProvider(models=["b", "a"], capacities={"a": 1024, "b": 2048})
+    store = ModelMetadataStore(provider=provider, cache_path=tmp_path / "cache.json")
+    store.populate()
+
+    metadata = store.get_metadata("a")
+    metadata["family"] = "changed"
+
+    assert store.get_metadata("a")["family"] == "test"
+    assert store.model_names() == ["a", "b"]
+
+
+@pytest.mark.unit
+def test_load_cache_returns_none_for_corrupt_json(tmp_path: Path) -> None:
+    """GIVEN corrupt cache JSON WHEN _load_cache is called THEN None is returned."""
+    provider = FakeProvider(models=[], capacities={})
+    cache_path = tmp_path / "cache.json"
+    cache_path.write_text("{bad json", encoding="utf-8")
+    store = ModelMetadataStore(provider=provider, cache_path=cache_path)
+
+    assert store._load_cache() is None
+
+
+@pytest.mark.unit
+def test_read_capacities_and_metadata_filter_invalid_values() -> None:
+    """GIVEN mixed raw cache values WHEN parsed THEN only valid capacities and metadata entries survive."""
+    raw = {
+        "capacities": {"a": 1024, "b": "2048", "c": "bad"},
+        "metadata": {"a": {"family": "ok", "count": 7, "bad": []}, "b": "bad"},
+    }
+
+    assert ModelMetadataStore._read_capacities(raw) == {"a": 1024, "b": 2048}
+    assert ModelMetadataStore._read_metadata(raw) == {"a": {"family": "ok", "count": 7}}
+
+
+@pytest.mark.unit
+def test_cache_models_match_uses_sorted_non_empty_values() -> None:
+    """GIVEN cached models with duplicates and empties WHEN compared THEN only sorted non-empty values are considered."""
+    cached = {"models": ["b", "", "a", "a"]}
+
+    assert ModelMetadataStore._cache_models_match(cached, ["a", "b"])

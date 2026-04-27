@@ -2,7 +2,7 @@
 
 Version: 2026-04-27  
 Branch: main  
-Project version: 0.19.1
+Project version: 0.19.2
 
 ---
 
@@ -118,6 +118,7 @@ main.py
 | Module | Path | Role |
 |--------|------|------|
 | `AgentXSession` | `session.py` | Central coordinator — wires all subsystems |
+| `shared.providers` | `../src/shared/providers/` | Shared LLM provider contracts and Ollama implementation consumed by both AgentX and Agentix |
 | `SessionState` | `session_state.py` | Mutable session data (model, history, message) |
 | `StreamingController` | `streaming_controller.py` | All LLM streaming and display logic |
 | `ToolDispatcher` | `tool_dispatcher.py` | Routes tool calls to client/server executor |

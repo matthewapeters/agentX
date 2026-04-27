@@ -2,7 +2,6 @@
 
 import json
 import logging
-import sys
 
 import requests
 
@@ -11,7 +10,7 @@ from .constants import FALLBACK_CONTEXT_WINDOW, OLLAMA_API_BASE, OLLAMA_MODELS_E
 logger = logging.getLogger(__name__)
 
 
-def get_models(args, filter_by_model=True):
+def get_models(args, filter_by_model: bool = True) -> list[dict]:
     """
     Fetch available models from Ollama API.
 
@@ -22,8 +21,22 @@ def get_models(args, filter_by_model=True):
     # Use configured host or fallback to constant
     ollama_base = f"http://{args.ollama_host}" if hasattr(args, "ollama_host") and args.ollama_host else OLLAMA_API_BASE
 
-    result = requests.get(f"{ollama_base}{OLLAMA_MODELS_ENDPOINT}")
-    models_json = result.json()
+    try:
+        result = requests.get(f"{ollama_base}{OLLAMA_MODELS_ENDPOINT}", timeout=10)
+        result.raise_for_status()
+        models_json = result.json()
+    except (requests.RequestException, ValueError) as exc:
+        logger.error("Failed to fetch models from Ollama: %s", exc)
+        return []
+
+    if not isinstance(models_json, dict):
+        logger.error("Unexpected models payload type from Ollama: %s", type(models_json).__name__)
+        return []
+
+    all_models = models_json.get("models", [])
+    if not isinstance(all_models, list):
+        logger.error("Unexpected 'models' field type from Ollama: %s", type(all_models).__name__)
+        return []
 
     if args.debug:
         logger.debug("Available models: %s", json.dumps(models_json, indent=2))
@@ -34,20 +47,13 @@ def get_models(args, filter_by_model=True):
     if filter_by_model and args.model:
         models = [
             m
-            for m in models_json["models"]
+            for m in all_models
             # filter based on model_name if provided
-            if m["name"].startswith(args.model)
+            if isinstance(m, dict) and isinstance(m.get("name"), str) and m["name"].startswith(args.model)
         ]
-        # return the first matching model or default to the first model
-        if models and len(models) == 1:
-            return models
         return models
-    else:
-        # Return all models
-        return models_json["models"]
-    if models and len(models) == 1:
-        return models
-    return models_json["models"]
+
+    return [model for model in all_models if isinstance(model, dict)]
 
 
 def parse_parameter_size(param_size: str) -> int:
@@ -60,13 +66,19 @@ def parse_parameter_size(param_size: str) -> int:
         "M": 1000000,
         "B": 1000000000,
     }
-    try:
-        # Split the numeric part and the suffix
-        num = float(param_size[:-1])  # Extract the number (e.g., "1.5")
-        suffix = param_size[-1].upper()  # Extract the suffix (e.g., "B")
-        return int(num * suffix_multipliers.get(suffix, 1))  # Default multiplier is 1
-    except (ValueError, KeyError):
+    if not param_size or len(param_size) < 2:
         raise ValueError(f"Invalid parameter size format: {param_size}")
+
+    try:
+        num = float(param_size[:-1])
+    except ValueError as exc:
+        raise ValueError(f"Invalid parameter size format: {param_size}") from exc
+
+    suffix = param_size[-1].upper()
+    if suffix not in suffix_multipliers:
+        raise ValueError(f"Invalid parameter size format: {param_size}")
+
+    return int(num * suffix_multipliers[suffix])
 
 
 def get_model(args, max_tokens: int | None = None) -> int:
@@ -88,10 +100,11 @@ def get_model(args, max_tokens: int | None = None) -> int:
     Returns:
         Maximum token count for the selected model.
     """
-    # Local import avoids import-time dependency loops between the two source trees.
-    from agentx.providers.ollama_provider import OllamaServiceProvider
-
     models = get_models(args)
+    if not models:
+        requested = getattr(args, "model", None)
+        raise RuntimeError(f"No models available from Ollama for selector '{requested}'")
+
     if len(models) > 1:
         if args.debug:
             logger.debug(
@@ -108,6 +121,8 @@ def get_model(args, max_tokens: int | None = None) -> int:
     # Fast path: caller already knows the context length.
     if max_tokens is not None:
         return max_tokens
+
+    from shared.providers.ollama_provider import OllamaServiceProvider
 
     ollama_host = args.ollama_host if hasattr(args, "ollama_host") else "localhost:11434"
     provider = OllamaServiceProvider(host=ollama_host)

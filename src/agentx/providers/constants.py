@@ -1,14 +1,5 @@
-"""Provider-scoped constants for LLM service integrations.
+"""Compatibility wrapper for shared provider constants."""
 
-These constants are used exclusively within the ``agentx.providers`` package
-and ``agentx.model_metadata_store``.  Keeping them here removes the cross-tree
-dependency on ``agentix.constants`` that previously existed in the provider
-implementation modules.
-"""
+from shared.providers.constants import FALLBACK_CONTEXT_WINDOW, OLLAMA_MODELS_ENDPOINT, OLLAMA_SHOW_ENDPOINT
 
-# Ollama HTTP endpoint paths
-OLLAMA_MODELS_ENDPOINT: str = "/api/tags"
-OLLAMA_SHOW_ENDPOINT: str = "/api/show"
-
-# Fallback context-window size when a provider cannot resolve model metadata.
-FALLBACK_CONTEXT_WINDOW: int = 4096
+__all__ = ["FALLBACK_CONTEXT_WINDOW", "OLLAMA_MODELS_ENDPOINT", "OLLAMA_SHOW_ENDPOINT"]

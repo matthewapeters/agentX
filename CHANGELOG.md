@@ -7,6 +7,40 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.19.2] - 2026-04-27
+
+### Code Changes
+
+#### Added
+
+- `src/shared/providers/` introducing a shared provider boundary so `agentix` and `agentx` can both consume the same `ILLMServiceProvider`, constants, and Ollama adapter without reverse imports.
+- `tests/test_agentix_models.py` and `tests/test_tool_loop_max_tokens.py` covering model-selection failures, cached max-token reuse, and tool-loop max-token wiring.
+
+#### Changed
+
+- `src/agentix/models.py` now hardens Ollama model enumeration, rejects malformed payloads, raises a clear error when no models match, and uses cached `max_tokens` when supplied.
+- `src/agentix/bridge/tool_loop.py`, `src/agentix/agentix_config.py`, and `src/agentx/session.py` now propagate cached context-length values into the tool loop so Agentix avoids redundant live lookups when AgentX already knows model capacity.
+- `src/agentx/protocols.py`, `src/agentx/session.py`, and `src/agentx/streaming_controller.py` now expose public context-meter protocol methods while keeping compatibility wrappers for existing call sites.
+- `src/agentx/model_metadata_store.py` now exposes `population_failed` alongside `populated` so callers can distinguish completion from successful population.
+- `src/agentx/providers/*` now act as compatibility wrappers over the shared provider implementation.
+
+#### Fixed
+
+- Removed the reverse dependency from `agentix` into `agentx.providers`, eliminating the reviewed layering violation.
+- Fixed unhandled request/JSON failures and malformed response handling in Ollama model discovery.
+- Fixed weak parameter-size validation and empty-model handling in Agentix model selection.
+- Fixed the bridge max-token path so cached context lengths are actually consumed by the tool loop.
+
+### Test Changes
+
+#### Added
+
+- Hermetic unit coverage for malformed Ollama payloads, fallback provider paths, model metadata cache failure semantics, public/compatibility meter APIs, and cached max-token routing into the tool loop.
+
+#### Fixed
+
+- Targeted hermetic coverage for the repaired core modules now reaches 98% (`agentix.models`, `agentx.model_metadata_store`, `shared.providers.ollama_provider`).
+
 ## [0.19.1] - 2026-04-27
 
 ### Code Changes

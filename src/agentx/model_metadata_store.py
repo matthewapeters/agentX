@@ -8,8 +8,8 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .providers.base import ILLMServiceProvider
-from .providers.constants import FALLBACK_CONTEXT_WINDOW
+from shared.providers.base import ILLMServiceProvider
+from shared.providers.constants import FALLBACK_CONTEXT_WINDOW
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,9 @@ class ModelMetadataStore:
         self._lock = threading.Lock()
         self._capacities: dict[str, int] = {}
         self._metadata: dict[str, dict[str, str | int]] = {}
-        # Set once the first populate() call completes successfully.
+        # Set once a populate() call has completed, whether successful or not.
         self.populated: threading.Event = threading.Event()
+        self.population_failed: threading.Event = threading.Event()
 
     def populate(self, force: bool = False) -> None:
         """Populate store from provider and cache.
@@ -52,6 +53,7 @@ class ModelMetadataStore:
             force: When ``True``, bypass the cache-match check and re-fetch
                 every model from the provider.
         """
+        self.population_failed.clear()
         try:
             provider_models = sorted({m for m in self._provider.list_models() if m})
             cached = self._load_cache()
@@ -84,6 +86,7 @@ class ModelMetadataStore:
             self.save_cache()
         except Exception:
             logger.exception("ModelMetadataStore.populate failed")
+            self.population_failed.set()
         finally:
             self.populated.set()
 
@@ -115,7 +118,7 @@ class ModelMetadataStore:
             model_name: Model identifier to look up.
 
         Returns:
-            Token capacity, or :data:`~agentx.providers.constants.FALLBACK_CONTEXT_WINDOW`
+            Token capacity, or :data:`~shared.providers.constants.FALLBACK_CONTEXT_WINDOW`
             when the model is unknown.
         """
         with self._lock:
@@ -145,7 +148,7 @@ class ModelMetadataStore:
     def save_cache(self) -> None:
         """Persist current store state to disk.
 
-        Uses :attr:`~agentx.providers.base.ILLMServiceProvider.provider_id` to
+        Uses :attr:`~shared.providers.base.ILLMServiceProvider.provider_id` to
         tag the cache file so multi-provider setups remain distinguishable.
         """
         with self._lock:

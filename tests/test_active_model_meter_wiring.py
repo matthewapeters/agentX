@@ -39,6 +39,7 @@ def test_active_model_change_triggers_meter_redraw() -> None:
     session.gui.update_context_meter.assert_called_once_with(max_tokens=8192, breakdown={"assistant": 10})
     assert session.config["agentx"]["ollama_model"] == "new-model"
     assert session.agentix_adapter.agentix_config.model == "new-model"
+    assert session.agentix_adapter.agentix_config.model_max_tokens == 8192
 
 
 @pytest.mark.unit
@@ -80,3 +81,25 @@ def test_on_context_assembled_updates_meter() -> None:
         max_tokens=16384,
         breakdown={"user": 50, "assistant": 20},
     )
+
+
+@pytest.mark.unit
+def test_public_meter_methods_delegate_to_gui() -> None:
+    """GIVEN a session stub WHEN public meter helpers are called THEN they compute payload and redraw correctly."""
+    session = _build_session_stub()
+
+    max_tokens, breakdown = session.context_meter_payload(model_name="new-model")
+    session.schedule_meter_redraw(max_tokens=max_tokens, breakdown=breakdown)
+
+    session.gui.update_context_meter.assert_called_once_with(max_tokens=8192, breakdown={"assistant": 10})
+
+
+@pytest.mark.unit
+def test_compatibility_meter_wrappers_delegate_to_public_api() -> None:
+    """GIVEN a session stub WHEN compatibility wrappers are used THEN the public meter API still drives redraw."""
+    session = _build_session_stub()
+
+    max_tokens, breakdown = session._context_meter_payload(model_name="new-model")
+    session._schedule_meter_redraw(max_tokens=max_tokens, breakdown=breakdown)
+
+    session.gui.update_context_meter.assert_called_once_with(max_tokens=8192, breakdown={"assistant": 10})

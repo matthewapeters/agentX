@@ -20,7 +20,7 @@ from typing import Any, Iterator, Optional
 import httpx
 
 from agentix.prompt_classification_response import PromptClassificationResponse
-from .providers.constants import FALLBACK_CONTEXT_WINDOW
+from shared.providers.constants import FALLBACK_CONTEXT_WINDOW
 from shared.models.context import Context
 from shared.models.message import Message, MessageRole
 from shared.models.response import ChunkType, ResponseChunk
@@ -45,7 +45,7 @@ from .session_state import SessionState
 from .streaming_controller import StreamingController
 from .tool_dispatcher import ToolDispatcher
 from .model_metadata_store import ModelMetadataStore
-from .providers import ILLMServiceProvider, OllamaServiceProvider
+from shared.providers import ILLMServiceProvider, OllamaServiceProvider
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +177,7 @@ class AgentXSession:
 
         # Initialize active model (kept on session for backward compat with tests)
         self._active_model = config["agentx"]["ollama_model"]
+        self._sync_agentix_model_capacity()
 
         # Per-turn message and history (reset after each sent message)
         self._history: Optional["History"] = None
@@ -232,6 +233,7 @@ class AgentXSession:
 
         try:
             shared_context = self._build_shared_context()
+            self._sync_agentix_model_capacity()
             classification = None
             if self.config.get("agentix", {}).get("classify_prompts", True):
                 classification = self.agentix_adapter.classify_prompt_sync(prompt, shared_context, self.working_memory)
@@ -257,6 +259,7 @@ class AgentXSession:
     def process_prompt(self, prompt: str) -> Iterator[ResponseChunk]:
         """Process a prompt and yield response chunks (test-friendly API)."""
         shared_context = self._build_shared_context()
+        self._sync_agentix_model_capacity()
 
         user_message = Message(role=MessageRole.USER, content=prompt)
         user_message.enabled = True
@@ -337,11 +340,16 @@ class AgentXSession:
 
         # Update the bridge's config
         self.agentix_adapter.agentix_config.model = model
+        self._sync_agentix_model_capacity()
 
-        max_tokens, breakdown = self._context_meter_payload(model_name=model)
-        self._schedule_meter_redraw(max_tokens, breakdown)
+        max_tokens, breakdown = self.context_meter_payload(model_name=model)
+        self.schedule_meter_redraw(max_tokens, breakdown)
 
-    def _context_meter_payload(self, model_name: Optional[str] = None) -> tuple[int, dict[str, int]]:
+    def _sync_agentix_model_capacity(self) -> None:
+        """Refresh Agentix config with the best-known context length for the active model."""
+        self.agentix_adapter.agentix_config.model_max_tokens = self._model_store.get_context_length(self._active_model)
+
+    def context_meter_payload(self, model_name: Optional[str] = None) -> tuple[int, dict[str, int]]:
         """Build denominator and token-band payload for context-meter redraws.
 
         Args:
@@ -367,6 +375,10 @@ class AgentXSession:
 
         return max_tokens, breakdown
 
+    def _context_meter_payload(self, model_name: Optional[str] = None) -> tuple[int, dict[str, int]]:
+        """Backward-compatible wrapper for the public meter payload API."""
+        return self.context_meter_payload(model_name=model_name)
+
     def on_context_assembled(self, shared_context: "Context") -> None:
         """Update the context meter from the fully assembled shared context.
 
@@ -384,11 +396,15 @@ class AgentXSession:
         except Exception:
             logger.exception("Failed to build context token breakdown for on_context_assembled")
             breakdown = {}
-        self._schedule_meter_redraw(max_tokens, breakdown)
+        self.schedule_meter_redraw(max_tokens, breakdown)
 
-    def _schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+    def schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
         """Schedule a context-meter redraw safely on the Tk main thread."""
         self._safe_root_after(lambda: self.gui.update_context_meter(max_tokens=max_tokens, breakdown=breakdown))
+
+    def _schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+        """Backward-compatible wrapper for the public redraw API."""
+        self.schedule_meter_redraw(max_tokens=max_tokens, breakdown=breakdown)
 
     @property
     def history(self) -> "History":

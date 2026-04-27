@@ -468,8 +468,8 @@ class StreamingController:
         finally:
             s._is_streaming.clear()
             if isinstance(s, IMeterSession):
-                max_tokens, breakdown = s._context_meter_payload(model_name=s.active_model)
-                s._schedule_meter_redraw(max_tokens, breakdown)
+                max_tokens, breakdown = s.context_meter_payload(model_name=s.active_model)
+                s.schedule_meter_redraw(max_tokens, breakdown)
             s._safe_root_after(self._on_stream_end)
 
     # ------------------------------------------------------------------
