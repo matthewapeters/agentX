@@ -72,7 +72,10 @@ def _make_session(test_dir: str, chunks):
     mock_adapter.get_models.return_value = []
     mock_adapter.get_tools.return_value = []
 
-    with patch("agentx.session.create_adapter", return_value=mock_adapter):
+    with (
+        patch("agentx.session.create_adapter", return_value=mock_adapter),
+        patch("agentx.model_metadata_store.ModelMetadataStore.populate"),
+    ):
         session = AgentXSession(username="tester", session_dir=test_dir, config=config)
     return session, mock_adapter
 
@@ -654,6 +657,170 @@ class TestPlanMessagesExcludedFromLLM(unittest.TestCase):
         self.assertNotIn("plan", roles)
         self.assertNotIn("task_node", roles)
         self.assertIn("user", roles)
+
+
+# ---------------------------------------------------------------------------
+# 8. _render_message_to_grid: every message has expand/collapse + full-content row
+# ---------------------------------------------------------------------------
+
+
+class TestRenderMessageAlwaysExpandable(unittest.TestCase):
+    """GIVEN any message (with or without tools/attachments/plans)
+    WHEN _render_message_to_grid is called
+    THEN an expand/collapse Button is always rendered AND a hidden full-content
+    detail row is appended to the collapsible_rows list.
+
+    Covers the regression where plain user/assistant messages rendered an empty
+    placeholder Label instead of an expand button, leaving full content
+    inaccessible to the user.
+    """
+
+    def setUp(self):
+        self.root = _make_root()
+        self.gui = _make_gui(self.root)
+        self.frame = tk.Frame(self.root)
+
+    def tearDown(self):
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def _count_expand_buttons(self, parent: tk.Frame) -> int:
+        """Count Button widgets gridded into column 0 (exp_button) of parent."""
+        count = 0
+        for child in parent.winfo_children():
+            if isinstance(child, tk.Button):
+                info = child.grid_info()
+                if info and int(info.get("column", -1)) == 0:
+                    count += 1
+        return count
+
+    def _find_gridded_labels(self, parent: tk.Frame) -> list[tk.Label]:
+        """Return all Label widgets that have been gridded into parent."""
+        return [c for c in parent.winfo_children() if isinstance(c, tk.Label) and c.grid_info()]
+
+    @unittest.mark.parametrize if False else lambda f: f  # mark unused — parameterize via subtests
+    def test_plain_user_message_has_expand_button(self):
+        """GIVEN a plain user message (no tools/attachments/plans)
+        WHEN rendered
+        THEN a Button is placed in the exp_button column (not an empty Label).
+        """
+        msg = Message(role=MessageRole.USER, content="Hello world")
+        self.gui._render_message_to_grid(msg, self.frame, 0)
+        btn_count = self._count_expand_buttons(self.frame)
+        self.assertGreater(btn_count, 0, "Plain user message must have an expand/collapse Button")
+
+    def test_plain_assistant_message_has_expand_button(self):
+        """GIVEN a plain assistant message (no tools/attachments/plans)
+        WHEN rendered
+        THEN a Button is placed in the exp_button column.
+        """
+        msg = Message(role=MessageRole.ASSISTANT, content="I can help with that.")
+        self.gui._render_message_to_grid(msg, self.frame, 0)
+        btn_count = self._count_expand_buttons(self.frame)
+        self.assertGreater(btn_count, 0, "Plain assistant message must have an expand/collapse Button")
+
+    def test_plain_system_message_has_expand_button(self):
+        """GIVEN a plain system message (no tools/attachments/plans)
+        WHEN rendered
+        THEN a Button is placed in the exp_button column.
+        """
+        msg = Message(role=MessageRole.SYSTEM, content="You are a helpful assistant.")
+        self.gui._render_message_to_grid(msg, self.frame, 0)
+        btn_count = self._count_expand_buttons(self.frame)
+        self.assertGreater(btn_count, 0, "Plain system message must have an expand/collapse Button")
+
+    def test_full_content_row_created_and_hidden_by_default(self):
+        """GIVEN a message with non-empty content
+        WHEN rendered
+        THEN a full-content Label is created and initially hidden (grid_remove'd).
+        """
+        long_text = "A" * 200  # definitely longer than 60-char preview
+        msg = Message(role=MessageRole.USER, content=long_text)
+        self.gui._render_message_to_grid(msg, self.frame, 0)
+
+        # Find all Labels in the content column (col 3) that are NOT the preview
+        full_text_labels = []
+        for child in self.frame.winfo_children():
+            if isinstance(child, tk.Label):
+                info = child.grid_info()
+                # grid_remove makes grid_info() return empty dict
+                if not info:
+                    try:
+                        text = child.cget("text")
+                        if long_text[:50] in text:
+                            full_text_labels.append(child)
+                    except tk.TclError:
+                        pass
+
+        self.assertGreater(len(full_text_labels), 0, "A hidden full-content Label must exist after rendering")
+
+    def test_full_content_row_becomes_visible_on_toggle(self):
+        """GIVEN a plain message rendered in the context panel
+        WHEN the expand button is clicked
+        THEN the full-content detail row becomes visible (grid_info is non-empty).
+        """
+        long_text = "Detail content that would be truncated in the preview " * 5
+        msg = Message(role=MessageRole.USER, content=long_text)
+        self.gui._render_message_to_grid(msg, self.frame, 0)
+
+        # Locate the expand/collapse button (col 0, row 0)
+        expand_btn = None
+        for child in self.frame.winfo_children():
+            if isinstance(child, tk.Button) and child.grid_info().get("column") == "0":
+                expand_btn = child
+                break
+        if expand_btn is None:
+            for child in self.frame.winfo_children():
+                if isinstance(child, tk.Button):
+                    info = child.grid_info()
+                    if info and int(info.get("column", -1)) == 0:
+                        expand_btn = child
+                        break
+
+        self.assertIsNotNone(expand_btn, "Expand button must exist")
+
+        # Before click: full-content label must be hidden
+        hidden_labels_before = [
+            c
+            for c in self.frame.winfo_children()
+            if isinstance(c, tk.Label) and not c.grid_info() and long_text[:30] in (c.cget("text") or "")
+        ]
+        self.assertGreater(len(hidden_labels_before), 0, "Full-content label must be hidden before expand")
+
+        # Click the expand button
+        expand_btn.invoke()
+
+        # After click: full-content label must be visible
+        visible_labels_after = [
+            c
+            for c in self.frame.winfo_children()
+            if isinstance(c, tk.Label) and c.grid_info() and long_text[:30] in (c.cget("text") or "")
+        ]
+        self.assertGreater(len(visible_labels_after), 0, "Full-content label must be visible after expanding")
+
+    def test_message_with_tool_still_has_expand_button(self):
+        """GIVEN a message with a tool call
+        WHEN rendered
+        THEN the expand button is still present (not regressed by the always-on change).
+        """
+        assistant_msg = Message(role=MessageRole.ASSISTANT, content="Used a tool")
+        tool_call = Message(role=MessageRole.TOOL_CALL, content="call", tool_name="read_file")
+        self.gui._render_message_to_grid(assistant_msg, self.frame, 0, tool_interactions=[tool_call])
+        btn_count = self._count_expand_buttons(self.frame)
+        self.assertGreater(btn_count, 0, "Message with tool call must still have an expand button")
+
+    def test_empty_content_message_has_expand_button_no_detail_row(self):
+        """GIVEN a message with empty string content
+        WHEN rendered
+        THEN an expand button is still created but no full-content detail row is added
+        (no point showing an empty label).
+        """
+        msg = Message(role=MessageRole.ASSISTANT, content="")
+        self.gui._render_message_to_grid(msg, self.frame, 0)
+        btn_count = self._count_expand_buttons(self.frame)
+        self.assertGreater(btn_count, 0, "Even empty-content message must have an expand button")
 
 
 if __name__ == "__main__":

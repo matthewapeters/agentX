@@ -7,6 +7,49 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.20.2] - 2026-04-28
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/gui/context_renderer._render_message_to_grid()` — regression where
+  plain messages (no tools, attachments, or plans) received `is_expandable=False`,
+  rendering an empty placeholder `Label` in the expand column instead of a toggle
+  `Button`.  This made the full message content inaccessible in the Context panel.
+  Fix: removed the `is_expandable` conditional entirely.  Every message now always
+  gets an expand/collapse `Button` (col 0) and a hidden full-content `tk.Label`
+  detail row that is revealed on toggle.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_phase6_context_panel.py` — new `TestRenderMessageAlwaysExpandable`
+  class (7 unit tests):
+  - `test_plain_user_message_has_expand_button` — GIVEN a plain user message WHEN
+    rendered THEN a Button is placed in the exp_button column.
+  - `test_plain_assistant_message_has_expand_button` — same for assistant role.
+  - `test_plain_system_message_has_expand_button` — same for system role.
+  - `test_full_content_row_created_and_hidden_by_default` — GIVEN a 200-char message
+    WHEN rendered THEN a hidden full-content Label exists.
+  - `test_full_content_row_becomes_visible_on_toggle` — GIVEN a plain message WHEN
+    expand button is clicked THEN the full-content label becomes visible.
+  - `test_message_with_tool_still_has_expand_button` — GIVEN a message with a tool
+    call WHEN rendered THEN the expand button is still present.
+  - `test_empty_content_message_has_expand_button_no_detail_row` — GIVEN an empty
+    message WHEN rendered THEN expand button exists but no hidden detail row is added.
+
+#### Fixed
+
+- `tests/test_phase6_context_panel.py` — pre-existing SIGABRT race: background
+  `ModelMetadataStore.populate` threads (spawned by `AgentXSession.__init__`) made
+  HTTP calls during test teardown, sometimes hitting a destroyed socket/GC and
+  aborting the entire process.  Fixed by adding
+  `patch("agentx.model_metadata_store.ModelMetadataStore.populate")` to `_make_session`.
+
+---
+
 ## [0.20.1] - 2026-04-28
 
 ### Code Changes

@@ -313,17 +313,12 @@ class ContextRenderer:
         has_attachments = bool(getattr(message_obj, "attachments", []))
         has_tools = bool(real_tool_msgs)
         has_plans = bool(plan_msgs or task_node_msgs)
-        is_expandable = has_attachments or has_tools or has_plans
 
+        # Every message is expandable — plain messages show full content in the
+        # detail row; tool/attachment/plan rows are appended to the same list.
         collapsible_rows: list[list[tk.Widget]] = []
-        collapse_expand_button: tk.Button
-
-        if is_expandable:
-            collapse_expand_button = self.collapse_expand_button(parent=parent_frame, attachment_rows=collapsible_rows)
-            collapse_expand_button.grid(row=current_row, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew")
-        else:
-            empty_label = tk.Label(parent_frame, width=2, bg=self._section_bg, fg=self._config.ui_fg)
-            empty_label.grid(row=current_row, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew")
+        collapse_expand_button = self.collapse_expand_button(parent=parent_frame, attachment_rows=collapsible_rows)
+        collapse_expand_button.grid(row=current_row, column=self.MESSAGE_COLUMNS["exp_button"], sticky="nsew")
 
         enabled_var = tk.BooleanVar(value=getattr(message_obj, "enabled", True))
 
@@ -374,6 +369,29 @@ class ContextRenderer:
         )
         preview_label.grid(row=current_row, column=self.MESSAGE_COLUMNS["content"], sticky="nsew")
         current_row += 1
+
+        # Full-content detail row — always created, starts hidden (collapsed).
+        if trimmed_content:
+            full_text_label = tk.Label(
+                parent_frame,
+                text=trimmed_content,
+                anchor="nw",
+                justify=tk.LEFT,
+                bg=self._section_bg,
+                fg=self._config.ui_fg,
+                wraplength=360,
+                font=("Terminal", 9),
+            )
+            full_text_label.grid(
+                row=current_row,
+                column=self.MESSAGE_COLUMNS["content"],
+                sticky="nsew",
+                padx=(12, 0),
+                pady=(0, 2),
+            )
+            full_text_label.grid_remove()
+            collapsible_rows.append([full_text_label])
+            current_row += 1
 
         if has_attachments:
             for att in getattr(message_obj, "attachments", []):
