@@ -11,9 +11,11 @@ user flows, and per-panel detail.
 
 | File | Description |
 |------|-------------|
+| **[UX_LIFECYCLE.md](UX_LIFECYCLE.md)** | **Single-source traceability hub — spec ↔ code ↔ test. Start here.** |
 | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) | Window geometry, zone map, layout diagram |
 | [02_USER_FLOWS.md](02_USER_FLOWS.md) | Mermaid flow diagrams for all major user interactions |
 | [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) | Per-panel affordances, widgets, and interactions |
+| [context_visualizer.md](context_visualizer.md) | ContextMeterWidget feature specification (REQ/ENH codes) |
 
 ---
 
