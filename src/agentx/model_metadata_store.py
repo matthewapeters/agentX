@@ -123,6 +123,9 @@ class ModelMetadataStore:
         """
         with self._lock:
             value = self._capacities.get(model_name)
+            if value is None and ":" not in model_name:
+                # Ollama stores models with an implicit ":latest" tag; try that.
+                value = self._capacities.get(f"{model_name}:latest")
         if value is None:
             logger.warning("Model '%s' missing from metadata store; using fallback", model_name)
             return FALLBACK_CONTEXT_WINDOW
@@ -138,7 +141,10 @@ class ModelMetadataStore:
             Metadata dict, or ``{}`` when the model is unknown.
         """
         with self._lock:
-            return dict(self._metadata.get(model_name, {}))
+            result = self._metadata.get(model_name)
+            if result is None and ":" not in model_name:
+                result = self._metadata.get(f"{model_name}:latest")
+            return dict(result) if result else {}
 
     def model_names(self) -> list[str]:
         """Return sorted model names currently present in the store."""

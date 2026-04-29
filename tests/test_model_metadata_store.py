@@ -279,3 +279,68 @@ def test_cache_models_match_uses_sorted_non_empty_values() -> None:
     cached = {"models": ["b", "", "a", "a"]}
 
     assert ModelMetadataStore._cache_models_match(cached, ["a", "b"])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "lookup_name,stored_name,expected_tokens",
+    [
+        ("gpt-oss", "gpt-oss:latest", 32768),
+        ("llama3.2", "llama3.2:latest", 131072),
+        ("gpt-oss:latest", "gpt-oss:latest", 32768),  # exact match still works
+        ("completely-unknown", "gpt-oss:latest", None),  # no match → fallback
+    ],
+    ids=["bare-name-latest", "bare-name-llama", "exact-tagged-name", "no-match-fallback"],
+)
+def test_get_context_length_latest_tag_fallback(
+    tmp_path,
+    lookup_name: str,
+    stored_name: str,
+    expected_tokens: int | None,
+) -> None:
+    """GIVEN Ollama stores models with ':latest' tags
+    WHEN get_context_length is called with the bare model name (no tag)
+    THEN the correct capacity is returned without a fallback warning.
+
+    Ollama always appends ':latest' when no explicit tag is given, so
+    'gpt-oss' in agentx.toml must resolve to 'gpt-oss:latest' in the store.
+
+    Parameterized cases:
+    - bare-name-latest: 'gpt-oss' resolves to 'gpt-oss:latest'
+    - bare-name-llama: 'llama3.2' resolves to 'llama3.2:latest'
+    - exact-tagged-name: 'gpt-oss:latest' resolves via direct match
+    - no-match-fallback: completely unknown model returns FALLBACK_CONTEXT_WINDOW
+    """
+    provider = FakeProvider(models=[stored_name], capacities={stored_name: expected_tokens or 8192})
+    store = ModelMetadataStore(provider=provider, cache_path=tmp_path / "cache.json")
+    store.populate()
+
+    result = store.get_context_length(lookup_name)
+    if expected_tokens is not None:
+        assert result == expected_tokens
+    else:
+        assert result == FALLBACK_CONTEXT_WINDOW
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "lookup_name,stored_name",
+    [
+        ("gpt-oss", "gpt-oss:latest"),
+        ("llama3.2", "llama3.2:latest"),
+    ],
+    ids=["gpt-oss-latest", "llama3.2-latest"],
+)
+def test_get_metadata_latest_tag_fallback(tmp_path, lookup_name: str, stored_name: str) -> None:
+    """GIVEN Ollama stores models with ':latest' tags
+    WHEN get_metadata is called with the bare model name
+    THEN the correct metadata dict is returned.
+
+    Mirrors the ':latest' tag fallback behaviour of get_context_length.
+    """
+    provider = FakeProvider(models=[stored_name], capacities={stored_name: 8192})
+    store = ModelMetadataStore(provider=provider, cache_path=tmp_path / "cache.json")
+    store.populate()
+
+    metadata = store.get_metadata(lookup_name)
+    assert metadata.get("family") == "test"

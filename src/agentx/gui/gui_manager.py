@@ -504,8 +504,18 @@ class GUIManager(IGUIManager):
         self._chat_panel.mark_plan_node_invalidated(task_id)
 
     def update_context_meter(self, max_tokens: int, breakdown: dict[str, int]) -> None:
-        """Stub implementation until ContextMeterWidget is introduced."""
+        """Redraw the context meter donut chart with updated token data.
+
+        Delegates to ``InputPanel.context_meter.update()`` which schedules
+        the canvas redraw on the Tkinter main thread (ARCH-06).
+
+        Args:
+            max_tokens (int): Context-window size for the active model.
+            breakdown (dict[str, int]): Per-category token estimates from
+                ``Context.token_breakdown()``.
+        """
         logger.debug("update_context_meter: max_tokens=%d breakdown=%s", max_tokens, breakdown)
+        self._input_panel.context_meter.update(max_tokens, breakdown)
 
     # ── Placeholder callbacks (replaced at runtime via set_*_callback) ────────
 
