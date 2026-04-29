@@ -1,6 +1,6 @@
 # Dynamic Context Resizing - Implementation Plan (PRE-02)
 
-**Status:** Draft - Decisions recorded 2026-04-26
+**Status:** Complete — 2026-04-26
 **Date:** 2026-04-26
 **Feature branch:** `feature/context-size-prerequisite`
 **Linked spec:** `docs/ux/context_visualizer.md`
@@ -239,7 +239,7 @@ are backend-agnostic (Ollama now, extensible later).
 - [/] **8.2** Update `docs/architecture.md` with provider abstraction + metadata store.
 - [/] **8.3** Update `CHANGELOG.md` with PRE-02 changes.
 - [/] **8.4** Bump version in `pyproject.toml`: `0.18.26 -> 0.19.0`.
-- [ ] **8.5** Commit all changes to working branch.
+- [/] **8.5** Commit all changes to working branch.
 
 ---
 
