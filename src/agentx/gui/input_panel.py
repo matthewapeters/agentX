@@ -85,7 +85,7 @@ class InputPanel:
             text=enter_emoji_unicode,
             command=self._on_submit_clicked,
         )
-        self._widgets.user_submit.place(relx=0.92, rely=0, relwidth=0.07, relheight=0.25)
+        self._widgets.user_submit.place(relx=0.92, rely=0.25, relwidth=0.07, relheight=0.25)
 
         # Interrupt button
         self._widgets.user_break = tk.Button(
@@ -94,7 +94,7 @@ class InputPanel:
             command=self._on_interrupt_clicked,
             state=tk.DISABLED,
         )
-        self._widgets.user_break.place(relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25)
+        self._widgets.user_break.place(relx=0.92, rely=0.51, relwidth=0.07, relheight=0.25)
         # Context meter (donut chart — ARCH-04)
         self.context_meter.create(self._widgets.user_input)
         self._widgets.context_meter_canvas = self.context_meter._canvas

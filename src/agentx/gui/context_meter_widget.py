@@ -103,14 +103,17 @@ class ContextMeterWidget:
 
         Must be called on the Tkinter main thread after the parent frame
         exists.  Places the canvas at ``relx=0.92, rely=0.00,
-        relwidth=0.07, relheight=0.24`` — matching the existing button
-        column geometry, above the Submit button.
+        relwidth=0.07, relheight=0.24`` — at the top of the button
+        column, above the Submit button (rely=0.25) and Break button
+        (rely=0.51).
 
         Args:
             parent (tk.Widget): Parent frame (the ``user_input`` frame).
         """
         bg = self._config.input_bg
         self._canvas = tk.Canvas(parent, bg=bg, highlightthickness=0, cursor="hand2")
+        # Top of the button column (0.00–0.24). Submit sits at 0.25 and
+        # Break at 0.51 so the donut occupies the head of the column.
         self._canvas.place(relx=0.92, rely=0.00, relwidth=0.07, relheight=0.24)
 
         # Bind Configure so the donut redraws if the canvas is resized
