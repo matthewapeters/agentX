@@ -102,9 +102,10 @@ AgentX is a local-first AI agent framework with a Tkinter GUI. It connects to **
 - For any changes that affect the user interface or user experience, update the relevant documentation with new UX mockups and user flow diagrams to reflect the changes.  Ensure that these documents are clear and provide a comprehensive overview of the user interactions with the system.
 - Use mermaid diagrams and/or ascii art in markdown files to document user flows and UX mockups.  Ensure that all user interactions are documented with clear explanations of the expected behavior and outcomes.
 - **`docs/ux/UX_LIFECYCLE.md` is the single traceability hub for all UI affordances.**  Every affordance carries an `PD-XX-AF-NNN` ID that must appear in its spec section, source docstring, and test docstring.  When making any change to `src/agentx/gui/`, the agent must:
-  1. Look up the Affordance ID in the traceability matrix.
-  2. Update the matrix `Status` column as part of the same commit.
-  3. Follow the checklist in §5 of that document (add / modify / remove).
+  1. Open `docs/ux/00_INDEX.md` first — check the Status Snapshot and Priority Work Queue.
+  2. Look up the Affordance ID in the traceability matrix (`UX_LIFECYCLE.md §4`).
+  3. Update the matrix `Status` column as part of the same commit.
+  4. Follow the checklist in §5 of that document (add / modify / remove).
   This is how drift between spec, code, and tests is prevented.
 
 ##### Ux Detail and Simplifcation Guidelines

@@ -1,0 +1,162 @@
+# AgentX UX — Working Index
+
+> **This is the entry point for every UX work session — human or agent.**
+> Open this file first. It tells you exactly where things stand and what to do next.
+
+**Last updated**: 2026-04-29  
+**Current version**: see `pyproject.toml`
+
+---
+
+## How to Use This Page
+
+| You want to… | Go to |
+|--------------|-------|
+| Understand the full lifecycle process | [UX_LIFECYCLE.md §2](UX_LIFECYCLE.md#2-the-4-phase-lifecycle) |
+| Find the affordance ID for a widget | [UX_LIFECYCLE.md §4 — Traceability Matrix](UX_LIFECYCLE.md#4-traceability-matrix-as-built) |
+| See a panel's widget details, state fields, diagrams | [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) |
+| Understand the window layout and zone map | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) |
+| Follow a user interaction end-to-end | [02_USER_FLOWS.md](02_USER_FLOWS.md) |
+| Run the UX review+enforce cycle (agent slash-command) | `/ux-review` in Copilot Chat |
+| See test coverage gaps | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-known-coverage-gaps) |
+| Detect spec/code/test drift | [UX_LIFECYCLE.md §5.4](UX_LIFECYCLE.md#54-detecting-drift-without-a-planned-change) |
+| Add a new panel/affordance (checklist) | [UX_LIFECYCLE.md §5.1](UX_LIFECYCLE.md#51-adding-a-new-affordance) |
+| Modify an existing affordance (checklist) | [UX_LIFECYCLE.md §5.2](UX_LIFECYCLE.md#52-modifying-an-existing-affordance) |
+| Remove an affordance (checklist) | [UX_LIFECYCLE.md §5.3](UX_LIFECYCLE.md#53-removing-an-affordance) |
+
+---
+
+## Current Status Snapshot
+
+> **Agent**: when starting a session, update this table from `UX_LIFECYCLE.md §4`.
+> Run the drift-detection commands in `UX_LIFECYCLE.md §5.4` and record the result here.
+
+| Panel | Fully Tested ✅ | Partial ⚠️ | Spec Only 📝 | Gap ❌ |
+|-------|:--------------:|:----------:|:------------:|:------:|
+| PD-01 ChatPanel | 4 | 1 | 3 | 0 |
+| PD-02 InputPanel | 0 | 3 | 4 | 0 |
+| PD-03 SidePanel — Context | 6 | 0 | 1 | 0 |
+| PD-03 SidePanel — Working Memory | 0 | 1 | 4 | 0 |
+| PD-04 ModelSelector | 3 | 0 | 1 | 0 |
+| PD-05 PlanTreeWidget | 3 | 0 | 3 | 0 |
+| PD-06 ResynthesisDialog | 0 | 0 | 0 | 3 |
+| PD-07 SettingsTab | 0 | 1 | 2 | 0 |
+| PD-08 ContextRenderer | 4 | 0 | 0 | 0 |
+| PD-09 CollapsibleSection | 0 | 0 | 4 | 0 |
+| PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
+| PD-11 FileExplorer | 7 | 0 | 0 | 0 |
+
+**Totals**: 34 ✅ · 6 ⚠️ · 22 📝 · 3 ❌
+
+---
+
+## Priority Work Queue
+
+> Ordered by risk (high-visibility affordances with no test coverage first).
+> When picking up work, take the **top unchecked item**.
+
+- [ ] **PD-09-AF-001..004** — CollapsibleSection: all 4 affordances untested (used everywhere)
+- [ ] **PD-01-AF-005** — Thinking block default-collapsed state
+- [ ] **PD-01-AF-006** — Tool call default-collapsed state
+- [ ] **PD-01-AF-007** — Assistant response default-expanded state
+- [ ] **PD-06-AF-001..003** — ResynthesisDialog: entire panel has no spec or tests
+- [ ] **PD-02-AF-005..007** — Attachment chip: render, remove, clear-all
+- [ ] **PD-03-AF-007** — Message enabled checkbox wired to `message.enabled`
+- [ ] **PD-03-AF-011..014** — Working Memory callbacks (toggle, delete, promote, add)
+- [ ] **PD-07-AF-002..003** — Settings collapse state + restart-required tooltip
+
+---
+
+## Agile Process: How a UX Change Flows
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  SESSION START                                                           │
+│  1. Open this file (00_INDEX.md)                                         │
+│  2. Check Status Snapshot — note any pre-existing ⚠️ or ❌              │
+│  3. Pick top item from Priority Work Queue                               │
+└────────────────────────┬─────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  SPECIFY                                                                 │
+│  - Write/update affordance in 03_PANEL_DETAILS.md                       │
+│  - Assign PD-XX-AF-NNN if new                                            │
+│  - Update ASCII/Mermaid diagram                                          │
+│  - Add row to UX_LIFECYCLE.md §4 (status: 📝)                           │
+│  - Commit: "spec(PD-XX): ..."                                            │
+└────────────────────────┬─────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  GHERKIN FIRST                                                           │
+│  - Write GIVEN/WHEN/THEN in test docstring                               │
+│  - Include [PD-XX-AF-NNN] in docstring                                   │
+│  - Write assertions that will FAIL against current code                  │
+│  - Run tests → confirm they fail (red)                                   │
+└────────────────────────┬─────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  CODE                                                                    │
+│  - Implement minimum code to pass the failing tests                      │
+│  - Reference affordance ID in source docstring                           │
+│  - Run tests → all green, no regressions                                 │
+└────────────────────────┬─────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  RECONCILE                                                               │
+│  - Update UX_LIFECYCLE.md §4 status → ✅                                │
+│  - Remove from Priority Work Queue                                       │
+│  - Bump version + update CHANGELOG.md                                    │
+│  - Commit: "ux(PD-XX): ..."                                              │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Quick Drift Check
+
+Run this at the start of any UX session to identify gaps immediately:
+
+```bash
+# IDs in tests but missing from UX_LIFECYCLE.md
+grep -rho 'PD-[0-9]\+-AF-[0-9]\+' tests/ | sort -u > /tmp/tested.txt
+grep -oh 'PD-[0-9]\+-AF-[0-9]\+' docs/ux/UX_LIFECYCLE.md | sort -u > /tmp/specced.txt
+echo "=== Tested but not in matrix ==="
+comm -23 /tmp/tested.txt /tmp/specced.txt
+echo "=== In matrix but no tests yet ==="
+comm -13 /tmp/tested.txt /tmp/specced.txt
+```
+
+---
+
+## Document Map
+
+```
+docs/ux/
+├── 00_INDEX.md              ← YOU ARE HERE — session entry point
+├── UX_LIFECYCLE.md          ← Lifecycle rules, affordance IDs, traceability matrix
+├── 01_MAIN_LAYOUT.md        ← Window zones, geometry
+├── 02_USER_FLOWS.md         ← End-to-end user interaction flows (Mermaid)
+├── 03_PANEL_DETAILS.md      ← Per-panel: affordance tables, state fields, diagrams
+└── context_visualizer.md    ← ContextMeterWidget spec (REQ/ENH)
+
+.github/prompts/
+└── ux-review.prompt.md      ← /ux-review slash command (8-phase TDD review loop)
+```
+
+---
+
+## Conventions Reminder
+
+| Topic | Rule |
+|-------|------|
+| Affordance ID format | `PD-<panel>-AF-<NNN>` (zero-padded three digits) |
+| Spec freeze | Spec must be committed before code changes |
+| Gherkin oracle | GIVEN/WHEN/THEN drives assertions; update Gherkin first, code second |
+| Regression gate | No commit if a test that previously passed now fails |
+| Coverage floor | Unit test coverage must stay ≥ 98% |
+| Source docstring | Must contain `[PD-XX-AF-NNN]` for every affordance implemented |
+| Test docstring | Must contain `[PD-XX-AF-NNN]` and Gherkin use-case |

@@ -7,7 +7,31 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.20.2] - 2026-04-28
+## [0.20.2.post1] - 2026-04-29
+
+### Documentation Changes
+
+#### Added
+- `docs/ux/00_INDEX.md` — session entry point for UX work; contains the Status
+  Snapshot table, Priority Work Queue, and agile process flow diagram.  Both
+  the developer and the agent open this file at the start of every UX session.
+- `.github/prompts/ux-review.prompt.md` — `/ux-review` slash-command prompt
+  implementing an 8-phase TDD review loop: Baseline → Specify → Cut-Sheet
+  Verify → Gherkin Verify → Test-First Update → Iterative Code Fix →
+  Reconcile → Commit Gate.
+- `docs/ux/UX_LIFECYCLE.md` — single-source traceability hub; affordance ID
+  scheme, complete traceability matrix for all 11 panels, change checklists,
+  headless Tkinter testing primer, gap inventory, and audit commands.
+  (File was created at end of prior session; captured in this post-release.)
+
+#### Changed
+- `docs/ux/README.md` — `00_INDEX.md` added as the top entry; `UX_LIFECYCLE.md`
+  listed as lifecycle rules document.
+- `.github/copilot-instructions.md` — UX section updated to require agent opens
+  `00_INDEX.md` first (Status Snapshot + Priority Work Queue) before any
+  `src/agentx/gui/` change.
+
+
 
 ### Code Changes
 
