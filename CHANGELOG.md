@@ -7,6 +7,39 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.20.1] - 2026-04-28
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/gui/gui_manager.py` — `update_context_meter()` had regressed to the no-op
+  stub after the editor saved a stale in-memory buffer over the committed fix. Re-applied
+  the real delegation: `self._input_panel.context_meter.update(max_tokens, breakdown)`.
+  This was the root cause of the context visualiser remaining at 0% throughout a session.
+- `src/agentx/model_metadata_store.get_context_length()` — added `:latest` tag fallback so
+  bare model names (e.g. `gpt-oss`) resolve to their tagged equivalent (`gpt-oss:latest`).
+  Ollama always appends `:latest` implicitly, causing spurious *"missing from metadata store"*
+  warnings and returning `FALLBACK_CONTEXT_WINDOW` instead of the real context length.
+- `src/agentx/model_metadata_store.get_metadata()` — applied the same `:latest` tag
+  fallback for consistency with `get_context_length()`.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_model_metadata_store.py` — 6 new unit tests:
+  - `test_get_context_length_latest_tag_fallback` (×4 parametrized):
+    - GIVEN model stored as `gpt-oss:latest` / WHEN looked up as `gpt-oss` / THEN returns real capacity
+    - GIVEN model stored as `llama3.2:latest` / WHEN looked up as `llama3.2` / THEN returns real capacity
+    - GIVEN exact tagged lookup `gpt-oss:latest` / WHEN looked up directly / THEN returns real capacity
+    - GIVEN completely unknown model / WHEN looked up / THEN returns FALLBACK_CONTEXT_WINDOW
+  - `test_get_metadata_latest_tag_fallback` (×2 parametrized):
+    - GIVEN model stored as `gpt-oss:latest` / WHEN metadata requested as `gpt-oss` / THEN returns correct dict
+    - GIVEN model stored as `llama3.2:latest` / WHEN metadata requested as `llama3.2` / THEN returns correct dict
+
+---
+
 ## [0.20.0] - 2026-04-28
 
 ### Code Changes
