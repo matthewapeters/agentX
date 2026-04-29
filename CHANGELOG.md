@@ -7,6 +7,42 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.20.0] - 2026-04-28
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/gui/context_meter_widget.py` — `ContextMeterWidget` (ARCH-04): donut chart Tkinter widget showing LLM context window utilisation by category. Features: seven band arcs (BAND-01–07), ghost arc for remaining capacity (ENH-02), border ring with three risk states (default / warning ≥80% / critical ≥100%, ENH-16), center percentage label with matching risk color, hover tooltips via `tk.Toplevel` (ENH-06), thread-safe `update()` via `canvas.after(0, ...)` (ARCH-06).
+- `src/agentx/widget_registry.py` — added `context_meter_canvas: Optional[tk.Canvas]` field and corresponding `destroy_all()` teardown.
+
+#### Changed
+
+- `src/agentx/gui/input_panel.py` — imports and instantiates `ContextMeterWidget`, calls `create()` inside `InputPanel.create()`, and registers `context_meter_canvas` in the widget registry.
+- `src/agentx/gui/gui_manager.py` — replaced `update_context_meter()` stub with real delegation to `self._input_panel.context_meter.update(max_tokens, breakdown)`.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_context_meter_widget.py` — 39 hermetic unit tests covering:
+  - GIVEN new widget / WHEN `create()` called / THEN canvas placed at correct geometry
+  - GIVEN `update()` on background thread / WHEN called / THEN `canvas.after(0, ...)` invoked (thread safety)
+  - GIVEN each of seven band categories / WHEN `_render()` / THEN PIESLICE arc drawn with correct fill color (parameterized × 7)
+  - GIVEN 50% usage / WHEN `_render()` / THEN ghost arc drawn with `_GHOST_COLOR`
+  - GIVEN 100% usage / WHEN `_render()` / THEN no ghost arc drawn
+  - GIVEN empty breakdown / WHEN `_render()` / THEN only ghost arc fills ring
+  - GIVEN usage at each risk threshold / WHEN `_render()` / THEN border ring has correct color and width (parameterized × 8: 0%, 50%, 79%, 80%, 95%, 99%, 100%, 120%)
+  - GIVEN usage at each risk threshold / WHEN `_render()` / THEN center label has correct fill color (parameterized × 4)
+  - GIVEN 40% usage / WHEN `_render()` / THEN center label text is `"40%"`
+  - GIVEN absurdly large token count / WHEN `_render()` / THEN center label capped at `"999%"`
+  - GIVEN `max_tokens=0` / WHEN `_render()` / THEN no crash
+  - GIVEN canvas not yet laid out / WHEN `_render()` / THEN retries via `canvas.after(50, ...)`
+  - GIVEN each band / WHEN tooltip hover / THEN tooltip text contains band label and percentage (parameterized × 5)
+  - GIVEN 50% usage / WHEN ghost arc hover / THEN tooltip shows "Remaining capacity" and token count
+  - GIVEN destroyed Toplevel / WHEN `_hide_tooltip()` / THEN TclError silently swallowed
+  - GIVEN no active tooltip / WHEN `_hide_tooltip()` / THEN no exception
+
 ## [0.19.3] - 2026-04-27
 
 ### Code Changes

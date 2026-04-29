@@ -11,6 +11,8 @@ import threading
 import tkinter as tk
 from typing import TYPE_CHECKING
 
+from .context_meter_widget import ContextMeterWidget
+
 if TYPE_CHECKING:
     from .gui_manager import GUIManager
 
@@ -21,6 +23,7 @@ class InputPanel:
     def __init__(self, gui_manager: "GUIManager") -> None:
         self._g = gui_manager
         self._cached_user_input: str = ""
+        self.context_meter: ContextMeterWidget = ContextMeterWidget(gui_manager)
 
     # ── Convenience accessors ─────────────────────────────────────────────────
 
@@ -92,7 +95,9 @@ class InputPanel:
             state=tk.DISABLED,
         )
         self._widgets.user_break.place(relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25)
-
+        # Context meter (donut chart — ARCH-04)
+        self.context_meter.create(self._widgets.user_input)
+        self._widgets.context_meter_canvas = self.context_meter._canvas
         # Keyboard shortcuts
         self._widgets.user_input_text.bind(
             "<Control-Return>",

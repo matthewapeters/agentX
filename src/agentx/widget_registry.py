@@ -52,6 +52,7 @@ class WidgetRegistry:
         self.input_scrollbar: Optional[tk.Scrollbar] = None
         self.user_submit: Optional[tk.Button] = None
         self.user_break: Optional[tk.Button] = None
+        self.context_meter_canvas: Optional[tk.Canvas] = None
 
     def clear_attachments(self) -> None:
         """Destroy all attachment label widgets.
@@ -75,6 +76,8 @@ class WidgetRegistry:
         self.clear_attachments()
 
         # Destroy input panel widgets
+        if self.context_meter_canvas is not None:
+            self.context_meter_canvas.destroy()
         if self.user_break is not None:
             self.user_break.destroy()
         if self.user_submit is not None:
