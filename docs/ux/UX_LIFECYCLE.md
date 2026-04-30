@@ -274,10 +274,10 @@ implements it and the test that validates it.  Status legend:
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
-| Section starts collapsed when default_open=False | PD-09-AF-001 | `CollapsibleSection.__init__()` | — | — | 📝 |
-| Section starts expanded when default_open=True | PD-09-AF-002 | `CollapsibleSection.__init__()` | — | — | 📝 |
-| Header click toggles content visibility | PD-09-AF-003 | `CollapsibleSection._toggle()` | — | — | 📝 |
-| set_content replaces previous content | PD-09-AF-004 | `CollapsibleSection.set_content()` | — | — | 📝 |
+| Section starts collapsed when default_open=False | PD-09-AF-001 | `CollapsibleSection.__init__()` | `test_collapsible_section.py` | Module-level pytest tests | ✅ |
+| Section starts expanded when default_open=True | PD-09-AF-002 | `CollapsibleSection.__init__()` | `test_collapsible_section.py` | Module-level pytest tests | ✅ |
+| Header click toggles content visibility | PD-09-AF-003 | `CollapsibleSection.toggle()` | `test_collapsible_section.py` | Module-level pytest tests | ✅ |
+| set_content replaces previous content | PD-09-AF-004 | `CollapsibleSection.set_content()` | `test_collapsible_section.py` | Module-level pytest tests | ✅ |
 
 ### PD-10 — ContextMeterWidget
 
@@ -497,7 +497,6 @@ tests.
 | PD-01-AF-005 | Thinking block collapsed by default on render | High — collapse state is fragile |
 | PD-01-AF-006 | Tool call collapsed by default on render | High — same mechanism |
 | PD-01-AF-007 | Assistant response expanded by default | High — inverted default |
-| PD-09-AF-001–004 | CollapsibleSection all four affordances | High — used everywhere |
 | PD-02-AF-005–007 | Attachment chip render, remove, clear-all | Medium — file workflow |
 
 ### Medium Priority (settings / configuration)

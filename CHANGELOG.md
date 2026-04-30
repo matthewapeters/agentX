@@ -7,11 +7,36 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.20.2.post2] - 2026-04-29
+
+### Code Changes
+
+#### Added
+- `docs/ux/04_COMPONENT_CUT_SHEET_TEMPLATE.md`: reusable component cut-sheet standard with sections for placement diagram, internal structure diagram, behaviour inventory table, Gherkin use-cases, test mapping table, and code/configuration references.
+
+#### Changed
+- `docs/ux/03_PANEL_DETAILS.md`: PD-09 (CollapsibleSection) backfilled to full cut-sheet exemplar — placement diagram, internal structure diagram, behaviour inventory (4 affordances), Gherkin scenarios, test mapping, code references.
+- `docs/ux/UX_LIFECYCLE.md`: PD-09 traceability matrix rows all updated from 📝 → ✅ with concrete test file and test name references; PD-09-AF-001..004 removed from §7 Known Coverage Gaps.
+- `docs/ux/00_INDEX.md`: status snapshot updated (38✅ total), requirement intake 5-step process added, cut-sheet template linked, PD-09 removed from Priority Work Queue.
+- `docs/ux/README.md`: `04_COMPONENT_CUT_SHEET_TEMPLATE.md` added to contents table.
+
+### Test Changes
+
+#### Added
+- `tests/test_collapsible_section.py`: 4 hermetic unit tests locking down all PD-09 affordances.
+  - GIVEN a CollapsibleSection with `initial_collapsed=True` WHEN created THEN `is_expanded()` is False and content_container has no geometry manager. (`test_initial_collapsed_state_hides_content_container` — PD-09-AF-001)
+  - GIVEN a CollapsibleSection with `initial_collapsed=False` WHEN created THEN `is_expanded()` is True and content_container is managed by pack. (`test_initial_expanded_state_shows_content_container` — PD-09-AF-002)
+  - GIVEN a CollapsibleSection WHEN `toggle()` is called THEN expanded state flips and content_container visibility toggles accordingly. (`test_toggle_flips_state_and_visibility` — PD-09-AF-003)
+  - GIVEN a CollapsibleSection with existing content WHEN `set_content()` is called with a new widget THEN previous widget is destroyed and only the new widget remains. (`test_set_content_replaces_previous_widget` — PD-09-AF-004)
+
+---
+
 ## [0.20.2.post1] - 2026-04-29
 
 ### Documentation Changes
 
 #### Added
+
 - `docs/ux/00_INDEX.md` — session entry point for UX work; contains the Status
   Snapshot table, Priority Work Queue, and agile process flow diagram.  Both
   the developer and the agent open this file at the start of every UX session.
@@ -25,13 +50,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   (File was created at end of prior session; captured in this post-release.)
 
 #### Changed
+
 - `docs/ux/README.md` — `00_INDEX.md` added as the top entry; `UX_LIFECYCLE.md`
   listed as lifecycle rules document.
 - `.github/copilot-instructions.md` — UX section updated to require agent opens
   `00_INDEX.md` first (Status Snapshot + Priority Work Queue) before any
   `src/agentx/gui/` change.
-
-
 
 ### Code Changes
 

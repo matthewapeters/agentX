@@ -13,6 +13,7 @@
 | You want to… | Go to |
 |--------------|-------|
 | Understand the full lifecycle process | [UX_LIFECYCLE.md §2](UX_LIFECYCLE.md#2-the-4-phase-lifecycle) |
+| Create or update a component cut-sheet | [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md) |
 | Find the affordance ID for a widget | [UX_LIFECYCLE.md §4 — Traceability Matrix](UX_LIFECYCLE.md#4-traceability-matrix-as-built) |
 | See a panel's widget details, state fields, diagrams | [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) |
 | Understand the window layout and zone map | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) |
@@ -42,11 +43,11 @@
 | PD-06 ResynthesisDialog | 0 | 0 | 0 | 3 |
 | PD-07 SettingsTab | 0 | 1 | 2 | 0 |
 | PD-08 ContextRenderer | 4 | 0 | 0 | 0 |
-| PD-09 CollapsibleSection | 0 | 0 | 4 | 0 |
+| PD-09 CollapsibleSection | 4 | 0 | 0 | 0 |
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 7 | 0 | 0 | 0 |
 
-**Totals**: 34 ✅ · 6 ⚠️ · 22 📝 · 3 ❌
+**Totals**: 38 ✅ · 6 ⚠️ · 18 📝 · 3 ❌
 
 ---
 
@@ -55,7 +56,6 @@
 > Ordered by risk (high-visibility affordances with no test coverage first).
 > When picking up work, take the **top unchecked item**.
 
-- [ ] **PD-09-AF-001..004** — CollapsibleSection: all 4 affordances untested (used everywhere)
 - [ ] **PD-01-AF-005** — Thinking block default-collapsed state
 - [ ] **PD-01-AF-006** — Tool call default-collapsed state
 - [ ] **PD-01-AF-007** — Assistant response default-expanded state
@@ -160,3 +160,17 @@ docs/ux/
 | Coverage floor | Unit test coverage must stay ≥ 98% |
 | Source docstring | Must contain `[PD-XX-AF-NNN]` for every affordance implemented |
 | Test docstring | Must contain `[PD-XX-AF-NNN]` and Gherkin use-case |
+
+---
+
+## Requirement Intake (Single Mechanism)
+
+Use this exact sequence for every new UX requirement.
+
+1. Start spec-first in [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) using
+    [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md).
+2. If new behavior is introduced, assign new `PD-XX-AF-NNN` IDs.
+3. Add or update traceability row(s) in [UX_LIFECYCLE.md](UX_LIFECYCLE.md#4-traceability-matrix-as-built) with `📝` status.
+4. Write/update Gherkin scenarios in tests before code changes.
+5. Run tests red, implement code, run tests green.
+6. Reconcile matrix status to `✅` and update this index status snapshot.

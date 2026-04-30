@@ -6,6 +6,9 @@ Detailed affordance specifications for each GUI panel/widget.  Each section
 documents the widget's purpose, all user-visible controls, and the callback
 wiring to session logic.
 
+Each section should follow the component cut-sheet standard in
+[04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md).
+
 ---
 
 ## PD-01: ChatPanel
@@ -412,6 +415,95 @@ Used in:
 
 - SidePanel Session tab: Working Memory section, Context section
 - SettingsTab: each configuration group
+
+### Placement Diagram (Context)
+
+```text
+MainWindow
+  └── SidePanel (PD-03)
+       └── Session tab
+            ├── CollapsibleSection("Working Memory")   [PD-09]
+            └── CollapsibleSection("Context")          [PD-09]
+
+MainWindow
+  └── SidePanel (PD-03)
+       └── Settings tab
+            └── SettingsTab (PD-07)
+                 └── CollapsibleSection(<settings group>) [PD-09]
+```
+
+### Internal Structure Diagram (Labeled Sub-Components)
+
+```text
+CollapsibleSection
+  ├── frame
+  │    ├── header
+  │    │    ├── toggle_button
+  │    │    └── title_label
+  │    └── content_container
+  │         └── _content_widget (optional, replaced by set_content)
+```
+
+### Behaviour Inventory
+
+| Affordance ID | Sub-component | Trigger | Expected behaviour | Edge cases |
+|---------------|---------------|---------|--------------------|------------|
+| PD-09-AF-001 | `content_container` | Constructor with `initial_collapsed=True` | Starts collapsed (container not packed) | Empty content is allowed |
+| PD-09-AF-002 | `content_container` | Constructor with `initial_collapsed=False` | Starts expanded (container packed) | No content set yet |
+| PD-09-AF-003 | `toggle_button` | User click / `toggle()` | Flips expanded state and icon (`▶/▼`), packs or forgets container | Repeated toggles remain stable |
+| PD-09-AF-004 | `_content_widget` | `set_content(widget)` | Replaces previous content widget, destroys old one | First assignment has no prior widget |
+
+### Gherkin Use-Cases (Complete)
+
+#### Scenario: Starts collapsed when requested `[PD-09-AF-001]`
+
+GIVEN a `CollapsibleSection` created with `initial_collapsed=True`
+WHEN the section is instantiated
+THEN `is_expanded()` is `False` and `content_container` has no pack manager.
+
+#### Scenario: Starts expanded when requested `[PD-09-AF-002]`
+
+GIVEN a `CollapsibleSection` created with `initial_collapsed=False`
+WHEN the section is instantiated
+THEN `is_expanded()` is `True` and `content_container` is packed.
+
+#### Scenario: Toggle changes visibility and state `[PD-09-AF-003]`
+
+GIVEN a collapsed `CollapsibleSection`
+WHEN `toggle()` is called
+THEN the section becomes expanded and `content_container` becomes packed.
+
+GIVEN the same section now expanded
+WHEN `toggle()` is called again
+THEN the section becomes collapsed and `content_container` is hidden.
+
+#### Scenario: set_content replaces previous widget `[PD-09-AF-004]`
+
+GIVEN a `CollapsibleSection` with an existing content widget
+WHEN `set_content()` is called with a new widget
+THEN the previous widget is destroyed and only the new widget remains.
+
+### Test Mapping
+
+| Affordance ID | Test file | Test class | Test function | Status |
+|---------------|-----------|------------|---------------|--------|
+| PD-09-AF-001 | `tests/test_collapsible_section.py` | Module-level pytest tests | `test_initial_collapsed_state_hides_content_container` | Passing |
+| PD-09-AF-002 | `tests/test_collapsible_section.py` | Module-level pytest tests | `test_initial_expanded_state_shows_content_container` | Passing |
+| PD-09-AF-003 | `tests/test_collapsible_section.py` | Module-level pytest tests | `test_toggle_flips_state_and_visibility` | Passing |
+| PD-09-AF-004 | `tests/test_collapsible_section.py` | Module-level pytest tests | `test_set_content_replaces_previous_widget` | Passing |
+
+### Code and Configuration References
+
+- Source implementation:
+  - `src/agentx/gui/collapsible_section.py:CollapsibleSection.__init__`
+  - `src/agentx/gui/collapsible_section.py:CollapsibleSection.toggle`
+  - `src/agentx/gui/collapsible_section.py:CollapsibleSection.set_content`
+- Configuration keys consumed:
+  - None directly (style args are passed from parent widgets)
+- Runtime lookups / external dependencies:
+  - None (pure Tkinter widget behavior)
+- Data/state dependencies:
+  - `expanded`, `_content_widget`, `content_container`, `toggle_button`
 
 ---
 
