@@ -40,14 +40,14 @@
 | PD-03 SidePanel — Working Memory | 0 | 1 | 4 | 0 |
 | PD-04 ModelSelector | 3 | 0 | 1 | 0 |
 | PD-05 PlanTreeWidget | 3 | 0 | 3 | 0 |
-| PD-06 ResynthesisDialog | 0 | 0 | 0 | 3 |
+| PD-06 ResynthesisDialog | 5 | 0 | 0 | 0 |
 | PD-07 SettingsTab | 0 | 1 | 2 | 0 |
 | PD-08 ContextRenderer | 4 | 0 | 0 | 0 |
 | PD-09 CollapsibleSection | 4 | 0 | 0 | 0 |
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 7 | 0 | 0 | 0 |
 
-**Totals**: 41 ✅ · 6 ⚠️ · 15 📝 · 3 ❌
+**Totals**: 46 ✅ · 6 ⚠️ · 15 📝 · 0 ❌
 
 ---
 
@@ -56,7 +56,6 @@
 > Ordered by risk (high-visibility affordances with no test coverage first).
 > When picking up work, take the **top unchecked item**.
 
-- [ ] **PD-06-AF-001..003** — ResynthesisDialog: entire panel has no spec or tests
 - [ ] **PD-02-AF-005..007** — Attachment chip: render, remove, clear-all
 - [ ] **PD-03-AF-007** — Message enabled checkbox wired to `message.enabled`
 - [ ] **PD-03-AF-011..014** — Working Memory callbacks (toggle, delete, promote, add)

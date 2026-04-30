@@ -249,9 +249,11 @@ implements it and the test that validates it.  Status legend:
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
-| Dialog renders with task name in title | PD-06-AF-001 | `ResynthesisDialog.__init__()` | — | — | ❌ |
-| Cancel closes dialog without action | PD-06-AF-002 | `ResynthesisDialog._on_cancel()` | — | — | ❌ |
-| Re-synthesise calls session method with hint | PD-06-AF-003 | `ResynthesisDialog._on_confirm()` | — | — | ❌ |
+| Dialog title includes task_id | PD-06-AF-001 | `ResynthesisDialog.__init__()` | `test_resynthesis_dialog.py` | Module-level pytest tests | ✅ |
+| Cancel closes dialog without calling on_confirm | PD-06-AF-002 | `ResynthesisDialog._win.destroy` | `test_resynthesis_dialog.py` | Module-level pytest tests | ✅ |
+| Re-synthesise calls on_confirm with hint text | PD-06-AF-003 | `ResynthesisDialog._on_confirm_clicked()` | `test_resynthesis_dialog.py` | Module-level pytest tests | ✅ |
+| WM hint section hidden/visible based on callback | PD-06-AF-004 | `ResynthesisDialog.__init__()` | `test_resynthesis_dialog.py` | Module-level pytest tests | ✅ |
+| Add WM hint calls callback and clears fields | PD-06-AF-005 | `ResynthesisDialog._on_add_wm_hint_clicked()` | `test_resynthesis_dialog.py` | Module-level pytest tests | ✅ |
 
 ### PD-07 — SettingsTab
 
@@ -509,7 +511,6 @@ tests.
 
 | Affordance ID | Description |
 |---------------|-------------|
-| PD-06-AF-001–003 | ResynthesisDialog — all affordances |
 | PD-05-AF-004–006 | PlanTreeWidget Re-synth, Export, node status icons |
 
 ---

@@ -241,27 +241,136 @@ Contains two `CollapsibleSection` widgets:
 ## PD-06: ResynthesisDialog
 
 **Class**: `ResynthesisDialog` (`src/agentx/gui/resynthesis_dialog.py`)  
-**Type**: Modal dialog (blocks parent window)  
-**Purpose**: Re-run synthesis for a specific task node, optionally with a WM hint.
+**Type**: Modal `tk.Toplevel` (blocks parent with `grab_set()`)  
+**Purpose**: Re-run synthesis for a specific task node, optionally injecting a free-text hint and/or a new Working-Memory fact before confirming.
+
+### Placement Diagram
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Re-synthesise: Step 1                           │
-│                                                  │
-│  Optional working-memory hint:                   │
-│  ┌────────────────────────────────────────────┐  │
-│  │  focus on error handling patterns          │  │
-│  └────────────────────────────────────────────┘  │
-│                                                  │
-│            [Cancel]  [Re-synthesise]              │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────── AgentX main window ────────────────────────────┐
+│                                                                            │
+│   [ChatPanel]               [SidePanel]                                   │
+│                                                                            │
+│        ┌──────────── ResynthesisDialog (modal Toplevel) ──────────────┐   │
+│        │  Re-synthesise — <task_id>              640 × 520 px          │   │
+│        └──────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-| Control | Action |
-|---------|--------|
-| Hint text field | Optional free-text hint injected into re-synthesis prompt |
-| `[Re-synthesise]` | Calls `session.retrigger_synthesis_streaming(task_id, hint)` |
-| `[Cancel]` | Dismisses dialog, no action |
+The dialog is transient to its parent widget and centered on screen.
+
+### Internal Structure Diagram
+
+```
+ResynthesisDialog._win  (tk.Toplevel, bg #1e1e1e, 640×520)
+├── title_label         "Current synthesis:"  (tk.Label)
+├── synth_frame         (tk.Frame)
+│     ├── _synth_text   (tk.Text, read-only, 6 rows, scrollable)
+│     └── synth_scroll  (tk.Scrollbar)
+│
+├── [assertions_label]  "Assertion failures:"  (tk.Label — only when failures > 0)
+├── [fail_frame]        (tk.Frame, bg #2a1a1a — only when failures > 0)
+│     └── ...labels per assertion
+│
+├── hint_label          "Hint for re-synthesis (optional):"  (tk.Label)
+├── _hint_text          (tk.Text, 4 rows, writable)
+│
+├── [wm_frame]          (tk.Frame — only when on_add_wm_hint provided)
+│     ├── wm_label      "Add working-memory fact:"  (tk.Label)
+│     ├── fields_frame  (tk.Frame)
+│     │     ├── key_label + _wm_key_var Entry
+│     │     └── val_label + _wm_val_var Entry
+│     └── add_wm_btn    [Add WM hint]  (tk.Button)
+│
+└── btn_frame           (tk.Frame)
+      ├── confirm_btn   [Re-synthesise]  (tk.Button, bg #166534)
+      └── cancel_btn    [Cancel]  (tk.Button, bg #3a3a3a)
+```
+
+### Behaviour Inventory
+
+| ID | Control / Trigger | Behaviour | Notes |
+|----|-------------------|-----------|-------|
+| PD-06-AF-001 | Window title | Title reads `"Re-synthesise — <task_id>"` | Set in `__init__` via `self._win.title(...)` |
+| PD-06-AF-002 | `[Cancel]` button | Destroys `_win`; `on_confirm` is **not** called | `command=self._win.destroy` |
+| PD-06-AF-003 | `[Re-synthesise]` button | Destroys `_win`, then calls `on_confirm(hint.strip())` | Hint may be empty string |
+| PD-06-AF-004 | WM hint section | Hidden when `on_add_wm_hint=None`; visible when provided | Entire `wm_frame` only packed if callback supplied |
+| PD-06-AF-005 | `[Add WM hint]` button | Calls `on_add_wm_hint(key, value)`, clears fields; shows warning if key or value blank | Dialog remains open after WM hint added |
+
+### Gherkin Use-Cases
+
+```gherkin
+# PD-06-AF-001
+Scenario: Dialog title includes task ID
+  Given ResynthesisDialog is constructed with task_id="step-42"
+  When the dialog window is displayed
+  Then the window title is "Re-synthesise — step-42"
+
+# PD-06-AF-002
+Scenario: Cancel closes dialog without calling on_confirm
+  Given a ResynthesisDialog with a mock on_confirm callback
+  When the Cancel button is invoked
+  Then the dialog window is destroyed
+  And on_confirm is not called
+
+# PD-06-AF-003
+Scenario: Re-synthesise calls on_confirm with hint text
+  Given a ResynthesisDialog with a mock on_confirm callback
+  And the hint field contains "focus on error handling"
+  When the Re-synthesise button is invoked
+  Then the dialog window is destroyed
+  And on_confirm is called once with "focus on error handling"
+
+# PD-06-AF-003 (empty hint)
+Scenario: Re-synthesise with empty hint passes empty string
+  Given a ResynthesisDialog with a mock on_confirm callback
+  And the hint field is empty
+  When the Re-synthesise button is invoked
+  Then on_confirm is called once with ""
+
+# PD-06-AF-004
+Scenario: WM hint section hidden when on_add_wm_hint not provided
+  Given ResynthesisDialog constructed without on_add_wm_hint
+  When the dialog is displayed
+  Then no "Add WM hint" button is visible in the dialog
+
+# PD-06-AF-004 (variant)
+Scenario: WM hint section visible when on_add_wm_hint provided
+  Given ResynthesisDialog constructed with a mock on_add_wm_hint callback
+  When the dialog is displayed
+  Then the "Add WM hint" button is visible in the dialog
+
+# PD-06-AF-005
+Scenario: Add WM hint calls callback and clears fields
+  Given ResynthesisDialog with on_add_wm_hint provided
+  And key field contains "style" and value field contains "concise"
+  When the Add WM hint button is invoked
+  Then on_add_wm_hint is called with ("style", "concise")
+  And the key and value fields are cleared
+  And the dialog remains open (on_confirm not called)
+```
+
+### Test Mapping
+
+| Affordance ID | Test File | Test Function |
+|---------------|-----------|---------------|
+| PD-06-AF-001 | `test_resynthesis_dialog.py` | `test_title_includes_task_id` |
+| PD-06-AF-002 | `test_resynthesis_dialog.py` | `test_cancel_destroys_dialog_without_confirm` |
+| PD-06-AF-003 | `test_resynthesis_dialog.py` | `test_confirm_calls_on_confirm_with_hint` |
+| PD-06-AF-003 | `test_resynthesis_dialog.py` | `test_confirm_with_empty_hint_passes_empty_string` |
+| PD-06-AF-004 | `test_resynthesis_dialog.py` | `test_wm_section_hidden_without_callback` |
+| PD-06-AF-004 | `test_resynthesis_dialog.py` | `test_wm_section_visible_with_callback` |
+| PD-06-AF-005 | `test_resynthesis_dialog.py` | `test_add_wm_hint_calls_callback_and_clears_fields` |
+
+### Code and Configuration References
+
+| Symbol | Location |
+|--------|----------|
+| `ResynthesisDialog.__init__` | `src/agentx/gui/resynthesis_dialog.py:18` |
+| `ResynthesisDialog._on_confirm_clicked` | `src/agentx/gui/resynthesis_dialog.py:193` |
+| `ResynthesisDialog._on_add_wm_hint_clicked` | `src/agentx/gui/resynthesis_dialog.py:198` |
+| `ResynthesisDialog.wait` | `src/agentx/gui/resynthesis_dialog.py:209` |
+| Caller (Re-synth button) | `src/agentx/gui/plan_tree_widget.py:342` |
 
 ---
 

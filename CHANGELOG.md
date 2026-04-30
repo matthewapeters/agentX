@@ -7,20 +7,49 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.20.2.post4] - 2026-04-29
+
+### Code Changes
+
+#### Added
+- `tests/test_resynthesis_dialog.py`: 7 unit tests covering all 5 PD-06 affordances (title, cancel, confirm with/without hint, WM section visibility, Add WM hint callback).
+
+#### Changed
+- `docs/ux/03_PANEL_DETAILS.md`: PD-06 (ResynthesisDialog) fully backfilled to cut-sheet standard — placement diagram, internal structure diagram, behaviour inventory (5 affordances: AF-001..005), Gherkin use-cases, test mapping, code references.
+- `docs/ux/UX_LIFECYCLE.md`: PD-06 matrix expanded from 3 rows (❌) to 5 rows (✅); PD-06-AF-004..005 added for WM hint section and callback; removed from §7 Known Coverage Gaps.
+- `docs/ux/00_INDEX.md`: PD-06 status row updated (5✅/0❌), totals updated (46✅/0❌), PD-06 removed from Priority Work Queue.
+
+### Test Changes
+
+#### Added
+- `tests/test_resynthesis_dialog.py` — 7 `@pytest.mark.unit` tests for ResynthesisDialog:
+  - GIVEN `task_id="step-42"` WHEN dialog created THEN title is `"Re-synthesise — step-42"`. (`test_title_includes_task_id` — PD-06-AF-001)
+  - GIVEN mock `on_confirm` WHEN Cancel invoked THEN `on_confirm` not called AND window destroyed. (`test_cancel_destroys_dialog_without_confirm` — PD-06-AF-002)
+  - GIVEN hint text `"focus on error handling"` WHEN Re-synthesise invoked THEN `on_confirm("focus on error handling")` called AND window destroyed. (`test_confirm_calls_on_confirm_with_hint` — PD-06-AF-003)
+  - GIVEN empty hint WHEN Re-synthesise invoked THEN `on_confirm("")` called. (`test_confirm_with_empty_hint_passes_empty_string` — PD-06-AF-003)
+  - GIVEN `on_add_wm_hint=None` WHEN dialog created THEN no "Add WM hint" button present. (`test_wm_section_hidden_without_callback` — PD-06-AF-004)
+  - GIVEN `on_add_wm_hint` provided WHEN dialog created THEN "Add WM hint" button is present. (`test_wm_section_visible_with_callback` — PD-06-AF-004)
+  - GIVEN key="style" value="concise" WHEN Add WM hint invoked THEN callback called, fields cleared, dialog open. (`test_add_wm_hint_calls_callback_and_clears_fields` — PD-06-AF-005)
+
+---
+
 ## [0.20.2.post3] - 2026-04-29
 
 ### Code Changes
 
 #### Added
+
 - `tests/test_chat_panel_collapse_defaults.py`: 3 unit tests locking down PD-01-AF-005..007 (thinking collapsed, tool call collapsed, assistant response expanded on initial render).
 
 #### Changed
+
 - `docs/ux/UX_LIFECYCLE.md`: PD-01-AF-005..007 matrix rows updated 📝 → ✅ with test file and test function references; rows removed from §7 Known Coverage Gaps.
 - `docs/ux/00_INDEX.md`: PD-01 status row updated (7✅/1⚠️/0📝), totals updated (41✅/15📝), PD-01-AF-005..007 removed from Priority Work Queue.
 
 ### Test Changes
 
 #### Added
+
 - `tests/test_chat_panel_collapse_defaults.py` — 3 `@pytest.mark.unit` tests for ChatPanel entry collapse defaults.
   - GIVEN a turn started WHEN `display_agent_thinking()` called THEN thinking entry has `expanded=False` and `detail_text` not visible. (`test_thinking_entry_collapsed_by_default` — PD-01-AF-005)
   - GIVEN a turn started WHEN a `[🔧 Calling tool` line received via `display_agent_response()` THEN tool_call entry has `expanded=False` and `detail_text` not visible. (`test_tool_call_entry_collapsed_by_default` — PD-01-AF-006)
