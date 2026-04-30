@@ -34,7 +34,7 @@
 
 | Panel | Fully Tested ✅ | Partial ⚠️ | Spec Only 📝 | Gap ❌ |
 |-------|:--------------:|:----------:|:------------:|:------:|
-| PD-01 ChatPanel | 4 | 1 | 3 | 0 |
+| PD-01 ChatPanel | 7 | 1 | 0 | 0 |
 | PD-02 InputPanel | 0 | 3 | 4 | 0 |
 | PD-03 SidePanel — Context | 6 | 0 | 1 | 0 |
 | PD-03 SidePanel — Working Memory | 0 | 1 | 4 | 0 |
@@ -47,7 +47,7 @@
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 7 | 0 | 0 | 0 |
 
-**Totals**: 38 ✅ · 6 ⚠️ · 18 📝 · 3 ❌
+**Totals**: 41 ✅ · 6 ⚠️ · 15 📝 · 3 ❌
 
 ---
 
@@ -56,9 +56,6 @@
 > Ordered by risk (high-visibility affordances with no test coverage first).
 > When picking up work, take the **top unchecked item**.
 
-- [ ] **PD-01-AF-005** — Thinking block default-collapsed state
-- [ ] **PD-01-AF-006** — Tool call default-collapsed state
-- [ ] **PD-01-AF-007** — Assistant response default-expanded state
 - [ ] **PD-06-AF-001..003** — ResynthesisDialog: entire panel has no spec or tests
 - [ ] **PD-02-AF-005..007** — Attachment chip: render, remove, clear-all
 - [ ] **PD-03-AF-007** — Message enabled checkbox wired to `message.enabled`

@@ -186,9 +186,9 @@ implements it and the test that validates it.  Status legend:
 | Collapse user entry hides children frame | PD-01-AF-002 | `ChatPanel._toggle_turn_children()` | `test_chat_panel_turn_rendering.py` | `TestConversationTurnRenderingOrder` | ✅ |
 | Expand re-packs children frame below user entry | PD-01-AF-003 | `ChatPanel._toggle_turn_children()` | `test_chat_panel_turn_rendering.py` | `TestConversationTurnRenderingOrder` | ✅ |
 | Multiple turns maintain independent order | PD-01-AF-004 | `ChatPanel` | `test_chat_panel_turn_rendering.py` | `TestMultipleTurnsRenderingOrder` | ✅ |
-| Thinking block collapsed by default | PD-01-AF-005 | `ChatPanel.display_agent_thinking()` | — | — | 📝 |
-| Tool call collapsed by default | PD-01-AF-006 | `ChatPanel._display_tool_call()` | — | — | 📝 |
-| Assistant response expanded by default | PD-01-AF-007 | `ChatPanel.display_agent_response()` | — | — | 📝 |
+| Thinking block collapsed by default | PD-01-AF-005 | `ChatPanel.display_agent_thinking()` | `test_chat_panel_collapse_defaults.py` | `test_thinking_entry_collapsed_by_default` | ✅ |
+| Tool call collapsed by default | PD-01-AF-006 | `ChatPanel._display_tool_call()` | `test_chat_panel_collapse_defaults.py` | `test_tool_call_entry_collapsed_by_default` | ✅ |
+| Assistant response expanded by default | PD-01-AF-007 | `ChatPanel.display_agent_response()` | `test_chat_panel_collapse_defaults.py` | `test_assistant_response_entry_expanded_by_default` | ✅ |
 | Markdown rendered after DONE chunk | PD-01-AF-008 | `ChatPanel.finalize_current_turn_markdown()` | `test_markdown_rendering.py` | — | ⚠️ |
 
 ### PD-02 — InputPanel
@@ -494,9 +494,6 @@ tests.
 
 | Affordance ID | Description | Risk |
 |---------------|-------------|------|
-| PD-01-AF-005 | Thinking block collapsed by default on render | High — collapse state is fragile |
-| PD-01-AF-006 | Tool call collapsed by default on render | High — same mechanism |
-| PD-01-AF-007 | Assistant response expanded by default | High — inverted default |
 | PD-02-AF-005–007 | Attachment chip render, remove, clear-all | Medium — file workflow |
 
 ### Medium Priority (settings / configuration)

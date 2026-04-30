@@ -7,14 +7,37 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.20.2.post3] - 2026-04-29
+
+### Code Changes
+
+#### Added
+- `tests/test_chat_panel_collapse_defaults.py`: 3 unit tests locking down PD-01-AF-005..007 (thinking collapsed, tool call collapsed, assistant response expanded on initial render).
+
+#### Changed
+- `docs/ux/UX_LIFECYCLE.md`: PD-01-AF-005..007 matrix rows updated 📝 → ✅ with test file and test function references; rows removed from §7 Known Coverage Gaps.
+- `docs/ux/00_INDEX.md`: PD-01 status row updated (7✅/1⚠️/0📝), totals updated (41✅/15📝), PD-01-AF-005..007 removed from Priority Work Queue.
+
+### Test Changes
+
+#### Added
+- `tests/test_chat_panel_collapse_defaults.py` — 3 `@pytest.mark.unit` tests for ChatPanel entry collapse defaults.
+  - GIVEN a turn started WHEN `display_agent_thinking()` called THEN thinking entry has `expanded=False` and `detail_text` not visible. (`test_thinking_entry_collapsed_by_default` — PD-01-AF-005)
+  - GIVEN a turn started WHEN a `[🔧 Calling tool` line received via `display_agent_response()` THEN tool_call entry has `expanded=False` and `detail_text` not visible. (`test_tool_call_entry_collapsed_by_default` — PD-01-AF-006)
+  - GIVEN a turn started WHEN `display_agent_response()` streams content THEN assistant entry has `expanded=True` and `detail_text` is visible. (`test_assistant_response_entry_expanded_by_default` — PD-01-AF-007)
+
+---
+
 ## [0.20.2.post2] - 2026-04-29
 
 ### Code Changes
 
 #### Added
+
 - `docs/ux/04_COMPONENT_CUT_SHEET_TEMPLATE.md`: reusable component cut-sheet standard with sections for placement diagram, internal structure diagram, behaviour inventory table, Gherkin use-cases, test mapping table, and code/configuration references.
 
 #### Changed
+
 - `docs/ux/03_PANEL_DETAILS.md`: PD-09 (CollapsibleSection) backfilled to full cut-sheet exemplar — placement diagram, internal structure diagram, behaviour inventory (4 affordances), Gherkin scenarios, test mapping, code references.
 - `docs/ux/UX_LIFECYCLE.md`: PD-09 traceability matrix rows all updated from 📝 → ✅ with concrete test file and test name references; PD-09-AF-001..004 removed from §7 Known Coverage Gaps.
 - `docs/ux/00_INDEX.md`: status snapshot updated (38✅ total), requirement intake 5-step process added, cut-sheet template linked, PD-09 removed from Priority Work Queue.
@@ -23,6 +46,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Test Changes
 
 #### Added
+
 - `tests/test_collapsible_section.py`: 4 hermetic unit tests locking down all PD-09 affordances.
   - GIVEN a CollapsibleSection with `initial_collapsed=True` WHEN created THEN `is_expanded()` is False and content_container has no geometry manager. (`test_initial_collapsed_state_hides_content_container` — PD-09-AF-001)
   - GIVEN a CollapsibleSection with `initial_collapsed=False` WHEN created THEN `is_expanded()` is True and content_container is managed by pack. (`test_initial_expanded_state_shows_content_container` — PD-09-AF-002)
