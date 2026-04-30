@@ -105,27 +105,128 @@ the user entry after re-packing, regardless of how many collapse/expand cycles o
 **Position**: rely=0.77 to rely=1.0 (bottom 23% of window)  
 **Purpose**: Captures user text input and file attachments.
 
-### Widgets
+### Placement Diagram
 
-| Widget | rely / relheight | Description |
-|--------|-----------------|-------------|
-| Attachment bar | 0.77 / 0.03 | Chip list of current + history attachments |
-| Text input | 0.80 / 0.18 | Multi-line `tk.Text` for user message |
-| Send button | right side | Triggers `on_submit()` |
-| Stop button | right side | Triggers `on_interrupt()` |
+```
+┌──────────────────────────── AgentX main window ─────────────────────────────┐
+│                                                                              │
+│  [ChatPanel rely=0.00–0.77]          [SidePanel rely=0.00–0.77]             │
+│                                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Attachment bar (rely=0.77, relheight=0.03)                                  │
+│  ┌─────────────────────────────────────────────────────────────────────────┐ │
+│  │ [📁 file1.py ✓]  [📜 old.py (history) ✓]                              │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  User input area (rely=0.80, relheight=0.20)                                 │
+│  ┌──────────────────────────────────────────────────┬────┬────┬──────────┐  │
+│  │ tk.Text (relwidth=0.90)                          │[⏎] │[❌]│ context  │  │
+│  │ (multi-line input, wraps at word boundaries)     │    │    │  meter   │  │
+│  │                                           ▲ scrollbar │    │ (donut)  │  │
+│  └──────────────────────────────────────────────────┴────┴────┴──────────┘  │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
 
-### Attachment Bar
+### Internal Structure — Attachment Bar
 
-- **Current attachments**: bright chip `📎 filename [×]` — click `[×]` to remove.
-- **History attachments**: greyed chip (already in context, informational only).
-- **Clear all**: `[✕]` button to remove all current-turn attachments.
+Each call to `InputPanel.update_attachment_bar(current, history)` destroys all
+existing chip widgets, then creates one chip per attachment in order:
+current-turn chips first, then history chips.
+
+```
+attachments_frame (tk.Frame, parent=root)
+  ├── att_frame (tk.Frame, bg=attachment_bg)          ← one per current-turn att
+  │     └── tk.Checkbutton(text="📁 {display_name}", variable=BooleanVar(enabled))
+  └── att_frame (tk.Frame, bg=history_attachment_bg)  ← one per history att
+        └── tk.Checkbutton(text="📜 {display_name} (history)", variable=BooleanVar(enabled))
+```
+
+### Behaviour Inventory
+
+| ID | Affordance | Widget | Trigger | Outcome |
+|----|-----------|--------|---------|---------|
+| PD-02-AF-001 | Enter key submits | `user_input_text` | `<Control-Return>` binding | Invokes `user_submit` button |
+| PD-02-AF-002 | Shift+Enter inserts newline | `user_input_text` | `<Shift-Return>` binding | Inserts `\n` into text widget |
+| PD-02-AF-003 | Send disabled during streaming | `user_submit` | `set_streaming_state(True)` | `state=DISABLED` |
+| PD-02-AF-004 | Stop enabled during streaming | `user_break` | `set_streaming_state(True)` | `state=NORMAL` |
+| PD-02-AF-005 | Chip renders with filename | `att_frame` + `Checkbutton` | `update_attachment_bar([info], [])` | Frame packed; Checkbutton text contains `display_name`; current-turn: `📁` icon, bright bg; history: `📜` icon + `" (history)"` suffix, grey bg |
+| PD-02-AF-006 | Toggle chip calls callback | `Checkbutton` (inside chip) | User clicks checkbox | `on_attachment_toggle(attachment_id, bool)` called with new enabled state |
+| PD-02-AF-007 | Rebuild clears old chips | `attachments_frame` children | `update_attachment_bar([], [])` | All previous chip frames destroyed; `attachment_labels` empty |
+
+### Gherkin Use-Cases
+
+```gherkin
+# PD-02-AF-005 — chip render (current-turn)
+GIVEN an AttachmentInfo with display_name="parser.py" and is_from_history=False
+WHEN  update_attachment_bar([info], []) is called
+THEN  attachment_labels has 1 entry
+  AND the Checkbutton text contains "parser.py"
+  AND the Checkbutton text starts with the 📁 icon
+
+# PD-02-AF-005 — chip render (history)
+GIVEN an AttachmentInfo with display_name="old.txt" and is_from_history=True
+WHEN  update_attachment_bar([], [info]) is called
+THEN  attachment_labels has 1 entry
+  AND the Checkbutton text contains "old.txt"
+  AND the Checkbutton text contains "(history)"
+
+# PD-02-AF-005 — multiple chips
+GIVEN two AttachmentInfos with display_names "a.py" and "b.py"
+WHEN  update_attachment_bar([info_a, info_b], []) is called
+THEN  attachment_labels has 2 entries
+
+# PD-02-AF-006 — toggle off
+GIVEN a chip rendered with enabled=True and attachment_id="att-x"
+WHEN  the Checkbutton is invoked (checked → unchecked)
+THEN  on_attachment_toggle("att-x", False) is called exactly once
+
+# PD-02-AF-006 — toggle on
+GIVEN a chip rendered with enabled=False and attachment_id="att-y"
+WHEN  the Checkbutton is invoked (unchecked → checked)
+THEN  on_attachment_toggle("att-y", True) is called exactly once
+
+# PD-02-AF-007 — rebuild empties bar
+GIVEN one chip already rendered
+WHEN  update_attachment_bar([], []) is called
+THEN  attachment_labels is empty
+
+# PD-02-AF-007 — rebuild replaces chips
+GIVEN a chip for "old.py" already rendered
+WHEN  update_attachment_bar([new_info("new.py")], []) is called
+THEN  attachment_labels has 1 entry
+  AND the Checkbutton text contains "new.py"
+```
+
+### Test Mapping
+
+| Affordance | Test file | Test name |
+|-----------|-----------|-----------|
+| PD-02-AF-005 | `test_input_panel_attachment_chips.py` | `test_current_attachment_chip_shows_filename` |
+| PD-02-AF-005 | `test_input_panel_attachment_chips.py` | `test_history_attachment_chip_shows_filename_and_history_suffix` |
+| PD-02-AF-005 | `test_input_panel_attachment_chips.py` | `test_multiple_chips_rendered_in_order` |
+| PD-02-AF-006 | `test_input_panel_attachment_chips.py` | `test_uncheck_calls_on_attachment_toggle_false` |
+| PD-02-AF-006 | `test_input_panel_attachment_chips.py` | `test_check_after_uncheck_calls_toggle_true` |
+| PD-02-AF-007 | `test_input_panel_attachment_chips.py` | `test_empty_update_clears_all_chips` |
+| PD-02-AF-007 | `test_input_panel_attachment_chips.py` | `test_rebuild_replaces_existing_chips` |
+
+### Code / Configuration References
+
+| Concept | Location |
+|---------|---------|
+| `InputPanel` class | `src/agentx/gui/input_panel.py` |
+| `update_attachment_bar()` | `src/agentx/gui/input_panel.py` L171 |
+| `_create_attachment_widget()` | `src/agentx/gui/input_panel.py` L211 |
+| `AttachmentInfo` DTO | `src/agentx/attachment_info.py` |
+| `WidgetRegistry.clear_attachments()` | `src/agentx/widget_registry.py` |
+| `on_attachment_toggle` callback | `src/agentx/session.py` — `_handle_attachment_toggle()` |
+| Chip colours | `GUIConfig.attachment_bg`, `GUIConfig.history_attachment_bg`, `GUIConfig.attachment_fg` |
 
 ### Keyboard Shortcuts
 
 | Key | Behaviour |
 |-----|-----------|
-| `Enter` | Send message (same as Send button) |
-| `Shift+Enter` | Insert newline in text area |
+| `Ctrl+Enter` | Send message (same as Send button) |
+| `Ctrl+Space` | Interrupt / stop streaming |
 
 ### Button State
 

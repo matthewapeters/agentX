@@ -7,14 +7,47 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.20.2.post5] - 2026-04-30
+
+### Code Changes
+
+#### Added
+
+- `tests/test_input_panel_attachment_chips.py`: 9 unit tests covering PD-02-AF-005..007 (chip render with filename/icon, toggle callback, rebuild clears chips).
+
+#### Changed
+
+- `docs/ux/03_PANEL_DETAILS.md`: PD-02 (InputPanel) fully backfilled to cut-sheet standard — placement diagram, internal structure, behaviour inventory (7 affordances AF-001..007), Gherkin use-cases, test mapping table, code references. Corrected inaccurate chip description (was `[×]` remove button, now reflects actual toggle-checkbutton implementation).
+- `docs/ux/UX_LIFECYCLE.md`: PD-02-AF-005..007 rows updated from 3 📝 (referencing non-existent methods) to 3 ✅ (referencing actual `_create_attachment_widget` / `update_attachment_bar`); High Priority gaps section cleared.
+- `docs/ux/00_INDEX.md`: PD-02 row updated (3✅/3⚠️/1📝/0❌), totals updated (49✅/0❌), PD-02-AF-005..007 marked complete in Priority Work Queue.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_input_panel_attachment_chips.py` — 9 `@pytest.mark.unit` tests:
+  - GIVEN `display_name="parser.py"` and `is_from_history=False` WHEN `update_attachment_bar([info], [])` THEN chip label contains `"parser.py"`. (`test_current_attachment_chip_shows_filename` — PD-02-AF-005)
+  - GIVEN current-turn chip WHEN rendered THEN Checkbutton text starts with `"\ud83d\udcc1"`. (`test_current_attachment_chip_uses_folder_icon` — PD-02-AF-005)
+  - GIVEN `is_from_history=True` WHEN rendered THEN text contains `"old_file.txt"` and `"history"`. (`test_history_attachment_chip_shows_filename_and_history_suffix` — PD-02-AF-005)
+  - GIVEN history chip WHEN rendered THEN text starts with `"\ud83d\udcdc"`. (`test_history_attachment_chip_uses_scroll_icon` — PD-02-AF-005)
+  - GIVEN two infos WHEN `update_attachment_bar([a, b], [])` THEN two chip frames. (`test_multiple_chips_rendered_in_order` — PD-02-AF-005)
+  - GIVEN `enabled=True`, `attachment_id="att-x"` WHEN checkbox invoked THEN `on_toggle("att-x", False)`. (`test_uncheck_calls_on_attachment_toggle_false` — PD-02-AF-006)
+  - GIVEN `enabled=False`, `attachment_id="att-y"` WHEN checkbox invoked THEN `on_toggle("att-y", True)`. (`test_check_after_uncheck_calls_toggle_true` — PD-02-AF-006)
+  - GIVEN 1 chip rendered WHEN `update_attachment_bar([], [])` THEN `attachment_labels` empty. (`test_empty_update_clears_all_chips` — PD-02-AF-007)
+  - GIVEN `"old.py"` chip WHEN rebuilt with `"new.py"` THEN only `"new.py"` chip present. (`test_rebuild_replaces_existing_chips` — PD-02-AF-007)
+
+---
+
 ## [0.20.2.post4] - 2026-04-29
 
 ### Code Changes
 
 #### Added
+
 - `tests/test_resynthesis_dialog.py`: 7 unit tests covering all 5 PD-06 affordances (title, cancel, confirm with/without hint, WM section visibility, Add WM hint callback).
 
 #### Changed
+
 - `docs/ux/03_PANEL_DETAILS.md`: PD-06 (ResynthesisDialog) fully backfilled to cut-sheet standard — placement diagram, internal structure diagram, behaviour inventory (5 affordances: AF-001..005), Gherkin use-cases, test mapping, code references.
 - `docs/ux/UX_LIFECYCLE.md`: PD-06 matrix expanded from 3 rows (❌) to 5 rows (✅); PD-06-AF-004..005 added for WM hint section and callback; removed from §7 Known Coverage Gaps.
 - `docs/ux/00_INDEX.md`: PD-06 status row updated (5✅/0❌), totals updated (46✅/0❌), PD-06 removed from Priority Work Queue.
@@ -22,6 +55,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Test Changes
 
 #### Added
+
 - `tests/test_resynthesis_dialog.py` — 7 `@pytest.mark.unit` tests for ResynthesisDialog:
   - GIVEN `task_id="step-42"` WHEN dialog created THEN title is `"Re-synthesise — step-42"`. (`test_title_includes_task_id` — PD-06-AF-001)
   - GIVEN mock `on_confirm` WHEN Cancel invoked THEN `on_confirm` not called AND window destroyed. (`test_cancel_destroys_dialog_without_confirm` — PD-06-AF-002)

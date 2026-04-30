@@ -199,9 +199,9 @@ implements it and the test that validates it.  Status legend:
 | Shift+Enter inserts newline | PD-02-AF-002 | `InputPanel._bind_keys()` | — | — | 📝 |
 | Send disabled during streaming | PD-02-AF-003 | `InputPanel.set_streaming_state()` | `test_gui_manager_integration.py` | `TestGUIManagerInputMethods` | ⚠️ |
 | Stop enabled during streaming | PD-02-AF-004 | `InputPanel.set_streaming_state()` | `test_gui_manager_integration.py` | `TestGUIManagerInputMethods` | ⚠️ |
-| Attachment chip rendered with filename | PD-02-AF-005 | `InputPanel.add_attachment_chip()` | — | — | 📝 |
-| Remove chip clears attachment | PD-02-AF-006 | `InputPanel._remove_chip()` | — | — | 📝 |
-| Clear-all removes all chips | PD-02-AF-007 | `InputPanel.clear_attachments()` | — | — | 📝 |
+| Attachment chip rendered with filename and icon | PD-02-AF-005 | `InputPanel._create_attachment_widget()` | `test_input_panel_attachment_chips.py` | `TestAttachmentChipRender` | ✅ |
+| Toggle chip calls on_attachment_toggle callback | PD-02-AF-006 | `InputPanel._create_attachment_widget()` | `test_input_panel_attachment_chips.py` | `TestAttachmentChipToggle` | ✅ |
+| Rebuild with empty lists clears all chips | PD-02-AF-007 | `InputPanel.update_attachment_bar()` | `test_input_panel_attachment_chips.py` | `TestAttachmentBarClear` | ✅ |
 
 ### PD-03 — SidePanel / Session Tab — Context Section
 
@@ -494,9 +494,7 @@ tests.
 
 ### High Priority (visible to users, behaviour is non-trivial)
 
-| Affordance ID | Description | Risk |
-|---------------|-------------|------|
-| PD-02-AF-005–007 | Attachment chip render, remove, clear-all | Medium — file workflow |
+*(No outstanding high-priority gaps.)*
 
 ### Medium Priority (settings / configuration)
 
