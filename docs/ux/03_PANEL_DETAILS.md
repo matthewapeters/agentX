@@ -326,6 +326,226 @@ THEN  message.enabled is True
 | PD-03-AF-007 | `test_context_renderer_message_enabled.py` | `test_uncheck_sets_message_enabled_false` |
 | PD-03-AF-007 | `test_context_renderer_message_enabled.py` | `test_check_sets_message_enabled_true` |
 
+#### PD-03-AF-011 — Working Memory Toggle Checkbox
+
+**ID**: `PD-03-AF-011`
+**Widget**: `tk.Checkbutton` in column 0 of each fact `row_frame`
+**Source**: `ContextRenderer._render_working_memory_row()`
+**Purpose**: Include or exclude an individual fact from the LLM context without deleting it.
+
+**Behaviour**:
+
+| Action | Outcome |
+|--------|---------|
+| Widget rendered | Checkbutton initial state reflects `fact.enabled` |
+| User checks | `on_toggle(compound_key, True)` fired |
+| User unchecks | `on_toggle(compound_key, False)` fired |
+| `on_toggle=None` | Invocation is silently ignored (no error) |
+
+**Gherkin Use-Cases**:
+
+```gherkin
+# PD-03-AF-011 — initial state enabled
+GIVEN a WorkingMemory with one fact (enabled=True)
+WHEN  render_working_memory_widget() is called
+THEN  the toggle Checkbutton variable is True
+
+# PD-03-AF-011 — initial state disabled
+GIVEN a WorkingMemory with one fact (enabled=False)
+WHEN  render_working_memory_widget() is called
+THEN  the toggle Checkbutton variable is False
+
+# PD-03-AF-011 — uncheck fires on_toggle False
+GIVEN a fact (enabled=True) and an on_toggle callback
+WHEN  the toggle Checkbutton is invoked (unchecking it)
+THEN  on_toggle is called with (compound_key, False)
+
+# PD-03-AF-011 — check fires on_toggle True
+GIVEN a fact (enabled=False) and an on_toggle callback
+WHEN  the toggle Checkbutton is invoked (checking it)
+THEN  on_toggle is called with (compound_key, True)
+
+# PD-03-AF-011 — no callback does not raise
+GIVEN a fact and on_toggle=None
+WHEN  the toggle Checkbutton is invoked
+THEN  no exception is raised
+```
+
+**Test Mapping**:
+
+| Affordance | Test file | Test name |
+|-----------|-----------|-----------|
+| PD-03-AF-011 | `test_working_memory_widget_callbacks.py` | `test_toggle_initial_checked_state_matches_fact_enabled` |
+| PD-03-AF-011 | `test_working_memory_widget_callbacks.py` | `test_toggle_initial_unchecked_state_matches_fact_disabled` |
+| PD-03-AF-011 | `test_working_memory_widget_callbacks.py` | `test_toggle_calls_on_toggle_with_false` |
+| PD-03-AF-011 | `test_working_memory_widget_callbacks.py` | `test_toggle_calls_on_toggle_with_true` |
+| PD-03-AF-011 | `test_working_memory_widget_callbacks.py` | `test_toggle_no_callback_does_not_raise` |
+
+---
+
+#### PD-03-AF-012 — Working Memory Delete Button
+
+**ID**: `PD-03-AF-012`
+**Widget**: `tk.Button(text="✕")` in column 3 of the `row_frame` — AGENT-owned facts only
+**Source**: `ContextRenderer._render_working_memory_row()`
+**Purpose**: Permanently delete an agent-owned fact after user confirmation.
+
+**Behaviour**:
+
+| Action | Outcome |
+|--------|---------|
+| ✕ clicked, dialog confirmed | `on_delete(compound_key)` fired |
+| ✕ clicked, dialog cancelled | `on_delete` NOT called |
+| USER-owned fact | No ✕ button rendered |
+| `on_delete=None` and confirmed | Silently ignored (no error) |
+
+**Gherkin Use-Cases**:
+
+```gherkin
+# PD-03-AF-012 — delete confirmed
+GIVEN a WorkingMemory with one AGENT fact and an on_delete callback
+WHEN  the ✕ button is clicked and the confirmation dialog returns True
+THEN  on_delete is called with the fact's compound_key
+
+# PD-03-AF-012 — delete cancelled
+GIVEN a WorkingMemory with one AGENT fact and an on_delete callback
+WHEN  the ✕ button is clicked and the dialog returns False
+THEN  on_delete is NOT called
+
+# PD-03-AF-012 — absent for USER fact
+GIVEN a WorkingMemory with one USER fact
+WHEN  render_working_memory_widget() is called
+THEN  no ✕ button is present in the row
+
+# PD-03-AF-012 — no callback does not raise
+GIVEN a AGENT fact and on_delete=None
+WHEN  the ✕ button is clicked and confirmed
+THEN  no exception is raised
+```
+
+**Test Mapping**:
+
+| Affordance | Test file | Test name |
+|-----------|-----------|-----------|
+| PD-03-AF-012 | `test_working_memory_widget_callbacks.py` | `test_delete_button_calls_on_delete_when_confirmed` |
+| PD-03-AF-012 | `test_working_memory_widget_callbacks.py` | `test_delete_button_not_called_when_cancelled` |
+| PD-03-AF-012 | `test_working_memory_widget_callbacks.py` | `test_delete_button_absent_for_user_fact` |
+| PD-03-AF-012 | `test_working_memory_widget_callbacks.py` | `test_delete_no_callback_does_not_raise` |
+
+---
+
+#### PD-03-AF-013 — Working Memory Promote Button
+
+**ID**: `PD-03-AF-013`
+**Widget**: `tk.Button(text=fact.owner_icon)` in column 1 of the `row_frame` — AGENT-owned facts only
+**Source**: `ContextRenderer._render_working_memory_row()`, `ContextRenderer._confirm_promote()`
+**Purpose**: Transfer ownership of an agent-written fact to the user, preventing the agent from overwriting it.
+
+**Behaviour**:
+
+| Action | Outcome |
+|--------|---------|
+| Owner icon clicked (🤖), dialog confirmed | `on_promote(compound_key)` fired |
+| Owner icon clicked, dialog cancelled | `on_promote` NOT called |
+| USER-owned fact | Owner icon is a static `tk.Label` (not clickable) |
+| `on_promote=None` and confirmed | Silently ignored (no error) |
+
+**Gherkin Use-Cases**:
+
+```gherkin
+# PD-03-AF-013 — promote confirmed
+GIVEN a WorkingMemory with one AGENT fact and an on_promote callback
+WHEN  the owner-icon button is clicked and the promote dialog returns True
+THEN  on_promote is called with the fact's compound_key
+
+# PD-03-AF-013 — promote cancelled
+GIVEN a WorkingMemory with one AGENT fact and an on_promote callback
+WHEN  the owner-icon button is clicked and the dialog returns False
+THEN  on_promote is NOT called
+
+# PD-03-AF-013 — USER fact has Label not Button
+GIVEN a WorkingMemory with one USER fact
+WHEN  render_working_memory_widget() is called
+THEN  the owner icon is a tk.Label (not tk.Button)
+
+# PD-03-AF-013 — no callback does not raise
+GIVEN an AGENT fact and on_promote=None
+WHEN  the owner-icon button is clicked and confirmed
+THEN  no exception is raised
+```
+
+**Test Mapping**:
+
+| Affordance | Test file | Test name |
+|-----------|-----------|-----------|
+| PD-03-AF-013 | `test_working_memory_widget_callbacks.py` | `test_promote_calls_on_promote_when_confirmed` |
+| PD-03-AF-013 | `test_working_memory_widget_callbacks.py` | `test_promote_not_called_when_cancelled` |
+| PD-03-AF-013 | `test_working_memory_widget_callbacks.py` | `test_user_fact_owner_icon_is_label_not_button` |
+| PD-03-AF-013 | `test_working_memory_widget_callbacks.py` | `test_promote_no_callback_does_not_raise` |
+
+---
+
+#### PD-03-AF-014 — Working Memory Add-Fact Form
+
+**ID**: `PD-03-AF-014`
+**Widget**: Footer `add_frame` inside `render_working_memory_widget()` — always present regardless of fact count
+**Source**: `ContextRenderer.render_working_memory_widget()`
+**Purpose**: Let the user add a new user-owned fact by entering a key and value.
+
+**Internal Structure**:
+
+```
+add_frame
+  ├── Label  "👤 Add fact:"
+  ├── Label  "key"     Entry [key_var, width=18]
+  ├── Label  "value"   Entry [val_var, width=28]
+  └── Button "Add 👤"
+```
+
+**Behaviour**:
+
+| Action | Outcome |
+|--------|---------|
+| Key non-empty, "Add 👤" clicked | `on_user_add(key.strip(), value.strip())` fired; both entries cleared |
+| Key empty, "Add 👤" clicked | `on_user_add` NOT called; entries not cleared |
+| `on_user_add=None` with valid key | Silently ignored (no error) |
+
+**Gherkin Use-Cases**:
+
+```gherkin
+# PD-03-AF-014 — submit with key and value
+GIVEN a rendered WM widget with on_user_add callback
+WHEN  the key Entry contains "my_key", value Entry contains "my_val"
+  AND "Add 👤" is clicked
+THEN  on_user_add is called with ("my_key", "my_val")
+
+# PD-03-AF-014 — entries cleared after submit
+GIVEN a rendered WM widget with on_user_add callback
+WHEN  "Add 👤" is clicked with non-empty key/value
+THEN  both Entry fields are empty after the call
+
+# PD-03-AF-014 — empty key suppresses callback
+GIVEN a rendered WM widget with on_user_add callback
+WHEN  the key Entry is empty and "Add 👤" is clicked
+THEN  on_user_add is NOT called
+
+# PD-03-AF-014 — no callback does not raise
+GIVEN a rendered WM widget with on_user_add=None
+WHEN  "Add 👤" is clicked with a non-empty key
+THEN  no exception is raised
+```
+
+**Test Mapping**:
+
+| Affordance | Test file | Test name |
+|-----------|-----------|-----------|
+| PD-03-AF-014 | `test_working_memory_widget_callbacks.py` | `test_add_button_calls_on_user_add_with_key_and_value` |
+| PD-03-AF-014 | `test_working_memory_widget_callbacks.py` | `test_add_button_clears_entries_after_submit` |
+| PD-03-AF-014 | `test_working_memory_widget_callbacks.py` | `test_add_button_does_not_call_on_user_add_when_key_empty` |
+| PD-03-AF-014 | `test_working_memory_widget_callbacks.py` | `test_add_button_no_callback_does_not_raise` |
+
+---
+
 ### Files Tab
 
 `FileExplorer` widget — full detail: [PD-11](#pd-11-fileexplorer).

@@ -220,10 +220,10 @@ implements it and the test that validates it.  Status legend:
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
 | Fact row rendered per WM fact | PD-03-AF-010 | `ContextRenderer.render_working_memory_widget()` | `test_gui_manager_integration.py` | `TestGUIManagerPanelMethods` | ⚠️ |
-| Toggle checkbox calls on_toggle callback | PD-03-AF-011 | `ContextRenderer.render_working_memory_widget()` | — | — | 📝 |
-| Delete button calls on_delete callback | PD-03-AF-012 | `ContextRenderer.render_working_memory_widget()` | — | — | 📝 |
-| Promote button calls on_promote callback | PD-03-AF-013 | `ContextRenderer.render_working_memory_widget()` | — | — | 📝 |
-| Add-fact form submits user-provided key/value | PD-03-AF-014 | `ContextRenderer.render_working_memory_widget()` | — | — | 📝 |
+| Toggle checkbox calls on_toggle callback | PD-03-AF-011 | `ContextRenderer._render_working_memory_row()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryToggle` | ✅ |
+| Delete button calls on_delete callback | PD-03-AF-012 | `ContextRenderer._render_working_memory_row()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryDelete` | ✅ |
+| Promote button calls on_promote callback | PD-03-AF-013 | `ContextRenderer._render_working_memory_row()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryPromote` | ✅ |
+| Add-fact form submits user-provided key/value | PD-03-AF-014 | `ContextRenderer.render_working_memory_widget()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryAddFact` | ✅ |
 
 ### PD-04 — ModelSelector
 
@@ -502,7 +502,6 @@ tests.
 |---------------|-------------|
 | PD-07-AF-002 | Settings sections default collapse state |
 | PD-07-AF-003 | Restart-required tooltip |
-| PD-03-AF-011–014 | Working Memory toggle/delete/promote/add callbacks |
 
 ### Low Priority (modal dialogs, less frequent use)
 

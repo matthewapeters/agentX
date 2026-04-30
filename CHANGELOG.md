@@ -7,6 +7,49 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.20.2.post7] - 2026-04-30
+
+### Code Changes
+
+#### Added
+
+- `tests/test_working_memory_widget_callbacks.py`: 17 unit tests covering PD-03-AF-011..014.
+
+#### Changed
+
+- `docs/ux/03_PANEL_DETAILS.md`: Added full cut-sheet sections for PD-03-AF-011 (toggle), PD-03-AF-012 (delete), PD-03-AF-013 (promote), PD-03-AF-014 (add-fact form) in the Working Memory sub-section of PD-03.
+- `docs/ux/UX_LIFECYCLE.md`: PD-03-AF-011..014 📝 → ✅, source method refs corrected, removed from Medium Priority gaps.
+- `docs/ux/00_INDEX.md`: PD-03 Working Memory row updated (4✅/0📝), totals (54✅/0❌), queue item marked complete.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_working_memory_widget_callbacks.py` — 17 `@pytest.mark.unit` tests across 4 classes:
+  - `TestWorkingMemoryToggle` (5 tests — PD-03-AF-011):
+    - GIVEN fact(enabled=True) WHEN rendered THEN Checkbutton variable is True.
+    - GIVEN fact(enabled=False) WHEN rendered THEN Checkbutton variable is False.
+    - GIVEN fact(enabled=True) WHEN invoked THEN on_toggle called with (key, False).
+    - GIVEN fact(enabled=False) WHEN invoked THEN on_toggle called with (key, True).
+    - GIVEN on_toggle=None WHEN invoked THEN no exception raised.
+  - `TestWorkingMemoryDelete` (4 tests — PD-03-AF-012):
+    - GIVEN AGENT fact WHEN ✕ clicked + confirmed THEN on_delete called.
+    - GIVEN AGENT fact WHEN ✕ clicked + cancelled THEN on_delete NOT called.
+    - GIVEN USER fact WHEN rendered THEN no ✕ button present.
+    - GIVEN on_delete=None WHEN confirmed THEN no exception raised.
+  - `TestWorkingMemoryPromote` (4 tests — PD-03-AF-013):
+    - GIVEN AGENT fact WHEN icon clicked + confirmed THEN on_promote called.
+    - GIVEN AGENT fact WHEN icon clicked + cancelled THEN on_promote NOT called.
+    - GIVEN USER fact WHEN rendered THEN owner icon is Label not Button.
+    - GIVEN on_promote=None WHEN confirmed THEN no exception raised.
+  - `TestWorkingMemoryAddFact` (4 tests — PD-03-AF-014):
+    - GIVEN key+value entered WHEN ‘Add 👤’ clicked THEN on_user_add called with (key, value).
+    - GIVEN key+value entered WHEN submitted THEN both entries cleared.
+    - GIVEN empty key WHEN ‘Add 👤’ clicked THEN on_user_add NOT called.
+    - GIVEN on_user_add=None WHEN submitted THEN no exception raised.
+
+---
+
 ## [0.20.2.post6] - 2026-04-30
 
 ### Code Changes
