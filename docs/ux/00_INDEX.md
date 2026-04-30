@@ -36,7 +36,7 @@
 |-------|:--------------:|:----------:|:------------:|:------:|
 | PD-01 ChatPanel | 7 | 1 | 0 | 0 |
 | PD-02 InputPanel | 3 | 3 | 1 | 0 |
-| PD-03 SidePanel — Context | 6 | 0 | 1 | 0 |
+| PD-03 SidePanel — Context | 7 | 0 | 0 | 0 |
 | PD-03 SidePanel — Working Memory | 0 | 1 | 4 | 0 |
 | PD-04 ModelSelector | 3 | 0 | 1 | 0 |
 | PD-05 PlanTreeWidget | 3 | 0 | 3 | 0 |
@@ -47,7 +47,7 @@
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 7 | 0 | 0 | 0 |
 
-**Totals**: 49 ✅ · 6 ⚠️ · 12 📝 · 0 ❌
+**Totals**: 50 ✅ · 6 ⚠️ · 11 📝 · 0 ❌
 
 ---
 
@@ -57,7 +57,7 @@
 > When picking up work, take the **top unchecked item**.
 
 - [/] **PD-02-AF-005..007** — Attachment chip: render, remove, clear-all
-- [ ] **PD-03-AF-007** — Message enabled checkbox wired to `message.enabled`
+- [/] **PD-03-AF-007** — Message enabled checkbox wired to `message.enabled`
 - [ ] **PD-03-AF-011..014** — Working Memory callbacks (toggle, delete, promote, add)
 - [ ] **PD-07-AF-002..003** — Settings collapse state + restart-required tooltip
 

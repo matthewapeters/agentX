@@ -273,9 +273,58 @@ Contains two `CollapsibleSection` widgets:
 
 | Row | Contains |
 |-----|---------|
-| Per-message row | Role icon, sender, timestamp, content preview, expand/collapse |
+| Per-message row | Expand/collapse button (▶/▼), enabled checkbox, role icon, content preview |
 | Tool call sub-row | 🔧 tool_name (indented, collapsible) |
 | Plan sub-row | 📋 plan_name (indented, collapsible) |
+
+#### PD-03-AF-007 — Message Enabled Checkbox
+
+**ID**: `PD-03-AF-007`  
+**Widget**: `tk.Checkbutton` in `MESSAGE_COLUMNS["enabled"]` (column 1) of each message row  
+**Source**: `ContextRenderer._render_message_to_grid()`  
+**Purpose**: Allow the user to exclude individual context messages from the LLM prompt without deleting them.
+
+**Behaviour**:
+
+| Action | Outcome |
+|--------|---------|
+| Checkbox rendered | Initial state reflects `message.enabled` — checked when `True`, unchecked when `False` |
+| User checks/unchecks | `message.enabled` is updated in-place to the new boolean value |
+| `enabled=False` message | Excluded from `Context.to_llm_messages()` on the next LLM call |
+
+**Gherkin Use-Cases**:
+
+```gherkin
+# PD-03-AF-007 — initial state enabled
+GIVEN a Message with enabled=True
+WHEN  the message row is rendered into a frame via _render_message_to_grid()
+THEN  a Checkbutton is present in the enabled column
+  AND the Checkbutton variable reports True
+
+# PD-03-AF-007 — initial state disabled
+GIVEN a Message with enabled=False
+WHEN  the message row is rendered
+THEN  the Checkbutton variable reports False
+
+# PD-03-AF-007 — unchecking updates model
+GIVEN a Message with enabled=True rendered in a frame
+WHEN  the Checkbutton is invoked (checked → unchecked)
+THEN  message.enabled is False
+
+# PD-03-AF-007 — checking updates model
+GIVEN a Message with enabled=False rendered in a frame
+WHEN  the Checkbutton is invoked (unchecked → checked)
+THEN  message.enabled is True
+```
+
+**Test Mapping**:
+
+| Affordance | Test file | Test name |
+|-----------|-----------|-----------|
+| PD-03-AF-007 | `test_context_renderer_message_enabled.py` | `test_enabled_checkbox_initial_true` |
+| PD-03-AF-007 | `test_context_renderer_message_enabled.py` | `test_enabled_checkbox_initial_false` |
+| PD-03-AF-007 | `test_context_renderer_message_enabled.py` | `test_uncheck_sets_message_enabled_false` |
+| PD-03-AF-007 | `test_context_renderer_message_enabled.py` | `test_check_sets_message_enabled_true` |
 
 ### Files Tab
 

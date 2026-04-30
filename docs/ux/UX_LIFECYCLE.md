@@ -213,7 +213,7 @@ implements it and the test that validates it.  Status legend:
 | Plan rows grouped under preceding assistant message | PD-03-AF-004 | `ContextRenderer.render_context_widget()` | `test_phase6_context_panel.py` | `TestRenderContextWidgetGrouping` | ✅ |
 | Plan header row is clickable when on_plan_click provided | PD-03-AF-005 | `ContextRenderer._render_plan_rows()` | `test_phase6_context_panel.py` | `TestRenderPlanRows` | ✅ |
 | Plan/task_node rows excluded from LLM messages | PD-03-AF-006 | `Context.to_llm_messages()` | `test_phase6_context_panel.py` | `TestPlanMessagesExcludedFromLLM` | ✅ |
-| Message enabled checkbox wired to message.enabled | PD-03-AF-007 | `ContextRenderer._render_message_to_grid()` | — | — | 📝 |
+| Message enabled checkbox wired to message.enabled | PD-03-AF-007 | `ContextRenderer._render_message_to_grid()` | `test_context_renderer_message_enabled.py` | `TestMessageEnabledCheckbox` | ✅ |
 
 ### PD-03 — SidePanel / Session Tab — Working Memory Section
 
@@ -502,7 +502,6 @@ tests.
 |---------------|-------------|
 | PD-07-AF-002 | Settings sections default collapse state |
 | PD-07-AF-003 | Restart-required tooltip |
-| PD-03-AF-007 | Message enabled checkbox wired to message.enabled |
 | PD-03-AF-011–014 | Working Memory toggle/delete/promote/add callbacks |
 
 ### Low Priority (modal dialogs, less frequent use)

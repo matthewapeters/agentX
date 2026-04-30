@@ -7,6 +7,32 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.20.2.post6] - 2026-04-30
+
+### Code Changes
+
+#### Added
+
+- `tests/test_context_renderer_message_enabled.py`: 4 unit tests for PD-03-AF-007 (checkbox initial state true/false, uncheck→False, check→True).
+
+#### Changed
+
+- `docs/ux/03_PANEL_DETAILS.md`: PD-03 Context section expanded with full PD-03-AF-007 cut-sheet entry — behaviour table, Gherkin use-cases, test mapping.
+- `docs/ux/UX_LIFECYCLE.md`: PD-03-AF-007 📝 → ✅; removed from Medium Priority gaps list.
+- `docs/ux/00_INDEX.md`: PD-03 Context row updated (7✅/0📝), totals (50✅/0❌), PD-03-AF-007 marked complete.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_context_renderer_message_enabled.py` — 4 `@pytest.mark.unit` tests:
+  - GIVEN `enabled=True` WHEN row rendered THEN Checkbutton variable is True. (`test_enabled_checkbox_initial_true` — PD-03-AF-007)
+  - GIVEN `enabled=False` WHEN row rendered THEN Checkbutton variable is False. (`test_enabled_checkbox_initial_false` — PD-03-AF-007)
+  - GIVEN `enabled=True` WHEN Checkbutton invoked THEN `message.enabled` is False. (`test_uncheck_sets_message_enabled_false` — PD-03-AF-007)
+  - GIVEN `enabled=False` WHEN Checkbutton invoked THEN `message.enabled` is True. (`test_check_sets_message_enabled_true` — PD-03-AF-007)
+
+---
+
 ## [0.20.2.post5] - 2026-04-30
 
 ### Code Changes
