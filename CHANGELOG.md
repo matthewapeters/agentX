@@ -7,6 +7,42 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.21.0] - 2026-04-30
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/gui/input_panel.py`: Implemented `_on_shift_return()` method and wired a
+  `<Shift-Return>` binding on `user_input_text` in `InputPanel.create()`. Pressing
+  Shift+Enter now inserts a newline at the cursor position and returns `"break"` to
+  suppress Tkinter's default key handling. Implements PD-02-AF-002.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_input_panel_keyboard.py` — 5 `@pytest.mark.unit` tests in
+  `TestShiftEnterInsertsNewline` covering PD-02-AF-002:
+  - GIVEN input text is empty WHEN Shift+Enter pressed THEN widget contains a newline.
+  - GIVEN input contains "hello" WHEN Shift+Enter pressed THEN content is "hello\\n".
+  - GIVEN InputPanel created WHEN _on_shift_return called THEN return value is "break".
+  - GIVEN InputPanel created WHEN bindings queried THEN Shift+Return binding present.
+  - GIVEN input contains "ab" with cursor mid-word WHEN Shift+Enter pressed THEN content is "a\\nb".
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/03_PANEL_DETAILS.md`: Added 5 Gherkin use-cases for PD-02-AF-002 and 5
+  test-mapping rows for `test_input_panel_keyboard.py` in the PD-02 cut-sheet.
+- `docs/ux/UX_LIFECYCLE.md`: PD-02-AF-002 📝 → ✅; corrected source method reference from
+  non-existent `_bind_keys()` to the actual `_on_shift_return()` implementation.
+- `docs/ux/00_INDEX.md`: PD-02 InputPanel row updated (4✅·3⚠️·0📝), totals
+  (57✅·4📝), queue item `PD-02-AF-002` appended and marked complete.
+
+---
+
 ## [0.20.3] - 2026-05-02
 
 ### Code Changes

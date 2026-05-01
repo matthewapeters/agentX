@@ -156,6 +156,31 @@ attachments_frame (tk.Frame, parent=root)
 ### Gherkin Use-Cases
 
 ```gherkin
+# PD-02-AF-002 — Shift+Enter inserts newline in empty widget
+GIVEN the user_input_text widget is empty
+WHEN  _on_shift_return is invoked
+THEN  the widget contains a newline character
+
+# PD-02-AF-002 — Shift+Enter inserts newline after existing text
+GIVEN the user_input_text contains "hello" and the cursor is at the end
+WHEN  _on_shift_return is invoked
+THEN  the widget content is "hello\n"
+
+# PD-02-AF-002 — return value suppresses default handling
+GIVEN the user_input_text widget exists
+WHEN  _on_shift_return is invoked
+THEN  the return value is "break"
+
+# PD-02-AF-002 — binding registered on text widget
+GIVEN InputPanel.create() has been called
+WHEN  we query the bindings on user_input_text
+THEN  a Shift+Return binding is present
+
+# PD-02-AF-002 — newline inserted at cursor, not at end
+GIVEN the user_input_text contains "ab" and the cursor is between 'a' and 'b'
+WHEN  _on_shift_return is invoked
+THEN  the content is "a\nb" (newline at cursor position)
+
 # PD-02-AF-005 — chip render (current-turn)
 GIVEN an AttachmentInfo with display_name="parser.py" and is_from_history=False
 WHEN  update_attachment_bar([info], []) is called
@@ -201,6 +226,11 @@ THEN  attachment_labels has 1 entry
 
 | Affordance | Test file | Test name |
 |-----------|-----------|-----------|
+| PD-02-AF-002 | `test_input_panel_keyboard.py` | `test_shift_return_inserts_newline_into_empty_widget` |
+| PD-02-AF-002 | `test_input_panel_keyboard.py` | `test_shift_return_inserts_newline_after_existing_text` |
+| PD-02-AF-002 | `test_input_panel_keyboard.py` | `test_shift_return_returns_break` |
+| PD-02-AF-002 | `test_input_panel_keyboard.py` | `test_shift_return_binding_registered_on_input_text` |
+| PD-02-AF-002 | `test_input_panel_keyboard.py` | `test_shift_return_inserts_at_cursor_not_at_end` |
 | PD-02-AF-005 | `test_input_panel_attachment_chips.py` | `test_current_attachment_chip_shows_filename` |
 | PD-02-AF-005 | `test_input_panel_attachment_chips.py` | `test_history_attachment_chip_shows_filename_and_history_suffix` |
 | PD-02-AF-005 | `test_input_panel_attachment_chips.py` | `test_multiple_chips_rendered_in_order` |

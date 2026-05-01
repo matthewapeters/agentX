@@ -103,6 +103,10 @@ class InputPanel:
             "<Control-Return>",
             lambda _event: self._widgets.user_submit.invoke(),
         )
+        self._widgets.user_input_text.bind(
+            "<Shift-Return>",
+            self._on_shift_return,
+        )
         self._g.root.bind_all(
             "<Control-space>",
             lambda _event: self._widgets.user_break.invoke(),
@@ -194,6 +198,18 @@ class InputPanel:
     def _on_interrupt_clicked(self) -> None:
         if self._g._on_interrupt:
             self._g._on_interrupt()
+
+    def _on_shift_return(self, event: tk.Event) -> str:  # type: ignore[type-arg]
+        """Insert a newline at the insertion cursor (PD-02-AF-002).
+
+        Bound to ``<Shift-Return>`` on ``user_input_text``.  Returns ``"break"``
+        to suppress Tkinter's default ``<Return>`` handling which would otherwise
+        also fire after Shift is released.
+
+        Affordance ID: PD-02-AF-002
+        """
+        self._widgets.user_input_text.insert(tk.INSERT, "\n")
+        return "break"
 
     def _create_attachment_widget(self, parent: tk.Frame, info, is_history: bool = False) -> tk.Widget:
         if is_history:

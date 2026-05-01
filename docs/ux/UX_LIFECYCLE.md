@@ -196,7 +196,7 @@ implements it and the test that validates it.  Status legend:
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
 | Enter key submits message | PD-02-AF-001 | `InputPanel._bind_keys()` | `test_gui_manager_integration.py` | `TestGUIManagerInputMethods` | ⚠️ |
-| Shift+Enter inserts newline | PD-02-AF-002 | `InputPanel._bind_keys()` | — | — | 📝 |
+| Shift+Enter inserts newline | PD-02-AF-002 | `InputPanel._on_shift_return()` | `test_input_panel_keyboard.py` | `TestShiftEnterInsertsNewline` | ✅ |
 | Send disabled during streaming | PD-02-AF-003 | `InputPanel.set_streaming_state()` | `test_gui_manager_integration.py` | `TestGUIManagerInputMethods` | ⚠️ |
 | Stop enabled during streaming | PD-02-AF-004 | `InputPanel.set_streaming_state()` | `test_gui_manager_integration.py` | `TestGUIManagerInputMethods` | ⚠️ |
 | Attachment chip rendered with filename and icon | PD-02-AF-005 | `InputPanel._create_attachment_widget()` | `test_input_panel_attachment_chips.py` | `TestAttachmentChipRender` | ✅ |
