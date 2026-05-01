@@ -7,6 +7,30 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.4] - 2026-05-01
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/file_explorer.py` `_on_right_click()`: Replaced synchronous `try/finally`
+  `grab_release()` with `menu.after_idle(menu.grab_release)` and added `return "break"`.
+  The synchronous call fired before Tk drained its event queue — queued grab-related events
+  could still cause `unpost()` afterward, producing the intermittent 1-in-12 success rate.
+  `after_idle` defers the release until the queue is empty.  `return "break"` stops the
+  `<ButtonRelease-3>` event from propagating to parent widgets or root-window bindings that
+  could also close the menu.
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_file_explorer_context_menu.py`: Updated file and folder right-click tests
+  to assert `after_idle(grab_release)` is scheduled and handler returns `"break"`,
+  replacing the previous synchronous `grab_release` assertions.
+
+---
+
 ## [0.22.3] - 2026-05-01
 
 ### Code Changes

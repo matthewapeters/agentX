@@ -409,7 +409,7 @@ class FileExplorer:
     def _on_right_click(self, event):
         item = self.tree.identify_row(event.y)
         if not item:
-            return
+            return "break"
         self.tree.selection_set(item)
         tags = self.tree.item(item, "tags")
         menu: tk.Menu | None = None
@@ -418,16 +418,17 @@ class FileExplorer:
         elif "directory" in tags:
             menu = self._folder_popup_menu
         if menu is None:
-            return
-        # tk_popup() calls grab() internally, which on Linux/X11 sets a server-side
-        # passive grab.  Modern compositors (GNOME/Mutter, KWin, etc.) resolve grab
-        # conflicts by cancelling Tk's grab, causing Tk to unpost the menu immediately.
-        # grab_release() releases the exclusive grab while leaving the menu posted;
-        # Tk's own <Leave> and root-ButtonPress bindings still handle auto-dismiss.
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            menu.grab_release()
+            return "break"
+        # Open the menu.  Two precautions for Linux/X11 + modern compositors:
+        # 1. after_idle defers grab_release() until the Tk event queue is fully drained.
+        #    Calling grab_release() synchronously (try/finally) can fire before Tk has
+        #    finished processing the grab-related events, leaving a queued event that
+        #    triggers unpost after the release.
+        # 2. Return "break" stops the ButtonRelease-3 event from propagating to parent
+        #    widgets or root-window bindings that could also unpost the menu.
+        menu.tk_popup(event.x_root, event.y_root)
+        menu.after_idle(menu.grab_release)
+        return "break"
 
     def _get_selected_folder_name(self) -> str | None:
         selection = self.tree.selection()

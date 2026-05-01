@@ -75,29 +75,39 @@ class TestFileContextMenu:
         GIVEN the tree has a file row
         WHEN the user right-clicks that row
         THEN the file context menu is posted (tk_popup called)
-         AND grab_release() is called to release the WM grab conflict
+         AND after_idle(grab_release) is scheduled — NOT a synchronous grab_release call
+         AND the handler returns 'break' to stop event propagation
          AND the folder context menu is NOT posted.
+
+        The after_idle deferral is critical: calling grab_release() synchronously
+        (try/finally) leaves grab-related events still queued that can unpost the menu;
+        deferring until the event queue drains prevents that race.
+        Returning 'break' prevents parent / root-window bindings from also acting
+        on the ButtonRelease-3 event and closing the menu.
+        Affordance ID: PD-11-AF-008
         """
         (tmp_path / "hello.py").write_text("x")
         root, fe, _ = _make_explorer(tmp_path)
         try:
-            # Locate the file item
             items = fe.tree.get_children()
             file_item = next(i for i in items if "file" in fe.tree.item(i, "tags"))
             bbox = fe.tree.bbox(file_item)
             y = int(bbox[1]) + int(bbox[3]) // 2 if bbox else 5
             ev = _fake_event(y=y)
 
+            after_idle_calls: list = []
             with (
                 patch.object(fe._popup_menu, "tk_popup") as mock_file_popup,
-                patch.object(fe._popup_menu, "grab_release") as mock_grab_release,
+                patch.object(fe._popup_menu, "after_idle", side_effect=lambda fn: after_idle_calls.append(fn)),
                 patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_popup,
             ):
-                fe._on_right_click(ev)
+                result = fe._on_right_click(ev)
 
             mock_file_popup.assert_called_once()
-            mock_grab_release.assert_called_once()
             mock_folder_popup.assert_not_called()
+            assert result == "break"
+            assert len(after_idle_calls) == 1
+            assert after_idle_calls[0] == fe._popup_menu.grab_release
         finally:
             root.destroy()
 
@@ -232,8 +242,11 @@ class TestFolderContextMenu:
         GIVEN the tree has a directory row
         WHEN the user right-clicks that row
         THEN the folder context menu is posted
-         AND grab_release() is called to release the WM grab conflict
+         AND after_idle(grab_release) is scheduled on the folder menu
+         AND the handler returns 'break' to stop event propagation
          AND the file context menu is NOT posted.
+
+        Affordance ID: PD-11-AF-009
         """
         (tmp_path / "subdir").mkdir()
         root, fe, _ = _make_explorer(tmp_path)
@@ -244,16 +257,19 @@ class TestFolderContextMenu:
             y = int(bbox[1]) + int(bbox[3]) // 2 if bbox else 5
             ev = _fake_event(y=y)
 
+            after_idle_calls: list = []
             with (
                 patch.object(fe._popup_menu, "tk_popup") as mock_file_popup,
                 patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_popup,
-                patch.object(fe._folder_popup_menu, "grab_release") as mock_grab_release,
+                patch.object(fe._folder_popup_menu, "after_idle", side_effect=lambda fn: after_idle_calls.append(fn)),
             ):
-                fe._on_right_click(ev)
+                result = fe._on_right_click(ev)
 
             mock_folder_popup.assert_called_once()
-            mock_grab_release.assert_called_once()
             mock_file_popup.assert_not_called()
+            assert result == "break"
+            assert len(after_idle_calls) == 1
+            assert after_idle_calls[0] == fe._folder_popup_menu.grab_release
         finally:
             root.destroy()
 
