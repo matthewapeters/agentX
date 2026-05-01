@@ -10,6 +10,17 @@ This file is the bug-tracking log for user-reported UX defects in AgentX.
 [ ] <Short description of the problem>.  <Observed behaviour>.  <Expected behaviour>.
 ```
 
+**Semaphore semantics** — the status markers are a handshake between agent and user:
+
+| Marker | Set by | Meaning |
+|--------|--------|---------|
+| `[ ]`  | User   | Issue reported; agent has not yet applied a fix. |
+| `[/]`  | Agent  | Fix committed and all tests pass; **ready for UAT**. UAT happens *after* the agent marks `[/]`, not before. |
+| `[X]`  | Either | Fix attempted but failed or blocked; needs follow-up. |
+
+When the user performs UAT and the fix is confirmed: leave `[/]` in place (it means resolved).
+When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` and note the failure count.
+
 **Agent**: For each `[ ]` entry:
 
 1. **Locate the affordance** — Open [docs/ux/00_INDEX.md](00_INDEX.md) and find
@@ -36,14 +47,15 @@ This file is the bug-tracking log for user-reported UX defects in AgentX.
    and any affected rows in [00_INDEX.md](00_INDEX.md) and
    [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md).
 
-6. **Mark complete** — Change `[ ]` to `[/]` once committed.
+6. **Mark complete** — Change `[ ]` to `[/]` once committed.  This signals the user
+   that the fix is ready for UAT.
 
 ---
 
 ## Issues
 
 ----
-[ ] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.   (count of attempted fixes: 3)
+[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.   (count of attempted fixes: 3)
 
 - **Root cause 1 (v0.22.1)**: `<FocusOut>` was bound to `_dismiss_popup_menu()` — removed.
 - **Root cause 2 (v0.22.2)**: Binding was on `<Button-3>` (press).  `tk_popup()` sets up an
