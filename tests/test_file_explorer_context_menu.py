@@ -13,9 +13,14 @@ Units under test:
   - FileExplorer._on_add_full_path_selected()
   - FileExplorer._on_add_relative_path_selected()
 
-Bug fixed: <FocusOut> on the treeview was bound to _dismiss_popup_menu().
-  When tk_popup() stole focus from the tree the menu was immediately unposted.
-  Fix: removed the <FocusOut> binding; Escape remains as the keyboard dismiss path.
+Bug history:
+  v0.22.1: <FocusOut> binding removed — tk_popup() stole focus, immediately unposting.
+  v0.22.2: Changed to <ButtonRelease-3> — avoided tk_popup() grab consuming the release.
+  v0.22.5: Replaced tk_popup() with menu.post() (no grab) — but kept ButtonRelease binding.
+  v0.22.6: Root cause found — Menu class <ButtonRelease> binding fires on the just-posted
+           menu window (cursor is over it at x_root,y_root), calls unpost() before any
+           item is active.  Fix: bind <Button-3> press; with no grab the release goes to
+           the treeview (ignored) or the menu (item invoked), never causing unpost().
 """
 
 import tkinter as tk
@@ -130,21 +135,24 @@ class TestFileContextMenu:
         finally:
             root.destroy()
 
-    def test_right_click_bound_to_button_release_not_press(self, tmp_path):
+    def test_right_click_bound_to_button_press_not_release(self, tmp_path):
         """
         GIVEN the widget has been created
         WHEN the tree's bindings are inspected
-        THEN <ButtonRelease-3> is bound (NOT <Button-3>).
+        THEN <Button-3> (press) is bound and <ButtonRelease-3> is NOT bound.
 
-        On Linux/X11, tk_popup() sets up an internal grab.  If the menu is opened on
-        <Button-3> (press), the corresponding <ButtonRelease-3> is captured by the grab
-        and immediately dismisses the menu.  Binding to the release event avoids this.
+        With menu.post() (no Tcl grab), <Button-3> press is the correct trigger.
+        The subsequent <ButtonRelease-3> is NOT captured by any grab — it goes to
+        whichever window the cursor is over at release time (menu → invoke ✓,
+        treeview → ignored ✓).  Binding to the release caused a race where the
+        Menu class's generic <ButtonRelease> class binding fired on the just-posted
+        menu before any item was active, calling unpost() immediately.
         """
         root, fe, _ = _make_explorer(tmp_path)
         try:
             bound_events = fe.tree.bind()
-            assert "<ButtonRelease-3>" in bound_events
-            assert "<Button-3>" not in bound_events
+            assert "<Button-3>" in bound_events
+            assert "<ButtonRelease-3>" not in bound_events
         finally:
             root.destroy()
 

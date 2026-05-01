@@ -375,18 +375,33 @@ class FileExplorer:
         )
         self._on_add_folder_to_memory_callback = on_add_folder_to_memory
 
-        # Bind right-click on RELEASE, not press.
-        # On Linux/X11, tk_popup() sets up an internal grab.  If the popup is opened on
-        # <Button-3> (press), the corresponding <ButtonRelease-3> is captured by the menu
-        # grab and immediately dismisses the menu before the user can interact with it.
-        # Binding to <ButtonRelease-3> means the release has already happened before the
-        # popup opens, so the menu stays visible.
-        self.tree.bind("<ButtonRelease-3>", self._on_right_click)
-        self.tree.bind("<Control-ButtonRelease-1>", self._on_right_click)
+        # Bind right-click on PRESS (Button-3), not release.
+        #
+        # History of this binding:
+        #   v0.22.2  Used <ButtonRelease-3> because tk_popup() internally calls
+        #            Tcl 'grab', which captures the subsequent ButtonRelease and
+        #            sends it to the menu before the user can select anything — the
+        #            menu's own <ButtonRelease> class binding then calls unpost().
+        #   v0.22.5  Replaced tk_popup() with menu.post() (no grab).  However,
+        #            keeping <ButtonRelease-3> introduced a new race:
+        #            menu.post() creates the menu window at (x_root, y_root) — i.e.
+        #            directly under the cursor — so after the handler returns the X
+        #            server sends an <Enter> event to the new menu window followed by
+        #            the same <ButtonRelease-3> (synthesised or queued).  The Menu
+        #            class has a generic <ButtonRelease> binding (tk::MenuInvoke)
+        #            which calls unpost() when no item is active.  Result: menu
+        #            appears and immediately vanishes.
+        #   v0.22.6  Switch back to <Button-3> (press).  With menu.post() there is
+        #            no grab, so the subsequent <ButtonRelease-3> goes to whichever
+        #            window the cursor is over when the button is released — either
+        #            the menu (item invoked ✓) or the treeview (ignored, menu stays ✓).
+        #            The press-trigger/no-grab combination is the standard Tkinter
+        #            idiom for right-click context menus on Linux.
+        self.tree.bind("<Button-3>", self._on_right_click)
+        self.tree.bind("<Control-Button-1>", self._on_right_click)
         self.tree.bind("<Escape>", self._dismiss_popup_menu)
-        # NOTE: <FocusOut> is intentionally NOT bound here.  When tk_popup() is called it
-        # grabs focus away from the tree, which would immediately trigger FocusOut and
-        # dismiss the menu.  Escape and clicking elsewhere are sufficient to dismiss.
+        # NOTE: <FocusOut> is intentionally NOT bound here.  The menu is dismissed
+        # by clicking elsewhere (Tk's root ButtonPress auto-dismiss) or pressing Escape.
 
         # Pack the treeview and scrollbars
         self.tree.grid(row=0, column=0, sticky="nsew")

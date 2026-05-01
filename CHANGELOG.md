@@ -7,6 +7,37 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.6] - 2026-05-01
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/file_explorer.py`: Changed right-click trigger binding from
+  `<ButtonRelease-3>` to `<Button-3>` (press).  Root cause identified: when
+  `menu.post()` is called from a `<ButtonRelease-3>` handler it creates the menu window
+  at `(x_root, y_root)` — directly under the cursor — so the X server sends an `<Enter>`
+  event to the new menu window.  The Tk `Menu` class has a generic `<ButtonRelease>`
+  class binding (`tk::MenuInvoke`) that fires when any button is released over the menu;
+  with no active item it calls `unpost()`.  Result: menu appeared and immediately
+  vanished.  With `<Button-3>` (press) and `menu.post()` (no grab), the subsequent
+  `<ButtonRelease-3>` goes to whichever window the cursor is over at release time — the
+  menu (item invoked ✓) or the treeview (ignored ✓) — never triggering the auto-unpost.
+  `<Control-ButtonRelease-1>` similarly changed to `<Control-Button-1>`.
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_file_explorer_context_menu.py`:
+  - Renamed `test_right_click_bound_to_button_release_not_press` →
+    `test_right_click_bound_to_button_press_not_release`; assertion now verifies
+    `<Button-3>` is bound and `<ButtonRelease-3>` is NOT.
+  - Updated module docstring to document full root cause history (v0.22.1–0.22.6).
+  - All 15 tests pass.
+
+---
+
 ## [0.22.5] - 2026-05-01
 
 ### Code Changes
