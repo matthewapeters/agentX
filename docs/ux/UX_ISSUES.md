@@ -44,11 +44,12 @@ This file is the bug-tracking log for user-reported UX defects in AgentX.
 
 ----
 [/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.
-  - **Root cause**: `<FocusOut>` was bound to `_dismiss_popup_menu()` on the treeview.
+
+- **Root cause**: `<FocusOut>` was bound to `_dismiss_popup_menu()` on the treeview.
     `tk_popup()` steals focus from the tree when it opens, immediately firing `FocusOut`
     and calling `unpost()` before the user sees the menu.
-  - **Fix**: Removed the `<FocusOut>` binding from `FileExplorer.to_gui()`.  `<Escape>`
+- **Fix**: Removed the `<FocusOut>` binding from `FileExplorer.to_gui()`.  `<Escape>`
     and clicking elsewhere remain as the natural dismiss paths.
-  - **Affordances added**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
-  - **Tests**: `tests/test_file_explorer_context_menu.py` (14 unit tests, all pass).
-  - **Committed**: v0.22.1
+- **Affordances added**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
+- **Tests**: `tests/test_file_explorer_context_menu.py` (14 unit tests, all pass).
+- **Committed**: v0.22.1

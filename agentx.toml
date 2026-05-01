@@ -1,16 +1,10 @@
 [agentx]
 ollama_host = "localhost:11434"
-ollama_model = "gpt-oss"
+ollama_model = "codellama:latest"
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
+theme_mode = "Dark Mode"
 
 [agentix]
-# Directory (relative to project root) that contains system prompt .md files.
-# Changing this lets you point AgentX at a different set of prompts without
-# modifying any source code.
 system_prompts_dir = "system_prompts"
-
-# Use a small, instruction-following model for intent classification.
-# gpt-oss:latest has a baked-in AgentX persona and ignores the classification
-# system prompt, producing {"response": "..."} instead of the required schema.
 agentix_bench_classification_model = "phi4-mini:3.8b"

@@ -20,7 +20,6 @@ import pytest
 from agentx.gui.gui_config import GUIConfig
 from agentx.gui.gui_manager import GUIManager
 
-
 # ---------------------------------------------------------------------------
 # Fixture helpers
 # ---------------------------------------------------------------------------
@@ -94,12 +93,10 @@ def test_thinking_entry_collapsed_by_default(gui: GUIManager) -> None:
     assert "thinking" in entries, "thinking entry must be created after display_agent_thinking"
 
     thinking_entry = entries["thinking"]
-    assert thinking_entry["expanded"] is False, (
-        "PD-01-AF-005: thinking entry must start collapsed (expanded=False)"
-    )
-    assert not _is_detail_visible(thinking_entry), (
-        "PD-01-AF-005: detail_text of thinking entry must not be visible on creation"
-    )
+    assert thinking_entry["expanded"] is False, "PD-01-AF-005: thinking entry must start collapsed (expanded=False)"
+    assert not _is_detail_visible(
+        thinking_entry
+    ), "PD-01-AF-005: detail_text of thinking entry must not be visible on creation"
 
 
 # ---------------------------------------------------------------------------
@@ -121,18 +118,16 @@ def test_tool_call_entry_collapsed_by_default(gui: GUIManager) -> None:
     # The assistant header line is required to initialise the assistant entry
     # before the tool-call line arrives, matching the real streaming order.
     gui.display_agent_response(f"\U0001f916 AgentX (12:00):\n")
-    gui.display_agent_response("[🔧 Calling tool: read_file({\"path\": \"/tmp/x\"})]")
+    gui.display_agent_response('[🔧 Calling tool: read_file({"path": "/tmp/x"})]')
 
     entries = gui._current_turn_entries
     assert "tool_call" in entries, "tool_call entry must be created after a '[🔧 Calling tool' line"
 
     tool_call_entry = entries["tool_call"]
-    assert tool_call_entry["expanded"] is False, (
-        "PD-01-AF-006: tool_call entry must start collapsed (expanded=False)"
-    )
-    assert not _is_detail_visible(tool_call_entry), (
-        "PD-01-AF-006: detail_text of tool_call entry must not be visible on creation"
-    )
+    assert tool_call_entry["expanded"] is False, "PD-01-AF-006: tool_call entry must start collapsed (expanded=False)"
+    assert not _is_detail_visible(
+        tool_call_entry
+    ), "PD-01-AF-006: detail_text of tool_call entry must not be visible on creation"
 
 
 # ---------------------------------------------------------------------------
@@ -159,9 +154,7 @@ def test_assistant_response_entry_expanded_by_default(gui: GUIManager) -> None:
     assert "assistant" in entries, "assistant entry must be created after display_agent_response"
 
     assistant_entry = entries["assistant"]
-    assert assistant_entry["expanded"] is True, (
-        "PD-01-AF-007: assistant entry must start expanded (expanded=True)"
-    )
-    assert _is_detail_visible(assistant_entry), (
-        "PD-01-AF-007: detail_text of assistant entry must be visible on creation"
-    )
+    assert assistant_entry["expanded"] is True, "PD-01-AF-007: assistant entry must start expanded (expanded=True)"
+    assert _is_detail_visible(
+        assistant_entry
+    ), "PD-01-AF-007: detail_text of assistant entry must be visible on creation"
