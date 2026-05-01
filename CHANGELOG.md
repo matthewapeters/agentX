@@ -7,6 +7,63 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.20.3] - 2026-05-02
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/gui/settings_tab.py`: `_add_text_entry()` and `_add_spinbox()` now correctly
+  append `RESTART_ICON` to the label when `restart=True` is passed, matching the existing
+  behaviour of `_add_checkbox()`. Previously the `restart` parameter was accepted but silently
+  ignored in both helpers, causing the 🔁 icon to be absent from Ollama Host and Load timeout
+  labels. Callers that were compensating by manually including `RESTART_ICON` in the label
+  string (`Agentix Host`, `Torch model`, `Torch device`) have had the explicit suffix removed
+  to avoid duplication.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_settings_tab_sections.py` — 19 `@pytest.mark.unit` tests across 2 classes
+  covering PD-07-AF-002 and PD-07-AF-003:
+  - `TestSettingsTabSectionCollapseDefaults` (5 tests — PD-07-AF-002):
+    - GIVEN SettingsTab constructed WHEN 🎨 Appearance section inspected THEN expanded=True.
+    - GIVEN SettingsTab constructed WHEN 🤖 Ollama section inspected THEN expanded=True.
+    - GIVEN SettingsTab constructed WHEN 🧠 Agentix section inspected THEN expanded=True.
+    - GIVEN SettingsTab constructed WHEN 📊 Classification Display inspected THEN expanded=False.
+    - GIVEN SettingsTab constructed WHEN 🏛️ Working Memory inspected THEN expanded=False.
+  - `TestRestartIconInLabels` (14 tests — PD-07-AF-003):
+    - GIVEN SettingsTab constructed WHEN RESTART_ICON constant read THEN equals `🔁`.
+    - GIVEN SettingsTab constructed WHEN Theme mode label located THEN text contains 🔁.
+    - GIVEN SettingsTab constructed WHEN Host labels located THEN at least one contains 🔁.
+    - GIVEN SettingsTab constructed WHEN Load timeout label located THEN text contains 🔁.
+    - GIVEN SettingsTab constructed WHEN Screen side label located THEN text contains 🔁.
+    - GIVEN SettingsTab constructed WHEN Default model label located THEN text contains 🔁.
+    - GIVEN SettingsTab constructed WHEN Enabled (WM) label located THEN text contains 🔁.
+    - GIVEN SettingsTab constructed WHEN Torch model label located THEN text contains 🔁.
+    - GIVEN SettingsTab constructed WHEN Torch device label located THEN text contains 🔁.
+    - GIVEN SettingsTab constructed WHEN Classify prompts label located THEN no 🔁.
+    - GIVEN SettingsTab constructed WHEN Debug logging label located THEN no 🔁.
+    - GIVEN SettingsTab constructed WHEN Backend label located THEN no 🔁.
+    - GIVEN SettingsTab constructed WHEN Inject into LLM context label located THEN no 🔁.
+    - GIVEN SettingsTab constructed WHEN Max facts label located THEN no 🔁.
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/03_PANEL_DETAILS.md`: Added PD-07-AF-002 (section collapse defaults) and
+  PD-07-AF-003 (restart-required icon in label text) cut-sheet blocks in the PD-07 section.
+- `docs/ux/UX_LIFECYCLE.md`: PD-07-AF-002 📝 → ✅, PD-07-AF-003 📝 → ✅; corrected
+  PD-07-AF-003 source method reference from non-existent `_make_restart_tooltip()` to the
+  actual implementation (`RESTART_ICON` class constant + widget factory helpers); removed both
+  from the Medium Priority gaps section.
+- `docs/ux/00_INDEX.md`: PD-07 SettingsTab row updated (2✅·1⚠️·0📝), totals
+  (56✅·5📝), queue item `PD-07-AF-002..003` marked complete; last-updated date refreshed.
+
+---
+
 ## [0.20.2.post7] - 2026-04-30
 
 ### Code Changes

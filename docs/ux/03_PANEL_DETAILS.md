@@ -810,6 +810,69 @@ Scenario: Add WM hint calls callback and clears fields
 | `agentx.working_memory.inject_into_context` | Inject into LLM context | Checkbutton | No |
 | `agentx.working_memory.max_facts` | Max facts (0 = unlimited) | Spinbox 0–500 | No |
 
+---
+
+### PD-07-AF-002: Section Collapse Defaults
+
+**Affordance ID**: `PD-07-AF-002`
+**Source**: `SettingsTab._make_section()` / `SettingsTab.__init__()` (`src/agentx/gui/settings_tab.py`)
+**Tests**: `tests/test_settings_tab_sections.py::TestSettingsTabSectionCollapseDefaults`
+
+Each settings section uses `CollapsibleSection(initial_collapsed=...)`. The initial
+`expanded` state of each section is set at construction time as follows:
+
+| Section title | `initial_collapsed` | Initial visible state |
+|---------------|--------------------|-----------------------|
+| 🎨 Appearance | `False` | Expanded (▼) |
+| 🤖 Ollama | `False` | Expanded (▼) |
+| 🧠 Agentix | `False` | Expanded (▼) |
+| 📊 Classification Display | `True` | Collapsed (▶) |
+| 🏛️ Working Memory | `True` | Collapsed (▶) |
+
+The three top sections are expanded by default so the most common settings are immediately
+visible. The two less-frequently-needed sections are collapsed to reduce visual noise on
+first load.
+
+**Behaviour**: `CollapsibleSection.expanded = not initial_collapsed`. User can toggle any
+section by clicking the ▼/▶ button; state is not persisted across restarts.
+
+---
+
+### PD-07-AF-003: Restart-Required Icon in Label Text
+
+**Affordance ID**: `PD-07-AF-003`
+**Source**: `SettingsTab.RESTART_ICON` class constant; `_add_checkbox()`, `_add_text_entry()`,
+`_add_spinbox()`, `_add_enum_dropdown()`, `_add_model_dropdown()` (`src/agentx/gui/settings_tab.py`)
+**Tests**: `tests/test_settings_tab_sections.py::TestRestartIconInLabels`
+
+Settings whose changes are persisted to disk but do NOT take effect until the app is
+restarted carry the `🔁` icon appended to their label text.
+
+- **Class constant**: `SettingsTab.RESTART_ICON = " 🔁"` (space + emoji)
+- **`_add_checkbox`**, **`_add_text_entry`**, **`_add_spinbox`**: append `RESTART_ICON` to
+  `label` when `restart=True` is passed
+- **`_add_enum_dropdown`** and **`_add_model_dropdown`**: callers include `RESTART_ICON`
+  explicitly in the `label` argument (these helpers have no `restart` parameter)
+
+**Restart-required fields**:
+
+| Setting key | Label shown |
+|-------------|-------------|
+| `agentx.theme_mode` | `Theme mode 🔁` |
+| `agentx.ollama_host` | `Host 🔁` |
+| `agentx.ollama_model` | `Default model 🔁` |
+| `agentx.ollama_initial_load_timeout_seconds` | `Load timeout (s) 🔁` |
+| `agentx.screen_side` | `Screen side 🔁` |
+| `agentix.host` | `Host 🔁` |
+| `agentx.working_memory.enabled` | `Enabled 🔁` |
+| `agentix.classification_torch_model` | `Torch model 🔁` |
+| `agentix.classification_torch_device` | `Torch device 🔁` |
+
+The `_RESTART_REQUIRED` module-level set in `settings_tab.py` is the authoritative list of
+keys that require restart.
+
+---
+
 ### ASCII Mockup
 
 ```

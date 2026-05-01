@@ -227,9 +227,7 @@ class SettingsTab:
         section = self._make_section("🧠 Agentix", initial_collapsed=False)
         g = section.content_container
 
-        self._add_text_entry(
-            g, 0, ["agentix", "host"], "Host" + self.RESTART_ICON, cfg.get("host", "localhost:8000"), restart=True
-        )
+        self._add_text_entry(g, 0, ["agentix", "host"], "Host", cfg.get("host", "localhost:8000"), restart=True)
 
         self._add_checkbox(g, 1, ["agentix", "classify_prompts"], "Classify prompts", cfg.get("classify_prompts", True))
 
@@ -262,7 +260,7 @@ class SettingsTab:
             g,
             6,
             ["agentix", "classification_torch_model"],
-            "Torch model" + self.RESTART_ICON,
+            "Torch model",
             cfg.get("classification_torch_model", ""),
             restart=True,
             return_widgets=True,
@@ -273,7 +271,7 @@ class SettingsTab:
             g,
             7,
             ["agentix", "classification_torch_device"],
-            "Torch device" + self.RESTART_ICON,
+            "Torch device",
             cfg.get("classification_torch_device", -1),
             from_=-1,
             to=16,
@@ -422,7 +420,7 @@ class SettingsTab:
         restart: bool = False,
         return_widgets: bool = False,
     ):
-        lbl = self._add_label(parent, row, label)
+        lbl = self._add_label(parent, row, label + (self.RESTART_ICON if restart else ""))
         var = tk.StringVar(value=str(initial))
 
         def _commit(*_):
@@ -448,7 +446,7 @@ class SettingsTab:
         restart: bool = False,
         return_widgets: bool = False,
     ):
-        lbl = self._add_label(parent, row, label)
+        lbl = self._add_label(parent, row, label + (self.RESTART_ICON if restart else ""))
         var = tk.StringVar(value=str(initial))
 
         def _commit(*_):

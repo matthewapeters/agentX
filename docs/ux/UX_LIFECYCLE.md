@@ -260,8 +260,8 @@ implements it and the test that validates it.  Status legend:
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
 | Theme toggle persists to agentx.toml | PD-07-AF-001 | `SettingsTab._on_theme_change()` | `test_gui_manager_integration.py` | `TestGUIManagerSettingsTheme` | ⚠️ |
-| Settings sections collapsed/expanded correctly | PD-07-AF-002 | `SettingsTab.__init__()` | — | — | 📝 |
-| Restart-required fields show tooltip on change | PD-07-AF-003 | `SettingsTab._make_restart_tooltip()` | — | — | 📝 |
+| Settings sections collapsed/expanded correctly | PD-07-AF-002 | `SettingsTab.__init__()` / `SettingsTab._make_section()` | `test_settings_tab_sections.py` | `TestSettingsTabSectionCollapseDefaults` | ✅ |
+| Restart-required fields show 🔁 icon in label | PD-07-AF-003 | `SettingsTab.RESTART_ICON` / `_add_checkbox()` / `_add_text_entry()` / `_add_spinbox()` | `test_settings_tab_sections.py` | `TestRestartIconInLabels` | ✅ |
 
 ### PD-08 — ContextRenderer (factory methods)
 
@@ -498,10 +498,7 @@ tests.
 
 ### Medium Priority (settings / configuration)
 
-| Affordance ID | Description |
-|---------------|-------------|
-| PD-07-AF-002 | Settings sections default collapse state |
-| PD-07-AF-003 | Restart-required tooltip |
+*All medium-priority items have been addressed.*
 
 ### Low Priority (modal dialogs, less frequent use)
 

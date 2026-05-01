@@ -3,7 +3,7 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-04-29  
+**Last updated**: 2026-05-02  
 **Current version**: see `pyproject.toml`
 
 ---
@@ -41,13 +41,13 @@
 | PD-04 ModelSelector | 3 | 0 | 1 | 0 |
 | PD-05 PlanTreeWidget | 3 | 0 | 3 | 0 |
 | PD-06 ResynthesisDialog | 5 | 0 | 0 | 0 |
-| PD-07 SettingsTab | 0 | 1 | 2 | 0 |
+| PD-07 SettingsTab | 2 | 1 | 0 | 0 |
 | PD-08 ContextRenderer | 4 | 0 | 0 | 0 |
 | PD-09 CollapsibleSection | 4 | 0 | 0 | 0 |
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 7 | 0 | 0 | 0 |
 
-**Totals**: 54 ✅ · 6 ⚠️ · 7 📝 · 0 ❌
+**Totals**: 56 ✅ · 6 ⚠️ · 5 📝 · 0 ❌
 
 ---
 
@@ -59,7 +59,7 @@
 - [/] **PD-02-AF-005..007** — Attachment chip: render, remove, clear-all
 - [/] **PD-03-AF-007** — Message enabled checkbox wired to `message.enabled`
 - [/] **PD-03-AF-011..014** — Working Memory callbacks (toggle, delete, promote, add)
-- [ ] **PD-07-AF-002..003** — Settings collapse state + restart-required tooltip
+- [/] **PD-07-AF-002..003** — Settings collapse state + restart-required icon
 
 ---
 
