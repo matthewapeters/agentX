@@ -419,15 +419,15 @@ class FileExplorer:
             menu = self._folder_popup_menu
         if menu is None:
             return "break"
-        # Open the menu.  Two precautions for Linux/X11 + modern compositors:
-        # 1. after_idle defers grab_release() until the Tk event queue is fully drained.
-        #    Calling grab_release() synchronously (try/finally) can fire before Tk has
-        #    finished processing the grab-related events, leaving a queued event that
-        #    triggers unpost after the release.
-        # 2. Return "break" stops the ButtonRelease-3 event from propagating to parent
-        #    widgets or root-window bindings that could also unpost the menu.
-        menu.tk_popup(event.x_root, event.y_root)
-        menu.after_idle(menu.grab_release)
+        # Use menu.post() rather than menu.tk_popup().
+        # tk_popup() calls Tcl's `grab` command internally; on Linux with any
+        # modern compositor (GNOME/Mutter, KWin, Wayland/XWayland) the WM already
+        # holds a server-side grab for the ButtonRelease event and resolves the
+        # conflict by cancelling Tk's grab, which immediately calls unpost().
+        # menu.post() positions and displays the menu without setting any grab.
+        # Tk's native root-window <ButtonPress> binding handles auto-dismiss when
+        # the user clicks outside the menu; <Escape> is bound explicitly on the tree.
+        menu.post(event.x_root, event.y_root)
         return "break"
 
     def _get_selected_folder_name(self) -> str | None:

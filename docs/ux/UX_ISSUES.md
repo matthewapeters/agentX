@@ -55,30 +55,29 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 ## Issues
 
 ----
-[ ] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 4)
+[ ] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 5)
 
-- **Root cause 1 (v0.22.1)**: `<FocusOut>` was bound to `_dismiss_popup_menu()` — removed.
-- **Root cause 2 (v0.22.2)**: Binding was on `<Button-3>` (press).  `tk_popup()` sets up an
-  internal X11 grab; the corresponding `<ButtonRelease-3>` (the release of the same click,
-  milliseconds later) is captured by the grab and immediately dismisses the menu.  Fix:
-  changed binding to `<ButtonRelease-3>`.
-- **Root cause 3 (v0.22.3)**: `tk_popup()` always calls `grab $menu` in Tk internally.
-  On Linux with modern compositors (GNOME/Mutter, KWin, Wayland/XWayland), this
-  server-side passive grab conflicts with the WM's own pointer grab.  The WM resolves the
-  conflict by cancelling Tk's grab, which causes Tk to call `unpost()` on the menu
-  immediately.  Fix: call `menu.grab_release()` immediately after `tk_popup()` inside a
-  `try/finally` block.
-- **Root cause 4 (v0.22.4)**: Calling `grab_release()` synchronously in a `try/finally`
-  block fires before Tk's event queue is drained.  There may still be grab-related events
-  already queued that cause `unpost()` after the release — explaining the 1-in-12
-  intermittent success rate.  Additionally, `<ButtonRelease-3>` propagates up the widget
-  tree; any binding on a parent or root window could also dismiss the menu.  Fix:
-  (a) defer `grab_release()` via `menu.after_idle(menu.grab_release)` so it runs after
-  the event queue is fully drained; (b) return `"break"` from the handler to stop event
-  propagation.
-- **Side-effect of root cause 2**: When the menu was bound to `<Button-3>` (press) and the
-  WM released the grab, the ButtonRelease-3 event could land on menu-item coordinates and
-  accidentally trigger "Attach" — the reported "file added without using the popup" symptom.
+- **Root cause 1–4 (v0.22.1–0.22.4)**: See history below — all were workarounds to
+  `tk_popup()`'s internal `grab` command.  The WM kept cancelling Tk's grab.
+- **Root cause 5 / structural fix (v0.22.5)**: All previous fixes treated symptoms of
+  `tk_popup()`.  `tk_popup()` unconditionally calls Tcl's `grab` command, which on any
+  modern Linux compositor (GNOME/Mutter, KWin, Wayland/XWayland) conflicts with the WM's
+  own pointer grab — the WM cancels Tk's grab and the menu is immediately dismissed.
+  There is no reliable way to keep the grab after `tk_popup()` on these compositors.
+  Fix: replaced `tk_popup()` with `menu.post()`.  `post()` positions and displays the
+  menu without setting any grab.  Tk's native root-window `<ButtonPress>` binding handles
+  auto-dismiss when the user clicks outside; `<Escape>` is bound explicitly.
+- **Test limitation note**: Unit tests verify that `menu.post()` is called and
+  `tk_popup()` is not.  Whether the menu stays visible under a live compositor cannot
+  be detected by headless unit tests — this requires manual UAT.
+- **History of prior root causes**:
+  - RC1 (v0.22.1): `<FocusOut>` bound to `_dismiss_popup_menu()` — removed.
+  - RC2 (v0.22.2): `<Button-3>` press binding — changed to `<ButtonRelease-3>`.
+  - RC3 (v0.22.3): Synchronous `grab_release()` after `tk_popup()` — added.
+  - RC4 (v0.22.4): `grab_release()` fired before event queue drained — moved to
+    `after_idle`; added `return "break"`.
+- **Side-effect of RC2**: `<Button-3>` could accidentally trigger "Attach" via the WM's
+  ButtonRelease landing on menu-item coordinates — fixed in v0.22.2.
 - **Affordances**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
 - **Tests**: `tests/test_file_explorer_context_menu.py` (15 unit tests, all pass).
-- **Committed**: v0.22.4
+- **Committed**: v0.22.5

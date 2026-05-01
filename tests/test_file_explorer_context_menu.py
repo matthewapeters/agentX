@@ -70,20 +70,22 @@ class TestFileContextMenu:
     Source: FileExplorer._on_right_click()
     """
 
-    def test_right_click_file_calls_tk_popup_on_file_menu(self, tmp_path):
+    def test_right_click_file_calls_post_on_file_menu(self, tmp_path):
         """
         GIVEN the tree has a file row
         WHEN the user right-clicks that row
-        THEN the file context menu is posted (tk_popup called)
-         AND after_idle(grab_release) is scheduled — NOT a synchronous grab_release call
+        THEN menu.post() is called (NOT tk_popup) to display the file context menu
          AND the handler returns 'break' to stop event propagation
          AND the folder context menu is NOT posted.
 
-        The after_idle deferral is critical: calling grab_release() synchronously
-        (try/finally) leaves grab-related events still queued that can unpost the menu;
-        deferring until the event queue drains prevents that race.
-        Returning 'break' prevents parent / root-window bindings from also acting
-        on the ButtonRelease-3 event and closing the menu.
+        NOTE on test limitations: unit tests can only verify that the correct Tk
+        method is called with the correct coordinates.  Whether the menu actually
+        stays visible under a live X11 compositor (grab conflicts, WM interference)
+        cannot be detected by headless unit tests and requires manual UAT.
+
+        menu.post() is used instead of tk_popup() to avoid the Tcl grab command
+        that tk_popup() sets internally.  On Linux compositors the WM cancels
+        Tk's grab immediately, causing unpost().  post() has no grab at all.
         Affordance ID: PD-11-AF-008
         """
         (tmp_path / "hello.py").write_text("x")
@@ -95,19 +97,17 @@ class TestFileContextMenu:
             y = int(bbox[1]) + int(bbox[3]) // 2 if bbox else 5
             ev = _fake_event(y=y)
 
-            after_idle_calls: list = []
             with (
-                patch.object(fe._popup_menu, "tk_popup") as mock_file_popup,
-                patch.object(fe._popup_menu, "after_idle", side_effect=lambda fn: after_idle_calls.append(fn)),
-                patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_popup,
+                patch.object(fe._popup_menu, "post") as mock_file_post,
+                patch.object(fe._popup_menu, "tk_popup") as mock_file_tk_popup,
+                patch.object(fe._folder_popup_menu, "post") as mock_folder_post,
             ):
                 result = fe._on_right_click(ev)
 
-            mock_file_popup.assert_called_once()
-            mock_folder_popup.assert_not_called()
+            mock_file_post.assert_called_once()
+            mock_file_tk_popup.assert_not_called()
+            mock_folder_post.assert_not_called()
             assert result == "break"
-            assert len(after_idle_calls) == 1
-            assert after_idle_calls[0] == fe._popup_menu.grab_release
         finally:
             root.destroy()
 
@@ -237,15 +237,16 @@ class TestFolderContextMenu:
     Source: FileExplorer._on_right_click()
     """
 
-    def test_right_click_directory_calls_tk_popup_on_folder_menu(self, tmp_path):
+    def test_right_click_directory_calls_post_on_folder_menu(self, tmp_path):
         """
         GIVEN the tree has a directory row
         WHEN the user right-clicks that row
-        THEN the folder context menu is posted
-         AND after_idle(grab_release) is scheduled on the folder menu
+        THEN menu.post() is called on the folder menu (NOT tk_popup)
          AND the handler returns 'break' to stop event propagation
          AND the file context menu is NOT posted.
 
+        See test_right_click_file_calls_post_on_file_menu for the rationale for
+        using post() instead of tk_popup().
         Affordance ID: PD-11-AF-009
         """
         (tmp_path / "subdir").mkdir()
@@ -257,19 +258,17 @@ class TestFolderContextMenu:
             y = int(bbox[1]) + int(bbox[3]) // 2 if bbox else 5
             ev = _fake_event(y=y)
 
-            after_idle_calls: list = []
             with (
-                patch.object(fe._popup_menu, "tk_popup") as mock_file_popup,
-                patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_popup,
-                patch.object(fe._folder_popup_menu, "after_idle", side_effect=lambda fn: after_idle_calls.append(fn)),
+                patch.object(fe._popup_menu, "post") as mock_file_post,
+                patch.object(fe._folder_popup_menu, "post") as mock_folder_post,
+                patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_tk_popup,
             ):
                 result = fe._on_right_click(ev)
 
-            mock_folder_popup.assert_called_once()
-            mock_file_popup.assert_not_called()
+            mock_folder_post.assert_called_once()
+            mock_folder_tk_popup.assert_not_called()
+            mock_file_post.assert_not_called()
             assert result == "break"
-            assert len(after_idle_calls) == 1
-            assert after_idle_calls[0] == fe._folder_popup_menu.grab_release
         finally:
             root.destroy()
 

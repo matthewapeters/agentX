@@ -7,6 +7,31 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.5] - 2026-05-01
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/file_explorer.py` `_on_right_click()`: Replaced `tk_popup()` with
+  `menu.post()`.  All previous fixes (v0.22.1–0.22.4) were workarounds to symptoms of
+  `tk_popup()`'s internal `grab` command.  On any modern Linux compositor the WM cancels
+  Tk's grab immediately after `tk_popup()` sets it — there is no reliable way to keep the
+  grab.  `menu.post()` displays the menu without setting any grab.  Tk's native
+  root-window `<ButtonPress>` binding handles auto-dismiss; `<Escape>` remains bound.
+  Removed the now-unnecessary `after_idle(grab_release)` call.
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_file_explorer_context_menu.py`: Updated file and folder right-click tests
+  to assert `menu.post()` is called and `tk_popup()` is NOT called.  Added docstring
+  note documenting the inherent limitation of unit tests for this behavior (compositor
+  grab conflicts cannot be detected headlessly; manual UAT is required).
+
+---
+
 ## [0.22.4] - 2026-05-01
 
 ### Code Changes
