@@ -439,6 +439,18 @@ class IGUIManager(Protocol):
         """
         ...
 
+    def set_refresh_models_callback(self, callback: Callable[[], None]) -> None:
+        """Register the callback invoked when the user clicks the model-list refresh button.
+
+        Args:
+            callback: Called with no arguments; should re-fetch models from
+                Agentix/Ollama and call ``populate_models()`` to update the
+                drop-down (PD-04-AF-004).
+
+        Replaces any previously registered refresh callback.
+        """
+        ...
+
     def set_tool_toggle_callback(self, callback: Callable[[str, bool], None]) -> None:
         """Register the callback invoked whenever a tool is enabled/disabled.
 

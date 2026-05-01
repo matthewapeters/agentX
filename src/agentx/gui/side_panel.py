@@ -208,6 +208,16 @@ class SidePanel:
         if self.model_selector:
             self.model_selector.on_model_change = callback
 
+    def set_refresh_models_callback(self, callback: Callable[[], None]) -> None:
+        """Register the callback invoked when the user clicks the model-list refresh button.
+
+        Args:
+            callback (Callable[[], None]): Called with no arguments when the
+                refresh button is pressed (PD-04-AF-004).
+        """
+        if self.model_selector:
+            self.model_selector.set_refresh_callback(callback)
+
     # ── Tools panel ───────────────────────────────────────────────────────────
 
     def populate_tools(self, tools: list[dict]) -> None:

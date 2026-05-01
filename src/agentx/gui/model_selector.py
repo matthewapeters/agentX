@@ -18,32 +18,51 @@ class ModelSelector:
     Dropdown widget for selecting Ollama model.
 
     Displays available models and calls a callback when selection changes.
+    An optional ``on_refresh`` callback may be supplied so the host can
+    reload the model list from Ollama/Agentix on demand (PD-04-AF-004).
 
-    Example:
+    Example::
+
         def on_model_change(model: str):
             session.active_model = model
+
+        def on_refresh():
+            models = agentix_adapter.get_models()
+            selector.populate(models)
 
         selector = ModelSelector(
             parent=status_frame,
             on_model_change=on_model_change,
-            initial_model="llama3.2"
+            initial_model="llama3.2",
+            on_refresh=on_refresh,
         )
         selector.get_widget().pack(side=tk.LEFT)
     """
 
-    def __init__(self, parent: tk.Widget, on_model_change: Callable[[str], None], initial_model: str = ""):
+    def __init__(
+        self,
+        parent: tk.Widget,
+        on_model_change: Callable[[str], None],
+        initial_model: str = "",
+        on_refresh: Optional[Callable[[], None]] = None,
+    ):
         """
         Initialize model selector.
 
         Args:
-            parent: Parent tkinter widget
-            on_model_change: Callback when user selects a model
-            initial_model: Initial model selection
+            parent (tk.Widget): Parent tkinter widget.
+            on_model_change (Callable[[str], None]): Callback when user selects a model.
+            initial_model (str): Initial model selection.
+            on_refresh (Optional[Callable[[], None]]): Optional callback invoked when the
+                user clicks the ``[⟳]`` refresh button (PD-04-AF-004).  When ``None`` the
+                button is still rendered but does nothing until a callback is registered
+                via :meth:`set_refresh_callback`.
         """
         self.parent = parent
         self.on_model_change = on_model_change
+        self._on_refresh_callback: Optional[Callable[[], None]] = on_refresh
         self.current_model = tk.StringVar(master=parent, value=initial_model)
-        self._models = {}  # Map display name to full model info
+        self._models: dict[str, str] = {}  # Map display name to full model info
 
         # Create frame
         self.frame = ttk.Frame(parent)
@@ -56,6 +75,10 @@ class ModelSelector:
         self.dropdown = ttk.Combobox(self.frame, textvariable=self.current_model, state="readonly", width=25)
         self.dropdown.bind("<<ComboboxSelected>>", self._on_selection)
         self.dropdown.pack(side=tk.LEFT)
+
+        # Refresh button (PD-04-AF-004)
+        self.refresh_btn = ttk.Button(self.frame, text="⟳", width=3, command=self._on_refresh)
+        self.refresh_btn.pack(side=tk.LEFT, padx=(4, 0))
 
     def populate(self, models: list[dict], initial_model: str = None) -> None:
         """
@@ -124,6 +147,22 @@ class ModelSelector:
         if not selected and not self.current_model.get() and model_names:
             self.current_model.set(model_names[0])
             self.on_model_change(self._models[model_names[0]])
+
+    def set_refresh_callback(self, callback: Callable[[], None]) -> None:
+        """Register or replace the refresh callback (PD-04-AF-004).
+
+        Args:
+            callback (Callable[[], None]): Called when the user clicks ``[⟳]``.
+        """
+        self._on_refresh_callback = callback
+
+    def _on_refresh(self) -> None:
+        """Handle refresh button click — invoke the registered callback if any (PD-04-AF-004).
+
+        Affordance ID: PD-04-AF-004
+        """
+        if self._on_refresh_callback is not None:
+            self._on_refresh_callback()
 
     def _on_selection(self, event) -> None:
         """Handle model selection change."""

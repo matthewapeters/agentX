@@ -3,7 +3,7 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-04-30  
+**Last updated**: 2026-05-01  
 **Current version**: see `pyproject.toml`
 
 ---
@@ -38,8 +38,8 @@
 | PD-02 InputPanel | 4 | 3 | 0 | 0 |
 | PD-03 SidePanel — Context | 7 | 0 | 0 | 0 |
 | PD-03 SidePanel — Working Memory | 4 | 1 | 0 | 0 |
-| PD-04 ModelSelector | 3 | 0 | 1 | 0 |
-| PD-05 PlanTreeWidget | 3 | 0 | 3 | 0 |
+| PD-04 ModelSelector | 4 | 0 | 0 | 0 |
+| PD-05 PlanTreeWidget | 6 | 0 | 0 | 0 |
 | PD-06 ResynthesisDialog | 5 | 0 | 0 | 0 |
 | PD-07 SettingsTab | 2 | 1 | 0 | 0 |
 | PD-08 ContextRenderer | 4 | 0 | 0 | 0 |
@@ -47,7 +47,7 @@
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 7 | 0 | 0 | 0 |
 
-**Totals**: 57 ✅ · 6 ⚠️ · 4 📝 · 0 ❌
+**Totals**: 61 ✅ · 6 ⚠️ · 0 📝 · 0 ❌
 
 ---
 
@@ -61,6 +61,10 @@
 - [/] **PD-03-AF-011..014** — Working Memory callbacks (toggle, delete, promote, add)
 - [/] **PD-07-AF-002..003** — Settings collapse state + restart-required icon
 - [/] **PD-02-AF-002** — Shift+Enter inserts newline
+- [/] **PD-04-AF-004** — ModelSelector refresh button
+- [/] **PD-05-AF-004** — Re-synth button in synthesis block
+- [/] **PD-05-AF-005** — Export button in plan tab toolbar
+- [/] **PD-05-AF-006** — Node status icon reflects task state
 
 ---
 

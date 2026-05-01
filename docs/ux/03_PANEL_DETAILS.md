@@ -597,6 +597,26 @@ THEN  no exception is raised
 | Dropdown combo | Select model | `on_model_change(model_name)` → updates `SessionState.active_model`, writes to `agentx.toml` |
 | `[⟳]` refresh | Reload model list | Calls Ollama `/api/tags` endpoint to refresh available models |
 
+### Affordance: PD-04-AF-004 — Refresh button reloads model list
+
+**Source**: `ModelSelector._on_refresh()` (`src/agentx/gui/model_selector.py`)  
+**Test**: `tests/test_model_selector_refresh.py` · `TestModelSelectorRefreshButton`
+
+```gherkin
+GIVEN a ModelSelector widget is rendered with a refresh callback registered
+WHEN the user clicks the [⟳] button
+THEN the refresh callback is invoked once
+ AND the model dropdown is repopulated with the updated list from Agentix
+
+GIVEN a ModelSelector widget is rendered with no refresh callback
+WHEN the user clicks the [⟳] button
+THEN no exception is raised
+
+GIVEN a ModelSelector widget with a previous refresh callback
+WHEN set_refresh_callback() is called with a new callback
+THEN only the new callback is invoked on the next button click
+```
+
 ---
 
 ## PD-05: PlanTreeWidget
@@ -635,6 +655,80 @@ THEN  no exception is raised
 | `[Export]` | Plan root | Writes `task_tree_export.md` and opens it |
 | Tool call `▶` | Tool call row | Expand/collapse tool result inline |
 | Canvas scroll | Tree panel | Vertical scroll through long plans |
+
+### Affordance: PD-05-AF-004 — Re-synth button opens ResynthesisDialog
+
+**Source**: `PlanTreeWidget._create_synthesis_block()` (`src/agentx/gui/plan_tree_widget.py`)  
+**Test**: `tests/test_plan_tree_affordances.py` · `TestResynthButtonInSynthesisBlock`
+
+```gherkin
+GIVEN a PlanTreeWidget with a task node that has an on_resynth callback
+WHEN add_synthesis_to_node() is called
+THEN a Re-synth button is present in the node's details frame
+ AND clicking it invokes the on_resynth callback
+
+GIVEN a PlanTreeWidget with a task node that has no on_resynth callback
+WHEN add_synthesis_to_node() is called
+THEN no Re-synth button is created
+
+GIVEN a PlanTreeWidget and a task_id that does not exist in the tree
+WHEN add_synthesis_to_node() is called with an on_resynth callback
+THEN no exception is raised
+```
+
+### Affordance: PD-05-AF-005 — Export button writes and opens export file
+
+**Source**: `ChatPanel.add_plan_tab()` (`src/agentx/gui/chat_panel.py`) / `AgentXSession._export_task_tree()` (`src/agentx/session.py`)  
+**Test**: `tests/test_plan_tree_affordances.py` · `TestExportButtonInPlanTab`
+
+```gherkin
+GIVEN a ChatPanel with a plan tab added via add_plan_tab()
+WHEN the toolbar is inspected
+THEN an Export button is present
+
+GIVEN a ChatPanel with a plan tab and an on_export callback registered
+WHEN the user clicks the Export button
+THEN the on_export callback is invoked once
+
+GIVEN a ChatPanel with a plan tab and no on_export callback
+WHEN the user clicks the Export button
+THEN no exception is raised
+```
+
+### Affordance: PD-05-AF-006 — Node status icon reflects task state
+
+**Source**: `PlanTreeWidget.update_node_status()` / `_STATUS_ICONS` (`src/agentx/gui/plan_tree_widget.py`)  
+**Test**: `tests/test_plan_tree_affordances.py` · `TestNodeStatusIconReflectsState`
+
+```gherkin
+GIVEN a PlanTreeWidget with a task node
+WHEN update_node_status(task_id, "pending") is called
+THEN the node label shows the pending icon (○)
+
+WHEN update_node_status(task_id, "running") is called
+THEN the node label shows the running icon (●)
+
+WHEN update_node_status(task_id, "done") is called
+THEN the node label shows the done icon (✓)
+
+WHEN update_node_status(task_id, "needs_review") is called
+THEN the node label shows the review icon (?)
+
+WHEN update_node_status(task_id, "failed") is called
+THEN the node label shows the failed icon (✗)
+
+GIVEN an unknown status string
+WHEN update_node_status() is called
+THEN a fallback bullet icon is displayed and no exception is raised
+
+GIVEN a task_id that does not exist in the tree
+WHEN update_node_status() is called
+THEN no exception is raised
+
+GIVEN a task node that transitions through multiple statuses
+WHEN update_node_status() is called multiple times
+THEN each call updates the icon to match the current status
+```
 
 ---
 

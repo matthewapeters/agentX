@@ -477,6 +477,17 @@ class AgentXSession:
 
         self.gui.set_model_change_callback(on_model_change)
 
+        def _refresh_models() -> None:
+            """Reload the model list from Agentix and re-populate the dropdown (PD-04-AF-004)."""
+            try:
+                models = self.agentix_adapter.get_models()
+                if models:
+                    self.gui.populate_models(models, initial_model=self.active_model)
+            except Exception as exc:
+                logger.exception("Error refreshing models: %s", exc)
+
+        self.gui.set_refresh_models_callback(_refresh_models)
+
         # Always populate models from Agentix (integrated and always available)
         try:
             models = self.agentix_adapter.get_models()

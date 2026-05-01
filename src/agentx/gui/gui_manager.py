@@ -444,6 +444,10 @@ class GUIManager(IGUIManager):
     def set_model_change_callback(self, callback: Callable[[str], None]) -> None:
         self._side_panel.set_model_change_callback(callback)
 
+    def set_refresh_models_callback(self, callback: Callable[[], None]) -> None:
+        """Register the callback invoked when the user presses the model-list refresh button (PD-04-AF-004)."""
+        self._side_panel.set_refresh_models_callback(callback)
+
     def set_tool_toggle_callback(self, callback: Callable[[str, bool], None]) -> None:
         self._side_panel.set_tool_toggle_callback(callback)
 

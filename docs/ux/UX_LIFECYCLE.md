@@ -232,7 +232,7 @@ implements it and the test that validates it.  Status legend:
 | Selecting model updates active_model | PD-04-AF-001 | `ModelSelector._on_selection_change()` | `test_active_model.py` | `TestActiveModelProperty` | ✅ |
 | Model change triggers context meter redraw | PD-04-AF-002 | `SessionState.active_model` setter | `test_active_model_meter_wiring.py` | — | ✅ |
 | Bare model name resolves via :latest fallback | PD-04-AF-003 | `ModelMetadataStore.get_context_length()` | `test_model_metadata_store.py` | — | ✅ |
-| Refresh button reloads model list | PD-04-AF-004 | `ModelSelector._on_refresh()` | — | — | 📝 |
+| Refresh button reloads model list | PD-04-AF-004 | `ModelSelector._on_refresh()` | `test_model_selector_refresh.py` | `TestModelSelectorRefreshButton` | ✅ |
 
 ### PD-05 — PlanTreeWidget
 
@@ -241,9 +241,9 @@ implements it and the test that validates it.  Status legend:
 | Plan header row rendered with plan name | PD-05-AF-001 | `ContextRenderer._render_plan_rows()` | `test_phase6_context_panel.py` | `TestRenderPlanRows` | ✅ |
 | Task node rows indented under plan | PD-05-AF-002 | `ContextRenderer._render_plan_rows()` | `test_phase6_context_panel.py` | `TestRenderPlanRows` | ✅ |
 | Step count badge shown in plan header | PD-05-AF-003 | `ContextRenderer._render_plan_rows()` | `test_phase6_context_panel.py` | `TestRenderPlanRows` | ✅ |
-| Re-synth button opens ResynthesisDialog | PD-05-AF-004 | `PlanTreeWidget._add_resynth_button()` | — | — | 📝 |
-| Export button writes and opens export file | PD-05-AF-005 | `PlanTreeWidget._on_export()` | — | — | 📝 |
-| Node status icon reflects task state | PD-05-AF-006 | `PlanTreeWidget._node_icon()` | — | — | 📝 |
+| Re-synth button opens ResynthesisDialog | PD-05-AF-004 | `PlanTreeWidget._create_synthesis_block()` | `test_plan_tree_affordances.py` | `TestResynthButtonInSynthesisBlock` | ✅ |
+| Export button writes and opens export file | PD-05-AF-005 | `ChatPanel.add_plan_tab()` / `AgentXSession._export_task_tree()` | `test_plan_tree_affordances.py` | `TestExportButtonInPlanTab` | ✅ |
+| Node status icon reflects task state | PD-05-AF-006 | `PlanTreeWidget.update_node_status()` / `_STATUS_ICONS` | `test_plan_tree_affordances.py` | `TestNodeStatusIconReflectsState` | ✅ |
 
 ### PD-06 — ResynthesisDialog
 

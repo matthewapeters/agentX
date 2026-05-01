@@ -7,6 +7,87 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.0] - 2026-05-01
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/gui/model_selector.py`: Added `on_refresh` constructor parameter,
+  `refresh_btn` (`ttk.Button` with glyph `⟳`), `set_refresh_callback()`, and
+  `_on_refresh()`. Pressing the button invokes the registered callback, which is
+  wired through the full chain to reload the Ollama model list. Implements PD-04-AF-004.
+- `src/agentx/gui/side_panel.py`: Added `set_refresh_models_callback()` — forwards
+  the callback down to `ModelSelector`.
+- `src/agentx/gui/gui_manager.py`: Added `set_refresh_models_callback()` delegate.
+- `src/agentx/igui_manager.py`: Added `set_refresh_models_callback()` Protocol method.
+- `src/agentx/session.py`: Added `_refresh_models()` inner function and
+  `gui.set_refresh_models_callback(_refresh_models)` call in `_setup_agentix_ui()`.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_model_selector_refresh.py` — 8 `@pytest.mark.unit` tests in
+  `TestModelSelectorRefreshButton` covering PD-04-AF-004:
+  - GIVEN ModelSelector created THEN refresh_btn is a ttk.Button.
+  - GIVEN ModelSelector created THEN refresh_btn is packed inside the widget frame.
+  - GIVEN ModelSelector created THEN refresh_btn text is "⟳".
+  - GIVEN refresh callback registered WHEN button clicked THEN callback invoked once.
+  - GIVEN no callback registered WHEN button clicked THEN no exception raised.
+  - GIVEN existing callback WHEN set_refresh_callback() called with new callback THEN only new callback invoked.
+  - GIVEN no callback WHEN set_refresh_callback() called THEN late-registered callback works on next click.
+  - GIVEN callback set WHEN set_refresh_callback(None) called THEN subsequent click does not raise.
+
+- `tests/test_plan_tree_affordances.py` — 16 `@pytest.mark.unit` tests across three
+  classes covering PD-05-AF-004, PD-05-AF-005, PD-05-AF-006:
+
+  `TestNodeStatusIconReflectsState` (PD-05-AF-006):
+  - GIVEN pending status WHEN update_node_status called THEN icon is ○.
+  - GIVEN running status WHEN update_node_status called THEN icon is ●.
+  - GIVEN done status WHEN update_node_status called THEN icon is ✓.
+  - GIVEN needs_review status WHEN update_node_status called THEN icon is ?.
+  - GIVEN failed status WHEN update_node_status called THEN icon is ✗.
+  - GIVEN unknown status WHEN update_node_status called THEN fallback bullet shown, no exception.
+  - GIVEN missing task_id WHEN update_node_status called THEN no exception.
+  - GIVEN multiple status transitions THEN each call updates icon correctly.
+
+  `TestResynthButtonInSynthesisBlock` (PD-05-AF-004):
+  - GIVEN on_resynth callback provided WHEN add_synthesis_to_node called THEN Re-synth button present.
+  - GIVEN no on_resynth callback WHEN add_synthesis_to_node called THEN no Re-synth button.
+  - GIVEN on_resynth callback THEN callback stored on synthesis widget for later invocation.
+  - GIVEN missing task_id with on_resynth callback THEN no exception.
+
+  `TestExportButtonInPlanTab` (PD-05-AF-005):
+  - GIVEN plan tab created THEN Export button present in toolbar.
+  - GIVEN plan tab with on_export callback WHEN Export clicked THEN callback invoked once.
+  - GIVEN plan tab with no on_export callback THEN Export button still present.
+  - GIVEN no on_export callback WHEN Export clicked THEN no exception.
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/UX_LIFECYCLE.md`:
+  - PD-04-AF-004 📝 → ✅; corrected source from non-existent `_on_refresh()` (method
+    now added) and added test file/class refs.
+  - PD-05-AF-004 📝 → ✅; corrected source from `_add_resynth_button()` to actual
+    `_create_synthesis_block()`; added test file/class refs.
+  - PD-05-AF-005 📝 → ✅; corrected source from `_on_export()` to `ChatPanel.add_plan_tab()`
+    and `AgentXSession._export_task_tree()`; added test file/class refs.
+  - PD-05-AF-006 📝 → ✅; corrected source from `_node_icon()` to `update_node_status()`
+    and `_STATUS_ICONS`; added test file/class refs.
+- `docs/ux/00_INDEX.md`:
+  - PD-04 row: `3✅·1📝` → `4✅·0📝`.
+  - PD-05 row: `3✅·3📝` → `6✅·0📝`.
+  - Totals: `57✅·4📝` → `61✅·0📝`.
+  - Priority Work Queue: added 4 `[/]` completed entries for PD-04-AF-004, PD-05-AF-004/005/006.
+- `docs/ux/03_PANEL_DETAILS.md`:
+  - PD-04 section: added Gherkin use-cases for PD-04-AF-004.
+  - PD-05 Controls section: added Gherkin use-cases for PD-05-AF-004, PD-05-AF-005, PD-05-AF-006.
+
+---
+
 ## [0.21.0] - 2026-04-30
 
 ### Code Changes
