@@ -7,6 +7,41 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.3] - 2026-05-01
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/file_explorer.py` `_on_right_click()`: Added `try/finally` block that calls
+  `menu.grab_release()` immediately after `tk_popup()`.  On Linux with modern compositors
+  (GNOME/Mutter, KWin, Wayland/XWayland), `tk_popup()` sets a server-side passive grab
+  that conflicts with the WM's own grab.  The WM resolves the conflict by cancelling Tk's
+  grab, which causes Tk to unpost the menu immediately.  `grab_release()` frees the
+  conflicting grab while leaving the menu posted; Tk's native `<Leave>` and root
+  `ButtonPress` bindings still handle auto-dismiss correctly.
+  This is root cause #3; causes #1 (FocusOut) and #2 (ButtonRelease binding) were fixed
+  in v0.22.1 and v0.22.2 respectively.
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_file_explorer_context_menu.py`: Updated `test_right_click_file_calls_tk_popup_on_file_menu`
+  and `test_right_click_directory_calls_tk_popup_on_folder_menu` to also assert
+  `grab_release()` is called after `tk_popup()`.
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/UX_ISSUES.md`: Added root cause #3 and side-effect explanation (accidental
+  Attach trigger); updated attempt count to 3.
+- `docs/ux/03_PANEL_DETAILS.md` PD-11: Extended dismiss-behaviour note to cover
+  `grab_release()` rationale.
+
+---
+
 ## [0.22.2] - 2026-05-01
 
 ### Code Changes

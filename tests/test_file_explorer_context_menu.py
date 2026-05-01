@@ -75,6 +75,7 @@ class TestFileContextMenu:
         GIVEN the tree has a file row
         WHEN the user right-clicks that row
         THEN the file context menu is posted (tk_popup called)
+         AND grab_release() is called to release the WM grab conflict
          AND the folder context menu is NOT posted.
         """
         (tmp_path / "hello.py").write_text("x")
@@ -89,11 +90,13 @@ class TestFileContextMenu:
 
             with (
                 patch.object(fe._popup_menu, "tk_popup") as mock_file_popup,
+                patch.object(fe._popup_menu, "grab_release") as mock_grab_release,
                 patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_popup,
             ):
                 fe._on_right_click(ev)
 
             mock_file_popup.assert_called_once()
+            mock_grab_release.assert_called_once()
             mock_folder_popup.assert_not_called()
         finally:
             root.destroy()
@@ -229,6 +232,7 @@ class TestFolderContextMenu:
         GIVEN the tree has a directory row
         WHEN the user right-clicks that row
         THEN the folder context menu is posted
+         AND grab_release() is called to release the WM grab conflict
          AND the file context menu is NOT posted.
         """
         (tmp_path / "subdir").mkdir()
@@ -243,10 +247,12 @@ class TestFolderContextMenu:
             with (
                 patch.object(fe._popup_menu, "tk_popup") as mock_file_popup,
                 patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_popup,
+                patch.object(fe._folder_popup_menu, "grab_release") as mock_grab_release,
             ):
                 fe._on_right_click(ev)
 
             mock_folder_popup.assert_called_once()
+            mock_grab_release.assert_called_once()
             mock_file_popup.assert_not_called()
         finally:
             root.destroy()

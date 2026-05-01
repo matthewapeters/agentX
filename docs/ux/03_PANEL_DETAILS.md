@@ -1257,6 +1257,11 @@ Files tab
 > On Linux/X11 `tk_popup()` sets up an internal grab; if the menu opens on the press
 > event, the corresponding button-release is captured by the grab and immediately dismisses
 > the menu.  Using the release event means it has already fired before the popup opens.
+> Additionally, `grab_release()` is called immediately after `tk_popup()` (in a
+> `try/finally`) to release the server-side grab that `tk_popup` sets.  On modern Linux
+> compositors (GNOME/Mutter, KWin) this grab can conflict with the WM's own grab,
+> causing the menu to vanish.  `grab_release()` frees the grab while keeping the menu
+> posted; Tk's native `<Leave>` and root-`ButtonPress` bindings still handle dismiss.
 > The `<FocusOut>` event is also intentionally **not** used to dismiss the menu, as
 > `tk_popup()` steals focus from the treeview when it opens.
 
