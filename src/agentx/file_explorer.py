@@ -375,14 +375,18 @@ class FileExplorer:
         )
         self._on_add_folder_to_memory_callback = on_add_folder_to_memory
 
-        # Bind right-click (Button-3) for most platforms and Control+Button-1 for macOS
-        self.tree.bind("<Button-3>", self._on_right_click)
-        self.tree.bind("<Control-Button-1>", self._on_right_click)
+        # Bind right-click on RELEASE, not press.
+        # On Linux/X11, tk_popup() sets up an internal grab.  If the popup is opened on
+        # <Button-3> (press), the corresponding <ButtonRelease-3> is captured by the menu
+        # grab and immediately dismisses the menu before the user can interact with it.
+        # Binding to <ButtonRelease-3> means the release has already happened before the
+        # popup opens, so the menu stays visible.
+        self.tree.bind("<ButtonRelease-3>", self._on_right_click)
+        self.tree.bind("<Control-ButtonRelease-1>", self._on_right_click)
         self.tree.bind("<Escape>", self._dismiss_popup_menu)
         # NOTE: <FocusOut> is intentionally NOT bound here.  When tk_popup() is called it
         # grabs focus away from the tree, which would immediately trigger FocusOut and
-        # dismiss the menu before the user sees it.  Escape and clicking elsewhere are
-        # sufficient to dismiss the menu.
+        # dismiss the menu.  Escape and clicking elsewhere are sufficient to dismiss.
 
         # Pack the treeview and scrollbars
         self.tree.grid(row=0, column=0, sticky="nsew")

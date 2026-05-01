@@ -7,6 +7,39 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.2] - 2026-05-01
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/file_explorer.py`: Changed right-click binding from `<Button-3>` to
+  `<ButtonRelease-3>` (and `<Control-Button-1>` → `<Control-ButtonRelease-1>`).
+  On Linux/X11, `tk_popup()` sets up an internal grab when it opens.  When the binding
+  was on the button-press event, the corresponding button-release event was captured by
+  that grab and immediately dismissed the menu.  Binding to the release event means the
+  release has already been consumed before the popup opens, so the menu stays visible.
+  This is the second fix for UX_ISSUES.md issue #1 (first fix in v0.22.1 removed the
+  FocusOut binding).
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_file_explorer_context_menu.py`: Added
+  `test_right_click_bound_to_button_release_not_press` to `TestFileContextMenu` — asserts
+  `<ButtonRelease-3>` is bound and `<Button-3>` is absent.  15 tests total (was 14).
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/UX_ISSUES.md`: Issue #1 updated with second root-cause and marked `[/]`.
+- `docs/ux/03_PANEL_DETAILS.md` PD-11: Updated the dismiss-behaviour note to explain
+  both the ButtonRelease and FocusOut rationale.
+
+---
+
 ## [0.22.1] - 2026-05-01
 
 ### Code Changes

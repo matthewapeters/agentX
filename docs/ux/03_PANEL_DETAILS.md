@@ -1253,9 +1253,12 @@ Files tab
 | Right-click (or Ctrl+click) | Directory row | Shows folder context menu |
 | `Escape` | Any | Dismisses open context menu |
 
-> **Note**: The `<FocusOut>` event on the tree is intentionally **not** used to dismiss
-> the menu.  `tk_popup()` grabs focus away from the treeview when the menu opens; binding
-> FocusOut would immediately unpost the menu before the user can interact with it.
+> **Note**: The `<ButtonRelease-3>` event is used (not `<Button-3>`) to open the menu.
+> On Linux/X11 `tk_popup()` sets up an internal grab; if the menu opens on the press
+> event, the corresponding button-release is captured by the grab and immediately dismisses
+> the menu.  Using the release event means it has already fired before the popup opens.
+> The `<FocusOut>` event is also intentionally **not** used to dismiss the menu, as
+> `tk_popup()` steals focus from the treeview when it opens.
 
 ### File Context Menu (right-click on a file)
 

@@ -117,12 +117,29 @@ class TestFileContextMenu:
         finally:
             root.destroy()
 
+    def test_right_click_bound_to_button_release_not_press(self, tmp_path):
+        """
+        GIVEN the widget has been created
+        WHEN the tree's bindings are inspected
+        THEN <ButtonRelease-3> is bound (NOT <Button-3>).
+
+        On Linux/X11, tk_popup() sets up an internal grab.  If the menu is opened on
+        <Button-3> (press), the corresponding <ButtonRelease-3> is captured by the grab
+        and immediately dismisses the menu.  Binding to the release event avoids this.
+        """
+        root, fe, _ = _make_explorer(tmp_path)
+        try:
+            bound_events = fe.tree.bind()
+            assert "<ButtonRelease-3>" in bound_events
+            assert "<Button-3>" not in bound_events
+        finally:
+            root.destroy()
+
     def test_focusout_binding_not_present(self, tmp_path):
         """
         GIVEN the widget has been created
         WHEN the tree's bindings are inspected
-        THEN <FocusOut> is NOT bound to _dismiss_popup_menu
-         (removing this binding is the fix for the immediate-dismiss bug).
+        THEN <FocusOut> is NOT bound (would dismiss menu immediately on focus steal).
         """
         root, fe, _ = _make_explorer(tmp_path)
         try:

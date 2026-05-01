@@ -43,13 +43,13 @@ This file is the bug-tracking log for user-reported UX defects in AgentX.
 ## Issues
 
 ----
-[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.
+[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains (count of attempted fixes: 1)
 
-- **Root cause**: `<FocusOut>` was bound to `_dismiss_popup_menu()` on the treeview.
-    `tk_popup()` steals focus from the tree when it opens, immediately firing `FocusOut`
-    and calling `unpost()` before the user sees the menu.
-- **Fix**: Removed the `<FocusOut>` binding from `FileExplorer.to_gui()`.  `<Escape>`
-    and clicking elsewhere remain as the natural dismiss paths.
-- **Affordances added**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
-- **Tests**: `tests/test_file_explorer_context_menu.py` (14 unit tests, all pass).
-- **Committed**: v0.22.1
+- **Root cause 1 (v0.22.1)**: `<FocusOut>` was bound to `_dismiss_popup_menu()` — removed.
+- **Root cause 2 (v0.22.2)**: Binding was on `<Button-3>` (press).  `tk_popup()` sets up an
+  internal X11 grab; the corresponding `<ButtonRelease-3>` (the release of the same click,
+  milliseconds later) is captured by the grab and immediately dismisses the menu.  Fix:
+  changed binding to `<ButtonRelease-3>` so the release is consumed before the menu opens.
+- **Affordances**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
+- **Tests**: `tests/test_file_explorer_context_menu.py` (15 unit tests, all pass).
+- **Committed**: v0.22.2
