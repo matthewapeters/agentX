@@ -3,7 +3,7 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-01  
+**Last updated**: 2026-05-01 (bugfix: PD-11 right-click menu)  
 **Current version**: see `pyproject.toml`
 
 ---
@@ -45,9 +45,9 @@
 | PD-08 ContextRenderer | 4 | 0 | 0 | 0 |
 | PD-09 CollapsibleSection | 4 | 0 | 0 | 0 |
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
-| PD-11 FileExplorer | 7 | 0 | 0 | 0 |
+| PD-11 FileExplorer | 10 | 0 | 0 | 0 |
 
-**Totals**: 61 ✅ · 6 ⚠️ · 0 📝 · 0 ❌
+**Totals**: 64 ✅ · 6 ⚠️ · 0 📝 · 0 ❌
 
 ---
 

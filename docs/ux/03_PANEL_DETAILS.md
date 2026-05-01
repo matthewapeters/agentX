@@ -1251,7 +1251,11 @@ Files tab
 | Double-click | File row | Opens file for editing (`on_edit` callback) |
 | Right-click (or Ctrl+click) | File row | Shows file context menu |
 | Right-click (or Ctrl+click) | Directory row | Shows folder context menu |
-| `Escape` / focus lost | Any | Dismisses open context menu |
+| `Escape` | Any | Dismisses open context menu |
+
+> **Note**: The `<FocusOut>` event on the tree is intentionally **not** used to dismiss
+> the menu.  `tk_popup()` grabs focus away from the treeview when the menu opens; binding
+> FocusOut would immediately unpost the menu before the user can interact with it.
 
 ### File Context Menu (right-click on a file)
 
@@ -1266,6 +1270,65 @@ Files tab
 |------|--------|---------|
 | Add full path to memory | Saves `folder_name → /abs/path` as a Working Memory fact | `on_add_folder_to_memory(key, full_path)` |
 | Add relative path to memory | Saves `folder_name → relative/path` as a Working Memory fact | `on_add_folder_to_memory(key, rel_path)` |
+
+### Affordance: PD-11-AF-008 — Right-click on a file shows file context menu
+
+**Source**: `FileExplorer._on_right_click()` (`src/agentx/file_explorer.py`)  
+**Test**: `tests/test_file_explorer_context_menu.py` · `TestFileContextMenu`
+
+```gherkin
+GIVEN the file listing is populated
+WHEN the user right-clicks a file row
+THEN the file context menu is posted at the cursor position
+ AND the menu remains visible (is not immediately dismissed)
+
+GIVEN the user right-clicks a file row and the menu is visible
+WHEN the user presses Escape
+THEN the menu is dismissed
+
+GIVEN the user right-clicks a file row and the menu is visible
+WHEN the user clicks Attach
+THEN the on_attach callback is invoked with the full path of the selected file
+
+GIVEN the user right-clicks a file row and the menu is visible
+WHEN the user clicks Edit
+THEN the on_edit callback is invoked with the full path of the selected file
+```
+
+### Affordance: PD-11-AF-009 — Right-click on a directory shows folder context menu
+
+**Source**: `FileExplorer._on_right_click()` (`src/agentx/file_explorer.py`)  
+**Test**: `tests/test_file_explorer_context_menu.py` · `TestFolderContextMenu`
+
+```gherkin
+GIVEN the file listing is populated with a directory row
+WHEN the user right-clicks the directory row
+THEN the folder context menu is posted (not the file context menu)
+ AND the menu remains visible
+
+GIVEN the folder context menu is visible
+WHEN the user clicks "Add full path to memory"
+THEN the on_add_folder_to_memory callback is invoked with the folder name and its absolute path
+
+GIVEN the folder context menu is visible
+WHEN the user clicks "Add relative path to memory"
+THEN the on_add_folder_to_memory callback is invoked with the folder name and its path relative to the root path
+```
+
+### Affordance: PD-11-AF-010 — Escape dismisses the context menu
+
+**Source**: `FileExplorer._dismiss_popup_menu()` (`src/agentx/file_explorer.py`)  
+**Test**: `tests/test_file_explorer_context_menu.py` · `TestDismissContextMenu`
+
+```gherkin
+GIVEN a file context menu is open
+WHEN the user presses Escape
+THEN both the file and folder context menus are unposted
+
+GIVEN no context menu is open
+WHEN _dismiss_popup_menu() is called
+THEN no exception is raised
+```
 
 ### State
 

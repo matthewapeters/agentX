@@ -370,14 +370,19 @@ class FileExplorer:
             activeforeground=colors["selection_fg"],
         )
         self._folder_popup_menu.add_command(label="Add full path to memory", command=self._on_add_full_path_selected)
-        self._folder_popup_menu.add_command(label="Add relative path to memory", command=self._on_add_relative_path_selected)
+        self._folder_popup_menu.add_command(
+            label="Add relative path to memory", command=self._on_add_relative_path_selected
+        )
         self._on_add_folder_to_memory_callback = on_add_folder_to_memory
 
         # Bind right-click (Button-3) for most platforms and Control+Button-1 for macOS
         self.tree.bind("<Button-3>", self._on_right_click)
         self.tree.bind("<Control-Button-1>", self._on_right_click)
         self.tree.bind("<Escape>", self._dismiss_popup_menu)
-        self.tree.bind("<FocusOut>", self._dismiss_popup_menu)
+        # NOTE: <FocusOut> is intentionally NOT bound here.  When tk_popup() is called it
+        # grabs focus away from the tree, which would immediately trigger FocusOut and
+        # dismiss the menu before the user sees it.  Escape and clicking elsewhere are
+        # sufficient to dismiss the menu.
 
         # Pack the treeview and scrollbars
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -560,14 +565,6 @@ class FileExplorer:
         Update the enabled/disabled state of navigation buttons.
         """
         if hasattr(self, "_back_btn"):
-            self._back_btn.config(
-                state=tk.NORMAL if self.history_index > 0 else tk.DISABLED
-            )
+            self._back_btn.config(state=tk.NORMAL if self.history_index > 0 else tk.DISABLED)
         if hasattr(self, "_forward_btn"):
-            self._forward_btn.config(
-                state=(
-                    tk.NORMAL
-                    if self.history_index < len(self.history) - 1
-                    else tk.DISABLED
-                )
-            )
+            self._forward_btn.config(state=(tk.NORMAL if self.history_index < len(self.history) - 1 else tk.DISABLED))

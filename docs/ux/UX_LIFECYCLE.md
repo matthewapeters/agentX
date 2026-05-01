@@ -304,6 +304,9 @@ implements it and the test that validates it.  Status legend:
 | Parent button navigates up one level | PD-11-AF-005 | `FileExplorer.navigate_parent()` | `test_file_explorer_coverage.py` | `TestNavigateParent` | ✅ |
 | Open file triggers callback | PD-11-AF-006 | `FileExplorer.open_file()` | `test_file_explorer_coverage.py` | `TestOpenFile` | ✅ |
 | Theme applies correct colours | PD-11-AF-007 | `FileExplorer._apply_theme()` | `test_file_explorer_theme.py` | — | ✅ |
+| Right-click on file shows file context menu | PD-11-AF-008 | `FileExplorer._on_right_click()` | `test_file_explorer_context_menu.py` | `TestFileContextMenu` | ✅ |
+| Right-click on directory shows folder context menu | PD-11-AF-009 | `FileExplorer._on_right_click()` | `test_file_explorer_context_menu.py` | `TestFolderContextMenu` | ✅ |
+| Escape dismisses context menu | PD-11-AF-010 | `FileExplorer._dismiss_popup_menu()` | `test_file_explorer_context_menu.py` | `TestDismissContextMenu` | ✅ |
 
 ---
 

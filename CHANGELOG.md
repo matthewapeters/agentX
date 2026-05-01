@@ -7,6 +7,63 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.1] - 2026-05-01
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/file_explorer.py`: Removed the `<FocusOut>` binding from the treeview
+  in `to_gui()`.  The binding was calling `_dismiss_popup_menu()` the instant
+  `tk_popup()` stole focus from the tree, causing context menus to appear and
+  immediately vanish on Linux/X11.  `<Escape>` and clicking outside the menu remain
+  as the natural dismiss paths.  Fixes UX_ISSUES.md issue #1.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_file_explorer_context_menu.py` — 14 `@pytest.mark.unit` tests across
+  three classes covering the new affordances:
+
+  `TestFileContextMenu` (PD-11-AF-008):
+  - GIVEN file row right-clicked THEN file menu posted, folder menu not.
+  - GIVEN empty area right-clicked THEN no menu posted.
+  - GIVEN widget created THEN `<FocusOut>` is NOT bound on the tree.
+  - GIVEN file selected WHEN Attach activated THEN on_attach called with correct path.
+  - GIVEN file selected WHEN Edit activated THEN on_edit called with correct path.
+  - GIVEN no on_attach callback THEN no exception raised on activation.
+
+  `TestFolderContextMenu` (PD-11-AF-009):
+  - GIVEN directory row right-clicked THEN folder menu posted, file menu not.
+  - GIVEN directory selected WHEN "Add full path" activated THEN callback with abs path.
+  - GIVEN directory selected WHEN "Add relative path" activated THEN callback with rel path.
+  - GIVEN no callback THEN no exception raised on activation.
+
+  `TestDismissContextMenu` (PD-11-AF-010):
+  - GIVEN widget created THEN `<Key-Escape>` is bound on the tree.
+  - GIVEN _dismiss_popup_menu called THEN unpost called on both menus.
+  - GIVEN no event arg THEN _dismiss_popup_menu does not raise.
+  - GIVEN synthetic event THEN _dismiss_popup_menu does not raise.
+
+### Documentation Changes
+
+#### Added
+
+- `docs/ux/UX_ISSUES.md`: Updated issue #1 to `[/]` with root-cause and fix notes.
+
+#### Changed
+
+- `docs/ux/03_PANEL_DETAILS.md` PD-11 section:
+  - Corrected "Escape / focus lost" dismiss interaction to "Escape only" with an
+    explanatory note about why FocusOut is not used.
+  - Added Gherkin use-cases for PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
+- `docs/ux/UX_LIFECYCLE.md` PD-11 matrix: added rows for PD-11-AF-008, PD-11-AF-009,
+  PD-11-AF-010 (all ✅).
+- `docs/ux/00_INDEX.md`: PD-11 row `7✅` → `10✅`; totals `61✅` → `64✅`.
+
+---
+
 ## [0.22.0] - 2026-05-01
 
 ### Code Changes
