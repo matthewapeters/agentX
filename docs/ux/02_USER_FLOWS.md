@@ -349,3 +349,35 @@ sequenceDiagram
         FileExplorer->>FileExplorer: refresh tree listing
     end
 ```
+
+---
+
+## UF-12: File Explorer Context Popup Rendering
+
+**Trigger**: User right-clicks a file or directory row in the `Files` tab.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Explorer as FileExplorer
+    participant Popup as WaylandFallbackPopup
+    participant Main as MainWindow
+
+    User->>Explorer: right-click row
+    Explorer->>Explorer: compute safe root coords (winfo_root + event offsets)
+    alt Wayland fallback active
+        Explorer->>Popup: create themed top-level surface
+        Popup->>Popup: apply current panel palette before first map
+        Popup->>Main: map popup at target coordinates
+    else Native menu path
+        Explorer->>Main: post native Tk context menu
+    end
+    Popup-->>User: visible context actions (Attach/Edit or folder actions)
+```
+
+**Main-window UX invariants**:
+
+- Right-click context actions must be visually present before they are actionable.
+- In Wayland fallback mode, the popup top-level first visible frame must use the
+  selected theme palette (no default light flash before dark-theme controls render).
+- Popup rendering behavior must remain consistent across repeated right-click cycles.

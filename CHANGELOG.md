@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.13.post1] - 2026-05-02
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/UX_ISSUES.md`:
+  - Recorded user UAT approval for PD-11 right-click popup fixes.
+  - Updated UAT status from pending verification to user-approved.
+- `docs/ux/00_INDEX.md`:
+  - Updated status snapshot to reflect UAT-approved state for PD-11.
+- `docs/ux/02_USER_FLOWS.md`:
+  - Added `UF-12` main-window popup rendering invariants for Wayland fallback.
+  - Fixed malformed section structure around `UF-11`/`UF-12` so sequence diagrams
+    render correctly and remain traceable for regression prevention.
+
+---
+
 ## [0.22.13] - 2026-05-02
 
 ### Code Changes

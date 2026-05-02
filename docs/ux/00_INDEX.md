@@ -3,7 +3,7 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-02 (v0.22.13: PD-11 right-click menu — theme Wayland popup toplevel background to reduce pre-render flicker; pending UAT)  
+**Last updated**: 2026-05-02 (v0.22.13.post1: PD-11 right-click menu — UAT approved; popup reliability and first-frame palette behavior confirmed)  
 **Current version**: see `pyproject.toml`
 
 ---

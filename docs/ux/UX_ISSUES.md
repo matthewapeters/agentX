@@ -55,7 +55,10 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 ## Issues
 
 ----
-[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 14 — latest attempted fix in v0.22.13; pending user UAT confirmation)
+[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 14 — latest attempted fix in v0.22.13)
+
+- **UAT confirmation (2026-05-02)**: User approved the fixes for this issue,
+  including reliability and minor pre-render palette behavior.
 
 - **Root cause 14 / attempted fix (v0.22.13)**: UAT confirms popup reliability,
   but a minor light-colored pre-render flash remains before the dark themed popup
@@ -141,6 +144,6 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Tests**: `tests/test_file_explorer_context_menu.py` (19 unit tests);
   `tests/test_file_explorer_menu_coordinates.py` (7 functional tests — all pass).
 - **Committed**: v0.22.13
-- **UAT Status**: User-owned verification required; agent does not claim definitive UX resolution.
+- **UAT Status**: User-approved in UAT on 2026-05-02.
 
 [ ] Log files appear empty.  Startup output should show the path to the log files.- **Fix**: `log.py` → `logger.info()` → `logger.debug()`.
