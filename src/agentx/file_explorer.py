@@ -9,6 +9,7 @@ from pathlib import Path
 from tkinter import ttk
 
 _logger = logging.getLogger(__name__)
+_to_gui_call_count = 0  # Track how many times to_gui() is called
 
 
 class FileExplorer:
@@ -168,7 +169,9 @@ class FileExplorer:
             ``value`` is the path string chosen by the user (full or relative).
         :return: A Tkinter frame containing the file explorer GUI.
         """
-        msg = "[FileExplorer] to_gui() called"
+        global _to_gui_call_count
+        _to_gui_call_count += 1
+        msg = f"[FileExplorer] to_gui() called (call #{_to_gui_call_count})"
         print(msg)
         _logger.debug(msg)
         if theme_mode == "Light Mode":
@@ -464,6 +467,16 @@ class FileExplorer:
             print(msg)
             _logger.debug(msg)
             return "break"
+        # Check menu validity
+        try:
+            menu_parent = menu.master
+            msg = f"[FileExplorer]   menu {id(menu)} parent is {id(menu_parent)}"
+            print(msg)
+            _logger.debug(msg)
+        except Exception as e:
+            msg = f"[FileExplorer]   ERROR: cannot get menu parent: {e}"
+            print(msg)
+            _logger.debug(msg)
         # Use menu.post() rather than menu.tk_popup().
         # tk_popup() calls Tcl's `grab` command internally; on Linux with any
         # modern compositor (GNOME/Mutter, KWin, Wayland/XWayland) the WM already
