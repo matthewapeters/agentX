@@ -7,6 +7,47 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.8] - 2026-05-02
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/file_explorer.py` `_on_right_click()`: Replaced `after_idle` with
+  `after(_MENU_POST_DELAY_MS)` (default 100 ms).  Root cause (RC9): `after_idle`
+  fires **before** the button is physically released — the `<Button-3>` press event
+  schedules the idle callback, the callback fires while the user still holds the
+  button, the menu posts, and the subsequent `<ButtonRelease-3>` lands on the
+  newly-posted menu window.  `tk::MenuInvoke` finds no active item and calls
+  `unpost()` immediately, so the menu disappears in < 1 frame.  With `after(100)` the
+  menu posts 100 ms after the press, by which time the button has always been
+  released on the treeview (no binding there → no unpost).
+
+#### Architecture / Design
+
+- Added `_MENU_POST_DELAY_MS: int = 100` class attribute to `FileExplorer`.
+  Set to `0` in unit tests combined with `root.update()` for zero-latency test runs.
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_file_explorer_context_menu.py`: Both right-click tests now set
+  `fe._MENU_POST_DELAY_MS = 0` and call `root.update()` (was `update_idletasks()`)
+  to fire `after(0)` callbacks.
+- `tests/test_file_explorer_menu_coordinates.py`: Same change to
+  `test_on_right_click_uses_safe_coords_for_post`.
+
+### Documentation Changes
+
+- `docs/ux/UX_LIFECYCLE.md §6`: Corrected subsection title and content from
+  `after_idle` to `after(100)`; added test pattern for `_MENU_POST_DELAY_MS = 0`.
+- `docs/ux/UX_ISSUES.md`: RC9 documented; issue fix count updated to 9; committed
+  version updated to v0.22.8.
+- `docs/ux/00_INDEX.md`: Last-updated date entry updated.
+
+---
+
 ## [0.22.7] - 2026-05-02
 
 ### Code Changes

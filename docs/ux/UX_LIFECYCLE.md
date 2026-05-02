@@ -431,7 +431,7 @@ extension, always within a visible monitor.
 menu.post(event.x_root, event.y_root)
 ```
 
-#### Why `after_idle` is also required
+#### Why `after_idle` is insufficient and `after(100)` is required
 
 The `<Button-3>` press event fires synchronously.  Creating the menu window inside
 the press handler causes the *subsequent* `<ButtonRelease-3>` to be delivered to the
@@ -439,14 +439,32 @@ newly-visible menu window, where the Tk `Menu` class's built-in `<ButtonRelease>
 binding (`tk::MenuInvoke`) immediately calls `unpost()` — dismissing the menu before
 the user can interact.
 
-The fix is to defer `menu.post()` until after the button-release event drains from the
-queue:
+The naive fix is `after_idle` — but **`after_idle` fires before the physical button
+release**.  The idle callback runs while the user is still holding the button down,
+so the menu posts, and the release still arrives at the menu window.
+
+The correct fix is `after(100)` — a 100 ms timer.  100 ms is longer than any
+physical click duration, so by the time the callback fires the button has been
+released on the treeview (where there is no `<ButtonRelease-3>` binding) and
+the menu posts cleanly and stays open:
 
 ```python
+_MENU_POST_DELAY_MS: int = 100  # class attribute; set to 0 in tests
+
 def _on_right_click(self, event) -> None:
     x = self.tree.winfo_rootx() + event.x   # safe coords (Wayland rule)
     y = self.tree.winfo_rooty() + event.y
-    self.tree.after_idle(lambda: menu.post(x, y))  # defer past ButtonRelease-3
+    self.tree.after(self._MENU_POST_DELAY_MS, lambda: menu.post(x, y))
+```
+
+**In unit tests** set `fe._MENU_POST_DELAY_MS = 0` and call `root.update()`
+(not `root.update_idletasks()`) to flush the timer callback without real latency:
+
+```python
+fe._MENU_POST_DELAY_MS = 0
+fe._on_right_click(ev)
+root.update()   # fires after(0) callbacks
+mock_post.assert_called_once()
 ```
 
 #### Testing the coordinate strategy

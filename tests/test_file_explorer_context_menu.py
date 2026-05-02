@@ -78,19 +78,18 @@ class TestFileContextMenu:
     def test_right_click_file_calls_post_on_file_menu(self, tmp_path):
         """
         GIVEN the tree has a file row
-        WHEN the user right-clicks that row
+        WHEN the user right-clicks that row AND idle callbacks are flushed
         THEN menu.post() is called (NOT tk_popup) to display the file context menu
          AND the handler returns 'break' to stop event propagation
          AND the folder context menu is NOT posted.
 
-        NOTE on test limitations: unit tests can only verify that the correct Tk
-        method is called with the correct coordinates.  Whether the menu actually
-        stays visible under a live X11 compositor (grab conflicts, WM interference)
-        cannot be detected by headless unit tests and requires manual UAT.
+        NOTE: _on_right_click() defers menu.post() via after(_MENU_POST_DELAY_MS).
+        In production _MENU_POST_DELAY_MS=100 ms ensures the button release fires
+        on the treeview (not the menu) before the menu posts.  In tests the delay
+        is set to 0 and root.update() is called to flush the timer callback.
 
-        menu.post() is used instead of tk_popup() to avoid the Tcl grab command
-        that tk_popup() sets internally.  On Linux compositors the WM cancels
-        Tk's grab immediately, causing unpost().  post() has no grab at all.
+        Unit tests can only verify the correct Tk method is called; whether the menu
+        stays visible under a live compositor requires manual UAT.
         Affordance ID: PD-11-AF-008
         """
         (tmp_path / "hello.py").write_text("x")
@@ -102,12 +101,15 @@ class TestFileContextMenu:
             y = int(bbox[1]) + int(bbox[3]) // 2 if bbox else 5
             ev = _fake_event(y=y)
 
+            fe._MENU_POST_DELAY_MS = 0  # fire synchronously in tests
             with (
                 patch.object(fe._popup_menu, "post") as mock_file_post,
                 patch.object(fe._popup_menu, "tk_popup") as mock_file_tk_popup,
                 patch.object(fe._folder_popup_menu, "post") as mock_folder_post,
             ):
                 result = fe._on_right_click(ev)
+                # Flush after(0) timer — this is when _post_menu() fires.
+                root.update()
 
             mock_file_post.assert_called_once()
             mock_file_tk_popup.assert_not_called()
@@ -248,13 +250,13 @@ class TestFolderContextMenu:
     def test_right_click_directory_calls_post_on_folder_menu(self, tmp_path):
         """
         GIVEN the tree has a directory row
-        WHEN the user right-clicks that row
+        WHEN the user right-clicks that row AND idle callbacks are flushed
         THEN menu.post() is called on the folder menu (NOT tk_popup)
          AND the handler returns 'break' to stop event propagation
          AND the file context menu is NOT posted.
 
         See test_right_click_file_calls_post_on_file_menu for the rationale for
-        using post() instead of tk_popup().
+        deferring menu.post() via after(_MENU_POST_DELAY_MS).
         Affordance ID: PD-11-AF-009
         """
         (tmp_path / "subdir").mkdir()
@@ -266,12 +268,15 @@ class TestFolderContextMenu:
             y = int(bbox[1]) + int(bbox[3]) // 2 if bbox else 5
             ev = _fake_event(y=y)
 
+            fe._MENU_POST_DELAY_MS = 0  # fire synchronously in tests
             with (
                 patch.object(fe._popup_menu, "post") as mock_file_post,
                 patch.object(fe._folder_popup_menu, "post") as mock_folder_post,
                 patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_tk_popup,
             ):
                 result = fe._on_right_click(ev)
+                # Flush after(0) timer — this is when _post_menu() fires.
+                root.update()
 
             mock_folder_post.assert_called_once()
             mock_folder_tk_popup.assert_not_called()

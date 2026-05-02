@@ -55,38 +55,30 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 ## Issues
 
 ----
-[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 8 — definitive fix in v0.22.7)
+[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 9 — definitive fix in v0.22.8)
 
-- **Root cause 8 / definitive fix (v0.22.7)**: Menu was posting successfully
-  (`winfo_ismapped=1`) but at an **off-screen position** due to XWayland virtual-screen
-  coordinate mismatch.  Under Wayland/XWayland, `event.x_root` / `event.y_root` are in
-  physical-pixel coordinates of the XWayland virtual framebuffer, which can be thousands
-  of pixels outside any visible monitor region.  UAT observation: `x_root=3753` on a
-  system with no monitor wider than ~3840px.
-  Fix: replaced `event.x_root/y_root` with `winfo_rootx() + event.x` /
-  `winfo_rooty() + event.y` — Tk's own geometry system, which always resolves to a
-  visible on-screen position.  Combined with the `after_idle` deferral (RC7) this
-  makes menu posting 100% reliable under both X11 and XWayland.
-  **This is now a standing design principle** — see
-  [UX_LIFECYCLE.md §6 — Platform Design Principle: Wayland / XWayland Coordinate Safety](UX_LIFECYCLE.md#platform-design-principle-wayland--xwayland-coordinate-safety).
-- **Root cause 7 / partial fix (v0.22.7)**: Menu posted (`ismapped=1, viewable=1`) but
-  was off-screen (see RC8 above).  The `after_idle` deferral correctly delays
-  `menu.post()` until after `<ButtonRelease-3>` drains, so `tk::MenuInvoke` does not
-  immediately unpost it.  This part is correct and was retained.
-- **Root cause 6 / partial fix (v0.22.6)**: After switching to `menu.post()` (v0.22.5)
-  the menu STILL vanished.  The binding was still `<ButtonRelease-3>`.  When
-  `menu.post()` creates the menu window at `(x_root, y_root)` — directly under the cursor
-  — the X server sends an `<Enter>` event to the new window.  The Tk `Menu` class has a
-  generic `<ButtonRelease>` class binding (`tk::MenuInvoke`) that fires when any button
-  release is received over the menu; with no active item it calls `unpost()`.  The
-  ButtonRelease event that triggered our handler was re-dispatched to the newly-visible
-  menu window, and `MenuInvoke` called `unpost()` before the user could interact.
-  Fix: change binding from `<ButtonRelease-3>` to `<Button-3>` (press).  With `menu.post()`
-  (no grab), the subsequent `<ButtonRelease-3>` goes to whichever window is under the
-  cursor at release time — the menu (item invoked ✓) or the treeview (ignored ✓) — and
-  `MenuInvoke` is never triggered during the posting sequence.
-- **Root cause 5 (v0.22.5)**: Replaced `tk_popup()` with `menu.post()` — necessary
-  first step (eliminates the grab) but binding was still `<ButtonRelease-3>`.
+- **Root cause 9 / definitive fix (v0.22.8)**: `after_idle` fires **before the button
+  is physically released**.  The menu posts while Button-3 is still held; the subsequent
+  `<ButtonRelease-3>` lands on the newly-posted menu window; `tk::MenuInvoke` finds no
+  active item and calls `unpost()` — menu disappears before the user sees it.  All four
+  UAT right-clicks in v0.22.7 exhibited `ismapped=1` immediately after post and then
+  vanished.  Fix: replace `after_idle` with `after(100)` so the button is guaranteed
+  to have been released before the menu posts (100 ms > any physical click duration).
+  The release fires on the treeview (no binding → no action) and the menu stays open.
+  `_MENU_POST_DELAY_MS = 100` class attribute allows tests to set the delay to `0`
+  without real wall-clock latency.  **This pattern applies to all future right-click
+  context menus in this codebase** — see
+  [UX_LIFECYCLE.md §6](UX_LIFECYCLE.md#why-after_idle-is-insufficient-and-after100-is-required).
+- **Root cause 8 / partial fix (v0.22.7)**: XWayland virtual-screen coordinate mismatch
+  (`event.x_root/y_root` in physical X11 pixels → replaced with `winfo_rootx/y() +
+  event.x/y`).  Menus posted at correct on-screen coordinates after this fix, but still
+  dismissed instantly by button-release (RC9 above).
+- **Root cause 7 (v0.22.7)**: `after_idle` added to defer past `<ButtonRelease-3>` —
+  rationale was correct but `after_idle` does not defer past the *physical* button
+  release when binding is `<Button-3>` (press).  Superseded by `after(100)` in RC9.
+- **Root cause 6 (v0.22.6)**: `<ButtonRelease-3>` binding + `menu.post()` → changed
+  to `<Button-3>`.  Correct change; retained.
+- **Root cause 5 (v0.22.5)**: Replaced `tk_popup()` with `menu.post()`.
 - **Root cause 1–4 (v0.22.1–0.22.4)**: See history below.
 - **History of all root causes**:
   - RC1 (v0.22.1): `<FocusOut>` bound to `_dismiss_popup_menu()` — removed.
@@ -94,15 +86,13 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
   - RC3 (v0.22.3): Synchronous `grab_release()` after `tk_popup()`.
   - RC4 (v0.22.4): `grab_release()` before queue drained → moved to `after_idle`.
   - RC5 (v0.22.5): `tk_popup()` itself → replaced with `menu.post()`.
-  - RC6 (v0.22.6): `<ButtonRelease-3>` binding + `menu.post()` → Menu class
-    `<ButtonRelease>` fires on the just-posted window → changed to `<Button-3>`.
-  - RC7 (v0.22.7 step 1): Menu visible but positions off-screen; `after_idle`
-    deferral confirmed correct.
-  - RC8 (v0.22.7 step 2): XWayland virtual-screen coordinate mismatch → replaced
-    `event.x_root/y_root` with `winfo_rootx/y() + event.x/y`.
+  - RC6 (v0.22.6): `<ButtonRelease-3>` binding → changed to `<Button-3>`.
+  - RC7 (v0.22.7): `after_idle` added (correct intent, wrong primitive).
+  - RC8 (v0.22.7): XWayland coordinates → `winfo_rootx/y() + event.x/y`.
+  - RC9 (v0.22.8): `after_idle` → `after(100)` to survive button-release race.
 - **Affordances**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
 - **Tests**: `tests/test_file_explorer_context_menu.py` (15 unit tests);
   `tests/test_file_explorer_menu_coordinates.py` (7 functional tests — all pass).
-- **Committed**: v0.22.7
+- **Committed**: v0.22.8
 
 [ ] Log files appear empty.  Startup output should show the path to the log files.- **Fix**: `log.py` → `logger.info()` → `logger.debug()`.

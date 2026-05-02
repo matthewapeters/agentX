@@ -238,9 +238,10 @@ class TestMenuCoordinateSafety:
 
             ev = _fake_event(tree=fe.tree, x=event_x, y=event_y, x_root=bad_x_root, y_root=bad_y_root)
 
+            fe._MENU_POST_DELAY_MS = 0  # fire synchronously in tests
             with patch.object(fe._popup_menu, "post") as mock_post:
                 fe._on_right_click(ev)
-                root.update_idletasks()  # flush after_idle
+                root.update()  # flush after(0) timer
 
             mock_post.assert_called_once_with(expected_x, expected_y)
         finally:

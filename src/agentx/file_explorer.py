@@ -16,7 +16,22 @@ class FileExplorer:
     """
     A file explorer widget that allows users to navigate the file system
     and explore directories and files.
+
+    Class attributes
+    ----------------
+    _MENU_POST_DELAY_MS : int
+        Milliseconds to wait before calling ``menu.post()`` after a right-click
+        press event.  The delay ensures the ``<ButtonRelease-3>`` event fires on
+        the treeview (where there is no binding) rather than on the newly-posted
+        menu window.  Without the delay the menu posts while the button is still
+        held; the release lands on the menu, ``tk::MenuInvoke`` finds no active
+        item, and calls ``unpost()`` before the user can see anything.
+
+        Set to ``0`` in unit tests (combined with ``root.update()``) to fire the
+        callback synchronously without introducing real wall-clock latency.
     """
+
+    _MENU_POST_DELAY_MS: int = 100
 
     def __init__(self, start_path: str = str(Path.home())):
         """
@@ -448,11 +463,17 @@ class FileExplorer:
     def _on_right_click(self, event):
         """Handle right-click on the treeview to show the context menu.
 
-        The menu is posted via after_idle() so that the ButtonRelease-3 event
-        that follows the Button-3 press fires on the treeview (no binding there)
-        before the menu window exists. This prevents the Menu class's built-in
-        <ButtonRelease> binding (tk::MenuInvoke) from calling unpost() the
-        instant the menu appears with no active item.
+        The menu is posted via ``after(_MENU_POST_DELAY_MS)`` (default 100 ms)
+        so that the ``<ButtonRelease-3>`` event fires on the treeview before
+        the menu window exists.  ``after_idle`` is NOT sufficient: it fires
+        before the button is physically released, so the release event still
+        lands on the just-posted menu window.  The Tk ``Menu`` class binding
+        ``tk::MenuInvoke`` then sees no active item and calls ``unpost()``
+        immediately, making the menu invisible to the user.
+
+        With a 100 ms timer the button is guaranteed to have been released by
+        the time the callback fires.  The release lands on the treeview (no
+        binding → no action) and the menu posts cleanly and remains visible.
         """
         item = self.tree.identify_row(event.y)
         if not item:
@@ -479,7 +500,7 @@ class FileExplorer:
         msg = f"[FileExplorer] _on_right_click: scheduling deferred post of menu {id(menu)} at ({x_root}, {y_root})"
         print(msg)
         _logger.debug(msg)
-        self.tree.after_idle(lambda m=menu, x=x_root, y=y_root: self._post_menu(m, x, y))
+        self.tree.after(self._MENU_POST_DELAY_MS, lambda m=menu, x=x_root, y=y_root: self._post_menu(m, x, y))
         return "break"
 
     def _post_menu(self, menu: tk.Menu, x_root: int, y_root: int) -> None:
