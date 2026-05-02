@@ -55,7 +55,15 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 ## Issues
 
 ----
-[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 13 — latest attempted fix in v0.22.12; pending user UAT confirmation)
+[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 14 — latest attempted fix in v0.22.13; pending user UAT confirmation)
+
+- **Root cause 14 / attempted fix (v0.22.13)**: UAT confirms popup reliability,
+  but a minor light-colored pre-render flash remains before the dark themed popup
+  buttons appear. Cause: fallback popup `tk.Toplevel` was created without an
+  explicit themed background, so compositor briefly displayed default light window
+  styling. Fix: apply `panel_bg` directly to the `Toplevel` at creation
+  (`popup.configure(bg=panel_bg, borderwidth=0, highlightthickness=0)`) so the
+  first visible frame uses the selected palette.
 
 - **Root cause 13 / attempted fix (v0.22.12)**: Wayland fallback popup reused one
   `overrideredirect` `tk.Toplevel` via repeated `withdraw()/deiconify()`. UAT still
@@ -128,10 +136,11 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
   - RC11 (v0.22.10): Wayland fallback to in-app `tk.Toplevel` popup.
   - RC12 (v0.22.11): removed Wayland popup FocusOut auto-dismiss + stabilized geometry.
   - RC13 (v0.22.12): recreate Wayland popup per show + pre-dismiss stale popup state.
+  - RC14 (v0.22.13): theme popup Toplevel background to reduce light pre-render flicker.
 - **Affordances**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
 - **Tests**: `tests/test_file_explorer_context_menu.py` (19 unit tests);
   `tests/test_file_explorer_menu_coordinates.py` (7 functional tests — all pass).
-- **Committed**: v0.22.12
+- **Committed**: v0.22.13
 - **UAT Status**: User-owned verification required; agent does not claim definitive UX resolution.
 
 [ ] Log files appear empty.  Startup output should show the path to the log files.- **Fix**: `log.py` → `logger.info()` → `logger.debug()`.

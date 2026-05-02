@@ -549,6 +549,25 @@ class TestWaylandPopupFallback:
         finally:
             root.destroy()
 
+    def test_wayland_popup_uses_theme_background_on_toplevel(self, tmp_path):
+        """
+        GIVEN Wayland fallback popup mode with a dark panel background
+        WHEN _ensure_wayland_popup() creates the popup window
+        THEN the toplevel background matches the themed panel color immediately.
+
+        Affordance ID: PD-11-AF-008
+        """
+        (tmp_path / "hello.py").write_text("x")
+        root, fe, _ = _make_explorer(tmp_path)
+        try:
+            fe._FORCE_WAYLAND_POPUP = True
+            fe._menu_colors["panel_bg"] = "#1f1f1f"
+            fe._ensure_wayland_popup()
+            assert fe._wayland_popup is not None
+            assert fe._wayland_popup.cget("bg") == "#1f1f1f"
+        finally:
+            root.destroy()
+
     def test_verify_does_nothing_when_generation_is_stale(self, tmp_path):
         """
         GIVEN a stale generation from an older click

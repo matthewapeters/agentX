@@ -7,6 +7,31 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.13] - 2026-05-02
+
+### Code Changes
+
+#### Changed
+
+- `src/agentx/file_explorer.py` Wayland fallback popup rendering:
+  - Applied themed `panel_bg` color directly to the popup `tk.Toplevel` at creation.
+  - Set `borderwidth=0` and `highlightthickness=0` on the `Toplevel` to avoid default
+    light window styling during first compositor frame.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_file_explorer_context_menu.py`: Added a unit regression test asserting
+  the Wayland popup `Toplevel` background is initialized from theme color.
+
+### Documentation Changes
+
+- `docs/ux/UX_ISSUES.md`: Added RC14 attempted fix notes and increased attempt count to 14.
+- `docs/ux/00_INDEX.md`: Updated Last updated status to v0.22.13 candidate.
+
+---
+
 ## [0.22.12] - 2026-05-02
 
 ### Code Changes

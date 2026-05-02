@@ -540,13 +540,15 @@ class FileExplorer:
         if self._wayland_popup is not None and self._wayland_popup.winfo_exists():
             return
 
+        popup_bg = self._menu_colors.get("panel_bg", "#2b2b2b")
         popup = tk.Toplevel(self.tree)
         popup.withdraw()
+        popup.configure(bg=popup_bg, borderwidth=0, highlightthickness=0)
         popup.overrideredirect(True)
         popup.attributes("-topmost", True)
         frame = tk.Frame(
             popup,
-            bg=self._menu_colors.get("panel_bg", "#2b2b2b"),
+            bg=popup_bg,
             borderwidth=1,
             relief="solid",
         )
