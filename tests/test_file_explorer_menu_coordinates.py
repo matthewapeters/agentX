@@ -170,10 +170,10 @@ class TestMenuCoordinateSafety:
         """
         GIVEN a FileExplorer with a file row
         WHEN _post_menu() is called with safe (winfo_rootx + event.x) coordinates
-        THEN menu.winfo_ismapped() returns 1 immediately after post
+        THEN menu.winfo_ismapped() returns 1 immediately after popup
          AND menu.winfo_x() and winfo_y() are within screen bounds.
 
-        This test uses a real tk.Menu.post() call (no mock) to confirm that Tk
+        This test uses a real tk.Menu.tk_popup() call (no mock) to confirm that Tk
         actually maps the menu window at those coordinates.
 
         Affordance ID: PD-11-AF-008
@@ -204,14 +204,14 @@ class TestMenuCoordinateSafety:
         finally:
             root.destroy()
 
-    def test_on_right_click_uses_safe_coords_for_post(self, tmp_path):
+    def test_on_right_click_uses_safe_coords_for_popup(self, tmp_path):
         """
         GIVEN a file row in the treeview
         WHEN _on_right_click() fires with widget-relative event.x / event.y = (10, row_y)
-        THEN menu.post() is called with (winfo_rootx + event.x, winfo_rooty + event.y)
+        THEN menu.tk_popup() is called with (winfo_rootx + event.x, winfo_rooty + event.y)
          NOT with the raw event.x_root / event.y_root values.
 
-        This test captures what coordinates are actually passed to menu.post()
+        This test captures what coordinates are actually passed to menu.tk_popup()
         and asserts they match the safe strategy.  It will FAIL until the
         production code is updated to use winfo_rootx/y + event.x/y instead of
         event.x_root/y_root.
@@ -239,10 +239,10 @@ class TestMenuCoordinateSafety:
             ev = _fake_event(tree=fe.tree, x=event_x, y=event_y, x_root=bad_x_root, y_root=bad_y_root)
 
             fe._MENU_POST_DELAY_MS = 0  # fire synchronously in tests
-            with patch.object(fe._popup_menu, "post") as mock_post:
+            with patch.object(fe._popup_menu, "tk_popup") as mock_popup:
                 fe._on_right_click(ev)
                 root.update()  # flush after(0) timer
 
-            mock_post.assert_called_once_with(expected_x, expected_y)
+            mock_popup.assert_called_once_with(expected_x, expected_y)
         finally:
             root.destroy()

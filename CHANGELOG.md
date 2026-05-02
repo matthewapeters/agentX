@@ -7,6 +7,37 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.9] - 2026-05-02
+
+### Code Changes
+
+#### Changed
+
+- `src/agentx/file_explorer.py` `_post_menu()`: changed popup primitive from
+  `menu.post()` to `menu.tk_popup()` with guarded `menu.grab_release()` in
+  `finally`.
+- Kept delayed scheduling (`_MENU_POST_DELAY_MS`) and generation-aware visibility
+  verification (`_MENU_POST_VERIFY_DELAY_MS`, `_menu_post_generation`) so retry
+  behavior remains bounded and stale clicks cannot re-open older menus.
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_file_explorer_context_menu.py`:
+  - Renamed file/folder right-click tests to assert `tk_popup()` behavior.
+  - Updated mocks to verify `grab_release()` is called after popup display.
+- `tests/test_file_explorer_menu_coordinates.py`:
+  - Updated coordinate assertion test to validate `tk_popup()` receives safe
+    coordinates rather than `post()`.
+
+### Documentation Changes
+
+- `docs/ux/UX_ISSUES.md`: Added RC10 as latest attempted fix candidate and
+  updated attempt count to 10, preserving user-owned UAT status.
+
+---
+
 ## [0.22.8] - 2026-05-02
 
 ### Code Changes

@@ -32,6 +32,7 @@ class FileExplorer:
     """
 
     _MENU_POST_DELAY_MS: int = 100
+    _MENU_POST_VERIFY_DELAY_MS: int = 120
 
     def __init__(self, start_path: str = str(Path.home())):
         """
@@ -43,6 +44,7 @@ class FileExplorer:
         self._root_path = self.current_path
         self.history = [self.current_path]
         self.history_index = 0
+        self._menu_post_generation = 0
 
     def list_directory(self) -> list[dict]:
         """
@@ -500,15 +502,46 @@ class FileExplorer:
         msg = f"[FileExplorer] _on_right_click: scheduling deferred post of menu {id(menu)} at ({x_root}, {y_root})"
         print(msg)
         _logger.debug(msg)
-        self.tree.after(self._MENU_POST_DELAY_MS, lambda m=menu, x=x_root, y=y_root: self._post_menu(m, x, y))
+        self._menu_post_generation += 1
+        generation = self._menu_post_generation
+        self.tree.after(
+            self._MENU_POST_DELAY_MS,
+            lambda m=menu, x=x_root, y=y_root, g=generation: self._post_menu(m, x, y, g),
+        )
         return "break"
 
-    def _post_menu(self, menu: tk.Menu, x_root: int, y_root: int) -> None:
-        """Post the context menu after all pending events for the click have drained."""
+    def _post_menu(
+        self,
+        menu: tk.Menu,
+        x_root: int,
+        y_root: int,
+        generation: int | None = None,
+        *,
+        is_retry: bool = False,
+    ) -> None:
+        """Post the context menu and verify it remained mapped.
+
+        Under some compositor/event-order combinations, the menu can be posted and
+        then immediately unposted by Tk's class-level ``<ButtonRelease>`` menu
+        binding. We verify after a short delay and retry once for the active click.
+        """
+        if generation is None:
+            generation = self._menu_post_generation
         msg = f"[FileExplorer] _post_menu: posting menu {id(menu)} at ({x_root}, {y_root})"
         print(msg)
         _logger.debug(msg)
-        menu.post(x_root, y_root)
+        try:
+            # tk_popup asks Tk to present the menu as a true popup with proper
+            # compositor stacking/focus behavior. This is more reliable than a
+            # bare post() on some Wayland/XWayland combinations.
+            menu.tk_popup(x_root, y_root)
+        finally:
+            # Do not keep the grab after showing the menu; we only need popup
+            # placement/stacking semantics from tk_popup.
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
         menu.lift()
         sw = menu.winfo_screenwidth()
         sh = menu.winfo_screenheight()
@@ -521,6 +554,27 @@ class FileExplorer:
         )
         print(msg2)
         _logger.debug(msg2)
+
+        if not is_retry:
+            self.tree.after(
+                self._MENU_POST_VERIFY_DELAY_MS,
+                lambda m=menu, x=x_root, y=y_root, g=generation: self._verify_menu_visible(m, x, y, g),
+            )
+
+    def _verify_menu_visible(self, menu: tk.Menu, x_root: int, y_root: int, generation: int) -> None:
+        """Re-post once if the current generation menu has already been unposted."""
+        if generation != self._menu_post_generation:
+            return
+        mapped = bool(menu.winfo_ismapped())
+        msg = f"[FileExplorer] _verify_menu_visible: menu {id(menu)} mapped={int(mapped)} generation={generation}"
+        print(msg)
+        _logger.debug(msg)
+        if mapped:
+            return
+        msg2 = f"[FileExplorer] _verify_menu_visible: retry posting menu {id(menu)} " f"at ({x_root}, {y_root})"
+        print(msg2)
+        _logger.debug(msg2)
+        self._post_menu(menu, x_root, y_root, generation, is_retry=True)
 
     def _get_selected_folder_name(self) -> str | None:
         selection = self.tree.selection()

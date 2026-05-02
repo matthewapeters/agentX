@@ -75,15 +75,15 @@ class TestFileContextMenu:
     Source: FileExplorer._on_right_click()
     """
 
-    def test_right_click_file_calls_post_on_file_menu(self, tmp_path):
+    def test_right_click_file_calls_popup_on_file_menu(self, tmp_path):
         """
         GIVEN the tree has a file row
         WHEN the user right-clicks that row AND idle callbacks are flushed
-        THEN menu.post() is called (NOT tk_popup) to display the file context menu
+        THEN menu.tk_popup() is called to display the file context menu
          AND the handler returns 'break' to stop event propagation
          AND the folder context menu is NOT posted.
 
-        NOTE: _on_right_click() defers menu.post() via after(_MENU_POST_DELAY_MS).
+        NOTE: _on_right_click() defers menu popup via after(_MENU_POST_DELAY_MS).
         In production _MENU_POST_DELAY_MS=100 ms ensures the button release fires
         on the treeview (not the menu) before the menu posts.  In tests the delay
         is set to 0 and root.update() is called to flush the timer callback.
@@ -103,17 +103,17 @@ class TestFileContextMenu:
 
             fe._MENU_POST_DELAY_MS = 0  # fire synchronously in tests
             with (
-                patch.object(fe._popup_menu, "post") as mock_file_post,
                 patch.object(fe._popup_menu, "tk_popup") as mock_file_tk_popup,
-                patch.object(fe._folder_popup_menu, "post") as mock_folder_post,
+                patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_tk_popup,
+                patch.object(fe._popup_menu, "grab_release") as mock_file_grab_release,
             ):
                 result = fe._on_right_click(ev)
                 # Flush after(0) timer — this is when _post_menu() fires.
                 root.update()
 
-            mock_file_post.assert_called_once()
-            mock_file_tk_popup.assert_not_called()
-            mock_folder_post.assert_not_called()
+            mock_file_tk_popup.assert_called_once()
+            mock_folder_tk_popup.assert_not_called()
+            mock_file_grab_release.assert_called_once()
             assert result == "break"
         finally:
             root.destroy()
@@ -143,7 +143,7 @@ class TestFileContextMenu:
         WHEN the tree's bindings are inspected
         THEN <Button-3> (press) is bound and <ButtonRelease-3> is NOT bound.
 
-        With menu.post() (no Tcl grab), <Button-3> press is the correct trigger.
+        With delayed popup posting, <Button-3> press is the correct trigger.
         The subsequent <ButtonRelease-3> is NOT captured by any grab — it goes to
         whichever window the cursor is over at release time (menu → invoke ✓,
         treeview → ignored ✓).  Binding to the release caused a race where the
@@ -247,16 +247,16 @@ class TestFolderContextMenu:
     Source: FileExplorer._on_right_click()
     """
 
-    def test_right_click_directory_calls_post_on_folder_menu(self, tmp_path):
+    def test_right_click_directory_calls_popup_on_folder_menu(self, tmp_path):
         """
         GIVEN the tree has a directory row
         WHEN the user right-clicks that row AND idle callbacks are flushed
-        THEN menu.post() is called on the folder menu (NOT tk_popup)
+        THEN menu.tk_popup() is called on the folder menu
          AND the handler returns 'break' to stop event propagation
          AND the file context menu is NOT posted.
 
         See test_right_click_file_calls_post_on_file_menu for the rationale for
-        deferring menu.post() via after(_MENU_POST_DELAY_MS).
+        deferring menu popup via after(_MENU_POST_DELAY_MS).
         Affordance ID: PD-11-AF-009
         """
         (tmp_path / "subdir").mkdir()
@@ -270,17 +270,17 @@ class TestFolderContextMenu:
 
             fe._MENU_POST_DELAY_MS = 0  # fire synchronously in tests
             with (
-                patch.object(fe._popup_menu, "post") as mock_file_post,
-                patch.object(fe._folder_popup_menu, "post") as mock_folder_post,
                 patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_tk_popup,
+                patch.object(fe._popup_menu, "tk_popup") as mock_file_tk_popup,
+                patch.object(fe._folder_popup_menu, "grab_release") as mock_folder_grab_release,
             ):
                 result = fe._on_right_click(ev)
                 # Flush after(0) timer — this is when _post_menu() fires.
                 root.update()
 
-            mock_folder_post.assert_called_once()
-            mock_folder_tk_popup.assert_not_called()
-            mock_file_post.assert_not_called()
+            mock_folder_tk_popup.assert_called_once()
+            mock_file_tk_popup.assert_not_called()
+            mock_folder_grab_release.assert_called_once()
             assert result == "break"
         finally:
             root.destroy()
@@ -427,5 +427,53 @@ class TestDismissContextMenu:
         try:
             ev = _fake_event()
             fe._dismiss_popup_menu(ev)
+        finally:
+            root.destroy()
+
+
+@pytest.mark.unit
+class TestMenuVisibilityRecovery:
+    """
+    Unit tests for recovery behavior when a context menu is immediately unposted.
+
+    Affordance ID: PD-11-AF-008
+    Source: FileExplorer._verify_menu_visible()
+    """
+
+    def test_verify_reposts_once_when_unmapped_for_active_generation(self, tmp_path):
+        """
+        GIVEN the current generation menu is not mapped
+        WHEN _verify_menu_visible() runs
+        THEN _post_menu() is called once with is_retry=True.
+
+        Affordance ID: PD-11-AF-008
+        """
+        root, fe, _ = _make_explorer(tmp_path)
+        try:
+            fe._menu_post_generation = 5
+            with (
+                patch.object(fe._popup_menu, "winfo_ismapped", return_value=0),
+                patch.object(fe, "_post_menu") as mock_post_menu,
+            ):
+                fe._verify_menu_visible(fe._popup_menu, 100, 200, generation=5)
+
+            mock_post_menu.assert_called_once_with(fe._popup_menu, 100, 200, 5, is_retry=True)
+        finally:
+            root.destroy()
+
+    def test_verify_does_nothing_when_generation_is_stale(self, tmp_path):
+        """
+        GIVEN a stale generation from an older click
+        WHEN _verify_menu_visible() runs
+        THEN no repost is attempted.
+
+        Affordance ID: PD-11-AF-008
+        """
+        root, fe, _ = _make_explorer(tmp_path)
+        try:
+            fe._menu_post_generation = 8
+            with patch.object(fe, "_post_menu") as mock_post_menu:
+                fe._verify_menu_visible(fe._popup_menu, 100, 200, generation=7)
+            mock_post_menu.assert_not_called()
         finally:
             root.destroy()

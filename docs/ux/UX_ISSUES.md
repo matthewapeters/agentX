@@ -55,9 +55,17 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 ## Issues
 
 ----
-[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 9 — definitive fix in v0.22.8)
+[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 10 — latest attempted fix in v0.22.9; pending user UAT confirmation)
 
-- **Root cause 9 / definitive fix (v0.22.8)**: `after_idle` fires **before the button
+- **Root cause 10 / attempted fix (v0.22.9)**: Menu popup windows remained
+  `ismapped=1` / `viewable=1` in diagnostics but still did not appear in live UAT.
+  Updated popup primitive from `menu.post()` to `menu.tk_popup()` (with a guarded
+  `grab_release()` in `finally`) while keeping delayed scheduling and generation-aware
+  verification.  Rationale: `tk_popup()` uses Tk's native popup semantics and is more
+  reliable for compositor stacking/focus behavior on some Wayland/XWayland sessions.
+  This is a **latest fix candidate** and requires user UAT confirmation.
+
+- **Root cause 9 / attempted fix (v0.22.8)**: `after_idle` fires **before the button
   is physically released**.  The menu posts while Button-3 is still held; the subsequent
   `<ButtonRelease-3>` lands on the newly-posted menu window; `tk::MenuInvoke` finds no
   active item and calls `unpost()` — menu disappears before the user sees it.  All four
@@ -90,9 +98,11 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
   - RC7 (v0.22.7): `after_idle` added (correct intent, wrong primitive).
   - RC8 (v0.22.7): XWayland coordinates → `winfo_rootx/y() + event.x/y`.
   - RC9 (v0.22.8): `after_idle` → `after(100)` to survive button-release race.
+  - RC10 (v0.22.9): switched popup primitive to `tk_popup()` + safe `grab_release()`.
 - **Affordances**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
-- **Tests**: `tests/test_file_explorer_context_menu.py` (15 unit tests);
+- **Tests**: `tests/test_file_explorer_context_menu.py` (17 unit tests);
   `tests/test_file_explorer_menu_coordinates.py` (7 functional tests — all pass).
-- **Committed**: v0.22.8
+- **Committed**: v0.22.9
+- **UAT Status**: User-owned verification required; agent does not claim definitive UX resolution.
 
 [ ] Log files appear empty.  Startup output should show the path to the log files.- **Fix**: `log.py` → `logger.info()` → `logger.debug()`.

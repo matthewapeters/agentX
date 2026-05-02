@@ -108,6 +108,13 @@ AgentX is a local-first AI agent framework with a Tkinter GUI. It connects to **
   4. Follow the checklist in §5 of that document (add / modify / remove).
   This is how drift between spec, code, and tests is prevented.
 
+#### UAT Claim Policy (Required)
+- The agent **must not** claim a UX defect is "definitively fixed" or "resolved" before user UAT confirms behavior in a live environment.
+- Agent-owned claims are limited to: code changes applied, tests passing, and "ready for UAT".
+- User-owned claims are required for closure language: "confirmed fixed", "resolved in UAT", or equivalent.
+- In `docs/ux/UX_ISSUES.md`, prefer wording such as "attempted fix" or "latest fix candidate" until user confirmation is recorded.
+- If UAT fails, the issue remains open and the agent must update the issue history with the failed attempt count and next hypothesis.
+
 ##### Ux Detail and Simplifcation Guidelines
 - When documenting UX mockups and user flows, aim for a balance between detail and simplicity.
   - Include enough detail to accurately convey the user interactions and expected outcomes, but avoid unnecessary complexity that may obscure the main points.
