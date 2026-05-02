@@ -7,6 +7,32 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.12] - 2026-05-02
+
+### Code Changes
+
+#### Changed
+
+- `src/agentx/file_explorer.py` Wayland fallback popup lifecycle:
+  - Explicitly dismisses any active fallback popup before scheduling a new right-click popup.
+  - Added `_destroy_wayland_popup()` and now recreates a fresh `tk.Toplevel`
+    surface on each `_show_wayland_popup()` call.
+  - This avoids intermittent non-visual-but-clickable stale popup state seen in UAT.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_file_explorer_context_menu.py`: Added a regression test that verifies
+  consecutive Wayland popup shows recreate the popup window.
+
+### Documentation Changes
+
+- `docs/ux/UX_ISSUES.md`: Added RC13 attempted fix notes and increased attempt count to 13.
+- `docs/ux/00_INDEX.md`: Updated Last updated status to v0.22.12 candidate.
+
+---
+
 ## [0.22.11] - 2026-05-02
 
 ### Code Changes

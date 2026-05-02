@@ -3,7 +3,7 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-02 (v0.22.11: PD-11 right-click menu — Wayland popup FocusOut removal + geometry stabilization; pending UAT)  
+**Last updated**: 2026-05-02 (v0.22.12: PD-11 right-click menu — recreate Wayland popup each show to avoid stale non-visual state; pending UAT)  
 **Current version**: see `pyproject.toml`
 
 ---

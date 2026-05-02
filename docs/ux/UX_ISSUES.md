@@ -55,7 +55,16 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 ## Issues
 
 ----
-[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 12 — latest attempted fix in v0.22.11; pending user UAT confirmation)
+[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 13 — latest attempted fix in v0.22.12; pending user UAT confirmation)
+
+- **Root cause 13 / attempted fix (v0.22.12)**: Wayland fallback popup reused one
+  `overrideredirect` `tk.Toplevel` via repeated `withdraw()/deiconify()`. UAT still
+  showed alternating invisible/visible popups where clicks near expected popup
+  coordinates triggered actions without any rendered menu, indicating stale
+  compositor surface state. Fix: force dismissal before scheduling each right-click
+  popup and recreate the fallback `Toplevel` for every show
+  (`_destroy_wayland_popup()` + fresh `_ensure_wayland_popup()`), so each invocation
+  gets a new mapped surface.
 
 - **Root cause 12 / attempted fix (v0.22.11)**: Wayland fallback popup displayed once,
   then immediately self-dismissed on subsequent attempts due to the popup's own
@@ -118,10 +127,11 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
   - RC10 (v0.22.9): switched popup primitive to `tk_popup()` + safe `grab_release()`.
   - RC11 (v0.22.10): Wayland fallback to in-app `tk.Toplevel` popup.
   - RC12 (v0.22.11): removed Wayland popup FocusOut auto-dismiss + stabilized geometry.
+  - RC13 (v0.22.12): recreate Wayland popup per show + pre-dismiss stale popup state.
 - **Affordances**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
 - **Tests**: `tests/test_file_explorer_context_menu.py` (19 unit tests);
   `tests/test_file_explorer_menu_coordinates.py` (7 functional tests — all pass).
-- **Committed**: v0.22.11
+- **Committed**: v0.22.12
 - **UAT Status**: User-owned verification required; agent does not claim definitive UX resolution.
 
 [ ] Log files appear empty.  Startup output should show the path to the log files.- **Fix**: `log.py` → `logger.info()` → `logger.debug()`.

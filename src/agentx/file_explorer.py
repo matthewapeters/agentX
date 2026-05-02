@@ -511,6 +511,9 @@ class FileExplorer:
         _logger.debug(msg)
 
         if self._use_wayland_popup():
+            # Ensure any previously shown fallback popup cannot keep stale hitboxes
+            # or compositor state before showing the next right-click menu.
+            self._dismiss_popup_menu()
             popup_kind = "file" if menu is self._popup_menu else "directory"
             self.tree.after(
                 self._MENU_POST_DELAY_MS,
@@ -551,6 +554,15 @@ class FileExplorer:
         popup.bind("<Escape>", self._dismiss_popup_menu)
         self._wayland_popup = popup
         self._wayland_popup_frame = frame
+
+    def _destroy_wayland_popup(self) -> None:
+        """Destroy Wayland popup window so next show starts with a fresh surface."""
+        if self._wayland_popup is None:
+            return
+        if self._wayland_popup.winfo_exists():
+            self._wayland_popup.destroy()
+        self._wayland_popup = None
+        self._wayland_popup_frame = None
 
     def _render_wayland_popup_buttons(self, popup_kind: str) -> None:
         """Populate Wayland popup with commands for current selection type."""
@@ -599,6 +611,10 @@ class FileExplorer:
 
     def _show_wayland_popup(self, popup_kind: str, x_root: int, y_root: int) -> None:
         """Show a custom in-app popup window for Wayland sessions."""
+        # Re-create the popup per invocation. Reusing an overrideredirect surface
+        # with repeated withdraw/deiconify can intermittently become non-visual on
+        # some Wayland compositors while still accepting clicks.
+        self._destroy_wayland_popup()
         self._render_wayland_popup_buttons(popup_kind)
         assert self._wayland_popup is not None
         # Realize child widgets first so we can set a stable geometry before map,

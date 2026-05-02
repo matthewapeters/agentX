@@ -523,6 +523,32 @@ class TestWaylandPopupFallback:
         finally:
             root.destroy()
 
+    def test_show_wayland_popup_recreates_window_each_time(self, tmp_path):
+        """
+        GIVEN Wayland fallback popup mode is active
+        WHEN _show_wayland_popup() is called for consecutive right-clicks
+        THEN a fresh popup toplevel is created each time to avoid stale compositor state.
+
+        Affordance ID: PD-11-AF-008
+        """
+        (tmp_path / "hello.py").write_text("x")
+        root, fe, _ = _make_explorer(tmp_path)
+        try:
+            fe._FORCE_WAYLAND_POPUP = True
+            fe._show_wayland_popup("file", 100, 120)
+            assert fe._wayland_popup is not None
+            first_popup = fe._wayland_popup
+            assert first_popup.winfo_exists() == 1
+
+            fe._show_wayland_popup("file", 140, 160)
+            assert fe._wayland_popup is not None
+            second_popup = fe._wayland_popup
+
+            assert second_popup is not first_popup
+            assert second_popup.winfo_exists() == 1
+        finally:
+            root.destroy()
+
     def test_verify_does_nothing_when_generation_is_stale(self, tmp_path):
         """
         GIVEN a stale generation from an older click
