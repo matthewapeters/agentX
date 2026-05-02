@@ -549,7 +549,6 @@ class FileExplorer:
         )
         frame.pack(fill="both", expand=True)
         popup.bind("<Escape>", self._dismiss_popup_menu)
-        popup.bind("<FocusOut>", self._dismiss_popup_menu)
         self._wayland_popup = popup
         self._wayland_popup_frame = frame
 
@@ -602,13 +601,18 @@ class FileExplorer:
         """Show a custom in-app popup window for Wayland sessions."""
         self._render_wayland_popup_buttons(popup_kind)
         assert self._wayland_popup is not None
-        self._wayland_popup.geometry(f"+{x_root}+{y_root}")
+        # Realize child widgets first so we can set a stable geometry before map,
+        # avoiding a transient oversized flash on some compositors.
+        self._wayland_popup.update_idletasks()
+        req_w = max(self._wayland_popup.winfo_reqwidth(), 120)
+        req_h = max(self._wayland_popup.winfo_reqheight(), 24)
+        self._wayland_popup.geometry(f"{req_w}x{req_h}+{x_root}+{y_root}")
         self._wayland_popup.deiconify()
         self._wayland_popup.lift()
-        self._wayland_popup.focus_force()
         msg = (
             f"[FileExplorer] _show_wayland_popup: kind={popup_kind}, "
-            f"pos=({x_root},{y_root}), mapped={int(self._wayland_popup.winfo_ismapped())}"
+            f"pos=({x_root},{y_root}), size={req_w}x{req_h}, "
+            f"mapped={int(self._wayland_popup.winfo_ismapped())}"
         )
         print(msg)
         _logger.debug(msg)

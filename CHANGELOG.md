@@ -7,6 +7,25 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.11] - 2026-05-02
+
+### Code Changes
+
+#### Changed
+
+- `src/agentx/file_explorer.py` Wayland fallback popup behavior:
+  - Removed `<FocusOut>` auto-dismiss binding from the fallback `tk.Toplevel` popup.
+  - Removed `focus_force()` on popup show to avoid immediate focus churn.
+  - Stabilized popup geometry before mapping (`update_idletasks()` + explicit
+    width/height in geometry string) to reduce transient oversized flash artifacts.
+
+### Documentation Changes
+
+- `docs/ux/UX_ISSUES.md`: Added RC12 as latest attempted fix candidate, updated
+  attempt count to 12, and preserved UAT ownership.
+
+---
+
 ## [0.22.10] - 2026-05-02
 
 ### Code Changes

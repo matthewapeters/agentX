@@ -55,7 +55,16 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 ## Issues
 
 ----
-[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 11 — latest attempted fix in v0.22.10; pending user UAT confirmation)
+[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 12 — latest attempted fix in v0.22.11; pending user UAT confirmation)
+
+- **Root cause 12 / attempted fix (v0.22.11)**: Wayland fallback popup displayed once,
+  then immediately self-dismissed on subsequent attempts due to the popup's own
+  `<FocusOut>` binding firing as soon as focus changed.  This made later right-clicks
+  appear as "no popup" despite `_show_wayland_popup(... mapped=1)` diagnostics.
+  Fix: removed popup `<FocusOut>` auto-dismiss and removed forced focus capture;
+  popup now dismisses via explicit actions/Escape/dismiss handler only.
+  Also precomputes requested popup geometry (`update_idletasks()` + fixed width/height)
+  before map to reduce transient oversized flash artifacts observed in UAT.
 
 - **Root cause 11 / attempted fix (v0.22.10)**: Even with `tk_popup()`, UAT showed
   no visible menus while diagnostics reported `ismapped=1, viewable=1`.  This implies
@@ -108,10 +117,11 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
   - RC9 (v0.22.8): `after_idle` → `after(100)` to survive button-release race.
   - RC10 (v0.22.9): switched popup primitive to `tk_popup()` + safe `grab_release()`.
   - RC11 (v0.22.10): Wayland fallback to in-app `tk.Toplevel` popup.
+  - RC12 (v0.22.11): removed Wayland popup FocusOut auto-dismiss + stabilized geometry.
 - **Affordances**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
 - **Tests**: `tests/test_file_explorer_context_menu.py` (19 unit tests);
   `tests/test_file_explorer_menu_coordinates.py` (7 functional tests — all pass).
-- **Committed**: v0.22.10
+- **Committed**: v0.22.11
 - **UAT Status**: User-owned verification required; agent does not claim definitive UX resolution.
 
 [ ] Log files appear empty.  Startup output should show the path to the log files.- **Fix**: `log.py` → `logger.info()` → `logger.debug()`.
