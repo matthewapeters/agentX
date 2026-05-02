@@ -168,7 +168,9 @@ class FileExplorer:
             ``value`` is the path string chosen by the user (full or relative).
         :return: A Tkinter frame containing the file explorer GUI.
         """
-        _logger.debug("[FileExplorer] to_gui() called")
+        msg = "[FileExplorer] to_gui() called"
+        print(msg)
+        _logger.debug(msg)
         if theme_mode == "Light Mode":
             defaults = {
                 "bg": "#ffffff",
@@ -363,7 +365,9 @@ class FileExplorer:
         self._popup_menu.add_command(label="Edit", command=self._on_edit_selected)
         self._on_attach_callback = on_attach
         self._on_edit_callback = on_edit
-        _logger.debug(f"[FileExplorer] Created file menu: {id(self._popup_menu)}")
+        msg = f"[FileExplorer] Created file menu: {id(self._popup_menu)}"
+        print(msg)
+        _logger.debug(msg)
 
         # --- Right-click popup menu for folders ---
         self._folder_popup_menu = tk.Menu(
@@ -379,7 +383,9 @@ class FileExplorer:
             label="Add relative path to memory", command=self._on_add_relative_path_selected
         )
         self._on_add_folder_to_memory_callback = on_add_folder_to_memory
-        _logger.debug(f"[FileExplorer] Created folder menu: {id(self._folder_popup_menu)}")
+        msg = f"[FileExplorer] Created folder menu: {id(self._folder_popup_menu)}"
+        print(msg)
+        _logger.debug(msg)
 
         # Bind right-click on PRESS (Button-3), not release.
         #
@@ -424,19 +430,27 @@ class FileExplorer:
         return frame
 
     def _dismiss_popup_menu(self, event=None):
-        _logger.debug(f"[FileExplorer] _dismiss_popup_menu called (event={event})")
-        _logger.debug(f"[FileExplorer]   file menu id={id(self._popup_menu)} - calling unpost()")
+        msg = f"[FileExplorer] _dismiss_popup_menu called (event={event})"
+        print(msg)
+        _logger.debug(msg)
+        msg2 = f"[FileExplorer]   file menu id={id(self._popup_menu)} - calling unpost()"
+        print(msg2)
+        _logger.debug(msg2)
         self._popup_menu.unpost()
-        _logger.debug(f"[FileExplorer]   folder menu id={id(self._folder_popup_menu)} - calling unpost()")
+        msg3 = f"[FileExplorer]   folder menu id={id(self._folder_popup_menu)} - calling unpost()"
+        print(msg3)
+        _logger.debug(msg3)
         self._folder_popup_menu.unpost()
 
     def _on_right_click(self, event):
-        _logger.debug(
-            f"[FileExplorer] _on_right_click called: x={event.x}, y={event.y}, x_root={event.x_root}, y_root={event.y_root}"
-        )
+        msg = f"[FileExplorer] _on_right_click called: x={event.x}, y={event.y}, x_root={event.x_root}, y_root={event.y_root}"
+        print(msg)
+        _logger.debug(msg)
         item = self.tree.identify_row(event.y)
         if not item:
-            _logger.debug("[FileExplorer]   no item found, returning break")
+            msg = "[FileExplorer]   no item found, returning break"
+            print(msg)
+            _logger.debug(msg)
             return "break"
         self.tree.selection_set(item)
         tags = self.tree.item(item, "tags")
@@ -446,7 +460,9 @@ class FileExplorer:
         elif "directory" in tags:
             menu = self._folder_popup_menu
         if menu is None:
-            _logger.debug("[FileExplorer]   menu is None, returning break")
+            msg = "[FileExplorer]   menu is None, returning break"
+            print(msg)
+            _logger.debug(msg)
             return "break"
         # Use menu.post() rather than menu.tk_popup().
         # tk_popup() calls Tcl's `grab` command internally; on Linux with any
@@ -456,9 +472,13 @@ class FileExplorer:
         # menu.post() positions and displays the menu without setting any grab.
         # Tk's native root-window <ButtonPress> binding handles auto-dismiss when
         # the user clicks outside the menu; <Escape> is bound explicitly on the tree.
-        _logger.debug(f"[FileExplorer]   posting menu {id(menu)} at ({event.x_root}, {event.y_root})")
+        msg = f"[FileExplorer]   posting menu {id(menu)} at ({event.x_root}, {event.y_root})"
+        print(msg)
+        _logger.debug(msg)
         menu.post(event.x_root, event.y_root)
-        _logger.debug(f"[FileExplorer]   menu.post() completed, returning break")
+        msg = f"[FileExplorer]   menu.post() completed, returning break"
+        print(msg)
+        _logger.debug(msg)
         return "break"
 
     def _get_selected_folder_name(self) -> str | None:
