@@ -3,7 +3,7 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-02 (v0.22.15: PD-01 startup notice icon refined to bold/larger ⓘ; ready for UAT)  
+**Last updated**: 2026-05-02 (v0.22.15.post1: PD-01 startup notice UAT approved; icon/readability confirmed)  
 **Current version**: see `pyproject.toml`
 
 ---

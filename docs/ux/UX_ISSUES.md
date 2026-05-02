@@ -146,7 +146,10 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Committed**: v0.22.13
 - **UAT Status**: User-approved in UAT on 2026-05-02.
 
-[/] Log files appear empty. Startup output should show where log files are written before the agent's first response so users can verify the expected locations. (latest attempted fix in v0.22.15; pending user UAT confirmation)
+[/] Log files appear empty. Startup output should show where log files are written before the agent's first response so users can verify the expected locations. (latest attempted fix in v0.22.15)
+
+- **UAT confirmation (2026-05-02)**: User approved the startup notice behavior,
+  including icon visibility and readability updates.
 
 - **UAT nit / attempted fix (v0.22.15)**: Startup notice icon refined per user
   preference to use `ⓘ` and increase visibility by rendering it bold and slightly
@@ -162,4 +165,4 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Affordance**: PD-01-AF-009.
 - **Tests**: `tests/test_startup_log_notice.py` (3 unit tests — all pass).
 - **Committed**: v0.22.15
-- **UAT Status**: Ready for user verification.
+- **UAT Status**: User-approved in UAT on 2026-05-02.

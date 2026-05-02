@@ -7,6 +7,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.15.post1] - 2026-05-02
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/UX_ISSUES.md`:
+  - Recorded user UAT approval for the startup log-location notice issue.
+  - Updated UAT status from pending verification to user-approved.
+- `docs/ux/00_INDEX.md`:
+  - Updated status snapshot to reflect UAT-approved state for PD-01 startup notice.
+
+---
+
 ## [0.22.15] - 2026-05-02
 
 ### Code Changes
