@@ -449,6 +449,17 @@ class FileExplorer:
         msg = f"[FileExplorer] _on_right_click called: x={event.x}, y={event.y}, x_root={event.x_root}, y_root={event.y_root}"
         print(msg)
         _logger.debug(msg)
+        # Check if a menu is already posted
+        try:
+            file_ismapped = self._popup_menu.winfo_ismapped()
+            folder_ismapped = self._folder_popup_menu.winfo_ismapped()
+            msg = f"[FileExplorer]   BEFORE: file_menu ismapped={file_ismapped}, folder_menu ismapped={folder_ismapped}"
+            print(msg)
+            _logger.debug(msg)
+        except Exception as e:
+            msg = f"[FileExplorer]   ERROR checking menu state BEFORE: {e}"
+            print(msg)
+            _logger.debug(msg)
         item = self.tree.identify_row(event.y)
         if not item:
             msg = "[FileExplorer]   no item found, returning break"
@@ -489,6 +500,17 @@ class FileExplorer:
         print(msg)
         _logger.debug(msg)
         menu.post(event.x_root, event.y_root)
+        # Check if menu is actually visible after post()
+        try:
+            is_mapped = menu.winfo_ismapped()
+            is_viewable = menu.winfo_viewable()
+            msg = f"[FileExplorer]   after post(): ismapped={is_mapped}, viewable={is_viewable}"
+            print(msg)
+            _logger.debug(msg)
+        except Exception as e:
+            msg = f"[FileExplorer]   ERROR checking menu visibility: {e}"
+            print(msg)
+            _logger.debug(msg)
         msg = f"[FileExplorer]   menu.post() completed, returning break"
         print(msg)
         _logger.debug(msg)
