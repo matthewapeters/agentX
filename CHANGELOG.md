@@ -7,6 +7,42 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.10] - 2026-05-02
+
+### Code Changes
+
+#### Changed
+
+- `src/agentx/file_explorer.py`: Added a Wayland-specific context popup fallback.
+  When `XDG_SESSION_TYPE=wayland` (or forced in tests), right-click now opens an
+  in-app `tk.Toplevel` popup with button actions instead of Tk menu windows.
+- Existing delayed scheduling remains in place (`_MENU_POST_DELAY_MS`).
+- Existing non-Wayland behavior remains unchanged (`tk_popup` path with
+  verification/retry logic).
+
+### Test Changes
+
+#### Added
+
+- `tests/test_file_explorer_context_menu.py`: Added `TestWaylandPopupFallback`
+  with two unit tests:
+  - verifies forced Wayland mode routes to `_show_wayland_popup()` and bypasses
+    `_post_menu()`.
+  - verifies `_dismiss_popup_menu()` withdraws the Wayland fallback popup.
+
+#### Changed
+
+- Updated tk-popup assertions in existing tests to force non-Wayland mode
+  (`fe._FORCE_WAYLAND_POPUP = False`) so test intent is explicit under Wayland CI.
+
+### Documentation Changes
+
+- `docs/ux/UX_ISSUES.md`: Added RC11 as the latest attempted fix candidate,
+  updated attempt count to 11, and kept UAT ownership explicit.
+- `docs/ux/00_INDEX.md`: Updated status snapshot line for v0.22.10.
+
+---
+
 ## [0.22.9] - 2026-05-02
 
 ### Code Changes

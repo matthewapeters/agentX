@@ -446,7 +446,7 @@ so the menu posts, and the release still arrives at the menu window.
 The correct fix is `after(100)` — a 100 ms timer.  100 ms is longer than any
 physical click duration, so by the time the callback fires the button has been
 released on the treeview (where there is no `<ButtonRelease-3>` binding) and
-the menu posts cleanly and stays open:
+the popup shows cleanly and stays open:
 
 ```python
 _MENU_POST_DELAY_MS: int = 100  # class attribute; set to 0 in tests
@@ -454,7 +454,7 @@ _MENU_POST_DELAY_MS: int = 100  # class attribute; set to 0 in tests
 def _on_right_click(self, event) -> None:
     x = self.tree.winfo_rootx() + event.x   # safe coords (Wayland rule)
     y = self.tree.winfo_rooty() + event.y
-    self.tree.after(self._MENU_POST_DELAY_MS, lambda: menu.post(x, y))
+  self.tree.after(self._MENU_POST_DELAY_MS, lambda: menu.tk_popup(x, y))
 ```
 
 **In unit tests** set `fe._MENU_POST_DELAY_MS = 0` and call `root.update()`
@@ -466,6 +466,21 @@ fe._on_right_click(ev)
 root.update()   # fires after(0) callbacks
 mock_post.assert_called_once()
 ```
+
+#### Wayland fallback when Tk menus are mapped but invisible
+
+If diagnostics repeatedly show `ismapped=1, viewable=1` with valid in-bounds
+coordinates but the user still sees no popup, treat this as a compositor-level
+rendering/stacking issue for Tk menu windows on Wayland/XWayland.
+
+In that case, use a **Wayland-specific in-app popup fallback**:
+1. Render a borderless `tk.Toplevel(overrideredirect=True)` anchored at safe
+  coordinates (`winfo_rootx/y + event.x/y`).
+2. Populate it with explicit `tk.Button` actions that map 1:1 to the context
+  menu commands.
+3. Keep existing non-Wayland behavior unchanged.
+4. In tests, gate behavior with a force flag (e.g. `_FORCE_WAYLAND_POPUP`) so
+  both branches are hermetically tested.
 
 #### Testing the coordinate strategy
 

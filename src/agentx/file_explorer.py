@@ -33,6 +33,7 @@ class FileExplorer:
 
     _MENU_POST_DELAY_MS: int = 100
     _MENU_POST_VERIFY_DELAY_MS: int = 120
+    _FORCE_WAYLAND_POPUP: bool | None = None
 
     def __init__(self, start_path: str = str(Path.home())):
         """
@@ -45,6 +46,9 @@ class FileExplorer:
         self.history = [self.current_path]
         self.history_index = 0
         self._menu_post_generation = 0
+        self._menu_colors: dict[str, str] = {}
+        self._wayland_popup: tk.Toplevel | None = None
+        self._wayland_popup_frame: tk.Frame | None = None
 
     def list_directory(self) -> list[dict]:
         """
@@ -385,6 +389,7 @@ class FileExplorer:
         self._popup_menu.add_command(label="Edit", command=self._on_edit_selected)
         self._on_attach_callback = on_attach
         self._on_edit_callback = on_edit
+        self._menu_colors = colors
         msg = f"[FileExplorer] Created file menu: {id(self._popup_menu)}"
         print(msg)
         _logger.debug(msg)
@@ -453,6 +458,8 @@ class FileExplorer:
         msg = f"[FileExplorer] _dismiss_popup_menu called (event={event})"
         print(msg)
         _logger.debug(msg)
+        if self._wayland_popup is not None and self._wayland_popup.winfo_exists():
+            self._wayland_popup.withdraw()
         msg2 = f"[FileExplorer]   file menu id={id(self._popup_menu)} - calling unpost()"
         print(msg2)
         _logger.debug(msg2)
@@ -502,6 +509,15 @@ class FileExplorer:
         msg = f"[FileExplorer] _on_right_click: scheduling deferred post of menu {id(menu)} at ({x_root}, {y_root})"
         print(msg)
         _logger.debug(msg)
+
+        if self._use_wayland_popup():
+            popup_kind = "file" if menu is self._popup_menu else "directory"
+            self.tree.after(
+                self._MENU_POST_DELAY_MS,
+                lambda k=popup_kind, x=x_root, y=y_root: self._show_wayland_popup(k, x, y),
+            )
+            return "break"
+
         self._menu_post_generation += 1
         generation = self._menu_post_generation
         self.tree.after(
@@ -509,6 +525,93 @@ class FileExplorer:
             lambda m=menu, x=x_root, y=y_root, g=generation: self._post_menu(m, x, y, g),
         )
         return "break"
+
+    def _use_wayland_popup(self) -> bool:
+        """Return True when running under Wayland where Tk menus may render invisibly."""
+        if self._FORCE_WAYLAND_POPUP is not None:
+            return self._FORCE_WAYLAND_POPUP
+        return os.getenv("XDG_SESSION_TYPE", "").lower() == "wayland"
+
+    def _ensure_wayland_popup(self) -> None:
+        """Create reusable in-app popup container for Wayland fallback mode."""
+        if self._wayland_popup is not None and self._wayland_popup.winfo_exists():
+            return
+
+        popup = tk.Toplevel(self.tree)
+        popup.withdraw()
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        frame = tk.Frame(
+            popup,
+            bg=self._menu_colors.get("panel_bg", "#2b2b2b"),
+            borderwidth=1,
+            relief="solid",
+        )
+        frame.pack(fill="both", expand=True)
+        popup.bind("<Escape>", self._dismiss_popup_menu)
+        popup.bind("<FocusOut>", self._dismiss_popup_menu)
+        self._wayland_popup = popup
+        self._wayland_popup_frame = frame
+
+    def _render_wayland_popup_buttons(self, popup_kind: str) -> None:
+        """Populate Wayland popup with commands for current selection type."""
+        self._ensure_wayland_popup()
+        assert self._wayland_popup_frame is not None
+        frame = self._wayland_popup_frame
+        for child in frame.winfo_children():
+            child.destroy()
+
+        bg = self._menu_colors.get("panel_bg", "#2b2b2b")
+        fg = self._menu_colors.get("fg", "#f1f1f1")
+        active_bg = self._menu_colors.get("selection_bg", "#404040")
+        active_fg = self._menu_colors.get("selection_fg", "#ffffff")
+
+        def add_btn(label: str, command) -> None:
+            btn = tk.Button(
+                frame,
+                text=label,
+                anchor="w",
+                relief="flat",
+                bd=0,
+                padx=10,
+                pady=6,
+                bg=bg,
+                fg=fg,
+                activebackground=active_bg,
+                activeforeground=active_fg,
+                highlightthickness=0,
+                command=lambda cb=command: self._invoke_wayland_action(cb),
+            )
+            btn.pack(fill="x")
+
+        if popup_kind == "file":
+            add_btn("Attach", self._on_attach_selected)
+            add_btn("Edit", self._on_edit_selected)
+        else:
+            add_btn("Add full path to memory", self._on_add_full_path_selected)
+            add_btn("Add relative path to memory", self._on_add_relative_path_selected)
+
+    def _invoke_wayland_action(self, callback) -> None:
+        """Run Wayland popup action and hide popup."""
+        try:
+            callback()
+        finally:
+            self._dismiss_popup_menu()
+
+    def _show_wayland_popup(self, popup_kind: str, x_root: int, y_root: int) -> None:
+        """Show a custom in-app popup window for Wayland sessions."""
+        self._render_wayland_popup_buttons(popup_kind)
+        assert self._wayland_popup is not None
+        self._wayland_popup.geometry(f"+{x_root}+{y_root}")
+        self._wayland_popup.deiconify()
+        self._wayland_popup.lift()
+        self._wayland_popup.focus_force()
+        msg = (
+            f"[FileExplorer] _show_wayland_popup: kind={popup_kind}, "
+            f"pos=({x_root},{y_root}), mapped={int(self._wayland_popup.winfo_ismapped())}"
+        )
+        print(msg)
+        _logger.debug(msg)
 
     def _post_menu(
         self,

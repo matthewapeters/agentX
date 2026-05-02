@@ -239,6 +239,7 @@ class TestMenuCoordinateSafety:
             ev = _fake_event(tree=fe.tree, x=event_x, y=event_y, x_root=bad_x_root, y_root=bad_y_root)
 
             fe._MENU_POST_DELAY_MS = 0  # fire synchronously in tests
+            fe._FORCE_WAYLAND_POPUP = False
             with patch.object(fe._popup_menu, "tk_popup") as mock_popup:
                 fe._on_right_click(ev)
                 root.update()  # flush after(0) timer

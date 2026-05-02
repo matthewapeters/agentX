@@ -102,6 +102,7 @@ class TestFileContextMenu:
             ev = _fake_event(y=y)
 
             fe._MENU_POST_DELAY_MS = 0  # fire synchronously in tests
+            fe._FORCE_WAYLAND_POPUP = False
             with (
                 patch.object(fe._popup_menu, "tk_popup") as mock_file_tk_popup,
                 patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_tk_popup,
@@ -269,6 +270,7 @@ class TestFolderContextMenu:
             ev = _fake_event(y=y)
 
             fe._MENU_POST_DELAY_MS = 0  # fire synchronously in tests
+            fe._FORCE_WAYLAND_POPUP = False
             with (
                 patch.object(fe._folder_popup_menu, "tk_popup") as mock_folder_tk_popup,
                 patch.object(fe._popup_menu, "tk_popup") as mock_file_tk_popup,
@@ -458,6 +460,66 @@ class TestMenuVisibilityRecovery:
                 fe._verify_menu_visible(fe._popup_menu, 100, 200, generation=5)
 
             mock_post_menu.assert_called_once_with(fe._popup_menu, 100, 200, 5, is_retry=True)
+        finally:
+            root.destroy()
+
+
+@pytest.mark.unit
+class TestWaylandPopupFallback:
+    """Unit tests for Wayland-specific custom popup fallback behavior."""
+
+    def test_right_click_uses_wayland_popup_when_enabled(self, tmp_path):
+        """
+        GIVEN forced Wayland popup mode
+        WHEN right-clicking a file row
+        THEN _show_wayland_popup() is called and _post_menu() is not.
+
+        Affordance ID: PD-11-AF-008
+        """
+        (tmp_path / "hello.py").write_text("x")
+        root, fe, _ = _make_explorer(tmp_path)
+        try:
+            fe._FORCE_WAYLAND_POPUP = True
+            fe._MENU_POST_DELAY_MS = 0
+            items = fe.tree.get_children()
+            file_item = next(i for i in items if "file" in fe.tree.item(i, "tags"))
+            bbox = fe.tree.bbox(file_item)
+            y = int(bbox[1]) + int(bbox[3]) // 2 if bbox else 5
+            ev = _fake_event(x=10, y=y)
+
+            with (
+                patch.object(fe, "_show_wayland_popup") as mock_show_wayland,
+                patch.object(fe, "_post_menu") as mock_post_menu,
+            ):
+                result = fe._on_right_click(ev)
+                root.update()
+
+            mock_show_wayland.assert_called_once()
+            mock_post_menu.assert_not_called()
+            assert result == "break"
+        finally:
+            root.destroy()
+
+    def test_dismiss_hides_wayland_popup(self, tmp_path):
+        """
+        GIVEN a visible Wayland popup window
+        WHEN _dismiss_popup_menu() is called
+        THEN the popup is withdrawn.
+
+        Affordance ID: PD-11-AF-010
+        """
+        (tmp_path / "hello.py").write_text("x")
+        root, fe, _ = _make_explorer(tmp_path)
+        try:
+            fe._FORCE_WAYLAND_POPUP = True
+            fe._ensure_wayland_popup()
+            assert fe._wayland_popup is not None
+            fe._wayland_popup.deiconify()
+            root.update_idletasks()
+            assert fe._wayland_popup.winfo_ismapped() == 1
+            fe._dismiss_popup_menu()
+            root.update_idletasks()
+            assert fe._wayland_popup.winfo_ismapped() == 0
         finally:
             root.destroy()
 
