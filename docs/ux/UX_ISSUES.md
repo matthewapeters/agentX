@@ -146,4 +146,16 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Committed**: v0.22.13
 - **UAT Status**: User-approved in UAT on 2026-05-02.
 
-[ ] Log files appear empty.  Startup output should show the path to the log files.- **Fix**: `log.py` → `logger.info()` → `logger.debug()`.
+[/] Log files appear empty. Startup output should show where log files are written before the agent's first response so users can verify the expected locations. (latest attempted fix in v0.22.14; pending user UAT confirmation)
+
+- **Root cause / attempted fix (v0.22.14)**: No startup affordance informed users where
+  logs are written, so expected locations appeared ambiguous or empty. Added a
+  startup output notice that lists session/runtime log locations and clarifies that
+  some files appear only after first write. The notice is controlled by a new
+  `agentx.show_log_locations_on_startup` boolean setting in `agentx.toml`
+  (default: `true`).
+
+- **Affordance**: PD-01-AF-009.
+- **Tests**: `tests/test_startup_log_notice.py` (3 unit tests — all pass).
+- **Committed**: v0.22.14
+- **UAT Status**: Ready for user verification.

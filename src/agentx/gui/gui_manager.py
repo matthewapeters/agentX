@@ -315,6 +315,9 @@ class GUIManager(IGUIManager):
     def display_bootstrap_agent_response(self, content: str) -> None:
         self._chat_panel.display_bootstrap_agent_response(content)
 
+    def display_startup_notice(self, content: str) -> None:
+        self._chat_panel.display_startup_notice(content)
+
     def display_error(self, message: str) -> None:
         self._chat_panel.display_error(message)
 

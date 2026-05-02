@@ -4,6 +4,7 @@ ollama_model = "codellama:latest"
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
 theme_mode = "Dark Mode"
+show_log_locations_on_startup = true
 
 [agentix]
 system_prompts_dir = "system_prompts"

@@ -89,6 +89,19 @@ class IGUIManager(Protocol):
         """
         ...
 
+    def display_startup_notice(self, content: str) -> None:
+        """Display a non-agent startup notice in the output panel.
+
+        Args:
+            content: Friendly startup text, typically operational guidance.
+
+        Behavior:
+            - Renders a one-shot informational notice before first agent output.
+            - Uses neutral/system visual styling (not assistant-response styling).
+            - Auto-scrolls to ensure the notice is visible on startup.
+        """
+        ...
+
     def display_classification(self, classification: dict) -> None:
         """Display prompt classification metadata block in the output panel.
 

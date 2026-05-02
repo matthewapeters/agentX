@@ -190,6 +190,7 @@ implements it and the test that validates it.  Status legend:
 | Tool call collapsed by default | PD-01-AF-006 | `ChatPanel._display_tool_call()` | `test_chat_panel_collapse_defaults.py` | `test_tool_call_entry_collapsed_by_default` | ✅ |
 | Assistant response expanded by default | PD-01-AF-007 | `ChatPanel.display_agent_response()` | `test_chat_panel_collapse_defaults.py` | `test_assistant_response_entry_expanded_by_default` | ✅ |
 | Markdown rendered after DONE chunk | PD-01-AF-008 | `ChatPanel.finalize_current_turn_markdown()` | `test_markdown_rendering.py` | — | ⚠️ |
+| Startup log-location notice shown before first agent response (config-gated) | PD-01-AF-009 | `AgentXSession._show_startup_log_locations_notice_if_enabled()` | `test_startup_log_notice.py` | `TestStartupLogNotice` | ✅ |
 
 ### PD-02 — InputPanel
 
@@ -474,6 +475,7 @@ coordinates but the user still sees no popup, treat this as a compositor-level
 rendering/stacking issue for Tk menu windows on Wayland/XWayland.
 
 In that case, use a **Wayland-specific in-app popup fallback**:
+
 1. Render a borderless `tk.Toplevel(overrideredirect=True)` anchored at safe
   coordinates (`winfo_rootx/y + event.x/y`).
 2. Populate it with explicit `tk.Button` actions that map 1:1 to the context

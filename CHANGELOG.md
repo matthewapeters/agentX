@@ -7,6 +7,43 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.14] - 2026-05-02
+
+### Code Changes
+
+#### Added
+
+- Startup log-location notice in the output window before first agent response.
+  - `AgentXSession._show_startup_log_locations_notice_if_enabled()` now renders
+    friendly paths for session/runtime logs during layout.
+  - New config gate: `agentx.show_log_locations_on_startup` in `agentx.toml`
+    (default: `true`), allowing users to suppress the notice.
+
+#### Changed
+
+- `ChatPanel`/`GUIManager` now support `display_startup_notice()` for system-style,
+  non-agent informational startup messages.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_startup_log_notice.py`:
+  - startup notice displays by default and includes expected log paths.
+  - startup notice suppression when config flag is false.
+  - layout order guarantees notice displays before bootstrap response rendering.
+
+### Documentation Changes
+
+- Added UX use-cases and traceability for startup log-location messaging:
+  - `docs/ux/03_PANEL_DETAILS.md` (PD-01-AF-009 + Gherkin stories)
+  - `docs/ux/02_USER_FLOWS.md` (UF-13)
+  - `docs/ux/UX_LIFECYCLE.md` (traceability matrix row)
+  - `docs/ux/UX_ISSUES.md` (issue moved to ready-for-UAT)
+  - `docs/ux/00_INDEX.md` (status snapshot)
+
+---
+
 ## [0.22.13.post1] - 2026-05-02
 
 ### Documentation Changes

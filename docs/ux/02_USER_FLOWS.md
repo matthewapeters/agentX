@@ -381,3 +381,32 @@ sequenceDiagram
 - In Wayland fallback mode, the popup top-level first visible frame must use the
   selected theme palette (no default light flash before dark-theme controls render).
 - Popup rendering behavior must remain consistent across repeated right-click cycles.
+
+---
+
+## UF-13: Startup Log Locations Notice
+
+**Trigger**: AgentX completes startup layout before first agent response.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Session as AgentXSession
+    participant Config as agentx.toml
+    participant Chat as ChatPanel
+
+    Session->>Config: read agentx.show_log_locations_on_startup
+    alt config is true or absent
+        Session->>Chat: display_startup_notice(log locations)
+        Chat-->>User: friendly startup message in output window
+    else config is false
+        Session->>Session: skip startup notice
+    end
+    Session->>Session: proceed with bootstrap/normal agent flow
+```
+
+**Behavior goals**:
+
+- Show users where logs are written without requiring filesystem discovery.
+- Display before first assistant response so operational context is immediately visible.
+- Allow suppression via `agentx.show_log_locations_on_startup=false`.

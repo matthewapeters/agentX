@@ -348,6 +348,35 @@ class ChatPanel:
         self._current_turn_entries = {}
         self._scroll_output_to_end()
 
+    def display_startup_notice(self, content: str) -> None:
+        """Render a one-shot informational startup notice in the output panel."""
+        if threading.current_thread() is not threading.main_thread():
+            return
+        if self._widgets.output_text is None:
+            return
+
+        clean_content = content.strip()
+        if not clean_content:
+            return
+
+        self._legacy_output_insert(f"ℹ️ Startup: {clean_content}\n\n", ("gray",))
+
+        if self._widgets.output_entries_frame is not None:
+            container = tk.Frame(self._widgets.output_entries_frame, bg=self._config.output_bg)
+            container.pack(fill=tk.X, anchor="w", pady=(4, 6))
+            self._create_output_entry(
+                parent=container,
+                role_label="Startup",
+                icon="ℹ️",
+                content=clean_content,
+                expanded=True,
+            )
+
+        self._current_turn_frame = None
+        self._current_turn_children_frame = None
+        self._current_turn_entries = {}
+        self._scroll_output_to_end()
+
     def display_error(self, message: str) -> None:
         if threading.current_thread() is not threading.main_thread():
             return

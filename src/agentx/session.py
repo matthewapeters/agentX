@@ -256,6 +256,30 @@ class AgentXSession:
         except Exception:
             logger.exception("Bootstrap prompt execution failed")
 
+    def _show_startup_log_locations_notice_if_enabled(self) -> None:
+        """Display startup log location guidance in the output panel when enabled."""
+        show_notice = self.config.get("agentx", {}).get("show_log_locations_on_startup", True)
+        if not show_notice:
+            return
+
+        base_sessions_dir = Path(self.user_history_folder).parent
+        app_log_dir = base_sessions_dir / "_logs"
+        app_log_path = app_log_dir / "agentx.log"
+        classification_log_path = app_log_dir / "classification.jsonl"
+        session_log_path = Path(self._session_log_path)
+        output_log_path = Path(self.session_folder) / "output_log.jsonl"
+
+        notice = (
+            "Log files for this session:\n"
+            f"- Session transcript: {session_log_path}\n"
+            f"- Output stream (JSONL): {output_log_path}\n"
+            f"- App runtime log: {app_log_path}\n"
+            f"- Classification log: {classification_log_path}\n"
+            "Note: a location may appear empty until its first write event."
+        )
+        self.gui.display_startup_notice(notice)
+        self._output_logger.log("startup", notice)
+
     def process_prompt(self, prompt: str) -> Iterator[ResponseChunk]:
         """Process a prompt and yield response chunks (test-friendly API)."""
         shared_context = self._build_shared_context()
@@ -1024,6 +1048,7 @@ class AgentXSession:
         # Setup model selector and tool panel if Agentix is available
         # (Must be after layout is created so the widgets exist)
         self._setup_agentix_ui()
+        self._show_startup_log_locations_notice_if_enabled()
         self._run_bootstrap_prompt_if_present()
 
     def stream_ollama_response_worker(self):

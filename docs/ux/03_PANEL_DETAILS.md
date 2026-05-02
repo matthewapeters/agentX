@@ -43,6 +43,7 @@ Each section should follow the component cut-sheet standard in
 | Thinking block `▶` button | Expand/collapse reasoning | In-widget toggle |
 | Plan tab click | Navigate to plan tree | Tkinter notebook selection |
 | Scroll | Vertical scroll of chat history | Mouse wheel / scrollbar |
+| Startup notice block | Show friendly log-file locations on startup | `AgentXSession._show_startup_log_locations_notice_if_enabled()` |
 
 ### State Fields
 
@@ -96,6 +97,28 @@ When the user clicks the `▶/▼` toggle on the user entry:
 
 Because the user entry was packed first, `children_frame` always re-appears **below**
 the user entry after re-packing, regardless of how many collapse/expand cycles occur.
+
+### Affordance: PD-01-AF-009 — Startup log-location notice in output window
+
+**Source**: `AgentXSession._show_startup_log_locations_notice_if_enabled()` +
+`ChatPanel.display_startup_notice()`
+(`src/agentx/session.py`, `src/agentx/gui/chat_panel.py`)  
+**Test**: `tests/test_startup_log_notice.py` · `TestStartupLogNotice`
+
+```gherkin
+GIVEN startup layout initialization with default configuration
+WHEN AgentX initializes the main output window
+THEN a friendly startup notice is displayed before any agent response
+ AND the notice includes where session and runtime log files can be found
+
+GIVEN `agentx.show_log_locations_on_startup` is set to false in `agentx.toml`
+WHEN AgentX initializes the main output window
+THEN the startup log-location notice is suppressed
+
+GIVEN startup notice display is enabled
+WHEN the notice is rendered in the output window
+THEN it appears as informational/system content (not as an agent response)
+```
 
 ---
 
@@ -1253,15 +1276,13 @@ Files tab
 | Right-click (or Ctrl+click) | Directory row | Shows folder context menu |
 | `Escape` | Any | Dismisses open context menu |
 
-> **Note**: The `<ButtonRelease-3>` event is used (not `<Button-3>`) to open the menu.
-> On Linux/X11 `tk_popup()` sets up an internal grab; if the menu opens on the press
-> event, the corresponding button-release is captured by the grab and immediately dismisses
-> the menu.  Using the release event means it has already fired before the popup opens.
-> Additionally, `grab_release()` is called immediately after `tk_popup()` (in a
-> `try/finally`) to release the server-side grab that `tk_popup` sets.  On modern Linux
-> compositors (GNOME/Mutter, KWin) this grab can conflict with the WM's own grab,
-> causing the menu to vanish.  `grab_release()` frees the grab while keeping the menu
-> posted; Tk's native `<Leave>` and root-`ButtonPress` bindings still handle dismiss.
+> **Platform behavior note**: Right-click is bound on `<Button-3>` and posted with a
+> short timer delay to avoid immediate button-release dismissal races. Under Wayland
+> sessions, FileExplorer uses a custom in-app `tk.Toplevel(overrideredirect=True)`
+> fallback popup rather than native Tk menu windows when compositor behavior makes
+> menus unreliable. The fallback popup must render with the active theme palette from
+> the first visible frame (no default light top-level flash) to prevent visual drift in
+> long usage sessions.
 > The `<FocusOut>` event is also intentionally **not** used to dismiss the menu, as
 > `tk_popup()` steals focus from the treeview when it opens.
 
@@ -1293,6 +1314,11 @@ THEN the file context menu is posted at the cursor position
 GIVEN the user right-clicks a file row and the menu is visible
 WHEN the user presses Escape
 THEN the menu is dismissed
+
+GIVEN the app is in Wayland fallback popup mode with dark theme selected
+WHEN the user right-clicks a file row
+THEN the top-level popup surface uses the selected theme palette on first render
+ AND no default light top-level frame is shown before buttons are painted
 
 GIVEN the user right-clicks a file row and the menu is visible
 WHEN the user clicks Attach
@@ -1350,3 +1376,4 @@ THEN no exception is raised
 
 See [UF-05: File Attachment](02_USER_FLOWS.md#uf-05-file-attachment) for the end-to-end flow from clicking a file to it appearing as an attachment chip.
 See [UF-11: File Explorer Navigation](02_USER_FLOWS.md#uf-11-file-explorer-navigation) for directory browsing and folder-to-memory flows.
+See [UF-12: File Explorer Context Popup Rendering](02_USER_FLOWS.md#uf-12-file-explorer-context-popup-rendering) for popup visibility and first-frame palette guarantees.

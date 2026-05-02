@@ -3,7 +3,7 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-02 (v0.22.13.post1: PD-11 right-click menu — UAT approved; popup reliability and first-frame palette behavior confirmed)  
+**Last updated**: 2026-05-02 (v0.22.14: PD-01 startup log-location notice added (config-gated); ready for UAT)  
 **Current version**: see `pyproject.toml`
 
 ---
@@ -34,7 +34,7 @@
 
 | Panel | Fully Tested ✅ | Partial ⚠️ | Spec Only 📝 | Gap ❌ |
 |-------|:--------------:|:----------:|:------------:|:------:|
-| PD-01 ChatPanel | 7 | 1 | 0 | 0 |
+| PD-01 ChatPanel | 8 | 1 | 0 | 0 |
 | PD-02 InputPanel | 4 | 3 | 0 | 0 |
 | PD-03 SidePanel — Context | 7 | 0 | 0 | 0 |
 | PD-03 SidePanel — Working Memory | 4 | 1 | 0 | 0 |
@@ -47,7 +47,7 @@
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 10 | 0 | 0 | 0 |
 
-**Totals**: 64 ✅ · 6 ⚠️ · 0 📝 · 0 ❌
+**Totals**: 65 ✅ · 6 ⚠️ · 0 📝 · 0 ❌
 
 ---
 
