@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -359,18 +360,52 @@ class ChatPanel:
         if not clean_content:
             return
 
-        self._legacy_output_insert(f"ℹ️ Startup: {clean_content}\n\n", ("gray",))
+        self._legacy_output_insert(f"ⓘ Startup: {clean_content}\n\n", ("gray",))
 
         if self._widgets.output_entries_frame is not None:
             container = tk.Frame(self._widgets.output_entries_frame, bg=self._config.output_bg)
             container.pack(fill=tk.X, anchor="w", pady=(4, 6))
-            self._create_output_entry(
-                parent=container,
-                role_label="Startup",
-                icon="ℹ️",
-                content=clean_content,
-                expanded=True,
+
+            text_font = self._text_font or self._config.default_font
+            base_size = 10
+            if isinstance(text_font, tuple) and len(text_font) >= 2 and isinstance(text_font[1], int):
+                base_size = text_font[1]
+            icon_font = (text_font[0], base_size + 2, "bold") if isinstance(text_font, tuple) else ("Terminal", 12, "bold")
+
+            header_frame = tk.Frame(container, bg=self._config.output_bg)
+            header_frame.pack(fill=tk.X, anchor="w")
+
+            icon_label = tk.Label(
+                header_frame,
+                text="ⓘ",
+                font=icon_font,
+                bg=self._config.output_bg,
+                fg=self._COLOR_AGENT_RESPONSE,
+                anchor="w",
             )
+            icon_label.pack(side=tk.LEFT, padx=(0, 6))
+            title_label = tk.Label(
+                header_frame,
+                text="Startup:",
+                font=(text_font[0], base_size, "bold") if isinstance(text_font, tuple) else ("Terminal", 10, "bold"),
+                bg=self._config.output_bg,
+                fg=self._COLOR_AGENT_RESPONSE,
+                anchor="w",
+            )
+            title_label.pack(side=tk.LEFT)
+
+            detail_label = tk.Label(
+                container,
+                text=clean_content,
+                bg=self._config.output_bg,
+                fg=self._COLOR_AGENT_RESPONSE,
+                anchor="w",
+                justify=tk.LEFT,
+                wraplength=self._output_wraplength,
+                font=text_font,
+            )
+            detail_label.pack(fill=tk.X, anchor="w", padx=(24, 0))
+            self._output_wrapped_labels.append(detail_label)
 
         self._current_turn_frame = None
         self._current_turn_children_frame = None

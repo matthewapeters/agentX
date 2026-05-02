@@ -7,6 +7,30 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.15] - 2026-05-02
+
+### Code Changes
+
+#### Changed
+
+- Startup log-location notice icon styling in output window:
+  - Updated icon to `ⓘ` per UAT preference.
+  - Rendered startup icon in bold and slightly larger font for improved visibility.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_startup_log_notice.py`:
+  - Added regression test validating `ⓘ` icon presence and bold/larger startup icon styling.
+
+### Documentation Changes
+
+- `docs/ux/UX_ISSUES.md`: Recorded UAT nit attempted fix for startup icon visibility.
+- `docs/ux/00_INDEX.md`: Updated status snapshot to v0.22.15 candidate.
+
+---
+
 ## [0.22.14] - 2026-05-02
 
 ### Code Changes
