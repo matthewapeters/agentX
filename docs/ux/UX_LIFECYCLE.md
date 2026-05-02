@@ -380,6 +380,89 @@ Tkinter requires a display server, but it can be driven completely in memory und
 `Xvfb` virtual framebuffer or the standard X session of a desktop environment.  Tests
 run in CI and locally without a visible window.
 
+---
+
+### Platform Design Principle: Wayland / XWayland Coordinate Safety
+
+> **This rule applies to every affordance that calls `menu.post()`, `wm_geometry()`,
+> or any other function that places a popup or floating window at an absolute screen
+> position.**
+
+#### Background
+
+AgentX runs on Ubuntu with a GNOME/Mutter Wayland compositor (`XDG_SESSION_TYPE=wayland`).
+Tkinter itself is an X11 application and is surfaced through **XWayland** — an X11
+compatibility layer embedded inside the Wayland session.
+
+XWayland exposes a single large *virtual framebuffer* whose pixel dimensions are the
+union of all physical monitors at their native (physical) resolutions, including any
+HiDPI scaling.  X11 event coordinates (`event.x_root`, `event.y_root`) are reported in
+this physical-pixel virtual space.  Under a multi-monitor or HiDPI setup the virtual
+framebuffer can be thousands of pixels wider/taller than any single visible monitor,
+and these coordinates may therefore describe a point that is off-screen from the user's
+perspective.
+
+**UAT evidence (v0.22.7):** a right-click event yielded `x_root=3753` on a system with
+no single monitor wider than ~3840 physical pixels, placing the menu window completely
+off-screen.
+
+#### The Rule
+
+**Never pass `event.x_root` / `event.y_root` directly to `menu.post()` or any
+window-positioning call.**
+
+Instead, derive the screen position from the widget's own geometry:
+
+```python
+# CORRECT — always visible under Wayland/XWayland
+x = widget.winfo_rootx() + event.x
+y = widget.winfo_rooty() + event.y
+menu.post(x, y)
+```
+
+`widget.winfo_rootx()` / `winfo_rooty()` query Tk's own geometry system, which tracks
+the widget's logical on-screen anchor.  `event.x` / `event.y` are cursor offsets
+*relative to the widget* — always non-negative and bounded by the widget's own
+dimensions.  The sum is therefore always within the widget's footprint and, by
+extension, always within a visible monitor.
+
+```python
+# WRONG — raw X11 physical-pixel coords, off-screen under XWayland
+menu.post(event.x_root, event.y_root)
+```
+
+#### Why `after_idle` is also required
+
+The `<Button-3>` press event fires synchronously.  Creating the menu window inside
+the press handler causes the *subsequent* `<ButtonRelease-3>` to be delivered to the
+newly-visible menu window, where the Tk `Menu` class's built-in `<ButtonRelease>`
+binding (`tk::MenuInvoke`) immediately calls `unpost()` — dismissing the menu before
+the user can interact.
+
+The fix is to defer `menu.post()` until after the button-release event drains from the
+queue:
+
+```python
+def _on_right_click(self, event) -> None:
+    x = self.tree.winfo_rootx() + event.x   # safe coords (Wayland rule)
+    y = self.tree.winfo_rooty() + event.y
+    self.tree.after_idle(lambda: menu.post(x, y))  # defer past ButtonRelease-3
+```
+
+#### Testing the coordinate strategy
+
+Functional tests for popup coordinates must:
+
+1. Use a real `tk.Tk()` root (geometry queries do not work on `MagicMock`).
+2. Assert that `winfo_rootx() + event.x` fits within `winfo_screenwidth()`.
+3. Optionally supply a synthetic `event.x_root` with an out-of-bounds value
+   (e.g. `9999`) and assert it is **not** what reaches `menu.post()`.
+
+See `tests/test_file_explorer_menu_coordinates.py::TestMenuCoordinateSafety` for the
+reference implementation (affordance PD-11-AF-008).
+
+---
+
 ### Why it works
 
 Tkinter's geometry managers (`pack`, `grid`) and widget state (`cget`, `grid_info`) are

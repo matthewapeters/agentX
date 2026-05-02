@@ -55,9 +55,25 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 ## Issues
 
 ----
-[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 6)
+[/] Right-clicking files in file browser do not cause menu pop-up - so they cannot be attached to the context - either individually or as a group.  Sporadic menus pop up but disappear immediately.  This is a major UX issue.  Although attempted to be fixed, UAT shows the issue ramains.  The pop-up shows up about once for every 12 clicks - it should be 100% reliable.  (count of attempted fixes: 8 — definitive fix in v0.22.7)
 
-- **Root cause 6 / definitive fix (v0.22.6)**: After switching to `menu.post()` (v0.22.5)
+- **Root cause 8 / definitive fix (v0.22.7)**: Menu was posting successfully
+  (`winfo_ismapped=1`) but at an **off-screen position** due to XWayland virtual-screen
+  coordinate mismatch.  Under Wayland/XWayland, `event.x_root` / `event.y_root` are in
+  physical-pixel coordinates of the XWayland virtual framebuffer, which can be thousands
+  of pixels outside any visible monitor region.  UAT observation: `x_root=3753` on a
+  system with no monitor wider than ~3840px.
+  Fix: replaced `event.x_root/y_root` with `winfo_rootx() + event.x` /
+  `winfo_rooty() + event.y` — Tk's own geometry system, which always resolves to a
+  visible on-screen position.  Combined with the `after_idle` deferral (RC7) this
+  makes menu posting 100% reliable under both X11 and XWayland.
+  **This is now a standing design principle** — see
+  [UX_LIFECYCLE.md §6 — Platform Design Principle: Wayland / XWayland Coordinate Safety](UX_LIFECYCLE.md#platform-design-principle-wayland--xwayland-coordinate-safety).
+- **Root cause 7 / partial fix (v0.22.7)**: Menu posted (`ismapped=1, viewable=1`) but
+  was off-screen (see RC8 above).  The `after_idle` deferral correctly delays
+  `menu.post()` until after `<ButtonRelease-3>` drains, so `tk::MenuInvoke` does not
+  immediately unpost it.  This part is correct and was retained.
+- **Root cause 6 / partial fix (v0.22.6)**: After switching to `menu.post()` (v0.22.5)
   the menu STILL vanished.  The binding was still `<ButtonRelease-3>`.  When
   `menu.post()` creates the menu window at `(x_root, y_root)` — directly under the cursor
   — the X server sends an `<Enter>` event to the new window.  The Tk `Menu` class has a
@@ -80,6 +96,13 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
   - RC5 (v0.22.5): `tk_popup()` itself → replaced with `menu.post()`.
   - RC6 (v0.22.6): `<ButtonRelease-3>` binding + `menu.post()` → Menu class
     `<ButtonRelease>` fires on the just-posted window → changed to `<Button-3>`.
+  - RC7 (v0.22.7 step 1): Menu visible but positions off-screen; `after_idle`
+    deferral confirmed correct.
+  - RC8 (v0.22.7 step 2): XWayland virtual-screen coordinate mismatch → replaced
+    `event.x_root/y_root` with `winfo_rootx/y() + event.x/y`.
 - **Affordances**: PD-11-AF-008, PD-11-AF-009, PD-11-AF-010.
-- **Tests**: `tests/test_file_explorer_context_menu.py` (15 unit tests, all pass).
-- **Committed**: v0.22.6
+- **Tests**: `tests/test_file_explorer_context_menu.py` (15 unit tests);
+  `tests/test_file_explorer_menu_coordinates.py` (7 functional tests — all pass).
+- **Committed**: v0.22.7
+
+[ ] Log files appear empty.  Startup output should show the path to the log files.- **Fix**: `log.py` → `logger.info()` → `logger.debug()`.

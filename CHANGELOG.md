@@ -7,6 +7,53 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.7] - 2026-05-02
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/file_explorer.py` `_on_right_click()`: Replaced `event.x_root` /
+  `event.y_root` with `self.tree.winfo_rootx() + event.x` / `self.tree.winfo_rooty() +
+  event.y` for the coordinates passed to `_post_menu()`.  Root cause (RC8): under
+  Wayland/XWayland the raw X11 event coordinates are in physical-pixel virtual-screen
+  space.  On a HiDPI or multi-monitor setup this can place `menu.post()` far outside any
+  visible monitor region (UAT observation: `x_root=3753`).  Tk's `winfo_rootx/y()`
+  queries the widget's logical on-screen anchor; adding the widget-relative `event.x/y`
+  offsets produces a coordinate that is always inside the visible window.
+
+#### Architecture / Design
+
+- **Wayland/XWayland coordinate safety rule** documented as a standing platform design
+  principle in `docs/ux/UX_LIFECYCLE.md §6`.  All future affordances that call
+  `menu.post()`, `wm_geometry()`, or any absolute-position popup must follow this rule.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_file_explorer_menu_coordinates.py` — 7 new `pytest.mark.functional` tests
+  in `TestMenuCoordinateSafety` covering affordance PD-11-AF-008:
+  - GIVEN winfo_rootx + event.x / WHEN widget is on-screen / THEN coords within screen bounds
+  - GIVEN raw XWayland x_root values (parametrized: 3753/500, 5000/3000, 0/0, 100/200) /
+    WHEN compared against screen dimensions / THEN safe strategy always in bounds
+  - GIVEN safe coordinates / WHEN _post_menu() called with real menu.post() /
+    THEN menu.winfo_ismapped()=1 AND menu position within screen bounds
+  - GIVEN synthetic event with bad x_root=9999 / WHEN_on_right_click() fires /
+    THEN menu.post() called with winfo_rootx+event.x NOT with raw x_root (regression guard)
+
+### Documentation Changes
+
+- `docs/ux/UX_LIFECYCLE.md`: New subsection **"Platform Design Principle: Wayland /
+  XWayland Coordinate Safety"** at the top of §6.  Covers: background on XWayland
+  virtual framebuffer, the rule (never use `event.x_root/y_root` for popup placement),
+  the correct pattern, why `after_idle` is also required, and testing guidelines.
+- `docs/ux/UX_ISSUES.md`: Right-click issue marked `[/]`; RC8 fully documented alongside
+  RC1–RC7 history.
+- `docs/ux/00_INDEX.md`: Last-updated date bumped to 2026-05-02.
+
+---
+
 ## [0.22.6] - 2026-05-01
 
 ### Code Changes

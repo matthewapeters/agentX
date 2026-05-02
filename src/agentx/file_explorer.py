@@ -446,25 +446,16 @@ class FileExplorer:
         self._folder_popup_menu.unpost()
 
     def _on_right_click(self, event):
-        msg = f"[FileExplorer] _on_right_click called: x={event.x}, y={event.y}, x_root={event.x_root}, y_root={event.y_root}"
-        print(msg)
-        _logger.debug(msg)
-        # Check if a menu is already posted
-        try:
-            file_ismapped = self._popup_menu.winfo_ismapped()
-            folder_ismapped = self._folder_popup_menu.winfo_ismapped()
-            msg = f"[FileExplorer]   BEFORE: file_menu ismapped={file_ismapped}, folder_menu ismapped={folder_ismapped}"
-            print(msg)
-            _logger.debug(msg)
-        except Exception as e:
-            msg = f"[FileExplorer]   ERROR checking menu state BEFORE: {e}"
-            print(msg)
-            _logger.debug(msg)
+        """Handle right-click on the treeview to show the context menu.
+
+        The menu is posted via after_idle() so that the ButtonRelease-3 event
+        that follows the Button-3 press fires on the treeview (no binding there)
+        before the menu window exists. This prevents the Menu class's built-in
+        <ButtonRelease> binding (tk::MenuInvoke) from calling unpost() the
+        instant the menu appears with no active item.
+        """
         item = self.tree.identify_row(event.y)
         if not item:
-            msg = "[FileExplorer]   no item found, returning break"
-            print(msg)
-            _logger.debug(msg)
             return "break"
         self.tree.selection_set(item)
         tags = self.tree.item(item, "tags")
@@ -474,47 +465,41 @@ class FileExplorer:
         elif "directory" in tags:
             menu = self._folder_popup_menu
         if menu is None:
-            msg = "[FileExplorer]   menu is None, returning break"
-            print(msg)
-            _logger.debug(msg)
             return "break"
-        # Check menu validity
-        try:
-            menu_parent = menu.master
-            msg = f"[FileExplorer]   menu {id(menu)} parent is {id(menu_parent)}"
-            print(msg)
-            _logger.debug(msg)
-        except Exception as e:
-            msg = f"[FileExplorer]   ERROR: cannot get menu parent: {e}"
-            print(msg)
-            _logger.debug(msg)
-        # Use menu.post() rather than menu.tk_popup().
-        # tk_popup() calls Tcl's `grab` command internally; on Linux with any
-        # modern compositor (GNOME/Mutter, KWin, Wayland/XWayland) the WM already
-        # holds a server-side grab for the ButtonRelease event and resolves the
-        # conflict by cancelling Tk's grab, which immediately calls unpost().
-        # menu.post() positions and displays the menu without setting any grab.
-        # Tk's native root-window <ButtonPress> binding handles auto-dismiss when
-        # the user clicks outside the menu; <Escape> is bound explicitly on the tree.
-        msg = f"[FileExplorer]   posting menu {id(menu)} at ({event.x_root}, {event.y_root})"
+        # Derive screen coordinates from the widget's own position rather than
+        # the raw X11 event coordinates.  Under XWayland on Wayland compositors,
+        # event.x_root / event.y_root are in the XWayland virtual-screen physical
+        # pixel space, which can extend far outside any visible monitor (e.g.
+        # x_root=3753 was observed in UAT on a system with no monitor wider than
+        # 3840px).  winfo_rootx/y() asks Tk for the widget's screen anchor — always
+        # inside the visible window — and event.x/y are widget-relative offsets
+        # bounded by the widget's own dimensions.
+        x_root = self.tree.winfo_rootx() + event.x
+        y_root = self.tree.winfo_rooty() + event.y
+        msg = f"[FileExplorer] _on_right_click: scheduling deferred post of menu {id(menu)} at ({x_root}, {y_root})"
         print(msg)
         _logger.debug(msg)
-        menu.post(event.x_root, event.y_root)
-        # Check if menu is actually visible after post()
-        try:
-            is_mapped = menu.winfo_ismapped()
-            is_viewable = menu.winfo_viewable()
-            msg = f"[FileExplorer]   after post(): ismapped={is_mapped}, viewable={is_viewable}"
-            print(msg)
-            _logger.debug(msg)
-        except Exception as e:
-            msg = f"[FileExplorer]   ERROR checking menu visibility: {e}"
-            print(msg)
-            _logger.debug(msg)
-        msg = f"[FileExplorer]   menu.post() completed, returning break"
-        print(msg)
-        _logger.debug(msg)
+        self.tree.after_idle(lambda m=menu, x=x_root, y=y_root: self._post_menu(m, x, y))
         return "break"
+
+    def _post_menu(self, menu: tk.Menu, x_root: int, y_root: int) -> None:
+        """Post the context menu after all pending events for the click have drained."""
+        msg = f"[FileExplorer] _post_menu: posting menu {id(menu)} at ({x_root}, {y_root})"
+        print(msg)
+        _logger.debug(msg)
+        menu.post(x_root, y_root)
+        menu.lift()
+        sw = menu.winfo_screenwidth()
+        sh = menu.winfo_screenheight()
+        mx, my = menu.winfo_x(), menu.winfo_y()
+        mw, mh = menu.winfo_width(), menu.winfo_height()
+        msg2 = (
+            f"[FileExplorer] _post_menu: after lift() → "
+            f"ismapped={menu.winfo_ismapped()}, viewable={menu.winfo_viewable()}, "
+            f"menu_pos=({mx},{my}), menu_size={mw}x{mh}, screen={sw}x{sh}"
+        )
+        print(msg2)
+        _logger.debug(msg2)
 
     def _get_selected_folder_name(self) -> str | None:
         selection = self.tree.selection()

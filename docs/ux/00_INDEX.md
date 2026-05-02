@@ -3,7 +3,7 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-01 (bugfix: PD-11 right-click menu)  
+**Last updated**: 2026-05-02 (v0.22.7: PD-11 right-click menu — XWayland coordinate fix; Wayland/XWayland platform design principle documented in UX_LIFECYCLE.md §6)  
 **Current version**: see `pyproject.toml`
 
 ---
