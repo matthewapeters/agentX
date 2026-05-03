@@ -167,3 +167,7 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Committed**: v0.22.15
 - **UAT Status**: User-approved in UAT on 2026-05-02.
 [ ] Issue: output pane text cannot be screen-scraped or coppied - strategies and behavior tests needed.
+[ ] Issue: The Working Memory widget should be collapsed at start-up like the other widgets in the context / history.  This should be reflected in Gherkin use-cases, unit tests, and cut-sheet details.
+[ ] Issue: When complex tasks are being performed, the main display lacks visual clues as to status or progress.  New visual affordances are necessary.
+[ ] Issue: When complex tasks are being performed, the user experience moving between output panes is slowed and the redraws are laggy.  It may be necessary to implement multi-processing with reliable state between processes to ensure reliable state management.
+
