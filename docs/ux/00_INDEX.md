@@ -3,7 +3,7 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-02 (v0.22.15.post1: PD-01 startup notice UAT approved; icon/readability confirmed)  
+**Last updated**: 2026-05-03 (v0.22.15.post2: PD-01-AF-010 and PD-02-AF-008..012 specced — clipboard copy/paste context menus)  
 **Current version**: see `pyproject.toml`
 
 ---
@@ -34,8 +34,8 @@
 
 | Panel | Fully Tested ✅ | Partial ⚠️ | Spec Only 📝 | Gap ❌ |
 |-------|:--------------:|:----------:|:------------:|:------:|
-| PD-01 ChatPanel | 8 | 1 | 0 | 0 |
-| PD-02 InputPanel | 4 | 3 | 0 | 0 |
+| PD-01 ChatPanel | 9 | 1 | 0 | 0 |
+| PD-02 InputPanel | 9 | 3 | 0 | 0 |
 | PD-03 SidePanel — Context | 7 | 0 | 0 | 0 |
 | PD-03 SidePanel — Working Memory | 4 | 1 | 0 | 0 |
 | PD-04 ModelSelector | 4 | 0 | 0 | 0 |
@@ -47,7 +47,7 @@
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 10 | 0 | 0 | 0 |
 
-**Totals**: 65 ✅ · 6 ⚠️ · 0 📝 · 0 ❌
+**Totals**: 71 ✅ · 6 ⚠️ · 0 📝 · 0 ❌
 
 ---
 
@@ -65,6 +65,8 @@
 - [/] **PD-05-AF-004** — Re-synth button in synthesis block
 - [/] **PD-05-AF-005** — Export button in plan tab toolbar
 - [/] **PD-05-AF-006** — Node status icon reflects task state
+- [/] **PD-01-AF-010** — Output panel right-click copy context menu (Wayland-safe)
+- [/] **PD-02-AF-008..012** — Input panel right-click context menu: popup, Copy/Paste visibility, Copy action, Paste action
 
 ---
 

@@ -191,6 +191,7 @@ implements it and the test that validates it.  Status legend:
 | Assistant response expanded by default | PD-01-AF-007 | `ChatPanel.display_agent_response()` | `test_chat_panel_collapse_defaults.py` | `test_assistant_response_entry_expanded_by_default` | ✅ |
 | Markdown rendered after DONE chunk | PD-01-AF-008 | `ChatPanel.finalize_current_turn_markdown()` | `test_markdown_rendering.py` | — | ⚠️ |
 | Startup log-location notice shown before first agent response (config-gated) | PD-01-AF-009 | `AgentXSession._show_startup_log_locations_notice_if_enabled()` | `test_startup_log_notice.py` | `TestStartupLogNotice` | ✅ |
+| Right-click on output panel opens copy context menu | PD-01-AF-010 | `ChatPanel._show_output_context_menu()` | `test_chat_panel_copy_context_menu.py` | `TestOutputPanelRightClickCopy` | ✅ |
 
 ### PD-02 — InputPanel
 
@@ -203,6 +204,11 @@ implements it and the test that validates it.  Status legend:
 | Attachment chip rendered with filename and icon | PD-02-AF-005 | `InputPanel._create_attachment_widget()` | `test_input_panel_attachment_chips.py` | `TestAttachmentChipRender` | ✅ |
 | Toggle chip calls on_attachment_toggle callback | PD-02-AF-006 | `InputPanel._create_attachment_widget()` | `test_input_panel_attachment_chips.py` | `TestAttachmentChipToggle` | ✅ |
 | Rebuild with empty lists clears all chips | PD-02-AF-007 | `InputPanel.update_attachment_bar()` | `test_input_panel_attachment_chips.py` | `TestAttachmentBarClear` | ✅ |
+| Right-click opens Wayland-safe context popup on input widget | PD-02-AF-008 | `InputPanel._show_input_context_menu()` | `test_input_panel_context_menu.py` | `TestInputPanelRightClickPopup` | ✅ |
+| Input context menu shows "Copy" only when text is selected | PD-02-AF-009 | `InputPanel._show_input_context_menu()` | `test_input_panel_context_menu.py` | `TestInputCopyMenuVisibility` | ✅ |
+| Input context menu shows "Paste" only when clipboard is non-empty | PD-02-AF-010 | `InputPanel._show_input_context_menu()` | `test_input_panel_context_menu.py` | `TestInputPasteMenuVisibility` | ✅ |
+| "Copy" in input context menu copies selected text to clipboard | PD-02-AF-011 | `InputPanel._on_input_context_copy()` | `test_input_panel_context_menu.py` | `TestInputCopyAction` | ✅ |
+| "Paste" in input context menu replaces selection or inserts at cursor | PD-02-AF-012 | `InputPanel._on_input_context_paste()` | `test_input_panel_context_menu.py` | `TestInputPasteAction` | ✅ |
 
 ### PD-03 — SidePanel / Session Tab — Context Section
 

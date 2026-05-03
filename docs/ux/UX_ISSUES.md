@@ -166,8 +166,24 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Tests**: `tests/test_startup_log_notice.py` (3 unit tests — all pass).
 - **Committed**: v0.22.15
 - **UAT Status**: User-approved in UAT on 2026-05-02.
-[ ] Issue: output pane text cannot be screen-scraped or coppied - strategies and behavior tests needed.
-[ ] Issue: The Working Memory widget should be collapsed at start-up like the other widgets in the context / history.  This should be reflected in Gherkin use-cases, unit tests, and cut-sheet details.
-[ ] Issue: When complex tasks are being performed, the main display lacks visual clues as to status or progress.  New visual affordances are necessary.
-[ ] Issue: When complex tasks are being performed, the user experience moving between output panes is slowed and the redraws are laggy.  It may be necessary to implement multi-processing with reliable state between processes to ensure reliable state management.
+  
+[/] Issue: output pane text cannot be screen-scraped or coppied - strategies and behavior tests needed.
 
+- The user can scrape content in the Output panel, ctrl-C copies to pasteboard, and ctrl-v to the user-input panel successfully pastes the content. ✅ (already implemented)
+- **Right-click to copy from Output panel** — right-clicking highlighted text in the Output panel should produce a popup showing "Copy"; selecting "Copy" adds the highlighted content to the clipboard. Affordance: **PD-01-AF-010**.
+- **Right-click context menu on User Input panel** — right-clicking in the user input widget should display a popup with:
+  - "Copy" (visible only when text is selected) — copies selected text to clipboard. Affordance: **PD-02-AF-009 / PD-02-AF-011**.
+  - "Paste" (visible only when clipboard is non-empty) — replaces selected text with clipboard content, or inserts at cursor if nothing is selected. Affordance: **PD-02-AF-010 / PD-02-AF-012**.
+- All popups use the Wayland-safe `tk.Toplevel(overrideredirect=True)` pattern established by the FileExplorer context menu.
+- Paste reliability: explicit `delete(SEL_FIRST, SEL_LAST)` + `mark_set(INSERT, sel_start)` before insert ensures correct cursor placement; verified hermetically in unit tests.
+- Clipboard emptiness check uses `try/except tk.TclError` guard around `clipboard_get()`.
+- **Phase 1 (documentation)** — Complete as of v0.22.15.post2.
+- **Phase 2 (implementation)** — Code + 25 hermetic unit tests implemented and passing. Complete as of v0.22.16 (latest fix candidate — ready for UAT).
+- **Affordances**: PD-01-AF-010, PD-02-AF-008, PD-02-AF-009, PD-02-AF-010, PD-02-AF-011, PD-02-AF-012.
+- **Tests**: `tests/test_chat_panel_copy_context_menu.py` (8 tests), `tests/test_input_panel_context_menu.py` (17 tests).
+
+[ ] Issue: The Working Memory widget should be collapsed at start-up like the other widgets in the context / history.  This should be reflected in Gherkin use-cases, unit tests, and cut-sheet details.
+
+[ ] Issue: When complex tasks are being performed, the main display lacks visual clues as to status or progress.  New visual affordances are necessary.
+
+[ ] Issue: When complex tasks are being performed, the user experience moving between output panes is slowed and the redraws are laggy.  It may be necessary to implement multi-processing with reliable state between processes to ensure reliable state management.

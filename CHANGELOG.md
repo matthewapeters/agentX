@@ -7,7 +7,54 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.22.15.post1] - 2026-05-02
+## [0.22.16] - 2026-05-03
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/gui/chat_panel.py` — PD-01-AF-010: right-click context menu on output panel.
+  - `_MENU_POST_DELAY_MS` class attribute (default 100 ms, overridable to 0 in tests).
+  - `_on_output_right_click()` — schedules popup via `after()` and returns `"break"`.
+  - `_use_wayland_popup()` — detects Wayland via `XDG_SESSION_TYPE`.
+  - `_dismiss_output_context_popup()` — safe Toplevel destroy.
+  - `_show_output_context_menu()` — fresh `tk.Toplevel(overrideredirect=True)` with "Copy" button; calls `output.event_generate("<<Copy>>")` on click; themed with `output_bg`/`ui_fg`/`muted_fg`.
+  - `<Button-3>` binding added in `_bind_output_text_shortcuts()`.
+
+- `src/agentx/gui/input_panel.py` — PD-02-AF-008..012: right-click context menu on user input widget.
+  - `_MENU_POST_DELAY_MS` class attribute (default 100 ms, overridable to 0 in tests).
+  - `_on_input_right_click()` — schedules popup via `after()` and returns `"break"`.
+  - `_dismiss_input_context_popup()` — safe Toplevel destroy.
+  - `_clipboard_has_content()` — `try/except tk.TclError` guard for portable empty-clipboard detection.
+  - `_on_input_context_copy()` — `event_generate("<<Copy>>")` + dismiss.
+  - `_on_input_context_paste()` — explicit `delete(SEL_FIRST, SEL_LAST)` + `mark_set(INSERT, sel_start)` + `insert(INSERT, text)` for deterministic paste-replace behaviour; `try/except tk.TclError` guard for empty clipboard.
+  - `_show_input_context_menu()` — conditional "Copy" (if SEL) and "Paste" (if clipboard non-empty); no popup when neither applies; fresh Toplevel per invocation; themed with `input_bg`/`input_fg`/`muted_fg`.
+  - `<Button-3>` binding added in `create()`.
+
+#### Fixed
+
+- `src/agentx/gui/input_panel.py` — paste insert-point bug: after `delete(SEL_FIRST, SEL_LAST)`, Tk drifts INSERT to end of remaining text; fixed by explicitly `mark_set(INSERT, sel_start)` before the insert call, ensuring pasted text lands at the deletion point.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_chat_panel_copy_context_menu.py` — 8 hermetic unit tests for PD-01-AF-010:
+  - GIVEN `<Button-3>` binding registered WHEN queried THEN present on `output_text`.
+  - GIVEN right-click fires WHEN delay fires THEN `_output_context_popup` is a live Toplevel.
+  - GIVEN popup created WHEN inspected THEN contains "Copy" button.
+  - GIVEN SEL set WHEN "Copy" invoked THEN `<<Copy>>` generated on `output_text`.
+  - GIVEN "Copy" clicked WHEN handler runs THEN popup is dismissed.
+  - GIVEN Escape handler called WHEN runs THEN popup is None.
+  - GIVEN first popup visible WHEN second right-click fires THEN first popup replaced.
+  - GIVEN theme set WHEN popup created THEN `bg == config.output_bg`.
+
+- `tests/test_input_panel_context_menu.py` — 17 hermetic unit tests for PD-02-AF-008..012:
+  - `TestInputPanelRightClickPopup` (6 tests): binding registered; popup created with selection; Escape dismisses; stale popup replaced; themed bg; no popup when neither Copy nor Paste applicable.
+  - `TestInputCopyMenuVisibility` (2 tests): "Copy" present with SEL, absent without.
+  - `TestInputPasteMenuVisibility` (4 tests): "Paste" present with clipboard, absent without; `_clipboard_has_content` returns False on empty, True when filled.
+  - `TestInputCopyAction` (2 tests): copies selection to clipboard; dismisses popup.
+  - `TestInputPasteAction` (3 tests): replaces selection with clipboard text; inserts at cursor when no selection; dismisses popup.
 
 ### Documentation Changes
 

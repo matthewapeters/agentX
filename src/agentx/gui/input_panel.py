@@ -20,10 +20,17 @@ if TYPE_CHECKING:
 class InputPanel:
     """Manages the bottom input area: text field, buttons, and attachment bar."""
 
+    # Delay (ms) before showing any right-click context popup.  Must be > the
+    # physical button-press duration so the ButtonRelease fires on the widget,
+    # not the popup window.  Tests may override this to 0 for speed.
+    _MENU_POST_DELAY_MS: int = 100
+
     def __init__(self, gui_manager: "GUIManager") -> None:
         self._g = gui_manager
         self._cached_user_input: str = ""
         self.context_meter: ContextMeterWidget = ContextMeterWidget(gui_manager)
+        # Input right-click context popup (PD-02-AF-008)
+        self._input_context_popup: tk.Toplevel | None = None
 
     # ── Convenience accessors ─────────────────────────────────────────────────
 
@@ -110,6 +117,11 @@ class InputPanel:
         self._g.root.bind_all(
             "<Control-space>",
             lambda _event: self._widgets.user_break.invoke(),
+        )
+        # Right-click context menu on user input (PD-02-AF-008)
+        self._widgets.user_input_text.bind(
+            "<Button-3>",
+            self._on_input_right_click,
         )
 
     # ── Public interface ──────────────────────────────────────────────────────
@@ -242,3 +254,163 @@ class InputPanel:
         ).pack(side=tk.LEFT, padx=5, pady=2)
 
         return att_frame
+
+    # ── Input right-click context menu (PD-02-AF-008..012) ───────────────────
+
+    def _on_input_right_click(self, event: tk.Event) -> str:  # type: ignore[type-arg]
+        """Schedule the input context menu popup after button release (PD-02-AF-008).
+
+        Uses after(_MENU_POST_DELAY_MS) so Button-3 is physically released before
+        the popup appears, preventing the release event from immediately dismissing it.
+        See UX_LIFECYCLE.md §6 for the rationale.
+
+        Affordance ID: PD-02-AF-008
+        """
+        widget = self._widgets.user_input_text
+        if widget is None:
+            return "break"
+        x_root = widget.winfo_rootx() + event.x
+        y_root = widget.winfo_rooty() + event.y
+        self._dismiss_input_context_popup()
+        widget.after(
+            self._MENU_POST_DELAY_MS,
+            lambda x=x_root, y=y_root: self._show_input_context_menu(x, y),
+        )
+        return "break"
+
+    def _dismiss_input_context_popup(self, _event: object = None) -> None:
+        """Destroy the input context popup if it exists (PD-02-AF-008).
+
+        Affordance ID: PD-02-AF-008
+        """
+        if self._input_context_popup is not None:
+            try:
+                if self._input_context_popup.winfo_exists():
+                    self._input_context_popup.destroy()
+            except tk.TclError:
+                pass
+            self._input_context_popup = None
+
+    def _clipboard_has_content(self) -> bool:
+        """Return True if the system clipboard contains non-empty text (PD-02-AF-010).
+
+        Uses try/except around clipboard_get() to handle the TclError raised
+        when the clipboard is empty.
+
+        Affordance ID: PD-02-AF-010
+        """
+        try:
+            content = self._widgets.user_input_text.clipboard_get()
+            return bool(content)
+        except tk.TclError:
+            return False
+
+    def _on_input_context_copy(self, widget: tk.Text) -> None:
+        """Copy selected text to clipboard and dismiss popup (PD-02-AF-011).
+
+        Affordance ID: PD-02-AF-011
+        """
+        try:
+            widget.event_generate("<<Copy>>")
+        finally:
+            self._dismiss_input_context_popup()
+
+    def _on_input_context_paste(self, widget: tk.Text) -> None:
+        """Replace selection (or insert at cursor) with clipboard content (PD-02-AF-012).
+
+        If text is currently selected the selection is deleted first, then the
+        clipboard content is inserted at the INSERT index.  This gives reliable,
+        test-verifiable behaviour rather than delegating to the <<Paste>> virtual
+        event whose replace-selection semantics vary across platforms.
+
+        Affordance ID: PD-02-AF-012
+        """
+        try:
+            clipboard_text = widget.clipboard_get()
+        except tk.TclError:
+            self._dismiss_input_context_popup()
+            return
+        try:
+            # Delete selection if present; reset INSERT to the deletion point so
+            # that the pasted text lands at the former selection start rather than
+            # wherever Tk drifts INSERT after the delete operation.
+            if widget.tag_ranges(tk.SEL):
+                sel_start = widget.index(tk.SEL_FIRST)
+                widget.delete(tk.SEL_FIRST, tk.SEL_LAST)
+                widget.mark_set(tk.INSERT, sel_start)
+            widget.insert(tk.INSERT, clipboard_text)
+        finally:
+            self._dismiss_input_context_popup()
+
+    def _show_input_context_menu(self, x_root: int, y_root: int) -> None:
+        """Display the user-input right-click context popup (PD-02-AF-008..012).
+
+        Always creates a fresh tk.Toplevel(overrideredirect=True) per invocation
+        so each right-click gets a new compositor surface — avoids stale Wayland
+        surfaces.
+
+        Conditional items:
+        - \"Copy\"  — shown only when text is selected (SEL tag present). AF-009/011.
+        - \"Paste\" — shown only when clipboard is non-empty.              AF-010/012.
+
+        If neither item is applicable the popup is not shown.
+
+        Affordance ID: PD-02-AF-008
+        """
+        widget = self._widgets.user_input_text
+        if widget is None:
+            return
+
+        has_selection = bool(widget.tag_ranges(tk.SEL))
+        has_clipboard = self._clipboard_has_content()
+
+        # Nothing to show — skip popup creation entirely
+        if not has_selection and not has_clipboard:
+            return
+
+        popup_bg = self._config.input_bg
+        popup_fg = self._config.input_fg
+        active_bg = self._config.muted_fg
+        active_fg = self._config.input_bg
+
+        popup = tk.Toplevel(widget)
+        popup.withdraw()
+        popup.configure(bg=popup_bg, borderwidth=0, highlightthickness=0)
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        self._input_context_popup = popup
+
+        frame = tk.Frame(popup, bg=popup_bg, borderwidth=1, relief="solid")
+        frame.pack(fill="both", expand=True)
+
+        def _btn(label: str, command) -> None:
+            tk.Button(
+                frame,
+                text=label,
+                anchor="w",
+                relief="flat",
+                bd=0,
+                padx=10,
+                pady=6,
+                bg=popup_bg,
+                fg=popup_fg,
+                activebackground=active_bg,
+                activeforeground=active_fg,
+                highlightthickness=0,
+                command=command,
+            ).pack(fill="x")
+
+        if has_selection:
+            _btn("Copy", lambda w=widget: self._on_input_context_copy(w))
+
+        if has_clipboard:
+            _btn("Paste", lambda w=widget: self._on_input_context_paste(w))
+
+        popup.bind("<Escape>", self._dismiss_input_context_popup)
+
+        popup.update_idletasks()
+        req_w = max(popup.winfo_reqwidth(), 80)
+        req_h = max(popup.winfo_reqheight(), 28)
+        popup.geometry(f"{req_w}x{req_h}+{x_root}+{y_root}")
+        popup.deiconify()
+        popup.lift()

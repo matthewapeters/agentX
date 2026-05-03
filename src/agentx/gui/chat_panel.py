@@ -47,6 +47,11 @@ class ChatPanel:
     }
     _FINALIZE_SKIP_ROLES = {"Tool", "Error", "Classification"}
 
+    # Delay (ms) before showing any right-click context popup.  Must be > the
+    # physical button-press duration so the ButtonRelease fires on the widget,
+    # not the popup window.  Tests may override this to 0 for speed.
+    _MENU_POST_DELAY_MS: int = 100
+
     def __init__(self, gui_manager: "GUIManager") -> None:
         self._g = gui_manager
 
@@ -58,6 +63,9 @@ class ChatPanel:
         self._output_wrapped_labels: list[tk.Label] = []
         self._output_detail_text_widgets: list[tk.Text] = []
         self._output_html_frames: list = []
+
+        # Output right-click context popup (PD-01-AF-010)
+        self._output_context_popup: Optional[tk.Toplevel] = None
 
         # Streaming display state flags
         self._agent_thinking_started: bool = False
@@ -708,6 +716,10 @@ class ChatPanel:
         return "break"
 
     def _bind_output_text_shortcuts(self) -> None:
+        """Bind keyboard shortcuts and right-click context menu to the output text widget.
+
+        Affordance IDs: (keyboard shortcuts — existing), PD-01-AF-010 (right-click popup).
+        """
         output = self._widgets.output_text
         if output is None:
             return
@@ -719,6 +731,106 @@ class ChatPanel:
         output.bind("<Control-C>", self._copy_output_text_selection)
         output.bind("<Command-c>", self._copy_output_text_selection)
         output.bind("<Command-C>", self._copy_output_text_selection)
+        # Right-click context menu (PD-01-AF-010)
+        output.bind("<Button-3>", self._on_output_right_click)
+
+    def _on_output_right_click(self, event: tk.Event) -> str:  # type: ignore[type-arg]
+        """Schedule the output context menu popup after button release (PD-01-AF-010).
+
+        Uses after(_MENU_POST_DELAY_MS) so Button-3 is physically released before
+        the popup appears, preventing the release event from immediately dismissing it.
+        See UX_LIFECYCLE.md §6 for the rationale.
+
+        Affordance ID: PD-01-AF-010
+        """
+        output = self._widgets.output_text
+        if output is None:
+            return "break"
+        x_root = output.winfo_rootx() + event.x
+        y_root = output.winfo_rooty() + event.y
+        self._dismiss_output_context_popup()
+        output.after(
+            self._MENU_POST_DELAY_MS,
+            lambda x=x_root, y=y_root: self._show_output_context_menu(x, y),
+        )
+        return "break"
+
+    def _use_wayland_popup(self) -> bool:
+        """Return True when running under Wayland/XWayland where Tk menus may not render."""
+        import os
+
+        return os.getenv("XDG_SESSION_TYPE", "").lower() == "wayland"
+
+    def _dismiss_output_context_popup(self, _event: object = None) -> None:
+        """Destroy the output context popup if it exists (PD-01-AF-010)."""
+        if self._output_context_popup is not None:
+            try:
+                if self._output_context_popup.winfo_exists():
+                    self._output_context_popup.destroy()
+            except tk.TclError:
+                pass
+            self._output_context_popup = None
+
+    def _show_output_context_menu(self, x_root: int, y_root: int) -> None:
+        """Display the output panel right-click context popup (PD-01-AF-010).
+
+        Always creates a fresh tk.Toplevel(overrideredirect=True) so each
+        right-click gets a new compositor surface — avoids stale Wayland surfaces.
+        The popup contains a single \"Copy\" button which calls <<Copy>> on the
+        output_text widget and dismisses itself.
+
+        Affordance ID: PD-01-AF-010
+        """
+        output = self._widgets.output_text
+        if output is None:
+            return
+
+        # Colours derived from the active palette
+        popup_bg = self._config.output_bg
+        popup_fg = self._config.ui_fg
+        active_bg = self._config.muted_fg
+        active_fg = self._config.output_bg
+
+        popup = tk.Toplevel(output)
+        popup.withdraw()
+        popup.configure(bg=popup_bg, borderwidth=0, highlightthickness=0)
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        self._output_context_popup = popup
+
+        frame = tk.Frame(popup, bg=popup_bg, borderwidth=1, relief="solid")
+        frame.pack(fill="both", expand=True)
+
+        def _do_copy() -> None:
+            try:
+                output.event_generate("<<Copy>>")
+            finally:
+                self._dismiss_output_context_popup()
+
+        tk.Button(
+            frame,
+            text="Copy",
+            anchor="w",
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=6,
+            bg=popup_bg,
+            fg=popup_fg,
+            activebackground=active_bg,
+            activeforeground=active_fg,
+            highlightthickness=0,
+            command=_do_copy,
+        ).pack(fill="x")
+
+        popup.bind("<Escape>", self._dismiss_output_context_popup)
+
+        popup.update_idletasks()
+        req_w = max(popup.winfo_reqwidth(), 80)
+        req_h = max(popup.winfo_reqheight(), 28)
+        popup.geometry(f"{req_w}x{req_h}+{x_root}+{y_root}")
+        popup.deiconify()
+        popup.lift()
 
     def _finalize_entry_markdown(self, entry: dict[str, Any]) -> None:
         # Read availability flags from gui_manager module so tests can patch
