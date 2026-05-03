@@ -166,3 +166,4 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Tests**: `tests/test_startup_log_notice.py` (3 unit tests — all pass).
 - **Committed**: v0.22.15
 - **UAT Status**: User-approved in UAT on 2026-05-02.
+[ ] Issue: output pane text cannot be screen-scraped or coppied - strategies and behavior tests needed.

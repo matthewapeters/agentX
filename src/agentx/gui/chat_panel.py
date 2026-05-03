@@ -370,7 +370,9 @@ class ChatPanel:
             base_size = 10
             if isinstance(text_font, tuple) and len(text_font) >= 2 and isinstance(text_font[1], int):
                 base_size = text_font[1]
-            icon_font = (text_font[0], base_size + 2, "bold") if isinstance(text_font, tuple) else ("Terminal", 12, "bold")
+            icon_font = (
+                (text_font[0], base_size + 2, "bold") if isinstance(text_font, tuple) else ("Terminal", 12, "bold")
+            )
 
             header_frame = tk.Frame(container, bg=self._config.output_bg)
             header_frame.pack(fill=tk.X, anchor="w")
