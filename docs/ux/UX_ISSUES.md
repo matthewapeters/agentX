@@ -178,9 +178,10 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - Paste reliability: explicit `delete(SEL_FIRST, SEL_LAST)` + `mark_set(INSERT, sel_start)` before insert ensures correct cursor placement; verified hermetically in unit tests.
 - Clipboard emptiness check uses `try/except tk.TclError` guard around `clipboard_get()`.
 - **Phase 1 (documentation)** — Complete as of v0.22.15.post2.
-- **Phase 2 (implementation)** — Code + 25 hermetic unit tests implemented and passing. Complete as of v0.22.16 (latest fix candidate — ready for UAT).
+- **Phase 2 (implementation)** — Code + 25 hermetic unit tests implemented and passing. Complete as of v0.22.16.
+- **Phase 3 (UAT fix)** — Root-cause analysis revealed two bugs: (1) `<Button-3>` was bound to hidden `output_text` widget never packed into the visible layout; (2) `header_label` was a `tk.Label` (not selectable). Fix: replaced `header_label` with a `tk.Text(state=DISABLED)` widget (`header_text`), added `<Button-3>` bindings to both `header_text` and `detail_text` in `_create_output_entry`, added `_on_entry_text_right_click` method, updated `_show_output_context_menu` to accept optional `target` widget. 8 new tests added (16 total for output context menu). Latest fix candidate as of v0.22.17 — ready for UAT.
 - **Affordances**: PD-01-AF-010, PD-02-AF-008, PD-02-AF-009, PD-02-AF-010, PD-02-AF-011, PD-02-AF-012.
-- **Tests**: `tests/test_chat_panel_copy_context_menu.py` (8 tests), `tests/test_input_panel_context_menu.py` (17 tests).
+- **Tests**: `tests/test_chat_panel_copy_context_menu.py` (16 tests), `tests/test_input_panel_context_menu.py` (17 tests).
 
 [ ] Issue: The Working Memory widget should be collapsed at start-up like the other widgets in the context / history.  This should be reflected in Gherkin use-cases, unit tests, and cut-sheet details.
 

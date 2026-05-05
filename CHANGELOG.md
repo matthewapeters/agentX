@@ -7,6 +7,34 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.17] - 2026-05-03
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/gui/chat_panel.py` — PD-01-AF-010: fixed two UAT-reported regressions:
+  1. **Right-click popup never appeared**: `<Button-3>` was bound to the hidden `output_text` widget (inside `_hidden_text_container`, never packed into the visible layout). Fixed by adding `<Button-3>` bindings directly to `header_text` and `detail_text` widgets inside `_create_output_entry`.
+  2. **Header text not selectable**: `header_label` was a `tk.Label` (no text selection). Replaced with `header_text = tk.Text(state=DISABLED)` to enable mouse-drag selection and Ctrl-C copy. Added `StringVar.trace_add("write", ...)` callback to keep `header_text` content in sync when `header_var.set(...)` is called. Added `header_text` to `_output_detail_text_widgets` for auto-height management.
+  - New method `_on_entry_text_right_click(event, target)` — passes the specific entry widget to `_show_output_context_menu`.
+  - Updated `_show_output_context_menu(x_root, y_root, target=None)` — accepts optional `target: Optional[tk.Text]`; uses `copy_target = target if target is not None else self._widgets.output_text`; `_do_copy()` calls `copy_target.event_generate("<<Copy>>")`.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_chat_panel_copy_context_menu.py` — 8 new tests in `TestEntryLevelRightClickCopy`:
+  - GIVEN an entry is created via `_create_output_entry` WHEN we inspect `header_text` THEN it is a `tk.Text` (not `tk.Label`)
+  - GIVEN an entry WHEN `header_var.set(...)` is called THEN `header_text` content is updated
+  - GIVEN `header_text` WHEN bindings inspected THEN `<Button-3>` is present
+  - GIVEN `detail_text` WHEN bindings inspected THEN `<Button-3>` is present
+  - GIVEN `detail_text` WHEN `_on_entry_text_right_click` called THEN popup is created
+  - GIVEN `header_text` WHEN `_on_entry_text_right_click` called THEN popup is created
+  - GIVEN `detail_text` with selection WHEN Copy button clicked via `_show_output_context_menu(..., target=detail_text)` THEN `<<Copy>>` generated on `detail_text` not on hidden `output_text`
+  - GIVEN `header_text` WHEN state inspected THEN state is `disabled`
+
+---
+
 ## [0.22.16] - 2026-05-03
 
 ### Code Changes

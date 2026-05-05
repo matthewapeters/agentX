@@ -735,11 +735,10 @@ class ChatPanel:
         output.bind("<Button-3>", self._on_output_right_click)
 
     def _on_output_right_click(self, event: tk.Event) -> str:  # type: ignore[type-arg]
-        """Schedule the output context menu popup after button release (PD-01-AF-010).
+        """Schedule the output context menu popup for the hidden output_text widget.
 
-        Uses after(_MENU_POST_DELAY_MS) so Button-3 is physically released before
-        the popup appears, preventing the release event from immediately dismissing it.
-        See UX_LIFECYCLE.md §6 for the rationale.
+        This binding is kept for backward-compatibility but in practice users
+        right-click on the visible entry widgets.  See _on_entry_text_right_click.
 
         Affordance ID: PD-01-AF-010
         """
@@ -752,6 +751,24 @@ class ChatPanel:
         output.after(
             self._MENU_POST_DELAY_MS,
             lambda x=x_root, y=y_root: self._show_output_context_menu(x, y),
+        )
+        return "break"
+
+    def _on_entry_text_right_click(self, event: tk.Event, target: tk.Text) -> str:  # type: ignore[type-arg]
+        """Schedule the output context menu popup for a visible entry Text widget.
+
+        Bound to both the header_text and detail_text widgets created by
+        _create_output_entry so right-clicking anywhere in the entry area shows
+        the popup with a 'Copy' action targeting the correct widget.
+
+        Affordance ID: PD-01-AF-010
+        """
+        x_root = target.winfo_rootx() + event.x
+        y_root = target.winfo_rooty() + event.y
+        self._dismiss_output_context_popup()
+        target.after(
+            self._MENU_POST_DELAY_MS,
+            lambda x=x_root, y=y_root, w=target: self._show_output_context_menu(x, y, w),
         )
         return "break"
 
@@ -771,18 +788,20 @@ class ChatPanel:
                 pass
             self._output_context_popup = None
 
-    def _show_output_context_menu(self, x_root: int, y_root: int) -> None:
+    def _show_output_context_menu(self, x_root: int, y_root: int, target: Optional[tk.Text] = None) -> None:
         """Display the output panel right-click context popup (PD-01-AF-010).
 
         Always creates a fresh tk.Toplevel(overrideredirect=True) so each
         right-click gets a new compositor surface — avoids stale Wayland surfaces.
-        The popup contains a single \"Copy\" button which calls <<Copy>> on the
-        output_text widget and dismisses itself.
+        The popup contains a single "Copy" button which calls <<Copy>> on *target*
+        (the specific entry Text widget that received the right-click) and
+        dismisses itself.  Falls back to the hidden output_text widget when
+        *target* is None.
 
         Affordance ID: PD-01-AF-010
         """
-        output = self._widgets.output_text
-        if output is None:
+        copy_target: Optional[tk.Text] = target if target is not None else self._widgets.output_text
+        if copy_target is None:
             return
 
         # Colours derived from the active palette
@@ -791,7 +810,7 @@ class ChatPanel:
         active_bg = self._config.muted_fg
         active_fg = self._config.output_bg
 
-        popup = tk.Toplevel(output)
+        popup = tk.Toplevel(copy_target)
         popup.withdraw()
         popup.configure(bg=popup_bg, borderwidth=0, highlightthickness=0)
         popup.overrideredirect(True)
@@ -803,7 +822,7 @@ class ChatPanel:
 
         def _do_copy() -> None:
             try:
-                output.event_generate("<<Copy>>")
+                copy_target.event_generate("<<Copy>>")
             finally:
                 self._dismiss_output_context_popup()
 
@@ -923,19 +942,53 @@ class ChatPanel:
         state["html_frame"] = None
         state["is_finalized"] = False
 
-        header_label = tk.Label(
+        text_font = self._text_font or self._config.default_font
+
+        # Header row: read-only Text widget (replaces Label so its text is selectable).
+        header_text = tk.Text(
             header_frame,
-            textvariable=state["header_var"],
+            font=text_font,
+            wrap=tk.WORD,
+            height=1,
             bg=self._config.output_bg,
             fg=self._COLOR_AGENT_RESPONSE,
-            anchor="w",
-            justify=tk.LEFT,
-            wraplength=self._output_wraplength,
+            insertbackground=self._config.output_bg,
+            borderwidth=0,
+            highlightthickness=0,
+            relief=tk.FLAT,
+            state=tk.NORMAL,
         )
-        header_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self._output_wrapped_labels.append(header_label)
+        header_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        header_text.config(state=tk.DISABLED)
+        header_text.bind("<Key>", lambda _e: "break")
+        header_text.bind("<Control-a>", lambda _e, w=header_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1])
+        header_text.bind("<Control-A>", lambda _e, w=header_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1])
+        header_text.bind("<Command-a>", lambda _e, w=header_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1])
+        header_text.bind("<Command-A>", lambda _e, w=header_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1])
+        header_text.bind("<Control-c>", lambda _e, w=header_text: w.event_generate("<<Copy>>") or "break")
+        header_text.bind("<Control-C>", lambda _e, w=header_text: w.event_generate("<<Copy>>") or "break")
+        header_text.bind("<Command-c>", lambda _e, w=header_text: w.event_generate("<<Copy>>") or "break")
+        header_text.bind("<Command-C>", lambda _e, w=header_text: w.event_generate("<<Copy>>") or "break")
+        header_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
+        header_text.bind("<Button-3>", lambda e, w=header_text: self._on_entry_text_right_click(e, w))
+        header_text.bind("<Configure>", lambda _e, w=header_text: self._schedule_detail_text_height_update(w))
+        self._output_detail_text_widgets.append(header_text)
+        state["header_text"] = header_text
 
-        text_font = self._text_font or self._config.default_font
+        # Keep header_var so callers can still do entry["header_var"].set(...).
+        # A write-trace keeps the visible Text widget in sync.
+        def _on_header_var_write(*_args: object) -> None:
+            val = state["header_var"].get()
+            header_text.config(state=tk.NORMAL)
+            header_text.delete("1.0", tk.END)
+            header_text.insert("1.0", val)
+            header_text.config(state=tk.DISABLED)
+            self._schedule_detail_text_height_update(header_text)
+
+        state["header_var"].trace_add("write", _on_header_var_write)
+        # hold reference so trace callback is not garbage-collected
+        state["_header_trace_cb"] = _on_header_var_write
+
         detail_text = tk.Text(
             entry_frame,
             wrap=tk.WORD,
@@ -962,6 +1015,8 @@ class ChatPanel:
         detail_text.bind("<Command-c>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
         detail_text.bind("<Command-C>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
         detail_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
+        # Right-click context menu bound directly to each visible Text widget (PD-01-AF-010)
+        detail_text.bind("<Button-3>", lambda e, w=detail_text: self._on_entry_text_right_click(e, w))
         state["detail_text"] = detail_text
         self._output_detail_text_widgets.append(detail_text)
 

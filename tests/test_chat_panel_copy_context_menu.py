@@ -4,7 +4,8 @@ Units under test:
   - ``agentx.gui.chat_panel.ChatPanel._on_output_right_click``        (PD-01-AF-010)
   - ``agentx.gui.chat_panel.ChatPanel._show_output_context_menu``     (PD-01-AF-010)
   - ``agentx.gui.chat_panel.ChatPanel._dismiss_output_context_popup`` (PD-01-AF-010)
-
+    - ``agentx.gui.chat_panel.ChatPanel._on_entry_text_right_click``   (PD-01-AF-010)
+    - ``agentx.gui.chat_panel.ChatPanel._create_output_entry``         (PD-01-AF-010)
 Affordance IDs: PD-01-AF-010
 
 All filesystem, networking, and external service access is mocked.  The Tk root
@@ -82,11 +83,11 @@ class TestOutputPanelRightClickCopy(unittest.TestCase):
     # -- Button-3 binding wired -----------------------------------------------
 
     def test_right_click_binding_registered(self) -> None:
-        """<Button-3> binding must be present on the output_text widget.
+        """<Button-3> legacy binding must be present on the output_text widget (backward-compat).
 
         GIVEN ChatPanel has been created with create_layout()
         WHEN we query the bindings on output_text
-        THEN a Button-3 binding is present
+        THEN a Button-3 binding is present (legacy fallback handler)
 
         [PD-01-AF-010]
         """
@@ -260,3 +261,197 @@ class TestOutputPanelRightClickCopy(unittest.TestCase):
         popup = self.gui._chat_panel._output_context_popup
         assert popup is not None
         assert popup.cget("bg") == self.gui.config.output_bg
+
+
+# ---------------------------------------------------------------------------
+# PD-01-AF-010 — entry-level right-click (visible widgets)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestEntryLevelRightClickCopy(unittest.TestCase):
+    """Unit tests for PD-01-AF-010: right-click on visible entry Text widgets.
+
+    Verifies that ``_create_output_entry`` produces ``detail_text`` and
+    ``header_text`` widgets that:
+    - are ``tk.Text`` instances (selectable, not ``tk.Label``)
+    - carry a ``<Button-3>`` binding that calls ``_on_entry_text_right_click``
+    - trigger ``_show_output_context_menu`` with the entry widget as target
+
+    Units under test:
+      - ``ChatPanel._create_output_entry``       (PD-01-AF-010)
+      - ``ChatPanel._on_entry_text_right_click`` (PD-01-AF-010)
+      - ``ChatPanel._show_output_context_menu``  (PD-01-AF-010)
+    """
+
+    def setUp(self) -> None:
+        """Create a headless Tk root and fully laid-out GUIManager."""
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self.gui = _make_gui(self.root)
+        self.gui._chat_panel._MENU_POST_DELAY_MS = 0
+        parent = self.gui.widgets.output_entries_frame
+        self.entry = self.gui._create_output_entry(
+            parent=parent,
+            role_label="Agent",
+            icon="🤖",
+            content="hello world",
+            expanded=True,
+        )
+
+    def tearDown(self) -> None:
+        """Destroy root after each test."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def _make_entry(self) -> dict:
+        """Helper – returns the setUp entry state dict."""
+        return self.entry
+
+    # -- header_text is a selectable Text widget ------------------------------
+
+    def test_header_text_is_tk_text_widget(self) -> None:
+        """header_text must be a tk.Text widget, not a tk.Label.
+
+        GIVEN an entry is created via _create_output_entry
+        WHEN we inspect the 'header_text' key of the state dict
+        THEN it is an instance of tk.Text (enables mouse text selection)
+
+        [PD-01-AF-010]
+        """
+        header_text = self.entry["header_text"]
+        assert isinstance(header_text, tk.Text), f"Expected tk.Text, got {type(header_text).__name__}"
+
+    def test_header_text_state_is_disabled(self) -> None:
+        """header_text must be read-only (state=DISABLED).
+
+        GIVEN an entry is created via _create_output_entry
+        WHEN we inspect the state of header_text
+        THEN the state is 'disabled' (content is read-only but still selectable)
+
+        [PD-01-AF-010]
+        """
+        header_text = self.entry["header_text"]
+        assert str(header_text.cget("state")) == "disabled"
+
+    def test_header_text_synced_via_header_var(self) -> None:
+        """header_var.set() must update the content of header_text.
+
+        GIVEN an entry is created via _create_output_entry
+        WHEN header_var.set('new content') is called
+        THEN header_text contains the updated text
+
+        [PD-01-AF-010]
+        """
+        self.entry["header_var"].set("new content")
+        self.root.update()
+        content = self.entry["header_text"].get("1.0", tk.END).strip()
+        assert content == "new content"
+
+    # -- Button-3 bindings ----------------------------------------------------
+
+    def test_header_text_has_right_click_binding(self) -> None:
+        """header_text must have a <Button-3> binding for the copy context menu.
+
+        GIVEN an entry is created via _create_output_entry
+        WHEN we inspect bindings on header_text
+        THEN '<Button-3>' is present
+
+        [PD-01-AF-010]
+        """
+        header_text = self.entry["header_text"]
+        assert "<Button-3>" in header_text.bind()
+
+    def test_detail_text_has_right_click_binding(self) -> None:
+        """detail_text must have a <Button-3> binding for the copy context menu.
+
+        GIVEN an entry is created via _create_output_entry
+        WHEN we inspect bindings on detail_text
+        THEN '<Button-3>' is present
+
+        [PD-01-AF-010]
+        """
+        detail_text = self.entry["detail_text"]
+        assert "<Button-3>" in detail_text.bind()
+
+    # -- _on_entry_text_right_click creates popup targeting entry widget ------
+
+    def test_right_click_on_detail_text_creates_popup(self) -> None:
+        """Right-clicking detail_text must create a popup via _on_entry_text_right_click.
+
+        GIVEN a detail_text widget from a created entry
+        WHEN _on_entry_text_right_click is called with that widget
+        THEN _output_context_popup is a live tk.Toplevel
+
+        [PD-01-AF-010]
+        """
+        detail_text: tk.Text = self.entry["detail_text"]
+        event = MagicMock()
+        event.widget = detail_text
+        event.x = 5
+        event.y = 5
+        self.gui._chat_panel._on_entry_text_right_click(event, detail_text)
+        self.root.update()
+
+        popup = self.gui._chat_panel._output_context_popup
+        assert popup is not None
+        assert popup.winfo_exists()
+
+    def test_right_click_on_header_text_creates_popup(self) -> None:
+        """Right-clicking header_text must create a popup via _on_entry_text_right_click.
+
+        GIVEN a header_text widget from a created entry
+        WHEN _on_entry_text_right_click is called with that widget
+        THEN _output_context_popup is a live tk.Toplevel
+
+        [PD-01-AF-010]
+        """
+        header_text: tk.Text = self.entry["header_text"]
+        event = MagicMock()
+        event.widget = header_text
+        event.x = 5
+        event.y = 5
+        self.gui._chat_panel._on_entry_text_right_click(event, header_text)
+        self.root.update()
+
+        popup = self.gui._chat_panel._output_context_popup
+        assert popup is not None
+        assert popup.winfo_exists()
+
+    def test_copy_from_entry_targets_detail_text(self) -> None:
+        """Copy action invoked from entry popup must call <<Copy>> on detail_text.
+
+        GIVEN a detail_text widget with selected text
+        WHEN _show_output_context_menu is called with detail_text as target
+          AND the Copy button is clicked
+        THEN <<Copy>> is generated on detail_text (not the hidden output_text)
+
+        [PD-01-AF-010]
+        """
+        detail_text: tk.Text = self.entry["detail_text"]
+        detail_text.config(state=tk.NORMAL)
+        detail_text.tag_add(tk.SEL, "1.0", "1.5")
+        detail_text.config(state=tk.DISABLED)
+
+        generated_events: list[str] = []
+        original_generate = detail_text.event_generate
+
+        def _capture(event_name: str, **kwargs: object) -> None:
+            generated_events.append(event_name)
+            original_generate(event_name, **kwargs)
+
+        detail_text.event_generate = _capture  # type: ignore[method-assign]
+
+        self.gui._chat_panel._show_output_context_menu(0, 0, target=detail_text)
+        self.root.update()
+
+        popup = self.gui._chat_panel._output_context_popup
+        assert popup is not None
+        for btn in popup.winfo_children()[0].winfo_children():
+            if isinstance(btn, tk.Button) and btn.cget("text") == "Copy":
+                btn.invoke()
+                break
+
+        assert "<<Copy>>" in generated_events
