@@ -844,12 +844,20 @@ class ChatPanel:
 
         popup.bind("<Escape>", self._dismiss_output_context_popup)
 
+        def _on_outside_click(event: "tk.Event[tk.Toplevel]") -> None:
+            """Dismiss popup when user clicks outside its bounds (PD-01-AF-010)."""
+            if not (0 <= event.x <= popup.winfo_width() and 0 <= event.y <= popup.winfo_height()):
+                self._dismiss_output_context_popup()
+
+        popup.bind("<ButtonPress>", _on_outside_click)
+
         popup.update_idletasks()
         req_w = max(popup.winfo_reqwidth(), 80)
         req_h = max(popup.winfo_reqheight(), 28)
         popup.geometry(f"{req_w}x{req_h}+{x_root}+{y_root}")
         popup.deiconify()
         popup.lift()
+        popup.grab_set()
 
     def _finalize_entry_markdown(self, entry: dict[str, Any]) -> None:
         # Read availability flags from gui_manager module so tests can patch

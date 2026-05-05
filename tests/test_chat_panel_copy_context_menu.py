@@ -455,3 +455,89 @@ class TestEntryLevelRightClickCopy(unittest.TestCase):
                 break
 
         assert "<<Copy>>" in generated_events
+
+
+# ---------------------------------------------------------------------------
+# PD-01-AF-010 — click-away and grab behaviour
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestOutputPopupDismissBehavior(unittest.TestCase):
+    """Unit tests for popup auto-dismiss: outside-click and grab (PD-01-AF-010).
+
+    Verifies that the output context popup is dismissed when the user clicks
+    outside it, and that it holds the Tk event grab so keyboard events reach it.
+
+    Units under test:
+      - ``ChatPanel._show_output_context_menu`` (PD-01-AF-010)
+      - ``ChatPanel._dismiss_output_context_popup`` (PD-01-AF-010)
+    """
+
+    def setUp(self) -> None:
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self.gui = _make_gui(self.root)
+        self.gui._chat_panel._MENU_POST_DELAY_MS = 0
+
+    def tearDown(self) -> None:
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def test_outside_click_dismisses_popup(self) -> None:
+        """A ButtonPress event outside popup bounds must dismiss it.
+
+        GIVEN the output context popup is visible
+        WHEN a ButtonPress is generated at coordinates outside the popup
+        THEN the popup is destroyed and _output_context_popup is None
+
+        [PD-01-AF-010]
+        """
+        self.gui._chat_panel._show_output_context_menu(0, 0)
+        self.root.update()
+        popup = self.gui._chat_panel._output_context_popup
+        assert popup is not None
+
+        popup.event_generate("<ButtonPress>", x=-50, y=-50)
+        self.root.update()
+
+        assert self.gui._chat_panel._output_context_popup is None
+
+    def test_inside_click_does_not_dismiss_popup(self) -> None:
+        """A ButtonPress event inside popup bounds must NOT dismiss it.
+
+        GIVEN the output context popup is visible
+        WHEN a ButtonPress is generated at coordinates inside the popup
+        THEN the popup remains present
+
+        [PD-01-AF-010]
+        """
+        self.gui._chat_panel._show_output_context_menu(0, 0)
+        self.root.update()
+        popup = self.gui._chat_panel._output_context_popup
+        assert popup is not None
+
+        popup.update_idletasks()
+        pw = max(popup.winfo_width(), 10)
+        ph = max(popup.winfo_height(), 10)
+        popup.event_generate("<ButtonPress>", x=pw // 2, y=ph // 2)
+        self.root.update()
+
+        assert self.gui._chat_panel._output_context_popup is not None
+
+    def test_popup_holds_grab(self) -> None:
+        """The popup must hold the Tk event grab after being shown.
+
+        GIVEN the output context popup is visible
+        WHEN we query grab_current() on the root
+        THEN it returns the popup Toplevel
+
+        [PD-01-AF-010]
+        """
+        self.gui._chat_panel._show_output_context_menu(0, 0)
+        self.root.update()
+        popup = self.gui._chat_panel._output_context_popup
+        assert popup is not None
+        assert self.root.grab_current() is popup

@@ -7,6 +7,37 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.18] - 2026-05-05
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/gui/chat_panel.py` — PD-01-AF-010: popup now dismisses on click-away and Escape.
+  - Root cause: `overrideredirect(True)` Toplevels do not capture focus, so `<Escape>` never fired and there was no click-away handler.
+  - Added `popup.grab_set()` after `popup.deiconify()` so the popup receives all keyboard and mouse events.
+  - Added `_on_outside_click` inner function bound to `<ButtonPress>` — checks if `event.x`/`event.y` fall outside the popup dimensions and calls `_dismiss_output_context_popup()` if so.
+
+- `src/agentx/gui/input_panel.py` — PD-02-AF-008: same fix applied to input panel popup.
+  - Added `popup.grab_set()` after `popup.deiconify()`.
+  - Added `_on_outside_click` inner function bound to `<ButtonPress>`.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_chat_panel_copy_context_menu.py` — `TestOutputPopupDismissBehavior` (3 new tests):
+  - GIVEN popup visible WHEN ButtonPress at x=-50, y=-50 THEN popup dismissed
+  - GIVEN popup visible WHEN ButtonPress inside bounds THEN popup NOT dismissed
+  - GIVEN popup visible WHEN grab_current() queried THEN returns popup Toplevel
+
+- `tests/test_input_panel_context_menu.py` — `TestInputPopupDismissBehavior` (3 new tests, identical structure):
+  - GIVEN popup visible WHEN ButtonPress at x=-50, y=-50 THEN popup dismissed
+  - GIVEN popup visible WHEN ButtonPress inside bounds THEN popup NOT dismissed
+  - GIVEN popup visible WHEN grab_current() queried THEN returns popup Toplevel
+
+---
+
 ## [0.22.17] - 2026-05-03
 
 ### Code Changes

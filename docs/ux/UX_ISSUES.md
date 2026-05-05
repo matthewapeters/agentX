@@ -167,8 +167,9 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Committed**: v0.22.15
 - **UAT Status**: User-approved in UAT on 2026-05-02.
   
-[/] Issue: output pane text cannot be screen-scraped or coppied - strategies and behavior tests needed.
+[ ] Issue: output pane text cannot be screen-scraped or coppied - strategies and behavior tests needed.
 
+- The copy menu now displays on right-click over scraped content, but if the user clicks elsewhere or hits ESCAPE key, it remains visible.  It only disappears if clicked or if a new area of text is highlighted and left-clicked.  Normal pop-up menu behavior should be enforced (consistently thoughtout the application: may require a cut-sheet for pop-ups and a common pop-up class inheritence for enforced consistent behavior)
 - The user can scrape content in the Output panel, ctrl-C copies to pasteboard, and ctrl-v to the user-input panel successfully pastes the content. ✅ (already implemented)
 - **Right-click to copy from Output panel** — right-clicking highlighted text in the Output panel should produce a popup showing "Copy"; selecting "Copy" adds the highlighted content to the clipboard. Affordance: **PD-01-AF-010**.
 - **Right-click context menu on User Input panel** — right-clicking in the user input widget should display a popup with:
@@ -179,10 +180,11 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - Clipboard emptiness check uses `try/except tk.TclError` guard around `clipboard_get()`.
 - **Phase 1 (documentation)** — Complete as of v0.22.15.post2.
 - **Phase 2 (implementation)** — Code + 25 hermetic unit tests implemented and passing. Complete as of v0.22.16.
-- **Phase 3 (UAT fix)** — Root-cause analysis revealed two bugs: (1) `<Button-3>` was bound to hidden `output_text` widget never packed into the visible layout; (2) `header_label` was a `tk.Label` (not selectable). Fix: replaced `header_label` with a `tk.Text(state=DISABLED)` widget (`header_text`), added `<Button-3>` bindings to both `header_text` and `detail_text` in `_create_output_entry`, added `_on_entry_text_right_click` method, updated `_show_output_context_menu` to accept optional `target` widget. 8 new tests added (16 total for output context menu). Latest fix candidate as of v0.22.17 — ready for UAT.
+- **Phase 3 (UAT fix)** — Root-cause analysis revealed two bugs: (1) `<Button-3>` was bound to hidden `output_text` widget never packed into the visible layout; (2) `header_label` was a `tk.Label` (not selectable). Fix: replaced `header_label` with a `tk.Text(state=DISABLED)` widget (`header_text`), added `<Button-3>` bindings to both `header_text` and `detail_text` in `_create_output_entry`, added `_on_entry_text_right_click` method, updated `_show_output_context_menu` to accept optional `target` widget. 8 new tests added (16 total for output context menu). Committed as v0.22.17.
+- **Phase 4 (UAT fix — popup dismiss)** — UAT reported popup persists when clicking elsewhere or pressing Escape. Root cause: `overrideredirect(True)` popups do not capture keyboard/mouse focus; the `<Escape>` binding never fires and there is no click-away handler. Fix: added `popup.grab_set()` after `popup.deiconify()` in both `_show_output_context_menu` and `_show_input_context_menu`. Added `_on_outside_click` handler bound to `<ButtonPress>` on the popup — checks if event coordinates are outside the popup bounds and dismisses if so. Applied to both output and input panels. 6 new tests added (19 output + 20 input = 39 total). Latest fix candidate as of v0.22.18 — ready for UAT.
 - **Affordances**: PD-01-AF-010, PD-02-AF-008, PD-02-AF-009, PD-02-AF-010, PD-02-AF-011, PD-02-AF-012.
-- **Tests**: `tests/test_chat_panel_copy_context_menu.py` (16 tests), `tests/test_input_panel_context_menu.py` (17 tests).
-
+- **Tests**: `tests/test_chat_panel_copy_context_menu.py` (19 tests), `tests/test_input_panel_context_menu.py` (20 tests).
+  
 [ ] Issue: The Working Memory widget should be collapsed at start-up like the other widgets in the context / history.  This should be reflected in Gherkin use-cases, unit tests, and cut-sheet details.
 
 [ ] Issue: When complex tasks are being performed, the main display lacks visual clues as to status or progress.  New visual affordances are necessary.
