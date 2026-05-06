@@ -324,17 +324,17 @@ implements it and the test that validates it.  Status legend:
 
 | Affordance | ID | Source | Test File | Test Class | Status |
 |---|---|---|---|---|---|
-| Status tab is first in system notebook | PD-12-AF-001 | `SidePanel.create()` | `test_status_tab.py` | `TestStatusTabOrder` | 📝 |
-| Auto-switch to Status tab on prompt submit | PD-12-AF-002 | `StreamingController._on_stream_start()` | `test_status_tab.py` | `TestStatusTabAutoSwitch` | 📝 |
-| Interrupt button enables/disables with streaming | PD-12-AF-003 | `StatusTab.set_streaming_state()` | `test_status_tab.py` | `TestInterruptButtonState` | 📝 |
-| Interrupt button invokes callback | PD-12-AF-004 | `StatusTab` `interrupt_btn` command | `test_status_tab.py` | `TestInterruptButtonCallback` | 📝 |
-| Phase rows reset at stream start | PD-12-AF-005 | `StatusTab.reset()` | `test_status_tab.py` | `TestPhaseStepperReset` | 📝 |
-| Phase row transitions to RUNNING / starts timer | PD-12-AF-006 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestPhaseRowRunning` | 📝 |
-| Phase row transitions to DONE / freezes timer | PD-12-AF-007 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestPhaseRowDone` | 📝 |
-| Phase row transitions to FAILED | PD-12-AF-008 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestPhaseRowFailed` | 📝 |
-| Tool step label updates with active tool name | PD-12-AF-009 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestToolStepLabel` | 📝 |
-| Colour-key legend rows match donut bands | PD-12-AF-010 | `ContextKeyWidget` | `test_status_tab.py` | `TestContextKeyLegend` | 📝 |
-| ContextMeterWidget hosted in StatusTab | PD-12-AF-011 | `StatusTab.create()` | `test_status_tab.py` | `TestContextMeterRelocation` | 📝 |
+| Status tab is first in system notebook | PD-12-AF-001 | `SidePanel.create()` | `test_status_tab.py` | `TestStatusTabCreate` | ✅ |
+| Auto-switch to Status tab on prompt submit | PD-12-AF-002 | `StreamingController._on_stream_start()` | `test_status_tab.py` | `TestStatusTabAutoSwitch` | ✅ |
+| Interrupt button enables/disables with streaming | PD-12-AF-003 | `StatusTab.set_streaming_state()` | `test_status_tab.py` | `TestStatusTabInterruptButton` | ✅ |
+| Interrupt button invokes callback | PD-12-AF-004 | `StatusTab` `_interrupt_btn` command | `test_status_tab.py` | `TestStatusTabInterruptButton` | ✅ |
+| Phase rows reset at stream start | PD-12-AF-005 | `StatusTab.reset()` | `test_status_tab.py` | `TestStatusTabPhaseReset` | ✅ |
+| Phase row transitions to RUNNING / starts timer | PD-12-AF-006 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestStatusTabSetPhase` | ✅ |
+| Phase row transitions to DONE / freezes timer | PD-12-AF-007 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestStatusTabSetPhase` | ✅ |
+| Phase row transitions to FAILED | PD-12-AF-008 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestStatusTabSetPhase` | ✅ |
+| Tool step label updates with active tool name | PD-12-AF-009 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestStatusTabSetPhase` | ✅ |
+| Colour-key legend rows match donut bands | PD-12-AF-010 | `ContextKeyWidget` | `test_status_tab.py` | `TestContextKeyWidget` | ✅ |
+| ContextMeterWidget hosted in StatusTab | PD-12-AF-011 | `StatusTab.create()` | `test_status_tab.py` | `TestStatusTabCreate` | ✅ |
 
 ### PD-13 — ToolPanel
 

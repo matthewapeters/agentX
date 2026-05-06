@@ -1,8 +1,12 @@
 """Input panel extracted from GUIManager.
 
-Owns the user-text input area, attachment bar, submit/interrupt buttons, and
-related state.  Follows the back-reference pattern: ``InputPanel(gui_manager)``
+Owns the user-text input area, attachment bar, and submit button.
+Follows the back-reference pattern: ``InputPanel(gui_manager)``
 stores ``self._g = gui_manager`` and accesses shared state from there.
+
+Note: The interrupt (user_break) button and ContextMeterWidget have been
+relocated to ``StatusTab`` (PD-12).  The submit button now occupies a slim
+right-column strip (relx=0.96, relwidth=0.04).
 """
 
 from __future__ import annotations
@@ -10,8 +14,6 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 from typing import TYPE_CHECKING
-
-from .context_meter_widget import ContextMeterWidget
 
 if TYPE_CHECKING:
     from .gui_manager import GUIManager
@@ -28,7 +30,6 @@ class InputPanel:
     def __init__(self, gui_manager: "GUIManager") -> None:
         self._g = gui_manager
         self._cached_user_input: str = ""
-        self.context_meter: ContextMeterWidget = ContextMeterWidget(gui_manager)
         # Input right-click context popup (PD-02-AF-008)
         self._input_context_popup: tk.Toplevel | None = None
 
@@ -83,28 +84,16 @@ class InputPanel:
 
         self._widgets.user_input_text.insert = _insert_with_cache
         self._widgets.input_scrollbar.config(command=self._widgets.user_input_text.yview)
-        self._widgets.user_input_text.place(relx=0, rely=0, relwidth=0.90, relheight=1.0)
-        self._widgets.input_scrollbar.place(relx=0.90, rely=0, relheight=1.0)
+        self._widgets.user_input_text.place(relx=0, rely=0, relwidth=0.96, relheight=1.0)
+        self._widgets.input_scrollbar.place(relx=0.96, rely=0, relheight=1.0)
 
-        # Submit button
+        # Submit button (slim strip — PD-12 freed the right column)
         self._widgets.user_submit = tk.Button(
             self._widgets.user_input,
             text=enter_emoji_unicode,
             command=self._on_submit_clicked,
         )
-        self._widgets.user_submit.place(relx=0.92, rely=0.25, relwidth=0.07, relheight=0.25)
-
-        # Interrupt button
-        self._widgets.user_break = tk.Button(
-            self._widgets.user_input,
-            text="❌",
-            command=self._on_interrupt_clicked,
-            state=tk.DISABLED,
-        )
-        self._widgets.user_break.place(relx=0.92, rely=0.51, relwidth=0.07, relheight=0.25)
-        # Context meter (donut chart — ARCH-04)
-        self.context_meter.create(self._widgets.user_input)
-        self._widgets.context_meter_canvas = self.context_meter._canvas
+        self._widgets.user_submit.place(relx=0.97, rely=0, relwidth=0.03, relheight=1.0)
         # Keyboard shortcuts
         self._widgets.user_input_text.bind(
             "<Control-Return>",
@@ -114,10 +103,7 @@ class InputPanel:
             "<Shift-Return>",
             self._on_shift_return,
         )
-        self._g.root.bind_all(
-            "<Control-space>",
-            lambda _event: self._widgets.user_break.invoke(),
-        )
+        # Note: Ctrl+Space binding moved to StatusTab (PD-12)
         # Right-click context menu on user input (PD-02-AF-008)
         self._widgets.user_input_text.bind(
             "<Button-3>",
@@ -152,16 +138,13 @@ class InputPanel:
         return self._cached_user_input or ""
 
     def set_streaming_state(self, is_streaming: bool) -> None:
-        """Update button states for streaming vs. idle."""
+        """Update submit button state for streaming vs. idle."""
         if threading.current_thread() is not threading.main_thread():
             return
         try:
             submit = self._widgets.user_submit
-            interrupt = self._widgets.user_break
             if submit is not None:
                 submit.config(state=tk.DISABLED if is_streaming else tk.NORMAL)
-            if interrupt is not None:
-                interrupt.config(state=tk.NORMAL if is_streaming else tk.DISABLED)
         except RuntimeError:
             pass
 

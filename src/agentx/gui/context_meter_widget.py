@@ -1,6 +1,6 @@
 """Context Meter Widget — donut chart showing LLM context window usage by category.
 
-Implements ARCH-04 from docs/ux/context_visualizer.md.
+Implements ARCH-04. Spec: docs/ux/03_PANEL_DETAILS.md §PD-10.
 
 The widget is a ``tk.Canvas`` placed inside the input-panel button column
 (``relx=0.92, rely=0.00, relwidth=0.07, relheight=0.24``) — above the Submit

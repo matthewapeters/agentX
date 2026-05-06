@@ -395,6 +395,7 @@ class GUIManager(IGUIManager):
 
     def set_streaming_state(self, is_streaming: bool) -> None:
         self._input_panel.set_streaming_state(is_streaming)
+        self._side_panel.set_status_streaming_state(is_streaming)
 
     def set_busy_state(self, is_busy: bool) -> None:
         self._input_panel.set_busy_state(is_busy)
@@ -513,8 +514,7 @@ class GUIManager(IGUIManager):
     def update_context_meter(self, max_tokens: int, breakdown: dict[str, int]) -> None:
         """Redraw the context meter donut chart with updated token data.
 
-        Delegates to ``InputPanel.context_meter.update()`` which schedules
-        the canvas redraw on the Tkinter main thread (ARCH-06).
+        Delegates to ``StatusTab.context_meter.update()`` (PD-12-AF-011).
 
         Args:
             max_tokens (int): Context-window size for the active model.
@@ -522,7 +522,33 @@ class GUIManager(IGUIManager):
                 ``Context.token_breakdown()``.
         """
         logger.debug("update_context_meter: max_tokens=%d breakdown=%s", max_tokens, breakdown)
-        self._input_panel.context_meter.update(max_tokens, breakdown)
+        self._side_panel.status_tab_context_meter.context_meter.update(max_tokens, breakdown)
+
+    def show_status_tab(self) -> None:
+        """Switch the system notebook to the Status tab.
+
+        [PD-12-AF-002]
+        """
+        self._side_panel.show_status_tab()
+
+    def reset_status_tab(self) -> None:
+        """Reset all phase rows and restart the tick loop.
+
+        [PD-12-AF-005]
+        """
+        self._side_panel.reset_status_tab()
+
+    def set_status_phase(self, step_key: str, state: str, tool_name: Optional[str] = None) -> None:
+        """Transition a phase row in the StatusTab.
+
+        [PD-12-AF-006] [PD-12-AF-007] [PD-12-AF-008] [PD-12-AF-009]
+
+        Args:
+            step_key (str): Phase key — classify, think, tool, respond.
+            state (str): RUNNING, DONE, or FAILED.
+            tool_name (Optional[str]): Active tool name for the tool step.
+        """
+        self._side_panel.set_status_phase(step_key, state, tool_name=tool_name)
 
     # ── Placeholder callbacks (replaced at runtime via set_*_callback) ────────
 

@@ -45,8 +45,10 @@ class StreamingController:
     # ------------------------------------------------------------------
 
     def _on_stream_start(self) -> None:
-        """Set the GUI streaming state to active."""
+        """Set the GUI streaming state to active and activate the Status tab."""
         self._s.gui.set_streaming_state(True)
+        self._s.gui.show_status_tab()
+        self._s.gui.reset_status_tab()
 
     def _on_stream_end(self) -> None:
         """Set the GUI streaming state to idle."""

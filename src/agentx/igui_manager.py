@@ -269,14 +269,41 @@ class IGUIManager(Protocol):
         Behavior:
             If is_streaming:
                 - Disable submit button
-                - Enable break button (for interrupt)
+                - Enable StatusTab interrupt button [PD-12-AF-003]
             Else:
                 - Enable submit button
-                - Disable break button
+                - Disable StatusTab interrupt button
 
         Design:
             GUI reflects state, doesn't own it
             Session manages streaming state, tells GUI to update
+        """
+        ...
+
+    def show_status_tab(self) -> None:
+        """Switch the system notebook to the Status tab.
+
+        [PD-12-AF-002] Called at stream start so the user sees live phase
+        progress without needing to manually navigate.
+        """
+        ...
+
+    def reset_status_tab(self) -> None:
+        """Reset all StatusTab phase rows to PENDING and restart tick loop.
+
+        [PD-12-AF-005]
+        """
+        ...
+
+    def set_status_phase(self, step_key: str, state: str, tool_name: Optional[str] = None) -> None:
+        """Transition a phase row in the StatusTab.
+
+        [PD-12-AF-006] [PD-12-AF-007] [PD-12-AF-008] [PD-12-AF-009]
+
+        Args:
+            step_key (str): One of classify / think / tool / respond.
+            state (str): RUNNING, DONE, or FAILED.
+            tool_name (Optional[str]): Active tool name for the tool step.
         """
         ...
 

@@ -7,6 +7,44 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.23.0] - 2026-05-08
+
+### Code Changes
+
+#### Added
+
+- **PD-12 StatusTab implementation**: Real-time prompt-cycle streaming status panel with live phase tracking, context meter relocation, and interrupt control.
+  - New `src/agentx/gui/status_tab.py` module: `StatusTab`, `PhaseRow`, `ContextKeyWidget` classes; 11 affordances (AF-001 to AF-011).
+  - Auto-activates on stream start; phase rows show Classify / Think / Tool / Respond with state icons (○ / ↻ / ✓ / ✗) and elapsed timers (HH:MM:SS).
+  - Interrupt button (`Ctrl+Space`) enabled while streaming.
+  - Context meter relocated from `InputPanel` to StatusTab `ContextWindowSection`.
+  - `ContextKeyWidget`: colour-key legend synced to meter bands.
+
+#### Changed
+
+- `src/agentx/gui/input_panel.py`: Removed `user_break` button, context meter, and `Ctrl+Space` binding (relocated to StatusTab). Submit button now occupies slim right-column strip (relx=0.97, relwidth=0.03).
+- `src/agentx/gui/side_panel.py`: Status tab inserted as first notebook tab via `SidePanel.show_status_tab()` and related delegation methods.
+- `src/agentx/gui/gui_manager.py`: `set_streaming_state()` now delegates to both InputPanel and StatusTab; `update_context_meter()` rerouted to StatusTab; new public methods `show_status_tab()`, `reset_status_tab()`, `set_status_phase()`.
+- `src/agentx/igui_manager.py` (Protocol): Added `show_status_tab()`, `reset_status_tab()`, `set_status_phase()` method signatures.
+- `src/agentx/streaming_controller.py`: `_on_stream_start()` now calls `gui.show_status_tab()` and `gui.reset_status_tab()` for auto-switch and phase reset.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_status_tab.py` (40 unit tests): Full traceability matrix for PD-12 affordances AF-001 through AF-011.
+  - `TestFormatElapsed`: 9 parameterized tests for elapsed timer formatting.
+  - `TestPhaseRow`: 6 tests for phase row state machine (PENDING / RUNNING / DONE / FAILED transitions, reset, tick).
+  - `TestContextKeyWidget`: 2 tests for colour-key legend rendering.
+  - `TestStatusTabCreate`: 3 tests for StatusTab instantiation and attribute presence.
+  - `TestStatusTabAutoSwitch`: 1 test for `show()` notebook selection.
+  - `TestStatusTabInterruptButton`: 4 tests for button state management and callback.
+  - `TestStatusTabPhaseReset`: 1 test for phase row reset.
+  - `TestStatusTabSetPhase`: 13 parameterized tests for state transitions across all phases and tool-name injection.
+  - All tests are hermetic (hidden Tk root, mocked GUIManager) and marked with `@pytest.mark.unit`.
+
+---
+
 ## [0.22.20.post2] - 2026-05-07
 
 ### Documentation Changes

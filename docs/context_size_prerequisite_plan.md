@@ -3,7 +3,7 @@
 **Status:** Complete — 2026-04-26
 **Date:** 2026-04-26
 **Feature branch:** `feature/context-size-prerequisite`
-**Linked spec:** `docs/ux/context_visualizer.md`
+**Linked spec:** `docs/ux/03_PANEL_DETAILS.md §PD-10` (ContextMeterWidget cut-sheet)
 **Linked ARCH items:** ARCH-02, ARCH-05, ARCH-06, ARCH-08, ARCH-09, ARCH-10
 **Linked REQ:** REQ-03, REQ-05, REQ-06, REQ-07, REQ-08
 **Token strategy:** TOK-02 (model-family char/token ratios)
@@ -235,7 +235,7 @@ are backend-agnostic (Ollama now, extensible later).
 
 ## Phase 8 - Docs and Release Readiness
 
-- [/] **8.1** Update `docs/ux/context_visualizer.md` to mark PRE-02 complete after implementation.
+- [/] **8.1** ~~Update `docs/ux/context_visualizer.md` to mark PRE-02 complete.~~ `context_visualizer.md` deleted; content absorbed into `03_PANEL_DETAILS.md §PD-10` (REQ-08 marked ✅).
 - [/] **8.2** Update `docs/architecture.md` with provider abstraction + metadata store.
 - [/] **8.3** Update `CHANGELOG.md` with PRE-02 changes.
 - [/] **8.4** Bump version in `pyproject.toml`: `0.18.26 -> 0.19.0`.

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from .collapsible_section import CollapsibleSection
 from .settings_tab import SettingsTab
+from .status_tab import StatusTab
 
 if TYPE_CHECKING:
     from .gui_manager import GUIManager
@@ -44,6 +45,9 @@ class SidePanel:
 
         # Settings tab state
         self._settings_tab_widget = None
+
+        # Status tab (PD-12)
+        self._status_tab: StatusTab = StatusTab(gui_manager)
 
     # ── Convenience accessors ─────────────────────────────────────────────────
 
@@ -80,6 +84,13 @@ class SidePanel:
         # Tabbed notebook
         self._widgets.system_notebook = ttk.Notebook(self._widgets.system_status)
         self._widgets.system_notebook.pack(expand=True, fill=tk.BOTH, padx=0, pady=0)
+
+        # Status tab — first tab [PD-12-AF-001]
+        status_frame = self._status_tab.create(
+            notebook=self._widgets.system_notebook,
+            section_bg=self._section_bg,
+        )
+        self._widgets.system_notebook.insert(0, status_frame, text="⚡ Status")
 
         # Session tab
         self._widgets.session_tab = tk.Frame(self._widgets.system_notebook, bg=self._section_bg)
@@ -194,6 +205,57 @@ class SidePanel:
             spacing=self._session_section_spacing if spacing is None else spacing,
         )
         return section.get_widget()
+
+    # ── Status tab API (PD-12) ────────────────────────────────────────────────
+
+    def show_status_tab(self) -> None:
+        """Switch the system notebook to the Status tab.
+
+        [PD-12-AF-002] Called from StreamingController._on_stream_start().
+        """
+        self._status_tab.show(self._widgets.system_notebook)
+
+    def set_status_streaming_state(self, is_streaming: bool) -> None:
+        """Relay streaming state to StatusTab interrupt button.
+
+        [PD-12-AF-003]
+
+        Args:
+            is_streaming (bool): True while LLM stream is active.
+        """
+        self._status_tab.set_streaming_state(is_streaming)
+
+    def reset_status_tab(self) -> None:
+        """Reset all phase rows and restart the tick loop.
+
+        [PD-12-AF-005] Called from StreamingController._on_stream_start().
+        """
+        self._status_tab.reset()
+
+    def set_status_phase(self, step_key: str, state: str, tool_name: Optional[str] = None) -> None:
+        """Transition a phase row in the StatusTab.
+
+        [PD-12-AF-006] [PD-12-AF-007] [PD-12-AF-008] [PD-12-AF-009]
+
+        Args:
+            step_key (str): Phase key — classify, think, tool, respond.
+            state (str): RUNNING, DONE, or FAILED.
+            tool_name (Optional[str]): Tool name for the tool step label.
+        """
+        self._status_tab.set_phase(step_key, state, tool_name=tool_name)
+
+    def stop_status_tick(self) -> None:
+        """Stop the phase elapsed timer tick loop."""
+        self._status_tab.stop_tick()
+
+    @property
+    def status_tab_context_meter(self) -> "StatusTab":
+        """Expose the StatusTab for context meter delegation.
+
+        Returns:
+            StatusTab: The status tab instance.
+        """
+        return self._status_tab
 
     # ── Model selector ────────────────────────────────────────────────────────
 
