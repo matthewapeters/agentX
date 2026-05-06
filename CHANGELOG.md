@@ -7,6 +7,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.20.post1] - 2026-05-06
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/UX_ISSUES.md`: Recorded user UAT approval for Working Memory collapse-at-startup fix (PD-03-AF-015, v0.22.20). Issue closed.
+
+---
+
 ## [0.22.20] - 2026-05-06
 
 ### Code Changes

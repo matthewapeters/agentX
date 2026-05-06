@@ -188,7 +188,8 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
   
 [/] Issue: The Working Memory widget should be collapsed at start-up like the other widgets in the context / history.  This should be reflected in Gherkin use-cases, unit tests, and cut-sheet details.  Its behavior should be consistent with widgets on this pane, and should be governed by common functionality, use-cases, and patterns within the cut-sheets.  It may be necessary to describe these widgets as a class of component with their own cut-sheet and use-cases.
 
-- **Fixed in v0.22.20**: Changed `initial_collapsed=False` → `True` for `working_memory` in `SidePanel.create()`. Added affordance `PD-03-AF-015` with Gherkin spec in `03_PANEL_DETAILS.md`. Updated `test_session_sections_start_collapsed` to assert `working_memory` is collapsed. **Ready for UAT.**
+- **Fixed in v0.22.20**: Changed `initial_collapsed=False` → `True` for `working_memory` in `SidePanel.create()`. Added affordance `PD-03-AF-015` with Gherkin spec in `03_PANEL_DETAILS.md`. Updated `test_session_sections_start_collapsed` to assert `working_memory` is collapsed.
+- **UAT-confirmed by user** (2026-05-06). Issue closed.
 
 [ ] Issue: When complex tasks are being performed, the main display lacks visual clues as to status or progress.  New visual affordances are necessary.
 
