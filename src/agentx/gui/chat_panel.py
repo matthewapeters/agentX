@@ -60,7 +60,6 @@ class ChatPanel:
         self._current_turn_children_frame: Optional[tk.Frame] = None
         self._current_turn_entries: dict[str, dict[str, Any]] = {}
         self._output_wraplength: int = 1200
-        self._output_wrapped_labels: list[tk.Label] = []
         self._output_detail_text_widgets: list[tk.Text] = []
         self._output_html_frames: list = []
 
@@ -385,37 +384,71 @@ class ChatPanel:
             header_frame = tk.Frame(container, bg=self._config.output_bg)
             header_frame.pack(fill=tk.X, anchor="w")
 
-            icon_label = tk.Label(
+            icon_text = tk.Text(
                 header_frame,
-                text="ⓘ",
                 font=icon_font,
+                height=1,
+                width=2,
                 bg=self._config.output_bg,
                 fg=self._COLOR_AGENT_RESPONSE,
-                anchor="w",
+                insertbackground=self._config.output_bg,
+                borderwidth=0,
+                highlightthickness=0,
+                relief=tk.FLAT,
+                state=tk.NORMAL,
             )
-            icon_label.pack(side=tk.LEFT, padx=(0, 6))
-            title_label = tk.Label(
-                header_frame,
-                text="Startup:",
-                font=(text_font[0], base_size, "bold") if isinstance(text_font, tuple) else ("Terminal", 10, "bold"),
-                bg=self._config.output_bg,
-                fg=self._COLOR_AGENT_RESPONSE,
-                anchor="w",
-            )
-            title_label.pack(side=tk.LEFT)
+            icon_text.insert("1.0", "ⓘ")
+            icon_text.config(state=tk.DISABLED)
+            icon_text.bind("<Key>", lambda _e: "break")
+            icon_text.bind("<Button-3>", lambda e, w=icon_text: self._on_entry_text_right_click(e, w))
+            icon_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
+            icon_text.pack(side=tk.LEFT, padx=(0, 6))
 
-            detail_label = tk.Label(
-                container,
-                text=clean_content,
+            title_font = (text_font[0], base_size, "bold") if isinstance(text_font, tuple) else ("Terminal", 10, "bold")
+            title_text = tk.Text(
+                header_frame,
+                font=title_font,
+                height=1,
                 bg=self._config.output_bg,
                 fg=self._COLOR_AGENT_RESPONSE,
-                anchor="w",
-                justify=tk.LEFT,
-                wraplength=self._output_wraplength,
-                font=text_font,
+                insertbackground=self._config.output_bg,
+                borderwidth=0,
+                highlightthickness=0,
+                relief=tk.FLAT,
+                state=tk.NORMAL,
             )
-            detail_label.pack(fill=tk.X, anchor="w", padx=(24, 0))
-            self._output_wrapped_labels.append(detail_label)
+            title_text.insert("1.0", "Startup:")
+            title_text.config(state=tk.DISABLED)
+            title_text.bind("<Key>", lambda _e: "break")
+            title_text.bind("<Button-3>", lambda e, w=title_text: self._on_entry_text_right_click(e, w))
+            title_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
+            title_text.pack(side=tk.LEFT)
+
+            detail_text = tk.Text(
+                container,
+                wrap=tk.WORD,
+                font=text_font,
+                bg=self._config.output_bg,
+                fg=self._COLOR_AGENT_RESPONSE,
+                insertbackground=self._config.output_bg,
+                borderwidth=0,
+                highlightthickness=0,
+                relief=tk.FLAT,
+                height=max(1, clean_content.count("\n") + 1),
+                state=tk.NORMAL,
+            )
+            detail_text.insert("1.0", clean_content)
+            detail_text.config(state=tk.DISABLED)
+            detail_text.bind("<Key>", lambda _e: "break")
+            detail_text.bind("<Control-a>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1])
+            detail_text.bind("<Control-A>", lambda _e, w=detail_text: (w.tag_add(tk.SEL, "1.0", tk.END), "break")[1])
+            detail_text.bind("<Control-c>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
+            detail_text.bind("<Control-C>", lambda _e, w=detail_text: w.event_generate("<<Copy>>") or "break")
+            detail_text.bind("<Button-3>", lambda e, w=detail_text: self._on_entry_text_right_click(e, w))
+            detail_text.bind("<Configure>", lambda _e, w=detail_text: self._schedule_detail_text_height_update(w))
+            detail_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
+            detail_text.pack(fill=tk.X, anchor="w", padx=(24, 0))
+            self._output_detail_text_widgets.append(detail_text)
 
         self._current_turn_frame = None
         self._current_turn_children_frame = None
@@ -472,18 +505,29 @@ class ChatPanel:
 
         toolbar = tk.Frame(tab_frame, bg=self._config.output_bg)
         toolbar.pack(fill=tk.X, side=tk.TOP, padx=4, pady=(4, 2))
-        tk.Label(
+        plan_title_font = (
+            self._config.default_font[0] if self._config.default_font else "Courier New",
+            11,
+            "bold",
+        )
+        plan_title_text = tk.Text(
             toolbar,
-            text=f"📋 {plan_name}",
+            font=plan_title_font,
+            height=1,
             bg=self._config.output_bg,
             fg=self._config.agent_response_fg,
-            font=(
-                self._config.default_font[0] if self._config.default_font else "Courier New",
-                11,
-                "bold",
-            ),
-            anchor="w",
-        ).pack(side=tk.LEFT)
+            insertbackground=self._config.output_bg,
+            borderwidth=0,
+            highlightthickness=0,
+            relief=tk.FLAT,
+            state=tk.NORMAL,
+        )
+        plan_title_text.insert("1.0", f"📋 {plan_name}")
+        plan_title_text.config(state=tk.DISABLED)
+        plan_title_text.bind("<Key>", lambda _e: "break")
+        plan_title_text.bind("<Button-3>", lambda e, w=plan_title_text: self._on_entry_text_right_click(e, w))
+        plan_title_text.tag_config("sel", background="#3399ff", foreground="#ffffff")
+        plan_title_text.pack(side=tk.LEFT)
         tk.Button(
             toolbar,
             text="Replay",
@@ -632,15 +676,6 @@ class ChatPanel:
 
     def _update_output_wraplength(self, canvas_width: int) -> None:
         self._output_wraplength = max(160, canvas_width - 40)
-        active_labels: list[tk.Label] = []
-        for label in self._output_wrapped_labels:
-            try:
-                label.configure(wraplength=self._output_wraplength)
-                active_labels.append(label)
-            except tk.TclError:
-                continue
-        self._output_wrapped_labels = active_labels
-
         active_text_widgets: list[tk.Text] = []
         for detail_text in self._output_detail_text_widgets:
             try:

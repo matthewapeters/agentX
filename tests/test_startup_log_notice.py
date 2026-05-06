@@ -131,16 +131,17 @@ class TestStartupLogNotice:
 
             output_entries = session.gui.widgets.output_entries_frame
             assert output_entries is not None
-            icon_labels = []
+            # icon_text is now a tk.Text widget (selectable) — not a tk.Label
+            icon_texts = []
             for child in output_entries.winfo_children():
                 for grandchild in child.winfo_children():
                     for widget in grandchild.winfo_children():
-                        if isinstance(widget, tk.Label) and widget.cget("text") == "ⓘ":
-                            icon_labels.append(widget)
-            assert icon_labels, "Expected startup icon label in output entries"
+                        if isinstance(widget, tk.Text) and widget.get("1.0", tk.END).strip() == "ⓘ":
+                            icon_texts.append(widget)
+            assert icon_texts, "Expected startup icon Text widget in output entries"
 
-            icon_label = icon_labels[-1]
-            icon_font = tkfont.Font(font=icon_label.cget("font"))
+            icon_text_widget = icon_texts[-1]
+            icon_font = tkfont.Font(font=icon_text_widget.cget("font"))
             icon_actual = icon_font.actual()
             text_font = session.gui._text_font or session.gui.config.default_font
             base_size = 10
@@ -149,6 +150,27 @@ class TestStartupLogNotice:
 
             assert icon_actual.get("weight") == "bold"
             assert int(icon_actual.get("size", base_size)) >= base_size + 1
+        finally:
+            session.close()
+            session.root.destroy()
+
+    def test_startup_notice_detail_is_selectable_text_with_context_binding(self, tmp_path: Path) -> None:
+        """GIVEN startup notice rendering [PD-01-AF-009]
+        WHEN display_startup_notice() creates the detail body
+        THEN detail is a disabled Text widget containing content and bound for right-click copy.
+        """
+        session = self._create_session(tmp_path, self._build_config(show_notice=True))
+        try:
+            session.gui.create_layout()
+            message = "Log files for this session"
+            session.gui.display_startup_notice(message)
+
+            detail_widgets = session.gui._chat_panel._output_detail_text_widgets
+            assert detail_widgets, "Expected startup detail Text widget to be tracked"
+            detail_widget = detail_widgets[-1]
+            assert detail_widget.get("1.0", tk.END).strip() == message
+            assert str(detail_widget.cget("state")) == "disabled"
+            assert "<Button-3>" in detail_widget.bind()
         finally:
             session.close()
             session.root.destroy()

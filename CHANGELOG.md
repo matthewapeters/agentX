@@ -7,6 +7,39 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.19] - 2026-05-05
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/gui/chat_panel.py` — addressed remaining non-selectable output text paths by replacing `tk.Label` widgets with selectable `tk.Text(state=DISABLED)` widgets.
+  - `display_startup_notice`: migrated icon/title/detail widgets to `tk.Text` and bound right-click on each so screen-scrape copy works consistently across startup notice content.
+  - `add_plan_tab`: migrated plan title from toolbar `tk.Label` to `tk.Text` with right-click binding.
+  - Removed dead `_output_wrapped_labels` tracking path now that output wrapping is handled by tracked text widgets (`_output_detail_text_widgets`).
+
+### Test Changes
+
+#### Added
+
+- `tests/test_startup_log_notice.py`:
+  - Added regression test validating startup notice detail body is a disabled selectable `tk.Text` widget with `<Button-3>` binding for context copy behavior.
+
+#### Changed
+
+- `tests/test_startup_log_notice.py`:
+  - Updated startup icon test to validate the migrated `tk.Text` icon widget instead of the old `tk.Label` implementation.
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/UX_ISSUES.md`:
+  - Recorded user UAT confirmation for the popup dismiss fix from v0.22.18.
+  - Added latest fix candidate details for startup/label selectability migration (v0.22.19, ready for UAT).
+
+---
+
 ## [0.22.18] - 2026-05-05
 
 ### Code Changes
