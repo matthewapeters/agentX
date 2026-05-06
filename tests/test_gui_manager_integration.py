@@ -669,9 +669,16 @@ class TestGUIManagerPanelMethods(unittest.TestCase):
         self.assertEqual(section_keys, ["history", "tools", "working_memory", "context"])
 
     def test_session_sections_start_collapsed(self):
-        """Session sections should be collapsed initially at application start."""
+        """Session sections should be collapsed initially at application start.
+
+        GIVEN a freshly created SidePanel
+        WHEN  SidePanel.create() runs
+        THEN  history, tools, working_memory, and context sections are all collapsed
+              (is_expanded() == False) — [PD-03-AF-015]
+        """
         self.assertFalse(self.gui._session_sections["history"].is_expanded())
         self.assertFalse(self.gui._session_sections["tools"].is_expanded())
+        self.assertFalse(self.gui._session_sections["working_memory"].is_expanded())
         self.assertFalse(self.gui._session_sections["context"].is_expanded())
 
 

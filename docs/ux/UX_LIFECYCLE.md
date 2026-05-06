@@ -231,6 +231,7 @@ implements it and the test that validates it.  Status legend:
 | Delete button calls on_delete callback | PD-03-AF-012 | `ContextRenderer._render_working_memory_row()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryDelete` | ✅ |
 | Promote button calls on_promote callback | PD-03-AF-013 | `ContextRenderer._render_working_memory_row()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryPromote` | ✅ |
 | Add-fact form submits user-provided key/value | PD-03-AF-014 | `ContextRenderer.render_working_memory_widget()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryAddFact` | ✅ |
+| Working Memory section starts collapsed at startup | PD-03-AF-015 | `SidePanel.create()` | `test_gui_manager_integration.py` | `test_session_sections_start_collapsed` | ✅ |
 
 ### PD-04 — ModelSelector
 

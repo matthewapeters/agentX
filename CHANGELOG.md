@@ -7,6 +7,49 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.20] - 2026-05-06
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/gui/side_panel.py` — `SidePanel.create()`: changed `initial_collapsed=False` to `True` for the `working_memory` session section so it starts collapsed at startup, consistent with History, Available Tools, and Context sections. [PD-03-AF-015]
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_gui_manager_integration.py` — `test_session_sections_start_collapsed`:
+  - Added assertion that `working_memory` section `is_expanded() == False` at startup.
+  - Updated docstring with Gherkin use-case referencing PD-03-AF-015.
+  - **Gherkin**: `GIVEN a freshly created SidePanel / WHEN SidePanel.create() runs / THEN history, tools, working_memory, and context sections are all collapsed`
+
+### Documentation Changes
+
+#### Added
+
+- `docs/ux/03_PANEL_DETAILS.md` — Added affordance spec `PD-03-AF-015` (Working Memory section starts collapsed at startup) with Gherkin use-cases and test mapping.
+
+#### Changed
+
+- `docs/ux/UX_LIFECYCLE.md` — Added `PD-03-AF-015` row to the PD-03 SidePanel affordance matrix.
+- `docs/ux/UX_ISSUES.md` — Marked Working Memory collapse-at-startup issue `[/]` (attempted fix; ready for UAT).
+
+---
+
+## [0.22.19.post1] - 2026-05-05
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/UX_ISSUES.md`:
+  - Recorded user UAT approval for Phase 5 startup/label selectability screen-scrape fixes.
+- `docs/ux/00_INDEX.md`:
+  - Updated status note to reflect v0.22.19 startup/label fixes are UAT-confirmed.
+
+---
+
 ## [0.22.19] - 2026-05-05
 
 ### Code Changes

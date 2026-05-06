@@ -3,7 +3,7 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-05 (v0.22.19 candidate: startup/label text paths migrated to selectable `tk.Text`)  
+**Last updated**: 2026-05-05 (v0.22.19 UAT-confirmed: startup/label screen-scrape fixes approved)  
 **Current version**: see `pyproject.toml`
 
 ---

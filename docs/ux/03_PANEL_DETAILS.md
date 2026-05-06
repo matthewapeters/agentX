@@ -120,6 +120,77 @@ WHEN the notice is rendered in the output window
 THEN it appears as informational/system content (not as an agent response)
 ```
 
+### Affordance: PD-01-AF-010 — Right-click context menu on output panel (Copy)
+
+**Source**: `ChatPanel._show_output_context_menu()` + `ChatPanel._bind_output_text_shortcuts()`  
+(`src/agentx/gui/chat_panel.py`)  
+**Test**: `tests/test_chat_panel_copy_context_menu.py` · `TestOutputPanelRightClickCopy`  
+**Status**: 📝 (spec only — not yet implemented)
+
+The output panel is read-only; the only clipboard action available is **Copy**.
+The right-click popup uses the same Wayland-aware `tk.Toplevel(overrideredirect=True)`
+approach proven by the `FileExplorer` context menu (see UX_ISSUES.md RC11–RC14 history).
+A fresh `Toplevel` is created for every invocation; stale surfaces are destroyed before
+each new popup is shown.  The "Copy" item is always visible; if no text is selected at
+the moment of right-click, "Copy" copies nothing (same as Ctrl-C with no selection).
+
+```
+output_text  ──<Button-3>──► after(100) ──► _show_output_context_menu(x, y)
+                                                   │
+                                     destroy any existing popup
+                                                   │
+                                 create tk.Toplevel (overrideredirect=True,
+                                   bg=panel_bg, borderwidth=0)
+                                   └── tk.Button "Copy"
+                                         └── output_text.event_generate("<<Copy>>")
+                                             dismiss popup
+```
+
+```gherkin
+# PD-01-AF-010 — right-click opens popup
+GIVEN the output_text widget has content
+WHEN the user right-clicks anywhere on the output_text widget
+THEN a popup menu appears within 200 ms
+ AND the popup contains a "Copy" option
+
+# PD-01-AF-010 — Copy with selection copies to clipboard
+GIVEN the output_text widget has text and the user has selected some of it
+WHEN the user right-clicks and chooses "Copy"
+THEN the selected text is placed on the system clipboard
+ AND the popup is dismissed
+
+# PD-01-AF-010 — Copy with no selection is a no-op
+GIVEN the output_text widget has text and no text is currently selected
+WHEN the user right-clicks and chooses "Copy"
+THEN the clipboard is unchanged
+ AND the popup is dismissed
+
+# PD-01-AF-010 — popup dismisses on Escape
+GIVEN the output context menu popup is visible
+WHEN the user presses Escape
+THEN the popup is dismissed without changing the clipboard
+
+# PD-01-AF-010 — stale popup replaced on second right-click
+GIVEN a context menu popup is already visible
+WHEN the user right-clicks the output panel again
+THEN the first popup is destroyed
+ AND a fresh popup appears at the new cursor position
+
+# PD-01-AF-010 — popup uses themed background (no light flash)
+GIVEN the active theme has a dark panel_bg colour
+WHEN the output context menu popup is created
+THEN the Toplevel background is set to panel_bg before it is made visible
+ AND no light-coloured pre-render flash is observable
+```
+
+### Test Mapping (PD-01)
+
+| Affordance | Test file | Test name |
+|-----------|-----------|-----------|
+| PD-01-AF-001..007 | `test_chat_panel_turn_rendering.py` | (see matrix) |
+| PD-01-AF-009 | `test_startup_log_notice.py` | `TestStartupLogNotice` |
+| PD-01-AF-010 | `test_chat_panel_copy_context_menu.py` | `TestOutputPanelRightClickCopy` |
+
 ---
 
 ## PD-02: InputPanel
@@ -175,6 +246,11 @@ attachments_frame (tk.Frame, parent=root)
 | PD-02-AF-005 | Chip renders with filename | `att_frame` + `Checkbutton` | `update_attachment_bar([info], [])` | Frame packed; Checkbutton text contains `display_name`; current-turn: `📁` icon, bright bg; history: `📜` icon + `" (history)"` suffix, grey bg |
 | PD-02-AF-006 | Toggle chip calls callback | `Checkbutton` (inside chip) | User clicks checkbox | `on_attachment_toggle(attachment_id, bool)` called with new enabled state |
 | PD-02-AF-007 | Rebuild clears old chips | `attachments_frame` children | `update_attachment_bar([], [])` | All previous chip frames destroyed; `attachment_labels` empty |
+| PD-02-AF-008 | Right-click opens context popup on input widget | `user_input_text` | `<Button-3>` binding | Wayland-safe `tk.Toplevel(overrideredirect=True)` popup appears with conditional "Copy" and/or "Paste" items |
+| PD-02-AF-009 | Input context menu shows "Copy" only when text is selected | `user_input_text` | Popup construction | "Copy" item present iff `SEL` tag exists at time of right-click; absent otherwise |
+| PD-02-AF-010 | Input context menu shows "Paste" only when clipboard is non-empty | `user_input_text` | Popup construction | "Paste" item present iff `clipboard_get()` succeeds (non-empty); absent otherwise (guarded with `try/except tk.TclError`) |
+| PD-02-AF-011 | "Copy" in input context menu copies selected text | `user_input_text` | User clicks "Copy" in popup | `user_input_text.event_generate("<<Copy>>")` called; selected text placed on system clipboard; popup dismissed |
+| PD-02-AF-012 | "Paste" in input context menu replaces selection / inserts at cursor | `user_input_text` | User clicks "Paste" in popup | If `SEL` tag exists, selected text deleted first; then clipboard content inserted at `INSERT`; popup dismissed |
 
 ### Gherkin Use-Cases
 
@@ -243,6 +319,69 @@ GIVEN a chip for "old.py" already rendered
 WHEN  update_attachment_bar([new_info("new.py")], []) is called
 THEN  attachment_labels has 1 entry
   AND the Checkbutton text contains "new.py"
+
+# PD-02-AF-008 — right-click opens popup
+GIVEN the user_input_text widget has focus and may or may not have selected text
+WHEN  the user right-clicks anywhere on user_input_text
+THEN  a Wayland-safe tk.Toplevel popup appears within 200 ms
+ AND  the popup contains at least one action item
+
+# PD-02-AF-008 — stale popup replaced on second right-click
+GIVEN an input context menu popup is already visible
+WHEN  the user right-clicks the input widget again
+THEN  the first popup is destroyed
+ AND  a fresh popup appears at the new cursor position
+
+# PD-02-AF-008 — popup dismisses on Escape
+GIVEN the input context menu popup is visible
+WHEN  the user presses Escape
+THEN  the popup is dismissed without modifying the input or clipboard
+
+# PD-02-AF-008 — popup uses themed background (no light flash)
+GIVEN the active theme has a dark panel_bg colour
+WHEN  the input context menu popup is created
+THEN  the Toplevel background is set to panel_bg before it is made visible
+
+# PD-02-AF-009 — Copy item present when text is selected
+GIVEN the user_input_text widget contains "hello world" with "hello" selected
+WHEN  the right-click popup is constructed
+THEN  the popup contains a "Copy" item
+
+# PD-02-AF-009 — Copy item absent when no text is selected
+GIVEN the user_input_text widget contains "hello world" with no selection
+WHEN  the right-click popup is constructed
+THEN  the popup does NOT contain a "Copy" item
+
+# PD-02-AF-010 — Paste item present when clipboard is non-empty
+GIVEN the system clipboard contains the text "world"
+WHEN  the right-click popup is constructed on user_input_text
+THEN  the popup contains a "Paste" item
+
+# PD-02-AF-010 — Paste item absent when clipboard is empty
+GIVEN the system clipboard is empty (clipboard_get() raises TclError)
+WHEN  the right-click popup is constructed on user_input_text
+THEN  the popup does NOT contain a "Paste" item
+
+# PD-02-AF-011 — Copy copies selection to clipboard
+GIVEN user_input_text contains "hello world" with "hello" selected
+WHEN  the user chooses "Copy" from the input context popup
+THEN  the system clipboard contains "hello"
+ AND  the popup is dismissed
+ AND  the input text is unchanged
+
+# PD-02-AF-012 — Paste replaces selected text
+GIVEN user_input_text contains "hello world" with "hello" selected
+ AND  the system clipboard contains "goodbye"
+WHEN  the user chooses "Paste" from the input context popup
+THEN  the input widget contains "goodbye world"
+ AND  the popup is dismissed
+
+# PD-02-AF-012 — Paste inserts at cursor when no selection
+GIVEN user_input_text contains "helo world" with the cursor after "hel" (no selection)
+ AND  the system clipboard contains "l"
+WHEN  the user chooses "Paste" from the input context popup
+THEN  the input widget contains "hello world"
+ AND  the popup is dismissed
 ```
 
 ### Test Mapping
@@ -261,6 +400,11 @@ THEN  attachment_labels has 1 entry
 | PD-02-AF-006 | `test_input_panel_attachment_chips.py` | `test_check_after_uncheck_calls_toggle_true` |
 | PD-02-AF-007 | `test_input_panel_attachment_chips.py` | `test_empty_update_clears_all_chips` |
 | PD-02-AF-007 | `test_input_panel_attachment_chips.py` | `test_rebuild_replaces_existing_chips` |
+| PD-02-AF-008 | `test_input_panel_context_menu.py` | `TestInputPanelRightClickPopup` — *not yet implemented* |
+| PD-02-AF-009 | `test_input_panel_context_menu.py` | `TestInputCopyMenuVisibility` — *not yet implemented* |
+| PD-02-AF-010 | `test_input_panel_context_menu.py` | `TestInputPasteMenuVisibility` — *not yet implemented* |
+| PD-02-AF-011 | `test_input_panel_context_menu.py` | `TestInputCopyAction` — *not yet implemented* |
+| PD-02-AF-012 | `test_input_panel_context_menu.py` | `TestInputPasteAction` — *not yet implemented* |
 
 ### Code / Configuration References
 
@@ -596,6 +740,42 @@ THEN  no exception is raised
 | PD-03-AF-014 | `test_working_memory_widget_callbacks.py` | `test_add_button_clears_entries_after_submit` |
 | PD-03-AF-014 | `test_working_memory_widget_callbacks.py` | `test_add_button_does_not_call_on_user_add_when_key_empty` |
 | PD-03-AF-014 | `test_working_memory_widget_callbacks.py` | `test_add_button_no_callback_does_not_raise` |
+
+---
+
+#### PD-03-AF-015 — Working Memory Section Starts Collapsed
+
+**ID**: `PD-03-AF-015`
+**Widget**: `CollapsibleSection` keyed `"working_memory"` in `SidePanel._session_sections`
+**Source**: `SidePanel.create()` in `side_panel.py`
+**Purpose**: Ensure the Working Memory section starts collapsed at startup, consistent with History, Available Tools, and Context sections.
+
+**Behaviour**:
+
+| Condition | Outcome |
+|-----------|---------|
+| SidePanel freshly created | `working_memory` section `is_expanded()` returns `False` |
+| User clicks section header | Section toggles (expand/collapse) normally |
+
+**Gherkin Use-Cases**:
+
+```gherkin
+# PD-03-AF-015 — Working Memory starts collapsed
+GIVEN a freshly created SidePanel
+WHEN  SidePanel.create() runs
+THEN  the "working_memory" CollapsibleSection is_expanded() == False
+
+# PD-03-AF-015 — consistent with peer sections
+GIVEN a freshly created SidePanel
+WHEN  SidePanel.create() runs
+THEN  history, tools, working_memory, and context are all collapsed
+```
+
+**Test Mapping**:
+
+| Affordance | Test file | Test name |
+|-----------|-----------|-----------|
+| PD-03-AF-015 | `test_gui_manager_integration.py` | `test_session_sections_start_collapsed` |
 
 ---
 

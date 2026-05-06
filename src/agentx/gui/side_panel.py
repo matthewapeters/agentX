@@ -88,7 +88,7 @@ class SidePanel:
         for key, title, collapsed in [
             ("history", "History", True),
             ("tools", "Available Tools", True),
-            ("working_memory", "🏛️ Working Memory", False),
+            ("working_memory", "🏛️ Working Memory", True),
             ("context", "Context", True),
         ]:
             self._register_system_collapsible_section(
