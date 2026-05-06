@@ -294,6 +294,26 @@ class StreamingController:
         s = self._s
         config = s.config
 
+        phase_state: dict[str, str] = {
+            "classify": "PENDING",
+            "think": "PENDING",
+            "tool": "PENDING",
+            "respond": "PENDING",
+        }
+
+        def _set_phase(step_key: str, state: str, tool_name: Optional[str] = None) -> None:
+            """Schedule a StatusTab phase transition on the Tk main thread."""
+            if step_key not in phase_state:
+                return
+            phase_state[step_key] = state
+            s._safe_root_after(lambda sk=step_key, st=state, tn=tool_name: s.gui.set_status_phase(sk, st, tool_name=tn))
+
+        def _finalize_running_phases(final_state: str) -> None:
+            """Finalize any currently RUNNING phases to DONE/FAILED."""
+            for _step, _state in phase_state.items():
+                if _state == "RUNNING":
+                    _set_phase(_step, final_state)
+
         s._is_streaming.set()
         s._safe_root_after(self._on_stream_start)
         s._safe_root_after(s.refresh_user_gui)
@@ -336,8 +356,10 @@ class StreamingController:
 
             classification = None
             if config.get("agentix", {}).get("classify_prompts", True):
+                _set_phase("classify", "RUNNING")
                 classification = s.agentix_adapter.classify_prompt_sync(prompt, shared_context, s.working_memory)
                 self._log_classification(classification, prompt)
+                _set_phase("classify", "DONE")
 
             s._assistant_header_shown = False
             s._thinking_header_shown = False
@@ -364,13 +386,24 @@ class StreamingController:
 
             for chunk in s.agentix_adapter.process_prompt_generator(prompt, shared_context, classification):
                 if not s._is_streaming.is_set():
+                    _finalize_running_phases("FAILED")
                     break
 
                 handler.process_chunk(chunk)
 
                 if chunk.type == ChunkType.THINKING and chunk.content:
+                    if phase_state["classify"] == "PENDING":
+                        _set_phase("classify", "DONE")
+                    if phase_state["think"] != "RUNNING":
+                        _set_phase("think", "RUNNING")
                     thinking_parts.append(chunk.content)
                 elif chunk.type == ChunkType.CONTENT and chunk.content:
+                    if phase_state["classify"] == "PENDING":
+                        _set_phase("classify", "DONE")
+                    if phase_state["think"] == "RUNNING":
+                        _set_phase("think", "DONE")
+                    if phase_state["respond"] != "RUNNING":
+                        _set_phase("respond", "RUNNING")
                     content_parts.append(chunk.content)
 
                 # Plan tree chunk routing
@@ -443,13 +476,27 @@ class StreamingController:
                         task_depth=_node_depth,
                     )
                     s.context.add_message(_node_msg)
-                elif chunk.type == ChunkType.TOOL_CALL and chunk.task_id:
-                    _tid = chunk.task_id
-                    _tname = chunk.tool_name or ""
-                    _tinput = chunk.tool_input or {}
-                    s._safe_root_after(lambda tid=_tid, tn=_tname, ti=_tinput: s.gui.add_plan_tool_call(tid, tn, ti))
+                elif chunk.type == ChunkType.TOOL_CALL:
+                    if phase_state["classify"] == "PENDING":
+                        _set_phase("classify", "DONE")
+                    if phase_state["think"] == "RUNNING":
+                        _set_phase("think", "DONE")
+                    _set_phase("tool", "RUNNING", tool_name=chunk.tool_name)
+                    if chunk.task_id:
+                        _tid = chunk.task_id
+                        _tname = chunk.tool_name or ""
+                        _tinput = chunk.tool_input or {}
+                        s._safe_root_after(
+                            lambda tid=_tid, tn=_tname, ti=_tinput: s.gui.add_plan_tool_call(tid, tn, ti)
+                        )
+                elif chunk.type == ChunkType.TOOL_RESULT:
+                    if phase_state["tool"] == "RUNNING":
+                        _set_phase("tool", "DONE")
 
                 s._safe_root_after(s.refresh_user_gui)
+
+            if s._is_streaming.is_set():
+                _finalize_running_phases("DONE")
 
             s._safe_root_after(s.gui.display_spacing)
             joined_thinking = "".join(thinking_parts)
@@ -463,6 +510,7 @@ class StreamingController:
 
         except Exception as e:
             logger.exception("Request error during streaming")
+            _finalize_running_phases("FAILED")
             err_line = f"\n⚠️  ERROR: {e}\n"
             s._safe_root_after(lambda err=e: s.gui.display_error(f"Error: {err}"))
             s._write_log(err_line)

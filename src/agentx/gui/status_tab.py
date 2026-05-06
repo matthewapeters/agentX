@@ -251,8 +251,13 @@ class StatusTab:
         ctx_frame = tk.LabelFrame(self._tab_frame, text="Context Window", padx=4, pady=4)
         ctx_frame.pack(fill=tk.X, padx=6, pady=(6, 2))
 
+        # Legend on the left; donut fills the remaining space on the right.
+        # The canvas <Configure> binding redraws at the actual pixel size so
+        # the donut scales dynamically — no hard-coded diameter needed.
         ContextKeyWidget(ctx_frame)
-        self.context_meter.create(ctx_frame)
+        donut_frame = tk.Frame(ctx_frame)
+        donut_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.context_meter.create(donut_frame, relx=0, rely=0, relwidth=1.0, relheight=1.0)
 
         # ── Section 2: Prompt Cycle phases ────────────────────────────────
         phase_frame = tk.LabelFrame(self._tab_frame, text="Prompt Cycle", padx=4, pady=4)

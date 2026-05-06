@@ -7,6 +7,29 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.23.1] - 2026-05-06
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/streaming_controller.py`: wired live prompt-cycle phase transitions into runtime streaming flow so StatusTab now updates in real time.
+  - `classify` now transitions `RUNNING -> DONE` around synchronous prompt classification.
+  - `think` transitions to `RUNNING` on THINKING chunks and finalizes when response/tool execution begins.
+  - `tool` transitions to `RUNNING` on all TOOL_CALL chunks (with active tool name) and to `DONE` on TOOL_RESULT.
+  - `respond` transitions to `RUNNING` on first CONTENT chunk and finalizes when streaming ends.
+  - Running phases finalize to `FAILED` on interruption/error and to `DONE` on normal completion.
+- `src/agentx/gui/status_tab.py` and `src/agentx/gui/context_meter_widget.py`: improved ContextMeter sizing in StatusTab by hosting donut canvas in a dedicated expanding frame and allowing placement overrides in `ContextMeterWidget.create()`.
+
+### Test Changes
+
+#### Changed
+
+- Re-ran affected GUI and agentic-loop regression tests after runtime phase and sizing fixes.
+  - `tests/test_status_tab.py`: pass
+  - `tests/test_context_meter_widget.py`: pass
+  - `tests/test_agentic_loop.py`: pass
+
 ## [0.23.0] - 2026-05-08
 
 ### Code Changes

@@ -98,23 +98,31 @@ class ContextMeterWidget:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def create(self, parent: tk.Widget) -> None:
+    def create(self, parent: tk.Widget, **place_kwargs: float) -> None:
         """Create and place the canvas inside ``parent``.
 
         Must be called on the Tkinter main thread after the parent frame
-        exists.  Places the canvas at ``relx=0.92, rely=0.00,
-        relwidth=0.07, relheight=0.24`` — at the top of the button
-        column, above the Submit button (rely=0.25) and Break button
-        (rely=0.51).
+        exists.  By default places the canvas at ``relx=0.92, rely=0.00,
+        relwidth=0.07, relheight=0.24`` — the original input-panel corner.
+        Pass ``place_kwargs`` to override any or all placement values; e.g.
+        ``relx=0, rely=0, relwidth=1.0, relheight=1.0`` to fill a
+        dedicated parent frame completely.
+
+        Because the canvas binds ``<Configure>``, any placement that gives
+        it more room will automatically produce a larger donut on the next
+        layout pass.
 
         Args:
-            parent (tk.Widget): Parent frame (the ``user_input`` frame).
+            parent (tk.Widget): Parent frame to place the canvas in.
+            **place_kwargs (float): Optional overrides for ``place()``
+                keyword arguments (``relx``, ``rely``, ``relwidth``,
+                ``relheight``, ``x``, ``y``, ``width``, ``height``).
         """
         bg = self._config.input_bg
         self._canvas = tk.Canvas(parent, bg=bg, highlightthickness=0, cursor="hand2")
-        # Top of the button column (0.00–0.24). Submit sits at 0.25 and
-        # Break at 0.51 so the donut occupies the head of the column.
-        self._canvas.place(relx=0.92, rely=0.00, relwidth=0.07, relheight=0.24)
+        _place = dict(relx=0.92, rely=0.00, relwidth=0.07, relheight=0.24)
+        _place.update(place_kwargs)
+        self._canvas.place(**_place)
 
         # Bind Configure so the donut redraws if the canvas is resized
         self._canvas.bind("<Configure>", self._on_configure)
