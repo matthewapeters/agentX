@@ -7,6 +7,38 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.22.20.post2] - 2026-05-07
+
+### Documentation Changes
+
+#### Added
+
+- `docs/ux/03_PANEL_DETAILS.md` — **PD-12: StatusTab** full cut-sheet appended after PD-11. Includes:
+  - ASCII placement diagram with three sub-sections (ContextWindowSection, PhaseStepperWidget, InterruptButton)
+  - Sub-widget specs: `ContextKeyWidget` (colour-key legend), `ContextMeterWidget` relocation, `PhaseStepperWidget` (vertical phase rows with status icon + elapsed timer), `InterruptButton`
+  - Phase step table (Classify / Think / Tool / Respond), status icon table (○ / ↻ / ✓ / ✗), elapsed timer design (1-second `after()` loop, `start_time: float` per row)
+  - `IGUIManager` additions: `show_status_tab()`, `set_status_phase()`, `reset_status_tab()`
+  - 11 affordances PD-12-AF-001 through PD-12-AF-011 with Gherkin use-cases
+  - Full cross-reference table: PD-02, PD-10, PD-03, `StreamingController`
+  - Test mapping table (all 11 affordances `📝 Spec Only`)
+
+- `docs/ux/UX_LIFECYCLE.md` — Added PD-12 to panel registry table and traceability matrix (§4) with all 11 affordances at status `📝`.
+
+- `docs/ux/00_INDEX.md` — Added PD-12 StatusTab row (11 spec-only affordances); updated totals; added PD-12 implementation item to Priority Work Queue.
+
+#### Changed
+
+- `docs/ux/03_PANEL_DETAILS.md` — PD-02 InputPanel:
+  - `PD-02-AF-004` annotated as ⚠️ Relocated to PD-12-AF-003.
+  - Keyboard Shortcuts and Button State tables annotated with pending PD-12 migration note for `Ctrl+Space` binding and `user_break` button.
+  - Added "PD-12 layout change" forward-reference note (submit shrinks, text area expands, donut removed from right-column).
+
+- `docs/ux/UX_LIFECYCLE.md` — PD-10 ContextMeterWidget section header annotated with relocation note referencing PD-12-AF-011.
+
+- `docs/ux/UX_ISSUES.md` — "Task Status Issue" updated from `[ ]` to `[/]` (spec complete, awaiting implementation + UAT). Added summary referencing PD-12-AF-001..011.
+
+---
+
 ## [0.22.20.post1] - 2026-05-06
 
 ### Documentation Changes

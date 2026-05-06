@@ -242,7 +242,7 @@ attachments_frame (tk.Frame, parent=root)
 | PD-02-AF-001 | Enter key submits | `user_input_text` | `<Control-Return>` binding | Invokes `user_submit` button |
 | PD-02-AF-002 | Shift+Enter inserts newline | `user_input_text` | `<Shift-Return>` binding | Inserts `\n` into text widget |
 | PD-02-AF-003 | Send disabled during streaming | `user_submit` | `set_streaming_state(True)` | `state=DISABLED` |
-| PD-02-AF-004 | Stop enabled during streaming | `user_break` | `set_streaming_state(True)` | `state=NORMAL` |
+| PD-02-AF-004 | Stop enabled during streaming | `user_break` | `set_streaming_state(True)` | `state=NORMAL` | ⚠️ **Relocated to PD-12-AF-003** — `user_break` button moves to `StatusTab`; callback unchanged |
 | PD-02-AF-005 | Chip renders with filename | `att_frame` + `Checkbutton` | `update_attachment_bar([info], [])` | Frame packed; Checkbutton text contains `display_name`; current-turn: `📁` icon, bright bg; history: `📜` icon + `" (history)"` suffix, grey bg |
 | PD-02-AF-006 | Toggle chip calls callback | `Checkbutton` (inside chip) | User clicks checkbox | `on_attachment_toggle(attachment_id, bool)` called with new enabled state |
 | PD-02-AF-007 | Rebuild clears old chips | `attachments_frame` children | `update_attachment_bar([], [])` | All previous chip frames destroyed; `attachment_labels` empty |
@@ -423,7 +423,7 @@ THEN  the input widget contains "hello world"
 | Key | Behaviour |
 |-----|-----------|
 | `Ctrl+Enter` | Send message (same as Send button) |
-| `Ctrl+Space` | Interrupt / stop streaming |
+| `Ctrl+Space` | Interrupt / stop streaming — ⚠️ **binding migrating to `StatusTab` (PD-12 implementation)**; callback unchanged |
 
 ### Button State
 
@@ -431,8 +431,16 @@ THEN  the input widget contains "hello world"
 |-------|------|
 | `Send` enabled | Not streaming |
 | `Send` disabled | Streaming in progress |
-| `Stop` enabled | Streaming in progress |
+| `Stop` enabled | Streaming in progress — ⚠️ **button relocated to StatusTab (PD-12); not present in InputPanel after PD-12 implementation** |
 | `Stop` disabled | Not streaming |
+
+> **PD-12 layout change**: When PD-12 `StatusTab` is implemented:
+>
+> - `user_break` button is removed from InputPanel right-column
+> - `ContextMeterWidget` canvas is removed from InputPanel right-column
+> - `user_submit` button shrinks to a slim right-edge strip (`relx=0.96, relwidth=0.04`)
+> - `user_input_text` expands from `relwidth=0.90` to `~relwidth=0.96`
+> - `Ctrl+Space` binding moves to `StatusTab` (still bound on `root`)
 
 ---
 
@@ -1557,3 +1565,408 @@ THEN no exception is raised
 See [UF-05: File Attachment](02_USER_FLOWS.md#uf-05-file-attachment) for the end-to-end flow from clicking a file to it appearing as an attachment chip.
 See [UF-11: File Explorer Navigation](02_USER_FLOWS.md#uf-11-file-explorer-navigation) for directory browsing and folder-to-memory flows.
 See [UF-12: File Explorer Context Popup Rendering](02_USER_FLOWS.md#uf-12-file-explorer-context-popup-rendering) for popup visibility and first-frame palette guarantees.
+
+---
+
+## PD-12: StatusTab
+
+**Class**: `StatusTab` (`src/agentx/gui/status_tab.py`) — *to be created*
+**Position**: First tab of `SidePanel.system_notebook` (before Session / Files / Settings)
+**Purpose**: Real-time visibility into the current prompt-reply cycle — active phase,
+elapsed time per step, and context window utilisation with a colour-key legend.
+The tab auto-activates when the user submits a prompt and updates in-the-blind
+(all widget state is written regardless of tab visibility; only paint is deferred).
+
+> **Moved from**:
+>
+> - `ContextMeterWidget` (PD-10) — donut canvas formerly hosted in `InputPanel`
+>   right-column (`relx=0.92, relwidth=0.07, relheight=0.24`). The donut and its
+>   colour-key legend are now the upper section of this tab.
+> - `InputPanel` (PD-02) — `user_break` interrupt button (`relx=0.92, rely=0.51`)
+>   removed from input panel right-column and re-hosted here as the large `Interrupt`
+>   button below the phase stepper.
+> - `InputPanel` right-column freed: `user_submit` button shrinks to a slim strip
+>   (`relx=0.96, relwidth=0.04`); text area expands to fill `relwidth=0.96`.
+
+---
+
+### Layout
+
+```
+┌────────────────────────── Status Tab ───────────────────────────────────┐
+│                                                                         │
+│  ┌──── Context Window ─────────────────────────────────────────────┐   │
+│  │                                                                  │   │
+│  │  ┌─── Colour Key ──────────────┐  ┌─── Donut ─────────────────┐ │   │
+│  │  │  ● Working Memory  #0d9488  │  │                           │ │   │
+│  │  │  ● System Prompts  #6366f1  │  │        ┌─────┐            │ │   │
+│  │  │  ● User Prompts    #3b82f6  │  │     ╱         ╲           │ │   │
+│  │  │  ● Attachments     #f59e0b  │  │    │     NN%   │          │ │   │
+│  │  │  ● Thinking        #a855f7  │  │     ╲         ╱           │ │   │
+│  │  │  ● Agent Response  #22c55e  │  │        └─────┘            │ │   │
+│  │  │  ● Tool Calls      #f97316  │  │                           │ │   │
+│  │  │  ░ Remaining        #444444 │  │  [risk border: gray/red]  │ │   │
+│  │  └─────────────────────────────┘  └───────────────────────────┘ │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌──── Prompt Cycle Status ────────────────────────────────────────┐   │
+│  │                                                                  │   │
+│  │  ☐  🤔 Classify       00:00:00                                  │   │
+│  │  ↻  💭 Think          00:00:07  ← running (spinner)             │   │
+│  │  ○  🔧 Tool: <name>   --:--:--  ← pending                      │   │
+│  │  ○  ✍️  Respond        --:--:--  ← pending                      │   │
+│  │                                                                  │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │              ⛔  Interrupt  (Ctrl+Space)                         │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Sub-widgets
+
+| Widget | Class | Purpose |
+|--------|-------|---------|
+| `ContextWindowSection` | `tk.LabelFrame` | Container holding colour-key and donut side-by-side |
+| `ContextKeyWidget` | `tk.Frame` (rows of coloured circles + labels) | Colour-key legend for donut bands |
+| `ContextMeterWidget` (relocated) | `tk.Canvas` | Donut chart — same class as before, re-parented |
+| `PhaseStepperWidget` | `tk.Frame` | Vertical list of phase rows with status icon + label + elapsed timer |
+| `PhaseRow` | internal row frame | One row per phase; holds status icon, emoji label, elapsed `tk.Label` |
+| `InterruptButton` | `tk.Button` | Large full-width interrupt button; enabled only during streaming |
+
+---
+
+### Context Window Section (upper)
+
+Two child frames sit side-by-side inside a `tk.LabelFrame` labelled
+`"Context Window"`:
+
+```
+ContextWindowSection (tk.LabelFrame, pack fill=X, pady=4)
+  ├── ContextKeyWidget  (pack side=LEFT, fill=Y, padx=8)
+  └── ContextMeterWidget canvas (pack side=LEFT, fill=BOTH, expand=True)
+```
+
+#### ContextKeyWidget — Colour Key
+
+Renders one row per band in band-definition order. Each row contains:
+
+- A small square `tk.Canvas` (14×14 px) filled with the band colour
+- A `tk.Label` with the band's display name
+
+Bands are read from the same `_BANDS` constant in `context_meter_widget.py`
+(or a shared constant imported by both) so the key is never out of sync with
+the donut.  The ghost-arc (remaining capacity) is the last row, using
+`_GHOST_COLOR` (`#444444`).
+
+```
+ContextKeyWidget (tk.Frame)
+  ├── row (tk.Frame)  swatch(Canvas 14×14 #0d9488)  Label "Working Memory"
+  ├── row (tk.Frame)  swatch(Canvas 14×14 #6366f1)  Label "System Prompts"
+  ├── row (tk.Frame)  swatch(Canvas 14×14 #3b82f6)  Label "User Prompts"
+  ├── row (tk.Frame)  swatch(Canvas 14×14 #f59e0b)  Label "Attachments"
+  ├── row (tk.Frame)  swatch(Canvas 14×14 #a855f7)  Label "Thinking"
+  ├── row (tk.Frame)  swatch(Canvas 14×14 #22c55e)  Label "Agent Response"
+  ├── row (tk.Frame)  swatch(Canvas 14×14 #f97316)  Label "Tool Calls / Results"
+  └── row (tk.Frame)  swatch(Canvas 14×14 #444444)  Label "Remaining"
+```
+
+#### ContextMeterWidget (re-parented)
+
+The existing `ContextMeterWidget` class is unchanged. Its `create(parent)` call
+is moved from `InputPanel` to `StatusTab`.  All existing affordances
+(PD-10-AF-001 through PD-10-AF-007) and the tooltip hover behaviour are
+preserved; only the host frame changes.
+
+> **Spec cross-reference**: PD-10 (ContextMeterWidget) — relocation only; no
+> behavioural change to the donut itself.
+
+---
+
+### Phase Stepper Section (middle)
+
+A `tk.LabelFrame` labelled `"Prompt Cycle"` containing a `PhaseStepperWidget`.
+
+#### Phase Row Structure
+
+```
+PhaseStepperWidget (tk.Frame, pack fill=BOTH, expand=True)
+  └── PhaseRow × N  (one per phase step)
+        ├── status_icon  (tk.Label, width=2)   — see Status Icon table
+        ├── phase_label  (tk.Label)             — emoji + phase name
+        └── elapsed_label (tk.Label, width=8)  — "HH:MM:SS" or "--:--:--"
+```
+
+#### Phase Steps (in display order)
+
+| Step key | Emoji | Label |
+|----------|-------|-------|
+| `classify` | 🤔 | Classify |
+| `think` | 💭 | Think |
+| `tool` | 🔧 | Tool: `<name>` *(name injected at runtime)* |
+| `respond` | ✍️ | Respond |
+
+> Tool step label is dynamic: once a tool call begins the step label updates to
+> `🔧 Tool: read_file` (or whichever tool is active).  If multiple tool rounds
+> occur, the same row is reused with the latest tool name.
+
+#### Status Icons
+
+| Icon | State | Meaning |
+|------|-------|---------|
+| `○` | `PENDING` | Not yet reached this step |
+| `↻` | `RUNNING` | Currently executing; elapsed timer ticking |
+| `✓` | `DONE` | Completed successfully |
+| `✗` | `FAILED` | Ended with an error |
+
+The icon is a `tk.Label` updated by `PhaseRow.set_state(state)`.
+
+#### Elapsed Timer
+
+- Format: `HH:MM:SS` while running; `--:--:--` while pending; frozen at final
+  elapsed when `DONE` or `FAILED`.
+- Implementation: `PhaseRow` records `start_time: float = time.monotonic()` when
+  state transitions to `RUNNING`.  `StatusTab` drives a single `after(1000, …)`
+  tick loop that calls `PhaseRow.tick()` on all `RUNNING` rows.  The tick loop
+  is started by `PhaseStepperWidget.start_tick()` and cancelled by
+  `PhaseStepperWidget.stop_tick()`.
+- Off-screen safety: `after()` callbacks fire regardless of tab visibility.
+  `tick()` updates the `tk.Label` text; the paint simply queues if the tab is
+  not the active view, flushing instantly when the tab is selected.
+
+---
+
+### Interrupt Button (bottom)
+
+A `tk.Button` spanning the full tab width:
+
+```
+interrupt_btn  text="⛔  Interrupt  (Ctrl+Space)"
+               state=DISABLED when not streaming
+               state=NORMAL   when streaming
+               command → on_interrupt callback (same callback as old user_break)
+```
+
+The `Ctrl+Space` global binding in `InputPanel` is **moved** to `StatusTab`
+(still bound on `root` so it works regardless of focus).
+
+> **Spec cross-reference**: PD-02-AF-004 (`user_break` button) — this affordance
+> is **relocated** to PD-12.  PD-02-AF-004 status changes to `🔁 Relocated →
+> PD-12-AF-003`.
+
+---
+
+### Tab Navigation Behaviour
+
+| Trigger | Action |
+|---------|--------|
+| User submits prompt | `system_notebook.select(status_tab_index)` — switches to Status tab |
+| Stream ends | Tab remains on Status (user may want to review elapsed times) |
+| User manually switches tab | No forced return; updates continue in-the-blind |
+
+---
+
+### Affordance Inventory
+
+#### PD-12-AF-001 — Status tab is the first tab in the system notebook
+
+**Source**: `SidePanel.create()` — Status tab added before Session tab
+**Purpose**: Ensures the tab order is: Status → Session → Files → Settings
+
+```gherkin
+GIVEN SidePanel.create() has been called
+WHEN  we query system_notebook tab names
+THEN  the first tab text is "Status"
+ AND  the second tab text is "Session"
+```
+
+#### PD-12-AF-002 — Auto-switch to Status tab on prompt submit
+
+**Source**: `StreamingController._on_stream_start()` (calls `gui.show_status_tab()`)
+**Purpose**: Gives the user immediate visual feedback that the system received their input
+
+```gherkin
+GIVEN the user is on any tab in the system notebook
+WHEN  the user submits a prompt
+THEN  the system notebook switches to the Status tab
+ AND  the Phase Stepper resets all rows to PENDING state
+```
+
+#### PD-12-AF-003 — Interrupt button enables/disables with streaming state
+
+**Source**: `StatusTab.set_streaming_state(is_streaming)` (mirrors old PD-02-AF-004)
+**Purpose**: Interrupt is only actionable when a stream is running
+
+> **Relocated from**: PD-02-AF-004 (`user_break` button in InputPanel)
+
+```gherkin
+GIVEN streaming is not active
+WHEN  StatusTab.set_streaming_state(False) is called
+THEN  interrupt_btn state is DISABLED
+
+GIVEN streaming is active
+WHEN  StatusTab.set_streaming_state(True) is called
+THEN  interrupt_btn state is NORMAL
+```
+
+#### PD-12-AF-004 — Interrupt button invokes on_interrupt callback
+
+**Source**: `StatusTab` `interrupt_btn` command binding
+**Purpose**: Stops the active stream via the same callback as the old Break button
+
+```gherkin
+GIVEN streaming is active and interrupt_btn is NORMAL
+WHEN  the user clicks interrupt_btn
+THEN  the on_interrupt callback is called exactly once
+
+GIVEN streaming is active
+WHEN  the user presses Ctrl+Space
+THEN  the on_interrupt callback is called exactly once
+```
+
+#### PD-12-AF-005 — Phase rows reset at stream start
+
+**Source**: `StatusTab.reset()` called from `StreamingController._on_stream_start()`
+**Purpose**: Each new prompt cycle starts with a clean slate
+
+```gherkin
+GIVEN the stepper has rows with DONE state from a previous cycle
+WHEN  StatusTab.reset() is called
+THEN  all phase rows return to PENDING state
+ AND  all elapsed labels show "--:--:--"
+ AND  all status icons show "○"
+```
+
+#### PD-12-AF-006 — Phase row transitions to RUNNING and starts timer
+
+**Source**: `StatusTab.set_phase(step_key, state="RUNNING", tool_name=None)`
+**Purpose**: Marks a phase as in-progress and begins elapsed time display
+
+```gherkin
+GIVEN the "classify" row is in PENDING state
+WHEN  set_phase("classify", "RUNNING") is called
+THEN  the classify row status icon becomes "↻"
+ AND  the classify elapsed label shows "00:00:00"
+ AND  after ~1 second the elapsed label shows "00:00:01"
+```
+
+#### PD-12-AF-007 — Phase row transitions to DONE and freezes timer
+
+**Source**: `StatusTab.set_phase(step_key, state="DONE")`
+**Purpose**: Records final elapsed time for a completed step
+
+```gherkin
+GIVEN the "classify" row has been RUNNING for ~3 seconds
+WHEN  set_phase("classify", "DONE") is called
+THEN  the classify row status icon becomes "✓"
+ AND  the elapsed label is frozen at the final elapsed value
+ AND  the label does not change after a further tick
+```
+
+#### PD-12-AF-008 — Phase row transitions to FAILED
+
+**Source**: `StatusTab.set_phase(step_key, state="FAILED")`
+**Purpose**: Distinguishes error-terminated steps from successful ones
+
+```gherkin
+GIVEN the "think" row is RUNNING
+WHEN  set_phase("think", "FAILED") is called
+THEN  the think row status icon becomes "✗"
+ AND  the elapsed label is frozen at the failure time
+```
+
+#### PD-12-AF-009 — Tool step label updates with active tool name
+
+**Source**: `StatusTab.set_phase("tool", "RUNNING", tool_name="read_file")`
+**Purpose**: Identifies which tool is running without opening the chat panel
+
+```gherkin
+GIVEN the tool row is in PENDING state
+WHEN  set_phase("tool", "RUNNING", tool_name="read_file") is called
+THEN  the tool row label shows "🔧 Tool: read_file"
+```
+
+#### PD-12-AF-010 — Colour-key legend rows match donut bands in order
+
+**Source**: `ContextKeyWidget` reads from the same `_BANDS` constant as `ContextMeterWidget`
+**Purpose**: Key and donut are guaranteed to stay in sync
+
+```gherkin
+GIVEN ContextKeyWidget has been created
+WHEN  we enumerate the key rows
+THEN  the row count equals len(_BANDS) + 1 (for the ghost/remaining row)
+ AND  each row swatch colour matches the corresponding band colour in _BANDS order
+ AND  the final row swatch colour is _GHOST_COLOR
+```
+
+#### PD-12-AF-011 — ContextMeterWidget hosted in StatusTab (relocation)
+
+**Source**: `StatusTab.create()` calls `ContextMeterWidget.create(context_frame)`
+**Purpose**: Donut retains all PD-10 affordances under new host; no functional regression
+
+```gherkin
+GIVEN StatusTab has been created
+WHEN  we inspect the ContextWindowSection
+THEN  a ContextMeterWidget canvas is present inside the section frame
+ AND  calling update(max_tokens, breakdown) redraws the donut (same as PD-10-AF-001)
+```
+
+---
+
+### State Fields
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `_phase_rows` | `dict[str, PhaseRow]` | Keyed by step key; created in `create()` |
+| `_tick_id` | `str \| None` | Return value of last `after()` call; `None` when idle |
+| `_on_interrupt` | `Callable[[], None]` | Callback; same reference passed to old `user_break` |
+| `_context_meter` | `ContextMeterWidget` | Donut instance (relocated from InputPanel) |
+| `_context_key` | `ContextKeyWidget` | Colour-key instance |
+
+---
+
+### IGUIManager Interface Additions
+
+The following methods are added to `IGUIManager` (and implemented in `GUIManager`):
+
+| Method | Purpose |
+|--------|---------|
+| `show_status_tab()` | Switch `system_notebook` to the Status tab |
+| `set_status_phase(step_key, state, tool_name=None)` | Delegate to `StatusTab.set_phase()` |
+| `reset_status_tab()` | Delegate to `StatusTab.reset()` |
+
+`set_streaming_state(is_streaming)` is extended to also call
+`StatusTab.set_streaming_state(is_streaming)`.
+
+---
+
+### Cross-References
+
+| Spec | Change |
+|------|--------|
+| PD-02 InputPanel | `user_break` button removed from right-column; `user_submit` resized to slim strip (`relx=0.96, relwidth=0.04`); text area expands to `relwidth=0.96`; `Ctrl+Space` binding migrated to `StatusTab`. See PD-02-AF-004 → **Relocated to PD-12-AF-003**. |
+| PD-10 ContextMeterWidget | `create()` call moves from `InputPanel` to `StatusTab`; all PD-10-AF-001..007 affordances unchanged. |
+| PD-03 SidePanel | Status tab frame created and inserted at index 0 of `system_notebook` before Session. |
+| `StreamingController` | `_on_stream_start()` gains `gui.show_status_tab()` + `gui.reset_status_tab()` calls. `_display_*` helpers gain `gui.set_status_phase()` calls at each phase transition. |
+
+---
+
+### Test Mapping
+
+| Affordance | Test file | Test class/name |
+|-----------|-----------|-----------------|
+| PD-12-AF-001 | `test_status_tab.py` | `TestStatusTabOrder` — *📝 spec only* |
+| PD-12-AF-002 | `test_status_tab.py` | `TestStatusTabAutoSwitch` — *📝 spec only* |
+| PD-12-AF-003 | `test_status_tab.py` | `TestInterruptButtonState` — *📝 spec only* |
+| PD-12-AF-004 | `test_status_tab.py` | `TestInterruptButtonCallback` — *📝 spec only* |
+| PD-12-AF-005 | `test_status_tab.py` | `TestPhaseStepperReset` — *📝 spec only* |
+| PD-12-AF-006 | `test_status_tab.py` | `TestPhaseRowRunning` — *📝 spec only* |
+| PD-12-AF-007 | `test_status_tab.py` | `TestPhaseRowDone` — *📝 spec only* |
+| PD-12-AF-008 | `test_status_tab.py` | `TestPhaseRowFailed` — *📝 spec only* |
+| PD-12-AF-009 | `test_status_tab.py` | `TestToolStepLabel` — *📝 spec only* |
+| PD-12-AF-010 | `test_status_tab.py` | `TestContextKeyLegend` — *📝 spec only* |
+| PD-12-AF-011 | `test_status_tab.py` | `TestContextMeterRelocation` — *📝 spec only* |

@@ -160,6 +160,7 @@ Examples:
 | PD-09 | CollapsibleSection | `src/agentx/gui/collapsible_section.py` |
 | PD-10 | ContextMeterWidget | `src/agentx/gui/context_meter_widget.py` |
 | PD-11 | FileExplorer | `src/agentx/file_explorer.py` |
+| PD-12 | StatusTab | `src/agentx/gui/status_tab.py` |
 
 When a new panel or top-level widget is added, assign the next available PD number,
 add a row to this table, and create a section in `03_PANEL_DETAILS.md`.
@@ -291,6 +292,8 @@ implements it and the test that validates it.  Status legend:
 
 ### PD-10 — ContextMeterWidget
 
+> ⚠️ **Relocation pending (PD-12 implementation)**: `ContextMeterWidget.create()` will be called from `StatusTab` instead of `InputPanel`. All PD-10 affordances are unchanged; only the host frame changes. See `PD-12-AF-011`.
+
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
 | Meter creates canvas on first create() call | PD-10-AF-001 | `ContextMeterWidget.create()` | `test_context_meter_widget.py` | — | ✅ |
@@ -315,6 +318,22 @@ implements it and the test that validates it.  Status legend:
 | Right-click on file shows file context menu | PD-11-AF-008 | `FileExplorer._on_right_click()` | `test_file_explorer_context_menu.py` | `TestFileContextMenu` | ✅ |
 | Right-click on directory shows folder context menu | PD-11-AF-009 | `FileExplorer._on_right_click()` | `test_file_explorer_context_menu.py` | `TestFolderContextMenu` | ✅ |
 | Escape dismisses context menu | PD-11-AF-010 | `FileExplorer._dismiss_popup_menu()` | `test_file_explorer_context_menu.py` | `TestDismissContextMenu` | ✅ |
+
+### PD-12 — StatusTab
+
+| Affordance | ID | Source | Test File | Test Class | Status |
+|---|---|---|---|---|---|
+| Status tab is first in system notebook | PD-12-AF-001 | `SidePanel.create()` | `test_status_tab.py` | `TestStatusTabOrder` | 📝 |
+| Auto-switch to Status tab on prompt submit | PD-12-AF-002 | `StreamingController._on_stream_start()` | `test_status_tab.py` | `TestStatusTabAutoSwitch` | 📝 |
+| Interrupt button enables/disables with streaming | PD-12-AF-003 | `StatusTab.set_streaming_state()` | `test_status_tab.py` | `TestInterruptButtonState` | 📝 |
+| Interrupt button invokes callback | PD-12-AF-004 | `StatusTab` `interrupt_btn` command | `test_status_tab.py` | `TestInterruptButtonCallback` | 📝 |
+| Phase rows reset at stream start | PD-12-AF-005 | `StatusTab.reset()` | `test_status_tab.py` | `TestPhaseStepperReset` | 📝 |
+| Phase row transitions to RUNNING / starts timer | PD-12-AF-006 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestPhaseRowRunning` | 📝 |
+| Phase row transitions to DONE / freezes timer | PD-12-AF-007 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestPhaseRowDone` | 📝 |
+| Phase row transitions to FAILED | PD-12-AF-008 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestPhaseRowFailed` | 📝 |
+| Tool step label updates with active tool name | PD-12-AF-009 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestToolStepLabel` | 📝 |
+| Colour-key legend rows match donut bands | PD-12-AF-010 | `ContextKeyWidget` | `test_status_tab.py` | `TestContextKeyLegend` | 📝 |
+| ContextMeterWidget hosted in StatusTab | PD-12-AF-011 | `StatusTab.create()` | `test_status_tab.py` | `TestContextMeterRelocation` | 📝 |
 
 ---
 

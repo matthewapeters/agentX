@@ -46,8 +46,9 @@
 | PD-09 CollapsibleSection | 4 | 0 | 0 | 0 |
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 10 | 0 | 0 | 0 |
+| PD-12 StatusTab | 0 | 0 | 11 | 0 |
 
-**Totals**: 71 ✅ · 6 ⚠️ · 0 📝 · 0 ❌
+**Totals**: 71 ✅ · 6 ⚠️ · 11 📝 · 0 ❌
 
 ---
 
@@ -61,6 +62,7 @@
 - [/] **PD-03-AF-011..014** — Working Memory callbacks (toggle, delete, promote, add)
 - [/] **PD-07-AF-002..003** — Settings collapse state + restart-required icon
 - [/] **PD-02-AF-002** — Shift+Enter inserts newline
+- [ ] **PD-12: StatusTab** — implement: `status_tab.py`, relocate donut + break button, wire `StreamingController` phase events (11 affordances spec-only)
 - [/] **PD-04-AF-004** — ModelSelector refresh button
 - [/] **PD-05-AF-004** — Re-synth button in synthesis block
 - [/] **PD-05-AF-005** — Export button in plan tab toolbar

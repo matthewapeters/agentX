@@ -191,6 +191,22 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Fixed in v0.22.20**: Changed `initial_collapsed=False` → `True` for `working_memory` in `SidePanel.create()`. Added affordance `PD-03-AF-015` with Gherkin spec in `03_PANEL_DETAILS.md`. Updated `test_session_sections_start_collapsed` to assert `working_memory` is collapsed.
 - **UAT-confirmed by user** (2026-05-06). Issue closed.
 
-[ ] Issue: When complex tasks are being performed, the main display lacks visual clues as to status or progress.  New visual affordances are necessary.
+[/] Task Status Issue: When complex tasks are being performed, the main display lacks visual clues as to status or progress.  New visual affordances are necessary.  Example: what is the curent state of the prompt-reply cycle (IE classification, thinking, tools, synthesize, reply, etc.)?  Nothing shows the steps of a plan and their status.  Agent and user should ideate solutions that are:
+
+- [/] 1. Simple to implement
+- [/] 2. Provide clear visual feedback to the user
+- [/] 3. Are robust and reliable
+- [/] 4. Are not overly complex or resource-intensive
+
+**Spec complete (v0.22.21)**: Resolved via **PD-12 StatusTab** — a new first tab in the system notebook that auto-activates on prompt submit.  Consists of three sub-widgets:
+
+1. **ContextWindowSection** — donut chart + colour-key legend side-by-side (ContextMeterWidget relocated from InputPanel button column).
+2. **PhaseStepperWidget** — vertical list of phase rows (Classify / Think / Tool: `<name>` / Respond) each showing a status icon (`○` / `↻` / `✓` / `✗`), phase emoji, and a `HH:MM:SS` elapsed timer (1-second `after()` loop).
+3. **InterruptButton** — large full-width button; replaces the `user_break` button removed from InputPanel.
+
+Affordances: PD-12-AF-001 through PD-12-AF-011 (all `📝 Spec Only`).
+Implementation: `src/agentx/gui/status_tab.py` (to be created) + wiring in `StreamingController`, `IGUIManager`, `GUIManager`, `SidePanel`, `InputPanel`.
+
+**Awaiting implementation and UAT confirmation before closing.**
 
 [ ] Issue: When complex tasks are being performed, the user experience moving between output panes is slowed and the redraws are laggy.  It may be necessary to implement multi-processing with reliable state between processes to ensure reliable state management.

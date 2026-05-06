@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentx"
-version = "0.22.20.post1"
+version = "0.22.20.post2"
 description = "agentX is a framework for building and deploying AI agents that can perform a wide range of tasks, from simple automation to complex problem-solving. It provides a flexible and extensible architecture that allows developers to create custom agents tailored to their specific needs."
 readme = "README.md"
 requires-python = ">=3.12"
