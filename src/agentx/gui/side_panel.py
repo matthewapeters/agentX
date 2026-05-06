@@ -90,7 +90,9 @@ class SidePanel:
             notebook=self._widgets.system_notebook,
             section_bg=self._section_bg,
         )
-        self._widgets.system_notebook.insert(0, status_frame, text="⚡ Status")
+        # add() is used (not insert) because the notebook is still empty here;
+        # subsequent tabs are added after, so Status is naturally at index 0.
+        self._widgets.system_notebook.add(status_frame, text="⚡ Status")
 
         # Session tab
         self._widgets.session_tab = tk.Frame(self._widgets.system_notebook, bg=self._section_bg)
