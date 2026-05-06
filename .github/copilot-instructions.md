@@ -129,6 +129,35 @@ AgentX is a local-first AI agent framework with a Tkinter GUI. It connects to **
 #### Document class relationships and module maps
 - Use Mermaid diagrams and markdown tables to document class relationships and module maps.  Ensure that all modules and classes are documented with their purpose, key methods, and interactions with other modules/classes.
 
+### Document Curation Policy
+
+A *document* is a curated object — it may be a single file, a folder of related files, or a section within a knowledge base.  Curation is an active discipline: it includes creating, updating, and **removing** unwanted, inferior, conflicting, or false information.  The following rules apply to all documentation in this project.
+
+#### One Authoritative Home Per Topic
+- Each design topic, specification, or decision must have exactly one authoritative home.  Two documents that make overlapping or conflicting claims about the same topic create a "split-brain" condition that degrades the reliability of both.
+- When you discover conflicting documents, identify which is authoritative (usually the more recent, more structured, or index-registered one), migrate any still-applicable unique content from the other into the authoritative document, then remove the subordinate document.
+- If it is unclear which document is authoritative, or whether content is still applicable, **stop and ask the user before proceeding**.
+
+#### Revision Stamps
+- Every documentation file should carry a revision stamp on the line immediately below its title:
+  ```
+  _Last updated: YYYY-MM-DD (vX.Y.Z)_
+  ```
+- Update the stamp whenever the file is modified.  This allows the agent to identify the more current source when two documents conflict, and gives readers an at-a-glance freshness signal without opening git log.
+
+#### Indexed Folders
+- A folder that contains an `00_INDEX.md` is an *indexed* folder.  Every document in an indexed folder must be registered in that index.  An unregistered file in an indexed folder is orphaned and must either be added to the index or removed.
+- Folders without an `00_INDEX.md` are unmanaged; no index coverage is required.  Do **not** auto-create an index for an unmanaged folder unless explicitly directed by the user.
+
+#### Deletion Protocol
+- Before deleting any document, ask: **"will we need this?"**  If there is any doubt, stop and ask the user for direction.
+- Deletion is low-risk because every committed document is fully recoverable: `git checkout <commit> -- path/to/file` restores it to the working tree at any time.  This is only true if the document was committed before deletion — ensure it is.
+- When directed to delete, remove the file, deregister it from any index, and update any cross-references.
+
+#### Folder Changelogs
+- If a documentation folder contains a `CHANGELOG.md`, record curation operations in it (migrations, deletions, renames) with enough detail — including the relevant commit hash or tag — that the agent or user can recover a prior version from git if needed.
+- If no `CHANGELOG.md` exists in the folder, no curation tracking is required beyond the git commit message.
+
 
 ## Commands
 
