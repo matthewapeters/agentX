@@ -1,5 +1,7 @@
 # UX ISSUES
 
+_Last updated: 2026-05-06 (v0.22.20.post3)_
+
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
 ## How to Use This File
@@ -15,7 +17,7 @@ This file is the bug-tracking log for user-reported UX defects in AgentX.
 | Marker | Set by | Meaning |
 |--------|--------|---------|
 | `[ ]`  | User   | Issue reported; agent has not yet applied a fix. |
-| `[/]`  | Agent  | Fix committed and all tests pass; **ready for UAT**. UAT happens *after* the agent marks `[/]`, not before. |
+| `[/]`  | Agent  | Fix committed and all tests pass; **ready for UAT**. UAT happens _after_ the agent marks `[/]`, not before. |
 | `[X]`  | Either | Fix attempted but failed or blocked; needs follow-up. |
 
 When the user performs UAT and the fix is confirmed: leave `[/]` in place (it means resolved).
@@ -119,7 +121,7 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
   event.x/y`).  Menus posted at correct on-screen coordinates after this fix, but still
   dismissed instantly by button-release (RC9 above).
 - **Root cause 7 (v0.22.7)**: `after_idle` added to defer past `<ButtonRelease-3>` —
-  rationale was correct but `after_idle` does not defer past the *physical* button
+  rationale was correct but `after_idle` does not defer past the _physical_ button
   release when binding is `<Button-3>` (press).  Superseded by `after(100)` in RC9.
 - **Root cause 6 (v0.22.6)**: `<ButtonRelease-3>` binding + `menu.post()` → changed
   to `<Button-3>`.  Correct change; retained.

@@ -1,6 +1,6 @@
 # AgentX — UX Documentation
 
-Version: 2026-04-19
+_Last updated: 2026-05-06 (v0.22.20.post3)_
 
 This directory documents the AgentX user interface — layout, affordances,
 user flows, and per-panel detail.
@@ -10,14 +10,13 @@ user flows, and per-panel detail.
 ## Contents
 
 | File | Description |
-|------|-------------|
+|------|-----------|
 | **[00_INDEX.md](00_INDEX.md)** | **Session entry point — status snapshot, priority queue, agile flow diagram** |
 | **[UX_LIFECYCLE.md](UX_LIFECYCLE.md)** | **Lifecycle rules, affordance ID scheme, full traceability matrix** |
 | [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md) | Component cut-sheet template (identity, diagrams, Gherkin, test mapping) |
 | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) | Window geometry, zone map, layout diagram |
 | [02_USER_FLOWS.md](02_USER_FLOWS.md) | Mermaid flow diagrams for all major user interactions |
-| [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) | Per-panel affordances, widgets, and interactions |
-| [context_visualizer.md](context_visualizer.md) | ContextMeterWidget feature specification (REQ/ENH codes) |
+| [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) | Per-panel affordances, widgets, and interactions (PD-01 through PD-14) |
 
 ---
 

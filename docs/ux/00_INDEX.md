@@ -1,5 +1,7 @@
 # AgentX UX — Working Index
 
+_Last updated: 2026-05-06 (v0.22.20.post3)_
+
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
@@ -144,12 +146,14 @@ comm -13 /tmp/tested.txt /tmp/specced.txt
 
 ```
 docs/ux/
-├── 00_INDEX.md              ← YOU ARE HERE — session entry point
-├── UX_LIFECYCLE.md          ← Lifecycle rules, affordance IDs, traceability matrix
-├── 01_MAIN_LAYOUT.md        ← Window zones, geometry
-├── 02_USER_FLOWS.md         ← End-to-end user interaction flows (Mermaid)
-├── 03_PANEL_DETAILS.md      ← Per-panel: affordance tables, state fields, diagrams
-└── context_visualizer.md    ← ContextMeterWidget spec (REQ/ENH)
+├── 00_INDEX.md                        ← YOU ARE HERE — session entry point
+├── README.md                          ← Overview and navigation guide
+├── UX_LIFECYCLE.md                    ← Lifecycle rules, affordance IDs, traceability matrix
+├── 01_MAIN_LAYOUT.md                  ← Window zones, geometry
+├── 02_USER_FLOWS.md                   ← End-to-end user interaction flows (Mermaid)
+├── 03_PANEL_DETAILS.md                ← Per-panel: affordance tables, state fields, diagrams
+├── 04_COMPONENT_CUT_SHEET_TEMPLATE.md ← Blank template for new component cut-sheets
+└── UX_ISSUES.md                       ← Bug-tracking log for user-reported UX defects
 
 .github/prompts/
 └── ux-review.prompt.md      ← /ux-review slash command (8-phase TDD review loop)

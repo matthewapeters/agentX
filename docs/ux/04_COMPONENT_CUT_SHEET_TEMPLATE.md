@@ -1,5 +1,7 @@
 # AgentX — Component Cut-Sheet Template
 
+_Last updated: 2026-05-06 (v0.22.20.post3)_
+
 Use this template for every UI component or sub-component that has user-visible
 behaviour. This includes panels, reusable widgets, dialogs, and nested controls.
 

@@ -1,6 +1,6 @@
 # AgentX — Panel Details
 
-Version: 2026-04-19 (updated 2026-04-19 — conversation-turn widget hierarchy documented)
+_Last updated: 2026-05-06 (v0.22.20.post3)_
 
 Detailed affordance specifications for each GUI panel/widget.  Each section
 documents the widget's purpose, all user-visible controls, and the callback
@@ -77,7 +77,7 @@ turn_frame (tk.Frame, parent: output_entries_frame)
 **Critical invariant**: `children_frame` must be packed into `turn_frame` **after**
 `user_entry_frame`.  Tkinter's `pack` geometry manager renders slaves in the order they
 were packed; packing `children_frame` first would cause all response widgets to appear
-*above* the user prompt.
+_above_ the user prompt.
 
 > **Bug history (fixed 2026-04-19):** `_ensure_turn_started()` previously called
 > `children.pack(...)` before `_create_output_entry()`, which packed the user entry
@@ -400,11 +400,11 @@ THEN  the input widget contains "hello world"
 | PD-02-AF-006 | `test_input_panel_attachment_chips.py` | `test_check_after_uncheck_calls_toggle_true` |
 | PD-02-AF-007 | `test_input_panel_attachment_chips.py` | `test_empty_update_clears_all_chips` |
 | PD-02-AF-007 | `test_input_panel_attachment_chips.py` | `test_rebuild_replaces_existing_chips` |
-| PD-02-AF-008 | `test_input_panel_context_menu.py` | `TestInputPanelRightClickPopup` — *not yet implemented* |
-| PD-02-AF-009 | `test_input_panel_context_menu.py` | `TestInputCopyMenuVisibility` — *not yet implemented* |
-| PD-02-AF-010 | `test_input_panel_context_menu.py` | `TestInputPasteMenuVisibility` — *not yet implemented* |
-| PD-02-AF-011 | `test_input_panel_context_menu.py` | `TestInputCopyAction` — *not yet implemented* |
-| PD-02-AF-012 | `test_input_panel_context_menu.py` | `TestInputPasteAction` — *not yet implemented* |
+| PD-02-AF-008 | `test_input_panel_context_menu.py` | `TestInputPanelRightClickPopup` — _not yet implemented_ |
+| PD-02-AF-009 | `test_input_panel_context_menu.py` | `TestInputCopyMenuVisibility` — _not yet implemented_ |
+| PD-02-AF-010 | `test_input_panel_context_menu.py` | `TestInputPasteMenuVisibility` — _not yet implemented_ |
+| PD-02-AF-011 | `test_input_panel_context_menu.py` | `TestInputCopyAction` — _not yet implemented_ |
+| PD-02-AF-012 | `test_input_panel_context_menu.py` | `TestInputPasteAction` — _not yet implemented_ |
 
 ### Code / Configuration References
 
@@ -1440,6 +1440,75 @@ THEN the previous widget is destroyed and only the new widget remains.
 
 - **PD-12-AF-011** — ContextMeterWidget is re-hosted in `StatusTab`; all above affordances unchanged.
 - **PD-12: ContextKeyWidget** — companion colour-key legend reading from the same `_BANDS` constant.
+- **PD-14: ContextPanelWidget** — management surface that the meter visualises; click-to-navigate links meter bands to panel rows.
+
+### Band Source Role Mapping
+
+Each arc segment corresponds to one or more `MessageRole` values from `Context.messages`.
+
+| Band | Label | `MessageRole`(s) / Source | Colour |
+|------|-------|---------------------------|--------|
+| 0 | Working Memory | `SYSTEM` message with `metadata["is_working_memory"] = True` (ARCH-03) | `#0d9488` teal |
+| 1 | System Prompts | All other `SYSTEM` messages (planner, tool-use, classification prompts) | `#6366f1` indigo |
+| 2 | User Prompts | `USER` | `#3b82f6` blue |
+| 3 | Attachments | Enabled `Attachment` objects across all messages | `#f59e0b` amber |
+| 4 | Thinking | `THINKING` | `#a855f7` purple |
+| 5 | Agent Response | `ASSISTANT` | `#22c55e` green |
+| 6 | Tool Calls / Results | `TOOL_CALL` + `TOOL_RESULT` | `#f97316` orange |
+| Ghost | Remaining capacity | — (ghost arc, not a role) | `#444444` dim |
+
+> **Note (ARCH-03)**: Working Memory is injected as an ordinary `SYSTEM` message and is not yet separately tagged. Separating band 0 from band 1 requires setting `metadata["is_working_memory"] = True` in `_build_shared_context()`.
+
+### Requirements Baseline
+
+Baseline requirements from the original design:
+
+| Code | Requirement | Status |
+|------|-------------|--------|
+| REQ-01 | Display a colour-band donut showing how much of the context window is consumed | ✅ Implemented |
+| REQ-02 | Distinguish token consumption by category (WM, Attachments, User, System, Thinking, Agent, Tools) | ✅ Implemented |
+| REQ-03 | Each arc is proportional to its share of `max_tokens` | ✅ Implemented |
+| REQ-04 | ~~Right of text input, above Submit~~ → **Superseded**: hosted in StatusTab (PD-12) | Relocated |
+| REQ-05 | Redraw when user submits a prompt | Deferred (PD-14 trigger) |
+| REQ-06 | Redraw when context element enabled/disabled | Deferred (PD-14 trigger) |
+| REQ-07 | Redraw after agent streaming finishes (`DONE` chunk) | Deferred |
+| REQ-08 | Percentages use actual model context window, not a constant | ✅ Implemented (PRE-02) |
+| REQ-09 | Band colours represent data type only; stable across risk levels | ✅ Implemented |
+| REQ-10 | Capacity risk shown via border, not by re-colouring bands | ✅ Implemented |
+| REQ-11 | Colour-blind-safe redundancy (text, border weight, tooltip) | ✅ Implemented |
+
+### Token Counting Strategy
+
+| Code | Strategy | Accuracy | Selected |
+|------|----------|----------|---------|
+| TOK-01 | `len(content) // 4` | ±30–50% | — |
+| TOK-02 | Model-family char/token ratios (Llama ≈ 3.5, Mistral ≈ 3.8, default ≈ 4.0) | ±15–25% | **Current default** |
+| TOK-03 | Ollama `/api/tokenize` endpoint | Exact | Follow-on (no extra dep) |
+| TOK-04 | `tiktoken` | Exact for OpenAI models only | Rejected (wrong for Ollama) |
+
+Upgrade path: TOK-02 → TOK-03 via an `ITokenizer` interface. See `docs/integration/04_IMPROVEMENT_SUGGESTIONS.md §1.3`.
+
+### Enrichment Backlog (Unimplemented)
+
+| Code | Description |
+|------|-------------|
+| ENH-02 | Remaining-capacity ghost band always visible in arc |
+| ENH-03 | Overflow hatching extends beyond 100 % boundary |
+| ENH-05 | Token label `N / max_tokens tokens` alongside the donut |
+| ENH-06 | Hover tooltips on arc bands: `Role · ~N tokens · X% · M messages` |
+| ENH-07 | Pending-input preview arc (live keystroke estimate; debounced ~400 ms) |
+| ENH-08 | Trim-warning badge at ≥ 90 % |
+| ENH-09 | Click-to-navigate: clicking a band scrolls Context Panel to first matching message |
+| ENH-10 | Post-completion token calibration from `prompt_eval_count` response field |
+
+### Open Questions
+
+| Code | Question |
+|------|----------|
+| Q-01 | Should disabled messages (REQ-06) trigger a meter redraw even though they contribute zero tokens? |
+| Q-03 | Is ENH-07 (pending-input preview) desirable, or does per-keystroke computation introduce lag? Should recompute be debounced at ~400 ms? |
+| Q-08 | Should `_max_tokens` cache be explicitly invalidated on model change, or should the meter always re-query on each redraw? |
+| Q-09 | Should an `on_model_change` hook in `ModelSelector` trigger a meter redraw so the denominator updates immediately? |
 
 ---
 
@@ -1629,7 +1698,7 @@ See [UF-12: File Explorer Context Popup Rendering](02_USER_FLOWS.md#uf-12-file-e
 
 ## PD-12: StatusTab
 
-**Class**: `StatusTab` (`src/agentx/gui/status_tab.py`) — *to be created*
+**Class**: `StatusTab` (`src/agentx/gui/status_tab.py`) — _to be created_
 **Position**: First tab of `SidePanel.system_notebook` (before Session / Files / Settings)
 **Purpose**: Real-time visibility into the current prompt-reply cycle — active phase,
 elapsed time per step, and context window utilisation with a colour-key legend.
@@ -1766,7 +1835,7 @@ PhaseStepperWidget (tk.Frame, pack fill=BOTH, expand=True)
 |----------|-------|-------|
 | `classify` | 🤔 | Classify |
 | `think` | 💭 | Think |
-| `tool` | 🔧 | Tool: `<name>` *(name injected at runtime)* |
+| `tool` | 🔧 | Tool: `<name>` _(name injected at runtime)_ |
 | `respond` | ✍️ | Respond |
 
 > Tool step label is dynamic: once a tool call begins the step label updates to
@@ -2018,14 +2087,140 @@ The following methods are added to `IGUIManager` (and implemented in `GUIManager
 
 | Affordance | Test file | Test class/name |
 |-----------|-----------|-----------------|
-| PD-12-AF-001 | `test_status_tab.py` | `TestStatusTabOrder` — *📝 spec only* |
-| PD-12-AF-002 | `test_status_tab.py` | `TestStatusTabAutoSwitch` — *📝 spec only* |
-| PD-12-AF-003 | `test_status_tab.py` | `TestInterruptButtonState` — *📝 spec only* |
-| PD-12-AF-004 | `test_status_tab.py` | `TestInterruptButtonCallback` — *📝 spec only* |
-| PD-12-AF-005 | `test_status_tab.py` | `TestPhaseStepperReset` — *📝 spec only* |
-| PD-12-AF-006 | `test_status_tab.py` | `TestPhaseRowRunning` — *📝 spec only* |
-| PD-12-AF-007 | `test_status_tab.py` | `TestPhaseRowDone` — *📝 spec only* |
-| PD-12-AF-008 | `test_status_tab.py` | `TestPhaseRowFailed` — *📝 spec only* |
-| PD-12-AF-009 | `test_status_tab.py` | `TestToolStepLabel` — *📝 spec only* |
-| PD-12-AF-010 | `test_status_tab.py` | `TestContextKeyLegend` — *📝 spec only* |
-| PD-12-AF-011 | `test_status_tab.py` | `TestContextMeterRelocation` — *📝 spec only* |
+| PD-12-AF-001 | `test_status_tab.py` | `TestStatusTabOrder` — _📝 spec only_ |
+| PD-12-AF-002 | `test_status_tab.py` | `TestStatusTabAutoSwitch` — _📝 spec only_ |
+| PD-12-AF-003 | `test_status_tab.py` | `TestInterruptButtonState` — _📝 spec only_ |
+| PD-12-AF-004 | `test_status_tab.py` | `TestInterruptButtonCallback` — _📝 spec only_ |
+| PD-12-AF-005 | `test_status_tab.py` | `TestPhaseStepperReset` — _📝 spec only_ |
+| PD-12-AF-006 | `test_status_tab.py` | `TestPhaseRowRunning` — _📝 spec only_ |
+| PD-12-AF-007 | `test_status_tab.py` | `TestPhaseRowDone` — _📝 spec only_ |
+| PD-12-AF-008 | `test_status_tab.py` | `TestPhaseRowFailed` — _📝 spec only_ |
+| PD-12-AF-009 | `test_status_tab.py` | `TestToolStepLabel` — _📝 spec only_ |
+| PD-12-AF-010 | `test_status_tab.py` | `TestContextKeyLegend` — _📝 spec only_ |
+| PD-12-AF-011 | `test_status_tab.py` | `TestContextMeterRelocation` — _📝 spec only_ |
+
+---
+
+## PD-14: ContextPanelWidget
+
+**Class**: `ContextPanelWidget` (planned: `src/agentx/gui/context_panel_widget.py`)
+**Position**: Permanent tab ("Context") in the SidePanel display notebook — always visible, never modal.
+**Purpose**: Management surface for all LLM context elements. The `ContextMeterWidget` (PD-10) shows _what_; the Context Panel shows _why_ and lets the user act: enable/disable messages, synthesise, clone/edit inline.
+**Status**: 📝 Spec only — not yet implemented.
+
+### Layout
+
+```
+SidePanel — "Context" tab
+│
+├── Selection Action Bar (hidden when selection = 0)
+│     ┌────────────────────────────────────────────────────┐
+│     │  N selected   [Disable]  [Synthesize]  [Clear]     │
+│     └────────────────────────────────────────────────────┘
+│
+└── Scrollable row list  (tk.Text + embedded tk.Frame rows)
+      ┌─[ ]──[▶]────────────────────────────────────[●]─┐
+      │  sel  exp   Role icon · Name · ~N tok · X%       │
+      │             Content preview (≤ 80 chars)         │
+      │  ┌───────────────────────────────────────────┐   │  ← expanded only
+      │  │  editable tk.Text widget                  │   │
+      │  └───────────────────────────────────────────┘   │
+      │  [Save]  [Discard]                                │  ← expanded only
+      └───────────────────────────────────────────────────┘
+```
+
+- `[ ]` select checkbox → shows/hides Selection Action Bar
+- `[▶]`/`[▼]` expand toggle → at most one row expanded at a time
+- `[●]`/`[○]` enable/disable toggle → right-aligned
+
+### Row Visual States (priority order)
+
+| Priority | State | Visual treatment |
+|----------|-------|-----------------|
+| 1 | Streaming | Animated pulse border; all controls disabled |
+| 2 | Expanded (edit active) | Elevated background; editor + [Save]/[Discard] shown; submit blocked globally |
+| 3 | Selected | Selection-tint overlay; checkbox checked |
+| 4a | Synthesis source | Greyed + italic + annotation `→ synthesised as #<id>`; toggle locked |
+| 4b | Clone source | Greyed + italic + annotation `→ cloned as #<id>`; toggle locked |
+| 5 | Disabled (user-toggled) | Greyed; token count struck through; toggle shows `○` |
+| — | Enabled (normal) | Default appearance; toggle shows `●` |
+
+### Live-Update Behaviour
+
+| Phase | Panel behaviour |
+|-------|----------------|
+| Idle | Full affordances active |
+| Streaming | List frozen at last-computed state; edits blocked; action bar disabled |
+| `DONE` chunk received | Atomic rebuild from updated `Context.messages`; meter recomputed simultaneously |
+| Inline edit active | Edit row open; all other rows read-only; submit button blocked (ARCH-14) |
+
+### Synthesise Flow (ENH-14)
+
+```
+User selects N rows → [Synthesize]
+  → "Synthesising N items…" spinner in action bar
+  → Background LLM call: compression prompt + selected message contents
+  → On completion:
+      a. New SYNTHESIS-role Message (enabled=True, synthesis_of=[id1,…])
+      b. Source rows: enabled=False; toggle locked; annotation added
+      c. Synthesis row inserted at position of last source in list
+      d. Selection cleared; action bar hidden; meter recomputed
+```
+
+Open (Q-11): whether step (b) is gated by a preview/approval step before originals are disabled.
+
+### Clone / Edit Flow (ENH-15)
+
+```
+User clicks [▶] on any row → row expands; submit disabled
+  [Save]:    new Message (same role, edited content, cloned_from=<original_id>)
+             original: enabled=False; toggle locked; annotation added
+             clone row appears below original; submit re-enabled; meter recomputed
+  [Discard]: editor content abandoned; row collapses; no state change; submit re-enabled
+```
+
+### System-Injected Rows
+
+Working Memory and system prompt files are not `Context.messages` objects — they are generated at send-time. Both appear as synthetic **read-only** rows with a `⚙` icon:
+
+| Synthetic row | Disable mechanism | Edit mechanism |
+|---------------|-------------------|----------------|
+| ⚙ Working Memory | `session_config["suppress_working_memory"] = True` | Link to WM management UI |
+| ⚙ `<prompt_file>.md` | `session_config["suppressed_system_prompts"].add(filename)` | Creates a `SYSTEM`-role Message override in `Context.messages`; replaces synthetic row |
+
+Requires ARCH-03 (tagging WM SYSTEM message with `metadata["is_working_memory"]`).
+
+### Architecture Notes
+
+| Code | Item |
+|------|------|
+| ARCH-11 | `ContextPanelWidget` uses `tk.Text` as a scrollable container; per-row `tk.Frame` embedded via `window_create`. |
+| ARCH-12 | Six-dimension row state bitmask; priority rules as in row-state table above. |
+| ARCH-13 | Panel list frozen during streaming; atomic rebuild on `DONE` chunk. |
+| ARCH-14 | `edit_active` flag on widget → disables submit button + applies amber border to input area. |
+
+### Affordance Inventory
+
+| Affordance | ID | Source | Status |
+|-----------|-----|---------|--------|
+| Row enable/disable toggle | PD-14-AF-001 | `ContextPanelWidget._on_toggle()` | 📝 |
+| Row expand/collapse | PD-14-AF-002 | `ContextPanelWidget._on_expand()` | 📝 |
+| Inline edit Save creates clone | PD-14-AF-003 | `ContextPanelWidget._on_save()` | 📝 |
+| Inline edit Discard reverts row | PD-14-AF-004 | `ContextPanelWidget._on_discard()` | 📝 |
+| Row select checkbox shows action bar | PD-14-AF-005 | `ContextPanelWidget._on_select()` | 📝 |
+| [Disable] disables all selected rows | PD-14-AF-006 | `ContextPanelWidget._on_bulk_disable()` | 📝 |
+| [Synthesize] runs synthesis LLM call | PD-14-AF-007 | `ContextPanelWidget._on_synthesize()` | 📝 |
+| [Clear] deselects all rows | PD-14-AF-008 | `ContextPanelWidget._on_clear_selection()` | 📝 |
+| List frozen during streaming | PD-14-AF-009 | `ContextPanelWidget.freeze()` | 📝 |
+| Atomic rebuild on DONE | PD-14-AF-010 | `ContextPanelWidget.rebuild()` | 📝 |
+| Click-to-navigate (ENH-09): band click scrolls panel | PD-14-AF-011 | `ContextPanelWidget.scroll_to_role()` | 📝 |
+| WM row disable sets session flag | PD-14-AF-012 | `ContextPanelWidget._on_toggle_wm()` | 📝 |
+| System-prompt row disable sets session flag | PD-14-AF-013 | `ContextPanelWidget._on_toggle_sysprompt()` | 📝 |
+
+### Open Questions
+
+| Code | Question |
+|------|----------|
+| Q-11 | Should synthesis (ENH-14) require a preview/approval step before originals are disabled? |
+| Q-12 | Where does a synthesised message appear in the list: (a) replace last source position, (b) bottom of selection range, or (c) dedicated Synthesis section? |
+| Q-13 | Should the synthesis compression instruction be a fixed internal prompt or user-editable per invocation? |

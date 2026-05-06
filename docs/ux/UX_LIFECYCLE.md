@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-**Version**: 2026-04-29  
+_Last updated: 2026-05-06 (v0.22.20.post3)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -431,7 +431,7 @@ AgentX runs on Ubuntu with a GNOME/Mutter Wayland compositor (`XDG_SESSION_TYPE=
 Tkinter itself is an X11 application and is surfaced through **XWayland** — an X11
 compatibility layer embedded inside the Wayland session.
 
-XWayland exposes a single large *virtual framebuffer* whose pixel dimensions are the
+XWayland exposes a single large _virtual framebuffer_ whose pixel dimensions are the
 union of all physical monitors at their native (physical) resolutions, including any
 HiDPI scaling.  X11 event coordinates (`event.x_root`, `event.y_root`) are reported in
 this physical-pixel virtual space.  Under a multi-monitor or HiDPI setup the virtual
@@ -459,7 +459,7 @@ menu.post(x, y)
 
 `widget.winfo_rootx()` / `winfo_rooty()` query Tk's own geometry system, which tracks
 the widget's logical on-screen anchor.  `event.x` / `event.y` are cursor offsets
-*relative to the widget* — always non-negative and bounded by the widget's own
+_relative to the widget_ — always non-negative and bounded by the widget's own
 dimensions.  The sum is therefore always within the widget's footprint and, by
 extension, always within a visible monitor.
 
@@ -471,7 +471,7 @@ menu.post(event.x_root, event.y_root)
 #### Why `after_idle` is insufficient and `after(100)` is required
 
 The `<Button-3>` press event fires synchronously.  Creating the menu window inside
-the press handler causes the *subsequent* `<ButtonRelease-3>` to be delivered to the
+the press handler causes the _subsequent_ `<ButtonRelease-3>` to be delivered to the
 newly-visible menu window, where the Tk `Menu` class's built-in `<ButtonRelease>`
 binding (`tk::MenuInvoke`) immediately calls `unpost()` — dismissing the menu before
 the user can interact.
@@ -651,11 +651,11 @@ tests.
 
 ### High Priority (visible to users, behaviour is non-trivial)
 
-*(No outstanding high-priority gaps.)*
+_(No outstanding high-priority gaps.)_
 
 ### Medium Priority (settings / configuration)
 
-*All medium-priority items have been addressed.*
+_All medium-priority items have been addressed._
 
 ### Low Priority (modal dialogs, less frequent use)
 

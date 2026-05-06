@@ -1,6 +1,6 @@
 # AgentX — User Flows
 
-Version: 2026-04-19
+_Last updated: 2026-05-06 (v0.22.20.post3)_
 
 Each section contains a Mermaid sequence or flowchart diagram documenting how
 user actions map to system behaviour.
