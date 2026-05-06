@@ -45,7 +45,7 @@ These items were specified by the user and form the baseline acceptance criteria
 | **REQ-01** | Display a horizontal color-band meter showing how much of the context window is consumed. |
 | **REQ-02** | Distinguish token consumption by category: **Working Memory (WM)**, **Attachments**, **User Prompts**, **Canned / System Prompts**, **Thinking**, and **Agent Response**. |
 | **REQ-03** | Each band is proportional to its share of the current `max_tokens` limit for the active LLM. |
-| **REQ-04** | Place the widget inside the input area, **to the right of the text input field**, **above the Submit button**. |
+| **REQ-04** | ~~Place the widget inside the input area, **to the right of the text input field**, **above the Submit button**.~~ **Superseded by PD-12 StatusTab**: meter is now hosted in the Status tab of the system notebook (right pane). See `docs/ux/03_PANEL_DETAILS.md §PD-12`. |
 | **REQ-05** | Recompute and redraw when the user **submits a prompt**. |
 | **REQ-06** | Recompute and redraw when the user **enables or disables any context element** (message, attachment, WM fact, etc.). |
 | **REQ-07** | Recompute and redraw when **agent streaming finishes** (i.e. after the `DONE` chunk is received, not during streaming). |
@@ -118,22 +118,52 @@ Proposed enrichments to the baseline requirements. Each is independently discuss
 
 ## 4. Layout Sketch
 
-Current input area layout (from `input_panel.py`, `rely=0.80, relheight=0.20`):
+> ⚠️ **PD-12 relocation (spec committed v0.22.20.post2)**: `ContextMeterWidget` and the interrupt
+> (`user_break`) button are moving from the `InputPanel` right-column to the new **StatusTab**
+> (`PD-12`), hosted in the `SidePanel` system notebook. REQ-04's original placement is superseded.
+> The diagrams below are preserved as historical record. See `docs/ux/03_PANEL_DETAILS.md §PD-12`
+> for the current target layout.
+
+Previous input area layout (from `input_panel.py`, `rely=0.80, relheight=0.20`):
 
 ```txt
 ┌───────────────────────────────────────────────┬─────────┐
-│                                               │ METER   │  ← REQ-04: new widget here
+│                                               │ METER   │  ← REQ-04 (original) — MOVED to StatusTab
 │   Text input  (relwidth 0.90)                 ├─────────┤
-│                                               │  [^⏎]   │  ← Submit (rely 0, relheight 0.25)
+│                                               │  [^⏎]   │  ← Submit (stays; shrinks to slim strip)
 │                                               ├─────────┤
-│                                               │  [❌]   │  ← Interrupt (rely 0.26)
-│                                               │         │    (meter remains above submit)
+│                                               │  [❌]   │  ← Interrupt — MOVED to StatusTab
+│                                               │         │
 └───────────────────────────────────────────────┴─────────┘
 ```
 
-The meter occupies the space to the right of the text area (`relx=0.92`) in the upper portion of the button column, above the Submit button.
+Post-PD-12 input area layout:
 
-> **Open:** The button column is currently only `relwidth=0.07`. Widening it slightly (to ~0.10) would give the meter enough horizontal space to be readable. The text area would shrink from 0.90 to ~0.87. To be confirmed.
+```txt
+┌──────────────────────────────────────────────────────┬────┐
+│                                                      │[^⏎]│  ← Submit (slim strip relwidth≈0.04)
+│   Text area  (relwidth ≈ 0.96)                       │    │
+│                                                      │    │
+└──────────────────────────────────────────────────────┴────┘
+```
+
+Meter and interrupt button now live in the **Status tab** of the system notebook (right pane,
+first tab). See `docs/ux/03_PANEL_DETAILS.md §PD-12` for the full StatusTab layout
+└───────────────────────────────────────────────┴─────────┘
+```
+
+Post-PD-12 input area layout:
+
+```txt
+┌──────────────────────────────────────────────────────┬────┐
+│                                                      │[^⏎]│  ← Submit (slim strip relwidth≈0.04)
+│   Text area  (relwidth ≈ 0.96)                       │    │
+│                                                      │    │
+└────────────~~Which layout variant is preferred — Option A, B, C, or D?~~ **Closed — superseded by PD-12 StatusTab.** Meter and interrupt button move to StatusTab; InputPanel right-column is freed for submit-only slim strip. Section 7 diagrams are preserved as historical record
+```
+
+Meter and interrupt button now live in the **Status tab** of the system notebook (right pane,
+first tab). See `docs/ux/03_PANEL_DETAILS.md §PD-12` for the full StatusTab layout.
 
 ---
 
@@ -144,7 +174,7 @@ The meter occupies the space to the right of the text area (`relx=0.92`) in the 
 | **Q-01** | Should disabled messages (REQ-06) trigger a redraw even if their token weight is not shown in the main meter? (ENH-04 removed; applies to redraw trigger only.) |
 | ~~**Q-02**~~ | **Closed — include BAND-07 (Tool Calls/Results).** Tool traffic is part of interactive context consumption and should remain visible in the meter and Context Panel. |
 | **Q-03** | Is ENH-07 (pending-input preview) desirable, or does per-keystroke computation introduce noticeable lag on large inputs? If included, should recompute be debounced (e.g., 400 ms after last keystroke) rather than per-character? |
-| **Q-04** | Which layout variant is preferred — Option A (compact horizontal meter in button column), Option B (horizontal strip at bottom of input area), Option C (widened button column), or Option D (separate strip between attachment bar and input)? See Section 7. |
+| **Q-04** | ~~Which layout variant is preferred — Option A, B, C, or D?~~ **Closed — superseded by PD-12 StatusTab.** Meter and interrupt button move to StatusTab; InputPanel right-column is freed for submit-only slim strip. Section 7 diagrams are preserved as historical record. |
 | ~~**Q-05**~~ | **Closed — ENH-09 is in scope.** Click-to-navigate is part of the interactive affordance set and should be implemented with the meter/Context Panel flow. |
 | ~~**Q-06**~~ | **Closed — use TOK-02 as the default counting strategy.** Keep tokenizer-backed counting as a follow-on mode. |
 | ~~**Q-07**~~ | **Closed — use Ollama `/api/show` context length for denominator.** `parameter_size` is not acceptable for context-window percentages. |
@@ -155,51 +185,63 @@ The meter occupies the space to the right of the text area (`relx=0.92`) in the 
 | **Q-12** | Where does a synthesized message appear positionally in the Context Panel list? Options: (a) replace the last selected source position; (b) bottom of the selection range; (c) a dedicated "Synthesis" header section. |
 | **Q-13** | For ENH-14, should the compression instruction be a fixed internal system prompt, or should the selection action bar expose a freeform instruction field so the user can direct what to extract or preserve? |
 | ~~**Q-14**~~ | **Closed — warning threshold is 80%.** Border warning state begins at `>= 80%` and remains active until critical state (`>= 100%`). |
+> ⚠️ **Historical record only.** These options were designed for hosting the meter inside
+> `InputPanel`. The decision was superseded by **PD-12 StatusTab** (spec: `03_PANEL_DETAILS.md §PD-12`,
+> committed v0.22.20.post2). The meter (`ContextMeterWidget`) and interrupt button are now hosted in
+> `StatusTab`, leaving `InputPanel` with only a slim submit strip. Q-04 is closed.
 
----
+Four layout options are identified. Diagrams are shown at the input-area (`rely=0.80, relheight=0.20`) level only; the rest of the window is unchanged.
 
-## 6. Out of Scope (for this feature)
+Previous button geometry within `user_input` frame (relative to frame):
 
-- Changing how context is stored or trimmed
-- Adding a new LLM tokenizer (see Section 9 for the token-counting approach decision)
+```
+user_submit:  relx=0.92, rely=0.00, relwidth=0.07, relheight=0.25  ← shrinks to relx=0.96, relwidth=0.04
+user_break:   relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25  ← REMOVED (moved to StatusTab)
+ContextMeter: relx=0.92, rely=0.00, relwidth=0.07, relheight=0.24  ← REMOVED (moved to StatusTab)g approach decision)
 - Replacing the existing session persistence model or introducing cross-session migration tooling beyond the documented `Message` field additions
 - Any end-to-end test creation (requires explicit user direction per project conventions)
 - Semantic embedding for content relevance scoring
 
----
-
-## 7. GUI Layout Variants
-
-Four layout options are identified. Diagrams are shown at the input-area (`rely=0.80, relheight=0.20`) level only; the rest of the window is unchanged.
-
-Current button geometry within `user_input` frame (relative to frame):
-
-```
-user_submit:  relx=0.92, rely=0.00, relwidth=0.07, relheight=0.25
-user_break:   relx=0.92, rely=0.26, relwidth=0.07, relheight=0.25
-```
-
----
-
-### Layout Option A — Compact horizontal meter in existing button column  *(matches REQ-04 as stated)*
+---original REQ-04 match — superseded)*
 
 The meter is a compact horizontal bar inside a `tk.Canvas` placed above the Submit button in the button column (`rely≈0.00` to `0.24`).
 
 ```
-Window (full width)
+Window (full width)  [HISTORICAL — meter and interrupt now in StatusTab]
 ┌──────────────────────────────────────────────────────────────┐
 │  Attachment bar                                          0.77 │
 ├──────────────────────────────────────────────────────────────┤
 │  Input frame (rely=0.80, relheight=0.20)                     │
 │  ┌──────────────────────────────────────────┬───────────────┐│
-│  │                                          │ WM|SYS|USR   ││  ← Horizontal meter (REQ-01)
-│  │  Text area   relwidth=0.90               │ ATT|THK|AGT  ││  ← BAND-01..07 + remaining
+│  │                                          │ WM|SYS|USR   ││  ← Meter (moved to StatusTab)
+│  │  Text area   relwidth=0.90               │ ATT|THK|AGT  ││
 │  │                                          │ TOL|FREE      ││
 │  │                                          ├───────────────┤│
 │  │                                          │  [^⏎]  0.26  ││
-│  │                                          │  [❌]   0.52  ││
-│  │                                          │               ││
-│  └──────────────────────────────────────────┴───────────────┘│
+│  │                                          │  [❌]   0.52  ││  ← Interrupt (moved to StatusTab)24  ← REMOVED (moved to StatusTab)
+```
+
+---
+
+### Layout Option A — Compact horizontal meter in existing button column  *(original REQ-04 match — superseded)*
+
+The meter is a compact horizontal bar inside a `tk.Canvas` placed above the Submit button in the button column (`rely≈0.00` to `0.24`).
+
+```
+Window (full width)  [HISTORICAL — meter and interrupt now in StatusTab]
+### Layout Option B — Thin horizontal strip at bottom of input frame  *(historical)*
+
+A single-row canvas spanning the full width of the input frame, placed below the text area. The text area shrinks slightly to accommodate it.
+
+```
+Input frame (rely=0.80, relheight=0.20)  [HISTORICAL — meter moved to StatusTab]
+┌────────────────────────────────────────────────┬──────────┐
+│  Text area  relwidth=0.90  relheight=0.88       │  [^⏎]  │
+│                                                 │  [❌]  │  ← Interrupt (moved to StatusTab)
+│                                                 │        │
+│                                                 │        │
+├───┬──────┬──────┬───────┬──────┬───────┬────┬──┴──────┤
+│WM │ SYS  │ USR  │  ATT  │ THK  │  AGT  │TOL │  FREE   │  ← rely=0.88, relheight=0.12
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -208,20 +250,20 @@ Window (full width)
 
 ---
 
-### Layout Option B — Thin horizontal strip at bottom of input frame
+### Layout Option B — Thin horizontal strip at bottom of input frame  *(historical)*
 
-A single-row canvas spanning the full width of the input frame, placed below the text area. The text area shrinks slightly to accommodate it.
+A single-row canvas spanning the full width of the input frame, p  *(historical)*
+
+The button column is widened from `relwidth=0.07` to `relwidth=0.13`. The text area shrinks from `relwidth=0.90` to `relwidth=0.84`. The meter renders as a horizontal bar within the widened column.
 
 ```
-Input frame (rely=0.80, relheight=0.20)
-┌────────────────────────────────────────────────┬──────────┐
-│  Text area  relwidth=0.90  relheight=0.88       │  [^⏎]  │
-│                                                 │  [❌]  │
-│                                                 │        │
-│                                                 │        │
-├───┬──────┬──────┬───────┬──────┬───────┬────┬──┴──────┤
-│WM │ SYS  │ USR  │  ATT  │ THK  │  AGT  │TOL │  FREE   │  ← rely=0.88, relheight=0.12
-│   │      │      │       │      │       │    │ (remain) │
+Input frame  [HISTORICAL — meter and interrupt moved to StatusTab]
+┌──────────────────────────────────────┬──────────────────┐
+│  Text area  relwidth=0.84            │ ██▒░·══≡  rem.   │  ← Meter (moved to StatusTab)
+│                                      │  3 421 / 32 768  │  ← ENH-05 token label
+│                                      ├──────────────────┤
+│                                      │  [^⏎]   rely=0.26│  ← Submit
+│                                      │  [❌]   rely=0.52│  ← Interrupt (moved to StatusTab)
 └───┴──────┴──────┴───────┴──────┴───────┴────┴──────────┘
       teal  indigo  blue   amber  purple  grn  orange  dim
 ```
@@ -230,19 +272,20 @@ Input frame (rely=0.80, relheight=0.20)
 **Cons**: Moves meter below the submit button (no longer "above" it). The text area loses ~12% of its height within the frame.
 
 ---
+  *(historical)*
 
-### Layout Option C — Widened button column with horizontal bands
-
-The button column is widened from `relwidth=0.07` to `relwidth=0.13`. The text area shrinks from `relwidth=0.90` to `relwidth=0.84`. The meter renders as a horizontal bar within the widened column.
+A dedicated, independent frame is inserted between the attachment bar (`rely=0.77`) and the input frame. The existing window geometry is re-sliced.
 
 ```
-Input frame
-┌──────────────────────────────────────┬──────────────────┐
-│  Text area  relwidth=0.84            │ ██▒░·══≡  rem.   │  ← Horizontal meter (above submit)
-│                                      │  3 421 / 32 768  │  ← ENH-05 token label
-│                                      ├──────────────────┤
-│                                      │  [^⏎]   rely=0.26│  ← Submit
-│                                      │  [❌]   rely=0.52│  ← Interrupt
+[HISTORICAL — meter moved to StatusTab]
+│  Attachment bar           rely=0.77, relheight=0.03       │
+├───┬──────┬──────┬───────┬──────┬───────┬────┬────────────┤
+│WM │ SYS  │ USR  │  ATT  │ THK  │  AGT  │TOL │  REMAIN    │ ← rely=0.80, relheight=0.02
+├──────────────────────────────────────────────────────────┤
+│  Input frame                      rely=0.82, relheight=0.18│
+│  ┌────────────────────────────────────┬─────────────┐     │
+│  │ Text area                          │ [^⏎]  [❌] │     │  ← Interrupt (moved to StatusTab)  ← Submit
+│                                      │  [❌]   rely=0.52│  ← Interrupt (moved to StatusTab)
 └──────────────────────────────────────┴──────────────────┘
 ```
 
@@ -251,18 +294,19 @@ Input frame
 
 ---
 
-### Layout Option D — Separate strip between attachment bar and input area
+### Layout Option D — Separate strip between attachment bar and input area  *(historical)*
 
 A dedicated, independent frame is inserted between the attachment bar (`rely=0.77`) and the input frame. The existing window geometry is re-sliced.
 
 ```
+[HISTORICAL — meter moved to StatusTab]
 │  Attachment bar           rely=0.77, relheight=0.03       │
 ├───┬──────┬──────┬───────┬──────┬───────┬────┬────────────┤
 │WM │ SYS  │ USR  │  ATT  │ THK  │  AGT  │TOL │  REMAIN    │ ← rely=0.80, relheight=0.02
 ├──────────────────────────────────────────────────────────┤
 │  Input frame                      rely=0.82, relheight=0.18│
 │  ┌────────────────────────────────────┬─────────────┐     │
-│  │ Text area                          │ [^⏎]  [❌] │     │
+│  │ Text area                          │ [^⏎]  [❌] │     │  ← Interrupt (moved to StatusTab)
 │  └────────────────────────────────────┴─────────────┘     │
 ```
 
