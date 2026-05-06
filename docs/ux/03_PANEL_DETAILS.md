@@ -1384,7 +1384,66 @@ THEN the previous widget is destroyed and only the new widget remains.
 
 ---
 
-## PD-10: ToolPanel
+## PD-10: ContextMeterWidget
+
+**Class**: `ContextMeterWidget` (`src/agentx/gui/context_meter_widget.py`)
+**Position**: Initially hosted in `InputPanel` right-column; relocating to `StatusTab` (PD-12) during PD-12 implementation.
+**Purpose**: Donut chart showing context-window utilisation. Seven coloured arc bands represent token categories; a ghost arc shows remaining capacity. A risk border changes colour as utilisation approaches the limit.
+
+### Layout
+
+```
+┌─── Canvas (square, configurable size) ─────────────────────┐
+│                                                            │
+│         ┌───────────────┐                                  │
+│       ╱   [arc bands]    ╲                                 │
+│      │       NN%          │   ← hole label (percentage)   │
+│       ╲                  ╱                                 │
+│         └───────────────┘                                  │
+│                                                            │
+│  [risk border: normal grey ▸ warning orange ▸ red]        │
+└────────────────────────────────────────────────────────────┘
+```
+
+### Band Definitions (`_BANDS` constant)
+
+| Index | Label | Hex colour |
+|-------|-------|------------|
+| 0 | Working Memory | `#0d9488` |
+| 1 | System Prompts | `#6366f1` |
+| 2 | User Prompts | `#3b82f6` |
+| 3 | Attachments | `#f59e0b` |
+| 4 | Thinking | `#a855f7` |
+| 5 | Agent Response | `#22c55e` |
+| 6 | Tool Calls / Results | `#f97316` |
+| Ghost | Remaining capacity | `#444444` (`_GHOST_COLOR`) |
+
+### Affordance Inventory
+
+| Affordance | ID | Source | Status |
+|-----------|----|---------|---------|
+| Meter creates canvas on first `create()` call | PD-10-AF-001 | `ContextMeterWidget.create()` | ✅ |
+| Arc slices sized proportionally to token counts | PD-10-AF-002 | `ContextMeterWidget._draw_arcs()` | ✅ |
+| Ghost arc shows remaining capacity | PD-10-AF-003 | `ContextMeterWidget._draw_arcs()` | ✅ |
+| Border turns warning-orange at 80 % utilisation | PD-10-AF-004 | `ContextMeterWidget._risk_state()` | ✅ |
+| Border turns critical-red at 100 % utilisation | PD-10-AF-005 | `ContextMeterWidget._risk_state()` | ✅ |
+| `update()` is thread-safe via `after()` | PD-10-AF-006 | `ContextMeterWidget.update()` | ✅ |
+| `max_tokens=0` does not crash | PD-10-AF-007 | `ContextMeterWidget._draw_arcs()` | ✅ |
+
+### Test Mapping
+
+| Affordance | Test file | Test class |
+|-----------|-----------|------------|
+| PD-10-AF-001..007 | `tests/test_context_meter_widget.py` | Module-level pytest tests |
+
+### Related Specs
+
+- **PD-12-AF-011** — ContextMeterWidget is re-hosted in `StatusTab`; all above affordances unchanged.
+- **PD-12: ContextKeyWidget** — companion colour-key legend reading from the same `_BANDS` constant.
+
+---
+
+## PD-13: ToolPanel
 
 **Class**: `ToolPanel` (`src/agentx/gui/tool_panel.py`)  
 **Position**: Inside SettingsTab  

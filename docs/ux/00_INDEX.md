@@ -3,8 +3,10 @@
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-05 (v0.22.19 UAT-confirmed: startup/label screen-scrape fixes approved)  
+**Last updated**: 2026-05-07 (v0.22.20.post2 — PD-12 StatusTab spec; PD-10/PD-13 numbering conflict resolved)
 **Current version**: see `pyproject.toml`
+
+> **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
 
 ---
 
@@ -47,8 +49,9 @@
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 10 | 0 | 0 | 0 |
 | PD-12 StatusTab | 0 | 0 | 11 | 0 |
+| PD-13 ToolPanel | 0 | 0 | 2 | 0 |
 
-**Totals**: 71 ✅ · 6 ⚠️ · 11 📝 · 0 ❌
+**Totals**: 71 ✅ · 6 ⚠️ · 13 📝 · 0 ❌
 
 ---
 

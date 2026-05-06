@@ -161,6 +161,7 @@ Examples:
 | PD-10 | ContextMeterWidget | `src/agentx/gui/context_meter_widget.py` |
 | PD-11 | FileExplorer | `src/agentx/file_explorer.py` |
 | PD-12 | StatusTab | `src/agentx/gui/status_tab.py` |
+| PD-13 | ToolPanel | `src/agentx/gui/tool_panel.py` |
 
 When a new panel or top-level widget is added, assign the next available PD number,
 add a row to this table, and create a section in `03_PANEL_DETAILS.md`.
@@ -334,6 +335,15 @@ implements it and the test that validates it.  Status legend:
 | Tool step label updates with active tool name | PD-12-AF-009 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestToolStepLabel` | 📝 |
 | Colour-key legend rows match donut bands | PD-12-AF-010 | `ContextKeyWidget` | `test_status_tab.py` | `TestContextKeyLegend` | 📝 |
 | ContextMeterWidget hosted in StatusTab | PD-12-AF-011 | `StatusTab.create()` | `test_status_tab.py` | `TestContextMeterRelocation` | 📝 |
+
+### PD-13 — ToolPanel
+
+> ⚠️ **Note**: ToolPanel was previously numbered PD-10 in `03_PANEL_DETAILS.md` — renumbered to PD-13 to resolve conflict with ContextMeterWidget (PD-10 in `UX_LIFECYCLE.md`). ToolPanel has no affordance IDs yet.
+
+| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
+|---|---|---|---|---|---|
+| Checkbox per tool toggles enabled state | PD-13-AF-001 | `ToolPanel.on_tool_toggle()` | — | — | 📝 |
+| Expand/collapse panel header | PD-13-AF-002 | `ToolPanel` header toggle | — | — | 📝 |
 
 ---
 
