@@ -22,7 +22,7 @@ from agentix.models import get_model
 from agentix.tools import extract_cst_tools
 from agentix.tools.describe_tools import to_openai_tools
 from shared.models.context import Context
-from shared.models.message import Message
+from shared.models.message import Message, MessageRole
 from shared.models.response import ChunkType, ResponseChunk
 from shared.models.tools import ToolResponse
 
@@ -330,5 +330,15 @@ class ToolLoopRunner:
     # ── Utility ──────────────────────────────────────────────────────────────
 
     def _context_to_history(self, context: Context) -> list[Message]:
-        """Convert AgentX Context to Agentix history format."""
-        return list(context.get_enabled_messages())
+        """Convert AgentX Context to Agentix history format.
+
+        Internal task-execution records are excluded here so callers can safely
+        serialize the returned messages with ``to_llm_dict()``.
+        """
+        internal_roles = {
+            MessageRole.PLAN,
+            MessageRole.TASK_NODE,
+            MessageRole.SYNTHESIS,
+            MessageRole.ASSERTION,
+        }
+        return [msg for msg in context.get_enabled_messages() if msg.role not in internal_roles]

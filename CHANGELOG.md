@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.23.2] - 2026-05-06
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentix/bridge/tool_loop.py`: hardened history conversion for LLM calls by filtering internal task-execution roles (`PLAN`, `TASK_NODE`, `SYNTHESIS`, `ASSERTION`) in `_context_to_history()`.
+  - Prevents runtime failures when bridge callers serialize history messages with `to_llm_dict()`.
+  - Resolves errors of the form: "Message with role MessageRole.PLAN is an internal task-execution record and must not be serialised for the LLM API".
+
+### Test Changes
+
+#### Changed
+
+- Re-ran bridge and loop regression tests after internal-role history filtering.
+  - `tests/test_bridge_coverage.py`: pass
+  - `tests/test_agentic_loop.py`: pass
+
 ## [0.23.1] - 2026-05-06
 
 ### Code Changes
