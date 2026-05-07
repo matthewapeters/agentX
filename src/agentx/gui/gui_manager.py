@@ -538,7 +538,13 @@ class GUIManager(IGUIManager):
         """
         self._side_panel.reset_status_tab()
 
-    def set_status_phase(self, step_key: str, state: str, tool_name: Optional[str] = None) -> None:
+    def set_status_phase(
+        self,
+        step_key: str,
+        state: str,
+        tool_name: Optional[str] = None,
+        start_time: Optional[float] = None,
+    ) -> None:
         """Transition a phase row in the StatusTab.
 
         [PD-12-AF-006] [PD-12-AF-007] [PD-12-AF-008] [PD-12-AF-009]
@@ -547,8 +553,10 @@ class GUIManager(IGUIManager):
             step_key (str): Phase key — classify, think, tool, respond.
             state (str): RUNNING, DONE, or FAILED.
             tool_name (Optional[str]): Active tool name for the tool step.
+            start_time (Optional[float]): Background-thread timestamp anchor;
+                see ``StatusTab.set_phase`` for details.
         """
-        self._side_panel.set_status_phase(step_key, state, tool_name=tool_name)
+        self._side_panel.set_status_phase(step_key, state, tool_name=tool_name, start_time=start_time)
 
     # ── Placeholder callbacks (replaced at runtime via set_*_callback) ────────
 

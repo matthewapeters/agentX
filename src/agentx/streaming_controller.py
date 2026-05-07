@@ -300,13 +300,42 @@ class StreamingController:
             "tool": "PENDING",
             "respond": "PENDING",
         }
+        # Background-thread monotonic timestamps for each phase start.
+        # Passed through to PhaseRow so that elapsed is accurate even when
+        # RUNNING and DONE are queued back-to-back on the Tk main thread.
+        phase_start_time: dict[str, Optional[float]] = {
+            "classify": None,
+            "think": None,
+            "tool": None,
+            "respond": None,
+        }
 
-        def _set_phase(step_key: str, state: str, tool_name: Optional[str] = None) -> None:
-            """Schedule a StatusTab phase transition on the Tk main thread."""
+        def _set_phase(
+            step_key: str,
+            state: str,
+            tool_name: Optional[str] = None,
+            bg_start: Optional[float] = None,
+        ) -> None:
+            """Schedule a StatusTab phase transition on the Tk main thread.
+
+            ``bg_start`` is a background-thread ``time.monotonic()`` value that
+            anchors the elapsed timer.  When the state is RUNNING and
+            ``bg_start`` is provided, it is stored in ``phase_start_time`` so
+            the subsequent DONE/FAILED call can retrieve it.  When the state is
+            DONE/FAILED and ``bg_start`` is *not* given, the stored RUNNING
+            start time is forwarded instead.
+            """
             if step_key not in phase_state:
                 return
+            if state == "RUNNING" and bg_start is not None:
+                phase_start_time[step_key] = bg_start
+            start = phase_start_time.get(step_key) if state in ("DONE", "FAILED") else bg_start
             phase_state[step_key] = state
-            s._safe_root_after(lambda sk=step_key, st=state, tn=tool_name: s.gui.set_status_phase(sk, st, tool_name=tn))
+            s._safe_root_after(
+                lambda sk=step_key, st=state, tn=tool_name, st_=start: s.gui.set_status_phase(
+                    sk, st, tool_name=tn, start_time=st_
+                )
+            )
 
         def _finalize_running_phases(final_state: str) -> None:
             """Finalize any currently RUNNING phases to DONE/FAILED."""
@@ -356,7 +385,7 @@ class StreamingController:
 
             classification = None
             if config.get("agentix", {}).get("classify_prompts", True):
-                _set_phase("classify", "RUNNING")
+                _set_phase("classify", "RUNNING", bg_start=time.monotonic())
                 classification = s.agentix_adapter.classify_prompt_sync(prompt, shared_context, s.working_memory)
                 self._log_classification(classification, prompt)
                 _set_phase("classify", "DONE")
@@ -395,7 +424,7 @@ class StreamingController:
                     if phase_state["classify"] == "PENDING":
                         _set_phase("classify", "DONE")
                     if phase_state["think"] != "RUNNING":
-                        _set_phase("think", "RUNNING")
+                        _set_phase("think", "RUNNING", bg_start=time.monotonic())
                     thinking_parts.append(chunk.content)
                 elif chunk.type == ChunkType.CONTENT and chunk.content:
                     if phase_state["classify"] == "PENDING":
@@ -403,7 +432,7 @@ class StreamingController:
                     if phase_state["think"] == "RUNNING":
                         _set_phase("think", "DONE")
                     if phase_state["respond"] != "RUNNING":
-                        _set_phase("respond", "RUNNING")
+                        _set_phase("respond", "RUNNING", bg_start=time.monotonic())
                     content_parts.append(chunk.content)
 
                 # Plan tree chunk routing
@@ -481,7 +510,7 @@ class StreamingController:
                         _set_phase("classify", "DONE")
                     if phase_state["think"] == "RUNNING":
                         _set_phase("think", "DONE")
-                    _set_phase("tool", "RUNNING", tool_name=chunk.tool_name)
+                    _set_phase("tool", "RUNNING", tool_name=chunk.tool_name, bg_start=time.monotonic())
                     if chunk.task_id:
                         _tid = chunk.task_id
                         _tname = chunk.tool_name or ""

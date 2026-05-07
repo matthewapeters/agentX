@@ -295,7 +295,13 @@ class IGUIManager(Protocol):
         """
         ...
 
-    def set_status_phase(self, step_key: str, state: str, tool_name: Optional[str] = None) -> None:
+    def set_status_phase(
+        self,
+        step_key: str,
+        state: str,
+        tool_name: Optional[str] = None,
+        start_time: Optional[float] = None,
+    ) -> None:
         """Transition a phase row in the StatusTab.
 
         [PD-12-AF-006] [PD-12-AF-007] [PD-12-AF-008] [PD-12-AF-009]
@@ -304,6 +310,9 @@ class IGUIManager(Protocol):
             step_key (str): One of classify / think / tool / respond.
             state (str): RUNNING, DONE, or FAILED.
             tool_name (Optional[str]): Active tool name for the tool step.
+            start_time (Optional[float]): Background-thread ``time.monotonic()``
+                anchor so elapsed is accurate even when RUNNING and DONE are
+                queued back-to-back on the Tk thread.
         """
         ...
 

@@ -234,7 +234,13 @@ class SidePanel:
         """
         self._status_tab.reset()
 
-    def set_status_phase(self, step_key: str, state: str, tool_name: Optional[str] = None) -> None:
+    def set_status_phase(
+        self,
+        step_key: str,
+        state: str,
+        tool_name: Optional[str] = None,
+        start_time: Optional[float] = None,
+    ) -> None:
         """Transition a phase row in the StatusTab.
 
         [PD-12-AF-006] [PD-12-AF-007] [PD-12-AF-008] [PD-12-AF-009]
@@ -243,8 +249,10 @@ class SidePanel:
             step_key (str): Phase key — classify, think, tool, respond.
             state (str): RUNNING, DONE, or FAILED.
             tool_name (Optional[str]): Tool name for the tool step label.
+            start_time (Optional[float]): Background-thread timestamp anchor;
+                see ``StatusTab.set_phase`` for details.
         """
-        self._status_tab.set_phase(step_key, state, tool_name=tool_name)
+        self._status_tab.set_phase(step_key, state, tool_name=tool_name, start_time=start_time)
 
     def stop_status_tick(self) -> None:
         """Stop the phase elapsed timer tick loop."""

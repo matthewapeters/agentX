@@ -119,7 +119,12 @@ class PhaseRow:
         self._phase_label.config(text=self._base_label)
         self._elapsed_label.config(text=_ELAPSED_PLACEHOLDER)
 
-    def set_state(self, state: str, tool_name: Optional[str] = None) -> None:
+    def set_state(
+        self,
+        state: str,
+        tool_name: Optional[str] = None,
+        start_time: Optional[float] = None,
+    ) -> None:
         """Transition this row to a new state.
 
         [PD-12-AF-006] [PD-12-AF-007] [PD-12-AF-008] [PD-12-AF-009]
@@ -127,24 +132,33 @@ class PhaseRow:
         Args:
             state (str): Target state — one of RUNNING, DONE, FAILED.
             tool_name (Optional[str]): When state is RUNNING and step_key is
-                "tool", update the label to show the active tool name.
+                ``"tool"``, update the label to show the active tool name.
+            start_time (Optional[float]): ``time.monotonic()`` timestamp captured
+                on the background thread when the phase began.  Passed for
+                phases (e.g. ``respond``) whose RUNNING and DONE transitions are
+                queued back-to-back on the Tk thread, which would otherwise give
+                zero elapsed.  When provided for RUNNING the row stores it
+                instead of calling ``time.monotonic()`` again; when provided for
+                DONE/FAILED it is used as the phase start anchor.
         """
         self._state = state
         if state == "RUNNING":
-            self._start_time = time.monotonic()
+            self._start_time = start_time if start_time is not None else time.monotonic()
             self._final_elapsed = None
             self._icon_label.config(text=_ICON_RUNNING)
             if self.step_key == "tool" and tool_name:
                 self._phase_label.config(text=f"\U0001f527 Tool: {tool_name}")
         elif state == "DONE":
-            if self._start_time is not None:
-                self._final_elapsed = time.monotonic() - self._start_time
+            anchor = self._start_time if start_time is None else start_time
+            if anchor is not None:
+                self._final_elapsed = time.monotonic() - anchor
             self._icon_label.config(text=_ICON_DONE)
             if self._final_elapsed is not None:
                 self._elapsed_label.config(text=_format_elapsed(self._final_elapsed))
         elif state == "FAILED":
-            if self._start_time is not None:
-                self._final_elapsed = time.monotonic() - self._start_time
+            anchor = self._start_time if start_time is None else start_time
+            if anchor is not None:
+                self._final_elapsed = time.monotonic() - anchor
             self._icon_label.config(text=_ICON_FAILED)
             if self._final_elapsed is not None:
                 self._elapsed_label.config(text=_format_elapsed(self._final_elapsed))
@@ -325,7 +339,13 @@ class StatusTab:
         self._stop_tick()
         self._start_tick()
 
-    def set_phase(self, step_key: str, state: str, tool_name: Optional[str] = None) -> None:
+    def set_phase(
+        self,
+        step_key: str,
+        state: str,
+        tool_name: Optional[str] = None,
+        start_time: Optional[float] = None,
+    ) -> None:
         """Transition a phase row to a new state.
 
         [PD-12-AF-006] [PD-12-AF-007] [PD-12-AF-008] [PD-12-AF-009]
@@ -335,12 +355,15 @@ class StatusTab:
             state (str): Target state — RUNNING, DONE, or FAILED.
             tool_name (Optional[str]): Tool name injected into the tool-step
                 label when state is RUNNING and step_key is "tool".
+            start_time (Optional[float]): Background-thread ``time.monotonic()``
+                timestamp to anchor the elapsed timer accurately when RUNNING
+                and DONE are queued back-to-back.
         """
         row = self._phase_rows.get(step_key)
         if row is None:
             logger.warning("StatusTab.set_phase: unknown step_key %r", step_key)
             return
-        row.set_state(state, tool_name=tool_name)
+        row.set_state(state, tool_name=tool_name, start_time=start_time)
 
     def stop_tick(self) -> None:
         """Stop the elapsed timer tick loop (called when streaming ends)."""
