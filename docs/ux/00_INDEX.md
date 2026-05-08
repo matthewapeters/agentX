@@ -1,11 +1,11 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-08 (v0.23.0)_
+_Last updated: 2026-05-08 (v0.24.1)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-08 (v0.23.0 — PD-14 VimBridge affordances + PD-15 TerminalPane affordances; vibe coding design doc added)
+**Last updated**: 2026-05-08 (v0.24.1 — lifecycle reliability fixes for launch_vibe editor pane health checks and GUI-exit teardown)
 **Current version**: see `pyproject.toml`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
@@ -53,10 +53,10 @@ _Last updated: 2026-05-08 (v0.23.0)_
 | PD-11 FileExplorer | 10 | 0 | 0 | 0 |
 | PD-12 StatusTab | 0 | 0 | 11 | 0 |
 | PD-13 ToolPanel | 0 | 0 | 2 | 0 |
-| PD-14 VimBridge GUI | 0 | 0 | 9 | 0 |
-| PD-15 TerminalPane GUI | 0 | 0 | 7 | 0 |
+| PD-14 VimBridge GUI | 0 | 0 | 10 | 0 |
+| PD-15 TerminalPane GUI | 0 | 0 | 8 | 0 |
 
-**Totals**: 71 ✅ · 6 ⚠️ · 29 📝 · 0 ❌
+**Totals**: 71 ✅ · 6 ⚠️ · 31 📝 · 0 ❌
 
 ---
 

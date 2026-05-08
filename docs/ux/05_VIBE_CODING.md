@@ -1,6 +1,6 @@
 # AgentX — Vibe Coding: Neovim Integration
 
-_Last updated: 2026-05-08 (v0.23.0 — TerminalBridge design + execution security model)_
+_Last updated: 2026-05-08 (v0.25.0 — multi-session socket scoping for collision prevention)
 
 > **"Vibe coding"**: a mode of collaborative software development where the AI agent
 > and the human developer co-author code in the same editor at the same time, each
@@ -180,22 +180,30 @@ User navigation:
 
 ### `launch_vibe.sh` Behaviour
 
-```
-launch_vibe.sh [project_dir]
+```bash
+launch_vibe.sh [start] [project_dir]
+launch_vibe.sh stop
+launch_vibe.sh status
+launch_vibe.sh recover-editor [project_dir]
+launch_vibe.sh restart [project_dir]
 ```
 
 **Steps performed (in order):**
 
-1. Verify `tmux`, `nvim`, and `python` are on PATH; abort with clear message if any missing.
-2. Resolve `project_dir` (default: `$PWD`).
-3. Check if a tmux session named `agentx` already exists; if so, prompt user to reattach or recreate.
-4. Create the save-notification pipe:
+1. Parse lifecycle command (`start` default; `stop`, `status`, `recover-editor`, `restart`).
+2. Verify dependencies for command scope:
+    - `start`/`restart`: `tmux`, `nvim`, and `python`
+    - `stop`/`status`: `tmux`
+    - `recover-editor`: `tmux`, `nvim`
+3. Resolve `project_dir` (default: `$PWD`).
+4. For `start`, check if a tmux session named `agentx` already exists; if so, prompt user to reattach, recreate, or stop.
+5. Create the save-notification pipe:
 
    ```bash
    [ -p /tmp/agentx_saves.fifo ] || mkfifo /tmp/agentx_saves.fifo
    ```
 
-5. Write `.nvimrc.agentx` into `project_dir`:
+6. Write `.nvimrc.agentx` into `project_dir`:
 
    ```vim
    " AgentX vibe-coding autocommands — auto-generated, do not edit manually
@@ -205,44 +213,83 @@ launch_vibe.sh [project_dir]
    augroup END
    ```
 
-6. Create tmux session (detached):
+7. Create tmux session (detached):
 
    ```bash
    tmux new-session -d -s agentx -c "$project_dir"
    ```
 
-7. Launch neovim in pane 0.0:
+8. Launch neovim in pane 0.0:
 
    ```bash
    tmux send-keys -t agentx:0.0 \
      "nvim --listen /tmp/agentx.nvim.sock --cmd 'source .nvimrc.agentx'" Enter
    ```
 
-8. Launch AgentX GUI as a floating window (not a tmux pane):
+9. Launch AgentX runtime process in `window 2: agentx-log` with an exit hook that
+     tears down the tmux session when the GUI process exits:
 
    ```bash
-   AGENTX_NVIM_SOCKET=/tmp/agentx.nvim.sock \
-   AGENTX_SAVES_FIFO=/tmp/agentx_saves.fifo \
-   AGENTX_TMUX_SESSION=agentx \
-     python -m agentx &
+     tmux new-window -t agentx:2 -n agentx-log -d -c "$project_dir"
+     tmux send-keys -t agentx:2 \
+         "AGENTX_NVIM_SOCKET=/tmp/agentx_agentx.nvim.sock AGENTX_SAVES_FIFO=/tmp/agentx_agentx.saves.fifo AGENTX_TMUX_SESSION=agentx python -m agentx; tmux kill-session -t agentx" Enter
    ```
 
-9. Attach tmux session (user sees neovim):
+10. Attach tmux session (user sees neovim):
 
    ```bash
    tmux attach -t agentx
    ```
 
+### Session Lifecycle Commands
+
+| Command | Behaviour |
+|---------|-----------|
+| `launch_vibe.sh start [project_dir]` | Creates/attaches session and launches editor + AgentX runtime |
+| `launch_vibe.sh stop` | Gracefully stops AgentX + neovim and kills tmux session |
+| `launch_vibe.sh status` | Prints session/socket/FIFO/windows status |
+| `launch_vibe.sh recover-editor [project_dir]` | Recreates window 0 editor and relaunches neovim in pane 0.0 |
+| `launch_vibe.sh restart [project_dir]` | `stop` + `start` with one command |
+
+### Shutdown / Recovery Permutations (Explicit)
+
+| Permutation | Detection | Expected Behaviour | Recovery Path |
+|------------|-----------|--------------------|---------------|
+| User closes AgentX GUI only | `window 2` command exits | tmux session is torn down automatically by launcher exit hook | Relaunch with `launch_vibe.sh start` |
+| User exits neovim (`:qa`) but keeps tmux session | missing socket and/or dead pane `0.0` command | Session remains active but editor disconnected | `launch_vibe.sh recover-editor` |
+| User kills window 0 accidentally | `window 0` missing from tmux | Agent runtime may continue; editor unavailable | `launch_vibe.sh recover-editor` recreates window 0 + relaunches nvim |
+| User detaches tmux (`Ctrl+B, D`) | session still exists | Nothing stops; background continues | `tmux attach -t agentx` or `launch_vibe.sh start` + reattach choice |
+| User wants deterministic full shutdown | explicit command | Graceful Ctrl+C + `:qa!`, then `tmux kill-session` | `launch_vibe.sh stop` |
+| Session gets wedged / partial failure | mixed dead/missing windows | One-command reset | `launch_vibe.sh restart` |
+
 ### Environment Variables Read by AgentX at Startup
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AGENTX_NVIM_SOCKET` | `/tmp/agentx.nvim.sock` | pynvim RPC connection path |
-| `AGENTX_SAVES_FIFO` | `/tmp/agentx_saves.fifo` | Named pipe for save notifications |
-| `AGENTX_TMUX_SESSION` | `agentx` | tmux session name for terminal panes |
+| `AGENTX_NVIM_SOCKET` | `/tmp/agentx_<SESSION_ID>.nvim.sock` | pynvim RPC connection path (scoped by session to prevent collisions) |
+| `AGENTX_SAVES_FIFO` | `/tmp/agentx_<SESSION_ID>.saves.fifo` | Named pipe for save notifications (scoped by session to prevent collisions) |
+| `AGENTX_TMUX_SESSION` | `agentx` | tmux session name; used as `<SESSION_ID>` for socket/FIFO scoping |
 | `AGENTX_TERMINAL_VISIBLE` | `true` | Default: show new agent terminal panes in window 1 |
 | `AGENTX_EXEC_MODE` | `supervised` | Execution mode: `supervised` or `autonomous` (see §4) |
 | `AGENTX_PROJECT_ROOTS` | `$PWD` | Colon-separated list of paths agent may read/write/execute within |
+| `AGENTX_SOCKET_WAIT_LOOPS` | `10` | Number of socket polling loops during startup/editor recovery |
+| `AGENTX_SOCKET_WAIT_SEC` | `0.5` | Seconds per socket polling loop |
+
+#### Multi-Session Collision Prevention
+
+When running multiple simultaneous or sequential vibe-coding sessions, each session automatically scopes its socket and FIFO paths using the tmux session name as a session ID. This prevents collisions:
+
+```bash
+# Session A (default session name)
+./launch_vibe.sh start /path/to/project-a
+# Uses: /tmp/agentx_agentx.nvim.sock, /tmp/agentx_agentx.saves.fifo
+
+# Session B (custom session name)
+AGENTX_TMUX_SESSION=agentx-user2 ./launch_vibe.sh start /path/to/project-b
+# Uses: /tmp/agentx_agentx-user2.nvim.sock, /tmp/agentx_agentx-user2.saves.fifo
+```
+
+On startup, `launch_vibe.sh` detects and removes stale socket and FIFO files to recover from incomplete prior shutdowns. This ensures reliable multi-session coexistence.
 
 ---
 
@@ -778,6 +825,23 @@ sequenceDiagram
 
 ---
 
+#### PD-14-AF-008: Recover Editor Command
+
+**Location**: `launch_vibe.sh recover-editor` launcher command.  
+**Purpose**: Restore neovim editing surface after accidental exit/window loss without restarting entire session.
+
+| Step | Action |
+|------|--------|
+| 1 | Validate tmux session exists |
+| 2 | Recreate `window 0` if missing |
+| 3 | Rewrite `.nvimrc.agentx` to ensure save autocommand remains present |
+| 4 | Relaunch neovim in pane `agentx:0.0` with `--listen` socket |
+| 5 | Print operator hint: `Ctrl+B, 0` |
+
+**Error path**: If session is missing, command fails with clear message and start hint.
+
+---
+
 ### PD-15: TerminalPane GUI affordances
 
 **New affordances for agent-controlled terminal execution via tmux.**
@@ -891,6 +955,23 @@ One entry per line (prefix string). Changes saved to `agentx.toml` on `[Save]`.
 | `[Save]` | Writes lists to `agentx.toml`, reloads `TerminalBridge.PermissionLayer` |
 | `[Reset to Defaults]` | Restores factory allow/confirm/deny lists |
 | `[?]` | Opens inline help explaining prefix-match semantics |
+
+---
+
+#### PD-15-AF-008: Graceful Session Shutdown Command
+
+**Location**: `launch_vibe.sh stop` launcher command.  
+**Purpose**: Single deterministic shutdown path for full vibe-coding session lifecycle.
+
+| Step | Action |
+|------|--------|
+| 1 | Detect active tmux session (`has-session`) |
+| 2 | Send `Ctrl+C` to AgentX runtime pane (`agentx:2.0`) |
+| 3 | Send `Ctrl+C` + `:qa!` to editor pane (`agentx:0.0`) |
+| 4 | Kill tmux session (`kill-session -t agentx`) |
+| 5 | Remove stale socket if present |
+
+**No-op behaviour**: If no session exists, command exits `0` with a friendly notice.
 
 ---
 
@@ -1081,6 +1162,10 @@ New tools registered in `AgentixBridgeAdapter` when `VimBridge` / `TerminalBridg
 | PD-14-AF-001 status bar shows disconnected state | `test_vim_bridge_gui.py` | GIVEN VimBridge disconnected THEN status label text contains "disconnected" |
 | PD-14-AF-003 Send to Editor button disabled when disconnected | `test_vim_bridge_gui.py` | GIVEN disconnected WHEN code block rendered THEN button state is DISABLED |
 | PD-14-AF-003 Send to Editor button enabled when connected | `test_vim_bridge_gui.py` | GIVEN connected WHEN code block rendered THEN button state is NORMAL |
+| PD-15-AF-008 stop command gracefully tears down session | `test_launch_vibe_shutdown.py` | GIVEN running session WHEN `launch_vibe.sh stop` THEN AgentX and neovim receive stop signals before kill-session |
+| PD-15-AF-008 stop command is safe when no session exists | `test_launch_vibe_shutdown.py` | GIVEN no session WHEN `launch_vibe.sh stop` THEN no-op success with no kill-session call |
+| PD-14-AF-008 recover-editor restores editing surface | `test_launch_vibe_shutdown.py` | GIVEN missing editor window WHEN `recover-editor` runs THEN window 0 is recreated and neovim relaunched in pane 0.0 |
+| PD-15-AF-008 start command installs GUI-exit teardown hook | `test_launch_vibe_shutdown.py` | GIVEN fresh start WHEN AgentX command is launched in window 2 THEN command string includes post-exit `tmux kill-session` hook |
 
 ### Integration Tests (two or more internal units)
 
@@ -1114,3 +1199,4 @@ New tools registered in `AgentixBridgeAdapter` when `VimBridge` / `TerminalBridg
 | OQ-06 | Should the audit log (`terminal_audit.jsonl`) be visible in the AgentX GUI (e.g. a new side-panel tab)? | Medium |
 | OQ-07 | Should `project_roots` path restriction apply to neovim `editor_write_buffer` calls too? Current design: no, VimBridge trusts the path. Should be added for consistency. | Medium |
 | OQ-08 | Credential question — **Resolved**: Agent runs as the user. A dedicated system user is not implemented. Safety is provided by the PermissionLayer (§4) which is user-configurable and toggleable. | Resolved |
+| OQ-09 | Session shutdown consistency — **Resolved**: `launch_vibe.sh` now exposes first-class lifecycle commands (`stop`, `status`, `recover-editor`, `restart`) with deterministic behaviour and tests. | Resolved |

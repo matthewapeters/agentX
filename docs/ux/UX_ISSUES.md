@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-08 (v0.23.0.post1)_
+_Last updated: 2026-05-08 (v0.24.1)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -219,4 +219,23 @@ Implementation: `src/agentx/gui/status_tab.py` (to be created) + wiring in `Stre
 - **Design doc** (`docs/ux/05_VIBE_CODING.md`) updated with window 2 in layout diagram, component map, and navigation key table.
 - **UAT confirmation (2026-05-08)**: User approved the pane separation behavior. Logs are isolated to `window 2: agentx-log` and no longer render in the neovim pane.
 - **UAT Status**: User-approved in UAT on 2026-05-08.
-[ ] launch_vibe.sh issue: how does the engineer terminate their session?  Stopping the agentx gui does not terminate the tmux panes or neovim session.  What happens if the user terminates neovim and their pane?  Can they get it back?  Identify all permutations and propose a solution that can be tested.
+[/] launch_vibe.sh issue: how does the engineer terminate their session?  Stopping the agentx gui does not terminate the tmux panes or neovim session.  What happens if the user terminates neovim and their pane?  Can they get it back?  Identify all permutations and propose a solution that can be tested.
+
+- **UAT failure (2026-05-08)**: v0.24.0 did not hold up in live use.
+  - Editor pane regression: window `0.0` presented a bash shell instead of neovim.
+  - Session shutdown regression: closing the AgentX GUI left tmux windows/panes running.
+
+- **Root cause / attempted fix (v0.24.0)**: `launch_vibe.sh` only provided a startup path; there was no canonical shutdown/recovery command set. This produced inconsistent behaviour when users closed GUI, exited neovim, detached tmux, or lost window 0.
+- **Fix**: Added lifecycle command interface to `launch_vibe.sh`: `start`, `stop`, `status`, `recover-editor`, `restart`.
+  - `stop`: graceful teardown (AgentX runtime pane Ctrl+C, neovim pane Ctrl+C + `:qa!`, `tmux kill-session`, stale socket cleanup).
+  - `status`: reports session/socket/FIFO/window state.
+  - `recover-editor`: recreates window 0 if missing and relaunches neovim in pane `0.0`.
+  - `restart`: deterministic `stop` + `start`.
+- **Permutations documented**: design now includes explicit session lifecycle matrix (GUI closed, editor exited, window missing, detach, full stop, wedged session).
+- **Latest attempted fix candidate (v0.24.1)**:
+  - Added editor health checks on start/reattach and automatic recovery if pane `0.0` is not running `nvim`.
+  - Added GUI-exit session teardown hook so closing AgentX GUI terminates the tmux session.
+  - Added socket wait tunables for robust startup polling (`AGENTX_SOCKET_WAIT_LOOPS`, `AGENTX_SOCKET_WAIT_SEC`).
+- **Tests**: `tests/test_launch_vibe_shutdown.py` (4 unit tests, hermetic fake tmux/nvim harness).
+- **Design docs updated**: `docs/ux/05_VIBE_CODING.md` (launch architecture, lifecycle commands, permutations, and traceability test scenarios).
+- **Ready for UAT**.

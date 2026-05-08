@@ -7,6 +7,112 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.25.0] - 2026-05-08
+
+### Code Changes
+
+#### Added
+
+- **Multi-session socket scoping**: `launch_vibe.sh` now automatically scopes neovim RPC socket and save-notification FIFO paths by tmux session name to prevent collisions between concurrent/sequential sessions.
+  - **Path scoping**: defaults changed from `/tmp/agentx.nvim.sock` and `/tmp/agentx_saves.fifo` to `/tmp/agentx_<SESSION_ID>.nvim.sock` and `/tmp/agentx_<SESSION_ID>.saves.fifo`.
+  - **SESSION_ID derivation**: defaults to `AGENTX_TMUX_SESSION` (default: `agentx`) for deterministic, user-customizable scoping.
+  - **Stale file cleanup**: new `_cleanup_stale_sockets()` function detects and removes stale/orphaned socket and FIFO files on startup, recovering from incomplete prior shutdowns.
+
+#### Fixed
+
+- **Socket collision issue (UAT finding v0.24.1)**: pane 0 failures caused by multiple sessions colliding on hardcoded `/tmp/` paths now resolved through session-scoped IPC paths and automatic stale file cleanup.
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/05_VIBE_CODING.md`: updated Environment Variables table to reflect session-scoped socket/FIFO defaults; added "Multi-Session Collision Prevention" section with examples and explanation of stale file cleanup.
+- `launch_vibe.sh` header: updated environment override documentation to explain session scoping and added multi-session support section.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_launch_vibe_shutdown.py`: added `test_multiple_sessions_use_scoped_sockets` unit test verifying that sessions with different `AGENTX_TMUX_SESSION` values use unique scoped socket/FIFO paths without collision.
+
+---
+
+## [0.24.1] - 2026-05-08
+
+### Code Changes
+
+#### Fixed
+
+- `launch_vibe.sh`: resolved UAT regressions from v0.24.0 lifecycle rollout.
+  - **Editor pane reliability**: added editor health-check verification and auto-recovery on `start`/reattach path when pane `0.0` is not running `nvim`.
+  - **GUI-exit teardown**: AgentX runtime command in window `2` now includes a post-exit hook that tears down the tmux session, preventing orphaned panes after GUI close.
+  - **Startup reliability tuning**: added `AGENTX_SOCKET_WAIT_LOOPS` and `AGENTX_SOCKET_WAIT_SEC` to control socket polling behavior in start/recovery paths.
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/UX_ISSUES.md`: recorded UAT failure symptoms for v0.24.0 and added v0.24.1 as the latest fix candidate for the launch shutdown issue.
+- `docs/ux/05_VIBE_CODING.md`: updated lifecycle behavior to reflect GUI-exit teardown hook and revised permutation outcomes.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_launch_vibe_shutdown.py`: added `test_start_launches_agentx_with_gui_exit_shutdown_hook` to validate session teardown hook is present in window `2` launch command.
+
+#### Changed
+
+- `tests/test_launch_vibe_shutdown.py`: fake tmux harness extended to report `#{pane_current_command}` for editor-health checks.
+
+---
+
+## [0.24.0] - 2026-05-08
+
+### Code Changes
+
+#### Added
+
+- `launch_vibe.sh`: added explicit lifecycle command surface for consistent session management:
+  - `start` (default), `stop`, `status`, `recover-editor`, and `restart`.
+  - Introduced deterministic shutdown path (`stop`) that gracefully signals AgentX runtime and neovim before killing tmux session and cleaning stale socket.
+  - Introduced editor recovery path (`recover-editor`) that recreates window 0 if missing and relaunches neovim in pane `0.0`.
+  - Added status reporting for session/socket/FIFO/window state.
+
+#### Changed
+
+- `launch_vibe.sh`: startup flow refactored into command-oriented helper functions to separate dependency checks, start/stop operations, and editor recovery logic.
+- Startup banner now includes explicit lifecycle command hints:
+  - `./launch_vibe.sh stop`
+  - `./launch_vibe.sh recover-editor`
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/05_VIBE_CODING.md`:
+  - Launch Architecture updated to reflect command-based lifecycle model.
+  - Added explicit shutdown/recovery permutation matrix.
+  - Added affordances `PD-14-AF-008` (recover-editor) and `PD-15-AF-008` (graceful stop command).
+  - Added corresponding test traceability entries in Test Scenarios.
+- `docs/ux/UX_ISSUES.md`:
+  - Marked launch_vibe shutdown lifecycle issue as `[/]` with fix summary and UAT-ready status.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_launch_vibe_shutdown.py` (3 unit tests):
+  - Graceful stop signals AgentX and editor before session kill.
+  - Stop command is safe no-op when no session exists.
+  - Recover-editor recreates missing editor window and relaunches neovim.
+
+#### Changed
+
+- Test harness for launcher lifecycle tests uses hermetic fake `tmux`/`nvim` executables (no real tmux/neovim dependency).
+
+---
+
 ## [0.23.2] - 2026-05-06
 
 ### Code Changes
