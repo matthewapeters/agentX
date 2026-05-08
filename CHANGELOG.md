@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.25.2] - 2026-05-08
+
+### Code Changes
+
+#### Fixed
+
+- `launch_vibe.sh`: fixed editor launch/recovery when tmux rejects named pane targets like `session:editor.0`.
+  - Added robust window resolution helpers to map stable window names (`editor`, `agent-bg`, `agentx-log`) to numeric tmux targets at runtime.
+  - All `send-keys` and pane command probes now use resolved numeric pane targets (`session:<index>.0`) while preserving name-based intent.
+  - Added explicit error messages and hard-fail behavior when required windows cannot be resolved after creation.
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_launch_vibe_shutdown.py`: updated fake tmux harness to be stateful across invocations in a launcher run (session/window creation, kill-session, format-aware list-windows output).
+- `tests/test_launch_vibe_shutdown.py`: adjusted assertions to allow dynamic editor index during recover flow while still verifying neovim launch and control signals.
+
+---
+
 ## [0.25.1] - 2026-05-08
 
 ### Code Changes

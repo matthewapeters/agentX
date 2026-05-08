@@ -27,9 +27,9 @@ def test_stop_gracefully_stops_agentx_and_editor(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert "send-keys\t-t\tagentx:agentx-log.0\tC-c" in log
-    assert "send-keys\t-t\tagentx:editor.0\tC-c" in log
-    assert "send-keys\t-t\tagentx:editor.0\t:qa!\tEnter" in log
+    assert "send-keys\t-t\tagentx:2.0\tC-c" in log
+    assert "send-keys\t-t\tagentx:0.0\tC-c" in log
+    assert "send-keys\t-t\tagentx:0.0\t:qa!\tEnter" in log
     assert "kill-session\t-t\tagentx" in log
 
 
@@ -77,8 +77,8 @@ def test_recover_editor_recreates_window_and_relaunches_nvim(tmp_path: Path) -> 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
     assert f"new-window\t-d\t-t\tagentx\t-n\teditor\t-c\t{project_dir}" in log
-    assert "send-keys\t-t\tagentx:editor.0\tC-c" in log
-    assert "send-keys\t-t\tagentx:editor.0\tnvim" in log
+    assert "send-keys\t-t\tagentx:" in log and "\tC-c" in log
+    assert "send-keys\t-t\tagentx:" in log and "\tnvim" in log
     assert "--listen" in log
     assert (project_dir / ".nvimrc.agentx").exists()
 
@@ -108,8 +108,8 @@ def test_start_launches_agentx_with_gui_exit_shutdown_hook(tmp_path: Path) -> No
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert "send-keys\t-t\tagentx:editor.0\tnvim" in log
-    assert "send-keys\t-t\tagentx:agentx-log" in log
+    assert "send-keys\t-t\tagentx:0.0\tnvim" in log
+    assert "send-keys\t-t\tagentx:2" in log
     assert "tmux\tkill-session\t-t\t'agentx'" in log
 
 
@@ -183,6 +183,7 @@ def _run_launcher(
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["TMUX_LOG"] = str(log_path)
+    env["TMUX_STATE_FILE"] = f"{log_path}.state"
     env.update(extra_env)
 
     script_path = Path(__file__).resolve().parents[1] / "launch_vibe.sh"
@@ -206,25 +207,69 @@ def _create_fake_bin(tmp_path: Path) -> Path:
         """#!/usr/bin/env bash
 set -euo pipefail
 
+state_file="${TMUX_STATE_FILE:-${TMUX_LOG:-/tmp/tmux}.state}"
+if [[ ! -f "$state_file" ]]; then
+    {
+        echo "HAS_SESSION=${TMUX_HAS_SESSION:-1}"
+        echo "WINDOWS=${TMUX_WINDOWS:-editor,agent-bg,agentx-log}"
+    } > "$state_file"
+fi
+
+# shellcheck disable=SC1090
+source "$state_file"
+
+save_state() {
+    {
+        echo "HAS_SESSION=$HAS_SESSION"
+        echo "WINDOWS=$WINDOWS"
+    } > "$state_file"
+}
+
 if [[ -n "${TMUX_LOG:-}" ]]; then
     printf '%s\\n' "$*" | sed 's/ /\\t/g' >> "$TMUX_LOG"
 fi
 
 cmd="${1:-}"
 if [[ "$cmd" == "has-session" ]]; then
-    [[ "${TMUX_HAS_SESSION:-1}" == "1" ]]
+    [[ "${HAS_SESSION:-1}" == "1" ]]
     exit $?
 fi
 
 if [[ "$cmd" == "list-windows" ]]; then
-    [[ "${TMUX_HAS_SESSION:-1}" == "1" ]] || exit 1
-    IFS=',' read -r -a wins <<< "${TMUX_WINDOWS:-editor,agent-bg,agentx-log}"
-    printf '%s\\n' "${wins[@]}"
+    [[ "${HAS_SESSION:-1}" == "1" ]] || exit 1
+    IFS=',' read -r -a wins <<< "${WINDOWS:-editor,agent-bg,agentx-log}"
+    format=""
+    prev=""
+    for a in "$@"; do
+        if [[ "$prev" == "-F" ]]; then
+            format="$a"
+            break
+        fi
+        prev="$a"
+    done
+
+    if [[ -z "$format" || "$format" == "#{window_name}" ]]; then
+        printf '%s\\n' "${wins[@]}"
+    elif [[ "$format" == "#{window_index}:#{window_name}" ]]; then
+        i=0
+        for w in "${wins[@]}"; do
+            printf '%s:%s\\n' "$i" "$w"
+            i=$((i + 1))
+        done
+    elif [[ "$format" == "#{window_index}" ]]; then
+        i=0
+        for _w in "${wins[@]}"; do
+            printf '%s\\n' "$i"
+            i=$((i + 1))
+        done
+    else
+        printf '%s\\n' "${wins[@]}"
+    fi
     exit 0
 fi
 
 if [[ "$cmd" == "list-panes" ]]; then
-    [[ "${TMUX_HAS_SESSION:-1}" == "1" ]] || exit 1
+    [[ "${HAS_SESSION:-1}" == "1" ]] || exit 1
     target=""
     prev=""
     for a in "$@"; do
@@ -234,18 +279,63 @@ if [[ "$cmd" == "list-panes" ]]; then
         fi
         prev="$a"
     done
-    win="editor"
+    win=""
     if [[ "$target" == *":"* ]]; then
         win_part="${target#*:}"
         win="${win_part%%.*}"
     fi
-    IFS=',' read -r -a wins <<< "${TMUX_WINDOWS:-editor,agent-bg,agentx-log}"
+    IFS=',' read -r -a wins <<< "${WINDOWS:-editor,agent-bg,agentx-log}"
+    i=0
     for w in "${wins[@]}"; do
-        if [[ "$w" == "$win" ]]; then
+        if [[ "$w" == "$win" || "$i" == "$win" ]]; then
             exit 0
         fi
+        i=$((i + 1))
     done
     exit 1
+fi
+
+if [[ "$cmd" == "new-session" ]]; then
+    HAS_SESSION=1
+    name="editor"
+    prev=""
+    for a in "$@"; do
+        if [[ "$prev" == "-n" ]]; then
+            name="$a"
+            break
+        fi
+        prev="$a"
+    done
+    WINDOWS="$name"
+    save_state
+    exit 0
+fi
+
+if [[ "$cmd" == "new-window" ]]; then
+    name=""
+    prev=""
+    for a in "$@"; do
+        if [[ "$prev" == "-n" ]]; then
+            name="$a"
+            break
+        fi
+        prev="$a"
+    done
+    if [[ -n "$name" ]]; then
+        if [[ -z "$WINDOWS" ]]; then
+            WINDOWS="$name"
+        elif [[ ",$WINDOWS," != *",$name,"* ]]; then
+            WINDOWS="$WINDOWS,$name"
+        fi
+        save_state
+    fi
+    exit 0
+fi
+
+if [[ "$cmd" == "kill-session" ]]; then
+    HAS_SESSION=0
+    save_state
+    exit 0
 fi
 
 if [[ "$cmd" == "display-message" ]]; then

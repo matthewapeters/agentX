@@ -184,24 +184,46 @@ _window_index_by_name() {
     awk -F: -v target="$name" '$2 == target {print $1; found=1; exit} END {if (!found) print ""}' || true
 }
 
+_window_target_by_name() {
+    local name="$1"
+    local idx
+    idx="$(_window_index_by_name "$name")"
+    if [[ -z "$idx" ]]; then
+        echo ""
+        return 1
+    fi
+    echo "${TMUX_SESSION}:${idx}"
+}
+
 _editor_pane_target() {
-    echo "${TMUX_SESSION}:${EDITOR_WINDOW_NAME}.0"
+    local target
+    target="$(_window_target_by_name "$EDITOR_WINDOW_NAME")" || true
+    [[ -n "$target" ]] && echo "${target}.0" || echo ""
 }
 
 _agent_bg_pane_target() {
-    echo "${TMUX_SESSION}:${AGENT_BG_WINDOW_NAME}.0"
+    local target
+    target="$(_window_target_by_name "$AGENT_BG_WINDOW_NAME")" || true
+    [[ -n "$target" ]] && echo "${target}.0" || echo ""
 }
 
 _agentx_log_window_target() {
-    echo "${TMUX_SESSION}:${AGENTX_LOG_WINDOW_NAME}"
+    local target
+    target="$(_window_target_by_name "$AGENTX_LOG_WINDOW_NAME")" || true
+    [[ -n "$target" ]] && echo "$target" || echo ""
 }
 
 _agentx_log_pane_target() {
-    echo "${TMUX_SESSION}:${AGENTX_LOG_WINDOW_NAME}.0"
+    local target
+    target="$(_window_target_by_name "$AGENTX_LOG_WINDOW_NAME")" || true
+    [[ -n "$target" ]] && echo "${target}.0" || echo ""
 }
 
 _pane_current_command() {
-    tmux display-message -p -t "$(_editor_pane_target)" '#{pane_current_command}' 2>/dev/null || echo ""
+    local pane_target
+    pane_target="$(_editor_pane_target)"
+    [[ -n "$pane_target" ]] || { echo ""; return 0; }
+    tmux display-message -p -t "$pane_target" '#{pane_current_command}' 2>/dev/null || echo ""
 }
 
 _cleanup_stale_sockets() {
@@ -243,9 +265,15 @@ NVIMRC
 
 _launch_editor_in_pane_zero() {
     local nvimrc_path="$PROJECT_DIR/.nvimrc.agentx"
+    local pane_target
+    pane_target="$(_editor_pane_target)"
+    if [[ -z "$pane_target" ]]; then
+        _red "  ✗ unable to find '${EDITOR_WINDOW_NAME}' window to launch neovim."
+        return 1
+    fi
     [[ -S "$NVIM_SOCKET" ]] && rm -f "$NVIM_SOCKET"
-    tmux send-keys -t "$(_editor_pane_target)" C-c
-    tmux send-keys -t "$(_editor_pane_target)" \
+    tmux send-keys -t "$pane_target" C-c
+    tmux send-keys -t "$pane_target" \
         "nvim --listen '${NVIM_SOCKET}' --cmd 'source ${nvimrc_path}'" \
         Enter
     _green "  Launched neovim in '${EDITOR_WINDOW_NAME}' pane 0 (socket: $NVIM_SOCKET)"
@@ -288,13 +316,18 @@ _stop_session() {
 
     echo "Stopping session '$TMUX_SESSION'..."
 
-    if tmux list-panes -t "${TMUX_SESSION}:${AGENTX_LOG_WINDOW_NAME}" &>/dev/null; then
-        tmux send-keys -t "$(_agentx_log_pane_target)" C-c
+    local agentx_log_pane_target
+    local editor_pane_target
+    agentx_log_pane_target="$(_agentx_log_pane_target)"
+    editor_pane_target="$(_editor_pane_target)"
+
+    if [[ -n "$agentx_log_pane_target" ]]; then
+        tmux send-keys -t "$agentx_log_pane_target" C-c
     fi
 
-    if tmux list-panes -t "${TMUX_SESSION}:${EDITOR_WINDOW_NAME}" &>/dev/null; then
-        tmux send-keys -t "$(_editor_pane_target)" C-c
-        tmux send-keys -t "$(_editor_pane_target)" ":qa!" Enter
+    if [[ -n "$editor_pane_target" ]]; then
+        tmux send-keys -t "$editor_pane_target" C-c
+        tmux send-keys -t "$editor_pane_target" ":qa!" Enter
     fi
 
     tmux kill-session -t "$TMUX_SESSION"
@@ -413,7 +446,13 @@ _start_session() {
     if ! _window_exists_by_name "$AGENT_BG_WINDOW_NAME"; then
         tmux new-window -t "$TMUX_SESSION" -n "$AGENT_BG_WINDOW_NAME" -d -c "$PROJECT_DIR"
     fi
-    tmux send-keys -t "$(_agent_bg_pane_target)" "bash" Enter
+    local agent_bg_pane_target
+    agent_bg_pane_target="$(_agent_bg_pane_target)"
+    if [[ -z "$agent_bg_pane_target" ]]; then
+        _red "  ✗ unable to find '${AGENT_BG_WINDOW_NAME}' window pane after creation."
+        exit 1
+    fi
+    tmux send-keys -t "$agent_bg_pane_target" "bash" Enter
 
     _launch_editor_in_pane_zero
     echo "  Waiting for neovim RPC socket..."
@@ -430,7 +469,13 @@ _start_session() {
     if ! _window_exists_by_name "$AGENTX_LOG_WINDOW_NAME"; then
         tmux new-window -t "$TMUX_SESSION" -n "$AGENTX_LOG_WINDOW_NAME" -d -c "$PROJECT_DIR"
     fi
-    tmux send-keys -t "$(_agentx_log_window_target)" \
+    local agentx_log_window_target
+    agentx_log_window_target="$(_agentx_log_window_target)"
+    if [[ -z "$agentx_log_window_target" ]]; then
+        _red "  ✗ unable to find '${AGENTX_LOG_WINDOW_NAME}' window after creation."
+        exit 1
+    fi
+    tmux send-keys -t "$agentx_log_window_target" \
         "AGENTX_NVIM_SOCKET='${NVIM_SOCKET}' AGENTX_SAVES_FIFO='${SAVES_FIFO}' AGENTX_TMUX_SESSION='${TMUX_SESSION}' AGENTX_TERMINAL_VISIBLE='${TERMINAL_VISIBLE}' '${python_bin}' -m agentx; __agentx_rc=\$?; tmux kill-session -t '${TMUX_SESSION}' >/dev/null 2>&1; exit \$__agentx_rc" \
         Enter
     _green "  AgentX launched in '${AGENTX_LOG_WINDOW_NAME}' window"

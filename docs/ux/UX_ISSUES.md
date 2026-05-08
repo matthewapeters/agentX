@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-08 (v0.24.1)_
+_Last updated: 2026-05-08 (v0.25.2)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -236,6 +236,13 @@ Implementation: `src/agentx/gui/status_tab.py` (to be created) + wiring in `Stre
   - Added editor health checks on start/reattach and automatic recovery if pane `0.0` is not running `nvim`.
   - Added GUI-exit session teardown hook so closing AgentX GUI terminates the tmux session.
   - Added socket wait tunables for robust startup polling (`AGENTX_SOCKET_WAIT_LOOPS`, `AGENTX_SOCKET_WAIT_SEC`).
-- **Tests**: `tests/test_launch_vibe_shutdown.py` (4 unit tests, hermetic fake tmux/nvim harness).
+- **UAT failure (2026-05-08, post-v0.25.1)**:
+  - Launcher output reported repeated `can't find window: editor` and no neovim process in any pane.
+  - Root cause: some tmux environments rejected/failed named pane targets (`session:editor.0`) even when the window existed, so editor relaunch attempts never reached the actual pane.
+- **Latest attempted fix candidate (v0.25.2)**:
+  - Reworked pane targeting to resolve named windows to numeric runtime targets (`session:<index>.0`) before every `send-keys`/status probe.
+  - Added stricter error handling when expected windows cannot be resolved after creation.
+  - Upgraded fake tmux harness in launcher tests to be stateful across invocations in a single launcher run, so session/window lifecycle regressions are covered.
+- **Tests**: `tests/test_launch_vibe_shutdown.py` (5 unit tests, hermetic fake tmux/nvim harness).
 - **Design docs updated**: `docs/ux/05_VIBE_CODING.md` (launch architecture, lifecycle commands, permutations, and traceability test scenarios).
 - **Ready for UAT**.
