@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-06 (v0.22.20.post3)_
+_Last updated: 2026-05-08 (v0.23.0.post1)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -212,3 +212,11 @@ Implementation: `src/agentx/gui/status_tab.py` (to be created) + wiring in `Stre
 **Awaiting implementation and UAT confirmation before closing.**
 
 [ ] Issue: When complex tasks are being performed, the user experience moving between output panes is slowed and the redraws are laggy.  It may be necessary to implement multi-processing with reliable state between processes to ensure reliable state management.
+[/] Need more TMUX panes! Running launch_vibe.sh creates the neovim pane, and then fills it with the agentx cli run-time logs!  Create a different pane for these! (not 0 or 1)
+
+- **Root cause / attempted fix (v0.23.0)**: `launch_vibe.sh` launched AgentX with `"$PYTHON_BIN" -m agentx &` as a background subprocess of the launcher script, then called `exec tmux attach`. The AgentX stdout/stderr FDs remained bound to the original TTY, which became the active tmux session — causing runtime logs to appear in pane 0.0 (the neovim window).
+- **Fix**: AgentX is now launched inside a dedicated tmux window (`window 2: agentx-log`, pane 2.0) via `tmux new-window` + `tmux send-keys`. Its stdout/stderr are captured by that pane and never reach pane 0.0. User can inspect logs at any time with `Ctrl+B, 2`.
+- **Design doc** (`docs/ux/05_VIBE_CODING.md`) updated with window 2 in layout diagram, component map, and navigation key table.
+- **UAT confirmation (2026-05-08)**: User approved the pane separation behavior. Logs are isolated to `window 2: agentx-log` and no longer render in the neovim pane.
+- **UAT Status**: User-approved in UAT on 2026-05-08.
+[ ] launch_vibe.sh issue: how does the engineer terminate their session?  Stopping the agentx gui does not terminate the tmux panes or neovim session.  What happens if the user terminates neovim and their pane?  Can they get it back?  Identify all permutations and propose a solution that can be tested.

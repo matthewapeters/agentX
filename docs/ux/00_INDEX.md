@@ -1,11 +1,11 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-06 (v0.22.20.post3)_
+_Last updated: 2026-05-08 (v0.23.0)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-07 (v0.22.20.post2 — PD-12 StatusTab spec; PD-10/PD-13 numbering conflict resolved)
+**Last updated**: 2026-05-08 (v0.23.0 — PD-14 VimBridge affordances + PD-15 TerminalPane affordances; vibe coding design doc added)
 **Current version**: see `pyproject.toml`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
@@ -22,6 +22,7 @@ _Last updated: 2026-05-06 (v0.22.20.post3)_
 | See a panel's widget details, state fields, diagrams | [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) |
 | Understand the window layout and zone map | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) |
 | Follow a user interaction end-to-end | [02_USER_FLOWS.md](02_USER_FLOWS.md) |
+| Vibe coding (neovim + tmux integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
 | Run the UX review+enforce cycle (agent slash-command) | `/ux-review` in Copilot Chat |
 | See test coverage gaps | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-known-coverage-gaps) |
 | Detect spec/code/test drift | [UX_LIFECYCLE.md §5.4](UX_LIFECYCLE.md#54-detecting-drift-without-a-planned-change) |
@@ -52,8 +53,10 @@ _Last updated: 2026-05-06 (v0.22.20.post3)_
 | PD-11 FileExplorer | 10 | 0 | 0 | 0 |
 | PD-12 StatusTab | 0 | 0 | 11 | 0 |
 | PD-13 ToolPanel | 0 | 0 | 2 | 0 |
+| PD-14 VimBridge GUI | 0 | 0 | 9 | 0 |
+| PD-15 TerminalPane GUI | 0 | 0 | 7 | 0 |
 
-**Totals**: 71 ✅ · 6 ⚠️ · 13 📝 · 0 ❌
+**Totals**: 71 ✅ · 6 ⚠️ · 29 📝 · 0 ❌
 
 ---
 
