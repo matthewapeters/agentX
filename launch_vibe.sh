@@ -58,7 +58,7 @@ Commands:
     start           Start a vibe session (default command)
     stop            Gracefully stop AgentX + neovim and kill tmux session
     status          Show current session/windows/socket status
-    recover-editor  Recreate or restart neovim pane 0.0 in window 0
+    recover-editor  Recreate or restart neovim in the editor window
     restart         Equivalent to: stop then start
 USAGE
 }
@@ -73,6 +73,9 @@ TERMINAL_VISIBLE="${AGENTX_TERMINAL_VISIBLE:-true}"
 SOCKET_WAIT_LOOPS="${AGENTX_SOCKET_WAIT_LOOPS:-10}"
 SOCKET_WAIT_SEC="${AGENTX_SOCKET_WAIT_SEC:-0.5}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EDITOR_WINDOW_NAME="editor"
+AGENT_BG_WINDOW_NAME="agent-bg"
+AGENTX_LOG_WINDOW_NAME="agentx-log"
 
 COMMAND="${1:-start}"
 PROJECT_DIR="${PWD}"
@@ -170,13 +173,35 @@ _session_exists() {
     tmux has-session -t "$TMUX_SESSION" 2>/dev/null
 }
 
-_window_exists() {
-    local idx="$1"
-    tmux list-windows -t "$TMUX_SESSION" -F '#{window_index}' 2>/dev/null | grep -qx "$idx"
+_window_exists_by_name() {
+    local name="$1"
+    tmux list-windows -t "$TMUX_SESSION" -F '#{window_name}' 2>/dev/null | grep -qx "$name"
+}
+
+_window_index_by_name() {
+    local name="$1"
+    tmux list-windows -t "$TMUX_SESSION" -F '#{window_index}:#{window_name}' 2>/dev/null | \
+    awk -F: -v target="$name" '$2 == target {print $1; found=1; exit} END {if (!found) print ""}' || true
+}
+
+_editor_pane_target() {
+    echo "${TMUX_SESSION}:${EDITOR_WINDOW_NAME}.0"
+}
+
+_agent_bg_pane_target() {
+    echo "${TMUX_SESSION}:${AGENT_BG_WINDOW_NAME}.0"
+}
+
+_agentx_log_window_target() {
+    echo "${TMUX_SESSION}:${AGENTX_LOG_WINDOW_NAME}"
+}
+
+_agentx_log_pane_target() {
+    echo "${TMUX_SESSION}:${AGENTX_LOG_WINDOW_NAME}.0"
 }
 
 _pane_current_command() {
-    tmux display-message -p -t "${TMUX_SESSION}:0.0" '#{pane_current_command}' 2>/dev/null || echo ""
+    tmux display-message -p -t "$(_editor_pane_target)" '#{pane_current_command}' 2>/dev/null || echo ""
 }
 
 _cleanup_stale_sockets() {
@@ -219,11 +244,11 @@ NVIMRC
 _launch_editor_in_pane_zero() {
     local nvimrc_path="$PROJECT_DIR/.nvimrc.agentx"
     [[ -S "$NVIM_SOCKET" ]] && rm -f "$NVIM_SOCKET"
-    tmux send-keys -t "${TMUX_SESSION}:0.0" C-c
-    tmux send-keys -t "${TMUX_SESSION}:0.0" \
+    tmux send-keys -t "$(_editor_pane_target)" C-c
+    tmux send-keys -t "$(_editor_pane_target)" \
         "nvim --listen '${NVIM_SOCKET}' --cmd 'source ${nvimrc_path}'" \
         Enter
-    _green "  Launched neovim in pane 0.0 (socket: $NVIM_SOCKET)"
+    _green "  Launched neovim in '${EDITOR_WINDOW_NAME}' pane 0 (socket: $NVIM_SOCKET)"
 }
 
 _wait_for_socket() {
@@ -263,13 +288,13 @@ _stop_session() {
 
     echo "Stopping session '$TMUX_SESSION'..."
 
-    if tmux list-panes -t "${TMUX_SESSION}:2" &>/dev/null; then
-        tmux send-keys -t "${TMUX_SESSION}:2.0" C-c
+    if tmux list-panes -t "${TMUX_SESSION}:${AGENTX_LOG_WINDOW_NAME}" &>/dev/null; then
+        tmux send-keys -t "$(_agentx_log_pane_target)" C-c
     fi
 
-    if tmux list-panes -t "${TMUX_SESSION}:0" &>/dev/null; then
-        tmux send-keys -t "${TMUX_SESSION}:0.0" C-c
-        tmux send-keys -t "${TMUX_SESSION}:0.0" ":qa!" Enter
+    if tmux list-panes -t "${TMUX_SESSION}:${EDITOR_WINDOW_NAME}" &>/dev/null; then
+        tmux send-keys -t "$(_editor_pane_target)" C-c
+        tmux send-keys -t "$(_editor_pane_target)" ":qa!" Enter
     fi
 
     tmux kill-session -t "$TMUX_SESSION"
@@ -305,15 +330,15 @@ _recover_editor() {
         exit 1
     fi
 
-    if ! _window_exists 0; then
-        tmux new-window -d -t "${TMUX_SESSION}:0" -n "editor" -c "$PROJECT_DIR"
-        _green "  Recreated window 0 (editor)."
+    if ! _window_exists_by_name "$EDITOR_WINDOW_NAME"; then
+        tmux new-window -d -t "$TMUX_SESSION" -n "$EDITOR_WINDOW_NAME" -c "$PROJECT_DIR"
+        _green "  Recreated '${EDITOR_WINDOW_NAME}' window."
     fi
 
     _write_nvimrc
     _launch_editor_in_pane_zero
     _ensure_editor_running || true
-    _green "Editor recovered. Use Ctrl+B, 0 to return to neovim."
+    _green "Editor recovered. Use Ctrl+B, w and select '${EDITOR_WINDOW_NAME}' to return to neovim."
 }
 
 _start_session() {
@@ -383,11 +408,12 @@ _start_session() {
 
     echo ""
     echo "Creating tmux session '$TMUX_SESSION'..."
-    tmux new-session -d -s "$TMUX_SESSION" -c "$PROJECT_DIR"
-    tmux rename-window -t "${TMUX_SESSION}:0" "editor"
+    tmux new-session -d -s "$TMUX_SESSION" -n "$EDITOR_WINDOW_NAME" -c "$PROJECT_DIR"
 
-    tmux new-window -t "$TMUX_SESSION:1" -n "agent-bg" -d -c "$PROJECT_DIR"
-    tmux send-keys -t "${TMUX_SESSION}:1.0" "bash" Enter
+    if ! _window_exists_by_name "$AGENT_BG_WINDOW_NAME"; then
+        tmux new-window -t "$TMUX_SESSION" -n "$AGENT_BG_WINDOW_NAME" -d -c "$PROJECT_DIR"
+    fi
+    tmux send-keys -t "$(_agent_bg_pane_target)" "bash" Enter
 
     _launch_editor_in_pane_zero
     echo "  Waiting for neovim RPC socket..."
@@ -400,22 +426,31 @@ _start_session() {
     _ensure_editor_running || true
 
     echo ""
-    echo "Launching AgentX in tmux window 2 (agentx-log)..."
-    tmux new-window -t "${TMUX_SESSION}:2" -n "agentx-log" -d -c "$PROJECT_DIR"
-    tmux send-keys -t "${TMUX_SESSION}:2" \
+    echo "Launching AgentX in tmux window '${AGENTX_LOG_WINDOW_NAME}'..."
+    if ! _window_exists_by_name "$AGENTX_LOG_WINDOW_NAME"; then
+        tmux new-window -t "$TMUX_SESSION" -n "$AGENTX_LOG_WINDOW_NAME" -d -c "$PROJECT_DIR"
+    fi
+    tmux send-keys -t "$(_agentx_log_window_target)" \
         "AGENTX_NVIM_SOCKET='${NVIM_SOCKET}' AGENTX_SAVES_FIFO='${SAVES_FIFO}' AGENTX_TMUX_SESSION='${TMUX_SESSION}' AGENTX_TERMINAL_VISIBLE='${TERMINAL_VISIBLE}' '${python_bin}' -m agentx; __agentx_rc=\$?; tmux kill-session -t '${TMUX_SESSION}' >/dev/null 2>&1; exit \$__agentx_rc" \
         Enter
-    _green "  AgentX launched in window 2 (Ctrl+B, 2 to view logs)"
+    _green "  AgentX launched in '${AGENTX_LOG_WINDOW_NAME}' window"
+
+    local editor_idx
+    local agent_bg_idx
+    local agentx_log_idx
+    editor_idx="$(_window_index_by_name "$EDITOR_WINDOW_NAME")"
+    agent_bg_idx="$(_window_index_by_name "$AGENT_BG_WINDOW_NAME")"
+    agentx_log_idx="$(_window_index_by_name "$AGENTX_LOG_WINDOW_NAME")"
 
     echo ""
     _bold "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     _bold "  Vibe Coding Session Ready"
     _bold "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "  Neovim     : window 0, pane 0.0  (Ctrl+B, 0)"
+    echo "  Neovim     : window '${EDITOR_WINDOW_NAME}', pane 0${editor_idx:+  (Ctrl+B, ${editor_idx})}"
     echo "  AgentX GUI : floating window (alt-tab or move to monitor 1)"
-    echo "  Agent bg   : window 1           (Ctrl+B, 1 — observe agent terminals)"
-    echo "  AgentX log : window 2           (Ctrl+B, 2 — runtime logs)"
+    echo "  Agent bg   : window '${AGENT_BG_WINDOW_NAME}'${agent_bg_idx:+         (Ctrl+B, ${agent_bg_idx} — observe agent terminals)}"
+    echo "  AgentX log : window '${AGENTX_LOG_WINDOW_NAME}'${agentx_log_idx:+        (Ctrl+B, ${agentx_log_idx} — runtime logs)}"
     echo ""
     echo "  Detach tmux   : Ctrl+B, D"
     echo "  Graceful stop : ./launch_vibe.sh stop"

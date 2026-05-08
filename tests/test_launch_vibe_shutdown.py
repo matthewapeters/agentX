@@ -21,15 +21,15 @@ def test_stop_gracefully_stops_agentx_and_editor(tmp_path: Path) -> None:
         log_path,
         {
             "TMUX_HAS_SESSION": "1",
-            "TMUX_WINDOWS": "0,1,2",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
         },
     )
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert "send-keys\t-t\tagentx:2.0\tC-c" in log
-    assert "send-keys\t-t\tagentx:0.0\tC-c" in log
-    assert "send-keys\t-t\tagentx:0.0\t:qa!\tEnter" in log
+    assert "send-keys\t-t\tagentx:agentx-log.0\tC-c" in log
+    assert "send-keys\t-t\tagentx:editor.0\tC-c" in log
+    assert "send-keys\t-t\tagentx:editor.0\t:qa!\tEnter" in log
     assert "kill-session\t-t\tagentx" in log
 
 
@@ -56,7 +56,7 @@ def test_stop_is_noop_when_session_missing(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_recover_editor_recreates_window_and_relaunches_nvim(tmp_path: Path) -> None:
-    """GIVEN editor window is missing WHEN launch_vibe.sh recover-editor runs THEN window 0 is recreated and neovim relaunches in pane 0.0. [PD-14-AF-008]"""
+    """GIVEN editor window is missing WHEN launch_vibe.sh recover-editor runs THEN the editor window is recreated and neovim relaunches in pane 0. [PD-14-AF-008]"""
     fake_bin = _create_fake_bin(tmp_path)
     log_path = tmp_path / "tmux.log"
     project_dir = tmp_path / "project"
@@ -68,7 +68,7 @@ def test_recover_editor_recreates_window_and_relaunches_nvim(tmp_path: Path) -> 
         log_path,
         {
             "TMUX_HAS_SESSION": "1",
-            "TMUX_WINDOWS": "1,2",
+            "TMUX_WINDOWS": "agent-bg,agentx-log",
             "AGENTX_NVIM_SOCKET": str(tmp_path / "agentx.nvim.sock"),
             "AGENTX_SAVES_FIFO": str(tmp_path / "agentx_saves.fifo"),
         },
@@ -76,9 +76,9 @@ def test_recover_editor_recreates_window_and_relaunches_nvim(tmp_path: Path) -> 
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert f"new-window\t-d\t-t\tagentx:0\t-n\teditor\t-c\t{project_dir}" in log
-    assert "send-keys\t-t\tagentx:0.0\tC-c" in log
-    assert "send-keys\t-t\tagentx:0.0\tnvim" in log
+    assert f"new-window\t-d\t-t\tagentx\t-n\teditor\t-c\t{project_dir}" in log
+    assert "send-keys\t-t\tagentx:editor.0\tC-c" in log
+    assert "send-keys\t-t\tagentx:editor.0\tnvim" in log
     assert "--listen" in log
     assert (project_dir / ".nvimrc.agentx").exists()
 
@@ -97,7 +97,7 @@ def test_start_launches_agentx_with_gui_exit_shutdown_hook(tmp_path: Path) -> No
         log_path,
         {
             "TMUX_HAS_SESSION": "0",
-            "TMUX_WINDOWS": "0,1,2",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
             "TMUX_PANE_COMMAND": "nvim",
             "AGENTX_NVIM_SOCKET": str(tmp_path / "agentx.nvim.sock"),
             "AGENTX_SAVES_FIFO": str(tmp_path / "agentx_saves.fifo"),
@@ -108,8 +108,8 @@ def test_start_launches_agentx_with_gui_exit_shutdown_hook(tmp_path: Path) -> No
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert "send-keys\t-t\tagentx:0.0\tnvim" in log
-    assert "send-keys\t-t\tagentx:2" in log
+    assert "send-keys\t-t\tagentx:editor.0\tnvim" in log
+    assert "send-keys\t-t\tagentx:agentx-log" in log
     assert "tmux\tkill-session\t-t\t'agentx'" in log
 
 
@@ -128,7 +128,7 @@ def test_multiple_sessions_use_scoped_sockets(tmp_path: Path) -> None:
         log_a,
         {
             "TMUX_HAS_SESSION": "0",
-            "TMUX_WINDOWS": "0,1,2",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
             "TMUX_PANE_COMMAND": "nvim",
             "AGENTX_TMUX_SESSION": "agentx",
             # Do NOT override socket/FIFO — let them be scoped by session ID
@@ -145,7 +145,7 @@ def test_multiple_sessions_use_scoped_sockets(tmp_path: Path) -> None:
         log_b,
         {
             "TMUX_HAS_SESSION": "0",
-            "TMUX_WINDOWS": "0,1,2",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
             "TMUX_PANE_COMMAND": "nvim",
             "AGENTX_TMUX_SESSION": "agentx-user2",
             # Do NOT override socket/FIFO — let them be scoped by session ID
@@ -218,7 +218,7 @@ fi
 
 if [[ "$cmd" == "list-windows" ]]; then
     [[ "${TMUX_HAS_SESSION:-1}" == "1" ]] || exit 1
-    IFS=',' read -r -a wins <<< "${TMUX_WINDOWS:-0,1,2}"
+    IFS=',' read -r -a wins <<< "${TMUX_WINDOWS:-editor,agent-bg,agentx-log}"
     printf '%s\\n' "${wins[@]}"
     exit 0
 fi
@@ -234,12 +234,12 @@ if [[ "$cmd" == "list-panes" ]]; then
         fi
         prev="$a"
     done
-    win="0"
+    win="editor"
     if [[ "$target" == *":"* ]]; then
         win_part="${target#*:}"
         win="${win_part%%.*}"
     fi
-    IFS=',' read -r -a wins <<< "${TMUX_WINDOWS:-0,1,2}"
+    IFS=',' read -r -a wins <<< "${TMUX_WINDOWS:-editor,agent-bg,agentx-log}"
     for w in "${wins[@]}"; do
         if [[ "$w" == "$win" ]]; then
             exit 0

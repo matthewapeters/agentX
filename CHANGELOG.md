@@ -7,6 +7,25 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.25.1] - 2026-05-08
+
+### Code Changes
+
+#### Fixed
+
+- `launch_vibe.sh`: fixed tmux window targeting to support non-default `base-index` settings.
+  - Replaced hardcoded numeric targets (`:0`, `:1`, `:2`) with named targets (`:editor`, `:agent-bg`, `:agentx-log`) so startup and recovery work when tmux window numbering starts at `1`.
+  - Prevented startup abort under `set -euo pipefail` when optional window index lookup returns empty.
+  - Updated launcher status/help messages to reference named windows and dynamic shortcuts.
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_launch_vibe_shutdown.py`: updated hermetic tmux expectations from numeric window targets to named window targets to validate base-index-safe behavior.
+
+---
+
 ## [0.25.0] - 2026-05-08
 
 ### Code Changes

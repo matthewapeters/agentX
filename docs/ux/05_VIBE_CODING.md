@@ -1,6 +1,6 @@
 # AgentX — Vibe Coding: Neovim Integration
 
-_Last updated: 2026-05-08 (v0.25.0 — multi-session socket scoping for collision prevention)
+_Last updated: 2026-05-08 (v0.25.1 — tmux base-index window targeting reliability fix)
 
 > **"Vibe coding"**: a mode of collaborative software development where the AI agent
 > and the human developer co-author code in the same editor at the same time, each
