@@ -7,6 +7,190 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.31.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/streaming_controller.py`: added terminal `tool_result` decision badges (allowed/approved/denied/rejected) and exit-code annotations in rendered tool-result rows.
+
+#### Changed
+
+- `src/agentx/integration/terminal_bridge.py`: `terminal_run(...)` now resolves `visible`, `auto_close`, and `timeout_sec` from runtime terminal settings when explicit arguments are omitted.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_terminal_bridge.py`: added unit coverage for wrapper default forwarding and supervised confirm-list dispatch approval path.
+- `tests/test_terminal_streaming_controller.py`: added unit coverage asserting terminal decision badge and exit-code rendering in streamed tool-result rows.
+
+#### Changed
+
+- Re-ran focused terminal feature regression suite covering bridge policy/dispatch, session approval hooks, settings editor behavior, and tool-result UI wiring.
+
+---
+
+## [0.30.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/gui/settings_tab.py`: added terminal permission-list editor controls (Allow/Confirm/Deny), save action, and reset-to-defaults action for PD-15-AF-007.
+- `src/agentx/integration/terminal_bridge.py`: added `reload_terminal_config(...)` helper so runtime permission-layer prefixes can be reloaded from updated config without restarting.
+
+#### Changed
+
+- `src/agentx/session.py`: terminal settings updates now trigger bridge config reload and status refresh in `_on_setting_change(...)`.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_terminal_settings_editor.py`: added unit coverage for terminal permission-list save and reset flows.
+
+#### Changed
+
+- `tests/test_terminal_mode_and_approval.py`: added unit coverage asserting terminal settings updates call runtime reload hook.
+
+---
+
+## [0.29.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/gui/input_panel.py`: added terminal mode toggle button in the input status strip and callback routing for user mode changes (PD-15-AF-005).
+- `src/agentx/session.py`: added terminal exec-mode toggle handling with confirmation gate for autonomous mode, runtime/app-config synchronization, and a supervised command approval dialog flow (PD-15-AF-005/006).
+- `src/agentx/integration/terminal_bridge.py`: added runtime helpers for setting/getting execution mode and attaching approval callbacks to the configured bridge singleton.
+- `src/agentx/gui/settings_tab.py`: added a Terminal Execution section with `exec_mode`, visibility, auto-close, and timeout settings.
+
+#### Changed
+
+- `src/agentx/gui/gui_manager.py`, `src/agentx/igui_manager.py`, and `src/agentx/widget_registry.py`: extended GUI protocol and widget registry for terminal mode toggling.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_terminal_mode_and_approval.py`: added unit coverage for autonomous-mode confirmation and session approval-request delegation.
+
+#### Changed
+
+- `tests/test_terminal_pane_gui.py`: added integration coverage for terminal mode-button callback invocation.
+
+---
+
+## [0.28.0] - 2026-05-08
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/gui/input_panel.py`: added terminal activity status strip rendering and `set_terminal_status(active_panes, exec_mode)` for PD-15-AF-003.
+- `src/agentx/gui/chat_panel.py`: added per-entry action button wiring and `set_tool_result_kill_action(...)` to expose kill-pane actions on terminal tool-result rows (PD-15-AF-004).
+- `src/agentx/session.py`: added tracked active-pane state, terminal status strip refresh hook, and kill-pane callback handler for GUI action buttons.
+- `src/agentx/streaming_controller.py`: added terminal-aware tool-result parsing to track active panes, refresh status strip, and wire kill actions for successful `terminal_run` calls.
+- `src/agentx/gui/gui_manager.py`, `src/agentx/igui_manager.py`, and `src/agentx/widget_registry.py`: added protocol/registry/delegation support for terminal status updates and tool-result kill actions.
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/UX_LIFECYCLE.md`: updated revision stamp and added PD-15 traceability rows for AF-003 and AF-004 with ✅ status.
+- `docs/ux/00_INDEX.md`: reconciled PD-15 status snapshot totals and marked the PD-15-AF-003..004 queue item complete.
+- `docs/ux/05_VIBE_CODING.md`: updated revision stamp to reflect the latest terminal GUI wiring milestone.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_terminal_pane_gui.py`: added integration coverage for terminal status strip text updates and kill-pane action callback invocation.
+- `tests/test_terminal_streaming_controller.py`: added unit coverage for terminal pane tracking and kill-action wiring/removal through `_display_tool_result` terminal branches.
+
+#### Changed
+
+- Re-ran focused terminal/tmux regression set including adapter wiring, bridge permission/dispatch, and launcher lifecycle tests.
+
+## [0.27.0] - 2026-05-08
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/integration/terminal_bridge.py`: added Agentix tool-loop wrapper functions and schema/export helpers:
+  - `configure_terminal_bridge(...)`
+  - `terminal_run(...)`
+  - `terminal_kill_pane(...)`
+  - `terminal_list_active_panes(...)`
+  - `get_terminal_tool_implementations()` / `get_terminal_tool_schemas()`
+- `src/agentx/integration/agentix_bridge_adapter.py`: added `_register_terminal_tools()` and automatic registration during adapter initialization, using `AGENTX_TMUX_SESSION` for session binding.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_agentix_bridge_adapter_coverage.py`: added terminal registration coverage tests for success and exception-swallow paths.
+
+#### Changed
+
+- Validated combined tmux feature tests: launcher lifecycle, permission layer, terminal bridge dispatch, and adapter wiring.
+
+---
+
+## [0.26.0] - 2026-05-08
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/integration/terminal_bridge.py`: added a tmux-backed `TerminalBridge` scaffold with:
+  - `run_command(...)` dispatch for visible ephemeral panes and persistent pane targeting,
+  - `PermissionLayer` (allow/confirm/deny precedence, supervised/autonomous mode),
+  - project-root path checks for absolute command paths,
+  - JSONL terminal audit logging via `TerminalResult` records.
+- `src/agentx/integration/__init__.py`: exported `TerminalBridge`, `PermissionLayer`, `PermissionDecision`, and `TerminalResult`.
+
+### Documentation Changes
+
+#### Changed
+
+- `docs/ux/05_VIBE_CODING.md`: updated revision stamp to reflect the new bridge scaffold milestone.
+- `docs/ux/00_INDEX.md`: updated status snapshot metadata and PD-15 progress counts to reflect tested tmux lifecycle and permission-layer foundation work.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_permission_layer.py`: added 7 hermetic unit tests for allow/confirm/deny matching, autonomous mode behavior, and root path checks.
+- `tests/test_terminal_bridge.py`: added 5 hermetic unit tests for tmux dispatch semantics, approval/rejection behavior, deny/path-violation short-circuiting, and audit log writes.
+
+#### Changed
+
+- Continued validation of launcher lifecycle behavior through `tests/test_launch_vibe_shutdown.py` alongside new bridge tests.
+
+---
+
+## [0.25.3] - 2026-05-08
+
+### Code Changes
+
+#### Fixed
+
+- `launch_vibe.sh`: launch `agentx` before starting neovim, then start neovim last so the editor pane target is stable during retries.
+- `launch_vibe.sh`: disable tmux `automatic-rename` on the editor window and trust the cached pane id directly so window renames no longer break editor recovery or shutdown.
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_launch_vibe_shutdown.py`: updated the recover-editor expectation to match the pane-id-returning `new-window` invocation.
+
+---
+
 ## [0.25.2] - 2026-05-08
 
 ### Code Changes

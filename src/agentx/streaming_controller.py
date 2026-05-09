@@ -156,7 +156,36 @@ class StreamingController:
 
         round_label = f" [round {round_index + 1}]" if round_index is not None else ""
         preview = display_text[:100] + "..." if len(display_text) > 100 else display_text
-        result_line = f"\n[📋 Tool result{round_label}: {preview}]\n"
+        badge = ""
+        if tool_name == "terminal_run":
+            parsed = None
+            if isinstance(output, str):
+                try:
+                    parsed = json.loads(output)
+                except json.JSONDecodeError:
+                    parsed = None
+            elif isinstance(output, dict):
+                parsed = output
+
+            if isinstance(parsed, dict):
+                decision = str(parsed.get("decision", "")).strip().lower()
+                exit_code = parsed.get("exit_code")
+                badge_icon = {
+                    "allowed": "✅",
+                    "approved": "✅",
+                    "denied": "⛔",
+                    "rejected": "🚫",
+                    "path_violation": "🚫",
+                }.get(decision, "⚠")
+                if isinstance(exit_code, int):
+                    badge = f" {badge_icon} {decision} (exit {exit_code})"
+                else:
+                    badge = f" {badge_icon} {decision}" if decision else f" {badge_icon}"
+                stdout_preview = parsed.get("stdout")
+                if isinstance(stdout_preview, str) and stdout_preview.strip():
+                    preview = stdout_preview[:100] + "..." if len(stdout_preview) > 100 else stdout_preview
+
+        result_line = f"\n[📋 Tool result{round_label}{badge}: {preview}]\n"
         s._safe_root_after(lambda: s.gui.display_agent_response(result_line))
         s._write_log(result_line)
         s._output_logger.log("tool_result", f"{tool_name}: {display_text}")
@@ -174,8 +203,75 @@ class StreamingController:
             dirty = True
         if dirty and msg.file_path:
             msg.save(os.path.dirname(msg.file_path))
+        self._handle_terminal_tool_result(tool_name=tool_name, output=output)
         s._safe_root_after(s.refresh_working_memory_gui)
         return msg.message_id
+
+    def _handle_terminal_tool_result(self, tool_name: str, output: object) -> None:
+        """Apply terminal-pane UI updates for terminal tool results.
+
+        Tracks pane lifecycle to drive the InputPanel terminal status strip
+        and binds per-row kill actions on successful `terminal_run` results.
+        """
+        s = self._s
+        if not hasattr(s, "_active_terminal_panes"):
+            return
+
+        active_panes = getattr(s, "_active_terminal_panes")
+        if not isinstance(active_panes, set):
+            return
+
+        def _sync_strip() -> None:
+            if hasattr(s, "_update_terminal_status_strip"):
+                s._update_terminal_status_strip()
+
+        if tool_name == "terminal_run":
+            parsed = None
+            if isinstance(output, str):
+                try:
+                    parsed = json.loads(output)
+                except json.JSONDecodeError:
+                    parsed = None
+            elif isinstance(output, dict):
+                parsed = output
+
+            if not isinstance(parsed, dict):
+                return
+
+            pane_id = parsed.get("pane_id")
+            decision = parsed.get("decision")
+            if isinstance(pane_id, str) and pane_id and decision in {"allowed", "approved"}:
+                active_panes.add(pane_id)
+                _sync_strip()
+                if hasattr(s, "_handle_terminal_kill_pane"):
+                    s._safe_root_after(
+                        lambda pid=pane_id: s.gui.set_tool_result_kill_action(pid, s._handle_terminal_kill_pane)
+                    )
+            return
+
+        if tool_name == "terminal_kill_pane":
+            if isinstance(output, str) and output.startswith("Killed pane: "):
+                pane_id = output.replace("Killed pane: ", "", 1).strip()
+                if pane_id:
+                    active_panes.discard(pane_id)
+                    _sync_strip()
+            return
+
+        if tool_name == "terminal_list_active_panes":
+            pane_ids: list[str] = []
+            if isinstance(output, str):
+                try:
+                    parsed_list = json.loads(output)
+                except json.JSONDecodeError:
+                    parsed_list = None
+                if isinstance(parsed_list, list):
+                    pane_ids = [str(v) for v in parsed_list if isinstance(v, str) and v]
+            elif isinstance(output, list):
+                pane_ids = [str(v) for v in output if isinstance(v, str) and v]
+
+            active_panes.clear()
+            active_panes.update(pane_ids)
+            _sync_strip()
 
     # ------------------------------------------------------------------
     # Message persistence

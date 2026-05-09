@@ -66,6 +66,42 @@ class TestRegisterClientToolsException:
             adapter._register_client_tools()
 
 
+class TestRegisterTerminalTools:
+    @pytest.mark.unit
+    def test_success_registers_terminal_tools(self):
+        """GIVEN adapter init WHEN terminal bridge helpers succeed THEN terminal tools register on bridge. [PD-15-AF-002]"""
+        adapter = _make_adapter()
+
+        with (
+            patch(
+                "agentx.integration.terminal_bridge.configure_terminal_bridge",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "agentx.integration.terminal_bridge.get_terminal_tool_implementations",
+                return_value={"terminal_run": lambda **_kwargs: "{}"},
+            ),
+            patch(
+                "agentx.integration.terminal_bridge.get_terminal_tool_schemas",
+                return_value=[{"type": "function", "function": {"name": "terminal_run"}}],
+            ),
+        ):
+            adapter._register_terminal_tools()
+
+        adapter.bridge.register_tool_implementations.assert_called()
+
+    @pytest.mark.unit
+    def test_exception_path_is_swallowed(self):
+        """GIVEN terminal helper import/setup failure WHEN terminal tools register THEN adapter does not raise. [PD-15-AF-002]"""
+        adapter = _make_adapter()
+
+        with patch(
+            "agentx.integration.terminal_bridge.get_terminal_tool_implementations",
+            side_effect=RuntimeError("terminal tooling unavailable"),
+        ):
+            adapter._register_terminal_tools()
+
+
 # ---------------------------------------------------------------------------
 # register_working_memory_tools — full body + exception path (lines 101-112)
 # ---------------------------------------------------------------------------

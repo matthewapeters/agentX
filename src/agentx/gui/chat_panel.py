@@ -9,6 +9,7 @@ Accessed via back-reference pattern: ``ChatPanel(gui_manager)`` stores
 
 from __future__ import annotations
 
+import json
 import math
 import threading
 import tkinter as tk
@@ -967,6 +968,7 @@ class ChatPanel:
             "full_text": full_text,
             "role_label": role_label,
             "icon": icon,
+            "header_frame": header_frame,
         }
 
         toggle_btn = tk.Button(
@@ -1090,6 +1092,46 @@ class ChatPanel:
         entry_frame.pack(fill=tk.X, anchor="w", pady=(1, 1))
         return state
 
+    def _set_entry_action_button(
+        self,
+        entry: dict[str, Any],
+        label: str,
+        command: Callable[[], None],
+    ) -> None:
+        """Attach or update a right-aligned action button on an entry header."""
+        existing = entry.get("action_button")
+        if existing is not None:
+            try:
+                existing.destroy()
+            except tk.TclError:
+                pass
+        btn = tk.Button(
+            entry["header_frame"],
+            text=label,
+            font=("Terminal", 8),
+            bd=0,
+            padx=8,
+            pady=1,
+            bg=self._config.status_bg,
+            fg=self._config.ui_fg,
+            activebackground=self._config.muted_fg,
+            activeforeground=self._config.output_bg,
+            command=command,
+        )
+        btn.pack(side=tk.RIGHT, padx=(6, 0))
+        entry["action_button"] = btn
+
+    def set_tool_result_kill_action(self, pane_id: str, on_kill: Callable[[str], None]) -> None:
+        """Attach a kill-pane action to the current tool-result row. [PD-15-AF-004]"""
+        entry = self._current_turn_entries.get("tool_result")
+        if entry is None:
+            return
+
+        def _handle_kill(target: str = pane_id) -> None:
+            on_kill(target)
+
+        self._set_entry_action_button(entry, f"Kill {pane_id}", _handle_kill)
+
     def _append_output_entry_text(self, entry: dict[str, Any], chunk: str) -> None:
         if not chunk:
             return
@@ -1198,6 +1240,31 @@ class ChatPanel:
                     self._set_entry_text(entry, f"{entry['full_text']}\n{stripped}")
                 else:
                     self._set_entry_text(entry, stripped)
+                pane_id = self._extract_terminal_pane_id(stripped)
+                if pane_id:
+                    self.set_tool_result_kill_action(pane_id, self._g._on_terminal_kill_pane)
             return True
 
         return False
+
+    def _extract_terminal_pane_id(self, tool_result_line: str) -> str | None:
+        """Extract pane_id from terminal_run tool-result preview text when present."""
+        marker = "Tool result"
+        if marker not in tool_result_line:
+            return None
+        payload_start = tool_result_line.find(":")
+        payload_end = tool_result_line.rfind("]")
+        if payload_start < 0 or payload_end <= payload_start:
+            return None
+        payload = tool_result_line[payload_start + 1 : payload_end].strip()
+        if not payload.startswith("{"):
+            return None
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+        pane_id = parsed.get("pane_id")
+        decision = parsed.get("decision")
+        if isinstance(pane_id, str) and pane_id and decision in {"allowed", "approved"}:
+            return pane_id
+        return None

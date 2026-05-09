@@ -1,6 +1,6 @@
 # AgentX — Vibe Coding: Neovim Integration
 
-_Last updated: 2026-05-08 (v0.25.2 — resolved tmux named pane-target launch failures)
+_Last updated: 2026-05-09 (v0.31.0 — terminal dispatch defaults + tool-result decision badges)_
 
 > **"Vibe coding"**: a mode of collaborative software development where the AI agent
 > and the human developer co-author code in the same editor at the same time, each
@@ -975,6 +975,37 @@ One entry per line (prefix string). Changes saved to `agentx.toml` on `[Save]`.
 
 ---
 
+#### PD-15-AF-009: Dispatch Defaults from Config
+
+**Location**: `terminal_bridge.terminal_run()` wrapper function.  
+**Purpose**: Callers need not pass `visible`, `auto_close`, or `timeout_sec` explicitly; the wrapper reads those values from `agentx.toml [terminal]` when any are omitted (`None`).
+
+| Parameter | Config key | Fallback |
+|-----------|-----------|---------|
+| `visible` | `terminal_visible` | `True` |
+| `auto_close` | `terminal_auto_close` | `True` |
+| `timeout_sec` | `terminal_timeout_sec` | `60` |
+
+Explicit call-site values override the config. Invalid config values silently fall back to the defaults above.
+
+---
+
+#### PD-15-AF-010: Tool-Result Decision Badge
+
+**Location**: `StreamingController._display_tool_result()`.  
+**Purpose**: Every streamed `terminal_run` tool-result row in the chat panel includes a visual badge indicating the permission decision and exit code.
+
+| Decision | Badge |
+|----------|-------|
+| `allowed` / `approved` | `✅ {decision} (exit {code})` |
+| `denied` | `⛔ denied` |
+| `rejected` / `path_violation` | `🚫 {decision}` |
+| Unknown | `⚠ {decision}` |
+
+When `stdout` is available in the result payload, the first 100 characters are shown as a preview in the tool-result row.
+
+---
+
 ## 7. Neovim Integration Contract
 
 ### `VimBridge` (`src/agentx/integration/vim_bridge.py`)
@@ -1166,6 +1197,8 @@ New tools registered in `AgentixBridgeAdapter` when `VimBridge` / `TerminalBridg
 | PD-15-AF-008 stop command is safe when no session exists | `test_launch_vibe_shutdown.py` | GIVEN no session WHEN `launch_vibe.sh stop` THEN no-op success with no kill-session call |
 | PD-14-AF-008 recover-editor restores editing surface | `test_launch_vibe_shutdown.py` | GIVEN missing editor window WHEN `recover-editor` runs THEN window 0 is recreated and neovim relaunched in pane 0.0 |
 | PD-15-AF-008 start command installs GUI-exit teardown hook | `test_launch_vibe_shutdown.py` | GIVEN fresh start WHEN AgentX command is launched in window 2 THEN command string includes post-exit `tmux kill-session` hook |
+| PD-15-AF-009 terminal_run wrapper reads visible/auto_close/timeout from config | `test_terminal_bridge.py` | GIVEN config terminal_visible=False, terminal_auto_close=False, terminal_timeout_sec=17 WHEN terminal_run("pytest tests/") called without options THEN run_command receives visible=False, auto_close=False, timeout_sec=17 |
+| PD-15-AF-010 decision badge appears in tool-result row | `test_terminal_streaming_controller.py` | GIVEN terminal_run result with decision="approved", exit_code=0 WHEN _display_tool_result called THEN display_agent_response arg contains "approved" and "exit 0" |
 
 ### Integration Tests (two or more internal units)
 

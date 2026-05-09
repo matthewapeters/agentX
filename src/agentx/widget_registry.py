@@ -51,6 +51,8 @@ class WidgetRegistry:
         self.user_input_text: Optional[tk.Text] = None
         self.input_scrollbar: Optional[tk.Scrollbar] = None
         self.user_submit: Optional[tk.Button] = None
+        self.terminal_status_label: Optional[tk.Label] = None
+        self.terminal_mode_button: Optional[tk.Button] = None
         self.user_break: Optional[tk.Button] = None
         self.context_meter_canvas: Optional[tk.Canvas] = None
 
@@ -82,6 +84,10 @@ class WidgetRegistry:
             self.user_break.destroy()
         if self.user_submit is not None:
             self.user_submit.destroy()
+        if self.terminal_status_label is not None:
+            self.terminal_status_label.destroy()
+        if self.terminal_mode_button is not None:
+            self.terminal_mode_button.destroy()
         if self.input_scrollbar is not None:
             self.input_scrollbar.destroy()
         if self.user_input_text is not None:

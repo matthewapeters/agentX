@@ -27,9 +27,9 @@ def test_stop_gracefully_stops_agentx_and_editor(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert "send-keys\t-t\tagentx:2.0\tC-c" in log
-    assert "send-keys\t-t\tagentx:0.0\tC-c" in log
-    assert "send-keys\t-t\tagentx:0.0\t:qa!\tEnter" in log
+    assert "send-keys\t-t\t%2\tC-c" in log
+    assert "send-keys\t-t\t%0\tC-c" in log
+    assert "send-keys\t-t\t%0\t:qa!\tEnter" in log
     assert "kill-session\t-t\tagentx" in log
 
 
@@ -76,9 +76,9 @@ def test_recover_editor_recreates_window_and_relaunches_nvim(tmp_path: Path) -> 
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert f"new-window\t-d\t-t\tagentx\t-n\teditor\t-c\t{project_dir}" in log
-    assert "send-keys\t-t\tagentx:" in log and "\tC-c" in log
-    assert "send-keys\t-t\tagentx:" in log and "\tnvim" in log
+    assert f"new-window\t-P\t-F\t#{{pane_id}}\t-d\t-t\tagentx\t-n\teditor\t-c\t{project_dir}" in log
+    assert "send-keys\t-t\t%2\tC-c" in log
+    assert "send-keys\t-t\t%2\tnvim" in log
     assert "--listen" in log
     assert (project_dir / ".nvimrc.agentx").exists()
 
@@ -108,7 +108,7 @@ def test_start_launches_agentx_with_gui_exit_shutdown_hook(tmp_path: Path) -> No
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert "send-keys\t-t\tagentx:0.0\tnvim" in log
+    assert "send-keys\t-t\t%0\tnvim" in log
     assert "send-keys\t-t\tagentx:2" in log
     assert "tmux\tkill-session\t-t\t'agentx'" in log
 
@@ -212,6 +212,9 @@ if [[ ! -f "$state_file" ]]; then
     {
         echo "HAS_SESSION=${TMUX_HAS_SESSION:-1}"
         echo "WINDOWS=${TMUX_WINDOWS:-editor,agent-bg,agentx-log}"
+        echo "OPT_AGENTX_EDITOR_PANE="
+        echo "OPT_AGENTX_AGENT_BG_PANE="
+        echo "OPT_AGENTX_AGENTX_LOG_PANE="
     } > "$state_file"
 fi
 
@@ -222,7 +225,45 @@ save_state() {
     {
         echo "HAS_SESSION=$HAS_SESSION"
         echo "WINDOWS=$WINDOWS"
+        echo "OPT_AGENTX_EDITOR_PANE=$OPT_AGENTX_EDITOR_PANE"
+        echo "OPT_AGENTX_AGENT_BG_PANE=$OPT_AGENTX_AGENT_BG_PANE"
+        echo "OPT_AGENTX_AGENTX_LOG_PANE=$OPT_AGENTX_AGENTX_LOG_PANE"
     } > "$state_file"
+}
+
+pane_id_for_index() {
+    local idx="$1"
+    echo "%${idx}"
+}
+
+window_index_for_name() {
+    local name="$1"
+    IFS=',' read -r -a wins <<< "${WINDOWS:-editor,agent-bg,agentx-log}"
+    local i=0
+    for w in "${wins[@]}"; do
+        if [[ "$w" == "$name" ]]; then
+            echo "$i"
+            return 0
+        fi
+        i=$((i + 1))
+    done
+    echo ""
+    return 1
+}
+
+parse_target_index() {
+    local target="$1"
+    if [[ "$target" == %* ]]; then
+        echo "${target#%}"
+        return 0
+    fi
+    if [[ "$target" == *":"* ]]; then
+        local win_part="${target#*:}"
+        echo "${win_part%%.*}"
+        return 0
+    fi
+    echo ""
+    return 1
 }
 
 if [[ -n "${TMUX_LOG:-}" ]]; then
@@ -270,6 +311,20 @@ fi
 
 if [[ "$cmd" == "list-panes" ]]; then
     [[ "${HAS_SESSION:-1}" == "1" ]] || exit 1
+
+    if printf '%s\n' "$*" | grep -q -- "-a"; then
+        IFS=',' read -r -a wins <<< "${WINDOWS:-editor,agent-bg,agentx-log}"
+        if printf '%s\n' "$*" | grep -q -- "#{pane_id}"; then
+            i=0
+            for _w in "${wins[@]}"; do
+                echo "$(pane_id_for_index "$i")"
+                i=$((i + 1))
+            done
+            exit 0
+        fi
+        exit 0
+    fi
+
     target=""
     prev=""
     for a in "$@"; do
@@ -279,11 +334,7 @@ if [[ "$cmd" == "list-panes" ]]; then
         fi
         prev="$a"
     done
-    win=""
-    if [[ "$target" == *":"* ]]; then
-        win_part="${target#*:}"
-        win="${win_part%%.*}"
-    fi
+    win="$(parse_target_index "$target" || true)"
     IFS=',' read -r -a wins <<< "${WINDOWS:-editor,agent-bg,agentx-log}"
     i=0
     for w in "${wins[@]}"; do
@@ -308,6 +359,9 @@ if [[ "$cmd" == "new-session" ]]; then
     done
     WINDOWS="$name"
     save_state
+    if printf '%s\n' "$*" | grep -q -- "-P"; then
+        echo "$(pane_id_for_index 0)"
+    fi
     exit 0
 fi
 
@@ -328,7 +382,51 @@ if [[ "$cmd" == "new-window" ]]; then
             WINDOWS="$WINDOWS,$name"
         fi
         save_state
+        if printf '%s\n' "$*" | grep -q -- "-P"; then
+            idx="$(window_index_for_name "$name")"
+            echo "$(pane_id_for_index "$idx")"
+        fi
     fi
+    exit 0
+fi
+
+if [[ "$cmd" == "set-option" ]]; then
+    key=""
+    value=""
+    prev=""
+    for a in "$@"; do
+        if [[ "$a" == "-q" || "$a" == "-t" ]]; then
+            prev="$a"
+            continue
+        fi
+        if [[ "$prev" == "-t" ]]; then
+            prev=""
+            continue
+        fi
+        if [[ -z "$key" ]]; then
+            key="$a"
+        elif [[ -z "$value" ]]; then
+            value="$a"
+            break
+        fi
+    done
+    case "$key" in
+        @agentx_editor_pane) OPT_AGENTX_EDITOR_PANE="$value" ;;
+        @agentx_agent_bg_pane) OPT_AGENTX_AGENT_BG_PANE="$value" ;;
+        @agentx_agentx_log_pane) OPT_AGENTX_AGENTX_LOG_PANE="$value" ;;
+    esac
+    save_state
+    exit 0
+fi
+
+if [[ "$cmd" == "show-options" ]]; then
+    key="${@: -1}"
+    case "$key" in
+        @agentx_editor_pane) echo "$OPT_AGENTX_EDITOR_PANE" ;;
+        @agentx_agent_bg_pane) echo "$OPT_AGENTX_AGENT_BG_PANE" ;;
+        @agentx_agentx_log_pane) echo "$OPT_AGENTX_AGENTX_LOG_PANE" ;;
+        *) echo "" ;;
+    esac
     exit 0
 fi
 
@@ -339,6 +437,24 @@ if [[ "$cmd" == "kill-session" ]]; then
 fi
 
 if [[ "$cmd" == "display-message" ]]; then
+    target=""
+    format=""
+    prev=""
+    for a in "$@"; do
+        if [[ "$prev" == "-t" ]]; then
+            target="$a"
+        fi
+        if [[ "$prev" == "-p" ]]; then
+            format="$a"
+        fi
+        prev="$a"
+    done
+
+    idx="$(parse_target_index "$target" || true)"
+    if [[ -z "$idx" ]]; then
+        idx="0"
+    fi
+
     for a in "$@"; do
         if [[ "$a" == "#{pane_current_path}" ]]; then
             echo "${TMUX_PANE_PATH:-$PWD}"
@@ -346,6 +462,14 @@ if [[ "$cmd" == "display-message" ]]; then
         fi
         if [[ "$a" == "#{pane_current_command}" ]]; then
             echo "${TMUX_PANE_COMMAND:-bash}"
+            exit 0
+        fi
+        if [[ "$a" == "#{pane_id}" ]]; then
+            echo "$(pane_id_for_index "$idx")"
+            exit 0
+        fi
+        if [[ "$a" == "#{session_name}:#{window_index}" ]]; then
+            echo "agentx:${idx}"
             exit 0
         fi
     done

@@ -1,11 +1,11 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-08 (v0.24.1)_
+_Last updated: 2026-05-09 (v0.31.0)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-08 (v0.24.1 — lifecycle reliability fixes for launch_vibe editor pane health checks and GUI-exit teardown)
+**Last updated**: 2026-05-09 (v0.31.0 — terminal dispatch defaults + tool-result decision badges)
 **Current version**: see `pyproject.toml`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
@@ -54,9 +54,9 @@ _Last updated: 2026-05-08 (v0.24.1)_
 | PD-12 StatusTab | 0 | 0 | 11 | 0 |
 | PD-13 ToolPanel | 0 | 0 | 2 | 0 |
 | PD-14 VimBridge GUI | 0 | 0 | 10 | 0 |
-| PD-15 TerminalPane GUI | 0 | 0 | 8 | 0 |
+| PD-15 TerminalPane GUI | 8 | 0 | 0 | 0 |
 
-**Totals**: 71 ✅ · 6 ⚠️ · 31 📝 · 0 ❌
+**Totals**: 82 ✅ · 6 ⚠️ · 23 📝 · 0 ❌
 
 ---
 
@@ -71,6 +71,7 @@ _Last updated: 2026-05-08 (v0.24.1)_
 - [/] **PD-07-AF-002..003** — Settings collapse state + restart-required icon
 - [/] **PD-02-AF-002** — Shift+Enter inserts newline
 - [ ] **PD-12: StatusTab** — implement: `status_tab.py`, relocate donut + break button, wire `StreamingController` phase events (11 affordances spec-only)
+- [/] **PD-15-AF-003..004** — active terminal indicator and kill-pane action wiring in GUI/tool-result rows
 - [/] **PD-04-AF-004** — ModelSelector refresh button
 - [/] **PD-05-AF-004** — Re-synth button in synthesis block
 - [/] **PD-05-AF-005** — Export button in plan tab toolbar

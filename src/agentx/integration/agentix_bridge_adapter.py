@@ -66,6 +66,7 @@ class AgentixBridgeAdapter:
         self.agentix_config = self._convert_config(config)
         self.bridge = AgentixBridge(self.agentix_config)
         self._register_client_tools()
+        self._register_terminal_tools()
 
     def _register_client_tools(self) -> None:
         """Register client-side file tools with the bridge.
@@ -86,6 +87,35 @@ class AgentixBridgeAdapter:
             self.bridge.register_tool_implementations(impls, schemas)
         except Exception as exc:
             logger.warning("Could not register client tools: %s", exc)
+
+    def _register_terminal_tools(self) -> None:
+        """Register tmux-backed terminal tools with the bridge.
+
+        Terminal tools are optional and are only useful when the launcher has set
+        ``AGENTX_TMUX_SESSION`` and tmux is available at runtime.
+        """
+        try:
+            from agentx.integration.terminal_bridge import (
+                configure_terminal_bridge,
+                get_terminal_tool_implementations,
+                get_terminal_tool_schemas,
+            )
+
+            tmux_session = os.environ.get("AGENTX_TMUX_SESSION", "agentx")
+            audit_log_path = self.config.get("terminal", {}).get("audit_log_path")
+
+            configure_terminal_bridge(
+                config=self.config,
+                session_id=tmux_session,
+                project_roots=[str(Path.cwd())],
+                audit_log_path=audit_log_path,
+            )
+
+            impls = get_terminal_tool_implementations()
+            schemas = get_terminal_tool_schemas()
+            self.bridge.register_tool_implementations(impls, schemas)
+        except Exception as exc:
+            logger.warning("Could not register terminal tools: %s", exc)
 
     def register_working_memory_tools(self, working_memory) -> None:
         """Register Working Memory tools with the bridge.

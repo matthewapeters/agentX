@@ -32,6 +32,7 @@ from ..gui.progress_widgets import (
     ResultStreamWidget,
     StreamingExecutionUI,
 )
+from .terminal_bridge import TerminalBridge, PermissionLayer, PermissionDecision, TerminalResult
 
 __all__ = [
     "AgentixBridgeAdapter",
@@ -58,4 +59,8 @@ __all__ = [
     "ProgressPanel",
     "ResultStreamWidget",
     "StreamingExecutionUI",
+    "TerminalBridge",
+    "PermissionLayer",
+    "PermissionDecision",
+    "TerminalResult",
 ]

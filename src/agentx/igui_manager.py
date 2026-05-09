@@ -332,6 +332,32 @@ class IGUIManager(Protocol):
         """
         ...
 
+    def set_terminal_status(self, active_panes: int, exec_mode: str = "supervised") -> None:
+        """Update terminal activity strip state.
+
+        Args:
+            active_panes: Number of active terminal panes tracked by the session.
+            exec_mode: Terminal execution mode label (`supervised` or `autonomous`).
+        """
+        ...
+
+    def set_tool_result_kill_action(self, pane_id: str, on_kill: Callable[[str], None]) -> None:
+        """Attach a kill-pane action to the most recent tool-result row.
+
+        Args:
+            pane_id: tmux pane id to target.
+            on_kill: Callback invoked when the user clicks the kill action.
+        """
+        ...
+
+    def set_terminal_mode_toggle_callback(self, callback: Callable[[], None]) -> None:
+        """Register callback for terminal execution mode toggle actions.
+
+        Args:
+            callback: Invoked when the terminal mode button is clicked.
+        """
+        ...
+
     # Widget Access Methods
 
     def get_root(self) -> tk.Tk:

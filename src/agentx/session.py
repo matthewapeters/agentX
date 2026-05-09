@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 import tkinter as tk
+from tkinter import messagebox
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator, Optional
@@ -144,6 +145,9 @@ class AgentXSession:
             on_interrupt=self._handle_interrupt,
             on_attachment_toggle=self._handle_attachment_toggle,
         )
+        if hasattr(self.gui, "_on_terminal_kill_pane"):
+            setattr(self.gui, "_on_terminal_kill_pane", self._handle_terminal_kill_pane)
+        self.gui.set_terminal_mode_toggle_callback(self._handle_terminal_mode_toggle)
 
         # Set window title with session info
         self.gui.set_window_title(f"{user} - AgentX Session - {self.start_time}")
@@ -190,6 +194,181 @@ class AgentXSession:
 
         # --- StreamingController: owns the streaming loop and display logic ---
         self._streaming_controller = StreamingController(self)
+        self._active_terminal_panes: set[str] = set()
+        self._configure_terminal_approval_callback()
+        self._update_terminal_status_strip()
+
+    def _get_terminal_exec_mode(self) -> str:
+        """Return configured terminal execution mode for status display."""
+        try:
+            from .integration.terminal_bridge import get_terminal_exec_mode
+
+            return get_terminal_exec_mode(default="supervised")
+        except Exception:
+            return "supervised"
+
+    def _configure_terminal_approval_callback(self) -> None:
+        """Attach session approval callback to the configured terminal bridge."""
+        try:
+            from .integration.terminal_bridge import set_terminal_approval_callback
+
+            set_terminal_approval_callback(self._request_terminal_approval)
+        except Exception:
+            pass
+
+    def _update_terminal_status_strip(self) -> None:
+        """Refresh input-panel terminal status strip. [PD-15-AF-003]"""
+        self._safe_root_after(
+            lambda: self.gui.set_terminal_status(
+                active_panes=len(self._active_terminal_panes),
+                exec_mode=self._get_terminal_exec_mode(),
+            )
+        )
+
+    def _handle_terminal_kill_pane(self, pane_id: str) -> None:
+        """Handle kill-pane action from tool-result UI. [PD-15-AF-004]
+
+        Args:
+            pane_id: Target tmux pane id.
+        """
+        try:
+            from .integration.terminal_bridge import terminal_kill_pane
+
+            result = terminal_kill_pane(pane_id)
+            self._active_terminal_panes.discard(pane_id)
+            self._update_terminal_status_strip()
+            self._safe_root_after(lambda: self.gui.display_agent_response(f"\n[🧹 {result}]\n"))
+        except Exception as exc:
+            self._safe_root_after(lambda err=exc: self.gui.display_error(f"Terminal kill failed: {err}"))
+
+    def _handle_terminal_mode_toggle(self) -> None:
+        """Toggle terminal exec mode with confirmation for autonomous. [PD-15-AF-005]"""
+        current = self._get_terminal_exec_mode().strip().lower()
+        target = "autonomous" if current != "autonomous" else "supervised"
+
+        if target == "autonomous":
+            confirmed = messagebox.askyesno(
+                "Enable Autonomous Mode",
+                "Autonomous mode will execute state-changing commands without approval. Continue?",
+                parent=self.root,
+            )
+            if not confirmed:
+                return
+
+        self._apply_terminal_exec_mode(target)
+
+    def _apply_terminal_exec_mode(self, mode: str) -> None:
+        """Apply terminal exec mode in runtime + persisted config."""
+        mode = mode.strip().lower()
+        if mode not in {"supervised", "autonomous"}:
+            return
+
+        try:
+            from .integration.terminal_bridge import set_terminal_exec_mode
+
+            set_terminal_exec_mode(mode)
+        except Exception:
+            pass
+
+        terminal_cfg = self.config.setdefault("terminal", {})
+        terminal_cfg["exec_mode"] = mode
+        try:
+            save_config(self.config)
+        except Exception as e:
+            logger.warning("Settings: failed to save terminal exec mode: %s", e)
+
+        self._update_terminal_status_strip()
+
+    def _show_terminal_approval_dialog(self, command: str, context: str) -> tuple[bool, str | None]:
+        """Show supervised approval dialog on Tk thread. [PD-15-AF-006]"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Terminal Command Approval")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.configure(bg=self.gui.config.status_bg)
+
+        result: dict[str, object] = {"approved": False, "command": command}
+        edit_enabled = tk.BooleanVar(value=False)
+
+        tk.Label(
+            dialog,
+            text="Agent wants to run:",
+            anchor="w",
+            bg=self.gui.config.status_bg,
+            fg=self.gui.config.ui_fg,
+            font=("Terminal", 10, "bold"),
+        ).pack(fill=tk.X, padx=12, pady=(10, 4))
+
+        cmd_text = tk.Text(dialog, height=4, wrap=tk.WORD, font=("Terminal", 9))
+        cmd_text.insert("1.0", command)
+        cmd_text.config(state=tk.DISABLED)
+        cmd_text.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 8))
+
+        if context:
+            tk.Label(
+                dialog,
+                text=f"Context: {context}",
+                anchor="w",
+                justify=tk.LEFT,
+                bg=self.gui.config.status_bg,
+                fg=self.gui.config.muted_fg,
+                font=("Terminal", 9),
+            ).pack(fill=tk.X, padx=12, pady=(0, 8))
+
+        btn_row = tk.Frame(dialog, bg=self.gui.config.status_bg)
+        btn_row.pack(fill=tk.X, padx=12, pady=(0, 10))
+
+        def _approve() -> None:
+            result["approved"] = True
+            result["command"] = cmd_text.get("1.0", tk.END).strip() if edit_enabled.get() else command
+            dialog.destroy()
+
+        def _edit_or_approve() -> None:
+            if not edit_enabled.get():
+                edit_enabled.set(True)
+                cmd_text.config(state=tk.NORMAL)
+                cmd_text.focus_set()
+                edit_btn.config(text="Approve Edit")
+                return
+            _approve()
+
+        def _reject() -> None:
+            result["approved"] = False
+            result["command"] = command
+            dialog.destroy()
+
+        tk.Button(btn_row, text="Approve", command=_approve).pack(side=tk.LEFT, padx=(0, 6))
+        edit_btn = tk.Button(btn_row, text="Edit & Approve", command=_edit_or_approve)
+        edit_btn.pack(side=tk.LEFT, padx=(0, 6))
+        tk.Button(btn_row, text="Reject", command=_reject).pack(side=tk.LEFT)
+
+        dialog.bind("<Escape>", lambda _e: _reject())
+        dialog.bind("<Return>", lambda _e: _approve())
+        dialog.protocol("WM_DELETE_WINDOW", _reject)
+
+        dialog.wait_window()
+        approved = bool(result.get("approved"))
+        updated_command = str(result.get("command", command))
+        return approved, updated_command
+
+    def _request_terminal_approval(self, command: str, context: str) -> tuple[bool, str | None]:
+        """Request command approval, marshaling to Tk main thread when needed."""
+        if threading.current_thread() is threading.main_thread():
+            return self._show_terminal_approval_dialog(command, context)
+
+        done = threading.Event()
+        result: dict[str, object] = {"approved": False, "command": command}
+
+        def _run_dialog() -> None:
+            approved, updated = self._show_terminal_approval_dialog(command, context)
+            result["approved"] = approved
+            result["command"] = updated
+            done.set()
+
+        self._safe_root_after(_run_dialog)
+        if not done.wait(timeout=300):
+            return False, command
+        return bool(result.get("approved")), str(result.get("command", command))
 
     def _log_classification(self, classification: Optional[PromptClassificationResponse], prompt: str) -> None:
         """Delegate to StreamingController."""
@@ -959,6 +1138,17 @@ class AgentXSession:
             elif section == "agentx":
                 if leaf == "markdown_render_enabled":
                     self.gui.config.markdown_render_enabled = bool(value)
+            elif section == "terminal":
+                if leaf == "exec_mode":
+                    self._apply_terminal_exec_mode(str(value))
+                else:
+                    try:
+                        from .integration.terminal_bridge import reload_terminal_config
+
+                        reload_terminal_config(self.config)
+                    except Exception:
+                        pass
+                    self._update_terminal_status_strip()
         except AttributeError:
             pass  # Agentix not available
 

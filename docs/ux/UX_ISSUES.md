@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-08 (v0.25.2)_
+_Last updated: 2026-05-08 (v0.25.3)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -245,4 +245,5 @@ Implementation: `src/agentx/gui/status_tab.py` (to be created) + wiring in `Stre
   - Upgraded fake tmux harness in launcher tests to be stateful across invocations in a single launcher run, so session/window lifecycle regressions are covered.
 - **Tests**: `tests/test_launch_vibe_shutdown.py` (5 unit tests, hermetic fake tmux/nvim harness).
 - **Design docs updated**: `docs/ux/05_VIBE_CODING.md` (launch architecture, lifecycle commands, permutations, and traceability test scenarios).
-- **Ready for UAT**.
+- **UAT confirmation (2026-05-08)**: User confirmed launch and close behavior of `launch_vibe.sh` now passes in live use.
+- **UAT Status**: User-approved in UAT on 2026-05-08.

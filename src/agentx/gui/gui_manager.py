@@ -130,6 +130,8 @@ class GUIManager(IGUIManager):
         # Callbacks stored here because panels access them via ``self._g.*``
         self._on_submit = on_submit
         self._on_interrupt = on_interrupt
+        self._on_terminal_kill_pane: Callable[[str], None] = lambda _pane_id: None
+        self._on_terminal_mode_toggle: Callable[[], None] = lambda: None
         # NOTE: storing this as an instance attribute shadows the class method
         # of the same name (defined below).  All callers that do
         # ``self._on_attachment_toggle(id, val)`` will invoke the stored
@@ -399,6 +401,18 @@ class GUIManager(IGUIManager):
 
     def set_busy_state(self, is_busy: bool) -> None:
         self._input_panel.set_busy_state(is_busy)
+
+    def set_terminal_status(self, active_panes: int, exec_mode: str = "supervised") -> None:
+        """Update terminal activity strip in the input panel. [PD-15-AF-003]"""
+        self._input_panel.set_terminal_status(active_panes, exec_mode)
+
+    def set_tool_result_kill_action(self, pane_id: str, on_kill: Callable[[str], None]) -> None:
+        """Attach a kill action to the current tool-result row. [PD-15-AF-004]"""
+        self._chat_panel.set_tool_result_kill_action(pane_id, on_kill)
+
+    def set_terminal_mode_toggle_callback(self, callback: Callable[[], None]) -> None:
+        """Register callback used by the terminal mode button. [PD-15-AF-005]"""
+        self._on_terminal_mode_toggle = callback
 
     # ── State accessors ───────────────────────────────────────────────────────
 

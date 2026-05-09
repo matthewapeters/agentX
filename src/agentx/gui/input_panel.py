@@ -57,6 +57,29 @@ class InputPanel:
         # Attachment bar
         self._widgets.attachments_frame = tk.Frame(self._g.root, height=2)
         self._widgets.attachments_frame.place(relx=0.001, rely=0.77, relwidth=1.0, relheight=0.03)
+        self._widgets.terminal_status_label = tk.Label(
+            self._widgets.attachments_frame,
+            text="Terminal: 0 active",
+            anchor="e",
+            font=("Terminal", 9),
+            bg=self._config.status_bg,
+            fg=self._config.muted_fg,
+        )
+        self._widgets.terminal_status_label.pack(side=tk.RIGHT, padx=8)
+        self._widgets.terminal_mode_button = tk.Button(
+            self._widgets.attachments_frame,
+            text="Supervised",
+            font=("Terminal", 8),
+            bd=0,
+            padx=8,
+            pady=1,
+            bg=self._config.status_bg,
+            fg=self._config.ui_fg,
+            activebackground=self._config.muted_fg,
+            activeforeground=self._config.output_bg,
+            command=self._on_terminal_mode_toggle,
+        )
+        self._widgets.terminal_mode_button.pack(side=tk.RIGHT, padx=4)
 
         # User input frame
         self._widgets.user_input = tk.Frame(self._g.root, bg=self._config.input_bg)
@@ -166,6 +189,32 @@ class InputPanel:
                 submit.config(state=tk.DISABLED if is_busy else tk.NORMAL)
         except RuntimeError:
             pass
+
+    def set_terminal_status(self, active_panes: int, exec_mode: str = "supervised") -> None:
+        """Update terminal activity strip text. [PD-15-AF-003]
+
+        Args:
+            active_panes: Number of currently active terminal panes.
+            exec_mode: Terminal execution mode (supervised or autonomous).
+        """
+        if threading.current_thread() is not threading.main_thread():
+            return
+        label = self._widgets.terminal_status_label
+        if label is None:
+            return
+        mode_button = self._widgets.terminal_mode_button
+        mode = exec_mode.strip().lower()
+        mode_text = "⚡ Autonomous" if mode == "autonomous" else "👀 Supervised"
+        if mode_button is not None:
+            mode_button.config(text="⚡ Autonomous" if mode == "autonomous" else "👀 Supervised")
+        pane_word = "pane" if active_panes == 1 else "panes"
+        label.config(text=f"{mode_text} | {active_panes} active {pane_word}")
+
+    def _on_terminal_mode_toggle(self) -> None:
+        """Invoke terminal execution mode toggle callback. [PD-15-AF-005]"""
+        callback = getattr(self._g, "_on_terminal_mode_toggle", None)
+        if callable(callback):
+            callback()
 
     def update_attachment_bar(
         self,

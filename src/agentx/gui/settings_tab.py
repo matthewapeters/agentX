@@ -110,6 +110,9 @@ class SettingsTab:
         self._torch_state_var: tk.StringVar | None = None
         self._theme_mode_var: tk.StringVar | None = None
         self._model_dropdowns: list[ttk.Combobox] = []
+        self._terminal_allow_text: tk.Text | None = None
+        self._terminal_confirm_text: tk.Text | None = None
+        self._terminal_deny_text: tk.Text | None = None
 
         # Build all sections.
         self._build_appearance_section()
@@ -117,6 +120,7 @@ class SettingsTab:
         self._build_agentix_section()
         self._build_classification_display_section()
         self._build_working_memory_section()
+        self._build_terminal_execution_section()
 
         # Apply initial torch-field greyout.
         self._apply_torch_greyout()
@@ -343,6 +347,144 @@ class SettingsTab:
             from_=0,
             to=500,
         )
+
+    def _build_terminal_execution_section(self) -> None:
+        """Render terminal execution controls. [PD-15-AF-005]"""
+        cfg = self._config.get("terminal", {})
+        section = self._make_section("🖥️ Terminal Execution", initial_collapsed=True)
+        g = section.content_container
+
+        self._add_enum_dropdown(
+            g,
+            0,
+            ["terminal", "exec_mode"],
+            "Execution mode",
+            cfg.get("exec_mode", "supervised"),
+            ["supervised", "autonomous"],
+            hot_reload=True,
+        )
+
+        self._add_checkbox(
+            g,
+            1,
+            ["terminal", "terminal_visible"],
+            "Visible terminal panes",
+            cfg.get("terminal_visible", True),
+        )
+
+        self._add_checkbox(
+            g,
+            2,
+            ["terminal", "terminal_auto_close"],
+            "Auto-close ephemeral panes",
+            cfg.get("terminal_auto_close", True),
+        )
+
+        self._add_spinbox(
+            g,
+            3,
+            ["terminal", "terminal_timeout_sec"],
+            "Terminal timeout (s)",
+            int(cfg.get("terminal_timeout_sec", 60)),
+            from_=5,
+            to=600,
+        )
+
+        self._add_separator(g, 4, "Permission prefixes (one per line)")
+
+        lists_row = tk.Frame(g, bg=self._bg)
+        lists_row.grid(row=5, column=0, columnspan=2, sticky="ew", padx=(8, 8), pady=(2, 2))
+        lists_row.columnconfigure(0, weight=1)
+        lists_row.columnconfigure(1, weight=1)
+        lists_row.columnconfigure(2, weight=1)
+
+        self._terminal_allow_text = self._create_terminal_prefix_editor(
+            parent=lists_row,
+            column=0,
+            title="Allow",
+            values=cfg.get("allow", []),
+        )
+        self._terminal_confirm_text = self._create_terminal_prefix_editor(
+            parent=lists_row,
+            column=1,
+            title="Confirm",
+            values=cfg.get("confirm", []),
+        )
+        self._terminal_deny_text = self._create_terminal_prefix_editor(
+            parent=lists_row,
+            column=2,
+            title="Deny",
+            values=cfg.get("deny", []),
+        )
+
+        action_row = tk.Frame(g, bg=self._bg)
+        action_row.grid(row=6, column=0, columnspan=2, sticky="w", padx=(8, 8), pady=(4, 6))
+        tk.Button(action_row, text="Save Lists", command=self._save_terminal_permission_lists).pack(side=tk.LEFT)
+        tk.Button(action_row, text="Reset Defaults", command=self._reset_terminal_permission_lists).pack(
+            side=tk.LEFT,
+            padx=(6, 0),
+        )
+
+    def _create_terminal_prefix_editor(
+        self,
+        parent: tk.Widget,
+        column: int,
+        title: str,
+        values: list[str],
+    ) -> tk.Text:
+        """Create one terminal prefix list editor widget."""
+        box = tk.Frame(parent, bg=self._bg)
+        box.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 4, 0))
+        tk.Label(
+            box,
+            text=title,
+            bg=self._bg,
+            fg=self._fg,
+            anchor="w",
+            font=("Terminal", 9, "bold"),
+        ).pack(fill=tk.X)
+        text_widget = tk.Text(box, height=6, width=18, font=("Terminal", 8), wrap=tk.WORD)
+        text_widget.pack(fill=tk.BOTH, expand=True)
+        lines = "\n".join(str(v) for v in values if str(v).strip())
+        if lines:
+            text_widget.insert("1.0", lines)
+        return text_widget
+
+    def _read_terminal_prefixes(self, widget: tk.Text | None) -> list[str]:
+        """Read non-empty prefix lines from a terminal list text box."""
+        if widget is None:
+            return []
+        raw = widget.get("1.0", tk.END)
+        return [line for line in raw.splitlines() if line.strip()]
+
+    def _save_terminal_permission_lists(self) -> None:
+        """Persist allow/confirm/deny terminal permission lists. [PD-15-AF-007]"""
+        allow = self._read_terminal_prefixes(self._terminal_allow_text)
+        confirm = self._read_terminal_prefixes(self._terminal_confirm_text)
+        deny = self._read_terminal_prefixes(self._terminal_deny_text)
+        self._fire(["terminal", "allow"], allow)
+        self._fire(["terminal", "confirm"], confirm)
+        self._fire(["terminal", "deny"], deny)
+
+    def _reset_terminal_permission_lists(self) -> None:
+        """Restore factory defaults for allow/confirm/deny lists. [PD-15-AF-007]"""
+        from agentx.integration.terminal_bridge import (
+            DEFAULT_ALLOW_PREFIXES,
+            DEFAULT_CONFIRM_PREFIXES,
+            DEFAULT_DENY_PREFIXES,
+        )
+
+        defaults = {
+            self._terminal_allow_text: DEFAULT_ALLOW_PREFIXES,
+            self._terminal_confirm_text: DEFAULT_CONFIRM_PREFIXES,
+            self._terminal_deny_text: DEFAULT_DENY_PREFIXES,
+        }
+        for widget, values in defaults.items():
+            if widget is None:
+                continue
+            widget.delete("1.0", tk.END)
+            widget.insert("1.0", "\n".join(values))
+        self._save_terminal_permission_lists()
 
     # ──────────────────────────────────────────────────────────────────────────
     # Widget factory helpers

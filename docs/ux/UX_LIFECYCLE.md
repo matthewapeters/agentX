@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-06 (v0.22.20.post3)_
+_Last updated: 2026-05-09 (v0.31.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -162,6 +162,8 @@ Examples:
 | PD-11 | FileExplorer | `src/agentx/file_explorer.py` |
 | PD-12 | StatusTab | `src/agentx/gui/status_tab.py` |
 | PD-13 | ToolPanel | `src/agentx/gui/tool_panel.py` |
+| PD-14 | VimBridge GUI | `src/agentx/integration/vim_bridge.py` |
+| PD-15 | TerminalPane GUI | `src/agentx/integration/terminal_bridge.py` + `src/agentx/gui/` |
 
 When a new panel or top-level widget is added, assign the next available PD number,
 add a row to this table, and create a section in `03_PANEL_DETAILS.md`.
@@ -344,6 +346,19 @@ implements it and the test that validates it.  Status legend:
 |---|---|---|---|---|---|
 | Checkbox per tool toggles enabled state | PD-13-AF-001 | `ToolPanel.on_tool_toggle()` | — | — | 📝 |
 | Expand/collapse panel header | PD-13-AF-002 | `ToolPanel` header toggle | — | — | 📝 |
+
+### PD-15 — TerminalPane GUI
+
+| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
+|---|---|---|---|---|---|
+| Active terminal pane indicator updates in input status strip | PD-15-AF-003 | `InputPanel.set_terminal_status()` + `StreamingController._handle_terminal_tool_result()` | `test_terminal_pane_gui.py`, `test_terminal_streaming_controller.py` | `TestTerminalPaneGuiAffordances` | ✅ |
+| Tool-result row exposes kill-pane action and callback wiring | PD-15-AF-004 | `ChatPanel.set_tool_result_kill_action()` + `AgentXSession._handle_terminal_kill_pane()` | `test_terminal_pane_gui.py`, `test_terminal_streaming_controller.py` | `TestTerminalPaneGuiAffordances` | ✅ |
+| Input-strip mode toggle switches supervised/autonomous with confirmation gate | PD-15-AF-005 | `InputPanel._on_terminal_mode_toggle()` + `AgentXSession._handle_terminal_mode_toggle()` | `test_terminal_pane_gui.py`, `test_terminal_mode_and_approval.py` | `TestTerminalPaneGuiAffordances` | ✅ |
+| Supervised confirm-list commands route through interactive approval dialog | PD-15-AF-006 | `AgentXSession._request_terminal_approval()` + `_show_terminal_approval_dialog()` | `test_terminal_mode_and_approval.py` | module-level tests | ✅ |
+| Settings editor updates allow/confirm/deny permission prefixes with save/reset controls | PD-15-AF-007 | `SettingsTab._save_terminal_permission_lists()` + `_reset_terminal_permission_lists()` | `test_terminal_settings_editor.py` | module-level tests | ✅ |
+| `launch_vibe.sh stop` sends Ctrl+C to AgentX and nvim panes then kills the tmux session | PD-15-AF-008 | `launch_vibe.sh` stop branch | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
+| `terminal_run()` wrapper resolves `visible`/`auto_close`/`timeout_sec` from `agentx.toml [terminal]` when caller omits them | PD-15-AF-009 | `terminal_bridge.terminal_run()` defaults resolution block | `test_terminal_bridge.py` | `test_terminal_run_wrapper_uses_config_defaults` | ✅ |
+| Streamed tool-result rows for `terminal_run` include a decision badge (✅/⛔/🚫) and exit code | PD-15-AF-010 | `StreamingController._display_tool_result()` badge injection | `test_terminal_streaming_controller.py` | `test_terminal_run_result_includes_decision_badge` | ✅ |
 
 ---
 
