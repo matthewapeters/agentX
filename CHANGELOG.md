@@ -7,6 +7,53 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.37.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/integration/tui_bridge.py`: added input FIFO reader support with
+  submit-sentinel parsing (`\n---SUBMIT---\n`), callback dispatch, daemon
+  reader lifecycle, and graceful stop handling.
+- `tests/test_tui_bridge_output.py`: added hermetic FIFO input tests for submit
+  parsing and whitespace-only discard behavior.
+- `tests/test_launch_vibe_shutdown.py`: added hermetic launcher test validating
+  TUI-enabled startup wiring (`tui-chat` window + AgentX TUI env vars).
+
+#### Changed
+
+- `src/agentx/session.py`:
+  - wires TUI input FIFO path resolution via config/env/session defaults
+  - routes TUI submit callbacks to the Tk main thread (`_safe_root_after`)
+  - preserves injected pending prompts in `stream_ollama_response` instead of
+    always overriding with GUI input.
+- `launch_vibe.sh`:
+  - adds optional TUI lifecycle variables (`AGENTX_TUI_ENABLE`,
+    `AGENTX_TUI_OUTPUT_FIFO`, `AGENTX_TUI_INPUT_FIFO`, `AGENTX_TUI_SOCKET`)
+  - creates/removes TUI FIFOs and socket during start/stop cleanup
+  - launches optional `tui-chat` tmux window when TUI mode is enabled
+  - includes TUI status lines in `status` output.
+- `docs/ux/06_TUI_MIRROR.md`: updated revision stamp and marked Phase 3 complete
+  with partial Phase 4 progress.
+
+### Test Changes
+
+#### Added
+
+- `test_tui_bridge_reads_submit_messages_from_input_fifo`
+  - GIVEN a running TUI input reader
+  - WHEN FIFO payloads contain submit sentinels
+  - THEN callback receives trimmed prompt texts in order.
+- `test_tui_bridge_ignores_empty_submit_messages`
+  - GIVEN a running TUI input reader
+  - WHEN FIFO payload is whitespace-only before submit sentinel
+  - THEN callback is not invoked for empty content.
+- `test_start_with_tui_enabled_launches_tui_window_and_env`
+  - GIVEN TUI mode enabled in launcher environment
+  - WHEN `launch_vibe.sh start` runs under fake tmux
+  - THEN `tui-chat` window launch and TUI env wiring are present.
+
 ## [0.36.0] - 2026-05-09
 
 ### Code Changes

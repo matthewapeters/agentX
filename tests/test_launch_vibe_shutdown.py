@@ -173,6 +173,40 @@ def test_multiple_sessions_use_scoped_sockets(tmp_path: Path) -> None:
     assert "agentx_agentx.nvim.sock" not in log_b_text  # B uses agentx-user2, not plain agentx
 
 
+@pytest.mark.unit
+def test_start_with_tui_enabled_launches_tui_window_and_env(tmp_path: Path) -> None:
+    """GIVEN TUI mode enabled WHEN launch_vibe.sh start runs THEN AgentX gets TUI env and a tui-chat window is launched. [PD-16-AF-003]"""
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_TUI_ENABLE": "true",
+            "AGENTX_TUI_OUTPUT_FIFO": str(tmp_path / "agentx.tui.output.fifo"),
+            "AGENTX_TUI_INPUT_FIFO": str(tmp_path / "agentx.tui.input.fifo"),
+            "AGENTX_TUI_SOCKET": str(tmp_path / "agentx.tui.sock"),
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    log = log_path.read_text(encoding="utf-8")
+    assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx\t-n\ttui-chat" in log
+    assert "send-keys\t-t\t%3\tnvim\t--listen" in log
+    assert "AGENTX_TUI_ENABLE='true'" in log
+    assert "AGENTX_TUI_OUTPUT_FIFO='" in log
+    assert "AGENTX_TUI_INPUT_FIFO='" in log
+
+
 def _run_launcher(
     args: list[str],
     fake_bin: Path,

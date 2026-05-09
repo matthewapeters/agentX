@@ -20,6 +20,10 @@
 # Environment overrides:
 #   AGENTX_NVIM_SOCKET      Path for nvim RPC socket (default: /tmp/agentx_<SESSION_ID>.nvim.sock)
 #   AGENTX_SAVES_FIFO       Path for save-notification pipe (default: /tmp/agentx_<SESSION_ID>.saves.fifo)
+#   AGENTX_TUI_ENABLE       Enable TUI mirror window + FIFO wiring (default: false)
+#   AGENTX_TUI_OUTPUT_FIFO  Path for TUI output FIFO (default: /tmp/agentx_<SESSION_ID>.tui_output.fifo)
+#   AGENTX_TUI_INPUT_FIFO   Path for TUI input FIFO (default: /tmp/agentx_<SESSION_ID>.tui_input.fifo)
+#   AGENTX_TUI_SOCKET       Path for TUI nvim socket (default: /tmp/agentx_<SESSION_ID>.tui.nvim.sock)
 #   AGENTX_TMUX_SESSION     tmux session name (default: agentx) — used as SESSION_ID for socket scoping
 #   AGENTX_TERMINAL_VISIBLE Default visibility for agent terminal panes (default: true)
 #   AGENTX_PYTHON           Python executable to use (default: resolved from venv or PATH)
@@ -69,6 +73,10 @@ TMUX_SESSION="${AGENTX_TMUX_SESSION:-agentx}"
 SESSION_ID="${TMUX_SESSION}"
 NVIM_SOCKET="${AGENTX_NVIM_SOCKET:-/tmp/agentx_${SESSION_ID}.nvim.sock}"
 SAVES_FIFO="${AGENTX_SAVES_FIFO:-/tmp/agentx_${SESSION_ID}.saves.fifo}"
+TUI_ENABLE="${AGENTX_TUI_ENABLE:-false}"
+TUI_OUTPUT_FIFO="${AGENTX_TUI_OUTPUT_FIFO:-/tmp/agentx_${SESSION_ID}.tui_output.fifo}"
+TUI_INPUT_FIFO="${AGENTX_TUI_INPUT_FIFO:-/tmp/agentx_${SESSION_ID}.tui_input.fifo}"
+TUI_SOCKET="${AGENTX_TUI_SOCKET:-/tmp/agentx_${SESSION_ID}.tui.nvim.sock}"
 TERMINAL_VISIBLE="${AGENTX_TERMINAL_VISIBLE:-true}"
 SOCKET_WAIT_LOOPS="${AGENTX_SOCKET_WAIT_LOOPS:-10}"
 SOCKET_WAIT_SEC="${AGENTX_SOCKET_WAIT_SEC:-0.5}"
@@ -76,9 +84,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EDITOR_WINDOW_NAME="editor"
 AGENT_BG_WINDOW_NAME="agent-bg"
 AGENTX_LOG_WINDOW_NAME="agentx-log"
+TUI_WINDOW_NAME="tui-chat"
 EDITOR_PANE_ID=""
 AGENT_BG_PANE_ID=""
 AGENTX_LOG_PANE_ID=""
+TUI_PANE_ID=""
 
 COMMAND="${1:-start}"
 PROJECT_DIR="${PWD}"
@@ -328,6 +338,39 @@ _pane_current_command() {
     tmux display-message -p -t "$pane_target" '#{pane_current_command}' 2>/dev/null || echo ""
 }
 
+_tui_enabled() {
+    case "${TUI_ENABLE,,}" in
+        1|true|yes|on)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+_tui_pane_target() {
+    if _pane_exists "$TUI_PANE_ID"; then
+        echo "$TUI_PANE_ID"
+        return 0
+    fi
+
+    local pane_id
+    local target
+    target="$(_window_target_by_name "$TUI_WINDOW_NAME")" || true
+    if [[ -n "$target" ]]; then
+        pane_id="$(tmux display-message -p -t "${target}.0" '#{pane_id}' 2>/dev/null || true)"
+        pane_id="$(_normalize_token "$pane_id")"
+        if _pane_exists "$pane_id"; then
+            TUI_PANE_ID="$pane_id"
+            echo "$pane_id"
+            return 0
+        fi
+    fi
+
+    echo ""
+}
+
 _cleanup_stale_sockets() {
     # Remove stale socket if it exists and no live neovim process is using it.
     if [[ -S "$NVIM_SOCKET" ]]; then
@@ -341,6 +384,18 @@ _cleanup_stale_sockets() {
     if [[ -p "$SAVES_FIFO" ]]; then
         _yellow "  Removing stale save-notification FIFO: $SAVES_FIFO"
         rm -f "$SAVES_FIFO"
+    fi
+    if [[ -S "$TUI_SOCKET" ]]; then
+        _yellow "  Removing stale TUI socket: $TUI_SOCKET"
+        rm -f "$TUI_SOCKET"
+    fi
+    if [[ -p "$TUI_OUTPUT_FIFO" ]]; then
+        _yellow "  Removing stale TUI output FIFO: $TUI_OUTPUT_FIFO"
+        rm -f "$TUI_OUTPUT_FIFO"
+    fi
+    if [[ -p "$TUI_INPUT_FIFO" ]]; then
+        _yellow "  Removing stale TUI input FIFO: $TUI_INPUT_FIFO"
+        rm -f "$TUI_INPUT_FIFO"
     fi
 }
 
@@ -420,8 +475,10 @@ _stop_session() {
 
     local agentx_log_pane_target
     local editor_pane_target
+    local tui_pane_target
     agentx_log_pane_target="$(_agentx_log_pane_target)"
     editor_pane_target="$(_editor_pane_target)"
+    tui_pane_target="$(_tui_pane_target)"
 
     if [[ -n "$agentx_log_pane_target" ]]; then
         tmux send-keys -t "$agentx_log_pane_target" C-c
@@ -432,9 +489,17 @@ _stop_session() {
         tmux send-keys -t "$editor_pane_target" ":qa!" Enter
     fi
 
+    if [[ -n "$tui_pane_target" ]]; then
+        tmux send-keys -t "$tui_pane_target" C-c
+        tmux send-keys -t "$tui_pane_target" ":qa!" Enter
+    fi
+
     tmux kill-session -t "$TMUX_SESSION"
     [[ -S "$NVIM_SOCKET" ]] && rm -f "$NVIM_SOCKET"
     [[ -p "$SAVES_FIFO" ]] && rm -f "$SAVES_FIFO"
+    [[ -S "$TUI_SOCKET" ]] && rm -f "$TUI_SOCKET"
+    [[ -p "$TUI_OUTPUT_FIFO" ]] && rm -f "$TUI_OUTPUT_FIFO"
+    [[ -p "$TUI_INPUT_FIFO" ]] && rm -f "$TUI_INPUT_FIFO"
     _green "Session '$TMUX_SESSION' stopped and cleaned up (socket and FIFO removed)."
 }
 
@@ -443,6 +508,14 @@ _show_status() {
     echo "Project   : $PROJECT_DIR"
     echo "Socket    : $NVIM_SOCKET"
     echo "FIFO      : $SAVES_FIFO"
+    if _tui_enabled; then
+        echo "TUI       : enabled"
+        echo "TUI socket: $TUI_SOCKET"
+        echo "TUI out   : $TUI_OUTPUT_FIFO"
+        echo "TUI in    : $TUI_INPUT_FIFO"
+    else
+        echo "TUI       : disabled"
+    fi
     if _session_exists; then
         _green "State     : RUNNING"
         echo ""
@@ -455,6 +528,13 @@ _show_status() {
         _green "Socket    : present"
     else
         _yellow "Socket    : missing"
+    fi
+    if _tui_enabled; then
+        if [[ -p "$TUI_OUTPUT_FIFO" && -p "$TUI_INPUT_FIFO" ]]; then
+            _green "TUI FIFOs : present"
+        else
+            _yellow "TUI FIFOs : missing"
+        fi
     fi
 }
 
@@ -492,6 +572,11 @@ _start_session() {
     echo "Project dir : $(_blue "$PROJECT_DIR")"
     echo "nvim socket : $(_blue "$NVIM_SOCKET")"
     echo "saves FIFO  : $(_blue "$SAVES_FIFO")"
+    if _tui_enabled; then
+        echo "tui output  : $(_blue "$TUI_OUTPUT_FIFO")"
+        echo "tui input   : $(_blue "$TUI_INPUT_FIFO")"
+        echo "tui socket  : $(_blue "$TUI_SOCKET")"
+    fi
     echo "tmux session: $(_blue "$TMUX_SESSION")"
     echo "Python      : $(_blue "$python_bin")"
     echo ""
@@ -542,6 +627,21 @@ _start_session() {
         _green "  FIFO exists: $SAVES_FIFO"
     fi
 
+    if _tui_enabled; then
+        if [[ ! -p "$TUI_OUTPUT_FIFO" ]]; then
+            mkfifo "$TUI_OUTPUT_FIFO"
+            _green "  Created TUI output FIFO: $TUI_OUTPUT_FIFO"
+        else
+            _green "  TUI output FIFO exists: $TUI_OUTPUT_FIFO"
+        fi
+        if [[ ! -p "$TUI_INPUT_FIFO" ]]; then
+            mkfifo "$TUI_INPUT_FIFO"
+            _green "  Created TUI input FIFO: $TUI_INPUT_FIFO"
+        else
+            _green "  TUI input FIFO exists: $TUI_INPUT_FIFO"
+        fi
+    fi
+
     _write_nvimrc
 
     echo ""
@@ -582,10 +682,30 @@ _start_session() {
         _red "  ✗ unable to find '${AGENTX_LOG_WINDOW_NAME}' window after creation."
         exit 1
     fi
+    local tui_env=""
+    if _tui_enabled; then
+        tui_env="AGENTX_TUI_ENABLE='true' AGENTX_TUI_OUTPUT_FIFO='${TUI_OUTPUT_FIFO}' AGENTX_TUI_INPUT_FIFO='${TUI_INPUT_FIFO}' AGENTX_TUI_SOCKET='${TUI_SOCKET}'"
+    fi
     tmux send-keys -t "$agentx_log_window_target" \
-        "AGENTX_NVIM_SOCKET='${NVIM_SOCKET}' AGENTX_SAVES_FIFO='${SAVES_FIFO}' AGENTX_TMUX_SESSION='${TMUX_SESSION}' AGENTX_TERMINAL_VISIBLE='${TERMINAL_VISIBLE}' '${python_bin}' -m agentx; __agentx_rc=\$?; tmux kill-session -t '${TMUX_SESSION}' >/dev/null 2>&1; exit \$__agentx_rc" \
+        "AGENTX_NVIM_SOCKET='${NVIM_SOCKET}' AGENTX_SAVES_FIFO='${SAVES_FIFO}' AGENTX_TMUX_SESSION='${TMUX_SESSION}' AGENTX_TERMINAL_VISIBLE='${TERMINAL_VISIBLE}' ${tui_env} '${python_bin}' -m agentx; __agentx_rc=\$?; tmux kill-session -t '${TMUX_SESSION}' >/dev/null 2>&1; exit \$__agentx_rc" \
         Enter
     _green "  AgentX launched in '${AGENTX_LOG_WINDOW_NAME}' window"
+
+    if _tui_enabled; then
+        echo ""
+        echo "Launching TUI mirror in tmux window '${TUI_WINDOW_NAME}'..."
+        local tui_pane_target
+        if ! _window_exists_by_name "$TUI_WINDOW_NAME"; then
+            tui_pane_target="$(tmux new-window -P -F '#{pane_id}' -t "$TMUX_SESSION" -n "$TUI_WINDOW_NAME" -d -c "$PROJECT_DIR")"
+        else
+            tui_pane_target="$(_tui_pane_target)"
+        fi
+        TUI_PANE_ID="$tui_pane_target"
+        tmux send-keys -t "$tui_pane_target" \
+            "nvim --listen '${TUI_SOCKET}'" \
+            Enter
+        _green "  TUI mirror launched in '${TUI_WINDOW_NAME}'"
+    fi
 
     # Launch neovim last — all windows and AgentX are stable before nvim starts,
     # so EDITOR_PANE_ID is fully valid and no window-rename race can occur.
@@ -602,9 +722,11 @@ _start_session() {
     local editor_idx
     local agent_bg_idx
     local agentx_log_idx
+    local tui_idx
     editor_idx="$(_window_index_by_name "$EDITOR_WINDOW_NAME")"
     agent_bg_idx="$(_window_index_by_name "$AGENT_BG_WINDOW_NAME")"
     agentx_log_idx="$(_window_index_by_name "$AGENTX_LOG_WINDOW_NAME")"
+    tui_idx="$(_window_index_by_name "$TUI_WINDOW_NAME")"
 
     echo ""
     _bold "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -615,6 +737,9 @@ _start_session() {
     echo "  AgentX GUI : floating window (alt-tab or move to monitor 1)"
     echo "  Agent bg   : window '${AGENT_BG_WINDOW_NAME}'${agent_bg_idx:+         (Ctrl+B, ${agent_bg_idx} — observe agent terminals)}"
     echo "  AgentX log : window '${AGENTX_LOG_WINDOW_NAME}'${agentx_log_idx:+        (Ctrl+B, ${agentx_log_idx} — runtime logs)}"
+    if _tui_enabled; then
+        echo "  TUI mirror : window '${TUI_WINDOW_NAME}'${tui_idx:+         (Ctrl+B, ${tui_idx} — FIFO chat view)}"
+    fi
     echo ""
     echo "  Detach tmux   : Ctrl+B, D"
     echo "  Graceful stop : ./launch_vibe.sh stop"

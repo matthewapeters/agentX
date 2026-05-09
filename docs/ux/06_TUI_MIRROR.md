@@ -1,6 +1,6 @@
 # AgentX — TUI Mirror: Neovim Chat Pane
 
-_Last updated: 2026-05-09 (v0.36.0)_
+_Last updated: 2026-05-09 (v0.37.0)_
 
 > **Companion document to [`05_VIBE_CODING.md`](05_VIBE_CODING.md).**
 > Specifies the optional TUI mirror that surfaces the AgentX chat interface as a
@@ -304,7 +304,7 @@ FIFO so the TUI neovim `agentx_output` buffer updates in real time.
 timeout (`tui.write_timeout_sec`, default `0.1 s`), the write is dropped with a
 `DEBUG`-level log.  The GUI display is never blocked by FIFO backpressure.
 
-**Status**: 📝 Spec only
+**Status**: ✅ Implemented and tested
 
 ---
 
@@ -325,7 +325,7 @@ terminated (via a `threading.Event`) on session close.
 | Session is already streaming | Input is queued (same as GUI: submit is blocked during streaming) |
 | FIFO removed while running | Thread catches `FileNotFoundError`, logs warning, exits cleanly |
 
-**Status**: 📝 Spec only
+**Status**: ✅ Implemented and tested
 
 ---
 
@@ -338,7 +338,7 @@ instance pre-configured with `agentx_tui.lua`.
 `AGENTX_TUI_ENABLE=true` environment variable.  When disabled, window 3 is not
 created; the rest of the session is identical to today.
 
-**Status**: 📝 Spec only
+**Status**: ⚠️ Partially implemented (window + env wiring done; full split-layout Lua config pending)
 
 ---
 
@@ -411,7 +411,7 @@ both are false.
 `self.tui_bridge` is `None` and all TuiBridge call-sites are guarded by
 `if self.tui_bridge:`.
 
-**Status**: 📝 Spec only
+**Status**: ✅ Implemented and tested
 
 ---
 
@@ -667,29 +667,29 @@ Work is divided into four phases, each independently mergeable and testable.
 
 ### Phase 3 — TuiBridge: Input FIFO Reader
 
-- [ ] Add `_start_input_reader()` to `TuiBridge`:
+- [/] Add input reader loop to `TuiBridge`:
   - Daemon thread blocking on input FIFO
   - Parses `\n---SUBMIT---\n` sentinel; accumulates preceding lines as message
-  - Calls `session._handle_submit(text)` on the main thread via `root.after(0, ...)`
+  - Calls session submit callback; session dispatches on the Tk main thread via `root.after(0, ...)`
   - Stops cleanly on `_stop_event`
-- [ ] Wire `TuiBridge` into `AgentXSession`:
+- [/] Wire `TuiBridge` into `AgentXSession`:
   - Construct when `tui.enable = true`
   - Call `tui_bridge.start()` after session init
   - Call `tui_bridge.stop()` in session cleanup
-- [ ] Unit tests: reader fires `_handle_submit` correctly; empty/whitespace discarded;
+- [/] Unit tests: reader fires submit callback correctly; empty/whitespace discarded;
   FIFO disappears mid-read handled gracefully
 
 ---
 
 ### Phase 4 — launch_vibe.sh and Neovim Config
 
-- [ ] Add TUI FIFO / socket path variables to `launch_vibe.sh`
-- [ ] Add `_launch_tui_window()` function (creates window 3, writes `agentx_tui.lua`,
-  launches TUI neovim)
-- [ ] Gate behind `AGENTX_TUI_ENABLE` env var check in `start` / `stop` / `status`
-- [ ] Update `stop` to `:qa!` the TUI neovim and remove TUI FIFOs
-- [ ] Update `status` to report TUI socket and FIFO state
-- [ ] Integration tests for `launch_vibe.sh` TUI window lifecycle (hermetic fake tmux)
+- [/] Add TUI FIFO / socket path variables to `launch_vibe.sh`
+- [X] Add `_launch_tui_window()` function (creates window 3, writes `agentx_tui.lua`,
+  launches TUI neovim) — deferred; current implementation launches TUI neovim directly in `tui-chat`
+- [/] Gate behind `AGENTX_TUI_ENABLE` env var check in `start` / `stop` / `status`
+- [/] Update `stop` to `:qa!` the TUI neovim and remove TUI FIFOs
+- [/] Update `status` to report TUI socket and FIFO state
+- [/] Integration tests for `launch_vibe.sh` TUI window lifecycle (hermetic fake tmux)
 
 ---
 

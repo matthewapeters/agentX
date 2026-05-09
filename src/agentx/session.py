@@ -161,6 +161,11 @@ class AgentXSession:
                 or os.getenv("AGENTX_TUI_OUTPUT_FIFO")
                 or f"/tmp/agentx_{tmux_session}.tui_output.fifo"
             )
+            input_fifo = str(
+                tui_cfg.get("input_fifo")
+                or os.getenv("AGENTX_TUI_INPUT_FIFO")
+                or f"/tmp/agentx_{tmux_session}.tui_input.fifo"
+            )
             try:
                 write_timeout_sec = float(tui_cfg.get("write_timeout_sec", 0.1))
             except (TypeError, ValueError):
@@ -168,6 +173,8 @@ class AgentXSession:
 
             self.tui_bridge = TuiBridge(
                 output_fifo=output_fifo,
+                input_fifo=input_fifo,
+                on_submit=self._on_tui_submit,
                 enabled=True,
                 write_timeout_sec=write_timeout_sec,
             )
@@ -688,6 +695,18 @@ class AgentXSession:
     def _handle_submit(self) -> None:
         """Handle user submit button click."""
         self.stream_ollama_response()
+
+    def _on_tui_submit(self, prompt_text: str) -> None:
+        """Schedule submit handling for prompt text coming from TUI input FIFO."""
+        cleaned_prompt = prompt_text.strip()
+        if not cleaned_prompt:
+            return
+
+        def _submit() -> None:
+            self._pending_prompt = cleaned_prompt
+            self.stream_ollama_response()
+
+        self._safe_root_after(_submit)
 
     def _handle_interrupt(self) -> None:
         """Handle user interrupt button click."""
@@ -1528,7 +1547,8 @@ class AgentXSession:
             logger.warning("Streaming already in progress")
             return
         # Capture and clear input before starting the worker.
-        self._pending_prompt = self.gui.get_user_input()
+        if self._pending_prompt is None:
+            self._pending_prompt = self.gui.get_user_input()
         if not self._pending_prompt and not self.message.attachments:
             self.gui.display_error("No input provided.")
             self._pending_prompt = None

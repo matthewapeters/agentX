@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import os
+import time
 import errno
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from agentx.integration.tui_bridge import TuiBridge
+import pytest
+
+from agentx.integration.tui_bridge import SUBMIT_SENTINEL, TuiBridge
 from agentx.streaming_controller import StreamingController
 
 
@@ -118,3 +123,74 @@ def test_streaming_controller_writes_thinking_when_enabled() -> None:
     calls = [str(call.args[0]) for call in session.tui_bridge.write_output.call_args_list]
     assert any(record == "###THINKING\n" for record in calls)
     assert any(record == "internal" for record in calls)
+
+
+@pytest.mark.unit
+def test_tui_bridge_reads_submit_messages_from_input_fifo(tmp_path: Path) -> None:
+    """GIVEN TUI input fifo payloads WHEN submit sentinel appears THEN callback receives trimmed prompts."""
+    output_fifo = tmp_path / "output.fifo"
+    input_fifo = tmp_path / "input.fifo"
+    os.mkfifo(input_fifo)
+
+    submitted: list[str] = []
+    bridge = TuiBridge(
+        output_fifo=str(output_fifo),
+        input_fifo=str(input_fifo),
+        on_submit=submitted.append,
+        enabled=True,
+    )
+    bridge.start()
+    try:
+        _write_fifo_payload(str(input_fifo), f" first prompt {SUBMIT_SENTINEL}second{SUBMIT_SENTINEL}")
+        deadline = time.time() + 1.5
+        while len(submitted) < 2 and time.time() < deadline:
+            time.sleep(0.01)
+    finally:
+        bridge.stop()
+
+    assert submitted == ["first prompt", "second"]
+
+
+@pytest.mark.unit
+def test_tui_bridge_ignores_empty_submit_messages(tmp_path: Path) -> None:
+    """GIVEN empty submit payloads WHEN sentinel is parsed THEN callback only receives non-empty prompts."""
+    output_fifo = tmp_path / "output.fifo"
+    input_fifo = tmp_path / "input.fifo"
+    os.mkfifo(input_fifo)
+
+    submitted: list[str] = []
+    bridge = TuiBridge(
+        output_fifo=str(output_fifo),
+        input_fifo=str(input_fifo),
+        on_submit=submitted.append,
+        enabled=True,
+    )
+    bridge.start()
+    try:
+        _write_fifo_payload(str(input_fifo), f"   {SUBMIT_SENTINEL}real input{SUBMIT_SENTINEL}")
+        deadline = time.time() + 1.5
+        while len(submitted) < 1 and time.time() < deadline:
+            time.sleep(0.01)
+    finally:
+        bridge.stop()
+
+    assert submitted == ["real input"]
+
+
+def _write_fifo_payload(path: str, payload: str) -> None:
+    """Write payload to a FIFO, retrying briefly while reader endpoint appears."""
+    deadline = time.time() + 1.5
+    while time.time() < deadline:
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
+            try:
+                os.write(fd, payload.encode("utf-8"))
+                return
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            if exc.errno == errno.ENXIO:
+                time.sleep(0.01)
+                continue
+            raise
+    raise AssertionError(f"Timed out opening fifo for write: {path}")
