@@ -38,6 +38,7 @@ from .integration import (
     AgentixBridgeAdapter,
     ClientToolExecutor,
     ServerToolExecutor,
+    TuiBridge,
     agentix_bridge_adapter,
 )
 from .integration.vim_bridge import VimBridge
@@ -149,6 +150,28 @@ class AgentXSession:
         self._session_log_path = session_log_path
         self._session_log = open(session_log_path, "a", encoding="utf-8", buffering=1)
         self._output_logger = OutputLogger(session_folder)
+
+        # Optional TUI output mirror bridge.
+        self.tui_bridge: Optional[TuiBridge] = None
+        tui_cfg = config.get("tui", {})
+        if bool(tui_cfg.get("enable", False)):
+            tmux_session = os.getenv("AGENTX_TMUX_SESSION", "agentx")
+            output_fifo = str(
+                tui_cfg.get("output_fifo")
+                or os.getenv("AGENTX_TUI_OUTPUT_FIFO")
+                or f"/tmp/agentx_{tmux_session}.tui_output.fifo"
+            )
+            try:
+                write_timeout_sec = float(tui_cfg.get("write_timeout_sec", 0.1))
+            except (TypeError, ValueError):
+                write_timeout_sec = 0.1
+
+            self.tui_bridge = TuiBridge(
+                output_fifo=output_fifo,
+                enabled=True,
+                write_timeout_sec=write_timeout_sec,
+            )
+            self.tui_bridge.start()
 
         # Initialize service manager for external services
         self.service_manager = ServiceManager(config)
@@ -1543,6 +1566,12 @@ class AgentXSession:
 
         # Flush and close the structured JSON-lines log.
         self._output_logger.close()
+
+        if self.tui_bridge is not None:
+            try:
+                self.tui_bridge.stop()
+            except Exception:
+                pass
 
         try:
             self.gui.destroy()

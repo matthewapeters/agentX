@@ -1,6 +1,6 @@
 # AgentX — TUI Mirror: Neovim Chat Pane
 
-_Last updated: 2026-05-09 (v0.35.0)_
+_Last updated: 2026-05-09 (v0.36.0)_
 
 > **Companion document to [`05_VIBE_CODING.md`](05_VIBE_CODING.md).**
 > Specifies the optional TUI mirror that surfaces the AgentX chat interface as a
@@ -651,17 +651,17 @@ Work is divided into four phases, each independently mergeable and testable.
 
 ### Phase 2 — TuiBridge: Output FIFO Writer
 
-- [ ] Create `src/agentx/integration/tui_bridge.py` with `TuiBridge` class
+- [/] Create `src/agentx/integration/tui_bridge.py` with `TuiBridge` class
   - `write_output(record: str)` — non-blocking write with `write_timeout_sec` guard
   - `start()` / `stop()` — thread lifecycle
   - `is_enabled` property
-- [ ] Hook `write_output()` into `StreamingController`:
+- [/] Hook `write_output()` into `StreamingController`:
   - `_display_user_message()` → `###USER` header + content
   - `_display_agent_response()` → `###AGENT` header (once per turn) + chunks
   - `_display_tool_call()` → `###TOOL_CALL` record
   - `_display_tool_result()` → `###TOOL_RESULT` record
   - `_finalize()` → `###DONE` record
-- [ ] Unit tests: writer emits correct records per signal type (hermetic, no real FIFO)
+- [/] Unit tests: writer emits correct records per signal type (hermetic, no real FIFO)
 
 ---
 

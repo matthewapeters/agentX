@@ -7,6 +7,55 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.36.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/integration/tui_bridge.py`: added `TuiBridge` with non-blocking FIFO
+  writes (`write_output`), runtime lifecycle controls (`start`/`stop`), and
+  `is_enabled` status gating.
+- `tests/test_tui_bridge_output.py`: new hermetic tests covering bridge write
+  behavior and streaming-controller TUI record emission.
+
+#### Changed
+
+- `src/agentx/session.py`:
+  - initializes optional `self.tui_bridge` when `tui.enable=true`
+  - resolves default output FIFO path via `AGENTX_TMUX_SESSION` session scope
+  - stops the bridge during session shutdown.
+- `src/agentx/streaming_controller.py`:
+  - emits TUI records for USER / AGENT / TOOL_CALL / TOOL_RESULT / DONE / ERROR
+  - supports optional THINKING emission via `tui.show_thinking`.
+- `src/agentx/integration/__init__.py`: exports `TuiBridge`.
+- `docs/ux/06_TUI_MIRROR.md`: Phase 2 checklist items marked complete.
+
+### Test Changes
+
+#### Added
+
+- `test_tui_bridge_write_output_success`
+  - GIVEN writable FIFO
+  - WHEN `write_output` runs
+  - THEN payload is written and descriptor is closed.
+- `test_tui_bridge_write_output_drops_when_no_reader`
+  - GIVEN no FIFO reader
+  - WHEN `write_output` runs
+  - THEN write is dropped without raising.
+- `test_streaming_controller_writes_agent_and_tool_records_to_tui`
+  - GIVEN streaming/tool events
+  - WHEN controller handlers run
+  - THEN TUI records are emitted with expected prefixes.
+- `test_streaming_controller_respects_show_thinking_flag_for_tui`
+  - GIVEN `show_thinking=false`
+  - WHEN thinking renders
+  - THEN no THINKING records are emitted.
+- `test_streaming_controller_writes_thinking_when_enabled`
+  - GIVEN `show_thinking=true`
+  - WHEN thinking renders
+  - THEN THINKING records are emitted.
+
 ## [0.35.0] - 2026-05-09
 
 ### Code Changes

@@ -55,6 +55,19 @@ class StreamingController:
         """Set the GUI streaming state to idle."""
         self._s.gui.set_streaming_state(False)
 
+    def _write_tui_output(self, record: str) -> None:
+        """Write a record to the optional TUI output bridge.
+
+        Writes are best-effort and intentionally ignored on failure.
+        """
+        bridge = getattr(self._s, "tui_bridge", None)
+        if bridge is None:
+            return
+        try:
+            bridge.write_output(record)
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------
     # Thinking / content display helpers
     # ------------------------------------------------------------------
@@ -62,13 +75,18 @@ class StreamingController:
     def _display_thinking(self, text: str) -> None:
         """Display thinking text with a once-per-turn header."""
         s = self._s
+        show_thinking = bool(s.config.get("tui", {}).get("show_thinking", False))
         if not getattr(s, "_thinking_header_shown", False):
             header = f"\n\U0001f4ad ({s.active_model})\t(The agent is thinking...)\n"
             s._safe_root_after(lambda: s.gui.display_agent_thinking(header))
             s._write_log(header)
             s._thinking_header_shown = True
+            if show_thinking:
+                self._write_tui_output("###THINKING\n")
         s._safe_root_after(lambda: s.gui.display_agent_thinking(text))
         s._write_log(text)
+        if show_thinking:
+            self._write_tui_output(text)
 
     def _display_assistant_header(self) -> None:
         """Display the assistant header once per response stream."""
@@ -78,12 +96,14 @@ class StreamingController:
             header = f"\n\n\U0001f916 ({s.active_model})\t"
             s._safe_root_after(lambda: s.gui.display_agent_response(header))
             s._write_log(header)
+            self._write_tui_output("###AGENT\n")
 
     def _handle_stream_content(self, text: str) -> None:
         """Ensure header is shown before streaming content chunks."""
         self._display_assistant_header()
         self._s._safe_root_after(lambda: self._s.gui.display_agent_response(text))
         self._s._write_log(text)
+        self._write_tui_output(text)
 
     # ------------------------------------------------------------------
     # Tool call / result display helpers
@@ -114,6 +134,7 @@ class StreamingController:
             input_text = f"{tool_name}: {json.dumps(tool_input, ensure_ascii=False)}"
         except Exception:
             input_text = f"{tool_name}: {tool_input}"
+        self._write_tui_output(f"###TOOL_CALL {input_text}\n")
         s._output_logger.log("tool_call", input_text)
         msg = s.context.add_tool_call_message(tool_name, tool_input, tool_id=tool_id)
         dirty = False
@@ -188,6 +209,7 @@ class StreamingController:
         result_line = f"\n[📋 Tool result{round_label}{badge}: {preview}]\n"
         s._safe_root_after(lambda: s.gui.display_agent_response(result_line))
         s._write_log(result_line)
+        self._write_tui_output(f"###TOOL_RESULT {tool_name}: {preview}\n")
         s._output_logger.log("tool_result", f"{tool_name}: {display_text}")
         msg = s.context.add_tool_result_message(
             tool_name=tool_name,
@@ -459,7 +481,9 @@ class StreamingController:
         import os
 
         attachment_filenames = [os.path.basename(att.file_path) for att in s.message.attachments]
-        s._safe_root_after(lambda: s.gui.display_user_message(prompt, attachment_filenames, datetime.now()))
+        user_timestamp = datetime.now()
+        s._safe_root_after(lambda: s.gui.display_user_message(prompt, attachment_filenames, user_timestamp))
+        self._write_tui_output(f"###USER {user_timestamp.strftime('%H:%M:%S')}\n{prompt}\n\n")
         s._write_log(f"\n👤 User: {prompt}\n")
         s._output_logger.log("user", prompt)
 
@@ -624,6 +648,7 @@ class StreamingController:
             if s._is_streaming.is_set():
                 _finalize_running_phases("DONE")
 
+            self._write_tui_output("\n###DONE\n")
             s._safe_root_after(s.gui.display_spacing)
             joined_thinking = "".join(thinking_parts)
             joined_content = "".join(content_parts)
@@ -639,6 +664,7 @@ class StreamingController:
             _finalize_running_phases("FAILED")
             err_line = f"\n⚠️  ERROR: {e}\n"
             s._safe_root_after(lambda err=e: s.gui.display_error(f"Error: {err}"))
+            self._write_tui_output(f"\n###ERROR {e}\n")
             s._write_log(err_line)
             s._output_logger.log("error", str(e))
         finally:
