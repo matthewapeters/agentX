@@ -7,6 +7,45 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.33.1.post1] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `docs/ux/06_TUI_MIRROR.md` — new UX specification and implementation plan for the
+  optional TUI mirror chat pane (PD-16), including architecture, IPC contract,
+  configuration toggles (`tui.enable`, `enable_gui_chat`), user flows, test scenarios,
+  and phased rollout checklist.
+
+#### Changed
+
+- `docs/ux/00_INDEX.md` — registered TUI mirror spec in the navigation table, added
+  PD-16 status row, updated UX totals, and queued PD-16 implementation in the priority list.
+- `docs/ux/05_VIBE_CODING.md` — linked OQ-10 to the dedicated TUI mirror specification.
+- `docs/ux/UX_LIFECYCLE.md` — added PD-16 panel reference to the lifecycle quick-reference map.
+
+### Test Changes
+
+#### Added
+
+- No runtime code changes in this release.
+- Added documented test-plan scenarios in `docs/ux/06_TUI_MIRROR.md` (unit,
+  integration, functional) with Gherkin-style GIVEN/WHEN/THEN expectations for
+  upcoming implementation work.
+
+#### Changed
+
+- No existing executable tests modified.
+
+#### Fixed
+
+- No failing executable tests addressed in this release.
+
+#### Removed
+
+- No tests removed.
+
 ## [0.33.1] - 2026-05-09
 
 ### Code Changes

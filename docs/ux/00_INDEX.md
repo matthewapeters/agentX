@@ -1,6 +1,6 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-10 (v0.32.1)_
+_Last updated: 2026-05-09 (v0.33.1.post1)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
@@ -23,6 +23,7 @@ _Last updated: 2026-05-10 (v0.32.1)_
 | Understand the window layout and zone map | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) |
 | Follow a user interaction end-to-end | [02_USER_FLOWS.md](02_USER_FLOWS.md) |
 | Vibe coding (neovim + tmux integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
+| TUI mirror chat pane (spec + plan) | [06_TUI_MIRROR.md](06_TUI_MIRROR.md) |
 | Run the UX review+enforce cycle (agent slash-command) | `/ux-review` in Copilot Chat |
 | See test coverage gaps | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-known-coverage-gaps) |
 | Detect spec/code/test drift | [UX_LIFECYCLE.md §5.4](UX_LIFECYCLE.md#54-detecting-drift-without-a-planned-change) |
@@ -55,8 +56,9 @@ _Last updated: 2026-05-10 (v0.32.1)_
 | PD-13 ToolPanel | 0 | 0 | 2 | 0 |
 | PD-14 VimBridge GUI | 3 | 0 | 6 | 0 |
 | PD-15 TerminalPane GUI | 8 | 0 | 0 | 0 |
+| PD-16 TuiMirror | 0 | 0 | 7 | 0 |
 
-**Totals**: 96 ✅ · 6 ⚠️ · 8 📝 · 0 ❌
+**Totals**: 96 ✅ · 6 ⚠️ · 15 📝 · 0 ❌
 
 ---
 
@@ -78,6 +80,7 @@ _Last updated: 2026-05-10 (v0.32.1)_
 - [/] **PD-05-AF-006** — Node status icon reflects task state
 - [/] **PD-01-AF-010** — Output panel right-click copy context menu (Wayland-safe)
 - [/] **PD-02-AF-008..012** — Input panel right-click context menu: popup, Copy/Paste visibility, Copy action, Paste action
+- [ ] **PD-16 (TuiMirror)** — TUI mirror spec written; Phase 1 (config + NullGUIManager) is the next implementation step — see [06_TUI_MIRROR.md §9](06_TUI_MIRROR.md#9-implementation-plan)
 
 ---
 

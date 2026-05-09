@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-10 (v0.32.1)_
+_Last updated: 2026-05-09 (v0.33.1.post1)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -164,6 +164,7 @@ Examples:
 | PD-13 | ToolPanel | `src/agentx/gui/tool_panel.py` |
 | PD-14 | VimBridge GUI | `src/agentx/integration/vim_bridge.py` |
 | PD-15 | TerminalPane GUI | `src/agentx/integration/terminal_bridge.py` + `src/agentx/gui/` |
+| PD-16 | TuiMirror | `src/agentx/integration/tui_bridge.py` (planned) |
 
 When a new panel or top-level widget is added, assign the next available PD number,
 add a row to this table, and create a section in `03_PANEL_DETAILS.md`.

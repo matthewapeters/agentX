@@ -1,6 +1,6 @@
 # AgentX — Vibe Coding: Neovim Integration
 
-_Last updated: 2026-05-09 (v0.32.0 — capture-pane polling + timeout enforcement)_
+_Last updated: 2026-05-09 (v0.33.1.post1 — added OQ-10 cross-reference to TUI mirror spec)_
 
 > **"Vibe coding"**: a mode of collaborative software development where the AI agent
 > and the human developer co-author code in the same editor at the same time, each
@@ -1233,3 +1233,4 @@ New tools registered in `AgentixBridgeAdapter` when `VimBridge` / `TerminalBridg
 | OQ-07 | Should `project_roots` path restriction apply to neovim `editor_write_buffer` calls too? Current design: no, VimBridge trusts the path. Should be added for consistency. | Medium |
 | OQ-08 | Credential question — **Resolved**: Agent runs as the user. A dedicated system user is not implemented. Safety is provided by the PermissionLayer (§4) which is user-configurable and toggleable. | Resolved |
 | OQ-09 | Session shutdown consistency — **Resolved**: `launch_vibe.sh` now exposes first-class lifecycle commands (`stop`, `status`, `recover-editor`, `restart`) with deterministic behaviour and tests. | Resolved |
+| OQ-10 | TUI mirror: surfacing the chat interface as a neovim split inside tmux — **Specced**: see [`06_TUI_MIRROR.md`](06_TUI_MIRROR.md) for the full plan. Config toggles: `tui.enable` (default `false`, opt-in) and `enable_gui_chat` (default `true`). | Resolved → Spec |
