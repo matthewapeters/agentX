@@ -1,14 +1,113 @@
 import os
 from importlib.resources import files
+from typing import Any
 
 import toml
 
 DEFAULT_CONFIG = "agentx.toml"
 
 
+class ConfigurationError(ValueError):
+    """Raised when AgentX configuration is structurally invalid."""
+
+
+def _parse_bool_env(var_name: str, value: str) -> bool:
+    """Parse a boolean environment variable value.
+
+    Args:
+        var_name: Environment variable name.
+        value: Raw environment variable value.
+
+    Returns:
+        Parsed boolean value.
+
+    Raises:
+        ConfigurationError: If the value is not a recognized boolean literal.
+    """
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigurationError(f"Invalid boolean value for {var_name}: {value!r}")
+
+
+def apply_config_defaults(config: dict[str, Any]) -> dict[str, Any]:
+    """Apply in-memory defaults for optional AgentX configuration keys.
+
+    Args:
+        config: Parsed configuration dictionary.
+
+    Returns:
+        The same dictionary instance with missing optional keys populated.
+    """
+    agentx = config.setdefault("agentx", {})
+    if not isinstance(agentx, dict):
+        raise ConfigurationError("[agentx] section must be a table")
+
+    agentx.setdefault("enable_gui_chat", True)
+
+    tui = config.setdefault("tui", {})
+    if not isinstance(tui, dict):
+        raise ConfigurationError("[tui] section must be a table")
+
+    tui.setdefault("enable", False)
+    tui.setdefault("socket", "")
+    tui.setdefault("output_fifo", "")
+    tui.setdefault("input_fifo", "")
+    tui.setdefault("output_split_ratio", 0.70)
+    tui.setdefault("write_timeout_sec", 0.1)
+    tui.setdefault("show_thinking", False)
+
+    # Environment variable overrides for TUI runtime control.
+    env_enable = os.getenv("AGENTX_TUI_ENABLE")
+    if env_enable is not None:
+        tui["enable"] = _parse_bool_env("AGENTX_TUI_ENABLE", env_enable)
+
+    env_output_fifo = os.getenv("AGENTX_TUI_OUTPUT_FIFO")
+    if env_output_fifo:
+        tui["output_fifo"] = env_output_fifo
+
+    env_input_fifo = os.getenv("AGENTX_TUI_INPUT_FIFO")
+    if env_input_fifo:
+        tui["input_fifo"] = env_input_fifo
+
+    env_socket = os.getenv("AGENTX_TUI_SOCKET")
+    if env_socket:
+        tui["socket"] = env_socket
+
+    return config
+
+
+def validate_config(config: dict[str, Any]) -> None:
+    """Validate cross-field configuration constraints.
+
+    Args:
+        config: Parsed and defaulted configuration dictionary.
+
+    Raises:
+        ConfigurationError: If a required constraint is violated.
+    """
+    agentx = config.get("agentx", {})
+    tui = config.get("tui", {})
+
+    enable_gui_chat = bool(agentx.get("enable_gui_chat", True))
+    enable_tui = bool(tui.get("enable", False))
+    output_split_ratio = float(tui.get("output_split_ratio", 0.70))
+
+    if not 0.0 < output_split_ratio < 1.0:
+        raise ConfigurationError("[tui].output_split_ratio must be between 0 and 1")
+
+    if not enable_gui_chat and not enable_tui:
+        raise ConfigurationError("Invalid config: enable_gui_chat=false requires tui.enable=true")
+
+
 def load_config(config_path=DEFAULT_CONFIG):
     with open(config_path, "r") as f:
         config = toml.loads(f.read())
+
+    apply_config_defaults(config)
+    validate_config(config)
 
     return config
 

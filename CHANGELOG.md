@@ -7,6 +7,63 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.34.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/config.py`: added Phase 1 TUI/GUI configuration groundwork:
+  - `ConfigurationError` for config-constraint failures
+  - `apply_config_defaults(config)` to inject defaults for `agentx.enable_gui_chat`
+    and `[tui]` settings (`enable`, `socket`, `output_fifo`, `input_fifo`,
+    `output_split_ratio`, `write_timeout_sec`, `show_thinking`)
+  - environment overrides for TUI runtime values:
+    `AGENTX_TUI_ENABLE`, `AGENTX_TUI_OUTPUT_FIFO`, `AGENTX_TUI_INPUT_FIFO`,
+    `AGENTX_TUI_SOCKET`
+- `tests/test_config_tui_phase1.py`: new hermetic unit tests for Phase 1 config
+  defaults, validation, and environment override behavior.
+
+#### Changed
+
+- `src/agentx/config.py`: `load_config()` now runs defaulting + validation before
+  returning config.
+- `src/agentx/session.py`: `AgentXSession.__init__` now applies and validates config
+  defaults even when tests or callers inject config dicts directly (without calling
+  `load_config()`).
+- `docs/ux/06_TUI_MIRROR.md`: Phase 1 checklist updated to reflect completed config
+  groundwork and remaining NullGUI-specific tasks.
+
+### Test Changes
+
+#### Added
+
+- `test_load_config_applies_gui_and_tui_defaults`
+  - GIVEN missing `enable_gui_chat` / `[tui]` keys
+  - WHEN config is loaded
+  - THEN defaults are applied.
+- `test_load_config_rejects_both_gui_and_tui_disabled`
+  - GIVEN `enable_gui_chat=false` and `tui.enable=false`
+  - WHEN config is loaded
+  - THEN `ConfigurationError` is raised.
+- `test_load_config_accepts_headless_mode_when_tui_enabled`
+  - GIVEN `enable_gui_chat=false` and `tui.enable=true`
+  - WHEN config is loaded
+  - THEN config is accepted.
+- `test_load_config_rejects_invalid_tui_split_ratio`
+  - GIVEN invalid `output_split_ratio`
+  - WHEN config is loaded
+  - THEN `ConfigurationError` is raised.
+- `test_load_config_applies_tui_env_overrides`
+  - GIVEN AGENTX_TUI_* env vars
+  - WHEN config is loaded
+  - THEN env values override TOML values.
+
+#### Changed
+
+- Session integration smoke test continues to pass with the new config defaulting path:
+  `tests/test_session_gui_integration.py::TestAgentXSessionGUIIntegration::test_session_has_valid_configuration`.
+
 ## [0.33.1.post1] - 2026-05-09
 
 ### Code Changes

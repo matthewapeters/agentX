@@ -28,7 +28,7 @@ from shared.models.response import ChunkType, ResponseChunk
 from shared.models.working_memory import FactOwner, WorkingMemory
 
 from .attachment_info import AttachmentInfo
-from .config import save_config
+from .config import apply_config_defaults, save_config, validate_config
 from .file_explorer import FileExplorer
 from .gui.gui_config import GUIConfig
 from .gui.gui_manager import GUIManager  # concrete class — used only for construction in __init__
@@ -70,6 +70,9 @@ class AgentXSession:
     ):
         if config is None:
             raise ValueError("config is required")
+
+        apply_config_defaults(config)
+        validate_config(config)
 
         self.root = root or tk.Tk()
         if root is None:
