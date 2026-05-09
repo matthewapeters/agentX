@@ -1,11 +1,11 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-09 (v0.33.1.post1)_
+_Last updated: 2026-05-09 (v0.38.2.post1)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-09 (v0.31.0 — terminal dispatch defaults + tool-result decision badges)
+**Last updated**: 2026-05-09 (v0.38.2.post1 — PD-16 TuiMirror traceability reconciled)
 **Current version**: see `pyproject.toml`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
@@ -56,9 +56,9 @@ _Last updated: 2026-05-09 (v0.33.1.post1)_
 | PD-13 ToolPanel | 0 | 0 | 2 | 0 |
 | PD-14 VimBridge GUI | 3 | 0 | 6 | 0 |
 | PD-15 TerminalPane GUI | 8 | 0 | 0 | 0 |
-| PD-16 TuiMirror | 0 | 0 | 7 | 0 |
+| PD-16 TuiMirror | 7 | 0 | 0 | 0 |
 
-**Totals**: 96 ✅ · 6 ⚠️ · 15 📝 · 0 ❌
+**Totals**: 103 ✅ · 6 ⚠️ · 8 📝 · 0 ❌
 
 ---
 
@@ -80,7 +80,7 @@ _Last updated: 2026-05-09 (v0.33.1.post1)_
 - [/] **PD-05-AF-006** — Node status icon reflects task state
 - [/] **PD-01-AF-010** — Output panel right-click copy context menu (Wayland-safe)
 - [/] **PD-02-AF-008..012** — Input panel right-click context menu: popup, Copy/Paste visibility, Copy action, Paste action
-- [ ] **PD-16 (TuiMirror)** — TUI mirror spec written; Phase 1 (config + NullGUIManager) is the next implementation step — see [06_TUI_MIRROR.md §9](06_TUI_MIRROR.md#9-implementation-plan)
+- [/] **PD-16 (TuiMirror)** — implemented: config + NullGUI path, bridge I/O, launcher lifecycle, and traceability/test reconciliation completed
 
 ---
 

@@ -1,6 +1,6 @@
 # AgentX — TUI Mirror: Neovim Chat Pane
 
-_Last updated: 2026-05-09 (v0.38.2)_
+_Last updated: 2026-05-09 (v0.38.2.post1)_
 
 > **Companion document to [`05_VIBE_CODING.md`](05_VIBE_CODING.md).**
 > Specifies the optional TUI mirror that surfaces the AgentX chat interface as a
@@ -400,7 +400,7 @@ methods are no-ops or return safe defaults).
 be set simultaneously.  The startup validation step raises `ConfigurationError` if
 both are false.
 
-**Status**: 📝 Spec only
+**Status**: ✅ Implemented and tested
 
 ---
 

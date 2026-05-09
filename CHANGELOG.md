@@ -7,6 +7,21 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.38.2.post1] - 2026-05-09
+
+### Code Changes
+
+#### Changed
+
+- `docs/ux/06_TUI_MIRROR.md`: reconciled `PD-16-AF-006` status to
+  implemented/tested and refreshed revision stamp.
+- `docs/ux/UX_LIFECYCLE.md`: reconciled PD-16 source mapping, added full
+  PD-16 traceability matrix rows (`PD-16-AF-001..007`) with test references,
+  and refreshed revision stamp.
+- `docs/ux/00_INDEX.md`: updated status snapshot and totals to reflect PD-16
+  completion and moved PD-16 queue item to completed.
+- `pyproject.toml`: bumped version to `0.38.2.post1` for a docs-only release.
+
 ## [0.38.2] - 2026-05-09
 
 ### Test Changes

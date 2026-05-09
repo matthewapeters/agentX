@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-09 (v0.33.1.post1)_
+_Last updated: 2026-05-09 (v0.38.2.post1)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -164,7 +164,7 @@ Examples:
 | PD-13 | ToolPanel | `src/agentx/gui/tool_panel.py` |
 | PD-14 | VimBridge GUI | `src/agentx/integration/vim_bridge.py` |
 | PD-15 | TerminalPane GUI | `src/agentx/integration/terminal_bridge.py` + `src/agentx/gui/` |
-| PD-16 | TuiMirror | `src/agentx/integration/tui_bridge.py` (planned) |
+| PD-16 | TuiMirror | `src/agentx/integration/tui_bridge.py`, `launch_vibe.sh` |
 
 When a new panel or top-level widget is added, assign the next available PD number,
 add a row to this table, and create a section in `03_PANEL_DETAILS.md`.
@@ -374,6 +374,18 @@ implements it and the test that validates it.  Status legend:
 | `launch_vibe.sh stop` sends Ctrl+C to AgentX and nvim panes then kills the tmux session | PD-15-AF-008 | `launch_vibe.sh` stop branch | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
 | `terminal_run()` wrapper resolves `visible`/`auto_close`/`timeout_sec` from `agentx.toml [terminal]` when caller omits them | PD-15-AF-009 | `terminal_bridge.terminal_run()` defaults resolution block | `test_terminal_bridge.py` | `test_terminal_run_wrapper_uses_config_defaults` | ✅ |
 | Streamed tool-result rows for `terminal_run` include a decision badge (✅/⛔/🚫) and exit code | PD-15-AF-010 | `StreamingController._display_tool_result()` badge injection | `test_terminal_streaming_controller.py` | `test_terminal_run_result_includes_decision_badge` | ✅ |
+
+### PD-16 — TuiMirror
+
+| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
+|---|---|---|---|---|---|
+| Output FIFO writer emits USER/AGENT/TOOL/DONE records without blocking GUI path | PD-16-AF-001 | `TuiBridge.write_output()` + `StreamingController._display_*()` hooks | `test_tui_bridge_output.py` | module-level tests | ✅ |
+| Input FIFO reader parses submit sentinel and dispatches prompt callbacks | PD-16-AF-002 | `TuiBridge._input_reader_loop()` | `test_tui_bridge_output.py` | module-level tests | ✅ |
+| Launcher creates optional `tui-chat` tmux window with TUI env wiring | PD-16-AF-003 | `launch_vibe.sh` start/restart branches | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
+| Generated `agentx_tui.lua` config is written and sourced by TUI nvim startup | PD-16-AF-004 | `launch_vibe.sh` `_write_tui_lua()` + TUI launch command | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
+| `<leader>s` submit keymap writes input text to FIFO with submit sentinel | PD-16-AF-005 | generated `agentx_tui.lua` submit keymap block | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
+| `enable_gui_chat=false` mode uses headless `NullGUIManager` and enforces config constraint | PD-16-AF-006 | `config.validate_config()` + `AgentXSession` GUI-disabled path | `test_config_tui_phase1.py`, `test_session_gui_disabled.py` | module-level tests | ✅ |
+| `tui.enable` controls `TuiBridge` lifecycle and guarded call-sites | PD-16-AF-007 | `AgentXSession.__init__()` + `close()` + streaming guards | `test_tui_bridge_output.py`, `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
 
 ---
 
