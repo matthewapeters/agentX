@@ -4,12 +4,17 @@ This module communicates with neovim via its built-in ``--server`` / ``--remote`
 CLI flags, which are available in every modern neovim distribution (≥ 0.5).  No
 ``pynvim`` or msgpack dependency is required.
 
-The typical socket path created by ``launch_vibe.sh`` is ``/tmp/agentx.nvim.sock``.
-This value is configurable via ``agentx.toml`` under ``[neovim] socket``.
+Socket path resolution (highest priority first):
+
+1. ``AGENTX_NVIM_SOCKET`` environment variable (mirrors ``launch_vibe.sh``).
+2. ``config["neovim"]["socket"]`` from the runtime config dict.
+3. ``/tmp/agentx_<session>.nvim.sock`` where ``<session>`` is
+   ``AGENTX_TMUX_SESSION`` (default ``agentx``) — the same formula as
+   ``launch_vibe.sh``.
 
 Example usage::
 
-    bridge = VimBridge(socket_path="/tmp/agentx.nvim.sock")
+    bridge = VimBridge(config=config)
     if bridge.is_connected():
         bridge.open_file("/path/to/file.py", line=42)
 
@@ -28,7 +33,24 @@ from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
-_DEFAULT_SOCKET_PATH = "/tmp/agentx.nvim.sock"
+
+def _resolve_default_socket() -> str:
+    """Compute the default neovim socket path, mirroring ``launch_vibe.sh``.
+
+    Resolution order:
+
+    1. ``AGENTX_NVIM_SOCKET`` environment variable.
+    2. ``/tmp/agentx_<session>.nvim.sock`` using ``AGENTX_TMUX_SESSION``
+       (default ``agentx``) — the same formula as ``launch_vibe.sh``.
+
+    Returns:
+        str: Resolved socket path.
+    """
+    from_env = os.environ.get("AGENTX_NVIM_SOCKET", "")
+    if from_env:
+        return from_env
+    session = os.environ.get("AGENTX_TMUX_SESSION", "agentx")
+    return f"/tmp/agentx_{session}.nvim.sock"
 
 
 class VimBridge:
@@ -43,33 +65,39 @@ class VimBridge:
           └── subprocess: nvim --server <socket> --remote <path>
                 (or --remote +<line> <path> when line number is provided)
 
-    The neovim socket is a Unix-domain socket created by::
+    The neovim socket is a Unix-domain socket created by ``launch_vibe.sh`` at::
 
-        nvim --listen /tmp/agentx.nvim.sock
+        nvim --listen /tmp/agentx_agentx.nvim.sock
+
+    where the trailing ``agentx`` is the tmux session name (``AGENTX_TMUX_SESSION``).
 
     Args:
-        socket_path: Filesystem path to the neovim Unix socket.  Defaults to
-            ``/tmp/agentx.nvim.sock``.
+        socket_path: Override the resolved socket path.  When omitted the path is
+            derived from ``AGENTX_NVIM_SOCKET`` / ``AGENTX_TMUX_SESSION`` env vars
+            (matching ``launch_vibe.sh``) or ``config["neovim"]["socket"]``.
         config: Optional mapping containing a ``[neovim]`` section whose ``socket``
-            key overrides ``socket_path``.
+            key overrides the env-var resolution.
     """
 
     def __init__(
         self,
-        socket_path: str = _DEFAULT_SOCKET_PATH,
+        socket_path: str | None = None,
         config: dict | None = None,
     ) -> None:
         """Initialise VimBridge.
 
         Args:
-            socket_path: Path to the neovim Unix socket.
-            config: Optional config dict; ``config["neovim"]["socket"]`` overrides
-                ``socket_path`` when present.
+            socket_path: Explicit socket path override.  When ``None`` the path is
+                resolved from environment variables and then from ``config``.
+            config: Optional config dict; ``config["neovim"]["socket"]`` takes
+                priority over the env-var default when present.
         """
-
+        resolved = _resolve_default_socket()
         if config:
-            socket_path = config.get("neovim", {}).get("socket", socket_path)
-        self._socket_path: str = socket_path
+            resolved = config.get("neovim", {}).get("socket", resolved)
+        if socket_path is not None:
+            resolved = socket_path
+        self._socket_path: str = resolved
 
     # ------------------------------------------------------------------
     # Public API

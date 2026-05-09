@@ -7,6 +7,36 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.33.1] - 2026-05-09
+
+### Code Changes
+
+#### Fixed
+
+- `VimBridge` socket path resolution: the hardcoded default `/tmp/agentx.nvim.sock` did not
+  match the session-scoped path created by `launch_vibe.sh`.  Resolution now mirrors the
+  shell script exactly (highest priority first):
+  1. `AGENTX_NVIM_SOCKET` environment variable
+  2. `config["neovim"]["socket"]` from the runtime config dict
+  3. `/tmp/agentx_<AGENTX_TMUX_SESSION>.nvim.sock` (default session name: `agentx`)
+- Added `_resolve_default_socket()` module-level helper (also exported for testability).
+- `VimBridge.__init__` `socket_path` parameter type changed from `str` (with default) to
+  `str | None` (explicit override only); callers that omit it now get the correct env-based path.
+
+### Test Changes
+
+#### Added
+
+- `TestVimBridgeConfig` expanded with 4 new env-var-aware tests replacing the 2 old static
+  default tests:
+  - `test_default_socket_path_uses_env_var_formula`
+  - `test_agentx_nvim_socket_env_overrides_default`
+  - `test_agentx_tmux_session_env_scopes_socket_path`
+  - `test_explicit_socket_path_overrides_config`
+  - `test_config_without_neovim_key_falls_through_to_env_formula`
+
+---
+
 ## [0.33.0] - 2026-05-09
 
 ### Code Changes

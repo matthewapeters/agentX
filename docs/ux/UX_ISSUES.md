@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-09 (v0.33.0)_
+_Last updated: 2026-05-09 (v0.33.1)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -253,5 +253,6 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
 [/] issue: when user selects a file and choses "Edit" from the pop-down menu, the agent should open the selected file in the neovim editor in a new buffer.  Do not close any open buffers.
 
 - **Affordance**: PD-14-AF-002 — "Edit" FileExplorer context menu → `VimBridge.open_file()`
-- **Attempted fix (v0.33.0)**: Created `src/agentx/integration/vim_bridge.py`. `VimBridge.open_file()` uses `nvim --server <socket> --remote <path>` which opens the file in a new buffer without closing existing ones. Wired into `AgentXSession._open_file_in_editor()` and passed as `on_edit` callback to `FileExplorer.to_gui()`. 16 unit/integration tests added in `tests/test_vim_bridge_gui.py`.
-- **UAT Status**: Ready for UAT — requires neovim running with `--listen /tmp/agentx.nvim.sock` (standard vibe-coding setup).
+- **Attempted fix 1 (v0.33.0)**: Created `src/agentx/integration/vim_bridge.py`. Socket defaulted to `/tmp/agentx.nvim.sock`. **UAT failed** — socket not found because `launch_vibe.sh` creates a session-scoped socket at `/tmp/agentx_<session>.nvim.sock` (e.g. `/tmp/agentx_agentx.nvim.sock`).
+- **Attempted fix 2 (v0.33.1)**: Fixed socket resolution to mirror `launch_vibe.sh`. Priority: `AGENTX_NVIM_SOCKET` env var → `config["neovim"]["socket"]` → `/tmp/agentx_<AGENTX_TMUX_SESSION>.nvim.sock` (default: `/tmp/agentx_agentx.nvim.sock`). 19 tests, 100% coverage.
+- **UAT Status**: Ready for UAT — launch `./launch_vibe.sh` then use Edit in file explorer.

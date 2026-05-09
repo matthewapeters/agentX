@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from agentx.integration.vim_bridge import VimBridge
+from agentx.integration.vim_bridge import VimBridge, _resolve_default_socket
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -97,38 +97,71 @@ class TestVimBridgeConfig:
     THEN socket_path reflects the expected value
     """
 
-    def test_default_socket_path(self) -> None:
-        """GIVEN no arguments
-        WHEN VimBridge is constructed
-        THEN socket_path is the default /tmp/agentx.nvim.sock.
+    def test_default_socket_path_uses_env_var_formula(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """GIVEN no AGENTX_NVIM_SOCKET env var and AGENTX_TMUX_SESSION=agentx (default)
+        WHEN VimBridge is constructed with no arguments
+        THEN socket_path is /tmp/agentx_agentx.nvim.sock (matching launch_vibe.sh).
         """
+        monkeypatch.delenv("AGENTX_NVIM_SOCKET", raising=False)
+        monkeypatch.delenv("AGENTX_TMUX_SESSION", raising=False)
         bridge = VimBridge()
-        assert bridge.socket_path == "/tmp/agentx.nvim.sock"
+        assert bridge.socket_path == "/tmp/agentx_agentx.nvim.sock"
 
-    def test_explicit_socket_path_overrides_default(self) -> None:
+    def test_agentx_nvim_socket_env_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """GIVEN AGENTX_NVIM_SOCKET is set in environment
+        WHEN VimBridge is constructed with no arguments
+        THEN socket_path equals the env var value.
+        """
+        monkeypatch.setenv("AGENTX_NVIM_SOCKET", "/env/override.sock")
+        bridge = VimBridge()
+        assert bridge.socket_path == "/env/override.sock"
+
+    def test_agentx_tmux_session_env_scopes_socket_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """GIVEN AGENTX_TMUX_SESSION=myproject and no AGENTX_NVIM_SOCKET
+        WHEN VimBridge is constructed with no arguments
+        THEN socket_path is /tmp/agentx_myproject.nvim.sock.
+        """
+        monkeypatch.delenv("AGENTX_NVIM_SOCKET", raising=False)
+        monkeypatch.setenv("AGENTX_TMUX_SESSION", "myproject")
+        bridge = VimBridge()
+        assert bridge.socket_path == "/tmp/agentx_myproject.nvim.sock"
+
+    def test_explicit_socket_path_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """GIVEN an explicit socket_path argument
         WHEN VimBridge is constructed
-        THEN socket_path equals the supplied value.
+        THEN socket_path equals the supplied value (env vars ignored).
         """
+        monkeypatch.setenv("AGENTX_NVIM_SOCKET", "/env/override.sock")
         bridge = _make_bridge("/custom/nvim.sock")
         assert bridge.socket_path == "/custom/nvim.sock"
 
-    def test_config_dict_overrides_socket_path(self) -> None:
+    def test_explicit_socket_path_overrides_config(self) -> None:
+        """GIVEN both socket_path argument and config[neovim][socket]
+        WHEN VimBridge is constructed
+        THEN explicit socket_path wins.
+        """
+        bridge = VimBridge(socket_path="/explicit.sock", config={"neovim": {"socket": "/cfg.sock"}})
+        assert bridge.socket_path == "/explicit.sock"
+
+    def test_config_dict_overrides_env_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """GIVEN a config dict with neovim.socket key
         WHEN VimBridge is constructed with config=...
-        THEN socket_path is taken from the config dict.
+        THEN socket_path is taken from the config dict (overrides env-var default).
         """
+        monkeypatch.delenv("AGENTX_NVIM_SOCKET", raising=False)
         cfg: dict[str, Any] = {"neovim": {"socket": "/cfg/nvim.sock"}}
         bridge = _make_bridge_from_config(cfg)
         assert bridge.socket_path == "/cfg/nvim.sock"
 
-    def test_config_without_neovim_key_uses_default(self) -> None:
-        """GIVEN a config dict that has no neovim section
+    def test_config_without_neovim_key_falls_through_to_env_formula(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """GIVEN a config dict with no neovim section and AGENTX_TMUX_SESSION=agentx
         WHEN VimBridge is constructed with config=...
-        THEN socket_path falls back to the default.
+        THEN socket_path falls back to /tmp/agentx_agentx.nvim.sock.
         """
+        monkeypatch.delenv("AGENTX_NVIM_SOCKET", raising=False)
+        monkeypatch.delenv("AGENTX_TMUX_SESSION", raising=False)
         bridge = _make_bridge_from_config({"agentx": {}})
-        assert bridge.socket_path == "/tmp/agentx.nvim.sock"
+        assert bridge.socket_path == "/tmp/agentx_agentx.nvim.sock"
 
 
 # ---------------------------------------------------------------------------
