@@ -201,10 +201,14 @@ def test_start_with_tui_enabled_launches_tui_window_and_env(tmp_path: Path) -> N
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
     assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx\t-n\ttui-chat" in log
-    assert "send-keys\t-t\t%3\tnvim\t--listen" in log
+    assert "send-keys\t-t\t%3\tAGENTX_TUI_OUTPUT_FIFO='" in log
+    assert "nvim\t--listen" in log
+    assert "--cmd\t'luafile" in log
+    assert "agentx_tui.lua'" in log
     assert "AGENTX_TUI_ENABLE='true'" in log
     assert "AGENTX_TUI_OUTPUT_FIFO='" in log
     assert "AGENTX_TUI_INPUT_FIFO='" in log
+    assert (project_dir / "agentx_tui.lua").exists()
 
 
 def _run_launcher(

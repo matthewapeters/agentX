@@ -1,6 +1,6 @@
 # AgentX — TUI Mirror: Neovim Chat Pane
 
-_Last updated: 2026-05-09 (v0.37.0)_
+_Last updated: 2026-05-09 (v0.38.0)_
 
 > **Companion document to [`05_VIBE_CODING.md`](05_VIBE_CODING.md).**
 > Specifies the optional TUI mirror that surfaces the AgentX chat interface as a
@@ -338,7 +338,7 @@ instance pre-configured with `agentx_tui.lua`.
 `AGENTX_TUI_ENABLE=true` environment variable.  When disabled, window 3 is not
 created; the rest of the session is identical to today.
 
-**Status**: ⚠️ Partially implemented (window + env wiring done; full split-layout Lua config pending)
+**Status**: ✅ Implemented and tested
 
 ---
 
@@ -360,7 +360,7 @@ Key responsibilities:
 - Bind `<leader>o` to switch focus to the output split.
 - Bind `<leader>i` to switch focus back to the input split.
 
-**Status**: 📝 Spec only
+**Status**: ✅ Implemented and tested
 
 ---
 
@@ -386,7 +386,7 @@ vim.keymap.set({'n', 'i'}, '<leader>s', function()
 end, { buffer = true, desc = "AgentX: Submit message" })
 ```
 
-**Status**: 📝 Spec only
+**Status**: ✅ Implemented and tested
 
 ---
 
@@ -684,8 +684,8 @@ Work is divided into four phases, each independently mergeable and testable.
 ### Phase 4 — launch_vibe.sh and Neovim Config
 
 - [/] Add TUI FIFO / socket path variables to `launch_vibe.sh`
-- [X] Add `_launch_tui_window()` function (creates window 3, writes `agentx_tui.lua`,
-  launches TUI neovim) — deferred; current implementation launches TUI neovim directly in `tui-chat`
+- [/] Add TUI window launch flow (creates window 3, writes `agentx_tui.lua`,
+  launches TUI neovim) — implemented inline in `_start_session`
 - [/] Gate behind `AGENTX_TUI_ENABLE` env var check in `start` / `stop` / `status`
 - [/] Update `stop` to `:qa!` the TUI neovim and remove TUI FIFOs
 - [/] Update `status` to report TUI socket and FIFO state

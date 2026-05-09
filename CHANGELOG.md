@@ -7,6 +7,39 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.38.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `launch_vibe.sh`: added runtime generation of `agentx_tui.lua` in the project
+  root with split layout, FIFO tailing, and keymaps (`<leader>s`, `<leader>c`,
+  `<leader>o`, `<leader>i`) for the TUI mirror workflow.
+
+#### Changed
+
+- `launch_vibe.sh`:
+  - TUI startup now launches neovim with `--cmd 'luafile .../agentx_tui.lua'`
+    and scoped TUI FIFO environment variables.
+  - adds generated `agentx_tui.lua` to `.gitignore` when the project already
+    has a `.gitignore` file.
+- `tests/test_launch_vibe_shutdown.py`:
+  - extended TUI-enabled launcher test to validate `luafile` startup command
+    wiring and generated `agentx_tui.lua` file creation.
+- `docs/ux/06_TUI_MIRROR.md`: updated revision stamp and marked PD-16 launcher
+  and Lua affordance statuses as implemented.
+
+### Test Changes
+
+#### Changed
+
+- `test_start_with_tui_enabled_launches_tui_window_and_env`
+  - GIVEN TUI mode enabled under fake tmux
+  - WHEN launcher starts session
+  - THEN `tui-chat` launch command includes `luafile` wiring and generated
+    `agentx_tui.lua` exists in the project directory.
+
 ## [0.37.0] - 2026-05-09
 
 ### Code Changes
