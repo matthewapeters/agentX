@@ -206,10 +206,10 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 2. **PhaseStepperWidget** — vertical list of phase rows (Classify / Think / Tool: `<name>` / Respond) each showing a status icon (`○` / `↻` / `✓` / `✗`), phase emoji, and a `HH:MM:SS` elapsed timer (1-second `after()` loop).
 3. **InterruptButton** — large full-width button; replaces the `user_break` button removed from InputPanel.
 
-Affordances: PD-12-AF-001 through PD-12-AF-011 (all `📝 Spec Only`).
-Implementation: `src/agentx/gui/status_tab.py` (to be created) + wiring in `StreamingController`, `IGUIManager`, `GUIManager`, `SidePanel`, `InputPanel`.
+Affordances: PD-12-AF-001 through PD-12-AF-011 (all `✅ Tested`).
+Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pass (v0.32.1).
 
-**Awaiting implementation and UAT confirmation before closing.**
+**Implementation complete — awaiting UAT confirmation before closing.**
 
 [ ] Issue: When complex tasks are being performed, the user experience moving between output panes is slowed and the redraws are laggy.  It may be necessary to implement multi-processing with reliable state between processes to ensure reliable state management.
 [/] Need more TMUX panes! Running launch_vibe.sh creates the neovim pane, and then fills it with the agentx cli run-time logs!  Create a different pane for these! (not 0 or 1)
@@ -247,3 +247,4 @@ Implementation: `src/agentx/gui/status_tab.py` (to be created) + wiring in `Stre
 - **Design docs updated**: `docs/ux/05_VIBE_CODING.md` (launch architecture, lifecycle commands, permutations, and traceability test scenarios).
 - **UAT confirmation (2026-05-08)**: User confirmed launch and close behavior of `launch_vibe.sh` now passes in live use.
 - **UAT Status**: User-approved in UAT on 2026-05-08.
+[ ] issue: when user selects a file and choses

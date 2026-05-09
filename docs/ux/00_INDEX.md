@@ -51,12 +51,12 @@ _Last updated: 2026-05-10 (v0.32.1)_
 | PD-09 CollapsibleSection | 4 | 0 | 0 | 0 |
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
 | PD-11 FileExplorer | 10 | 0 | 0 | 0 |
-| PD-12 StatusTab | 0 | 0 | 11 | 0 |
+| PD-12 StatusTab | 11 | 0 | 0 | 0 |
 | PD-13 ToolPanel | 0 | 0 | 2 | 0 |
 | PD-14 VimBridge GUI | 0 | 0 | 10 | 0 |
 | PD-15 TerminalPane GUI | 8 | 0 | 0 | 0 |
 
-**Totals**: 82 ✅ · 6 ⚠️ · 23 📝 · 0 ❌
+**Totals**: 93 ✅ · 6 ⚠️ · 12 📝 · 0 ❌
 
 ---
 
@@ -70,7 +70,7 @@ _Last updated: 2026-05-10 (v0.32.1)_
 - [/] **PD-03-AF-011..014** — Working Memory callbacks (toggle, delete, promote, add)
 - [/] **PD-07-AF-002..003** — Settings collapse state + restart-required icon
 - [/] **PD-02-AF-002** — Shift+Enter inserts newline
-- [ ] **PD-12: StatusTab** — implement: `status_tab.py`, relocate donut + break button, wire `StreamingController` phase events (11 affordances spec-only)
+- [/] **PD-12: StatusTab** — implemented: `status_tab.py`, donut + break button relocated, `StreamingController` phase events wired (11 affordances ✅)
 - [/] **PD-15-AF-003..004** — active terminal indicator and kill-pane action wiring in GUI/tool-result rows
 - [/] **PD-04-AF-004** — ModelSelector refresh button
 - [/] **PD-05-AF-004** — Re-synth button in synthesis block
