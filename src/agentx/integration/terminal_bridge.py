@@ -17,8 +17,9 @@ import shutil
 import subprocess
 import time
 from typing import Callable, Mapping
+import uuid
 
-_CAPTURE_SENTINEL = "__AGENTX_DONE__"
+_CAPTURE_SENTINEL_PREFIX = "__AGENTX_DONE__"
 _DEFAULT_POLL_INTERVAL = 0.5  # seconds between capture-pane polls
 
 DEFAULT_ALLOW_PREFIXES: list[str] = [
@@ -417,11 +418,16 @@ class TerminalBridge:
 
         pane_target = self._create_visible_pane() if visible else f"{self._session_id}:1.0"
 
-        # Wrap command with a sentinel so we can detect completion and capture exit code.
-        sentinel_cmd = f"{command}; echo {_CAPTURE_SENTINEL}$?"
+        # Generate a unique sentinel for this invocation so concurrent or
+        # back-to-back commands on the persistent pane cannot cross-match.
+        run_id = uuid.uuid4().hex
+        sentinel = f"{_CAPTURE_SENTINEL_PREFIX}{run_id}__"
+        sentinel_cmd = f"{command}; echo {sentinel}$?"
         self._tmux_send_keys(pane_target, sentinel_cmd)
 
-        timed_out, exit_code, stdout_text = self._wait_for_completion(pane_target, timeout_sec, visible=visible)
+        timed_out, exit_code, stdout_text = self._wait_for_completion(
+            pane_target, timeout_sec, sentinel=sentinel, visible=visible
+        )
 
         if visible and auto_close and not timed_out:
             try:
@@ -441,20 +447,26 @@ class TerminalBridge:
         self._append_audit(result)
         return result
 
-    def _wait_for_completion(self, pane_target: str, timeout_sec: int, visible: bool = True) -> tuple[bool, int, str]:
-        """Poll ``capture-pane`` until the sentinel line appears or timeout.
+    def _wait_for_completion(
+        self,
+        pane_target: str,
+        timeout_sec: int,
+        sentinel: str,
+        visible: bool = True,
+    ) -> tuple[bool, int, str]:
+        """Poll ``capture-pane`` until the unique sentinel line appears or timeout.
 
-        A sentinel ``__AGENTX_DONE__<exit_code>`` is appended to the shell
-        command by ``run_command()`` before dispatch.  This method reads the
-        pane scrollback at intervals of ``_DEFAULT_POLL_INTERVAL`` seconds and
-        returns once it detects the sentinel or the deadline is reached.
+        Each invocation of ``run_command()`` generates a distinct sentinel of the
+        form ``__AGENTX_DONE__<uuid>__<exit_code>`` so back-to-back or concurrent
+        commands on the same persistent pane cannot cross-match each other's output.
 
-        On timeout, visible panes are killed; persistent panes receive a
-        ``Ctrl+C`` interrupt instead to preserve the persistent shell.
+        On timeout, visible panes are killed (``kill-pane``); persistent panes
+        receive ``Ctrl+C`` to preserve the shell for subsequent commands.
 
         Args:
             pane_target: tmux pane target string.
             timeout_sec: Maximum wait in seconds.
+            sentinel: Unique per-invocation sentinel prefix string to match.
             visible: True for ephemeral panes; False for persistent pane (1.0).
 
         Returns:
@@ -472,12 +484,12 @@ class TerminalBridge:
                 return False, -1, "(pane closed before output captured)"
 
             for line in output.splitlines():
-                if _CAPTURE_SENTINEL in line:
+                if sentinel in line:
                     try:
-                        exit_code = int(line.split(_CAPTURE_SENTINEL)[-1].strip())
+                        exit_code = int(line.split(sentinel)[-1].strip())
                     except (ValueError, IndexError):
                         exit_code = 0
-                    clean = "\n".join(ln for ln in output.splitlines() if _CAPTURE_SENTINEL not in ln)
+                    clean = "\n".join(ln for ln in output.splitlines() if sentinel not in ln)
                     return False, exit_code, clean.strip()
 
         # Timeout reached.

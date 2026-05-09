@@ -7,11 +7,51 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.32.1] - 2026-05-10
+
+### Code Changes
+
+#### Changed
+
+- `_CAPTURE_SENTINEL` renamed to `_CAPTURE_SENTINEL_PREFIX` — it is now a prefix, not the full
+  sentinel string.  Each `run_command()` invocation generates a unique sentinel
+  `__AGENTX_DONE__<uuid>__` via `uuid.uuid4().hex`, eliminating cross-invocation contamination
+  on the persistent pane (`session:1.0`) where back-to-back commands share the same scrollback.
+- `_wait_for_completion()` now accepts an explicit `sentinel: str` parameter rather than reading
+  the module-level constant, and matches only its own unique sentinel string.
+- Added `import uuid` to `terminal_bridge.py`.
+
+### Test Changes
+
+#### Added
+
+- `test_run_command_persistent_pane_timeout_sends_ctrl_c_not_kill` — verifies that on timeout with
+  `visible=False`, `send-keys C-c` is sent and `kill-pane` is **not** invoked.  [PD-15-AF-009]
+  - GIVEN `visible=False` persistent pane, `timeout_sec=0`
+  - WHEN `_wait_for_completion` times out
+  - THEN `send-keys C-c` is called; `kill-pane` is absent from tmux calls
+- `test_run_command_pane_closed_early_returns_gracefully` — verifies that a `RuntimeError` from
+  `capture-pane` (pane already gone) returns `(timed_out=False, exit_code=-1, "pane closed …")`.  [PD-15-AF-009]
+  - GIVEN ephemeral pane closes before first poll
+  - WHEN `capture-pane` raises `RuntimeError`
+  - THEN result carries `exit_code=-1` and `"pane closed"` in stdout, `timed_out=False`
+
+#### Changed
+
+- All `fake_run` closures in existing tests replaced with `_StatefulFakeTmux` helper class that
+  automatically extracts the per-invocation UUID sentinel from the dispatched `send-keys` command
+  and echoes it back in the `capture-pane` response — tests no longer rely on a fixed sentinel
+  string and therefore remain correct regardless of the UUID value.
+- `_CAPTURE_SENTINEL` import in test file updated to `_CAPTURE_SENTINEL_PREFIX`.
+
+---
+
 ## [0.32.0] - 2026-05-09
 
 ### Code Changes
 
 #### Added
+
 - `TerminalBridge._wait_for_completion()` — polls `tmux capture-pane` at 0.5 s intervals until
   `__AGENTX_DONE__<exit_code>` sentinel is detected in pane scrollback or `timeout_sec` elapses.
 - Real exit-code capture: `run_command()` now wraps dispatched commands with the sentinel and
@@ -22,6 +62,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `_CAPTURE_SENTINEL` and `_DEFAULT_POLL_INTERVAL` module-level constants exported for test use.
 
 #### Changed
+
 - `run_command()` no longer returns a static `"DISPATCHED …"` stdout; actual captured pane output
   (excluding the sentinel line) is returned in `TerminalResult.stdout`.
 - Auto-close of ephemeral panes now happens via `kill-pane` after capture, not via a shell
@@ -30,6 +71,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Test Changes
 
 #### Added
+
 - `test_run_command_captures_exit_code_from_sentinel` — verifies exit code 42 propagated from
   sentinel, stdout cleaned of sentinel line. [PD-15-AF-009]
 
@@ -46,6 +88,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   GIVEN supervised mode with confirm-list command WHEN approval callback edits command THEN `executed_command` and `send-keys` carry the edited string.
 
 #### Changed
+
 - Existing dispatch tests (`visible_creates_ephemeral_pane`, `appends_audit_log_entry`,
   `confirm_command_dispatches_when_approved`) updated to handle `capture-pane` in `fake_run`
   and patch `time.sleep` for speed.

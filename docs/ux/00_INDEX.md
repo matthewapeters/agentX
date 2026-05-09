@@ -1,6 +1,6 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-09 (v0.32.0)_
+_Last updated: 2026-05-10 (v0.32.1)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
