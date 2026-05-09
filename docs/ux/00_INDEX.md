@@ -53,10 +53,10 @@ _Last updated: 2026-05-10 (v0.32.1)_
 | PD-11 FileExplorer | 10 | 0 | 0 | 0 |
 | PD-12 StatusTab | 11 | 0 | 0 | 0 |
 | PD-13 ToolPanel | 0 | 0 | 2 | 0 |
-| PD-14 VimBridge GUI | 0 | 0 | 10 | 0 |
+| PD-14 VimBridge GUI | 3 | 0 | 6 | 0 |
 | PD-15 TerminalPane GUI | 8 | 0 | 0 | 0 |
 
-**Totals**: 93 ✅ · 6 ⚠️ · 12 📝 · 0 ❌
+**Totals**: 96 ✅ · 6 ⚠️ · 8 📝 · 0 ❌
 
 ---
 

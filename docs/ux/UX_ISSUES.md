@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-08 (v0.25.3)_
+_Last updated: 2026-05-09 (v0.33.0)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -247,4 +247,11 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
 - **Design docs updated**: `docs/ux/05_VIBE_CODING.md` (launch architecture, lifecycle commands, permutations, and traceability test scenarios).
 - **UAT confirmation (2026-05-08)**: User confirmed launch and close behavior of `launch_vibe.sh` now passes in live use.
 - **UAT Status**: User-approved in UAT on 2026-05-08.
-[ ] issue: when user selects a file and choses
+
+---
+
+[/] issue: when user selects a file and choses "Edit" from the pop-down menu, the agent should open the selected file in the neovim editor in a new buffer.  Do not close any open buffers.
+
+- **Affordance**: PD-14-AF-002 — "Edit" FileExplorer context menu → `VimBridge.open_file()`
+- **Attempted fix (v0.33.0)**: Created `src/agentx/integration/vim_bridge.py`. `VimBridge.open_file()` uses `nvim --server <socket> --remote <path>` which opens the file in a new buffer without closing existing ones. Wired into `AgentXSession._open_file_in_editor()` and passed as `on_edit` callback to `FileExplorer.to_gui()`. 16 unit/integration tests added in `tests/test_vim_bridge_gui.py`.
+- **UAT Status**: Ready for UAT — requires neovim running with `--listen /tmp/agentx.nvim.sock` (standard vibe-coding setup).

@@ -347,6 +347,20 @@ implements it and the test that validates it.  Status legend:
 | Checkbox per tool toggles enabled state | PD-13-AF-001 | `ToolPanel.on_tool_toggle()` | — | — | 📝 |
 | Expand/collapse panel header | PD-13-AF-002 | `ToolPanel` header toggle | — | — | 📝 |
 
+### PD-14 — VimBridge GUI
+
+| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
+|---|---|---|---|---|---|
+| "Edit" context menu opens file in running neovim as new buffer; no buffers closed | PD-14-AF-002 | `VimBridge.open_file()` + `AgentXSession._open_file_in_editor()` + `FileExplorer._on_edit_selected()` | `test_vim_bridge_gui.py` | `TestVimBridgeOpenFile`, `TestSessionOpenFileInEditor` | ✅ |
+| is_connected() returns True when socket file is a Unix socket | PD-14-AF-002a | `VimBridge.is_connected()` | `test_vim_bridge_gui.py` | `TestVimBridgeIsConnected` | ✅ |
+| Path resolution forwards absolute/relative paths correctly | PD-14-AF-002b | `VimBridge.open_file_from_context()` | `test_vim_bridge_gui.py` | `TestVimBridgeOpenFileFromContext` | ✅ |
+| Editor status bar shows connected state | PD-14-AF-001 | — | — | — | 📝 |
+| Send to Editor button enabled when connected | PD-14-AF-003 | — | — | — | 📝 |
+| Send to Editor button disabled when disconnected | PD-14-AF-003 | — | — | — | 📝 |
+| Line navigation from error display opens file at line N | PD-14-AF-004 | — | — | — | 📝 |
+| File-saved notification shown in ChatPanel | PD-14-AF-005 | — | — | — | 📝 |
+| Recover-editor restores editing surface | PD-14-AF-008 | `launch_vibe.sh` recover-editor branch | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
+
 ### PD-15 — TerminalPane GUI
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |

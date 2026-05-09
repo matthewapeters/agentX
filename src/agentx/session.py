@@ -40,6 +40,7 @@ from .integration import (
     ServerToolExecutor,
     agentix_bridge_adapter,
 )
+from .integration.vim_bridge import VimBridge
 from .output_logger import OutputLogger
 from .service_manager import ServiceManager
 from .session_state import SessionState
@@ -120,6 +121,9 @@ class AgentXSession:
         # Context lives on session directly (tests mock session.context)
         self.context = Context(path=context_folder, session_id=session_id)
         self.file_explorer = FileExplorer(start_path=os.getcwd())
+
+        # VimBridge: connects to the running neovim instance via its Unix socket
+        self.vim_bridge = VimBridge(config=config)
 
         # Per-turn streaming state (stays on session — tests set these directly)
         self._is_streaming = threading.Event()
@@ -1160,6 +1164,24 @@ class AgentXSession:
         self.message.attach(file_path)
         self.refresh_user_gui()
 
+    def _open_file_in_editor(self, file_path: str) -> None:
+        """Open ``file_path`` in the running neovim instance as a new buffer.
+
+        Called by the FileExplorer "Edit" context-menu entry (``on_edit`` callback).
+        Delegates to :class:`VimBridge` which communicates via ``nvim --server``.
+        If neovim is not connected, a warning is logged and nothing is sent.
+
+        Args:
+            file_path: Absolute path to the file selected in the FileExplorer.
+        """
+
+        success = self.vim_bridge.open_file_from_context(file_path)
+        if not success:
+            logger.warning(
+                "Could not open %s in neovim — is the editor running?",
+                file_path,
+            )
+
     def refresh_user_gui(self):
         """
         Refreshes the user attachment bar display.
@@ -1200,7 +1222,7 @@ class AgentXSession:
         files_widget = self.file_explorer.to_gui(
             self.gui.get_files_parent(),
             on_attach=self.attach_file,
-            on_edit=None,  # You can wire up edit logic here later
+            on_edit=self._open_file_in_editor,
             on_add_folder_to_memory=self._on_add_folder_to_memory,
             theme_mode=self.gui.config.theme_mode,
             bg=self.gui.config.status_bg,

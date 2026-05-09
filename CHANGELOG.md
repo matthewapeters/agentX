@@ -7,6 +7,42 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.33.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/integration/vim_bridge.py` — new `VimBridge` class that opens files in a running
+  neovim instance via `nvim --server <socket> --remote <path>`.  No new Python dependencies;
+  uses neovim's built-in CLI RPC client.  Socket path defaults to `/tmp/agentx.nvim.sock` and
+  is configurable via `config["neovim"]["socket"]`.  [PD-14-AF-002]
+- `AgentXSession.vim_bridge` — `VimBridge` instance created at session startup and held on the
+  session for testability and future extension.
+- `AgentXSession._open_file_in_editor(file_path)` — callback that delegates to
+  `vim_bridge.open_file_from_context()`.  Logs a warning when neovim is not connected.
+
+#### Changed
+
+- `AgentXSession.refresh_files_gui()` — `on_edit=None` placeholder replaced with
+  `on_edit=self._open_file_in_editor`, wiring the FileExplorer "Edit" context-menu entry to
+  the new neovim integration.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_vim_bridge_gui.py` — 16 hermetic unit and integration tests for `VimBridge` and
+  session wiring (PD-14-AF-002).
+  - `TestVimBridgeIsConnected`: 3 tests — socket exists (True), missing (False), regular file (False)
+  - `TestVimBridgeConfig`: 4 tests — default path, explicit path, config override, no neovim key
+  - `TestVimBridgeOpenFile`: 6 tests — dispatches correct command, line-number prefix, not
+    connected, nvim not on PATH, non-zero exit, OSError
+  - `TestVimBridgeOpenFileFromContext`: 3 tests — relative path resolved, absolute unchanged, line forwarded
+  - `TestSessionOpenFileInEditor`: 2 integration tests — delegates to vim_bridge, graceful on disconnected
+
+---
+
 ## [0.32.1] - 2026-05-10
 
 ### Code Changes
