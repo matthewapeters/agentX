@@ -1,6 +1,6 @@
 # AgentX — TUI Mirror: Neovim Chat Pane
 
-_Last updated: 2026-05-09 (v0.34.0)_
+_Last updated: 2026-05-09 (v0.35.0)_
 
 > **Companion document to [`05_VIBE_CODING.md`](05_VIBE_CODING.md).**
 > Specifies the optional TUI mirror that surfaces the AgentX chat interface as a
@@ -641,11 +641,11 @@ Work is divided into four phases, each independently mergeable and testable.
     `AGENTX_TUI_INPUT_FIFO`, `AGENTX_TUI_SOCKET`
   - Validation: reject `enable_gui_chat=false` + `tui.enable=false` combination
 - [/] Add `enable_gui_chat` key to `[agentx]` section (default `true`)
-- [ ] Add `NullGUIManager` stub to `src/agentx/igui_manager.py` (or new file)
+- [/] Add `NullGUIManager` stub to `src/agentx/igui_manager.py` (or new file)
   - Implements `IGUIManager` protocol; all methods are no-ops
-- [ ] Wire `enable_gui_chat = false` path in `AgentXSession.__init__`
-- [ ] Unit tests for config parsing and `NullGUIManager` (hermetic)
-  - Status: config parsing tests are implemented; NullGUIManager tests are pending.
+- [/] Wire `enable_gui_chat = false` path in `AgentXSession.__init__`
+- [/] Unit tests for config parsing and `NullGUIManager` (hermetic)
+  - Status: config parsing and NullGUIManager/headless wiring tests are implemented.
 
 ---
 

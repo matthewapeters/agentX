@@ -32,7 +32,7 @@ from .config import apply_config_defaults, save_config, validate_config
 from .file_explorer import FileExplorer
 from .gui.gui_config import GUIConfig
 from .gui.gui_manager import GUIManager  # concrete class — used only for construction in __init__
-from .igui_manager import IGUIManager
+from .igui_manager import IGUIManager, NullGUIManager
 from .history import History
 from .integration import (
     AgentixBridgeAdapter,
@@ -74,8 +74,18 @@ class AgentXSession:
         apply_config_defaults(config)
         validate_config(config)
 
-        self.root = root or tk.Tk()
-        if root is None:
+        self._enable_gui_chat = bool(config.get("agentx", {}).get("enable_gui_chat", True))
+
+        if root is not None:
+            self.root = root
+        else:
+            if self._enable_gui_chat:
+                self.root = tk.Tk()
+            else:
+                # Headless mode keeps a Tcl/Tk event loop available without creating windows.
+                self.root = tk.Tk(useTk=False)
+
+        if root is None and self._enable_gui_chat:
             self.root.withdraw()
         self.config = config
 
@@ -145,13 +155,22 @@ class AgentXSession:
 
         # Initialize GUIManager
         gui_config = GUIConfig.from_dict(config)
-        self.gui: IGUIManager = GUIManager(
-            root=self.root,
-            config=gui_config,
-            on_submit=self._handle_submit,
-            on_interrupt=self._handle_interrupt,
-            on_attachment_toggle=self._handle_attachment_toggle,
-        )
+        if self._enable_gui_chat:
+            self.gui = GUIManager(
+                root=self.root,
+                config=gui_config,
+                on_submit=self._handle_submit,
+                on_interrupt=self._handle_interrupt,
+                on_attachment_toggle=self._handle_attachment_toggle,
+            )
+        else:
+            self.gui = NullGUIManager(
+                root=self.root,
+                config=gui_config,
+                on_submit=self._handle_submit,
+                on_interrupt=self._handle_interrupt,
+                on_attachment_toggle=self._handle_attachment_toggle,
+            )
         if hasattr(self.gui, "_on_terminal_kill_pane"):
             setattr(self.gui, "_on_terminal_kill_pane", self._handle_terminal_kill_pane)
         self.gui.set_terminal_mode_toggle_callback(self._handle_terminal_mode_toggle)
@@ -360,6 +379,10 @@ class AgentXSession:
 
     def _request_terminal_approval(self, command: str, context: str) -> tuple[bool, str | None]:
         """Request command approval, marshaling to Tk main thread when needed."""
+        if not self._enable_gui_chat:
+            # In headless mode there is no modal approval UI.
+            return False, command
+
         if threading.current_thread() is threading.main_thread():
             return self._show_terminal_approval_dialog(command, context)
 
@@ -1251,6 +1274,9 @@ class AgentXSession:
         Sets up the layout for the tkinter root window.
         Now delegated to GUIManager.
         """
+        if not self._enable_gui_chat:
+            return
+
         # Create all GUI widgets via GUIManager
         self.gui.create_layout()
 
@@ -1517,6 +1543,11 @@ class AgentXSession:
 
         # Flush and close the structured JSON-lines log.
         self._output_logger.close()
+
+        try:
+            self.gui.destroy()
+        except Exception:
+            pass
 
     def interrupt_streaming(self):
         """

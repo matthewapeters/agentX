@@ -7,6 +7,48 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.35.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/igui_manager.py`: added `NullGUIManager`, a headless no-op GUI implementation
+  for `enable_gui_chat=false` mode. It preserves the session-facing interface while avoiding
+  widget creation.
+- `tests/test_session_gui_disabled.py`: new hermetic tests for GUI-disabled runtime behavior.
+
+#### Changed
+
+- `src/agentx/session.py`:
+  - wired `enable_gui_chat=false` path to instantiate `NullGUIManager` instead of `GUIManager`
+  - uses `tk.Tk(useTk=False)` when no root is provided and GUI is disabled
+  - skips GUI layout work when GUI chat is disabled
+  - denies terminal approval requests in headless mode (no modal UI available)
+  - ensures `gui.destroy()` is called safely during shutdown
+- `docs/ux/06_TUI_MIRROR.md`: Phase 1 checklist updated; NullGUI and headless wiring items are now complete.
+
+### Test Changes
+
+#### Added
+
+- `test_session_uses_null_gui_manager_when_gui_disabled`
+  - GIVEN `enable_gui_chat=false`
+  - WHEN session initializes
+  - THEN `NullGUIManager` is used and `GUIManager` is not constructed.
+- `test_terminal_approval_is_denied_in_headless_mode`
+  - GIVEN headless mode
+  - WHEN terminal approval is requested
+  - THEN approval is denied and original command is returned.
+- `test_layout_skips_gui_setup_when_disabled`
+  - GIVEN headless mode
+  - WHEN `session.layout()` is called
+  - THEN GUI layout creation is not invoked.
+
+#### Changed
+
+- Re-validated existing Phase 1 config tests and GUI-enabled integration smoke test after headless path wiring.
+
 ## [0.34.0] - 2026-05-09
 
 ### Code Changes

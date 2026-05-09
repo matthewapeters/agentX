@@ -545,3 +545,85 @@ class IGUIManager(Protocol):
             pipeline is bypassed.
         """
         ...
+
+
+class NullGUIManager:
+    """Headless no-op GUI manager used when GUI chat is disabled.
+
+    This implementation satisfies the session-facing GUI contract without
+    creating widgets. All display/update operations are no-ops.
+    """
+
+    def __init__(
+        self,
+        root: tk.Misc,
+        config: GUIConfig,
+        on_submit: Optional[Callable[[], None]] = None,
+        on_interrupt: Optional[Callable[[], None]] = None,
+        on_attachment_toggle: Optional[Callable[[str, bool], None]] = None,
+    ) -> None:
+        self._root = root
+        self.config = config
+        self._on_submit = on_submit
+        self._on_interrupt = on_interrupt
+        self._on_attachment_toggle = on_attachment_toggle
+        self._cached_user_input = ""
+
+    def create_layout(self) -> None:
+        return None
+
+    def destroy(self) -> None:
+        return None
+
+    def set_window_title(self, title: str) -> None:
+        try:
+            if hasattr(self._root, "title"):
+                self._root.title(title)
+        except Exception:
+            pass
+
+    def get_root(self) -> tk.Misc:
+        return self._root
+
+    def get_user_input(self) -> str:
+        return ""
+
+    def get_cached_user_input(self) -> str:
+        return self._cached_user_input
+
+    def get_enabled_tools(self) -> list[str]:
+        return []
+
+    def get_context_parent(self) -> tk.Misc:
+        return self._root
+
+    def get_history_parent(self) -> tk.Misc:
+        return self._root
+
+    def get_files_parent(self) -> tk.Misc:
+        return self._root
+
+    def get_settings_parent(self) -> tk.Misc:
+        return self._root
+
+    def get_working_memory_parent(self) -> tk.Misc:
+        return self._root
+
+    def add_plan_tab(
+        self,
+        plan_id: str,
+        plan_name: str,
+        on_export: Optional[Callable[[], None]] = None,
+    ) -> tk.Misc:
+        return self._root
+
+    def get_plan_tab_frame(self, plan_id: str) -> Optional[tk.Misc]:
+        return None
+
+    def __getattr__(self, name: str) -> Callable[..., Any]:
+        """Return a generic no-op callable for unimplemented GUI methods."""
+
+        def _noop(*args: Any, **kwargs: Any) -> None:
+            return None
+
+        return _noop
