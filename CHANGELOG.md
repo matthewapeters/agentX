@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.38.1] - 2026-05-09
+
+### Test Changes
+
+#### Added
+
+- `test_start_with_tui_disabled_does_not_launch_tui_window_or_lua`
+  - GIVEN default launcher settings
+  - WHEN `launch_vibe.sh start` runs
+  - THEN no `tui-chat` window is created and `agentx_tui.lua` is not generated.
+- `test_tui_enabled_status_and_stop_report_and_cleanup`
+  - GIVEN a TUI-enabled launcher session
+  - WHEN `status` and `stop` run after startup
+  - THEN TUI state lines are reported and TUI FIFOs are removed.
+
+#### Changed
+
+- `docs/ux/06_TUI_MIRROR.md`: updated revision stamp and added `TUI-FT-003`
+  scenario for TUI status/stop lifecycle coverage.
+
 ## [0.38.0] - 2026-05-09
 
 ### Code Changes

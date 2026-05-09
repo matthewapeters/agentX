@@ -211,6 +211,76 @@ def test_start_with_tui_enabled_launches_tui_window_and_env(tmp_path: Path) -> N
     assert (project_dir / "agentx_tui.lua").exists()
 
 
+@pytest.mark.unit
+def test_start_with_tui_disabled_does_not_launch_tui_window_or_lua(tmp_path: Path) -> None:
+    """GIVEN default launcher settings WHEN launch_vibe.sh start runs THEN no tui-chat window or TUI Lua file is created. [PD-16-AF-003]"""
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    log = log_path.read_text(encoding="utf-8")
+    assert "-n\ttui-chat" not in log
+    assert "AGENTX_TUI_ENABLE='true'" not in log
+    assert "agentx_tui.lua" not in log
+    assert not (project_dir / "agentx_tui.lua").exists()
+
+
+@pytest.mark.unit
+def test_tui_enabled_status_and_stop_report_and_cleanup(tmp_path: Path) -> None:
+    """GIVEN TUI-enabled session WHEN status and stop run THEN TUI state is reported and TUI FIFOs are cleaned up. [PD-16-AF-003]"""
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    state_path = tmp_path / "tmux.state"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    output_fifo = tmp_path / "agentx.tui.output.fifo"
+    input_fifo = tmp_path / "agentx.tui.input.fifo"
+
+    shared_env = {
+        "TMUX_HAS_SESSION": "0",
+        "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+        "TMUX_PANE_COMMAND": "nvim",
+        "TMUX_STATE_FILE": str(state_path),
+        "AGENTX_TUI_ENABLE": "true",
+        "AGENTX_TUI_OUTPUT_FIFO": str(output_fifo),
+        "AGENTX_TUI_INPUT_FIFO": str(input_fifo),
+        "AGENTX_TUI_SOCKET": str(tmp_path / "agentx.tui.sock"),
+        "AGENTX_SOCKET_WAIT_LOOPS": "1",
+        "AGENTX_SOCKET_WAIT_SEC": "0",
+    }
+
+    start_result = _run_launcher(["start", str(project_dir)], fake_bin, log_path, shared_env)
+    assert start_result.returncode == 0, start_result.stderr
+    assert output_fifo.exists()
+    assert input_fifo.exists()
+
+    status_result = _run_launcher(["status", str(project_dir)], fake_bin, log_path, shared_env)
+    assert status_result.returncode == 0, status_result.stderr
+    assert "TUI       : enabled" in status_result.stdout
+    assert "TUI out" in status_result.stdout
+    assert "TUI in" in status_result.stdout
+
+    stop_result = _run_launcher(["stop", str(project_dir)], fake_bin, log_path, shared_env)
+    assert stop_result.returncode == 0, stop_result.stderr
+    assert not output_fifo.exists()
+    assert not input_fifo.exists()
+
+
 def _run_launcher(
     args: list[str],
     fake_bin: Path,
