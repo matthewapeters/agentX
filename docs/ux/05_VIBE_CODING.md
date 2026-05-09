@@ -1,6 +1,6 @@
 # AgentX — Vibe Coding: Neovim Integration
 
-_Last updated: 2026-05-09 (v0.31.0 — terminal dispatch defaults + tool-result decision badges)_
+_Last updated: 2026-05-09 (v0.32.0 — capture-pane polling + timeout enforcement)_
 
 > **"Vibe coding"**: a mode of collaborative software development where the AI agent
 > and the human developer co-author code in the same editor at the same time, each

@@ -11,6 +11,7 @@ import pytest
 from agentx.integration.terminal_bridge import (
     TerminalBridge,
     TerminalResult,
+    _CAPTURE_SENTINEL,
     configure_terminal_bridge,
     terminal_run,
 )
@@ -43,11 +44,14 @@ def test_run_command_visible_creates_ephemeral_pane_and_dispatches(tmp_path: Pat
             return _tmux_ok("")
         if cmd[1:6] == ["new-window", "-P", "-F", "#{pane_id}", "-t"]:
             return _tmux_ok("%7\n")
+        if cmd[1:4] == ["capture-pane", "-p", "-t"]:
+            return _tmux_ok(f"some output\n{_CAPTURE_SENTINEL}0\n")
         return _tmux_ok("")
 
     with patch("agentx.integration.terminal_bridge.shutil.which", return_value="/usr/bin/tmux"):
         with patch("agentx.integration.terminal_bridge.subprocess.run", side_effect=fake_run):
-            result = bridge.run_command("pytest tests/", visible=True)
+            with patch("agentx.integration.terminal_bridge.time.sleep"):
+                result = bridge.run_command("pytest tests/", visible=True)
 
     assert result.exit_code == 0
     assert result.pane_id == "%7"
@@ -120,11 +124,14 @@ def test_run_command_appends_audit_log_entry(tmp_path: Path) -> None:
             return _tmux_ok("")
         if cmd[1:6] == ["new-window", "-P", "-F", "#{pane_id}", "-t"]:
             return _tmux_ok("%2\n")
+        if cmd[1:4] == ["capture-pane", "-p", "-t"]:
+            return _tmux_ok(f"output\n{_CAPTURE_SENTINEL}0\n")
         return _tmux_ok("")
 
     with patch("agentx.integration.terminal_bridge.shutil.which", return_value="/usr/bin/tmux"):
         with patch("agentx.integration.terminal_bridge.subprocess.run", side_effect=fake_run):
-            bridge.run_command("pytest tests/", visible=True)
+            with patch("agentx.integration.terminal_bridge.time.sleep"):
+                bridge.run_command("pytest tests/", visible=True)
 
     lines = audit_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
@@ -196,11 +203,119 @@ def test_confirm_command_dispatches_when_approved(tmp_path: Path) -> None:
             return _tmux_ok("")
         if cmd[1:6] == ["new-window", "-P", "-F", "#{pane_id}", "-t"]:
             return _tmux_ok("%9\n")
+        if cmd[1:4] == ["capture-pane", "-p", "-t"]:
+            return _tmux_ok(f"output\n{_CAPTURE_SENTINEL}0\n")
         return _tmux_ok("")
 
     with patch("agentx.integration.terminal_bridge.shutil.which", return_value="/usr/bin/tmux"):
         with patch("agentx.integration.terminal_bridge.subprocess.run", side_effect=fake_run):
-            result = bridge.run_command("git commit -m 'wip'", context="save", visible=True)
+            with patch("agentx.integration.terminal_bridge.time.sleep"):
+                result = bridge.run_command("git commit -m 'wip'", context="save", visible=True)
 
     assert result.decision == "approved"
     assert any(c[1] == "send-keys" for c in calls)
+
+
+@pytest.mark.unit
+def test_run_command_captures_exit_code_from_sentinel(tmp_path: Path) -> None:
+    """GIVEN command exits with code 42 WHEN sentinel echoed in pane THEN exit_code is 42 and stdout is captured.
+
+    GIVEN an active tmux session and a command that exits with code 42
+    WHEN run_command dispatches the command and capture-pane returns '__AGENTX_DONE__42'
+    THEN result.exit_code == 42 and result.timed_out is False. [PD-15-AF-009]
+    """
+
+    config = {"terminal": {"allow": ["pytest"], "confirm": [], "deny": []}}
+    bridge = TerminalBridge(config=config, session_id="agentx", audit_log_path=str(tmp_path / "audit.jsonl"))
+
+    def fake_run(cmd, capture_output, text, check):
+        if cmd[1:4] == ["has-session", "-t", "agentx"]:
+            return _tmux_ok("")
+        if cmd[1:6] == ["new-window", "-P", "-F", "#{pane_id}", "-t"]:
+            return _tmux_ok("%3\n")
+        if cmd[1:4] == ["capture-pane", "-p", "-t"]:
+            return _tmux_ok(f"line one\nline two\n{_CAPTURE_SENTINEL}42\n")
+        return _tmux_ok("")
+
+    with patch("agentx.integration.terminal_bridge.shutil.which", return_value="/usr/bin/tmux"):
+        with patch("agentx.integration.terminal_bridge.subprocess.run", side_effect=fake_run):
+            with patch("agentx.integration.terminal_bridge.time.sleep"):
+                result = bridge.run_command("pytest tests/", visible=True, auto_close=False)
+
+    assert result.exit_code == 42
+    assert result.timed_out is False
+    assert "line one" in result.stdout
+    assert _CAPTURE_SENTINEL not in result.stdout
+
+
+@pytest.mark.unit
+def test_run_command_timeout_sets_timed_out_flag_and_kills_pane(tmp_path: Path) -> None:
+    """GIVEN command exceeds timeout WHEN timeout_sec=0 THEN timed_out=True, exit_code=-1, kill-pane called.
+
+    GIVEN an active tmux session and timeout_sec=0 (deadline already passed)
+    WHEN run_command dispatches and poll loop never executes
+    THEN result.timed_out is True, exit_code is -1, and kill-pane is invoked. [PD-15-AF-009]
+    """
+
+    config = {"terminal": {"allow": ["pytest"], "confirm": [], "deny": []}}
+    bridge = TerminalBridge(config=config, session_id="agentx", audit_log_path=str(tmp_path / "audit.jsonl"))
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, capture_output, text, check):
+        calls.append(cmd)
+        if cmd[1:4] == ["has-session", "-t", "agentx"]:
+            return _tmux_ok("")
+        if cmd[1:6] == ["new-window", "-P", "-F", "#{pane_id}", "-t"]:
+            return _tmux_ok("%4\n")
+        return _tmux_ok("")
+
+    with patch("agentx.integration.terminal_bridge.shutil.which", return_value="/usr/bin/tmux"):
+        with patch("agentx.integration.terminal_bridge.subprocess.run", side_effect=fake_run):
+            result = bridge.run_command("pytest tests/", visible=True, timeout_sec=0)
+
+    assert result.timed_out is True
+    assert result.exit_code == -1
+    assert any(c[1] == "kill-pane" for c in calls)
+
+
+@pytest.mark.unit
+def test_run_command_edited_command_is_dispatched(tmp_path: Path) -> None:
+    """GIVEN approval callback returns edited command WHEN command approved THEN edited command is dispatched.
+
+    GIVEN supervised mode, a confirm-list command, and an approval callback that edits the command
+    WHEN run_command calls the callback and user edits the command before approving
+    THEN result.executed_command reflects the edited command and send-keys carries it. [PD-15-AF-006]
+    """
+
+    config = {"terminal": {"allow": [], "confirm": ["git commit"], "deny": []}}
+    edited = "git commit --amend -m 'fix: correct message'"
+    bridge = TerminalBridge(
+        config=config,
+        session_id="agentx",
+        approval_callback=lambda cmd, _ctx: (True, edited),
+        audit_log_path=str(tmp_path / "audit.jsonl"),
+    )
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, capture_output, text, check):
+        calls.append(cmd)
+        if cmd[1:4] == ["has-session", "-t", "agentx"]:
+            return _tmux_ok("")
+        if cmd[1:6] == ["new-window", "-P", "-F", "#{pane_id}", "-t"]:
+            return _tmux_ok("%5\n")
+        if cmd[1:4] == ["capture-pane", "-p", "-t"]:
+            return _tmux_ok(f"output\n{_CAPTURE_SENTINEL}0\n")
+        return _tmux_ok("")
+
+    with patch("agentx.integration.terminal_bridge.shutil.which", return_value="/usr/bin/tmux"):
+        with patch("agentx.integration.terminal_bridge.subprocess.run", side_effect=fake_run):
+            with patch("agentx.integration.terminal_bridge.time.sleep"):
+                result = bridge.run_command("git commit -m 'wip'", context="commit", visible=True)
+
+    assert result.executed_command == edited
+    assert result.decision == "approved"
+    # The edited command should appear in the send-keys call
+    sent_keys_args = [c for c in calls if c[1] == "send-keys"]
+    assert any(edited in c[4] for c in sent_keys_args)

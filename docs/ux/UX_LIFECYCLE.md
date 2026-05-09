@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-09 (v0.31.0)_
+_Last updated: 2026-05-09 (v0.32.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to

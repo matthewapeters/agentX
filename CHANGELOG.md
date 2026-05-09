@@ -7,6 +7,51 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.32.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+- `TerminalBridge._wait_for_completion()` — polls `tmux capture-pane` at 0.5 s intervals until
+  `__AGENTX_DONE__<exit_code>` sentinel is detected in pane scrollback or `timeout_sec` elapses.
+- Real exit-code capture: `run_command()` now wraps dispatched commands with the sentinel and
+  returns the actual exit code from the process via `TerminalResult.exit_code`.
+- Timeout enforcement: on deadline exceeded, visible panes are killed (`kill-pane`); persistent
+  pane (1.0) receives `Ctrl+C` to preserve the shell.  `TerminalResult.timed_out` is set to `True`
+  and `exit_code` to `-1` on timeout.
+- `_CAPTURE_SENTINEL` and `_DEFAULT_POLL_INTERVAL` module-level constants exported for test use.
+
+#### Changed
+- `run_command()` no longer returns a static `"DISPATCHED …"` stdout; actual captured pane output
+  (excluding the sentinel line) is returned in `TerminalResult.stdout`.
+- Auto-close of ephemeral panes now happens via `kill-pane` after capture, not via a shell
+  `exit` injected into the dispatch command.
+
+### Test Changes
+
+#### Added
+- `test_run_command_captures_exit_code_from_sentinel` — verifies exit code 42 propagated from
+  sentinel, stdout cleaned of sentinel line. [PD-15-AF-009]
+
+  GIVEN active tmux session WHEN capture-pane returns sentinel `__AGENTX_DONE__42` THEN `exit_code == 42` and sentinel absent from stdout.
+
+- `test_run_command_timeout_sets_timed_out_flag_and_kills_pane` — `timeout_sec=0` triggers
+  timeout path: `timed_out=True`, `exit_code=-1`, `kill-pane` called. [PD-15-AF-009]
+
+  GIVEN active session WHEN timeout_sec=0 THEN poll loop skipped, `timed_out=True`, `kill-pane` invoked.
+
+- `test_run_command_edited_command_is_dispatched` — approval callback returns edited command;
+  `executed_command` and `send-keys` payload reflect the edit. [PD-15-AF-006]
+
+  GIVEN supervised mode with confirm-list command WHEN approval callback edits command THEN `executed_command` and `send-keys` carry the edited string.
+
+#### Changed
+- Existing dispatch tests (`visible_creates_ephemeral_pane`, `appends_audit_log_entry`,
+  `confirm_command_dispatches_when_approved`) updated to handle `capture-pane` in `fake_run`
+  and patch `time.sleep` for speed.
+
+---
+
 ## [0.31.0] - 2026-05-09
 
 ### Code Changes

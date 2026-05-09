@@ -15,7 +15,11 @@ from pathlib import Path
 import shlex
 import shutil
 import subprocess
+import time
 from typing import Callable, Mapping
+
+_CAPTURE_SENTINEL = "__AGENTX_DONE__"
+_DEFAULT_POLL_INTERVAL = 0.5  # seconds between capture-pane polls
 
 DEFAULT_ALLOW_PREFIXES: list[str] = [
     "pwd",
@@ -412,25 +416,84 @@ class TerminalBridge:
             return result
 
         pane_target = self._create_visible_pane() if visible else f"{self._session_id}:1.0"
-        dispatch_command = command
-        if visible and auto_close:
-            dispatch_command = f"{command}; __agentx_rc=$?; exit $__agentx_rc"
 
-        self._tmux_send_keys(pane_target, dispatch_command)
+        # Wrap command with a sentinel so we can detect completion and capture exit code.
+        sentinel_cmd = f"{command}; echo {_CAPTURE_SENTINEL}$?"
+        self._tmux_send_keys(pane_target, sentinel_cmd)
 
-        # This scaffold dispatches commands and records audit details. A follow-up
-        # increment will add robust capture-pane polling and timeout enforcement.
+        timed_out, exit_code, stdout_text = self._wait_for_completion(pane_target, timeout_sec, visible=visible)
+
+        if visible and auto_close and not timed_out:
+            try:
+                self._run_tmux(["kill-pane", "-t", pane_target])
+            except RuntimeError:
+                pass  # pane already closed
+
         result = TerminalResult(
             pane_id=pane_target,
-            exit_code=0,
-            stdout=f"DISPATCHED (timeout={timeout_sec}s): {command}",
-            timed_out=False,
+            exit_code=exit_code,
+            stdout=stdout_text,
+            timed_out=timed_out,
             decision="approved" if decision.verdict == "requires_approval" else "allowed",
             original_command=original_command,
             executed_command=command,
         )
         self._append_audit(result)
         return result
+
+    def _wait_for_completion(self, pane_target: str, timeout_sec: int, visible: bool = True) -> tuple[bool, int, str]:
+        """Poll ``capture-pane`` until the sentinel line appears or timeout.
+
+        A sentinel ``__AGENTX_DONE__<exit_code>`` is appended to the shell
+        command by ``run_command()`` before dispatch.  This method reads the
+        pane scrollback at intervals of ``_DEFAULT_POLL_INTERVAL`` seconds and
+        returns once it detects the sentinel or the deadline is reached.
+
+        On timeout, visible panes are killed; persistent panes receive a
+        ``Ctrl+C`` interrupt instead to preserve the persistent shell.
+
+        Args:
+            pane_target: tmux pane target string.
+            timeout_sec: Maximum wait in seconds.
+            visible: True for ephemeral panes; False for persistent pane (1.0).
+
+        Returns:
+            Tuple of (timed_out, exit_code, stdout_text).
+        """
+
+        deadline = time.monotonic() + timeout_sec
+
+        while time.monotonic() < deadline:
+            time.sleep(_DEFAULT_POLL_INTERVAL)
+            try:
+                output = self._run_tmux(["capture-pane", "-p", "-t", pane_target])
+            except RuntimeError:
+                # Pane closed before we could capture; treat as completed without exit code.
+                return False, -1, "(pane closed before output captured)"
+
+            for line in output.splitlines():
+                if _CAPTURE_SENTINEL in line:
+                    try:
+                        exit_code = int(line.split(_CAPTURE_SENTINEL)[-1].strip())
+                    except (ValueError, IndexError):
+                        exit_code = 0
+                    clean = "\n".join(ln for ln in output.splitlines() if _CAPTURE_SENTINEL not in ln)
+                    return False, exit_code, clean.strip()
+
+        # Timeout reached.
+        if visible:
+            try:
+                self._run_tmux(["kill-pane", "-t", pane_target])
+            except RuntimeError:
+                pass
+        else:
+            # Interrupt command without destroying the persistent shell pane.
+            try:
+                self._run_tmux(["send-keys", "-t", pane_target, "C-c"])
+            except RuntimeError:
+                pass
+
+        return True, -1, f"TIMEOUT after {timeout_sec}s"
 
     def kill_pane(self, pane_id: str) -> None:
         """Kill a tmux pane by id.
