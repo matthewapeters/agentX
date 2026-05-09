@@ -1,6 +1,6 @@
 # AgentX — TUI Mirror: Neovim Chat Pane
 
-_Last updated: 2026-05-09 (v0.38.1)_
+_Last updated: 2026-05-09 (v0.38.2)_
 
 > **Companion document to [`05_VIBE_CODING.md`](05_VIBE_CODING.md).**
 > Specifies the optional TUI mirror that surfaces the AgentX chat interface as a
@@ -717,6 +717,8 @@ real tmux).
 | TUI-FT-001 | Functional | launch_vibe.sh TUI window created | GIVEN fake tmux AND `AGENTX_TUI_ENABLE=true` WHEN `launch_vibe.sh start` runs THEN window 3 tui-chat is created, FIFOs are created, agentx_tui.lua written |
 | TUI-FT-002 | Functional | launch_vibe.sh TUI disabled by default | GIVEN fake tmux AND no `AGENTX_TUI_ENABLE` WHEN `launch_vibe.sh start` runs THEN window 3 is NOT created |
 | TUI-FT-003 | Functional | launch_vibe.sh TUI status/stop lifecycle | GIVEN fake tmux AND `AGENTX_TUI_ENABLE=true` WHEN `status` and `stop` run after start THEN TUI state is reported and TUI FIFOs are cleaned up |
+| TUI-FT-004 | Functional | launch_vibe.sh status in default mode | GIVEN fake tmux AND no `AGENTX_TUI_ENABLE` WHEN `status` runs THEN launcher reports `TUI : disabled` without TUI path lines |
+| TUI-FT-005 | Functional | launch_vibe.sh restart with TUI enabled | GIVEN fake tmux AND `AGENTX_TUI_ENABLE=true` WHEN `restart` runs THEN stop/start lifecycle re-creates TUI FIFOs and relaunches `tui-chat` with `agentx_tui.lua` |
 
 ---
 

@@ -281,6 +281,63 @@ def test_tui_enabled_status_and_stop_report_and_cleanup(tmp_path: Path) -> None:
     assert not input_fifo.exists()
 
 
+@pytest.mark.unit
+def test_status_reports_tui_disabled_by_default(tmp_path: Path) -> None:
+    """GIVEN default launcher settings WHEN status runs THEN it reports TUI disabled without TUI path lines. [PD-16-AF-003]"""
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+
+    result = _run_launcher(
+        ["status"],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "TUI       : disabled" in result.stdout
+    assert "TUI out" not in result.stdout
+    assert "TUI in" not in result.stdout
+
+
+@pytest.mark.unit
+def test_restart_with_tui_enabled_recreates_tui_lifecycle(tmp_path: Path) -> None:
+    """GIVEN an existing TUI-enabled session WHEN restart runs THEN stop/start lifecycle re-creates TUI FIFOs and relaunches tui-chat. [PD-16-AF-003]"""
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    output_fifo = tmp_path / "agentx.restart.tui.output.fifo"
+    input_fifo = tmp_path / "agentx.restart.tui.input.fifo"
+
+    result = _run_launcher(
+        ["restart", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "1",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log,tui-chat",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_TUI_ENABLE": "true",
+            "AGENTX_TUI_OUTPUT_FIFO": str(output_fifo),
+            "AGENTX_TUI_INPUT_FIFO": str(input_fifo),
+            "AGENTX_TUI_SOCKET": str(tmp_path / "agentx.restart.tui.sock"),
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    log = log_path.read_text(encoding="utf-8")
+    assert "kill-session\t-t\tagentx" in log
+    assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx\t-n\ttui-chat" in log
+    assert "agentx_tui.lua" in log
+    assert output_fifo.exists()
+    assert input_fifo.exists()
+
+
 def _run_launcher(
     args: list[str],
     fake_bin: Path,

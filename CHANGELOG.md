@@ -7,6 +7,27 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.38.2] - 2026-05-09
+
+### Test Changes
+
+#### Added
+
+- `test_status_reports_tui_disabled_by_default`
+  - GIVEN default launcher settings
+  - WHEN `launch_vibe.sh status` runs
+  - THEN launcher reports `TUI : disabled` and omits TUI path lines.
+- `test_restart_with_tui_enabled_recreates_tui_lifecycle`
+  - GIVEN an existing TUI-enabled launcher session
+  - WHEN `launch_vibe.sh restart` runs
+  - THEN stop/start lifecycle re-creates TUI FIFOs and relaunches `tui-chat`
+    with `agentx_tui.lua` wiring.
+
+#### Changed
+
+- `docs/ux/06_TUI_MIRROR.md`: updated revision stamp and added `TUI-FT-004`
+  and `TUI-FT-005` scenarios for default status and restart lifecycle coverage.
+
 ## [0.38.1] - 2026-05-09
 
 ### Test Changes
