@@ -56,12 +56,15 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
             },
         }
 
+        self.patcher_populate = patch("agentx.model_metadata_store.ModelMetadataStore.populate")
+        self.patcher_populate.start()
         self.session = AgentXSession(root=self.root, config=config)
 
     def tearDown(self):
         """Clean up after tests."""
         self.patcher_getcwd.stop()
         self.patcher_getenv.stop()
+        self.patcher_populate.stop()
 
         try:
             self.root.destroy()
@@ -172,6 +175,7 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
                 ]
             )
         )
+        self.session.tui_bridge = MagicMock()
 
         self.session.layout()
 
@@ -180,6 +184,7 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
         self.assertNotIn("Hi! Identify yourself!", output_text)
         self.assertNotIn("hidden thinking", output_text)
         self.assertNotIn("Calling tool", output_text)
+        self.session.tui_bridge.write_output.assert_any_call("###AGENT\nHello! I am AgentX.\n###DONE\n")
         self.assertEqual(len(self.session.context.messages), 0)
 
     def test_layout_skips_bootstrap_when_file_missing(self):

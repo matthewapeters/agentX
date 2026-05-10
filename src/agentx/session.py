@@ -29,6 +29,7 @@ from shared.models.working_memory import FactOwner, WorkingMemory
 
 from .attachment_info import AttachmentInfo
 from .config import apply_config_defaults, save_config, validate_config
+from .event_broker import EventBroker, EventType
 from .file_explorer import FileExplorer
 from .gui.gui_config import GUIConfig
 from .gui.gui_manager import GUIManager  # concrete class — used only for construction in __init__
@@ -41,6 +42,7 @@ from .integration import (
     TuiBridge,
     agentix_bridge_adapter,
 )
+from .integration.tui_event_subscriber import TUIEventSubscriber
 from .integration.vim_bridge import VimBridge
 from .output_logger import OutputLogger
 from .service_manager import ServiceManager
@@ -136,6 +138,9 @@ class AgentXSession:
         self.context = Context(path=context_folder, session_id=session_id)
         self.file_explorer = FileExplorer(start_path=os.getcwd())
 
+        # Initialize event broker for pub-sub streaming
+        self.event_broker = EventBroker()
+
         # VimBridge: connects to the running neovim instance via its Unix socket
         self.vim_bridge = VimBridge(config=config)
 
@@ -153,6 +158,7 @@ class AgentXSession:
 
         # Optional TUI output mirror bridge.
         self.tui_bridge: Optional[TuiBridge] = None
+        self.tui_event_subscriber: Optional[TUIEventSubscriber] = None
         tui_cfg = config.get("tui", {})
         if bool(tui_cfg.get("enable", False)):
             tmux_session = os.getenv("AGENTX_TMUX_SESSION", "agentx")
@@ -179,6 +185,16 @@ class AgentXSession:
                 write_timeout_sec=write_timeout_sec,
             )
             self.tui_bridge.start()
+
+            # Create TUI event subscriber and wire to event broker
+            self.tui_event_subscriber = TUIEventSubscriber(tui_bridge=self.tui_bridge)
+            self.tui_event_subscriber.start()
+
+            # Subscribe to all streaming events
+            from .event_broker import EventType
+
+            for event_type in EventType:
+                self.event_broker.subscribe(event_type, self.tui_event_subscriber.handle_event, queue_size=1000)
 
         # Initialize service manager for external services
         self.service_manager = ServiceManager(config)
@@ -490,6 +506,11 @@ class AgentXSession:
             response_text = "".join(content_parts).strip()
             if response_text:
                 self.gui.display_bootstrap_agent_response(response_text)
+                if self.tui_bridge is not None:
+                    try:
+                        self.tui_bridge.write_output(f"###AGENT\n{response_text}\n###DONE\n")
+                    except Exception:
+                        logger.debug("Failed to mirror bootstrap response to TUI output", exc_info=True)
                 self._output_logger.log("bootstrap_agent", response_text)
                 self.refresh_working_memory_gui()
         except Exception:
@@ -517,6 +538,11 @@ class AgentXSession:
             "Note: a location may appear empty until its first write event."
         )
         self.gui.display_startup_notice(notice)
+        if self.tui_bridge is not None:
+            try:
+                self.tui_bridge.write_output(f"###SYSTEM Startup\n{notice}\n")
+            except Exception:
+                logger.debug("Failed to mirror startup notice to TUI output", exc_info=True)
         self._output_logger.log("startup", notice)
 
     def process_prompt(self, prompt: str) -> Iterator[ResponseChunk]:
@@ -1590,6 +1616,12 @@ class AgentXSession:
         if self.tui_bridge is not None:
             try:
                 self.tui_bridge.stop()
+            except Exception:
+                pass
+
+        if self.tui_event_subscriber is not None:
+            try:
+                self.tui_event_subscriber.stop()
             except Exception:
                 pass
 

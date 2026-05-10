@@ -10,7 +10,7 @@ from __future__ import annotations
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -38,7 +38,8 @@ class TestStartupLogNotice:
     def _create_session(self, tmp_path: Path, config: dict) -> AgentXSession:
         root = tk.Tk()
         root.withdraw()
-        return AgentXSession(root=root, config=config, username="tester", session_dir=str(tmp_path))
+        with patch("agentx.model_metadata_store.ModelMetadataStore.populate"):
+            return AgentXSession(root=root, config=config, username="tester", session_dir=str(tmp_path))
 
     def test_notice_enabled_by_default_emits_friendly_paths(self, tmp_path: Path) -> None:
         """GIVEN show_log_locations_on_startup is absent [PD-01-AF-009]
@@ -79,6 +80,28 @@ class TestStartupLogNotice:
 
             mock_notice.assert_not_called()
             mock_log.assert_not_called()
+        finally:
+            session.close()
+            session.root.destroy()
+
+    def test_notice_enabled_mirrors_to_tui_output_when_bridge_present(self, tmp_path: Path) -> None:
+        """GIVEN show_log_locations_on_startup is enabled [PD-01-AF-009]
+        WHEN _show_startup_log_locations_notice_if_enabled() runs with a TUI bridge
+        THEN the startup notice is mirrored to the TUI output as a system record.
+        """
+        session = self._create_session(tmp_path, self._build_config(show_notice=True))
+        try:
+            session.tui_bridge = Mock()
+            with (
+                patch.object(session.gui, "display_startup_notice") as mock_notice,
+                patch.object(session._output_logger, "log") as mock_log,
+            ):
+                session._show_startup_log_locations_notice_if_enabled()
+
+            mock_notice.assert_called_once()
+            content = mock_notice.call_args.args[0]
+            session.tui_bridge.write_output.assert_called_once_with(f"###SYSTEM Startup\n{content}\n")
+            mock_log.assert_called_once_with("startup", content)
         finally:
             session.close()
             session.root.destroy()

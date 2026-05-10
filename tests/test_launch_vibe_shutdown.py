@@ -76,7 +76,8 @@ def test_recover_editor_recreates_window_and_relaunches_nvim(tmp_path: Path) -> 
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert f"new-window\t-P\t-F\t#{{pane_id}}\t-d\t-t\tagentx\t-n\teditor\t-c\t{project_dir}" in log
+    assert "new-window\t-P\t-F\t#{pane_id}\t-d\t-t\tagentx:" in log
+    assert "\t-n\teditor\t-c\t" in log
     assert "send-keys\t-t\t%2\tC-c" in log
     assert "send-keys\t-t\t%2\tnvim" in log
     assert "--listen" in log
@@ -200,7 +201,8 @@ def test_start_with_tui_enabled_launches_tui_window_and_env(tmp_path: Path) -> N
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx\t-n\ttui-chat" in log
+    assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx:" in log
+    assert "\t-n\ttui-chat" in log
     assert "send-keys\t-t\t%3\tAGENTX_TUI_OUTPUT_FIFO='" in log
     assert "nvim\t--listen" in log
     assert "--cmd\t'luafile" in log
@@ -208,7 +210,14 @@ def test_start_with_tui_enabled_launches_tui_window_and_env(tmp_path: Path) -> N
     assert "AGENTX_TUI_ENABLE='true'" in log
     assert "AGENTX_TUI_OUTPUT_FIFO='" in log
     assert "AGENTX_TUI_INPUT_FIFO='" in log
+    assert "AGENTX_TUI_OUTPUT_SPLIT_RATIO='" in log
     assert (project_dir / "agentx_tui.lua").exists()
+    lua_text = (project_dir / "agentx_tui.lua").read_text(encoding="utf-8")
+    assert 'local output_ratio = tonumber(vim.fn.expand("$AGENTX_TUI_OUTPUT_SPLIT_RATIO")) or 0.70' in lua_text
+    assert 'vim.cmd("belowright split")' in lua_text
+    assert 'nvim_create_user_command("AgentXSubmit"' in lua_text
+    assert 'vim.keymap.set("n", "<CR>", submit_input' in lua_text
+    assert "AgentX TUI ready." in lua_text
 
 
 @pytest.mark.unit
@@ -293,6 +302,7 @@ def test_status_reports_tui_disabled_by_default(tmp_path: Path) -> None:
         log_path,
         {
             "TMUX_HAS_SESSION": "0",
+            "AGENTX_TUI_ENABLE": "false",
         },
     )
 
@@ -332,10 +342,120 @@ def test_restart_with_tui_enabled_recreates_tui_lifecycle(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
     assert "kill-session\t-t\tagentx" in log
-    assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx\t-n\ttui-chat" in log
+    assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx:" in log
+    assert "\t-n\ttui-chat" in log
     assert "agentx_tui.lua" in log
     assert output_fifo.exists()
     assert input_fifo.exists()
+
+
+@pytest.mark.unit
+def test_start_reads_tui_enable_from_project_toml(tmp_path: Path) -> None:
+    """GIVEN project config with tui.enable=true WHEN launch_vibe.sh start runs without AGENTX_TUI_ENABLE THEN tui-chat window is launched. [PD-16-AF-003]"""
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "agentx.toml").write_text(
+        """
+[agentx]
+enable_gui_chat = true
+
+[tui]
+enable = true
+""".strip() + "\n",
+        encoding="utf-8",
+    )
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    log = log_path.read_text(encoding="utf-8")
+    assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx:" in log
+    assert "\t-n\ttui-chat" in log
+
+
+@pytest.mark.unit
+def test_start_reads_tui_split_ratio_from_project_toml(tmp_path: Path) -> None:
+    """GIVEN project config with tui.output_split_ratio WHEN launch_vibe.sh start runs THEN TUI launch command includes AGENTX_TUI_OUTPUT_SPLIT_RATIO. [PD-16-AF-003]"""
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "agentx.toml").write_text(
+        """
+[agentx]
+enable_gui_chat = true
+
+[tui]
+enable = true
+output_split_ratio = 0.62
+""".strip() + "\n",
+        encoding="utf-8",
+    )
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    log = log_path.read_text(encoding="utf-8")
+    assert "AGENTX_TUI_OUTPUT_SPLIT_RATIO='0.62'" in log
+
+
+@pytest.mark.unit
+def test_start_reads_auto_stop_override_from_project_toml(tmp_path: Path) -> None:
+    """GIVEN project config with agentx.auto_stop_tmux_on_gui_exit=false WHEN launch_vibe.sh start runs THEN AgentX command omits tmux kill-session hook. [PD-15-AF-008]"""
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "agentx.toml").write_text(
+        """
+[agentx]
+enable_gui_chat = true
+auto_stop_tmux_on_gui_exit = false
+""".strip() + "\n",
+        encoding="utf-8",
+    )
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    log = log_path.read_text(encoding="utf-8")
+    assert "send-keys\t-t\tagentx:2" in log
+    assert "tmux\tkill-session\t-t\t'agentx'" not in log
 
 
 def _run_launcher(

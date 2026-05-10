@@ -25,6 +25,10 @@ _RESTART_REQUIRED: set[tuple] = {
     ("agentx", "working_memory", "enabled"),
     ("agentix", "classification_torch_device"),
     ("agentix", "classification_torch_model"),
+    ("tui", "enable"),
+    ("tui", "output_split_ratio"),
+    ("tui", "write_timeout_sec"),
+    ("tui", "show_thinking"),
 }
 
 # Keys that are greyed-out unless classification_backend == "torch".
@@ -120,6 +124,7 @@ class SettingsTab:
         self._build_agentix_section()
         self._build_classification_display_section()
         self._build_working_memory_section()
+        self._build_tui_section()
         self._build_terminal_execution_section()
 
         # Apply initial torch-field greyout.
@@ -346,6 +351,46 @@ class SettingsTab:
             cfg.get("max_facts", 50),
             from_=0,
             to=500,
+        )
+
+    def _build_tui_section(self) -> None:
+        """Render TUI mirror settings backed by [tui] config."""
+        cfg = self._config.get("tui", {})
+        section = self._make_section("🪟 TUI Mirror", initial_collapsed=True)
+        g = section.content_container
+
+        self._add_checkbox(
+            g,
+            0,
+            ["tui", "enable"],
+            "Enable TUI mirror" + self.RESTART_ICON,
+            bool(cfg.get("enable", False)),
+            restart=True,
+        )
+
+        self._add_float_entry(
+            g,
+            1,
+            ["tui", "output_split_ratio"],
+            "Output split ratio (0..1)" + self.RESTART_ICON,
+            float(cfg.get("output_split_ratio", 0.70)),
+            restart=True,
+        )
+
+        self._add_float_entry(
+            g,
+            2,
+            ["tui", "write_timeout_sec"],
+            "Output write timeout (s)",
+            float(cfg.get("write_timeout_sec", 0.1)),
+        )
+
+        self._add_checkbox(
+            g,
+            3,
+            ["tui", "show_thinking"],
+            "Mirror thinking traces",
+            bool(cfg.get("show_thinking", False)),
         )
 
     def _build_terminal_execution_section(self) -> None:
@@ -603,6 +648,31 @@ class SettingsTab:
         spin.bind("<Return>", _commit)
         if return_widgets:
             return lbl, spin
+        return var
+
+    def _add_float_entry(
+        self,
+        parent: tk.Widget,
+        row: int,
+        key_path: list[str],
+        label: str,
+        initial: float,
+        restart: bool = False,
+    ) -> tk.StringVar:
+        """Add a float entry that commits on focus-out/enter."""
+        self._add_label(parent, row, label + (self.RESTART_ICON if restart else ""))
+        var = tk.StringVar(value=f"{initial:.2f}")
+
+        def _commit(*_):
+            try:
+                self._fire(key_path, float(var.get()))
+            except ValueError:
+                pass
+
+        entry = ttk.Entry(parent, textvariable=var, width=10)
+        entry.grid(row=row, column=1, sticky="w", padx=(0, 8), pady=2)
+        entry.bind("<FocusOut>", _commit)
+        entry.bind("<Return>", _commit)
         return var
 
     def _add_enum_dropdown(

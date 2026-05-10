@@ -7,6 +7,159 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.39.0] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- **NEW EVENT-BROKER PUB-SUB ARCHITECTURE** — centralized pub-sub system for streaming:
+  - `src/agentx/event_broker.py`: `EventBroker` class with guaranteed event delivery to all subscribers.
+  - `src/agentx/event_broker.py`: `EventType` enum for all streaming events (thinking, content, tool calls, errors, etc.).
+  - `src/agentx/integration/tui_event_subscriber.py`: `TUIEventSubscriber` for reliable TUI output handling via event broker.
+    - Maintains bounded event queue (maxlen=10000)
+    - Background writer thread for FIFO writes with retry/backoff
+    - Formats events into TUI protocol (###THINKING, ###AGENT, ###TOOL_CALL, etc.)
+  - `tests/test_event_broker_pubsub.py`: 11 comprehensive unit tests covering pub-sub system, TUI subscriber, and end-to-end data flow.
+  - `docs/event_broker_pubsub.md`: Complete architecture documentation with examples and diagrams.
+
+#### Changed
+
+- `src/agentx/streaming_controller.py`:
+  - `_write_tui_output()` now publishes to EventBroker instead of direct FIFO writes.
+  - No longer silently drops data if FIFO unavailable.
+  - Guaranteed delivery to TUI via pub-sub.
+- `src/agentx/session.py`:
+  - Added `event_broker: EventBroker` initialization.
+  - Created and wired `tui_event_subscriber: TUIEventSubscriber` to all event types.
+  - Subscribers started/stopped with session lifecycle.
+
+#### Fixed
+
+- **TUI output data loss** — Previous non-blocking FIFO writes silently dropped data if reader unavailable.
+  Now uses pub-sub guarantees with per-subscriber queues and retry/backoff.
+- **TUI input processing** — Data flow now guaranteed end-to-end via event broker.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_event_broker_pubsub.py`: Full test suite with 11 unit tests (11/11 passing):
+  - `TestEventBrokerPubSub`: Basic publish/subscribe, multiple subscribers, unsubscribe, slow subscribers.
+  - `TestTUIEventSubscriber`: Event formatting, buffering, bounded queue, writer thread.
+  - `TestStreamingControllerPubSub`: Publishing events, graceful handling of missing broker.
+  - `TestEndToEndDataFlow`: Full chain from StreamingController → EventBroker → TUI Subscriber.
+
+### Architecture
+
+- Replaced brittle point-to-point FIFO writes with centralized event broker.
+- Each subscriber gets its own queue; slow subscribers don't block publishers.
+- Events buffered and retried with backoff if FIFO unavailable.
+- Design supports future subscribers (logging, monitoring, bidirectional UI sync).
+- See `docs/event_broker_pubsub.md` for complete architecture and migration guide.
+
+---
+
+## [0.38.5] - 2026-05-09
+
+### Code Changes
+
+#### Added
+
+- `src/agentx/gui/settings_tab.py`: added a new `🪟 TUI Mirror` Settings section
+  exposing `[tui]` keys:
+  `enable`, `output_split_ratio`, `write_timeout_sec`, and `show_thinking`.
+- `agentx.toml`: added explicit `agentx.auto_stop_tmux_on_gui_exit = true`
+  so launcher auto-stop behavior is visible in project config by default.
+
+#### Changed
+
+- `launch_vibe.sh`: added support for `AGENTX_TUI_OUTPUT_SPLIT_RATIO` and
+  `[tui].output_split_ratio` from `agentx.toml`.
+- `launch_vibe.sh` generated `agentx_tui.lua`: now enforces output-on-top/input-on-bottom
+  with `belowright split` and computes input-pane height from configurable
+  output ratio.
+- `agentx_tui.lua`: aligned checked-in script with launcher-generated behavior
+  (split ratio env support + explicit split orientation).
+
+### Test Changes
+
+#### Added
+
+- `tests/test_launch_vibe_shutdown.py`:
+  - `test_start_reads_tui_split_ratio_from_project_toml`
+    - GIVEN `agentx.toml` has `tui.output_split_ratio`
+    - WHEN launcher starts
+    - THEN TUI launch command includes `AGENTX_TUI_OUTPUT_SPLIT_RATIO`.
+
+#### Changed
+
+- `tests/test_launch_vibe_shutdown.py`:
+  - strengthened TUI startup assertions to verify split-ratio env propagation
+    and generated Lua wiring for split ratio + explicit split direction.
+
+## [0.38.4] - 2026-05-09
+
+### Code Changes
+
+#### Fixed
+
+- `launch_vibe.sh`: fixed tmux window allocation to use the next available
+  explicit window index for `editor` recovery, `agent-bg`, `agentx-log`, and
+  `tui-chat`, eliminating startup failures such as
+  `create window failed: index <N> in use`.
+- `launch_vibe.sh`: fixed generated `agentx_tui.lua` heredoc quoting so
+  launcher no longer fails under `set -u` with unbound `AGENTX_TUI_*`
+  variables while writing the Lua file.
+
+### Test Changes
+
+#### Changed
+
+- `tests/test_launch_vibe_shutdown.py`:
+  - updated tmux command-log assertions to support explicit
+    `session:index` window targets.
+  - hardened default TUI status test with explicit `AGENTX_TUI_ENABLE=false`
+    to avoid environmental coupling.
+
+## [0.38.3] - 2026-05-09
+
+### Code Changes
+
+#### Fixed
+
+- `launch_vibe.sh`: fixed stale editor pane targeting by retrying target
+  resolution when an initial `tmux send-keys` fails, preventing start failures
+  like `can't find pane: %0`.
+- `launch_vibe.sh`: restored default tmux auto-shutdown on AgentX/GUI exit and
+  made it configurable via `AGENTX_AUTO_STOP_ON_EXIT` and
+  `[agentx].auto_stop_tmux_on_gui_exit`.
+- `launch_vibe.sh`: now reads `[tui]` defaults from project `agentx.toml`
+  (`enable`, `socket`, `output_fifo`, `input_fifo`) when launcher env overrides
+  are not provided.
+- `launch_vibe.sh`: fixed `status`/`stop` early-exit regression under `set -e`
+  in TOML default loading logic.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_launch_vibe_shutdown.py`:
+  - `test_start_reads_tui_enable_from_project_toml`
+    - GIVEN `agentx.toml` with `tui.enable=true`
+    - WHEN launcher starts without `AGENTX_TUI_ENABLE`
+    - THEN `tui-chat` window is created.
+  - `test_start_reads_auto_stop_override_from_project_toml`
+    - GIVEN `agentx.toml` with `agentx.auto_stop_tmux_on_gui_exit=false`
+    - WHEN launcher starts
+    - THEN AgentX command does not include tmux kill-session hook.
+
+#### Changed
+
+- `tests/test_launch_vibe_shutdown.py`:
+  - restored start lifecycle assertion to validate default tmux auto-kill hook
+    remains present when no override is configured.
+
 ## [0.38.2.post1] - 2026-05-09
 
 ### Code Changes

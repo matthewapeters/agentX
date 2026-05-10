@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 from shared.models.message import Message, MessageRole
 from shared.models.response import ChunkType, ResponseChunk
+from .event_broker import EventType
 from .protocols import IMeterSession
 
 if TYPE_CHECKING:
@@ -56,15 +57,16 @@ class StreamingController:
         self._s.gui.set_streaming_state(False)
 
     def _write_tui_output(self, record: str) -> None:
-        """Write a record to the optional TUI output bridge.
+        """Publish an output record to TUI subscribers via event broker.
 
-        Writes are best-effort and intentionally ignored on failure.
+        Guaranteed delivery via pub-sub; no data is dropped like the old FIFO approach.
         """
-        bridge = getattr(self._s, "tui_bridge", None)
-        if bridge is None:
-            return
         try:
-            bridge.write_output(record)
+            broker = getattr(self._s, "event_broker", None)
+            if broker is None:
+                return
+            # Publish as a raw output record so TUI subscribers can handle it
+            broker.publish(EventType.AGENT_CONTENT, {"text": record, "is_raw_tui": True})
         except Exception:
             pass
 

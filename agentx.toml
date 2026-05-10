@@ -5,7 +5,23 @@ ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
 theme_mode = "Dark Mode"
 show_log_locations_on_startup = true
+enable_gui_chat = true
+auto_stop_tmux_on_gui_exit = true
 
 [agentix]
 system_prompts_dir = "system_prompts"
 agentix_bench_classification_model = "phi4-mini:3.8b"
+
+[tui]
+enable = true
+socket = ""
+output_fifo = ""
+input_fifo = ""
+output_split_ratio = 0.7
+write_timeout_sec = 0.1
+show_thinking = false
+lua = ["output_win", "input_win"]
+
+
+[terminal]
+exec_mode = "autonomous"
