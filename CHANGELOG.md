@@ -5,6 +5,36 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+
+## [0.40.1] - 2026-05-12
+
+### Code Changes
+
+#### Added
+
+- **Tool Execution Diagnostics (P2 Foundation)**: Comprehensive diagnostic suite for verifying tool pipeline health.
+  - `src/agentx/tool_diagnostics.py` — ToolDiagnostics class with 4-phase diagnostic suite:
+    - Phase 1: Registry check — verify tools loaded from config
+    - Phase 2: Bridge registration — confirm tools registered with bridge
+    - Phase 3: Tool availability — check if LLM can see critical tools (read_file, write_file)
+    - Phase 4: End-to-end execution — test actual tool invocation
+  - Explicit error reporting for missing tools, schema issues, and execution failures.
+  - JSON export and human-readable summary generation.
+  - Factory function `create_tool_diagnostics()` for easy instantiation.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_tool_diagnostics.py` — 16 unit tests covering:
+  - ToolDiagnostics initialization with and without registry manager.
+  - Registry diagnostics phase (inventory, state verification).
+  - Bridge diagnostics phase (registration status).
+  - Availability diagnostics phase (critical tool visibility).
+  - Execution diagnostics phase (read_file/write_file end-to-end).
+  - Full diagnostic suite compilation with issue detection.
+  - JSON export validation and factory function.
+
 ---
 
 ## [0.40.0] - 2026-05-11
