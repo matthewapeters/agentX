@@ -47,6 +47,7 @@ def test_layout_runs_bootstrap_prompt_and_shows_only_agent_response(self):
 ```
 
 **Problem:**
+
 - ✗ Doesn't verify data reaches actual FIFO
 - ✗ Doesn't verify Lua TUI can read the data
 - ✗ Doesn't test inter-process communication
@@ -72,6 +73,7 @@ def test_streaming_controller_writes_agent_and_tool_records_to_tui() -> None:
 ```
 
 **Problem:**
+
 - ✗ No actual FIFO created or written to
 - ✗ Doesn't verify non-blocking write behavior
 - ✗ Doesn't test "what happens if FIFO reader is slow?"
@@ -98,6 +100,7 @@ def test_tui_bridge_write_output_success() -> None:
 ```
 
 **Problem:**
+
 - ✗ OS layer is completely mocked (os.open, os.write, select.select)
 - ✗ Never tests real FIFO semantics
 - ✗ Doesn't verify Lua can actually read the data
@@ -128,6 +131,7 @@ fd = os.open(self.output_fifo, os.O_WRONLY | os.O_NONBLOCK)  # NON-BLOCKING
 ```
 
 **This means:**
+
 - If FIFO reader is slow → write silently drops
 - If FIFO reader disconnects → write returns False
 - If FIFO has no reader → write fails with ENXIO
@@ -137,11 +141,13 @@ fd = os.open(self.output_fifo, os.O_WRONLY | os.O_NONBLOCK)  # NON-BLOCKING
 ### ❌ 3. Concurrent Multi-Process Scenario
 
 Real usage:
+
 1. Python session running in tmux window 1
 2. Neovim TUI running in tmux window 2
 3. Reading from same FIFO
 
 **Test gap:** Never simulated actual two-process scenario where:
+
 - Python writes to FIFO
 - Lua/TUI reads from FIFO
 - What if reader connects late?
@@ -153,6 +159,7 @@ Real usage:
 ### 1. Test Isolation Best Practice
 
 Tests are designed to be **hermetic** (self-contained, no external dependencies). Testing real FIFOs requires:
+
 - Actual OS FIFOs ✓ (system has `/tmp`)
 - Two processes ✗ (hard to coordinate)
 - Real timing ✗ (flaky)
@@ -168,6 +175,7 @@ StreamingController → TuiBridge.write_output() → FIFO (no one else knows abo
 ```
 
 This made it hard to test the complete chain because:
+
 - Each component tested in isolation
 - No layer that aggregates or buffers events
 - No way to verify "all subscribers got the data"
@@ -175,6 +183,7 @@ This made it hard to test the complete chain because:
 ### 3. Non-Blocking Semantics Hidden Complexity
 
 The non-blocking write design (intentional to avoid GUI latency) meant:
+
 - Data could disappear silently
 - No one noticed in tests (data wasn't real)
 - No one noticed in live usage until user reported it
@@ -206,6 +215,7 @@ class EventBroker:
 ```
 
 Now tests can verify:
+
 - Event queued for TUI subscriber
 - TUI subscriber background thread processes queue
 - Data written to FIFO with retry

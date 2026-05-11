@@ -1,6 +1,6 @@
 # Event-Broker Pub-Sub Architecture
 
-_Last updated: 2026-05-09 (v0.39.0)_
+_Last updated: 2026-05-10 (v0.39.3)_
 
 ## Overview
 
@@ -86,7 +86,7 @@ def publish(
 - **Ordered delivery:** Events dispatched in publish order
 - **No dropped events:** Each subscriber has its own queue
 - **Thread-safe:** Uses RLock for concurrent access
-- **Non-blocking publishers:** Dispatch happens in background threads
+- **Non-blocking publishers:** Enqueue-only publish path with per-subscriber workers
 
 ### 2. EventType (`src/agentx/event_broker.py`)
 
@@ -124,7 +124,7 @@ class EventType(str, Enum):
 
 **Key Features:**
 
-- Maintains bounded event queue (maxlen=10000)
+- Maintains an unbounded in-process queue (no maxlen truncation)
 - Background writer thread for FIFO writes
 - Retries with backoff if FIFO unavailable
 - Formats events into TUI protocol (###THINKING, ###AGENT, ###TOOL_CALL, etc.)
@@ -132,7 +132,7 @@ class EventType(str, Enum):
 **Data Flow:**
 
 1. StreamingController publishes event
-2. EventBroker queues for all subscribers
+2. EventBroker enqueues per subscriber worker
 3. TUIEventSubscriber receives event in background
 4. Event added to internal queue
 5. Writer thread:
@@ -215,7 +215,7 @@ if tui_enabled:
 
 ## Testing
 
-All tests pass (11/11):
+Focused pub-sub and TUI tests pass:
 
 ```bash
 python -m pytest tests/test_event_broker_pubsub.py -v
@@ -224,7 +224,7 @@ python -m pytest tests/test_event_broker_pubsub.py -v
 ### Test Coverage
 
 - **EventBroker:** Basic pub-sub, multiple subscribers, unsubscribe, slow subscribers
-- **TUIEventSubscriber:** Event formatting, buffering, bounded queue, writer thread
+- **TUIEventSubscriber:** Event formatting, buffering, queue behavior, writer thread
 - **StreamingController:** Publishing events, graceful handling of missing broker
 - **End-to-end:** Full chain from StreamingController → EventBroker → TUI Subscriber
 
@@ -266,7 +266,7 @@ def _write_tui_output(self, record: str) -> None:
 ✅ **Thread-safe:** RLock on broker, per-subscriber queues
 ✅ **Backpressure:** Slow FIFO doesn't block streaming
 ✅ **Buffering:** Events buffered if TUI temporarily unavailable
-✅ **Retry logic:** Writes retry with exponential backoff
+✅ **Retry logic:** Writes retry with bounded backoff loop
 ✅ **Testable:** All components unit-tested with 66%+ coverage
 
 ## Future Enhancements

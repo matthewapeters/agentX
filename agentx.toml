@@ -1,6 +1,6 @@
 [agentx]
 ollama_host = "localhost:11434"
-ollama_model = "gpt-oss:latest"
+ollama_model = "qwen3.6:latest"
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
 theme_mode = "Dark Mode"
@@ -14,14 +14,13 @@ agentix_bench_classification_model = "phi4-mini:3.8b"
 
 [tui]
 enable = true
-socket = ""
-output_fifo = ""
-input_fifo = ""
-output_split_ratio = 0.7
-write_timeout_sec = 0.1
-show_thinking = false
-lua = ["output_win", "input_win"]
-
+socket = "/tmp/agentx_agentx.tui.nvim.sock"
+output_fifo = "/tmp/agentx_agentx.tui_output.fifo"
+input_fifo = "/tmp/agentx_agentx.tui_input.fifo"
+output_split_ratio = 0.3
+write_timeout_sec = 1.0
+show_thinking = true
+lua = [ "output_win", "input_win",]
 
 [terminal]
 exec_mode = "autonomous"

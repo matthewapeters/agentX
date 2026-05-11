@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import time
-import errno
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentx.event_broker import EventType
 from agentx.integration.tui_bridge import SUBMIT_SENTINEL, TuiBridge
 from agentx.streaming_controller import StreamingController
 
@@ -52,36 +53,196 @@ def _build_session(show_thinking: bool = False) -> SimpleNamespace:
     session.refresh_working_memory_gui = MagicMock()
     session._active_terminal_panes = set()
     session.tui_bridge = MagicMock()
+    session.event_broker = MagicMock()
     return session
 
 
-def test_tui_bridge_write_output_success() -> None:
-    """GIVEN writable FIFO WHEN write_output is called THEN full payload is written."""
-    bridge = TuiBridge("/tmp/test-output.fifo", enabled=True, write_timeout_sec=0.1)
+@pytest.mark.unit
+def test_tui_bridge_write_output_success_with_reader(tmp_path: Path) -> None:
+    """GIVEN active FIFO reader WHEN write_output is called THEN full payload reaches reader."""
+    output_fifo = tmp_path / "output.fifo"
+    os.mkfifo(output_fifo)
+
+    received: list[bytes] = []
+
+    def read_fifo() -> None:
+        """Background thread to read FIFO data."""
+        try:
+            with open(output_fifo, "rb") as f:
+                while True:
+                    chunk = f.read(4096)
+                    if not chunk:
+                        break
+                    received.append(chunk)
+        except Exception:
+            pass
+
+    import threading
+
+    reader_thread = threading.Thread(target=read_fifo, daemon=True)
+    reader_thread.start()
+    time.sleep(0.05)  # Let reader open FIFO
+
+    bridge = TuiBridge(output_fifo=str(output_fifo), enabled=True, write_timeout_sec=0.5)
     bridge.start()
 
-    with (
-        patch("agentx.integration.tui_bridge.os.open", return_value=11),
-        patch("agentx.integration.tui_bridge.select.select", return_value=([], [11], [])),
-        patch("agentx.integration.tui_bridge.os.write", return_value=5) as mock_write,
-        patch("agentx.integration.tui_bridge.os.close") as mock_close,
-    ):
-        ok = bridge.write_output("hello")
+    try:
+        ok = bridge.write_output("hello world")
+        assert ok is True
 
-    assert ok is True
-    mock_write.assert_called_once()
-    mock_close.assert_called_once_with(11)
+        # Give reader time to process
+        deadline = time.time() + 1.0
+        while not received and time.time() < deadline:
+            time.sleep(0.01)
+
+        assert received, "Data did not reach FIFO reader"
+        assert b"hello world" in b"".join(received)
+    finally:
+        bridge.stop()
+        reader_thread.join(timeout=1.0)
 
 
-def test_tui_bridge_write_output_drops_when_no_reader() -> None:
-    """GIVEN FIFO has no reader WHEN write_output is called THEN write is dropped safely."""
-    bridge = TuiBridge("/tmp/test-output.fifo", enabled=True)
+@pytest.mark.unit
+def test_tui_bridge_write_output_drops_when_no_reader(tmp_path: Path) -> None:
+    """GIVEN no FIFO reader WHEN write_output is called THEN write is dropped safely."""
+    output_fifo = tmp_path / "output.fifo"
+    os.mkfifo(output_fifo)
+
+    bridge = TuiBridge(output_fifo=str(output_fifo), enabled=True, write_timeout_sec=0.05)
     bridge.start()
 
-    with patch("agentx.integration.tui_bridge.os.open", side_effect=OSError(errno.ENXIO, "no reader")):
+    try:
+        # No reader thread opened the FIFO, so write should fail
         ok = bridge.write_output("hello")
+        # Non-blocking write with no reader should be False or timeout
+        assert ok is False
+    finally:
+        bridge.stop()
 
-    assert ok is False
+
+@pytest.mark.unit
+def test_tui_bridge_write_output_returns_false_when_disabled(tmp_path: Path) -> None:
+    """GIVEN bridge disabled WHEN write_output is called THEN returns False immediately."""
+    output_fifo = tmp_path / "output.fifo"
+    os.mkfifo(output_fifo)
+
+    bridge = TuiBridge(output_fifo=str(output_fifo), enabled=False)
+    bridge.start()
+
+    try:
+        ok = bridge.write_output("hello")
+        assert ok is False
+    finally:
+        bridge.stop()
+
+
+@pytest.mark.unit
+def test_tui_bridge_write_output_returns_false_for_empty_record(tmp_path: Path) -> None:
+    """GIVEN empty record WHEN write_output is called THEN returns False immediately."""
+    output_fifo = tmp_path / "output.fifo"
+    os.mkfifo(output_fifo)
+
+    bridge = TuiBridge(output_fifo=str(output_fifo), enabled=True)
+    bridge.start()
+
+    try:
+        ok = bridge.write_output("")
+        assert ok is False
+    finally:
+        bridge.stop()
+
+
+@pytest.mark.unit
+def test_tui_bridge_write_output_multipart_payload(tmp_path: Path) -> None:
+    """GIVEN large payload requiring multiple writes WHEN write_output is called THEN full data reaches reader."""
+    output_fifo = tmp_path / "output.fifo"
+    os.mkfifo(output_fifo)
+
+    received: list[bytes] = []
+
+    def read_fifo() -> None:
+        """Background thread to read FIFO data."""
+        try:
+            with open(output_fifo, "rb") as f:
+                while True:
+                    chunk = f.read(4096)
+                    if not chunk:
+                        break
+                    received.append(chunk)
+        except Exception:
+            pass
+
+    import threading
+
+    reader_thread = threading.Thread(target=read_fifo, daemon=True)
+    reader_thread.start()
+    time.sleep(0.05)
+
+    bridge = TuiBridge(output_fifo=str(output_fifo), enabled=True, write_timeout_sec=0.5)
+    bridge.start()
+
+    try:
+        # Large payload that may require multiple os.write calls
+        large_payload = "x" * 10000
+        ok = bridge.write_output(large_payload)
+        assert ok is True
+
+        deadline = time.time() + 1.0
+        while not received and time.time() < deadline:
+            time.sleep(0.01)
+
+        combined = b"".join(received)
+        assert len(combined) >= len(large_payload)
+        assert large_payload.encode() in combined
+    finally:
+        bridge.stop()
+        reader_thread.join(timeout=1.0)
+
+
+@pytest.mark.unit
+def test_tui_bridge_write_output_handles_unicode(tmp_path: Path) -> None:
+    """GIVEN unicode payload WHEN write_output is called THEN payload is encoded and reaches reader."""
+    output_fifo = tmp_path / "output.fifo"
+    os.mkfifo(output_fifo)
+
+    received: list[bytes] = []
+
+    def read_fifo() -> None:
+        """Background thread to read FIFO data."""
+        try:
+            with open(output_fifo, "rb") as f:
+                while True:
+                    chunk = f.read(4096)
+                    if not chunk:
+                        break
+                    received.append(chunk)
+        except Exception:
+            pass
+
+    import threading
+
+    reader_thread = threading.Thread(target=read_fifo, daemon=True)
+    reader_thread.start()
+    time.sleep(0.05)
+
+    bridge = TuiBridge(output_fifo=str(output_fifo), enabled=True, write_timeout_sec=0.5)
+    bridge.start()
+
+    try:
+        unicode_payload = "Hello 世界 🚀 Привет"
+        ok = bridge.write_output(unicode_payload)
+        assert ok is True
+
+        deadline = time.time() + 1.0
+        while not received and time.time() < deadline:
+            time.sleep(0.01)
+
+        combined = b"".join(received).decode("utf-8", errors="replace")
+        assert "Hello" in combined
+        assert "🚀" in combined
+    finally:
+        bridge.stop()
+        reader_thread.join(timeout=1.0)
 
 
 def test_streaming_controller_writes_agent_and_tool_records_to_tui() -> None:
@@ -93,12 +254,20 @@ def test_streaming_controller_writes_agent_and_tool_records_to_tui() -> None:
     controller._display_tool_call("read_file", {"path": "src/app.py"})
     controller._display_tool_result("read_file", "ok")
 
-    calls = [str(call.args[0]) for call in session.tui_bridge.write_output.call_args_list]
+    calls = [
+        (call.args[0], call.args[1].get("text", ""))
+        for call in session.event_broker.publish.call_args_list
+        if len(call.args) >= 2
+    ]
 
-    assert any(record == "###AGENT\n" for record in calls)
-    assert any(record == "hi" for record in calls)
-    assert any(record.startswith("###TOOL_CALL read_file") for record in calls)
-    assert any(record.startswith("###TOOL_RESULT read_file") for record in calls)
+    assert any(event == EventType.AGENT_CONTENT and record == "###AGENT\n" for event, record in calls)
+    assert any(event == EventType.AGENT_CONTENT and record == "hi" for event, record in calls)
+    assert any(
+        event == EventType.AGENT_CONTENT and record.startswith("###TOOL_CALL read_file") for event, record in calls
+    )
+    assert any(
+        event == EventType.AGENT_CONTENT and record.startswith("###TOOL_RESULT read_file") for event, record in calls
+    )
 
 
 def test_streaming_controller_respects_show_thinking_flag_for_tui() -> None:
@@ -108,7 +277,11 @@ def test_streaming_controller_respects_show_thinking_flag_for_tui() -> None:
 
     controller._display_thinking("internal")
 
-    calls = [str(call.args[0]) for call in session.tui_bridge.write_output.call_args_list]
+    calls = [
+        call.args[1].get("text", "")
+        for call in session.event_broker.publish.call_args_list
+        if len(call.args) >= 2 and call.args[0] == EventType.AGENT_CONTENT
+    ]
     assert not any(record.startswith("###THINKING") for record in calls)
     assert "internal" not in calls
 
@@ -120,7 +293,11 @@ def test_streaming_controller_writes_thinking_when_enabled() -> None:
 
     controller._display_thinking("internal")
 
-    calls = [str(call.args[0]) for call in session.tui_bridge.write_output.call_args_list]
+    calls = [
+        call.args[1].get("text", "")
+        for call in session.event_broker.publish.call_args_list
+        if len(call.args) >= 2 and call.args[0] == EventType.AGENT_CONTENT
+    ]
     assert any(record == "###THINKING\n" for record in calls)
     assert any(record == "internal" for record in calls)
 
@@ -175,6 +352,42 @@ def test_tui_bridge_ignores_empty_submit_messages(tmp_path: Path) -> None:
         bridge.stop()
 
     assert submitted == ["real input"]
+
+
+@pytest.mark.unit
+def test_tui_bridge_input_reader_handles_transient_eof_without_reopen() -> None:
+    """GIVEN FIFO read EOF WHEN later submit arrives THEN callback still receives message without fd reopen."""
+    submitted: list[str] = []
+    bridge = TuiBridge(
+        output_fifo="/tmp/unused-output.fifo",
+        input_fifo="/tmp/unused-input.fifo",
+        on_submit=submitted.append,
+        enabled=True,
+    )
+
+    read_sequence = [b"", f" hello {SUBMIT_SENTINEL}".encode("utf-8")]
+    state = {"reads": 0}
+
+    def _fake_read(_fd: int, _size: int) -> bytes:
+        """Return EOF once, then a valid submit payload, then stop the loop."""
+        idx = state["reads"]
+        state["reads"] += 1
+        if idx < len(read_sequence):
+            return read_sequence[idx]
+        bridge._stop_event.set()
+        return b""
+
+    with (
+        patch("agentx.integration.tui_bridge.os.open", return_value=11) as mock_open,
+        patch("agentx.integration.tui_bridge.select.select", return_value=([11], [], [])),
+        patch("agentx.integration.tui_bridge.os.read", side_effect=_fake_read),
+        patch("agentx.integration.tui_bridge.time.sleep"),
+        patch("agentx.integration.tui_bridge.os.close"),
+    ):
+        bridge._input_reader_loop()
+
+    assert submitted == ["hello"]
+    assert mock_open.call_count == 1
 
 
 def _write_fifo_payload(path: str, payload: str) -> None:

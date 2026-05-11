@@ -107,6 +107,63 @@ class TestEventBrokerPubSub:
         assert len(events) == 5
         assert processed_count[0] == 5
 
+    def test_event_broker_preserves_order_for_single_subscriber(self):
+        """
+        GIVEN: One subscriber receiving many events
+        WHEN: Events are published in sequence
+        THEN: Callback observes the same event order
+        """
+        broker = EventBroker()
+        received: list[int] = []
+
+        def handler(event: Event) -> None:
+            received.append(int(event.data["index"]))
+
+        broker.subscribe(EventType.AGENT_CONTENT, handler)
+
+        count = 200
+        for i in range(count):
+            broker.publish(EventType.AGENT_CONTENT, {"index": i})
+
+        deadline = time.time() + 2.0
+        while len(received) < count and time.time() < deadline:
+            time.sleep(0.01)
+
+        assert len(received) == count
+        assert received == list(range(count))
+
+    def test_event_broker_no_drop_when_subscriber_is_busy(self):
+        """
+        GIVEN: A slow subscriber and rapid publish bursts
+        WHEN: A large stream of events is published
+        THEN: Subscriber still receives every event
+        """
+        broker = EventBroker()
+        received: list[int] = []
+        lock = threading.Lock()
+
+        def handler(event: Event) -> None:
+            time.sleep(0.001)
+            with lock:
+                received.append(int(event.data["index"]))
+
+        broker.subscribe(EventType.AGENT_CONTENT, handler, queue_size=1)
+
+        count = 1200
+        for i in range(count):
+            broker.publish(EventType.AGENT_CONTENT, {"index": i})
+
+        deadline = time.time() + 8.0
+        while True:
+            with lock:
+                done = len(received) >= count
+            if done or time.time() >= deadline:
+                break
+            time.sleep(0.01)
+
+        with lock:
+            assert len(received) == count
+
 
 class TestTUIEventSubscriber:
     """Tests for TUIEventSubscriber."""
@@ -146,23 +203,21 @@ class TestTUIEventSubscriber:
 
         assert len(subscriber._event_queue) == 5
 
-    def test_tui_subscriber_bounded_queue(self):
+    def test_tui_subscriber_retains_all_queued_events(self):
         """
-        GIVEN: A TUIEventSubscriber with maxlen=10000
-        WHEN: More than 10000 events are added
-        THEN: Old events are dropped (FIFO queue behavior)
+        GIVEN: A TUIEventSubscriber queue
+        WHEN: Many events are added before writer drains
+        THEN: Queue retains all events without maxlen truncation
         """
         subscriber = TUIEventSubscriber()
 
-        # Add more events than the queue can hold
-        for i in range(10100):
+        for i in range(12000):
             event = Event(event_type=EventType.AGENT_CONTENT, data={"text": f"Event {i}"})
             subscriber.handle_event(event)
 
-        assert len(subscriber._event_queue) == 10000  # Queue is bounded
-        # First 100 events should have been dropped
+        assert len(subscriber._event_queue) == 12000
         oldest_event = subscriber._event_queue[0]
-        assert "Event 100" in oldest_event.data["text"]
+        assert "Event 0" in oldest_event.data["text"]
 
 
 class TestStreamingControllerPubSub:

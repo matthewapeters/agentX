@@ -215,7 +215,9 @@ def test_start_with_tui_enabled_launches_tui_window_and_env(tmp_path: Path) -> N
     lua_text = (project_dir / "agentx_tui.lua").read_text(encoding="utf-8")
     assert 'local output_ratio = tonumber(vim.fn.expand("$AGENTX_TUI_OUTPUT_SPLIT_RATIO")) or 0.70' in lua_text
     assert 'vim.cmd("belowright split")' in lua_text
+    assert "while true; do cat %q; done" in lua_text
     assert 'nvim_create_user_command("AgentXSubmit"' in lua_text
+    assert 'vim.keymap.set({ "n", "i" }, "<leader>s", submit_input' in lua_text
     assert 'vim.keymap.set("n", "<CR>", submit_input' in lua_text
     assert "AgentX TUI ready." in lua_text
 

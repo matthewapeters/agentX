@@ -99,8 +99,10 @@ class TuiBridge:
 
                 chunk = os.read(fd, 4096)
                 if not chunk:
-                    os.close(fd)
-                    fd = None
+                    # Keep the FIFO reader fd open across writer disconnects.
+                    # Closing/reopening introduces readerless gaps that can block
+                    # TUI submit opens on the writer side.
+                    time.sleep(0.05)
                     continue
 
                 buffer += chunk.decode("utf-8", errors="replace")

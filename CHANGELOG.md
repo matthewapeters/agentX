@@ -7,6 +7,101 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.39.3.post1] - 2026-05-11
+
+### Code Changes
+
+#### Changed
+
+- Documentation curation only: split tool/tooling backlog from UX backlog to reduce triage drift.
+- Added indexed tools docs entry point in `docs/tools/00_INDEX.md` and normalized `docs/tools/tools_issues.md` structure/status semantics.
+- Updated UX docs cross-reference so tooling items are tracked in tools docs while UX items remain in the UX lifecycle tracker.
+
+### Test Changes
+
+#### Changed
+
+- No code-path changes; no test behavior changes expected.
+
+## [0.39.3] - 2026-05-10
+
+### Code Changes
+
+#### Fixed
+
+- `src/agentx/event_broker.py`: replaced per-publish fire-and-forget callback threads + never-consumed queues with per-subscriber worker threads that actively drain queued events. This prevents silent delivery stalls after repeated prompt streams.
+- `src/agentx/integration/tui_event_subscriber.py`: removed bounded `deque(maxlen=10000)` truncation and corrected writer-loop lock usage so idle waits do not occur while holding the queue lock.
+- `launch_vibe.sh`: fixed generated `agentx_tui.lua` submit framing to use real newline sentinel (`"\n---SUBMIT---\n"`) and real newline join for input text, matching Python submit parsing.
+- `launch_vibe.sh` / `agentx_tui.lua`: updated output pane append logic to coalesce partial stream chunks onto the current line and only emit new lines on explicit separators, preventing token-per-line rendering during streaming.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_event_broker_pubsub.py`:
+  - Added order-preservation test for a single subscriber under burst publish load.
+  - Added no-drop regression test for rapid publish against a busy subscriber.
+
+#### Changed
+
+- `tests/test_event_broker_pubsub.py`:
+  - Replaced bounded-queue truncation assertion in TUI subscriber coverage with retention coverage for large queued event sets.
+
+---
+
+## [0.39.2] - 2026-05-09
+
+### Code Changes
+
+#### Fixed
+
+- `launch_vibe.sh`: updated generated TUI Lua output reader command from one-shot FIFO read to persistent reopen loop (`while true; do cat <fifo>; done`) so the TUI output mirror does not die after writer-side EOF.
+- `src/agentx/integration/tui_bridge.py`: changed input FIFO reader behavior to keep the read fd open across transient EOF, avoiding readerless reopen gaps that can stall or miss TUI submit writes.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_tui_bridge_output.py`:
+  - Added regression test validating `_input_reader_loop` handles transient EOF and still dispatches later submit payloads without reopening fd.
+
+#### Changed
+
+- `tests/test_launch_vibe_shutdown.py`:
+  - Added assertion that generated `agentx_tui.lua` uses persistent FIFO read loop for output mirror continuity.
+
+---
+
+## [0.39.1] - 2026-05-09
+
+### Code Changes
+
+#### Changed
+
+- Updated TUI bridge output tests to validate real FIFO behavior so `write_output()` is a directly testable unit instead of only a mocked call path.
+- Updated streaming-controller TUI emission assertions to validate `EventBroker.publish(...)` records (current architecture) instead of legacy direct bridge-write calls.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_tui_bridge_output.py`:
+  - Added real FIFO reader/writer test for successful `write_output()` delivery.
+  - Added disabled-bridge and empty-record unit cases for `write_output()` guard behavior.
+  - Added large payload coverage for multi-write delivery semantics.
+  - Added unicode payload coverage for encoded write/read behavior.
+
+#### Changed
+
+- `tests/test_tui_bridge_output.py`:
+  - Streaming-controller integration assertions now validate broker-published payloads with `EventType.AGENT_CONTENT`.
+
+#### Fixed
+
+- Restored failing streaming-controller TUI tests after broker migration by asserting the active publish path.
+
+---
+
 ## [0.39.0] - 2026-05-09
 
 ### Code Changes

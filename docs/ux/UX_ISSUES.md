@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-09 (v0.33.1)_
+_Last updated: 2026-05-11 (v0.39.3.post1)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -256,3 +256,19 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
 - **Attempted fix 1 (v0.33.0)**: Created `src/agentx/integration/vim_bridge.py`. Socket defaulted to `/tmp/agentx.nvim.sock`. **UAT failed** — socket not found because `launch_vibe.sh` creates a session-scoped socket at `/tmp/agentx_<session>.nvim.sock` (e.g. `/tmp/agentx_agentx.nvim.sock`).
 - **Attempted fix 2 (v0.33.1)**: Fixed socket resolution to mirror `launch_vibe.sh`. Priority: `AGENTX_NVIM_SOCKET` env var → `config["neovim"]["socket"]` → `/tmp/agentx_<AGENTX_TMUX_SESSION>.nvim.sock` (default: `/tmp/agentx_agentx.nvim.sock`). 19 tests, 100% coverage.
 - **UAT Status**: Ready for UAT — launch `./launch_vibe.sh` then use Edit in file explorer.
+[ ] TUI issue: resilts streaming from the LLM are written to the TUI with a CR or LF after each word is received.  Text should be continued on the same line - only carriage returns from the agent should be written until the end of the stream is complete - then an additional CR is added.  It is clear that only the first response is mirrored to the TUI - the pub/sub channels appear to be closed or not re-established with second and later prompts (from the GUI).  Prompts in the TUI do not appear to send, but it is unclear.
+
+- **Root cause / attempted fix (v0.39.3)**:
+  - Event-broker subscriptions used a queue that was never drained, so sustained publish streams eventually stalled TUI delivery after initial responses. Fixed by introducing per-subscriber worker threads that consume and dispatch queued events continuously.
+  - Generated TUI Lua used escaped sentinel/join strings (`"\\n"`) while Python expected real newline framing (`"\n"`), causing TUI submit parsing mismatch. Fixed Lua generation + checked-in script to emit real newline sentinel/join text.
+  - Output pane appended each `on_stdout` callback as full lines, which rendered token streams as frequent line breaks. Fixed output append logic to coalesce partial chunks on the current line and only create new lines on explicit separators.
+- **Tests**:
+  - `tests/test_event_broker_pubsub.py`: added no-drop busy-subscriber regression and ordered-delivery regression tests.
+  - `tests/test_tui_bridge_output.py`, `tests/test_config_tui_phase1.py`: full related suite re-run; all pass.
+- **UAT Status**: latest fix candidate ready for UAT.
+- [ ] Issue, the neovim panes should be reorganized for better user experience:
+  - TUI (default displayed)
+  - neovim (AKA "Editor" or "Vibe Editor")
+  - BASH terminal
+  - AgentX Logs
+- Tool/tooling backlog items were moved to `docs/tools/tools_issues.md` to keep UX and tooling triage separate.

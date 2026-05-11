@@ -1,11 +1,11 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-09 (v0.38.2.post1)_
+_Last updated: 2026-05-11 (v0.39.3.post1)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-09 (v0.38.2.post1 — PD-16 TuiMirror traceability reconciled)
+**Last updated**: 2026-05-11 (v0.39.3.post1 — tooling backlog split from UX issue tracker)
 **Current version**: see `pyproject.toml`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
@@ -24,6 +24,7 @@ _Last updated: 2026-05-09 (v0.38.2.post1)_
 | Follow a user interaction end-to-end | [02_USER_FLOWS.md](02_USER_FLOWS.md) |
 | Vibe coding (neovim + tmux integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
 | TUI mirror chat pane (spec + plan) | [06_TUI_MIRROR.md](06_TUI_MIRROR.md) |
+| Tool/tooling backlog (non-UX) | [../tools/tools_issues.md](../tools/tools_issues.md) |
 | Run the UX review+enforce cycle (agent slash-command) | `/ux-review` in Copilot Chat |
 | See test coverage gaps | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-known-coverage-gaps) |
 | Detect spec/code/test drift | [UX_LIFECYCLE.md §5.4](UX_LIFECYCLE.md#54-detecting-drift-without-a-planned-change) |

@@ -17,7 +17,7 @@ import threading
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from queue import Queue
+from queue import Empty, Queue
 from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
@@ -65,6 +65,16 @@ class Event:
         return f"Event({self.event_type.value}, data_keys={list(self.data.keys())})"
 
 
+@dataclass
+class _SubscriberWorker:
+    """Background worker that serializes callback invocation per subscriber."""
+
+    callback: Callable[[Event], None]
+    queue: Queue
+    stop_event: threading.Event
+    thread: threading.Thread
+
+
 class EventBroker:
     """
     Centralized pub-sub broker for streaming events.
@@ -78,8 +88,8 @@ class EventBroker:
 
     def __init__(self) -> None:
         """Initialize the broker with empty subscriber registrations."""
-        # subscribers[event_type] = [(callback, queue), ...]
-        self._subscribers: dict[EventType, list[tuple[Callable, Queue]]] = defaultdict(list)
+        # subscribers[event_type] = [_SubscriberWorker, ...]
+        self._subscribers: dict[EventType, list[_SubscriberWorker]] = defaultdict(list)
         self._lock = threading.RLock()
 
     def subscribe(
@@ -107,16 +117,45 @@ class EventBroker:
             # ... later ...
             unsub()  # Unsubscribe
         """
-        q: Queue = Queue(maxsize=queue_size)
+        # Use an unbounded queue for reliable delivery. The ``queue_size``
+        # parameter is retained for API compatibility.
+        q: Queue = Queue(maxsize=0)
+        stop_event = threading.Event()
+        worker_thread = threading.Thread(
+            target=self._worker_loop,
+            args=(callback, q, stop_event),
+            daemon=True,
+        )
+        worker = _SubscriberWorker(
+            callback=callback,
+            queue=q,
+            stop_event=stop_event,
+            thread=worker_thread,
+        )
         with self._lock:
-            self._subscribers[event_type].append((callback, q))
+            self._subscribers[event_type].append(worker)
+        worker_thread.start()
 
         def unsubscribe() -> None:
+            target: _SubscriberWorker | None = None
             with self._lock:
                 try:
-                    self._subscribers[event_type].remove((callback, q))
+                    workers = self._subscribers[event_type]
+                    workers.remove(worker)
+                    if not workers:
+                        del self._subscribers[event_type]
+                    target = worker
                 except ValueError:
+                    return
+
+            if target is not None:
+                target.stop_event.set()
+                try:
+                    target.queue.put_nowait(None)
+                except Exception:
                     pass
+                if target.thread.is_alive():
+                    target.thread.join(timeout=0.5)
 
         return unsubscribe
 
@@ -138,18 +177,25 @@ class EventBroker:
         with self._lock:
             subscribers = list(self._subscribers.get(event_type, []))
 
-        for callback, q in subscribers:
+        for worker in subscribers:
             try:
-                # Non-blocking put: if queue is full, drop the event (subscriber is too slow)
-                q.put_nowait(event)
-                # Dispatch callback in a background thread so it doesn't block publishing
-                threading.Thread(
-                    target=self._dispatch_callback,
-                    args=(callback, event),
-                    daemon=True,
-                ).start()
+                worker.queue.put_nowait(event)
             except Exception as exc:
                 logger.warning("Failed to queue event for subscriber: %s", exc)
+
+    def _worker_loop(self, callback: Callable[[Event], None], queue: Queue, stop_event: threading.Event) -> None:
+        """Serialize event delivery for one subscriber callback."""
+        while not stop_event.is_set():
+            try:
+                event = queue.get(timeout=0.1)
+            except Empty:
+                continue
+
+            # ``None`` is a shutdown sentinel.
+            if event is None:
+                continue
+
+            self._dispatch_callback(callback, event)
 
     def _dispatch_callback(self, callback: Callable[[Event], None], event: Event) -> None:
         """Dispatch a callback safely, catching any exceptions."""
@@ -240,8 +286,20 @@ class EventBroker:
 
     def clear_subscribers(self) -> None:
         """Clear all subscribers (used for testing)."""
+        workers: list[_SubscriberWorker] = []
         with self._lock:
+            for subs in self._subscribers.values():
+                workers.extend(subs)
             self._subscribers.clear()
+
+        for worker in workers:
+            worker.stop_event.set()
+            try:
+                worker.queue.put_nowait(None)
+            except Exception:
+                pass
+            if worker.thread.is_alive():
+                worker.thread.join(timeout=0.5)
 
     def get_subscriber_count(self, event_type: EventType) -> int:
         """Return the number of subscribers for an event type."""

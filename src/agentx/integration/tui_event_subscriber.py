@@ -36,7 +36,8 @@ class TUIEventSubscriber:
             tui_bridge: Optional TuiBridge for FIFO writing. If None, events are logged only.
         """
         self.tui_bridge = tui_bridge
-        self._event_queue: deque = deque(maxlen=10000)  # Bounded queue (max 10k events)
+        # Keep an unbounded queue so TUI output is not silently dropped.
+        self._event_queue: deque = deque()
         self._writer_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
@@ -68,13 +69,17 @@ class TUIEventSubscriber:
         """Background thread that writes queued events to the TUI FIFO."""
         while not self._stop_event.is_set():
             try:
+                event: Event | None = None
                 with self._lock:
                     if not self._event_queue:
-                        # No events; wait a bit before checking again
-                        time.sleep(0.01)
-                        continue
+                        event = None
+                    else:
+                        event = self._event_queue[0]  # Peek at the front
 
-                    event = self._event_queue[0]  # Peek at the front
+                if event is None:
+                    # No events; wait a bit before checking again
+                    time.sleep(0.01)
+                    continue
 
                 # Try to write the event
                 if self._write_event_to_fifo(event):

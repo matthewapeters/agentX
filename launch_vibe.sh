@@ -520,7 +520,7 @@ _write_tui_lua() {
 
 local output_fifo = vim.fn.expand("$AGENTX_TUI_OUTPUT_FIFO")
 local input_fifo = vim.fn.expand("$AGENTX_TUI_INPUT_FIFO")
-local submit_sentinel = "\\n---SUBMIT---\\n"
+local submit_sentinel = "\n---SUBMIT---\n"
 local output_ratio = tonumber(vim.fn.expand("$AGENTX_TUI_OUTPUT_SPLIT_RATIO")) or 0.70
 if output_ratio <= 0 or output_ratio >= 1 then
     output_ratio = 0.70
@@ -554,14 +554,41 @@ local function append_output(lines)
     if not lines or #lines == 0 then
         return
     end
+
+    -- Neovim may deliver partial stdout chunks. Append chunk fragments to the
+    -- current buffer line and only create new lines for explicit separators.
+    local function append_to_current_line(text)
+        if not text or text == "" then
+            return
+        end
+        local line_count = vim.api.nvim_buf_line_count(output_buf)
+        if line_count <= 0 then
+            vim.api.nvim_buf_set_lines(output_buf, 0, -1, false, { text })
+            return
+        end
+        local last_idx = line_count - 1
+        local current = vim.api.nvim_buf_get_lines(output_buf, last_idx, last_idx + 1, false)[1] or ""
+        vim.api.nvim_buf_set_lines(output_buf, last_idx, last_idx + 1, false, { current .. text })
+    end
+
+    local function append_newline()
+        vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, { "" })
+    end
+
     vim.bo[output_buf].modifiable = true
-    vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, lines)
+    for idx, piece in ipairs(lines) do
+        local is_last = idx == #lines
+        append_to_current_line(piece)
+        if not is_last then
+            append_newline()
+        end
+    end
     vim.bo[output_buf].modifiable = false
     local line_count = vim.api.nvim_buf_line_count(output_buf)
     vim.api.nvim_win_set_cursor(output_win, { line_count, 0 })
 end
 
-vim.fn.jobstart({ "bash", "-lc", string.format("cat %q", output_fifo) }, {
+vim.fn.jobstart({ "bash", "-lc", string.format("while true; do cat %q; done", output_fifo) }, {
     stdout_buffered = false,
     on_stdout = function(_, data)
         if data then
@@ -576,7 +603,7 @@ end
 
 local function submit_input()
     local lines = vim.api.nvim_buf_get_lines(input_buf, 0, -1, false)
-    local text = table.concat(lines, "\\n")
+    local text = table.concat(lines, "\n")
     if text:match("^%s*$") then
         return
     end
