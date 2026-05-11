@@ -300,7 +300,7 @@ class TestSaveEnabledState:
         assert output_file.exists()
         saved_content = output_file.read_text()
         assert "[tools.cst]" in saved_content
-        assert 'enabled = false' in saved_content
+        assert "enabled = false" in saved_content
 
 
 class TestExportState:

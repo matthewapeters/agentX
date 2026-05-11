@@ -77,10 +77,7 @@ class ToolRegistry:
         Returns:
             List of tool definitions with name, description, category, and enabled status.
         """
-        return [
-            {**tool, "enabled": self.enabled_state.get(name, True)}
-            for name, tool in self.tools.items()
-        ]
+        return [{**tool, "enabled": self.enabled_state.get(name, True)} for name, tool in self.tools.items()]
 
     def get_enabled_tools(self) -> list[dict[str, Any]]:
         """Get only enabled tools.
@@ -88,11 +85,7 @@ class ToolRegistry:
         Returns:
             List of enabled tool definitions.
         """
-        return [
-            {**tool, "enabled": True}
-            for name, tool in self.tools.items()
-            if self.enabled_state.get(name, True)
-        ]
+        return [{**tool, "enabled": True} for name, tool in self.tools.items() if self.enabled_state.get(name, True)]
 
     def get_enabled_tool_names(self) -> list[str]:
         """Get list of enabled tool names.
@@ -100,9 +93,7 @@ class ToolRegistry:
         Returns:
             List of tool names that are currently enabled.
         """
-        return [
-            name for name, enabled in self.enabled_state.items() if enabled
-        ]
+        return [name for name, enabled in self.enabled_state.items() if enabled]
 
     def toggle_tool(self, tool_name: str, enabled: bool) -> bool:
         """Enable or disable a tool.
@@ -169,12 +160,7 @@ class ToolRegistry:
             output_path: Path to save state to. If None, uses registry config path.
         """
         output = output_path or self.config_path
-        state = {
-            "tools": {
-                name: {"enabled": self.enabled_state.get(name, True)}
-                for name in self.tools
-            }
-        }
+        state = {"tools": {name: {"enabled": self.enabled_state.get(name, True)} for name in self.tools}}
         with open(output, "w") as f:
             toml.dump(state, f)
 

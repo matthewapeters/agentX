@@ -210,9 +210,7 @@ class TestBuiltinRegisterTool:
         THEN JSON with success status and tool list is returned.
         """
         manager = ToolRegistryManager(str(temp_tools_config))
-        result = manager.builtin_register_tool(
-            "my_tool", description="Test tool", category="user"
-        )
+        result = manager.builtin_register_tool("my_tool", description="Test tool", category="user")
 
         data = json.loads(result)
         assert data["status"] == "success"

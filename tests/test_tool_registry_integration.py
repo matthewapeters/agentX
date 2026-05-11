@@ -48,9 +48,7 @@ class TestToolRegistryBridgeIntegration:
         THEN the callback is invoked to update bridge.
         """
         callback = MagicMock()
-        manager = ToolRegistryManager(
-            str(temp_tools_config), on_registry_change=callback
-        )
+        manager = ToolRegistryManager(str(temp_tools_config), on_registry_change=callback)
 
         manager.toggle_tool("ast", enabled=True)
 
@@ -170,9 +168,7 @@ class TestToolRegistryBridgeIntegration:
         assert "custom_tool" in [t["name"] for t in manager.get_available_tools()]
 
         # Operation 3: Verify custom tool is disabled
-        custom = next(
-            t for t in manager.get_available_tools() if t["name"] == "custom_tool"
-        )
+        custom = next(t for t in manager.get_available_tools() if t["name"] == "custom_tool")
         assert custom["enabled"] is False
 
         # Operation 4: Toggle new tool to enabled
@@ -184,6 +180,4 @@ class TestToolRegistryBridgeIntegration:
         manager.builtin_reload_tools()
         enabled = manager.get_enabled_tool_names()
         assert "ast" not in enabled  # Back to disabled
-        assert "custom_tool" not in [
-            t["name"] for t in manager.get_available_tools()
-        ]  # Gone
+        assert "custom_tool" not in [t["name"] for t in manager.get_available_tools()]  # Gone

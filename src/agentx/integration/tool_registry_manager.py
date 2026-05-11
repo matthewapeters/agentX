@@ -129,9 +129,7 @@ class ToolRegistryManager:
         if not tool_name:
             return json.dumps({"status": "error", "message": "tool_name is required"})
 
-        success = self.registry.register_tool(
-            tool_name, description=description, category=category, enabled=enabled
-        )
+        success = self.registry.register_tool(tool_name, description=description, category=category, enabled=enabled)
 
         if not success:
             return json.dumps(
