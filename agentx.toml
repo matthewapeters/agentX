@@ -24,3 +24,9 @@ lua = [ "output_win", "input_win",]
 
 [terminal]
 exec_mode = "autonomous"
+
+[tool_registry]
+search_paths = [
+	"./agentx_tools.toml",
+	"~/.agentx/agentx_tools.toml",
+]

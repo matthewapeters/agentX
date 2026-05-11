@@ -148,9 +148,7 @@ class ToolDiagnostics:
                 "critical_tools": list(critical_tools),
                 "missing_critical_tools": list(missing),
                 "builtin_tools": [
-                    t.get("name")
-                    for t in available_tools
-                    if t.get("name") in {"reload_tools", "register_tool"}
+                    t.get("name") for t in available_tools if t.get("name") in {"reload_tools", "register_tool"}
                 ],
             }
         except Exception as e:
@@ -219,9 +217,7 @@ class ToolDiagnostics:
         # Check for critical issues
         for phase_result in self.diagnostics:
             if phase_result.get("status") == "error":
-                issues.append(
-                    f"ERROR in {phase_result['phase']}: {phase_result.get('error')}"
-                )
+                issues.append(f"ERROR in {phase_result['phase']}: {phase_result.get('error')}")
             elif phase_result.get("status") == "warning":
                 if missing := phase_result.get("missing_critical_tools"):
                     issues.append(f"WARNING: Missing critical tools: {missing}")

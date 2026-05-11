@@ -8,6 +8,7 @@ import json
 from typing import Any, Callable, Optional
 
 from src.agentx.tool_registry import ToolRegistry
+from src.agentx.tool_diagnostics import create_tool_diagnostics
 
 
 class ToolRegistryManager:
@@ -29,6 +30,7 @@ class ToolRegistryManager:
         self,
         config_path: Optional[str] = None,
         on_registry_change: Optional[Callable[[], None]] = None,
+        bridge: Optional[Any] = None,
     ):
         """
         Initialize tool registry manager.
@@ -38,9 +40,11 @@ class ToolRegistryManager:
             on_registry_change: Callback invoked when registry state changes
                 (tool toggled, registered, or reloaded). Used to update bridge
                 and UI.
+            bridge: Optional AgentixBridge instance used by builtin_diagnose_tools.
         """
         self.registry = ToolRegistry(config_path)
         self.on_registry_change = on_registry_change or (lambda: None)
+        self.bridge = bridge
 
     def get_available_tools(self) -> list[dict[str, Any]]:
         """Get all tools (both enabled and disabled).
@@ -114,6 +118,12 @@ class ToolRegistryManager:
         description: str = "",
         category: str = "user",
         enabled: bool = True,
+        scope: str = "project",
+        source_path: str = "",
+        runtime: str = "python",
+        entrypoint: str = "",
+        input_schema: Optional[dict[str, Any]] = None,
+        output_schema: Optional[dict[str, Any]] = None,
     ) -> str:
         """Built-in tool: register a new tool dynamically.
 
@@ -122,6 +132,12 @@ class ToolRegistryManager:
             description: Human-readable description.
             category: Tool category.
             enabled: Whether the tool is enabled by default.
+            scope: Tool scope (universal, user, project, session).
+            source_path: Path to the tool implementation file.
+            runtime: Runtime used to execute the tool implementation.
+            entrypoint: Callable/function entrypoint.
+            input_schema: JSON-schema-like tool input schema.
+            output_schema: JSON-schema-like tool output schema.
 
         Returns:
             JSON result with status and updated tool list.
@@ -129,7 +145,19 @@ class ToolRegistryManager:
         if not tool_name:
             return json.dumps({"status": "error", "message": "tool_name is required"})
 
-        success = self.registry.register_tool(tool_name, description=description, category=category, enabled=enabled)
+        success = self.registry.register_tool(
+            tool_name,
+            description=description,
+            category=category,
+            enabled=enabled,
+            scope=scope,
+            source_path=source_path or None,
+            runtime=runtime,
+            entrypoint=entrypoint or None,
+            input_schema=input_schema,
+            output_schema=output_schema,
+            persist=True,
+        )
 
         if not success:
             return json.dumps(
@@ -151,6 +179,27 @@ class ToolRegistryManager:
             }
         )
 
+    def builtin_diagnose_tools(self) -> str:
+        """Built-in tool: diagnose tool pipeline health.
+
+        Runs a full diagnostic suite that verifies registry state, bridge
+        registration, LLM tool visibility, and end-to-end tool execution.
+
+        Returns:
+            JSON diagnostic report.
+        """
+        if self.bridge is None:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "Bridge is not configured for diagnostics",
+                }
+            )
+
+        diagnostics = create_tool_diagnostics(self.bridge, self)
+        report = diagnostics.run_full_diagnostic()
+        return json.dumps(report)
+
     def get_builtin_tool_implementations(self) -> dict[str, Callable]:
         """Get built-in tool implementations for bridge registration.
 
@@ -160,4 +209,5 @@ class ToolRegistryManager:
         return {
             "reload_tools": self.builtin_reload_tools,
             "register_tool": self.builtin_register_tool,
+            "diagnose_tools": self.builtin_diagnose_tools,
         }

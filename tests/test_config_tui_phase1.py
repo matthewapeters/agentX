@@ -41,6 +41,29 @@ host = "localhost:8000"
     assert config["tui"]["output_split_ratio"] == 0.70
     assert config["tui"]["write_timeout_sec"] == 0.1
     assert config["tui"]["show_thinking"] is False
+    assert config["tool_registry"]["search_paths"]
+
+
+def test_load_config_rejects_invalid_tool_registry_search_paths(tmp_path: Path) -> None:
+    """GIVEN invalid tool_registry.search_paths WHEN loaded THEN ConfigurationError is raised."""
+    config_path = tmp_path / "agentx.toml"
+    _write_config(
+        config_path,
+        """
+[agentx]
+ollama_host = "localhost:11434"
+ollama_model = "gpt-oss:latest"
+
+[tui]
+enable = true
+
+[tool_registry]
+search_paths = [""]
+""".strip(),
+    )
+
+    with pytest.raises(ConfigurationError, match="search_paths"):
+        load_config(str(config_path))
 
 
 def test_load_config_rejects_both_gui_and_tui_disabled(tmp_path: Path) -> None:

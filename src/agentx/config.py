@@ -5,6 +5,10 @@ from typing import Any
 import toml
 
 DEFAULT_CONFIG = "agentx.toml"
+DEFAULT_TOOL_REGISTRY_SEARCH_PATHS = [
+    "./agentx_tools.toml",
+    "~/.agentx/agentx_tools.toml",
+]
 
 
 class ConfigurationError(ValueError):
@@ -59,6 +63,11 @@ def apply_config_defaults(config: dict[str, Any]) -> dict[str, Any]:
     tui.setdefault("write_timeout_sec", 0.1)
     tui.setdefault("show_thinking", False)
 
+    tool_registry = config.setdefault("tool_registry", {})
+    if not isinstance(tool_registry, dict):
+        raise ConfigurationError("[tool_registry] section must be a table")
+    tool_registry.setdefault("search_paths", list(DEFAULT_TOOL_REGISTRY_SEARCH_PATHS))
+
     # Environment variable overrides for TUI runtime control.
     env_enable = os.getenv("AGENTX_TUI_ENABLE")
     if env_enable is not None:
@@ -90,6 +99,7 @@ def validate_config(config: dict[str, Any]) -> None:
     """
     agentx = config.get("agentx", {})
     tui = config.get("tui", {})
+    tool_registry = config.get("tool_registry", {})
 
     enable_gui_chat = bool(agentx.get("enable_gui_chat", True))
     enable_tui = bool(tui.get("enable", False))
@@ -100,6 +110,14 @@ def validate_config(config: dict[str, Any]) -> None:
 
     if not enable_gui_chat and not enable_tui:
         raise ConfigurationError("Invalid config: enable_gui_chat=false requires tui.enable=true")
+
+    search_paths = tool_registry.get("search_paths", [])
+    if (
+        not isinstance(search_paths, list)
+        or not search_paths
+        or any(not isinstance(path, str) or not path.strip() for path in search_paths)
+    ):
+        raise ConfigurationError("[tool_registry].search_paths must be a non-empty list of non-empty strings")
 
 
 def load_config(config_path=DEFAULT_CONFIG):

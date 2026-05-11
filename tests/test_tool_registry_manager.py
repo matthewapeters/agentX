@@ -269,6 +269,39 @@ class TestBuiltinRegisterTool:
         assert tool["category"] == "user"
         assert manager.registry.enabled_state["minimal_tool"] is True
 
+    def test_register_external_tool_persists_metadata(self, temp_tools_config):
+        """
+        GIVEN a user-created script and complete tool metadata
+        WHEN calling builtin_register_tool()
+        THEN metadata is persisted to TOML and visible after reload.
+        """
+        manager = ToolRegistryManager(str(temp_tools_config))
+
+        result = manager.builtin_register_tool(
+            "extract_todos",
+            description="Extract TODO comments",
+            category="analysis",
+            enabled=True,
+            scope="project",
+            source_path="tools/extract_todos.py",
+            runtime="python",
+            entrypoint="main",
+            input_schema={"type": "object", "required": ["path"]},
+            output_schema={"type": "object", "required": ["todos"]},
+        )
+
+        data = json.loads(result)
+        assert data["status"] == "success"
+
+        reloaded = ToolRegistryManager(str(temp_tools_config))
+        tool = reloaded.registry.tools["extract_todos"]
+        assert tool["scope"] == "project"
+        assert tool["source_path"] == "tools/extract_todos.py"
+        assert tool["runtime"] == "python"
+        assert tool["entrypoint"] == "main"
+        assert tool["input_schema"]["required"] == ["path"]
+        assert tool["output_schema"]["required"] == ["todos"]
+
 
 class TestGetBuiltinToolImplementations:
     """Test retrieval of built-in tool implementations."""
@@ -277,12 +310,62 @@ class TestGetBuiltinToolImplementations:
         """
         GIVEN a manager
         WHEN calling get_builtin_tool_implementations()
-        THEN dictionary with reload_tools and register_tool is returned.
+        THEN dictionary with reload_tools, register_tool, and diagnose_tools is returned.
         """
         manager = ToolRegistryManager(str(temp_tools_config))
         impls = manager.get_builtin_tool_implementations()
 
         assert "reload_tools" in impls
         assert "register_tool" in impls
+        assert "diagnose_tools" in impls
         assert callable(impls["reload_tools"])
         assert callable(impls["register_tool"])
+        assert callable(impls["diagnose_tools"])
+
+
+class TestBuiltinDiagnoseTools:
+    """Test built-in diagnose_tools implementation."""
+
+    def test_diagnose_tools_requires_bridge(self, temp_tools_config):
+        """
+        GIVEN a manager without bridge
+        WHEN calling builtin_diagnose_tools()
+        THEN JSON with error status is returned.
+        """
+        manager = ToolRegistryManager(str(temp_tools_config))
+
+        result = manager.builtin_diagnose_tools()
+        data = json.loads(result)
+
+        assert data["status"] == "error"
+        assert "Bridge is not configured" in data["message"]
+
+    def test_diagnose_tools_returns_report(self, temp_tools_config):
+        """
+        GIVEN a manager with bridge and registry tools
+        WHEN calling builtin_diagnose_tools()
+        THEN JSON report with phases is returned.
+        """
+        bridge = MagicMock()
+        bridge.get_available_tools.return_value = [
+            {"name": "read_file"},
+            {"name": "write_file"},
+            {"name": "diagnose_tools"},
+        ]
+
+        def execute_tool(tool_name, arguments):
+            if tool_name == "write_file":
+                return "ok"
+            if tool_name == "read_file":
+                return "AgentX tool diagnostic test"
+            raise ValueError("unexpected tool")
+
+        bridge.execute_tool.side_effect = execute_tool
+
+        manager = ToolRegistryManager(str(temp_tools_config), bridge=bridge)
+        result = manager.builtin_diagnose_tools()
+        data = json.loads(result)
+
+        assert "status" in data
+        assert "phases" in data
+        assert len(data["phases"]) == 4

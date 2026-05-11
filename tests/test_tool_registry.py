@@ -6,12 +6,11 @@ THEN the registry correctly maintains tool definitions and enabled state.
 """
 
 import json
-import pytest
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
-from src.agentx.tool_registry import ToolRegistry
+import pytest
+
+from src.agentx.tool_registry import DEFAULT_AGENTX_TOOLS_TOML, ToolRegistry
 
 
 @pytest.fixture
@@ -62,15 +61,18 @@ class TestToolRegistryInit:
         assert registry.enabled_state["ast"] is False
         assert registry.enabled_state["read_file"] is True
 
-    def test_load_missing_config_raises_error(self, tmp_path):
+    def test_load_missing_config_regenerates_default(self, tmp_path):
         """
         GIVEN a non-existent config file path
         WHEN creating a ToolRegistry
-        THEN FileNotFoundError is raised.
+        THEN the default config is regenerated verbatim at that path.
         """
         missing_path = tmp_path / "nonexistent.toml"
-        with pytest.raises(FileNotFoundError):
-            ToolRegistry(str(missing_path))
+        registry = ToolRegistry(str(missing_path))
+
+        assert registry.config_path == missing_path
+        assert missing_path.exists()
+        assert missing_path.read_text(encoding="utf-8") == DEFAULT_AGENTX_TOOLS_TOML
 
     def test_load_invalid_toml_raises_error(self, tmp_path):
         """
@@ -126,6 +128,40 @@ class TestGetTools:
         names = registry.get_enabled_tool_names()
 
         assert names == ["cst", "read_file"]
+
+
+class TestRegistryPathResolution:
+    """Test default config resolution via agentx.toml search paths."""
+
+    def test_resolve_search_paths_from_agentx_config(self, tmp_path, monkeypatch):
+        """
+        GIVEN agentx.toml search paths with no existing registry files
+        WHEN creating ToolRegistry() without explicit config path
+        THEN the first configured path is created from baked defaults.
+        """
+        monkeypatch.chdir(tmp_path)
+
+        configured = tmp_path / "config" / "agentx_tools.toml"
+        (tmp_path / "agentx.toml").write_text(
+            """
+[agentx]
+ollama_host = "localhost:11434"
+ollama_model = "qwen3.6:latest"
+
+[tui]
+enable = true
+
+[tool_registry]
+search_paths = ["./config/agentx_tools.toml", "~/.agentx/fallback.toml"]
+""".strip(),
+            encoding="utf-8",
+        )
+
+        registry = ToolRegistry()
+
+        assert registry.config_path == configured
+        assert configured.exists()
+        assert configured.read_text(encoding="utf-8") == DEFAULT_AGENTX_TOOLS_TOML
 
 
 class TestToggleTool:
@@ -227,6 +263,96 @@ class TestRegisterTool:
         assert registry.tools["minimal_tool"]["description"] == ""
         assert registry.tools["minimal_tool"]["category"] == "user"
         assert registry.enabled_state["minimal_tool"] is True
+
+    def test_register_tool_with_extended_metadata_and_persist(self, temp_tools_config):
+        """
+        GIVEN a user-created Python script path and complete schema metadata
+        WHEN calling register_tool() with persist=True
+        THEN the tool is added in memory and written to agentx_tools.toml.
+        """
+        registry = ToolRegistry(str(temp_tools_config))
+
+        input_schema = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+            },
+            "required": ["path"],
+        }
+        output_schema = {
+            "type": "object",
+            "properties": {
+                "todos": {"type": "array"},
+            },
+            "required": ["todos"],
+        }
+
+        result = registry.register_tool(
+            "extract_todos",
+            description="Extract TODO comments from files",
+            category="analysis",
+            enabled=True,
+            scope="project",
+            source_path="tools/extract_todos.py",
+            runtime="python",
+            entrypoint="main",
+            input_schema=input_schema,
+            output_schema=output_schema,
+            persist=True,
+        )
+
+        assert result is True
+        assert registry.tools["extract_todos"]["scope"] == "project"
+        assert registry.tools["extract_todos"]["source_path"] == "tools/extract_todos.py"
+        assert registry.tools["extract_todos"]["runtime"] == "python"
+        assert registry.tools["extract_todos"]["entrypoint"] == "main"
+        assert registry.tools["extract_todos"]["input_schema"]["required"] == ["path"]
+        assert registry.tools["extract_todos"]["output_schema"]["required"] == ["todos"]
+
+        persisted = ToolRegistry(str(temp_tools_config))
+        assert "extract_todos" in persisted.tools
+        assert persisted.tools["extract_todos"]["scope"] == "project"
+        assert persisted.tools["extract_todos"]["source_path"] == "tools/extract_todos.py"
+
+
+class TestExtendedSchemaLoad:
+    """Test loading extended schema fields from TOML."""
+
+    def test_load_extended_tool_schema(self, tmp_path):
+        """
+        GIVEN a TOML tool definition with scope/path/runtime/entrypoint and I/O schema
+        WHEN creating ToolRegistry
+        THEN extended fields are loaded and normalized.
+        """
+        config_file = tmp_path / "agentx_tools.toml"
+        config_file.write_text("""
+[tools.my_tool]
+description = "My external tool"
+category = "user"
+enabled = true
+scope = "user"
+source_path = "~/.agentx/tools/user/my_tool.py"
+runtime = "python"
+entrypoint = "run"
+
+[tools.my_tool.input_schema]
+type = "object"
+required = ["name"]
+
+[tools.my_tool.output_schema]
+type = "object"
+required = ["result"]
+""")
+
+        registry = ToolRegistry(str(config_file))
+        tool = registry.tools["my_tool"]
+
+        assert tool["scope"] == "user"
+        assert tool["source_path"] == "~/.agentx/tools/user/my_tool.py"
+        assert tool["runtime"] == "python"
+        assert tool["entrypoint"] == "run"
+        assert tool["input_schema"]["required"] == ["name"]
+        assert tool["output_schema"]["required"] == ["result"]
 
 
 class TestReloadTools:

@@ -176,8 +176,12 @@ class TestToolRegistryBridgeIntegration:
         enabled = manager.get_enabled_tool_names()
         assert "custom_tool" in enabled
 
-        # Operation 5: Reload (should reset all)
+        # Operation 5: Reload (should reset toggles to config defaults)
         manager.builtin_reload_tools()
         enabled = manager.get_enabled_tool_names()
         assert "ast" not in enabled  # Back to disabled
-        assert "custom_tool" not in [t["name"] for t in manager.get_available_tools()]  # Gone
+
+        # Registered tools now persist to config and remain available after reload.
+        assert "custom_tool" in [t["name"] for t in manager.get_available_tools()]
+        custom = next(t for t in manager.get_available_tools() if t["name"] == "custom_tool")
+        assert custom["enabled"] is False

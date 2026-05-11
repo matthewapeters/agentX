@@ -1,6 +1,6 @@
 # TOOLS ISSUES
 
-_Last updated: 2026-05-11 (v0.40.0)_
+_Last updated: 2026-05-11 (v0.44.0)_
 
 This file tracks non-UX tool and tooling issues (tool registry, tool exposure, tool intent routing, and editor-tool integrations).
 
@@ -49,9 +49,14 @@ This backlog is organized by dependency order. Complete items in sequence to min
   - **Tests**: 39 unit tests + integration tests (all passing)
   - **Config**: `agentx_tools.toml` defines built-in tools (cst, ast, read_file, write_file, list_directory, get_file_info, search_files)
 
-**[ ] Phase 2: Tool Execution Diagnostics**
+**[/] Phase 2: Tool Execution Diagnostics**
 
-- [ ] **P2-001**: Agent does not seem able to create or edit files. Verify end-to-end tool wiring from tool discovery (in registry) to execution. Add explicit diagnostics for missing tool exposure. Use `read_file`, `write_file` as test cases. Ensure agent can invoke them end-to-end.
+- [/] **P2-001**: Agent does not seem able to create or edit files. Verify end-to-end tool wiring from tool discovery (in registry) to execution. Add explicit diagnostics for missing tool exposure. Use `read_file`, `write_file` as test cases. Ensure agent can invoke them end-to-end.
+  - **Implementation**: `src/agentx/tool_diagnostics.py` — ToolDiagnostics class with 4-phase suite (registry, bridge, availability, execution)
+  - **Built-in tool wiring**: `diagnose_tools()` added to ToolRegistryManager and registered in bridge schemas
+  - **Integration**: ToolRegistryManager now receives bridge reference for runtime diagnostics
+  - **Verification**: targeted tests pass for manager + integration + diagnostics suites
+  - **Status**: Ready for UAT (agent can self-diagnose tool pipeline health)
 
 **[ ] Phase 3: Vibe-Editor Intent Routing**
 

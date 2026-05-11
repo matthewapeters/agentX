@@ -1,6 +1,25 @@
 # AgentX Dynamic Tool Registry
 # Define available tools that the agent can invoke.
-# Each tool must have a unique name and can optionally include description, category, and enabled status.
+# Each tool must have a unique name.
+#
+# Extended tool schema fields:
+# - description: human-readable tool description
+# - category: logical category for UI grouping
+# - enabled: whether the tool is currently available
+# - scope: universal | user | project | session
+# - source_path: path to implementation script/module
+# - runtime: execution runtime (python, shell, etc)
+# - entrypoint: callable reference (module:function or function name)
+# - input_schema: JSON-schema-like object for parameters
+# - output_schema: JSON-schema-like object for return shape
+
+schema_version = "1.1"
+
+[tool_paths]
+universal = "~/.agentx/tools/universal"
+user = "~/.agentx/tools/user"
+project = "./tools"
+session = "./sessions/_tools"
 
 [tools.cst]
 description = "Concrete Syntax Tree analysis - parse and analyze code structure"
@@ -37,7 +56,29 @@ description = "Search for files matching patterns"
 category = "filesystem"
 enabled = true
 
+# Example external Python tool registration:
+# [tools.extract_todos]
+# description = "Extract TODO comments from source files"
+# category = "analysis"
+# enabled = true
+# scope = "project"
+# source_path = "tools/extract_todos.py"
+# runtime = "python"
+# entrypoint = "main"
+# [tools.extract_todos.input_schema]
+# type = "object"
+# required = ["path"]
+# [tools.extract_todos.input_schema.properties.path]
+# type = "string"
+# description = "Root path to scan"
+# [tools.extract_todos.output_schema]
+# type = "object"
+# required = ["todos"]
+# [tools.extract_todos.output_schema.properties.todos]
+# type = "array"
+
 # Built-in system tools (always available, not overrideable)
 [system_tools]
 reload_tools = true
 register_tool = true
+diagnose_tools = true

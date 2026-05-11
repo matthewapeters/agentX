@@ -117,6 +117,7 @@ class SettingsTab:
         self._terminal_allow_text: tk.Text | None = None
         self._terminal_confirm_text: tk.Text | None = None
         self._terminal_deny_text: tk.Text | None = None
+        self._tool_registry_paths_text: tk.Text | None = None
 
         # Build all sections.
         self._build_appearance_section()
@@ -125,6 +126,7 @@ class SettingsTab:
         self._build_classification_display_section()
         self._build_working_memory_section()
         self._build_tui_section()
+        self._build_tool_registry_section()
         self._build_terminal_execution_section()
 
         # Apply initial torch-field greyout.
@@ -393,6 +395,32 @@ class SettingsTab:
             bool(cfg.get("show_thinking", False)),
         )
 
+    def _build_tool_registry_section(self) -> None:
+        """Render tool registry config controls."""
+        cfg = self._config.get("tool_registry", {})
+        section = self._make_section("🧰 Tool Registry", initial_collapsed=True)
+        g = section.content_container
+
+        self._add_separator(g, 0, "Search paths (one path per line, in priority order)")
+
+        lists_row = tk.Frame(g, bg=self._bg)
+        lists_row.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(8, 8), pady=(2, 2))
+        lists_row.columnconfigure(0, weight=1)
+
+        self._tool_registry_paths_text = self._create_terminal_prefix_editor(
+            parent=lists_row,
+            column=0,
+            title="agentx_tools.toml search paths",
+            values=cfg.get("search_paths", []),
+        )
+
+        action_row = tk.Frame(g, bg=self._bg)
+        action_row.grid(row=2, column=0, columnspan=2, sticky="w", padx=(8, 8), pady=(4, 6))
+        tk.Button(action_row, text="Save Paths", command=self._save_tool_registry_paths).pack(side=tk.LEFT)
+        tk.Button(action_row, text="Reset Defaults", command=self._reset_tool_registry_paths).pack(
+            side=tk.LEFT, padx=(6, 0)
+        )
+
     def _build_terminal_execution_section(self) -> None:
         """Render terminal execution controls. [PD-15-AF-005]"""
         cfg = self._config.get("terminal", {})
@@ -530,6 +558,20 @@ class SettingsTab:
             widget.delete("1.0", tk.END)
             widget.insert("1.0", "\n".join(values))
         self._save_terminal_permission_lists()
+
+    def _save_tool_registry_paths(self) -> None:
+        """Persist tool registry search paths from settings UI."""
+        paths = self._read_terminal_prefixes(self._tool_registry_paths_text)
+        self._fire(["tool_registry", "search_paths"], paths)
+
+    def _reset_tool_registry_paths(self) -> None:
+        """Restore default tool registry search paths."""
+        defaults = ["./agentx_tools.toml", "~/.agentx/agentx_tools.toml"]
+        if self._tool_registry_paths_text is None:
+            return
+        self._tool_registry_paths_text.delete("1.0", tk.END)
+        self._tool_registry_paths_text.insert("1.0", "\n".join(defaults))
+        self._save_tool_registry_paths()
 
     # ──────────────────────────────────────────────────────────────────────────
     # Widget factory helpers

@@ -143,6 +143,7 @@ class AgentixBridgeAdapter:
             self.tool_registry_manager = ToolRegistryManager(
                 config_path="agentx_tools.toml",
                 on_registry_change=on_registry_change,
+                bridge=self.bridge,
             )
 
             impls = self.tool_registry_manager.get_builtin_tool_implementations()
@@ -180,8 +181,41 @@ class AgentixBridgeAdapter:
                                 "type": "boolean",
                                 "description": "Whether tool is enabled by default",
                             },
+                            "scope": {
+                                "type": "string",
+                                "description": "Tool scope (universal, user, project, session)",
+                            },
+                            "source_path": {
+                                "type": "string",
+                                "description": "Path to tool implementation file",
+                            },
+                            "runtime": {
+                                "type": "string",
+                                "description": "Tool runtime (e.g., python)",
+                            },
+                            "entrypoint": {
+                                "type": "string",
+                                "description": "Callable/function entrypoint (e.g., module:function)",
+                            },
+                            "input_schema": {
+                                "type": "object",
+                                "description": "JSON-schema-like input schema for the tool",
+                            },
+                            "output_schema": {
+                                "type": "object",
+                                "description": "JSON-schema-like output schema for the tool",
+                            },
                         },
                         "required": ["tool_name"],
+                    },
+                },
+                {
+                    "name": "diagnose_tools",
+                    "description": "Run diagnostics for tool registration and execution pipeline",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
                     },
                 },
             ]

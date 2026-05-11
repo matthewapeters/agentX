@@ -2,6 +2,11 @@
 
 These tools are always available to the agent for discovering and managing
 available tools dynamically.
+
+Built-in tools:
+- reload_tools(): Reload tool definitions from configuration
+- register_tool(): Dynamically register a new tool definition
+- diagnose_tools(): Run pipeline diagnostics for tool availability and execution
 """
 
 from typing import Any
@@ -58,3 +63,15 @@ def register_tool(
         {"status": "success", "tool_registered": "analyze_performance"}
     """
     return '{"status": "success", "message": "Tool registered"}'
+
+
+def diagnose_tools() -> str:
+    """Run diagnostics for the tool pipeline.
+
+    Verifies that tools are discoverable in the registry, registered with the
+    bridge, visible to the LLM, and executable end-to-end.
+
+    Returns:
+        JSON string with diagnostic report and identified issues.
+    """
+    return '{"status": "ok", "summary": "Tool diagnostics completed"}'
