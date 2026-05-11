@@ -1,0 +1,43 @@
+# AgentX Dynamic Tool Registry
+# Define available tools that the agent can invoke.
+# Each tool must have a unique name and can optionally include description, category, and enabled status.
+
+[tools.cst]
+description = "Concrete Syntax Tree analysis - parse and analyze code structure"
+category = "code-analysis"
+enabled = true
+
+[tools.ast]
+description = "Abstract Syntax Tree analysis - analyze code semantics"
+category = "code-analysis"
+enabled = true
+
+[tools.read_file]
+description = "Read file contents"
+category = "filesystem"
+enabled = true
+
+[tools.write_file]
+description = "Write or create files"
+category = "filesystem"
+enabled = true
+
+[tools.list_directory]
+description = "List directory contents"
+category = "filesystem"
+enabled = true
+
+[tools.get_file_info]
+description = "Get file metadata (size, permissions, timestamps)"
+category = "filesystem"
+enabled = true
+
+[tools.search_files]
+description = "Search for files matching patterns"
+category = "filesystem"
+enabled = true
+
+# Built-in system tools (always available, not overrideable)
+[system_tools]
+reload_tools = true
+register_tool = true

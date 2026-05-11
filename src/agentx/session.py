@@ -797,19 +797,27 @@ class AgentXSession:
         except Exception as e:
             logger.exception("Error loading models: %s", e)
 
-        # Register tool-toggle callback through the protocol interface.
-        def on_tool_toggle(tool_name: str, enabled: bool):
-            enabled_tools = self.gui.get_enabled_tools()
-            self.config["agentix"]["available_tools"] = enabled_tools
-            self.agentix_adapter.set_enabled_tools(enabled_tools)
-
-        self.gui.set_tool_toggle_callback(on_tool_toggle)
-
-        # Populate tools from Agentix
+        # Populate tools from registry
         try:
-            tools = self.agentix_adapter.get_tools()
-            if tools:
-                self.gui.populate_tools(tools)
+            if self.agentix_adapter.tool_registry_manager:
+                registry_manager = self.agentix_adapter.tool_registry_manager
+
+                # Populate UI with all tools (enabled and disabled)
+                all_tools = registry_manager.get_available_tools()
+                if all_tools:
+                    self.gui.populate_tools(all_tools)
+
+                # Register tool-toggle callback to update registry and bridge
+                def on_tool_toggle(tool_name: str, enabled: bool):
+                    registry_manager.toggle_tool(tool_name, enabled)
+                    # Bridge updates automatically via registry callback
+
+                self.gui.set_tool_toggle_callback(on_tool_toggle)
+            else:
+                # Fallback if registry manager is not initialized
+                tools = self.agentix_adapter.get_tools()
+                if tools:
+                    self.gui.populate_tools(tools)
         except Exception as e:
             logger.exception("Error loading tools: %s", e)
 

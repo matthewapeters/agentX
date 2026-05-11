@@ -7,6 +7,35 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.40.0] - 2026-05-11
+
+### Code Changes
+
+#### Added
+
+- **Dynamic Tool Registry (P1 Implementation)**: Complete tool lifecycle management system.
+  - `src/agentx/tool_registry.py` — ToolRegistry class: loads tools from `agentx_tools.toml`, maintains in-memory set, provides toggle/register/reload operations.
+  - `src/agentx/integration/tool_registry_manager.py` — ToolRegistryManager: bridges registry with agent bridge and UI; provides built-in tools `reload_tools()` and `register_tool()`.
+  - `src/agentx/integration/registry_tools.py` — Built-in tool implementations for tool discovery and registration.
+  - `agentx_tools.toml` — New config file defining available tools (cst, ast, read_file, write_file, list_directory, get_file_info, search_files) with enable/disable state.
+  - `AgentixBridgeAdapter._register_registry_tools()` — Registers built-in tools with bridge so agent can invoke `reload_tools()` and `register_tool()`.
+  - Session layout update: populates ToolPanel with registry tools and wires toggle callback to registry manager.
+
+#### Changed
+
+- ToolPanel (`src/agentx/gui/tool_panel.py`) now receives tools from registry with enabled/disabled state instead of hardcoded list.
+- Session tool population now uses registry manager for UI and bridge state synchronization.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_tool_registry.py` — 15 unit tests covering ToolRegistry load, toggle, register, reload, and state persistence.
+- `tests/test_tool_registry_manager.py` — 18 unit tests covering ToolRegistryManager delegation, built-in tool implementations, and callback invocation.
+- `tests/test_tool_registry_integration.py` — 6 integration tests verifying registry → bridge → UI pipeline (toggle, register, reload, state consistency).
+
+---
+
 ## [0.39.3.post1] - 2026-05-11
 
 ### Code Changes

@@ -65,8 +65,10 @@ class AgentixBridgeAdapter:
         self.config = config
         self.agentix_config = self._convert_config(config)
         self.bridge = AgentixBridge(self.agentix_config)
+        self.tool_registry_manager = None  # Initialized by _register_registry_tools()
         self._register_client_tools()
         self._register_terminal_tools()
+        self._register_registry_tools()
 
     def _register_client_tools(self) -> None:
         """Register client-side file tools with the bridge.
@@ -116,6 +118,77 @@ class AgentixBridgeAdapter:
             self.bridge.register_tool_implementations(impls, schemas)
         except Exception as exc:
             logger.warning("Could not register terminal tools: %s", exc)
+
+    def _register_registry_tools(self) -> None:
+        """Register dynamic tool registry with the bridge.
+
+        Initializes the ToolRegistryManager which:
+        - Loads available tools from agentx_tools.toml
+        - Provides built-in tools: reload_tools, register_tool
+        - Exposes registry to UI (ToolPanel) for enable/disable controls
+
+        The manager is stored as self.tool_registry_manager so the UI can
+        access it to update enabled tools.
+        """
+        try:
+            from agentx.integration.tool_registry_manager import (
+                ToolRegistryManager,
+            )
+
+            def on_registry_change():
+                """Callback when registry state changes - update bridge with new enabled tools."""
+                enabled_names = self.tool_registry_manager.get_enabled_tool_names()
+                self.bridge.set_enabled_tools(enabled_names)
+
+            self.tool_registry_manager = ToolRegistryManager(
+                config_path="agentx_tools.toml",
+                on_registry_change=on_registry_change,
+            )
+
+            impls = self.tool_registry_manager.get_builtin_tool_implementations()
+
+            # Generate tool schemas for built-in tools
+            schemas = [
+                {
+                    "name": "reload_tools",
+                    "description": "Reload available tools from configuration",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                    },
+                },
+                {
+                    "name": "register_tool",
+                    "description": "Dynamically register a new tool",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "tool_name": {
+                                "type": "string",
+                                "description": "Unique name for the tool",
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Human-readable description",
+                            },
+                            "category": {
+                                "type": "string",
+                                "description": "Tool category (e.g., user, filesystem)",
+                            },
+                            "enabled": {
+                                "type": "boolean",
+                                "description": "Whether tool is enabled by default",
+                            },
+                        },
+                        "required": ["tool_name"],
+                    },
+                },
+            ]
+
+            self.bridge.register_tool_implementations(impls, schemas)
+        except Exception as exc:
+            logger.warning("Could not register registry tools: %s", exc)
 
     def register_working_memory_tools(self, working_memory) -> None:
         """Register Working Memory tools with the bridge.
