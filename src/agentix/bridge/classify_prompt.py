@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -15,6 +16,39 @@ from shared.models.context import Context
 from shared.models.working_memory import WorkingMemory
 
 logger = logging.getLogger("agentix.classification")
+
+
+_VIBE_EDITOR_INTENT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:open|edit)\b.*\b(?:vibe(?:\s*editor)?|neovim|nvim|vim)\b", re.IGNORECASE),
+    re.compile(r"\b(?:vibe(?:\s*editor)?|neovim|nvim|vim)\b.*\b(?:open|edit)\b", re.IGNORECASE),
+    re.compile(r"\bopen\b.*\bin\b.*\b(?:editor|vibe(?:\s*editor)?)\b", re.IGNORECASE),
+)
+
+
+def _route_vibe_editor_intent(prompt: str) -> Optional[PromptClassificationResponse]:
+    """Deterministically route explicit vibe-editor intents to single-tool execution.
+
+    Args:
+        prompt: User prompt text.
+
+    Returns:
+        PromptClassificationResponse | None: Forced route when an explicit vibe-editor
+        intent is detected; ``None`` otherwise.
+    """
+    prompt_text = (prompt or "").strip()
+    if not prompt_text:
+        return None
+
+    for pattern in _VIBE_EDITOR_INTENT_PATTERNS:
+        if pattern.search(prompt_text):
+            return PromptClassificationResponse(
+                intent=Intent.simple_action,
+                needs_clarification=False,
+                missing_fields=[],
+                reasoning_summary="Explicit vibe-editor request routed to editor tool path.",
+                next_step=NextStep.single_tool,
+            )
+    return None
 
 
 def _format_working_memory_for_classification(wm: WorkingMemory) -> str:
@@ -76,6 +110,19 @@ def classify_prompt(
             "wm_fact_count": len(working_memory.all_facts()) if working_memory else 0,
         },
     )
+
+    vibe_editor_route = _route_vibe_editor_intent(prompt)
+    if vibe_editor_route is not None:
+        logger.info(
+            "Classification short-circuited by vibe-editor intent routing",
+            extra={
+                "intent": vibe_editor_route.intent.name,
+                "next_step": vibe_editor_route.next_step.name,
+                "reasoning": vibe_editor_route.reasoning_summary,
+                "duration_ms": (datetime.now() - start_time).total_seconds() * 1000,
+            },
+        )
+        return vibe_editor_route
 
     # Use the classification prompt to ask the LLM to classify the user input
     # and determine next steps.  We do this for all user prompts.

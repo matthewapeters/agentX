@@ -5,6 +5,33 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.45.0] - 2026-05-11
+
+### Code Changes
+
+#### Added
+
+- Added deterministic vibe-editor intent routing in classification.
+  - [src/agentix/bridge/classify_prompt.py](src/agentix/bridge/classify_prompt.py)
+    - Added explicit phrase detection for requests such as "open <file> in vibe editor" and editor-first phrasing.
+    - Added short-circuit classification route to `simple_action` + `single_tool` for reliable editor tool routing.
+
+#### Changed
+
+- Updated tool issues tracker status for Phase 3.
+  - [docs/tools/tools_issues.md](docs/tools/tools_issues.md)
+    - Marked `P3-001` complete and documented implementation/tests.
+
+### Test Changes
+
+#### Added
+
+- [tests/test_classify_prompt_bridge.py](tests/test_classify_prompt_bridge.py)
+  - Added deterministic-routing tests for vibe-editor intent override.
+  - Added guard test confirming non-editor prompts still use normal LLM classification flow.
+
+---
+
 ## [0.43.0.post1] - 2026-05-11
 
 ### Code Changes

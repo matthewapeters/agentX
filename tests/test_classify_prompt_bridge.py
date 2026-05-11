@@ -282,3 +282,46 @@ def test_classify_prompt_injects_working_memory_into_prompt():
         result = classify_prompt(config=config, prompt="help", context=Context(), history=[], working_memory=wm)
 
     assert result is not None
+
+
+def test_classify_prompt_routes_vibe_editor_open_intent_without_llm_call():
+    """GIVEN a vibe-editor open request WHEN classify_prompt runs THEN it routes to single_tool without API classification."""
+    config = _make_config()
+
+    with (
+        patch("agentix.bridge.classify_prompt.assemble_prompts") as assemble_mock,
+        patch("agentix.bridge.classify_prompt.query_classification") as query_mock,
+    ):
+        result = classify_prompt(
+            config=config,
+            prompt="open src/agentx/session.py in vibe editor",
+            context=Context(),
+            history=[],
+            max_tokens=1000,
+        )
+
+    assert result.intent.name == "simple_action"
+    assert result.next_step.name == "single_tool"
+    assemble_mock.assert_not_called()
+    query_mock.assert_not_called()
+
+
+def test_classify_prompt_non_editor_phrase_still_uses_llm_classification():
+    """GIVEN a non-editor prompt WHEN classify_prompt runs THEN the normal LLM classification path is used."""
+    config = _make_config()
+
+    with (
+        patch("agentix.bridge.classify_prompt.assemble_prompts", return_value={"messages": []}) as assemble_mock,
+        patch("agentix.bridge.classify_prompt.query_classification", return_value=DEFAULT_RESULT) as query_mock,
+    ):
+        result = classify_prompt(
+            config=config,
+            prompt="open README.md",
+            context=Context(),
+            history=[],
+            max_tokens=1000,
+        )
+
+    assert result.intent.name == "conversation"
+    assemble_mock.assert_called_once()
+    query_mock.assert_called_once()

@@ -1,6 +1,6 @@
 # TOOLS ISSUES
 
-_Last updated: 2026-05-11 (v0.44.0)_
+_Last updated: 2026-05-11 (v0.45.0)_
 
 This file tracks non-UX tool and tooling issues (tool registry, tool exposure, tool intent routing, and editor-tool integrations).
 
@@ -58,9 +58,12 @@ This backlog is organized by dependency order. Complete items in sequence to min
   - **Verification**: targeted tests pass for manager + integration + diagnostics suites
   - **Status**: Ready for UAT (agent can self-diagnose tool pipeline health)
 
-**[ ] Phase 3: Vibe-Editor Intent Routing**
+**[/] Phase 3: Vibe-Editor Intent Routing**
 
-- [ ] **P3-001**: AgentX needs explicit awareness of vibe-editor intents (neovim in tmux pane 0): "open file", "open <file> in vibe editor", "edit file", and similar phrasings should reliably route to the editor-open capability. Update prompt classification or prompt router to map these intents to the tool set.
+- [/] **P3-001**: AgentX needs explicit awareness of vibe-editor intents (neovim in tmux pane 0): "open file", "open <file> in vibe editor", "edit file", and similar phrasings should reliably route to the editor-open capability. Update prompt classification or prompt router to map these intents to the tool set.
+  - **Implementation**: `src/agentix/bridge/classify_prompt.py` — added deterministic pattern-based override for explicit vibe-editor phrasing.
+  - **Routing behavior**: explicit editor intent short-circuits to `intent=simple_action`, `next_step=single_tool` for reliable tool-route selection.
+  - **Tests**: `tests/test_classify_prompt_bridge.py` verifies short-circuit routing and confirms non-editor prompts still flow through normal LLM classification.
 
 **[ ] Phase 4–6: Editor Tools (Vibe-Coding Integration)**
 
