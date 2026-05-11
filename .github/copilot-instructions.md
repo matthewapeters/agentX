@@ -53,6 +53,30 @@ AgentX is a local-first AI agent framework with a Tkinter GUI. It connects to **
 - Document a summary of the applied changes as a commit message and commit the changes.  Ensure sure new files and modified files are added to the commit.
 - Maintain a changelog file `CHANGELOG.md` and update it with a summary of the changes, the semantic version, and the date of the change.  Follow this format for changelog entries:
   ```
+
+### Session Closure and Anti-Drift Commit Discipline (Required)
+
+- The agent must not end a coding task with agent-authored files left modified and uncommitted unless the user explicitly asks to pause without committing.
+- Before any commit, the agent must run quality control gates relevant to the touched scope and report results:
+  - Required minimum: targeted tests for changed units and integrations.
+  - Required when feasible: full project test run and lint/type gates (`black`, `isort`, `flake8`, `mypy`).
+  - If any gate fails, the agent must report the failure details and either fix them in the same session or explicitly record why they remain unresolved.
+- The agent must create a local commit for each completed change set. Do not push unless the user explicitly asks to push.
+- The agent must treat uncommitted changes created in the same session as in-scope work, never as unrelated "other" changes.
+- At session end, the agent must provide a closure report including:
+  - files changed
+  - gates executed and pass/fail status
+  - semantic version update
+  - commit hash(es)
+
+#### Commit Hygiene Workflow (Required)
+
+1. Inspect current working tree (`git status --short`).
+2. Separate user-preexisting changes from agent-authored changes.
+3. Run required quality gates.
+4. Update semantic version and `CHANGELOG.md`.
+5. Commit agent-authored completed work locally.
+6. Confirm remaining uncommitted files (if any) and why they remain.
   ## [Version] - YYYY-MM-DD
   ### Code Changes
   #### Added

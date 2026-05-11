@@ -5,6 +5,140 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.43.0.post1] - 2026-05-11
+
+### Code Changes
+
+#### Changed
+
+- Documentation governance update only.
+  - [.github/copilot-instructions.md](.github/copilot-instructions.md)
+    - Added required anti-drift session closure policy.
+    - Added mandatory quality-gate-before-commit requirements.
+    - Added explicit rule: local commit required for completed change sets; never push unless user asks.
+    - Added commit hygiene workflow to prevent session-owned changes from being treated as unrelated drift.
+
+### Test Changes
+
+#### Changed
+
+- No code-path changes; no test behavior changes expected.
+
+---
+
+## [0.43.0] - 2026-05-11
+
+### Code Changes
+
+#### Added
+
+- Added baked-in default tool-registry template and automatic regeneration when `agentx_tools.toml` is missing.
+  - [src/agentx/tool_registry.py](src/agentx/tool_registry.py)
+    - Added `DEFAULT_AGENTX_TOOLS_TOML` template stored in application code.
+    - Added config-path resolution that auto-creates missing registry file from baked defaults.
+    - Added support for search-path lookup from `agentx.toml` `[tool_registry].search_paths`.
+- Added configurable tool-registry path management in application config.
+  - [src/agentx/config.py](src/agentx/config.py)
+    - Added `[tool_registry].search_paths` defaults.
+    - Added validation for non-empty path list.
+  - [agentx.toml](agentx.toml)
+    - Added `[tool_registry]` section with default search paths.
+- Added Settings UI exposure for tool-registry search paths.
+  - [src/agentx/gui/settings_tab.py](src/agentx/gui/settings_tab.py)
+    - Added `🧰 Tool Registry` section.
+    - Added editable one-path-per-line search path list with Save/Reset actions.
+
+#### Changed
+
+- [src/agentx/tool_registry.py](src/agentx/tool_registry.py)
+  - Clarified reload semantics: persisted dynamic registrations remain after reload.
+
+### Test Changes
+
+#### Added
+
+- [tests/test_tool_registry.py](tests/test_tool_registry.py)
+  - Added test for missing registry auto-regeneration using baked-in template.
+  - Added test for search-path resolution from `agentx.toml` and default-file creation.
+- [tests/test_config_tui_phase1.py](tests/test_config_tui_phase1.py)
+  - Added validation test for `[tool_registry].search_paths` integrity.
+
+#### Changed
+
+- Existing focused suites run and pass with updated registry and config behavior.
+
+---
+
+## [0.42.0] - 2026-05-11
+
+### Code Changes
+
+#### Added
+
+- Extended dynamic tool registry schema to support executable external-tool metadata.
+  - [src/agentx/tool_registry.py](src/agentx/tool_registry.py)
+    - Added support for extended fields: scope, source_path, runtime, entrypoint, input_schema, output_schema.
+    - Added schema normalization for input/output metadata.
+    - Added persistent registration path so new tools can be written directly to [agentx_tools.toml](agentx_tools.toml).
+  - [src/agentx/integration/tool_registry_manager.py](src/agentx/integration/tool_registry_manager.py)
+    - Expanded builtin register_tool parameters to accept full metadata for external scripts/functions.
+    - Register flow now persists tool entries to TOML by default.
+  - [src/agentx/integration/agentix_bridge_adapter.py](src/agentx/integration/agentix_bridge_adapter.py)
+    - Expanded register_tool schema exposed to bridge with scope, source_path, runtime, entrypoint, input_schema, output_schema.
+  - [agentx_tools.toml](agentx_tools.toml)
+    - Added schema_version and default scoped tool paths (universal, user, project, session).
+    - Added example external-tool registration block with input/output schema structure.
+
+### Test Changes
+
+#### Added
+
+- [tests/test_tool_registry.py](tests/test_tool_registry.py)
+  - Added tests for loading extended schema fields.
+  - Added tests for persistent register_tool behavior with full metadata.
+- [tests/test_tool_registry_manager.py](tests/test_tool_registry_manager.py)
+  - Added tests for builtin registration with external script metadata persistence.
+
+#### Changed
+
+- [tests/test_tool_registry_integration.py](tests/test_tool_registry_integration.py)
+  - Updated reload expectation to reflect persisted registration behavior.
+
+---
+
+## [0.41.0] - 2026-05-11
+
+### Code Changes
+
+#### Added
+
+- Added built-in `diagnose_tools()` integration for agent-invoked tool pipeline diagnostics.
+  - `src/agentx/integration/tool_registry_manager.py`
+    - Added `builtin_diagnose_tools()`.
+    - Added optional `bridge` dependency so diagnostics can execute against live bridge state.
+    - Registered `diagnose_tools` in `get_builtin_tool_implementations()`.
+  - `src/agentx/integration/agentix_bridge_adapter.py`
+    - Passes bridge reference to `ToolRegistryManager`.
+    - Registers `diagnose_tools` schema with the bridge.
+  - `src/agentx/integration/registry_tools.py`
+    - Added built-in tool documentation and stub for `diagnose_tools()`.
+
+#### Changed
+
+- `docs/tools/tools_issues.md`
+  - Marked Phase 2 / P2-001 as complete (`[/]`) with implementation details and test status.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_tool_registry_manager.py`
+  - Added coverage for `builtin_diagnose_tools()`:
+    - returns error when bridge is unavailable
+    - returns full 4-phase diagnostic report when bridge is configured
+  - Updated built-in implementation-map assertions to include `diagnose_tools`.
+
+---
 
 ## [0.40.1] - 2026-05-12
 
