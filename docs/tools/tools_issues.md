@@ -1,6 +1,6 @@
 # TOOLS ISSUES
 
-_Last updated: 2026-05-11 (v0.45.0)_
+_Last updated: 2026-05-11 (v0.46.0)_
 
 This file tracks non-UX tool and tooling issues (tool registry, tool exposure, tool intent routing, and editor-tool integrations).
 
@@ -67,7 +67,11 @@ This backlog is organized by dependency order. Complete items in sequence to min
 
 **[ ] Phase 4–6: Editor Tools (Vibe-Coding Integration)**
 
-- [ ] **P4-001**: AgentX needs a tool that opens a file in the vibe editor. Expose `VimBridge.open_file()` as an agent tool schema. Register in the tool registry (P1-001). Wire into session and bridge executors.
+- [/] **P4-001**: AgentX needs a tool that opens a file in the vibe editor. Expose `VimBridge.open_file()` as an agent tool schema. Register in the tool registry (P1-001). Wire into session and bridge executors.
+  - **Implementation**: `src/agentx/integration/tool_registry_manager.py` — added `builtin_open_file_in_editor(file_path, line)` wired through `VimBridge.open_file_from_context()`.
+  - **Bridge registration**: `src/agentx/integration/agentix_bridge_adapter.py` now exposes `open_file_in_editor` schema and registers implementation with the built-in registry tools.
+  - **Registry metadata**: `src/agentx/tool_registry.py` default `system_tools` now includes `open_file_in_editor = true`.
+  - **Tests**: `tests/test_tool_registry_manager.py` covers required-arg validation, success path, and editor-unavailable failure path.
 
 - [ ] **P5-001**: AgentX needs a tool that diffs files in the vibe editor. Implement `VimBridge.diff_files()` to invoke `nvim --server` with vimdiff semantics. Register in tool registry. Wire into executor.
 

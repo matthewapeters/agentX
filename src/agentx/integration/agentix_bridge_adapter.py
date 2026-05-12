@@ -144,6 +144,7 @@ class AgentixBridgeAdapter:
                 config_path="agentx_tools.toml",
                 on_registry_change=on_registry_change,
                 bridge=self.bridge,
+                config=self.config,
             )
 
             impls = self.tool_registry_manager.get_builtin_tool_implementations()
@@ -216,6 +217,24 @@ class AgentixBridgeAdapter:
                         "type": "object",
                         "properties": {},
                         "required": [],
+                    },
+                },
+                {
+                    "name": "open_file_in_editor",
+                    "description": "Open a file in the running vibe editor (neovim)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "Absolute or relative path to the file to open",
+                            },
+                            "line": {
+                                "type": "integer",
+                                "description": "Optional 1-based line number for cursor placement",
+                            },
+                        },
+                        "required": ["file_path"],
                     },
                 },
             ]

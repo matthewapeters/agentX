@@ -7,6 +7,7 @@ Built-in tools:
 - reload_tools(): Reload tool definitions from configuration
 - register_tool(): Dynamically register a new tool definition
 - diagnose_tools(): Run pipeline diagnostics for tool availability and execution
+- open_file_in_editor(): Open a file in the running vibe editor
 """
 
 from typing import Any
@@ -75,3 +76,16 @@ def diagnose_tools() -> str:
         JSON string with diagnostic report and identified issues.
     """
     return '{"status": "ok", "summary": "Tool diagnostics completed"}'
+
+
+def open_file_in_editor(file_path: str, line: int | None = None) -> str:
+    """Open a file in the running vibe editor.
+
+    Args:
+        file_path: Absolute or relative path to the file to open.
+        line: Optional 1-based line number to focus after opening.
+
+    Returns:
+        JSON string with operation status.
+    """
+    return '{"status": "success", "message": "File opened in editor"}'

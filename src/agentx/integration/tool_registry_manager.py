@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 
 from src.agentx.tool_registry import ToolRegistry
 from src.agentx.tool_diagnostics import create_tool_diagnostics
+from src.agentx.integration.vim_bridge import VimBridge
 
 
 class ToolRegistryManager:
@@ -31,6 +32,7 @@ class ToolRegistryManager:
         config_path: Optional[str] = None,
         on_registry_change: Optional[Callable[[], None]] = None,
         bridge: Optional[Any] = None,
+        config: Optional[dict[str, Any]] = None,
     ):
         """
         Initialize tool registry manager.
@@ -41,10 +43,12 @@ class ToolRegistryManager:
                 (tool toggled, registered, or reloaded). Used to update bridge
                 and UI.
             bridge: Optional AgentixBridge instance used by builtin_diagnose_tools.
+            config: Optional AgentX runtime config used by editor bridge tools.
         """
         self.registry = ToolRegistry(config_path)
         self.on_registry_change = on_registry_change or (lambda: None)
         self.bridge = bridge
+        self.config = config or {}
 
     def get_available_tools(self) -> list[dict[str, Any]]:
         """Get all tools (both enabled and disabled).
@@ -200,6 +204,40 @@ class ToolRegistryManager:
         report = diagnostics.run_full_diagnostic()
         return json.dumps(report)
 
+    def builtin_open_file_in_editor(self, file_path: str, line: Optional[int] = None) -> str:
+        """Built-in tool: open a file in the running vibe editor.
+
+        Args:
+            file_path: Absolute or relative path to the file to open.
+            line: Optional 1-based line number for cursor placement.
+
+        Returns:
+            JSON result indicating success or failure.
+        """
+        if not file_path or not str(file_path).strip():
+            return json.dumps({"status": "error", "message": "file_path is required"})
+
+        bridge = VimBridge(config=self.config)
+        success = bridge.open_file_from_context(file_path, line=line)
+        if not success:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "Could not open file in vibe editor",
+                    "file_path": file_path,
+                    "line": line,
+                }
+            )
+
+        return json.dumps(
+            {
+                "status": "success",
+                "message": "Opened file in vibe editor",
+                "file_path": file_path,
+                "line": line,
+            }
+        )
+
     def get_builtin_tool_implementations(self) -> dict[str, Callable]:
         """Get built-in tool implementations for bridge registration.
 
@@ -210,4 +248,5 @@ class ToolRegistryManager:
             "reload_tools": self.builtin_reload_tools,
             "register_tool": self.builtin_register_tool,
             "diagnose_tools": self.builtin_diagnose_tools,
+            "open_file_in_editor": self.builtin_open_file_in_editor,
         }

@@ -5,6 +5,41 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.46.0] - 2026-05-11
+
+### Code Changes
+
+#### Added
+
+- Added built-in editor-open tool for vibe-editor integration.
+  - [src/agentx/integration/tool_registry_manager.py](src/agentx/integration/tool_registry_manager.py)
+    - Added `builtin_open_file_in_editor(file_path, line)` routed through `VimBridge.open_file_from_context()`.
+    - Added JSON success/error responses for required-path validation and editor availability.
+  - [src/agentx/integration/agentix_bridge_adapter.py](src/agentx/integration/agentix_bridge_adapter.py)
+    - Registered `open_file_in_editor` tool schema with bridge-exposed built-ins.
+    - Passed runtime config through to `ToolRegistryManager` for neovim socket resolution.
+  - [src/agentx/tool_registry.py](src/agentx/tool_registry.py)
+    - Added `open_file_in_editor` to default `system_tools` template.
+  - [src/agentx/integration/registry_tools.py](src/agentx/integration/registry_tools.py)
+    - Added built-in tool documentation stub for `open_file_in_editor`.
+
+#### Changed
+
+- Updated tool issue tracker for editor-tool sequence progress.
+  - [docs/tools/tools_issues.md](docs/tools/tools_issues.md)
+    - Marked `P4-001` complete and documented implementation + tests.
+
+### Test Changes
+
+#### Added
+
+- [tests/test_tool_registry_manager.py](tests/test_tool_registry_manager.py)
+  - Added `open_file_in_editor` tests for required input validation.
+  - Added success path test asserting `VimBridge.open_file_from_context()` invocation.
+  - Added failure path test for unavailable editor bridge.
+
+---
+
 ## [0.45.0] - 2026-05-11
 
 ### Code Changes
