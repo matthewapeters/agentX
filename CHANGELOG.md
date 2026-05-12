@@ -5,6 +5,24 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.1] - 2026-05-12
+
+### Code Changes
+
+#### Fixed
+
+- Improved launcher startup UX by adding an Ollama model preflight before tmux session creation.
+  - [launch_vibe.sh](launch_vibe.sh)
+    - Added config-driven preflight using `[agentx].ollama_host` and `[agentx].ollama_model`.
+    - Added fast `/api/chat` validation with actionable guidance when a non-chat model is configured.
+    - Added clear failure output to avoid misleading "launcher crashed" behavior when AgentX would otherwise exit immediately.
+
+### Test Changes
+
+#### Changed
+
+- Performed manual launcher smoke validation for preflight success path and startup flow.
+
 ## [0.48.0] - 2026-05-11
 
 ### Code Changes

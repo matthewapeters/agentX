@@ -1,6 +1,6 @@
 [agentx]
 ollama_host = "localhost:11434"
-ollama_model = "qwen3.6:latest"
+ollama_model = "phi4-mini:3.8b"
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
 theme_mode = "Dark Mode"
@@ -17,7 +17,7 @@ enable = true
 socket = "/tmp/agentx_agentx.tui.nvim.sock"
 output_fifo = "/tmp/agentx_agentx.tui_output.fifo"
 input_fifo = "/tmp/agentx_agentx.tui_input.fifo"
-output_split_ratio = 0.3
+output_split_ratio = 0.7
 write_timeout_sec = 1.0
 show_thinking = true
 lua = [ "output_win", "input_win",]
@@ -26,7 +26,4 @@ lua = [ "output_win", "input_win",]
 exec_mode = "autonomous"
 
 [tool_registry]
-search_paths = [
-	"./agentx_tools.toml",
-	"~/.agentx/agentx_tools.toml",
-]
+search_paths = [ "./agentx_tools.toml", "~/.agentx/agentx_tools.toml",]

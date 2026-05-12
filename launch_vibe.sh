@@ -81,6 +81,8 @@ TUI_SOCKET="${AGENTX_TUI_SOCKET:-/tmp/agentx_${SESSION_ID}.tui.nvim.sock}"
 TUI_OUTPUT_SPLIT_RATIO="${AGENTX_TUI_OUTPUT_SPLIT_RATIO:-0.70}"
 AUTO_STOP_ON_EXIT="${AGENTX_AUTO_STOP_ON_EXIT:-true}"
 TERMINAL_VISIBLE="${AGENTX_TERMINAL_VISIBLE:-true}"
+OLLAMA_HOST="${AGENTX_OLLAMA_HOST:-}"
+OLLAMA_MODEL="${AGENTX_OLLAMA_MODEL:-}"
 SOCKET_WAIT_LOOPS="${AGENTX_SOCKET_WAIT_LOOPS:-10}"
 SOCKET_WAIT_SEC="${AGENTX_SOCKET_WAIT_SEC:-0.5}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -219,6 +221,76 @@ _apply_agentx_toml_defaults() {
             AUTO_STOP_ON_EXIT="$v"
         fi
     fi
+
+    if [[ -z "${AGENTX_OLLAMA_HOST+x}" ]]; then
+        v="$(_toml_get_value "$config_path" "agentx" "ollama_host")"
+        if [[ -n "$v" ]]; then
+            OLLAMA_HOST="$v"
+        fi
+    fi
+
+    if [[ -z "${AGENTX_OLLAMA_MODEL+x}" ]]; then
+        v="$(_toml_get_value "$config_path" "agentx" "ollama_model")"
+        if [[ -n "$v" ]]; then
+            OLLAMA_MODEL="$v"
+        fi
+    fi
+}
+
+_preflight_ollama_chat_model() {
+    if [[ -z "$OLLAMA_HOST" || -z "$OLLAMA_MODEL" ]]; then
+        _yellow "  ⚠ skipping Ollama preflight (ollama_host or ollama_model is not configured)."
+        return 0
+    fi
+
+    if ! command -v curl &>/dev/null; then
+        _yellow "  ⚠ skipping Ollama preflight (curl not found)."
+        return 0
+    fi
+
+    local host_url="$OLLAMA_HOST"
+    if [[ "$host_url" != http://* && "$host_url" != https://* ]]; then
+        host_url="http://${host_url}"
+    fi
+
+    local chat_url="${host_url%/}/api/chat"
+    local response_file
+    response_file="$(mktemp)"
+
+    local http_code
+    http_code="$(curl -sS -m 10 -o "$response_file" -w '%{http_code}' \
+        -H 'Content-Type: application/json' \
+        "$chat_url" \
+        -d "{\"model\":\"${OLLAMA_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"stream\":false}" || true)"
+
+    if [[ "$http_code" == "200" ]]; then
+        rm -f "$response_file"
+        _green "  ✓ Ollama preflight passed (model '${OLLAMA_MODEL}' supports chat)"
+        return 0
+    fi
+
+    _red "  ✗ Ollama preflight failed for model '${OLLAMA_MODEL}' at '${chat_url}' (HTTP ${http_code:-unknown})."
+    if [[ -s "$response_file" ]]; then
+        local body_preview
+        body_preview="$(head -c 240 "$response_file" | tr '\n' ' ')"
+        _red "    Response: ${body_preview}"
+    fi
+    rm -f "$response_file"
+
+    cat <<EOF
+
+Action required before launching AgentX:
+  1. Pick a chat-capable model (not an embedding model).
+  2. Update [agentx].ollama_model in agentx.toml.
+  3. Confirm available models: ollama list
+
+Common chat-capable examples:
+  - phi4-mini:3.8b
+  - gpt-oss:latest
+  - qwen3.6:latest
+
+EOF
+    return 1
 }
 
 _check_start_dependencies() {
@@ -1048,6 +1120,7 @@ case "$COMMAND" in
         echo "Checking dependencies..."
         _check_start_dependencies "$PYTHON_BIN"
         _verify_nvim_version
+        _preflight_ollama_chat_model
         _start_session "$PYTHON_BIN"
         ;;
     stop)
@@ -1076,6 +1149,7 @@ case "$COMMAND" in
         echo "Checking dependencies..."
         _check_start_dependencies "$PYTHON_BIN"
         _verify_nvim_version
+        _preflight_ollama_chat_model
         _stop_session
         _start_session "$PYTHON_BIN"
         ;;
