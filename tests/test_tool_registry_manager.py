@@ -320,11 +320,13 @@ class TestGetBuiltinToolImplementations:
         assert "diagnose_tools" in impls
         assert "open_file_in_editor" in impls
         assert "diff_files_in_editor" in impls
+        assert "editor_action" in impls
         assert callable(impls["reload_tools"])
         assert callable(impls["register_tool"])
         assert callable(impls["diagnose_tools"])
         assert callable(impls["open_file_in_editor"])
         assert callable(impls["diff_files_in_editor"])
+        assert callable(impls["editor_action"])
 
 
 class TestBuiltinDiagnoseTools:
@@ -499,3 +501,58 @@ class TestBuiltinDiffFilesInEditor:
 
         assert data["status"] == "error"
         assert "Could not diff files in vibe editor" in data["message"]
+
+
+class TestBuiltinEditorAction:
+    """Test built-in editor_action implementation."""
+
+    def test_editor_action_requires_action(self, temp_tools_config):
+        """
+        GIVEN a manager
+        WHEN calling builtin_editor_action() without action
+        THEN JSON with error status is returned.
+        """
+        manager = ToolRegistryManager(str(temp_tools_config))
+
+        result = manager.builtin_editor_action("", "src/agentx/session.py")
+        data = json.loads(result)
+
+        assert data["status"] == "error"
+        assert "action is required" in data["message"]
+
+    def test_editor_action_requires_file_path(self, temp_tools_config):
+        """
+        GIVEN a manager
+        WHEN calling builtin_editor_action() without file_path
+        THEN JSON with error status is returned.
+        """
+        manager = ToolRegistryManager(str(temp_tools_config))
+
+        result = manager.builtin_editor_action("show_symbol_help", "")
+        data = json.loads(result)
+
+        assert data["status"] == "error"
+        assert "file_path is required" in data["message"]
+
+    def test_editor_action_success(self, temp_tools_config):
+        """
+        GIVEN a running editor bridge
+        WHEN calling builtin_editor_action() with valid arguments
+        THEN JSON with success status is returned.
+        """
+        manager = ToolRegistryManager(str(temp_tools_config))
+
+        with patch("src.agentx.integration.tool_registry_manager.VimBridge") as mock_bridge_cls:
+            mock_bridge = mock_bridge_cls.return_value
+            mock_bridge.editor_action.return_value = {"status": "success", "action": "show_symbol_help"}
+
+            result = manager.builtin_editor_action("show_symbol_help", "src/agentx/session.py", line=10)
+            data = json.loads(result)
+
+        assert data["status"] == "success"
+        mock_bridge.editor_action.assert_called_once_with(
+            action="show_symbol_help",
+            file_path="src/agentx/session.py",
+            line=10,
+            payload="",
+        )

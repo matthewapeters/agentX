@@ -1,6 +1,6 @@
 # TOOLS ISSUES
 
-_Last updated: 2026-05-11 (v0.47.0)_
+_Last updated: 2026-05-11 (v0.48.0)_
 
 This file tracks non-UX tool and tooling issues (tool registry, tool exposure, tool intent routing, and editor-tool integrations).
 
@@ -80,4 +80,10 @@ This backlog is organized by dependency order. Complete items in sequence to min
   - **Registry metadata**: `src/agentx/tool_registry.py` default `system_tools` now includes `diff_files_in_editor = true`.
   - **Tests**: `tests/test_tool_registry_manager.py` covers validation, success, and failure paths.
 
-- [ ] **P6-001**: AgentX needs a tool that performs editor-assist actions in vibe editor (for example: propose edits, show symbol help, and autocomplete-style assist) while preserving terminal safety controls. Implement `VimBridge.editor_action()` with sandboxed key-injection and output capture. Integrate with command approval UI (PD-15-AF-006).
+- [/] **P6-001**: AgentX needs a tool that performs editor-assist actions in vibe editor (for example: propose edits, show symbol help, and autocomplete-style assist) while preserving terminal safety controls. Implement `VimBridge.editor_action()` with sandboxed key-injection and output capture. Integrate with command approval UI (PD-15-AF-006).
+  - **Implementation**: `src/agentx/integration/vim_bridge.py` — added `editor_action()` with supported-action allowlist (`show_symbol_help`, `autocomplete_assist`, `propose_edit`), payload sanitization, and subprocess output capture.
+  - **Safety integration**: `src/agentx/integration/terminal_bridge.py` — added `evaluate_terminal_policy()` so editor actions route through terminal policy and supervised approval callback (`PD-15-AF-006`).
+  - **Built-in tool wiring**: `src/agentx/integration/tool_registry_manager.py` — added `builtin_editor_action()`.
+  - **Bridge registration**: `src/agentx/integration/agentix_bridge_adapter.py` — added `editor_action` schema.
+  - **Registry metadata**: `src/agentx/tool_registry.py` default `system_tools` now includes `editor_action = true`.
+  - **Tests**: `tests/test_tool_registry_manager.py` and `tests/test_vim_bridge_gui.py` cover argument validation, policy rejection, sandbox validation, and success path.

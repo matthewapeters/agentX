@@ -385,6 +385,74 @@ class TestVimBridgeOpenFileFromContext:
         mock_open.assert_called_once_with(abs_path, line=10)
 
 
+@pytest.mark.unit
+class TestVimBridgeEditorAction:
+    """Unit tests for ``VimBridge.editor_action()``. [PD-14-AF-003]"""
+
+    def test_editor_action_rejects_unsupported_action(self) -> None:
+        """GIVEN unsupported action WHEN editor_action is called THEN error is returned."""
+        bridge = _make_bridge("/tmp/agentx.nvim.sock")
+
+        result = bridge.editor_action("unsupported", "some.py")
+
+        assert result["status"] == "error"
+        assert "Unsupported editor action" in str(result["message"])
+
+    def test_editor_action_policy_rejection(self) -> None:
+        """GIVEN policy denies action WHEN editor_action runs THEN error is returned without subprocess."""
+        bridge = _make_bridge("/tmp/agentx.nvim.sock")
+
+        with (
+            patch.object(bridge, "open_file_from_context", return_value=True),
+            patch("shutil.which", return_value="/usr/bin/nvim"),
+            patch(
+                "agentx.integration.terminal_bridge.evaluate_terminal_policy", return_value=(False, "cmd", "rejected")
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
+            result = bridge.editor_action("show_symbol_help", "some.py")
+
+        assert result["status"] == "error"
+        assert result["decision"] == "rejected"
+        mock_run.assert_not_called()
+
+    def test_editor_action_propose_edit_success(self) -> None:
+        """GIVEN propose_edit payload WHEN policy allows THEN remote-send command is dispatched."""
+        bridge = _make_bridge("/tmp/agentx.nvim.sock")
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with (
+            patch.object(bridge, "open_file_from_context", return_value=True),
+            patch("shutil.which", return_value="/usr/bin/nvim"),
+            patch("agentx.integration.terminal_bridge.evaluate_terminal_policy", return_value=(True, "cmd", "allowed")),
+            patch("subprocess.run", return_value=mock_result) as mock_run,
+        ):
+            result = bridge.editor_action("propose_edit", "some.py", payload="hello world")
+
+        assert result["status"] == "success"
+        assert result["action"] == "propose_edit"
+        called_args = mock_run.call_args[0][0]
+        assert called_args[:3] == ["/usr/bin/nvim", "--server", "/tmp/agentx.nvim.sock"]
+        assert called_args[3] == "--remote-send"
+
+    def test_editor_action_propose_edit_rejects_control_chars(self) -> None:
+        """GIVEN unsafe payload chars WHEN propose_edit runs THEN validation error is returned."""
+        bridge = _make_bridge("/tmp/agentx.nvim.sock")
+
+        with (
+            patch.object(bridge, "open_file_from_context", return_value=True),
+            patch("shutil.which", return_value="/usr/bin/nvim"),
+            patch("agentx.integration.terminal_bridge.evaluate_terminal_policy", return_value=(True, "cmd", "allowed")),
+        ):
+            result = bridge.editor_action("propose_edit", "some.py", payload="bad\x01text")
+
+        assert result["status"] == "error"
+        assert "unsupported control characters" in str(result["message"])
+
+
 # ---------------------------------------------------------------------------
 # PD-14-AF-002: Session._open_file_in_editor integration test
 # ---------------------------------------------------------------------------

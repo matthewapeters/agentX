@@ -9,6 +9,7 @@ Built-in tools:
 - diagnose_tools(): Run pipeline diagnostics for tool availability and execution
 - open_file_in_editor(): Open a file in the running vibe editor
 - diff_files_in_editor(): Open two files in side-by-side diff mode in vibe editor
+- editor_action(): Run sandboxed editor-assist actions in vibe editor
 """
 
 from typing import Any
@@ -103,3 +104,18 @@ def diff_files_in_editor(left_file: str, right_file: str) -> str:
         JSON string with operation status.
     """
     return '{"status": "success", "message": "Diff opened in editor"}'
+
+
+def editor_action(action: str, file_path: str, line: int | None = None, payload: str = "") -> str:
+    """Run an editor-assist action in vibe editor.
+
+    Args:
+        action: Action name (show_symbol_help, autocomplete_assist, propose_edit).
+        file_path: Target file path.
+        line: Optional 1-based line number.
+        payload: Optional text payload for propose_edit.
+
+    Returns:
+        JSON string with operation status.
+    """
+    return '{"status": "success", "message": "Editor action executed"}'

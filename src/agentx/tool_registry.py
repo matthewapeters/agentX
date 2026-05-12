@@ -101,6 +101,7 @@ register_tool = true
 diagnose_tools = true
 open_file_in_editor = true
 diff_files_in_editor = true
+editor_action = true
 """
 
 

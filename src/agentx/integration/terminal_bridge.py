@@ -812,3 +812,38 @@ def reload_terminal_config(config: Mapping[str, object]) -> bool:
     _terminal_bridge._config = config
     _terminal_bridge._permission_layer.reload_from_config(config)
     return True
+
+
+def evaluate_terminal_policy(command: str, context: str = "") -> tuple[bool, str, str]:
+    """Evaluate terminal policy and optionally invoke supervised approval.
+
+    This helper is intended for non-shell integrations (for example editor
+    actions) that still need to honor AgentX terminal safety controls and the
+    PD-15-AF-006 approval dialog.
+
+    Args:
+        command: Canonical command string used for policy classification.
+        context: Human-readable context shown in approval UI.
+
+    Returns:
+        tuple[bool, str, str]: ``(allowed, effective_command, decision_label)``.
+    """
+
+    bridge = _get_terminal_bridge()
+    decision = bridge.permission_layer.check_command(command)
+
+    if not bridge.permission_layer.check_paths(command, bridge._project_roots):
+        return False, command, "path_violation"
+
+    if decision.verdict == "denied":
+        return False, command, "denied"
+
+    if decision.verdict == "requires_approval":
+        if bridge._approval_callback is None:
+            return False, command, "rejected"
+        approved, edited = bridge._approval_callback(command, context)
+        if not approved:
+            return False, command, "rejected"
+        return True, edited or command, "approved"
+
+    return True, command, "allowed"

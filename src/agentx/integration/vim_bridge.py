@@ -27,11 +27,13 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)
+_CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 
 
 def _resolve_default_socket() -> str:
@@ -306,3 +308,146 @@ class VimBridge:
         resolved_left = str(Path(left_file).resolve())
         resolved_right = str(Path(right_file).resolve())
         return self.diff_files(resolved_left, resolved_right)
+
+    @staticmethod
+    def _sanitize_editor_text(text: str, max_length: int = 4000) -> str:
+        """Sanitize freeform editor text to prevent unsafe key-injection payloads.
+
+        Args:
+            text: Raw user/tool-provided text.
+            max_length: Maximum accepted payload length.
+
+        Returns:
+            str: Sanitized text payload.
+
+        Raises:
+            ValueError: If payload is too long or contains unsafe control chars.
+        """
+
+        if len(text) > max_length:
+            raise ValueError(f"payload exceeds max length ({max_length})")
+        if _CONTROL_CHAR_PATTERN.search(text):
+            raise ValueError("payload contains unsupported control characters")
+        return text
+
+    def editor_action(
+        self,
+        action: str,
+        file_path: str,
+        line: int | None = None,
+        payload: str = "",
+    ) -> dict[str, object]:
+        """Perform sandboxed editor-assist actions in the running vibe editor.
+
+        Supported actions:
+        - ``show_symbol_help``: trigger keyword help (`K`)
+        - ``autocomplete_assist``: trigger omnifunc completion (`<C-x><C-o>`)
+        - ``propose_edit``: replace current line with sanitized payload text
+
+        Args:
+            action: Action name from the supported set above.
+            file_path: Target file path to open before action.
+            line: Optional 1-based line number.
+            payload: Optional text payload, used by ``propose_edit``.
+
+        Returns:
+            dict[str, object]: Action result payload with status and captured output.
+        """
+
+        supported_actions = {"show_symbol_help", "autocomplete_assist", "propose_edit"}
+        if action not in supported_actions:
+            return {
+                "status": "error",
+                "message": f"Unsupported editor action: {action}",
+                "action": action,
+            }
+
+        if not self.open_file_from_context(file_path, line=line):
+            return {
+                "status": "error",
+                "message": "Could not open file in vibe editor",
+                "action": action,
+                "file_path": file_path,
+                "line": line,
+            }
+
+        nvim_bin = shutil.which("nvim")
+        if nvim_bin is None:
+            return {
+                "status": "error",
+                "message": "nvim binary not found in PATH",
+                "action": action,
+            }
+
+        try:
+            from agentx.integration.terminal_bridge import evaluate_terminal_policy
+
+            canonical_command = f"nvim --server {self._socket_path} --remote-send <editor_action:{action}>"
+            allowed, _, decision = evaluate_terminal_policy(
+                canonical_command,
+                context=f"Editor assist action '{action}' on {file_path}",
+            )
+            if not allowed:
+                return {
+                    "status": "error",
+                    "message": "Editor action rejected by terminal safety policy",
+                    "action": action,
+                    "decision": decision,
+                }
+        except Exception as exc:
+            return {
+                "status": "error",
+                "message": f"Terminal policy unavailable: {exc}",
+                "action": action,
+            }
+
+        if action == "show_symbol_help":
+            key_sequence = "K"
+        elif action == "autocomplete_assist":
+            key_sequence = "<C-x><C-o>"
+        else:
+            try:
+                safe_payload = self._sanitize_editor_text(payload)
+            except ValueError as exc:
+                return {
+                    "status": "error",
+                    "message": str(exc),
+                    "action": action,
+                }
+            escaped_payload = safe_payload.replace("\\", "\\\\").replace("'", "''")
+            key_sequence = f"<C-\\><C-N>:call setline('.', '{escaped_payload}')<CR>"
+
+        command = [
+            nvim_bin,
+            "--server",
+            self._socket_path,
+            "--remote-send",
+            key_sequence,
+        ]
+
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+        except OSError as exc:
+            return {
+                "status": "error",
+                "message": f"Editor action failed: {exc}",
+                "action": action,
+            }
+
+        if result.returncode != 0:
+            return {
+                "status": "error",
+                "message": "Editor action command failed",
+                "action": action,
+                "stderr": result.stderr.strip(),
+                "exit_code": result.returncode,
+            }
+
+        return {
+            "status": "success",
+            "message": "Editor action executed",
+            "action": action,
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip(),
+            "exit_code": result.returncode,
+        }

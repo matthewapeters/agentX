@@ -5,6 +5,44 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.0] - 2026-05-11
+
+### Code Changes
+
+#### Added
+
+- Added sandboxed editor-assist tooling integrated with terminal approval policy.
+  - [src/agentx/integration/vim_bridge.py](src/agentx/integration/vim_bridge.py)
+    - Added `editor_action()` supporting `show_symbol_help`, `autocomplete_assist`, and `propose_edit`.
+    - Added payload sanitization and subprocess stdout/stderr capture for action results.
+  - [src/agentx/integration/terminal_bridge.py](src/agentx/integration/terminal_bridge.py)
+    - Added `evaluate_terminal_policy()` helper to reuse terminal allow/confirm/deny + approval callback flow for non-shell actions.
+  - [src/agentx/integration/tool_registry_manager.py](src/agentx/integration/tool_registry_manager.py)
+    - Added built-in `editor_action` tool wrapper with argument validation.
+  - [src/agentx/integration/agentix_bridge_adapter.py](src/agentx/integration/agentix_bridge_adapter.py)
+    - Registered `editor_action` tool schema for bridge invocation.
+  - [src/agentx/tool_registry.py](src/agentx/tool_registry.py)
+    - Added `editor_action` to default `system_tools`.
+  - [src/agentx/integration/registry_tools.py](src/agentx/integration/registry_tools.py)
+    - Added built-in documentation stub for `editor_action`.
+
+#### Changed
+
+- Updated tool issue tracker for final editor-tools sequence.
+  - [docs/tools/tools_issues.md](docs/tools/tools_issues.md)
+    - Marked `P6-001` complete with implementation and test references.
+
+### Test Changes
+
+#### Added
+
+- [tests/test_tool_registry_manager.py](tests/test_tool_registry_manager.py)
+  - Added `editor_action` tests for required argument validation and success dispatch.
+- [tests/test_vim_bridge_gui.py](tests/test_vim_bridge_gui.py)
+  - Added `editor_action` tests for unsupported actions, policy rejection, sandbox validation, and propose-edit success path.
+
+---
+
 ## [0.47.0] - 2026-05-11
 
 ### Code Changes

@@ -274,6 +274,33 @@ class ToolRegistryManager:
             }
         )
 
+    def builtin_editor_action(
+        self,
+        action: str,
+        file_path: str,
+        line: Optional[int] = None,
+        payload: str = "",
+    ) -> str:
+        """Built-in tool: run a sandboxed editor-assist action.
+
+        Args:
+            action: Action name (show_symbol_help, autocomplete_assist, propose_edit).
+            file_path: Target file path.
+            line: Optional 1-based line number.
+            payload: Optional text payload (used by propose_edit).
+
+        Returns:
+            JSON result indicating success or failure.
+        """
+        if not action or not str(action).strip():
+            return json.dumps({"status": "error", "message": "action is required"})
+        if not file_path or not str(file_path).strip():
+            return json.dumps({"status": "error", "message": "file_path is required"})
+
+        bridge = VimBridge(config=self.config)
+        result = bridge.editor_action(action=action, file_path=file_path, line=line, payload=payload)
+        return json.dumps(result)
+
     def get_builtin_tool_implementations(self) -> dict[str, Callable]:
         """Get built-in tool implementations for bridge registration.
 
@@ -286,4 +313,5 @@ class ToolRegistryManager:
             "diagnose_tools": self.builtin_diagnose_tools,
             "open_file_in_editor": self.builtin_open_file_in_editor,
             "diff_files_in_editor": self.builtin_diff_files_in_editor,
+            "editor_action": self.builtin_editor_action,
         }

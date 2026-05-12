@@ -255,6 +255,32 @@ class AgentixBridgeAdapter:
                         "required": ["left_file", "right_file"],
                     },
                 },
+                {
+                    "name": "editor_action",
+                    "description": "Run sandboxed editor-assist actions in the running vibe editor",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "description": "Action name: show_symbol_help | autocomplete_assist | propose_edit",
+                            },
+                            "file_path": {
+                                "type": "string",
+                                "description": "Path to target file",
+                            },
+                            "line": {
+                                "type": "integer",
+                                "description": "Optional 1-based line number",
+                            },
+                            "payload": {
+                                "type": "string",
+                                "description": "Optional payload text (used by propose_edit)",
+                            },
+                        },
+                        "required": ["action", "file_path"],
+                    },
+                },
             ]
 
             self.bridge.register_tool_implementations(impls, schemas)
