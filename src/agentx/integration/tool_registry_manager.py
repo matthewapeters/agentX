@@ -238,6 +238,42 @@ class ToolRegistryManager:
             }
         )
 
+    def builtin_diff_files_in_editor(self, left_file: str, right_file: str) -> str:
+        """Built-in tool: open a side-by-side diff in the running vibe editor.
+
+        Args:
+            left_file: Left-hand file path, absolute or relative.
+            right_file: Right-hand file path, absolute or relative.
+
+        Returns:
+            JSON result indicating success or failure.
+        """
+        if not left_file or not str(left_file).strip():
+            return json.dumps({"status": "error", "message": "left_file is required"})
+        if not right_file or not str(right_file).strip():
+            return json.dumps({"status": "error", "message": "right_file is required"})
+
+        bridge = VimBridge(config=self.config)
+        success = bridge.diff_files_from_context(left_file, right_file)
+        if not success:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "Could not diff files in vibe editor",
+                    "left_file": left_file,
+                    "right_file": right_file,
+                }
+            )
+
+        return json.dumps(
+            {
+                "status": "success",
+                "message": "Opened diff in vibe editor",
+                "left_file": left_file,
+                "right_file": right_file,
+            }
+        )
+
     def get_builtin_tool_implementations(self) -> dict[str, Callable]:
         """Get built-in tool implementations for bridge registration.
 
@@ -249,4 +285,5 @@ class ToolRegistryManager:
             "register_tool": self.builtin_register_tool,
             "diagnose_tools": self.builtin_diagnose_tools,
             "open_file_in_editor": self.builtin_open_file_in_editor,
+            "diff_files_in_editor": self.builtin_diff_files_in_editor,
         }

@@ -310,7 +310,7 @@ class TestGetBuiltinToolImplementations:
         """
         GIVEN a manager
         WHEN calling get_builtin_tool_implementations()
-        THEN dictionary with reload_tools, register_tool, diagnose_tools, and open_file_in_editor is returned.
+        THEN dictionary with all expected built-ins is returned.
         """
         manager = ToolRegistryManager(str(temp_tools_config))
         impls = manager.get_builtin_tool_implementations()
@@ -319,10 +319,12 @@ class TestGetBuiltinToolImplementations:
         assert "register_tool" in impls
         assert "diagnose_tools" in impls
         assert "open_file_in_editor" in impls
+        assert "diff_files_in_editor" in impls
         assert callable(impls["reload_tools"])
         assert callable(impls["register_tool"])
         assert callable(impls["diagnose_tools"])
         assert callable(impls["open_file_in_editor"])
+        assert callable(impls["diff_files_in_editor"])
 
 
 class TestBuiltinDiagnoseTools:
@@ -427,3 +429,73 @@ class TestBuiltinOpenFileInEditor:
 
         assert data["status"] == "error"
         assert "Could not open file in vibe editor" in data["message"]
+
+
+class TestBuiltinDiffFilesInEditor:
+    """Test built-in diff_files_in_editor implementation."""
+
+    def test_diff_files_in_editor_requires_left_file(self, temp_tools_config):
+        """
+        GIVEN a manager
+        WHEN calling builtin_diff_files_in_editor() without left_file
+        THEN JSON with error status is returned.
+        """
+        manager = ToolRegistryManager(str(temp_tools_config))
+
+        result = manager.builtin_diff_files_in_editor("", "src/agentx/session.py")
+        data = json.loads(result)
+
+        assert data["status"] == "error"
+        assert "left_file is required" in data["message"]
+
+    def test_diff_files_in_editor_requires_right_file(self, temp_tools_config):
+        """
+        GIVEN a manager
+        WHEN calling builtin_diff_files_in_editor() without right_file
+        THEN JSON with error status is returned.
+        """
+        manager = ToolRegistryManager(str(temp_tools_config))
+
+        result = manager.builtin_diff_files_in_editor("src/agentx/session.py", "")
+        data = json.loads(result)
+
+        assert data["status"] == "error"
+        assert "right_file is required" in data["message"]
+
+    def test_diff_files_in_editor_success(self, temp_tools_config):
+        """
+        GIVEN a running editor bridge
+        WHEN calling builtin_diff_files_in_editor() with valid file paths
+        THEN JSON with success status is returned.
+        """
+        manager = ToolRegistryManager(str(temp_tools_config))
+
+        with patch("src.agentx.integration.tool_registry_manager.VimBridge") as mock_bridge_cls:
+            mock_bridge = mock_bridge_cls.return_value
+            mock_bridge.diff_files_from_context.return_value = True
+
+            result = manager.builtin_diff_files_in_editor("a.py", "b.py")
+            data = json.loads(result)
+
+        assert data["status"] == "success"
+        assert data["left_file"] == "a.py"
+        assert data["right_file"] == "b.py"
+        mock_bridge.diff_files_from_context.assert_called_once_with("a.py", "b.py")
+
+    def test_diff_files_in_editor_failure(self, temp_tools_config):
+        """
+        GIVEN an unavailable editor bridge
+        WHEN calling builtin_diff_files_in_editor()
+        THEN JSON with error status is returned.
+        """
+        manager = ToolRegistryManager(str(temp_tools_config))
+
+        with patch("src.agentx.integration.tool_registry_manager.VimBridge") as mock_bridge_cls:
+            mock_bridge = mock_bridge_cls.return_value
+            mock_bridge.diff_files_from_context.return_value = False
+
+            result = manager.builtin_diff_files_in_editor("a.py", "b.py")
+            data = json.loads(result)
+
+        assert data["status"] == "error"
+        assert "Could not diff files in vibe editor" in data["message"]

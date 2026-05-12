@@ -204,3 +204,105 @@ class VimBridge:
 
         resolved = str(Path(file_path).resolve())
         return self.open_file(resolved, line=line)
+
+    @staticmethod
+    def _escape_ex_path(file_path: str) -> str:
+        """Escape a path for safe use in neovim Ex commands.
+
+        Args:
+            file_path: Path to escape.
+
+        Returns:
+            str: Escaped path string suitable for ``:edit``/``:diffsplit``.
+        """
+
+        escaped = file_path.replace("\\", "\\\\")
+        escaped = escaped.replace(" ", "\\ ")
+        escaped = escaped.replace("|", "\\|")
+        return escaped
+
+    def diff_files(self, left_file: str, right_file: str) -> bool:
+        """Open a side-by-side vimdiff view for two files in running neovim.
+
+        The command opens ``left_file`` in a new tab, runs ``:vert diffsplit``
+        for ``right_file``, and enables diff mode for both windows.
+
+        Args:
+            left_file: Left-hand file in the diff view.
+            right_file: Right-hand file in the diff view.
+
+        Returns:
+            bool: ``True`` when neovim accepted both commands, else ``False``.
+        """
+
+        if not self.is_connected():
+            _logger.warning(
+                "VimBridge.diff_files: neovim socket not present at %s — diff not sent.",
+                self._socket_path,
+            )
+            return False
+
+        nvim_bin = shutil.which("nvim")
+        if nvim_bin is None:
+            _logger.error("VimBridge.diff_files: 'nvim' binary not found in PATH.")
+            return False
+
+        escaped_left = self._escape_ex_path(left_file)
+        escaped_right = self._escape_ex_path(right_file)
+
+        open_left_cmd = [
+            nvim_bin,
+            "--server",
+            self._socket_path,
+            "--remote-tab-silent",
+            escaped_left,
+        ]
+        diff_cmd = [
+            nvim_bin,
+            "--server",
+            self._socket_path,
+            "--remote-send",
+            f"<C-\\><C-N>:vert diffsplit {escaped_right}<CR>:windo diffthis<CR>",
+        ]
+
+        _logger.debug("VimBridge.diff_files: %s", " ".join(open_left_cmd))
+        _logger.debug("VimBridge.diff_files: %s", " ".join(diff_cmd))
+
+        try:
+            open_left_result = subprocess.run(open_left_cmd, capture_output=True, text=True, check=False)
+            if open_left_result.returncode != 0:
+                _logger.warning(
+                    "VimBridge.diff_files: nvim exited %d opening left file — %s",
+                    open_left_result.returncode,
+                    open_left_result.stderr.strip(),
+                )
+                return False
+
+            diff_result = subprocess.run(diff_cmd, capture_output=True, text=True, check=False)
+            if diff_result.returncode != 0:
+                _logger.warning(
+                    "VimBridge.diff_files: nvim exited %d sending diffsplit — %s",
+                    diff_result.returncode,
+                    diff_result.stderr.strip(),
+                )
+                return False
+        except OSError as exc:
+            _logger.error("VimBridge.diff_files: subprocess error — %s", exc)
+            return False
+
+        return True
+
+    def diff_files_from_context(self, left_file: str, right_file: str) -> bool:
+        """Resolve relative file paths and open a diff in the running editor.
+
+        Args:
+            left_file: Left-hand file path, absolute or relative.
+            right_file: Right-hand file path, absolute or relative.
+
+        Returns:
+            bool: Result of ``diff_files``.
+        """
+
+        resolved_left = str(Path(left_file).resolve())
+        resolved_right = str(Path(right_file).resolve())
+        return self.diff_files(resolved_left, resolved_right)

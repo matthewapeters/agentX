@@ -8,6 +8,7 @@ Built-in tools:
 - register_tool(): Dynamically register a new tool definition
 - diagnose_tools(): Run pipeline diagnostics for tool availability and execution
 - open_file_in_editor(): Open a file in the running vibe editor
+- diff_files_in_editor(): Open two files in side-by-side diff mode in vibe editor
 """
 
 from typing import Any
@@ -89,3 +90,16 @@ def open_file_in_editor(file_path: str, line: int | None = None) -> str:
         JSON string with operation status.
     """
     return '{"status": "success", "message": "File opened in editor"}'
+
+
+def diff_files_in_editor(left_file: str, right_file: str) -> str:
+    """Open two files in a side-by-side diff view in vibe editor.
+
+    Args:
+        left_file: Left-hand file path.
+        right_file: Right-hand file path.
+
+    Returns:
+        JSON string with operation status.
+    """
+    return '{"status": "success", "message": "Diff opened in editor"}'

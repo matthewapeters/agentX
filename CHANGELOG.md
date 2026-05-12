@@ -5,6 +5,42 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.47.0] - 2026-05-11
+
+### Code Changes
+
+#### Added
+
+- Added vibe-editor diff tool support for side-by-side file comparisons.
+  - [src/agentx/integration/vim_bridge.py](src/agentx/integration/vim_bridge.py)
+    - Added `diff_files(left_file, right_file)` using neovim `--server` commands with vimdiff semantics.
+    - Added `diff_files_from_context(left_file, right_file)` and Ex-command path escaping helper.
+  - [src/agentx/integration/tool_registry_manager.py](src/agentx/integration/tool_registry_manager.py)
+    - Added `builtin_diff_files_in_editor(left_file, right_file)` with argument validation and JSON results.
+  - [src/agentx/integration/agentix_bridge_adapter.py](src/agentx/integration/agentix_bridge_adapter.py)
+    - Registered `diff_files_in_editor` schema for bridge tool invocation.
+  - [src/agentx/tool_registry.py](src/agentx/tool_registry.py)
+    - Added `diff_files_in_editor` to default `system_tools`.
+  - [src/agentx/integration/registry_tools.py](src/agentx/integration/registry_tools.py)
+    - Added built-in documentation stub for `diff_files_in_editor`.
+
+#### Changed
+
+- Updated tool issue tracker for editor-tool sequence progress.
+  - [docs/tools/tools_issues.md](docs/tools/tools_issues.md)
+    - Marked `P5-001` complete and documented implementation + tests.
+
+### Test Changes
+
+#### Added
+
+- [tests/test_tool_registry_manager.py](tests/test_tool_registry_manager.py)
+  - Added `diff_files_in_editor` tests for required input validation.
+  - Added success path test asserting `VimBridge.diff_files_from_context()` invocation.
+  - Added failure path test for unavailable editor bridge.
+
+---
+
 ## [0.46.0] - 2026-05-11
 
 ### Code Changes

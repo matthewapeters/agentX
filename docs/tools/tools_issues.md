@@ -1,6 +1,6 @@
 # TOOLS ISSUES
 
-_Last updated: 2026-05-11 (v0.46.0)_
+_Last updated: 2026-05-11 (v0.47.0)_
 
 This file tracks non-UX tool and tooling issues (tool registry, tool exposure, tool intent routing, and editor-tool integrations).
 
@@ -73,6 +73,11 @@ This backlog is organized by dependency order. Complete items in sequence to min
   - **Registry metadata**: `src/agentx/tool_registry.py` default `system_tools` now includes `open_file_in_editor = true`.
   - **Tests**: `tests/test_tool_registry_manager.py` covers required-arg validation, success path, and editor-unavailable failure path.
 
-- [ ] **P5-001**: AgentX needs a tool that diffs files in the vibe editor. Implement `VimBridge.diff_files()` to invoke `nvim --server` with vimdiff semantics. Register in tool registry. Wire into executor.
+- [/] **P5-001**: AgentX needs a tool that diffs files in the vibe editor. Implement `VimBridge.diff_files()` to invoke `nvim --server` with vimdiff semantics. Register in tool registry. Wire into executor.
+  - **Implementation**: `src/agentx/integration/vim_bridge.py` — added `diff_files()` and `diff_files_from_context()` with `--server`/`--remote-tab-silent`/`--remote-send` vimdiff flow.
+  - **Built-in tool wiring**: `src/agentx/integration/tool_registry_manager.py` — added `builtin_diff_files_in_editor(left_file, right_file)`.
+  - **Bridge registration**: `src/agentx/integration/agentix_bridge_adapter.py` — added `diff_files_in_editor` schema.
+  - **Registry metadata**: `src/agentx/tool_registry.py` default `system_tools` now includes `diff_files_in_editor = true`.
+  - **Tests**: `tests/test_tool_registry_manager.py` covers validation, success, and failure paths.
 
 - [ ] **P6-001**: AgentX needs a tool that performs editor-assist actions in vibe editor (for example: propose edits, show symbol help, and autocomplete-style assist) while preserving terminal safety controls. Implement `VimBridge.editor_action()` with sandboxed key-injection and output capture. Integrate with command approval UI (PD-15-AF-006).

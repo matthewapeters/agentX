@@ -237,6 +237,24 @@ class AgentixBridgeAdapter:
                         "required": ["file_path"],
                     },
                 },
+                {
+                    "name": "diff_files_in_editor",
+                    "description": "Open a side-by-side diff between two files in the running vibe editor",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "left_file": {
+                                "type": "string",
+                                "description": "Path to the left-hand file in the diff view",
+                            },
+                            "right_file": {
+                                "type": "string",
+                                "description": "Path to the right-hand file in the diff view",
+                            },
+                        },
+                        "required": ["left_file", "right_file"],
+                    },
+                },
             ]
 
             self.bridge.register_tool_implementations(impls, schemas)
