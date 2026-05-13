@@ -56,10 +56,11 @@ def test_handle_terminal_mode_toggle_cancel_keeps_supervised() -> None:
 def test_request_terminal_approval_delegates_to_dialog_on_main_thread() -> None:
     """GIVEN a terminal command in supervised mode [PD-15-AF-006]
 
-    WHEN approval is requested on main thread
+    WHEN approval is requested on main thread with GUI enabled
     THEN session delegates to the approval dialog and returns its result.
     """
     session = object.__new__(AgentXSession)
+    session._enable_gui_chat = True
     session._show_terminal_approval_dialog = MagicMock(return_value=(True, "git status"))
 
     approved, command = session._request_terminal_approval("git status", "check repo state")
@@ -67,6 +68,24 @@ def test_request_terminal_approval_delegates_to_dialog_on_main_thread() -> None:
     assert approved is True
     assert command == "git status"
     session._show_terminal_approval_dialog.assert_called_once_with("git status", "check repo state")
+
+
+@pytest.mark.unit
+def test_request_terminal_approval_returns_false_when_gui_disabled() -> None:
+    """GIVEN a terminal command with GUI chat disabled (headless mode) [PD-15-AF-006]
+
+    WHEN approval is requested
+    THEN session returns denied without opening any dialog.
+    """
+    session = object.__new__(AgentXSession)
+    session._enable_gui_chat = False
+    session._show_terminal_approval_dialog = MagicMock()
+
+    approved, command = session._request_terminal_approval("git status", "check repo state")
+
+    assert approved is False
+    assert command == "git status"
+    session._show_terminal_approval_dialog.assert_not_called()
 
 
 @pytest.mark.unit

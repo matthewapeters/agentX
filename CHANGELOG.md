@@ -5,6 +5,31 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.3] - 2026-05-13
+
+### Code Changes
+
+#### Fixed
+
+- `_request_terminal_approval` crash when the approval callback fires without `_enable_gui_chat` set.
+  - Root cause: the test for `PD-15-AF-006` used `object.__new__(AgentXSession)` to bypass `__init__`, so `_enable_gui_chat` was never initialised. When `_enable_gui_chat` was added to `_request_terminal_approval` (headless-mode guard, commit `1f9cdd6`), the test started raising `AttributeError` — and this same path would crash in any code that constructs a session-like object without calling `__init__`.
+  - Fix: set `session._enable_gui_chat = True` in the test setup so the unit exercises the correct GUI-enabled code path.
+
+### Test Changes
+
+#### Fixed
+
+- `tests/test_terminal_mode_and_approval.py::test_request_terminal_approval_delegates_to_dialog_on_main_thread`
+  - GIVEN a terminal command in supervised mode [PD-15-AF-006] WHEN approval requested on main thread THEN delegates to dialog — was failing with `AttributeError: 'AgentXSession' object has no attribute '_enable_gui_chat'`.
+  - Added `session._enable_gui_chat = True` to test setup.
+
+#### Added
+
+- `tests/test_terminal_mode_and_approval.py::test_request_terminal_approval_returns_false_when_gui_disabled`
+  - GIVEN a terminal command with GUI chat disabled (headless mode) [PD-15-AF-006] WHEN approval is requested THEN returns denied without opening any dialog.
+
+---
+
 ## [0.48.2] - 2026-05-12
 
 ### Code Changes
