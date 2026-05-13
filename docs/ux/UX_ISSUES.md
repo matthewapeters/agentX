@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-11 (v0.39.3.post1)_
+_Last updated: 2026-05-12 (v0.48.2)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -266,9 +266,16 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
   - `tests/test_event_broker_pubsub.py`: added no-drop busy-subscriber regression and ordered-delivery regression tests.
   - `tests/test_tui_bridge_output.py`, `tests/test_config_tui_phase1.py`: full related suite re-run; all pass.
 - **UAT Status**: latest fix candidate ready for UAT.
-- [ ] Issue, the neovim panes should be reorganized for better user experience:
+- [/] Issue, the neovim panes should be reorganized for better user experience:
   - TUI (default displayed)
   - neovim (AKA "Editor" or "Vibe Editor")
   - BASH terminal
   - AgentX Logs
+- **Root cause / attempted fix (v0.48.2)**:
+  - Launcher created the editor as window `0`, then added agent/log windows and optionally appended `tui-chat` later. This made attach behavior editor-first and inconsistent with the requested TUI-first workflow.
+  - Updated `launch_vibe.sh` session creation order when TUI is enabled to deterministic window order: `0=tui-chat`, `1=editor`, `2=agent-bg`, `3=agentx-log`.
+  - Added explicit `tmux select-window` before attach so default visible pane is `tui-chat` when enabled (editor remains default when TUI is disabled).
+  - Adjusted editor-pane resolution fallback order to prefer named `editor` window before generic first-pane fallback, preventing mis-targeting in TUI-first sessions.
+- **Tests**: `tests/test_launch_vibe_shutdown.py` updated for TUI-first ordering and attach-window selection assertions.
+- **UAT Status**: latest fix candidate ready for UAT.
 - Tool/tooling backlog items were moved to `docs/tools/tools_issues.md` to keep UX and tooling triage separate.

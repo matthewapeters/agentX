@@ -3,9 +3,10 @@
 # launch_vibe.sh — AgentX Vibe Coding Launcher
 # =============================================================================
 # Starts a tmux session with:
-#   - window 0, pane 0.0: neovim with RPC socket exposed at /tmp/agentx.nvim.sock
-#   - window 1 (agent-bg): persistent agent shell + ephemeral agent terminal panes
-#   - window 2 (agentx-log): AgentX runtime process + its stdout/stderr logs
+#   - window 0 (tui-chat, optional): TUI mirror (default attached view when enabled)
+#   - window 1 (editor): neovim with RPC socket exposed at /tmp/agentx.nvim.sock
+#   - window 2 (agent-bg): persistent agent shell + ephemeral agent terminal panes
+#   - window 3 (agentx-log): AgentX runtime process + its stdout/stderr logs
 #   - AgentX GUI launched as a floating Tkinter window (separate from tmux)
 #
 # Usage:
@@ -415,16 +416,6 @@ _editor_pane_target() {
         return 0
     fi
 
-    # In this launcher the editor starts as the first pane in the session.
-    # Prefer that stable position before falling back to the window name,
-    # because tmux may rename the window away from "editor" after nvim starts.
-    pane_id="$(_first_pane_target)"
-    if [[ -n "$pane_id" ]]; then
-        EDITOR_PANE_ID="$pane_id"
-        echo "$pane_id"
-        return 0
-    fi
-
     local target
     target="$(_window_target_by_name "$EDITOR_WINDOW_NAME")" || true
     if [[ -n "$target" ]]; then
@@ -435,6 +426,14 @@ _editor_pane_target() {
             echo "$pane_id"
             return 0
         fi
+    fi
+
+    # Final fallback: first pane in session if no named editor window is available.
+    pane_id="$(_first_pane_target)"
+    if [[ -n "$pane_id" ]]; then
+        EDITOR_PANE_ID="$pane_id"
+        echo "$pane_id"
+        return 0
     fi
 
     echo ""
@@ -987,8 +986,21 @@ _start_session() {
     echo ""
     echo "Creating tmux session '$TMUX_SESSION'..."
     local editor_pane_target
-    editor_pane_target="$(tmux new-session -d -P -F '#{pane_id}' -s "$TMUX_SESSION" -n "$EDITOR_WINDOW_NAME" -c "$PROJECT_DIR")"
-    EDITOR_PANE_ID="$(_normalize_token "$editor_pane_target")"
+    local tui_pane_target
+    if _tui_enabled; then
+        # Keep TUI as window 0 and default attached view for fast prompt/response iteration.
+        tui_pane_target="$(tmux new-session -d -P -F '#{pane_id}' -s "$TMUX_SESSION" -n "$TUI_WINDOW_NAME" -c "$PROJECT_DIR")"
+        TUI_PANE_ID="$(_normalize_token "$tui_pane_target")"
+
+        local editor_idx_new
+        editor_idx_new="$(_next_available_window_index)"
+        editor_pane_target="$(tmux new-window -P -F '#{pane_id}' -t "${TMUX_SESSION}:${editor_idx_new}" -n "$EDITOR_WINDOW_NAME" -d -c "$PROJECT_DIR")"
+        EDITOR_PANE_ID="$(_normalize_token "$editor_pane_target")"
+    else
+        editor_pane_target="$(tmux new-session -d -P -F '#{pane_id}' -s "$TMUX_SESSION" -n "$EDITOR_WINDOW_NAME" -c "$PROJECT_DIR")"
+        EDITOR_PANE_ID="$(_normalize_token "$editor_pane_target")"
+    fi
+
     # Prevent tmux from renaming the editor window after nvim starts — this keeps
     # _window_target_by_name("editor") reliable throughout the session lifetime.
     tmux set-window-option -t "${TMUX_SESSION}:${EDITOR_WINDOW_NAME}" automatic-rename off 2>/dev/null || true
@@ -1047,14 +1059,7 @@ _start_session() {
     if _tui_enabled; then
         echo ""
         echo "Launching TUI mirror in tmux window '${TUI_WINDOW_NAME}'..."
-        local tui_pane_target
-        if ! _window_exists_by_name "$TUI_WINDOW_NAME"; then
-            local tui_idx_new
-            tui_idx_new="$(_next_available_window_index)"
-            tui_pane_target="$(tmux new-window -P -F '#{pane_id}' -t "${TMUX_SESSION}:${tui_idx_new}" -n "$TUI_WINDOW_NAME" -d -c "$PROJECT_DIR")"
-        else
-            tui_pane_target="$(_tui_pane_target)"
-        fi
+        tui_pane_target="$(_tui_pane_target)"
         TUI_PANE_ID="$tui_pane_target"
         tmux send-keys -t "$tui_pane_target" \
             "AGENTX_TUI_OUTPUT_FIFO='${TUI_OUTPUT_FIFO}' AGENTX_TUI_INPUT_FIFO='${TUI_INPUT_FIFO}' AGENTX_TUI_OUTPUT_SPLIT_RATIO='${TUI_OUTPUT_SPLIT_RATIO}' nvim --listen '${TUI_SOCKET}' --cmd 'luafile ${PROJECT_DIR}/${TUI_LUA_FILE}'" \
@@ -1100,6 +1105,20 @@ _start_session() {
     echo "  Graceful stop : ./launch_vibe.sh stop"
     echo "  Recover editor: ./launch_vibe.sh recover-editor"
     echo ""
+
+    if _tui_enabled; then
+        local tui_window_target
+        tui_window_target="$(_window_target_by_name "$TUI_WINDOW_NAME")" || true
+        if [[ -n "$tui_window_target" ]]; then
+            tmux select-window -t "$tui_window_target"
+        fi
+    else
+        local editor_window_target
+        editor_window_target="$(_window_target_by_name "$EDITOR_WINDOW_NAME")" || true
+        if [[ -n "$editor_window_target" ]]; then
+            tmux select-window -t "$editor_window_target"
+        fi
+    fi
 
     exec tmux attach -t "$TMUX_SESSION"
 }

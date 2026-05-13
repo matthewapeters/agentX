@@ -5,6 +5,34 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.2] - 2026-05-12
+
+### Code Changes
+
+#### Fixed
+
+- Reordered tmux launcher windows for TUI-first workflow when TUI is enabled.
+  - [launch_vibe.sh](launch_vibe.sh)
+    - Changed startup window order to `0=tui-chat`, `1=editor`, `2=agent-bg`, `3=agentx-log` when `[tui].enable=true`.
+    - Set explicit pre-attach window selection to make `tui-chat` the default visible pane when enabled.
+    - Updated editor pane resolution fallback order to prefer named `editor` window before generic first-pane fallback.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated vibe-launch architecture and UX issue tracking for TUI-first pane ordering.
+  - [docs/ux/05_VIBE_CODING.md](docs/ux/05_VIBE_CODING.md)
+  - [docs/ux/UX_ISSUES.md](docs/ux/UX_ISSUES.md)
+
+### Test Changes
+
+#### Changed
+
+- Updated launcher lifecycle tests to validate TUI-first ordering semantics.
+  - [tests/test_launch_vibe_shutdown.py](tests/test_launch_vibe_shutdown.py)
+    - Added assertions for `tui-chat` as session window `0` and `select-window -t agentx:0` before attach.
+
 ## [0.48.1] - 2026-05-12
 
 ### Code Changes

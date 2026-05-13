@@ -176,7 +176,7 @@ def test_multiple_sessions_use_scoped_sockets(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_start_with_tui_enabled_launches_tui_window_and_env(tmp_path: Path) -> None:
-    """GIVEN TUI mode enabled WHEN launch_vibe.sh start runs THEN AgentX gets TUI env and a tui-chat window is launched. [PD-16-AF-003]"""
+    """GIVEN TUI mode enabled WHEN launch_vibe.sh start runs THEN tui-chat is window 0 and receives TUI env wiring. [PD-16-AF-003]"""
     fake_bin = _create_fake_bin(tmp_path)
     log_path = tmp_path / "tmux.log"
     project_dir = tmp_path / "project"
@@ -201,12 +201,13 @@ def test_start_with_tui_enabled_launches_tui_window_and_env(tmp_path: Path) -> N
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx:" in log
-    assert "\t-n\ttui-chat" in log
-    assert "send-keys\t-t\t%3\tAGENTX_TUI_OUTPUT_FIFO='" in log
+    assert "new-session\t-d\t-P\t-F\t#{pane_id}\t-s\tagentx\t-n\ttui-chat" in log
+    assert "AGENTX_TUI_OUTPUT_FIFO='" in log
     assert "nvim\t--listen" in log
     assert "--cmd\t'luafile" in log
     assert "agentx_tui.lua'" in log
+    assert "send-keys\t-t\tagentx:3" in log
+    assert "select-window\t-t\tagentx:0" in log
     assert "AGENTX_TUI_ENABLE='true'" in log
     assert "AGENTX_TUI_OUTPUT_FIFO='" in log
     assert "AGENTX_TUI_INPUT_FIFO='" in log
@@ -316,7 +317,7 @@ def test_status_reports_tui_disabled_by_default(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_restart_with_tui_enabled_recreates_tui_lifecycle(tmp_path: Path) -> None:
-    """GIVEN an existing TUI-enabled session WHEN restart runs THEN stop/start lifecycle re-creates TUI FIFOs and relaunches tui-chat. [PD-16-AF-003]"""
+    """GIVEN an existing TUI-enabled session WHEN restart runs THEN stop/start lifecycle keeps tui-chat as window 0 and relaunches it. [PD-16-AF-003]"""
     fake_bin = _create_fake_bin(tmp_path)
     log_path = tmp_path / "tmux.log"
     project_dir = tmp_path / "project"
@@ -344,8 +345,9 @@ def test_restart_with_tui_enabled_recreates_tui_lifecycle(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
     assert "kill-session\t-t\tagentx" in log
-    assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx:" in log
-    assert "\t-n\ttui-chat" in log
+    assert "new-session\t-d\t-P\t-F\t#{pane_id}\t-s\tagentx\t-n\ttui-chat" in log
+    assert "AGENTX_TUI_OUTPUT_FIFO='" in log
+    assert "select-window\t-t\tagentx:0" in log
     assert "agentx_tui.lua" in log
     assert output_fifo.exists()
     assert input_fifo.exists()
@@ -353,7 +355,7 @@ def test_restart_with_tui_enabled_recreates_tui_lifecycle(tmp_path: Path) -> Non
 
 @pytest.mark.unit
 def test_start_reads_tui_enable_from_project_toml(tmp_path: Path) -> None:
-    """GIVEN project config with tui.enable=true WHEN launch_vibe.sh start runs without AGENTX_TUI_ENABLE THEN tui-chat window is launched. [PD-16-AF-003]"""
+    """GIVEN project config with tui.enable=true WHEN launch_vibe.sh start runs without AGENTX_TUI_ENABLE THEN tui-chat starts as window 0. [PD-16-AF-003]"""
     fake_bin = _create_fake_bin(tmp_path)
     log_path = tmp_path / "tmux.log"
     project_dir = tmp_path / "project"
@@ -384,8 +386,8 @@ enable = true
 
     assert result.returncode == 0, result.stderr
     log = log_path.read_text(encoding="utf-8")
-    assert "new-window\t-P\t-F\t#{pane_id}\t-t\tagentx:" in log
-    assert "\t-n\ttui-chat" in log
+    assert "new-session\t-d\t-P\t-F\t#{pane_id}\t-s\tagentx\t-n\ttui-chat" in log
+    assert "select-window\t-t\tagentx:0" in log
 
 
 @pytest.mark.unit

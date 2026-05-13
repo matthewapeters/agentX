@@ -1,6 +1,6 @@
 # AgentX — Vibe Coding: Neovim Integration
 
-_Last updated: 2026-05-09 (v0.33.1.post1 — added OQ-10 cross-reference to TUI mirror spec)_
+_Last updated: 2026-05-12 (v0.48.2 — reordered tmux windows for TUI-first attach flow)_
 
 > **"Vibe coding"**: a mode of collaborative software development where the AI agent
 > and the human developer co-author code in the same editor at the same time, each
@@ -55,21 +55,29 @@ _Last updated: 2026-05-09 (v0.33.1.post1 — added OQ-10 cross-reference to TUI 
 │                                                                          │
 │  tmux session: agentx                                                   │
 │                                                                          │
-│  ┌── window 0: editor (user-visible) ────────────────────────────────┐  │
+│  ┌── window 0: tui-chat (user-visible default, when enabled) ────────┐  │
 │  │                                                                    │  │
-│  │  pane 0.0 (always present)                                        │  │
+│  │  pane 0.0 (always present when TUI is enabled)                    │  │
 │  │  ┌──────────────────────────────────────────────────────────┐    │  │
-│  │  │  nvim --listen /tmp/agentx.nvim.sock                     │    │  │
-│  │  │  (user's primary editing surface — agent can also write) │    │  │
+│  │  │  nvim --listen /tmp/agentx_tui.nvim.sock                  │    │  │
+│  │  │  (FIFO-backed TUI mirror input/output view)               │    │  │
 │  │  └──────────────────────────────────────────────────────────┘    │  │
 │  │                                                                    │  │
-│  │  NOTE: Agent does NOT split window 0.                             │  │
-│  │  The user may split window 0 manually (vimdiff, :vsplit, etc.).   │  │
+│  │  NOTE: This is the default attached window for prompt iteration.   │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
-│  ┌── window 1: agent-bg (agent-controlled terminal panes) ───────────┐  │
+│  ┌── window 1: editor (primary neovim editing surface) ──────────────┐  │
 │  │                                                                    │  │
-│  │  pane 1.0 (persistent — agent shell, always present)             │  │
+│  │  pane 1.0 (always present)                                        │  │
+│  │  ┌──────────────────────────────────────────────────────────┐    │  │
+│  │  │  nvim --listen /tmp/agentx.nvim.sock                     │    │  │
+│  │  │  (user + agent shared editing surface)                   │    │  │
+│  │  └──────────────────────────────────────────────────────────┘    │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  ┌── window 2: agent-bg (agent-controlled terminal panes) ───────────┐  │
+│  │                                                                    │  │
+│  │  pane 2.0 (persistent — agent shell, always present)             │  │
 │  │  ┌──────────────────────────────────────────────────────────┐    │  │
 │  │  │  bash  (base shell, sourced venv, cwd = project_dir)     │    │  │
 │  │  │  commands run here when visible=False                    │    │  │
@@ -86,14 +94,15 @@ _Last updated: 2026-05-09 (v0.33.1.post1 — added OQ-10 cross-reference to TUI 
 │  │  └──────────────────────────────────────────────────────────┘    │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
-│  tmux key: Ctrl+B, 0  ← window 0 (neovim)                              │
-│            Ctrl+B, 1  ← window 1 (agent terminals — observe/intervene)  │
-│            Ctrl+B, 2  ← window 2 (agentx runtime logs)                  │
+│  tmux key: Ctrl+B, 0  ← window 0 (tui-chat, default attached view)      │
+│            Ctrl+B, 1  ← window 1 (editor neovim)                         │
+│            Ctrl+B, 2  ← window 2 (agent terminals — observe/intervene)   │
+│            Ctrl+B, 3  ← window 3 (agentx runtime logs)                   │
 └──────────────────────────────────────────────────────────────────────────┘
 
-┌─── window 2: agentx-log (AgentX runtime process) ──────────────────────┐
+┌─── window 3: agentx-log (AgentX runtime process) ──────────────────────┐
 │                                                                          │
-│  pane 2.0 (persistent — AgentX process, stdout/stderr captured here)   │
+│  pane 3.0 (persistent — AgentX process, stdout/stderr captured here)   │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │  python -m agentx  (GUI process — Tkinter opens separate window) │  │
 │  │  [2026-05-08 14:32] INFO  OllamaService: connected               │  │
@@ -102,7 +111,7 @@ _Last updated: 2026-05-09 (v0.33.1.post1 — added OQ-10 cross-reference to TUI 
 │  └──────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
 │  This window is never shown on attach — user switches to it explicitly  │
-│  with Ctrl+B, 2 when they need to inspect AgentX runtime output.        │
+│  with Ctrl+B, 3 when they need to inspect AgentX runtime output.        │
 └──────────────────────────────────────────────────────────────────────────┘
 
 ┌─── AgentX GUI (monitor 1, Tkinter floating window) ──────────────┐
@@ -127,10 +136,11 @@ launch_vibe.sh
   │
   ├── mkfifo /tmp/agentx_saves.fifo          File-save notification pipe
   ├── drops .nvimrc.agentx                   BufWritePost autocommand
-  ├── tmux new-session "agentx"
-  │     ├── window 0: pane 0.0 — nvim --listen /tmp/agentx.nvim.sock
-  │     ├── window 1: pane 1.0 — persistent agent shell (venv activated)
-  │     └── window 2: pane 2.0 — python -m agentx (runtime logs land here, GUI opens separately)
+    ├── tmux new-session "agentx"
+    │     ├── window 0: pane 0.0 — optional TUI mirror (when `[tui].enable=true`)
+    │     ├── window 1: pane 1.0 — nvim --listen /tmp/agentx.nvim.sock
+    │     ├── window 2: pane 2.0 — persistent agent shell (venv activated)
+    │     └── window 3: pane 3.0 — python -m agentx (runtime logs land here, GUI opens separately)
   │
 AgentX (src/agentx/)
   │
@@ -149,29 +159,30 @@ AgentX (src/agentx/)
   └── session.py                 wires VimBridge + TerminalBridge into tool loop
 ```
 
-### Window 1 Pane Lifecycle
+### Window 2 Pane Lifecycle
 
 ```
-launch_vibe.sh creates window 1 with pane 1.0 (persistent agent shell)
+launch_vibe.sh creates window 2 with pane 2.0 (persistent agent shell)
 
 For each terminal_run(cmd, visible=True) call:
-  tmux new-window -t agentx:1  (or split-pane within window 1)
+    tmux new-window -t agentx:2  (or split-pane within window 2)
   → ephemeral pane runs command
   → TerminalBridge polls for exit
   → if auto_close: tmux kill-pane
   → else: pane stays, marked [done]
 
 For each terminal_run(cmd, visible=False) call:
-  tmux send-keys -t agentx:1.0 "<command>" Enter
+    tmux send-keys -t agentx:2.0 "<command>" Enter
   → command runs in persistent pane 1.0
   → output captured via tmux capture-pane
   → pane 1.0 returns to idle shell prompt
 
 User navigation:
-  Ctrl+B, 0          — switch to neovim
-  Ctrl+B, 1          — switch to agent window to observe running commands
-  Ctrl+B, 2          — switch to agentx-log to inspect AgentX runtime output
-  Ctrl+B, &          — kill window 1 (emergency stop all agent terminals)
+    Ctrl+B, 0          — switch to TUI mirror (default attached view when enabled)
+    Ctrl+B, 1          — switch to neovim editor
+    Ctrl+B, 2          — switch to agent window to observe running commands
+    Ctrl+B, 3          — switch to agentx-log to inspect AgentX runtime output
+    Ctrl+B, &          — kill window 2 (emergency stop all agent terminals)
 ```
 
 ---
@@ -216,26 +227,31 @@ launch_vibe.sh restart [project_dir]
 7. Create tmux session (detached):
 
    ```bash
-   tmux new-session -d -s agentx -c "$project_dir"
+    # when TUI enabled
+    tmux new-session -d -s agentx -n tui-chat -c "$project_dir"
+    tmux new-window -t agentx:1 -n editor -d -c "$project_dir"
+
+    # when TUI disabled
+    tmux new-session -d -s agentx -n editor -c "$project_dir"
    ```
 
-8. Launch neovim in pane 0.0:
+8. Launch neovim in the editor pane:
 
    ```bash
-   tmux send-keys -t agentx:0.0 \
+    tmux send-keys -t agentx:1.0 \
      "nvim --listen /tmp/agentx.nvim.sock --cmd 'source .nvimrc.agentx'" Enter
    ```
 
-9. Launch AgentX runtime process in `window 2: agentx-log` with an exit hook that
+9. Launch AgentX runtime process in `window 3: agentx-log` (or `window 2` when TUI is disabled) with an exit hook that
      tears down the tmux session when the GUI process exits:
 
    ```bash
-     tmux new-window -t agentx:2 -n agentx-log -d -c "$project_dir"
-     tmux send-keys -t agentx:2 \
+    tmux new-window -t agentx:3 -n agentx-log -d -c "$project_dir"
+    tmux send-keys -t agentx:3 \
          "AGENTX_NVIM_SOCKET=/tmp/agentx_agentx.nvim.sock AGENTX_SAVES_FIFO=/tmp/agentx_agentx.saves.fifo AGENTX_TMUX_SESSION=agentx python -m agentx; tmux kill-session -t agentx" Enter
    ```
 
-10. Attach tmux session (user sees neovim):
+10. Attach tmux session (user sees TUI when enabled, editor otherwise):
 
    ```bash
    tmux attach -t agentx
@@ -836,7 +852,7 @@ sequenceDiagram
 | 2 | Recreate `window 0` if missing |
 | 3 | Rewrite `.nvimrc.agentx` to ensure save autocommand remains present |
 | 4 | Relaunch neovim in pane `agentx:0.0` with `--listen` socket |
-| 5 | Print operator hint: `Ctrl+B, 0` |
+| 5 | Print operator hint for editor window (`Ctrl+B, 1` when TUI is enabled; `Ctrl+B, 0` otherwise) |
 
 **Error path**: If session is missing, command fails with clear message and start hint.
 
@@ -852,7 +868,7 @@ sequenceDiagram
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `terminal_visible` | `bool` | `true` | Agent terminal panes open in window 1 visibly (user can observe via Ctrl+B, 1) |
+| `terminal_visible` | `bool` | `true` | Agent terminal panes open in the `agent-bg` window visibly (Ctrl+B, 2 when TUI is enabled) |
 | `terminal_auto_close` | `bool` | `true` | Kill ephemeral pane when command completes |
 | `terminal_timeout_sec` | `int` | `60` | Max seconds to wait for command exit |
 
