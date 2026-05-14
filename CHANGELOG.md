@@ -5,6 +5,27 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.3.post1] - 2025-05-13
+
+### Documentation Changes
+
+#### Added
+
+- `.github/prompts/issue-intake.prompt.md` — triage, duplicate detection, reopen vs new logic
+- `.github/prompts/issue-reproduce-evidence.prompt.md` — structured reproduction, artifacts, reproducibility matrix
+- `.github/prompts/issue-investigate.prompt.md` — root-cause analysis, blast radius, fix strategy selection
+- `.github/prompts/issue-regression-tests.prompt.md` — Gherkin scenario authoring, failing regression test baseline
+- `.github/prompts/issue-fix-close.prompt.md` — fix code, quality gates, changelog, version, issue close
+- `.github/prompts/issue-pr-handoff.prompt.md` — push branch, create PR, checklist, hand off to post-merge
+- `.github/prompts/issue-verify-release.prompt.md` — post-merge verification, durable audit trail, reopen criteria
+- `.github/prompts/00_INDEX.md` — indexed folder index with lifecycle pipeline diagram
+
+#### Removed
+
+- `.github/prompts/issue-intake-legacy.prompt.md` (renamed `new-issue.prompt.md`) — superseded by the seven-stage prompt suite above
+
+---
+
 ## [0.48.3] - 2026-05-13
 
 ### Code Changes
