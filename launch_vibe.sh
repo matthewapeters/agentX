@@ -31,6 +31,7 @@
 #   AGENTX_PYTHON           Python executable to use (default: resolved from venv or PATH)
 #   AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS Number of preflight attempts before failing (default: 2)
 #   AGENTX_OLLAMA_PREFLIGHT_RETRY_SEC Seconds to wait between preflight retries (default: 1)
+#   AGENTX_OLLAMA_PREFLIGHT_TIMEOUT_SEC Curl timeout per preflight attempt in seconds (default: 20)
 #   AGENTX_SOCKET_WAIT_LOOPS Number of nvim socket polling loops (default: 10)
 #   AGENTX_SOCKET_WAIT_SEC   Seconds per socket polling loop (default: 0.5)
 #
@@ -88,6 +89,7 @@ OLLAMA_HOST="${AGENTX_OLLAMA_HOST:-}"
 OLLAMA_MODEL="${AGENTX_OLLAMA_MODEL:-}"
 OLLAMA_PREFLIGHT_ATTEMPTS="${AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS:-2}"
 OLLAMA_PREFLIGHT_RETRY_SEC="${AGENTX_OLLAMA_PREFLIGHT_RETRY_SEC:-1}"
+OLLAMA_PREFLIGHT_TIMEOUT_SEC="${AGENTX_OLLAMA_PREFLIGHT_TIMEOUT_SEC:-20}"
 SOCKET_WAIT_LOOPS="${AGENTX_SOCKET_WAIT_LOOPS:-10}"
 SOCKET_WAIT_SEC="${AGENTX_SOCKET_WAIT_SEC:-0.5}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -272,13 +274,29 @@ _preflight_ollama_chat_model() {
         retry_sec=1
     fi
 
+    local timeout_sec="$OLLAMA_PREFLIGHT_TIMEOUT_SEC"
+    if [[ -z "$timeout_sec" || ! "$timeout_sec" =~ ^[0-9]+$ || "$timeout_sec" -lt 1 ]]; then
+        timeout_sec=20
+    fi
+
     local http_code=""
+    local last_body_preview=""
+    local saw_oom="false"
     local attempt=1
     while [[ "$attempt" -le "$max_attempts" ]]; do
-        http_code="$(curl -sS -m 10 -o "$response_file" -w '%{http_code}' \
+        http_code="$(curl -sS -m "$timeout_sec" -o "$response_file" -w '%{http_code}' \
             -H 'Content-Type: application/json' \
             "$chat_url" \
-            -d "{\"model\":\"${OLLAMA_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"stream\":false}" || true)"
+            -d "{\"model\":\"${OLLAMA_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"options\":{\"num_predict\":1},\"stream\":false}" || true)"
+
+        if [[ -s "$response_file" ]]; then
+            last_body_preview="$(head -c 240 "$response_file" | tr '\n' ' ')"
+            if grep -qiE 'out of memory|cuda error' "$response_file"; then
+                saw_oom="true"
+            fi
+        else
+            last_body_preview=""
+        fi
 
         if [[ "$http_code" == "200" ]]; then
             rm -f "$response_file"
@@ -295,10 +313,12 @@ _preflight_ollama_chat_model() {
     done
 
     _red "  ✗ Ollama preflight failed for model '${OLLAMA_MODEL}' at '${chat_url}' (HTTP ${http_code:-unknown})."
-    if [[ -s "$response_file" ]]; then
-        local body_preview
-        body_preview="$(head -c 240 "$response_file" | tr '\n' ' ')"
-        _red "    Response: ${body_preview}"
+    if [[ -n "$last_body_preview" ]]; then
+        _red "    Response: ${last_body_preview}"
+    fi
+    if [[ "$saw_oom" == "true" ]]; then
+        _red "    Detected GPU memory pressure (OOM) while probing '${OLLAMA_MODEL}'."
+        _yellow "    Consider freeing VRAM, switching to a smaller model, or increasing AGENTX_OLLAMA_PREFLIGHT_TIMEOUT_SEC."
     fi
     rm -f "$response_file"
 

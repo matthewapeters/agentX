@@ -5,6 +5,31 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.5] - 2026-05-15
+
+### Code Changes
+
+#### Fixed
+
+- Hardened Ollama launcher preflight behavior in `launch_vibe.sh` for heavy model startup paths.
+  - Added `AGENTX_OLLAMA_PREFLIGHT_TIMEOUT_SEC` (default: `20`) so startup can tolerate slower first-token latency.
+  - Reduced preflight generation work by sending chat probe option `"num_predict": 1`.
+  - Added OOM-aware diagnostics when preflight response indicates CUDA/VRAM memory pressure.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_launch_vibe_shutdown.py::test_start_preflight_surfaces_gpu_oom_guidance`
+  - GIVEN preflight returns HTTP 500 with CUDA out-of-memory details [PD-15-AF-010]
+  - WHEN launcher starts
+  - THEN launcher exits with OOM-specific guidance.
+
+#### Changed
+
+- `tests/test_launch_vibe_shutdown.py::test_start_preflight_uses_configured_model_payload`
+  - Added assertion that preflight payload uses lightweight probe option `"num_predict": 1`.
+
 ## [0.48.4] - 2026-05-15
 
 ### Code Changes

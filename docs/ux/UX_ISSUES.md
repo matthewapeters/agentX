@@ -321,5 +321,14 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
     - Added bounded preflight retry/backoff in `launch_vibe.sh` to reduce false-negative startup aborts on transient `HTTP 000`.
     - Added controls: `AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS` and `AGENTX_OLLAMA_PREFLIGHT_RETRY_SEC`.
   - **Regression test evidence**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4460265372>.
-  - **UAT Status**: latest fix candidate ready for UAT.
-  - **Next prompt**: `issue-fix-close`.
+  - **Fix summary evidence**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4460328653>.
+  - **Verify-release evidence**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4461184032>.
+  - **UAT Status**: verification failed stability gate (5-trial run: 2 pass / 3 fail); issue remains open.
+  - **Investigation hardening candidate (v0.48.5)**:
+    - Increased preflight timeout budget via `AGENTX_OLLAMA_PREFLIGHT_TIMEOUT_SEC` (default `20`).
+    - Reduced chat-probe work with `"num_predict": 1` in preflight payload.
+    - Added explicit OOM diagnostics in launcher output for CUDA/VRAM pressure signatures.
+  - **Latest observed failure signatures**:
+    - preflight retry exhaustion with `curl: (28)` and final `HTTP 000` launcher abort;
+    - intermittent upstream `HTTP 500` including `CUDA error: out of memory` in model execution path.
+  - **Next prompt**: `issue-investigate`.

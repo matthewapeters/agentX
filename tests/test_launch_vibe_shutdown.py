@@ -225,6 +225,41 @@ ollama_model = "qwen3.6:latest"
     curl_log = curl_log_path.read_text(encoding="utf-8")
     assert "/api/chat" in curl_log
     assert '"model":"qwen3.6:latest"' in curl_log
+    assert '"num_predict":1' in curl_log
+
+
+@pytest.mark.unit
+def test_start_preflight_surfaces_gpu_oom_guidance(tmp_path: Path) -> None:
+    """GIVEN preflight returns GPU OOM response for qwen [PD-15-AF-010]
+
+    WHEN launch_vibe start is run
+    THEN launcher exits with OOM-specific guidance instead of generic model-only hints.
+    """
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_OLLAMA_HOST": "localhost:11434",
+            "AGENTX_OLLAMA_MODEL": "qwen3.6:latest",
+            "FAKE_CURL_HTTP_CODE": "500",
+            "FAKE_CURL_BODY": '{"error":"CUDA error: out of memory"}',
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 1
+    assert "Detected GPU memory pressure (OOM)" in result.stdout
+    assert "AGENTX_OLLAMA_PREFLIGHT_TIMEOUT_SEC" in result.stdout
 
 
 @pytest.mark.unit
