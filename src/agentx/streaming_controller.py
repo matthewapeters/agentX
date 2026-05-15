@@ -98,7 +98,7 @@ class StreamingController:
             header = f"\n\n\U0001f916 ({s.active_model})\t"
             s._safe_root_after(lambda: s.gui.display_agent_response(header))
             s._write_log(header)
-            self._write_tui_output("###AGENT\n")
+            self._write_tui_output("###AGENT 🤖\n")
 
     def _handle_stream_content(self, text: str) -> None:
         """Ensure header is shown before streaming content chunks."""
@@ -485,7 +485,7 @@ class StreamingController:
         attachment_filenames = [os.path.basename(att.file_path) for att in s.message.attachments]
         user_timestamp = datetime.now()
         s._safe_root_after(lambda: s.gui.display_user_message(prompt, attachment_filenames, user_timestamp))
-        self._write_tui_output(f"###USER {user_timestamp.strftime('%H:%M:%S')}\n{prompt}\n\n")
+        self._write_tui_output(f"###USER {user_timestamp.strftime('%H:%M:%S')}\n👤 {prompt}\n\n")
         s._write_log(f"\n👤 User: {prompt}\n")
         s._output_logger.log("user", prompt)
 

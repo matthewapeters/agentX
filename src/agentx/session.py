@@ -516,7 +516,7 @@ class AgentXSession:
                 self.gui.display_bootstrap_agent_response(response_text)
                 if self.tui_bridge is not None:
                     try:
-                        self.tui_bridge.write_output(f"###AGENT\n{response_text}\n###DONE\n")
+                        self.tui_bridge.write_output(f"###AGENT 🤖\n{response_text}\n###DONE\n")
                     except Exception:
                         logger.debug("Failed to mirror bootstrap response to TUI output", exc_info=True)
                 self._output_logger.log("bootstrap_agent", response_text)

@@ -6,7 +6,6 @@ with guaranteed delivery. Buffers output if FIFO isn't ready.
 """
 
 import logging
-import os
 import threading
 import time
 from collections import deque
@@ -135,7 +134,8 @@ class TUIEventSubscriber:
             return data.get("text", "")
 
         elif event_type == EventType.AGENT_HEADER:
-            return "###AGENT\n"
+            # Preserve marker semantics while adding GUI-parity role icon.
+            return "###AGENT 🤖\n"
 
         elif event_type == EventType.AGENT_CONTENT:
             # Check if this is raw TUI output (from _write_tui_output)
@@ -167,8 +167,8 @@ class TUIEventSubscriber:
             text = data.get("text", "")
             timestamp = data.get("timestamp", "")
             if timestamp:
-                return f"###USER {timestamp}\n{text}\n\n"
-            return f"###USER\n{text}\n\n"
+                return f"###USER {timestamp}\n👤 {text}\n\n"
+            return f"###USER\n👤 {text}\n\n"
 
         elif event_type == EventType.BOOTSTRAP_MESSAGE:
             return f"###SYSTEM Bootstrap\n{data.get('message', '')}\n"

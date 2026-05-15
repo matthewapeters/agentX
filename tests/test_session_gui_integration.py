@@ -184,7 +184,7 @@ class TestAgentXSessionGUIIntegration(unittest.TestCase):
         self.assertNotIn("Hi! Identify yourself!", output_text)
         self.assertNotIn("hidden thinking", output_text)
         self.assertNotIn("Calling tool", output_text)
-        self.session.tui_bridge.write_output.assert_any_call("###AGENT\nHello! I am AgentX.\n###DONE\n")
+        self.session.tui_bridge.write_output.assert_any_call("###AGENT 🤖\nHello! I am AgentX.\n###DONE\n")
         self.assertEqual(len(self.session.context.messages), 0)
 
     def test_layout_skips_bootstrap_when_file_missing(self):

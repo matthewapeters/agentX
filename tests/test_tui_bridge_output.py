@@ -260,7 +260,7 @@ def test_streaming_controller_writes_agent_and_tool_records_to_tui() -> None:
         if len(call.args) >= 2
     ]
 
-    assert any(event == EventType.AGENT_CONTENT and record == "###AGENT\n" for event, record in calls)
+    assert any(event == EventType.AGENT_CONTENT and record.startswith("###AGENT") for event, record in calls)
     assert any(event == EventType.AGENT_CONTENT and record == "hi" for event, record in calls)
     assert any(
         event == EventType.AGENT_CONTENT and record.startswith("###TOOL_CALL read_file") for event, record in calls

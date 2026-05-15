@@ -90,7 +90,10 @@ def _start_nonblocking_fifo_reader(path: str, sink: list[str], stop_event: threa
                 readable, _, _ = select.select([fd], [], [], 0.05)
                 if not readable:
                     continue
-                data = os.read(fd, 4096)
+                try:
+                    data = os.read(fd, 4096)
+                except BlockingIOError:
+                    continue
                 if not data:
                     time.sleep(0.01)
                     continue
@@ -127,7 +130,8 @@ def test_tui_event_formatting_includes_role_emoji(event: Event, expected_emoji: 
 
 @pytest.mark.integration
 def test_tui_submit_output_includes_user_and_agent_emojis(tmp_path: Path) -> None:
-    """GIVEN a headless TUI prompt flow WHEN a response is streamed THEN output includes 👤 and 🤖 indicators. [PD-16-AF-004]"""
+    """GIVEN a headless TUI prompt flow WHEN a response is streamed THEN output includes
+    👤 and 🤖 indicators. [PD-16-AF-004]"""
     output_fifo = tmp_path / "tui.output.fifo"
     input_fifo = tmp_path / "tui.input.fifo"
     os.mkfifo(output_fifo)

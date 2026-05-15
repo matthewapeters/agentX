@@ -5,6 +5,32 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.9] - 2026-05-15
+
+### Code Changes
+
+#### Fixed
+
+- Fixed Issue #8 TUI emoji parity by adding role emoji indicators to streamed and bootstrap TUI output records.
+  - Updated `src/agentx/streaming_controller.py` to emit emoji-enhanced markers for streamed user and agent headers.
+  - Updated `src/agentx/integration/tui_event_subscriber.py` role formatting for agent/user event payloads.
+  - Updated `src/agentx/session.py` bootstrap TUI mirror output to include agent emoji marker.
+
+### Test Changes
+
+#### Changed
+
+- Updated TUI regression and compatibility assertions to validate emoji-enhanced markers while preserving `###` framing semantics.
+  - `tests/test_tui_emoji_regression.py`
+  - `tests/test_tui_bridge_output.py`
+  - `tests/test_session_gui_integration.py`
+
+### Documentation Changes
+
+#### Changed
+
+- Updated Issue #8 status in `docs/ux/UX_ISSUES.md` to fix-complete and advanced the workflow prompt to verify-release.
+
 ## [0.48.8] - 2026-05-15
 
 ### Test Changes
