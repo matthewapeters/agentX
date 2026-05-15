@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-15 (v0.48.10)_
+_Last updated: 2026-05-15 (v0.48.10.post1)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -363,7 +363,10 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
     - [/] evidence complete
     - [/] regression tests complete (defect encoded)
     - [/] fix complete
-    - [ ] verification pending
+    - [/] verification complete (closed-unverified)
   - **Reproduction evidence**: <https://github.com/matthewapeters/agentX/issues/8#issuecomment-4462913162>.
   - **Regression test evidence**: <https://github.com/matthewapeters/agentX/issues/8#issuecomment-4463029769>.
-  - **Next prompt**: `issue-verify-release`.
+  - **Verify-release evidence**: <https://github.com/matthewapeters/agentX/issues/8#issuecomment-4463262638>.
+  - **Closure comment**: <https://github.com/matthewapeters/agentX/issues/8#issuecomment-4463263445>.
+  - **Final state**: closed as closed-unverified on 2026-05-15 (automated release-like validation passed; reporter live UAT pending).
+  - **Next prompt**: `issue-intake`.

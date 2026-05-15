@@ -5,6 +5,17 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.10.post1] - 2026-05-15
+
+### Documentation Changes
+
+#### Changed
+
+- Completed Issue #8 verify-release audit trail and closure traceability.
+  - Added release-like verification evidence link in `docs/ux/UX_ISSUES.md`.
+  - Added final closure comment link and closed-unverified rationale in `docs/ux/UX_ISSUES.md`.
+  - Recorded reopen trigger context and workflow transition to `issue-intake`.
+
 ## [0.48.10] - 2026-05-15
 
 ### Code Changes
