@@ -5,6 +5,21 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.12] - 2026-05-15
+
+### Code Changes
+
+#### Fixed
+
+- Fixed TUI classification mirroring when GUI classification panel rendering is disabled.
+  - Updated `src/agentx/streaming_controller.py` so classification callback always emits TUI classification output (`###CLASSIFICATION 🤔`) while only gating GUI rendering behind `classification_display.enabled`.
+
+### Test Changes
+
+#### Added
+
+- Added regression test in `tests/test_tui_bridge_output.py` to ensure TUI classification output is still emitted when GUI classification display is disabled.
+
 ## [0.48.11] - 2026-05-15
 
 ### Code Changes

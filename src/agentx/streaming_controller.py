@@ -366,8 +366,7 @@ class StreamingController:
         """Build the on_classification callback respecting field-level display config."""
         s = self._s
         cd = config.get("agentix", {}).get("classification_display", {})
-        if not cd.get("enabled", True):
-            return lambda meta: None
+        show_gui_block = cd.get("enabled", True)
 
         show_intent = cd.get("show_intent", True)
         show_reasoning = cd.get("show_reasoning", True)
@@ -382,7 +381,8 @@ class StreamingController:
                 "missing_fields": meta.get("missing_fields") if show_clarification else [],
                 "next_step": meta.get("next_step", "") if show_next_step else "",
             }
-            s._safe_root_after(lambda m=filtered: s.gui.display_classification(m))
+            if show_gui_block:
+                s._safe_root_after(lambda m=filtered: s.gui.display_classification(m))
             lines = []
             if filtered.get("intent"):
                 lines.append(f"🤔 intent: {filtered['intent']}")

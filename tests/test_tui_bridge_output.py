@@ -342,6 +342,46 @@ def test_streaming_controller_writes_classification_record_to_tui() -> None:
     assert "path: respond_directly" in classification_records[0]
 
 
+def test_streaming_controller_writes_classification_to_tui_when_gui_display_disabled() -> None:
+    """GIVEN GUI classification display is disabled WHEN callback runs THEN TUI still receives classification output."""
+    session = _build_session(show_thinking=False)
+    controller = StreamingController(session)
+
+    callback = controller._make_classification_callback(
+        {
+            "agentix": {
+                "classification_display": {
+                    "enabled": False,
+                    "show_intent": True,
+                    "show_reasoning": True,
+                    "show_clarification": True,
+                    "show_next_step": True,
+                }
+            }
+        }
+    )
+    callback(
+        {
+            "intent": "simple_action",
+            "reasoning_summary": "Direct answer is sufficient.",
+            "needs_clarification": False,
+            "missing_fields": [],
+            "next_step": "respond_directly",
+        }
+    )
+
+    assert session.gui.display_classification.call_count == 0
+
+    calls = [
+        call.args[1].get("text", "")
+        for call in session.event_broker.publish.call_args_list
+        if len(call.args) >= 2 and call.args[0] == EventType.AGENT_CONTENT
+    ]
+    classification_records = [record for record in calls if record.startswith("###CLASSIFICATION")]
+    assert classification_records, "Expected TUI classification record even when GUI display is disabled"
+    assert "###CLASSIFICATION 🤔" in classification_records[0]
+
+
 @pytest.mark.unit
 def test_tui_bridge_reads_submit_messages_from_input_fifo(tmp_path: Path) -> None:
     """GIVEN TUI input fifo payloads WHEN submit sentinel appears THEN callback receives trimmed prompts."""
