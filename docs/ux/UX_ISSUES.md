@@ -302,10 +302,13 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
     - [ ] reproduction pending
     - [ ] evidence pending
     - [/] regression tests complete (defect encoded)
-    - [/] fix complete (ready for verify-release)
-    - [ ] verification pending
+    - [/] fix complete
+    - [/] verification complete (closed-unverified)
   - **Regression test evidence**: <https://github.com/matthewapeters/agentX/issues/6#issuecomment-4461869543>.
-  - **Next prompt**: `issue-verify-release`.
+  - **Verify-release evidence**:
+    - <https://github.com/matthewapeters/agentX/issues/6#issuecomment-4462068242> (release/build validation + scenario evidence + reopen criteria).
+    - <https://github.com/matthewapeters/agentX/issues/6#issuecomment-4462069247> (issue closed as closed-unverified; live UAT unavailable in-session).
+  - **Next prompt**: `issue-intake` (for next open issue).
 [/] launch_vibe.sh crashes - there is an issue working with the selected model (qwen3.6:latest)
 
 - **Intake/Triage (2026-05-14)**:
