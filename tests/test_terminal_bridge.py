@@ -282,6 +282,30 @@ def test_confirm_command_dispatches_when_approved(tmp_path: Path) -> None:
     assert any(c[1] == "send-keys" for c in fake.calls)
 
 
+@pytest.mark.integration
+def test_run_command_approval_callback_exception_is_rejected(tmp_path: Path) -> None:
+    """GIVEN supervised confirm-list command and approval callback boundary [PD-15-AF-006]
+
+    WHEN the approval callback raises unexpectedly
+    THEN command execution should be rejected without propagating the exception.
+    """
+    config = {"terminal": {"allow": [], "confirm": ["git commit"], "deny": []}}
+    bridge = TerminalBridge(
+        config=config,
+        session_id="agentx",
+        approval_callback=lambda _cmd, _ctx: (_ for _ in ()).throw(RuntimeError("approval callback failed")),
+        audit_log_path=str(tmp_path / "audit.jsonl"),
+    )
+
+    with patch("agentx.integration.terminal_bridge.shutil.which", return_value="/usr/bin/tmux"):
+        with patch("agentx.integration.terminal_bridge.subprocess.run") as mocked_run:
+            result = bridge.run_command("git commit -m 'wip'", context="save", visible=True)
+
+    assert result.exit_code == -1
+    assert result.decision == "rejected"
+    mocked_run.assert_not_called()
+
+
 @pytest.mark.unit
 def test_run_command_captures_exit_code_from_sentinel(tmp_path: Path) -> None:
     """GIVEN command exits with code 42 WHEN unique sentinel echoed in pane THEN exit_code is 42 and stdout is cleaned.
@@ -417,5 +441,3 @@ def test_run_command_edited_command_is_dispatched(tmp_path: Path) -> None:
     assert result.decision == "approved"
     sent_keys_args = [c for c in fake.calls if c[1] == "send-keys"]
     assert any(edited in c[4] for c in sent_keys_args)
-
-

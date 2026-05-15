@@ -7,6 +7,7 @@ Units under test:
 
 from __future__ import annotations
 
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -86,6 +87,53 @@ def test_request_terminal_approval_returns_false_when_gui_disabled() -> None:
     assert approved is False
     assert command == "git status"
     session._show_terminal_approval_dialog.assert_not_called()
+
+
+@pytest.mark.unit
+def test_request_terminal_approval_dialog_exception_rejects_without_propagating() -> None:
+    """GIVEN supervised approval callback execution [PD-15-AF-006]
+
+    WHEN the approval dialog callback raises an unexpected exception
+    THEN approval should resolve as rejected without propagating a crash.
+    """
+    session = object.__new__(AgentXSession)
+    session._enable_gui_chat = True
+    session.root = MagicMock()
+    session._show_terminal_approval_dialog = MagicMock(side_effect=RuntimeError("dialog failed"))
+    session._safe_root_after = lambda callback: callback()
+
+    with (
+        patch("agentx.session.threading.current_thread", return_value=object()),
+        patch("agentx.session.threading.main_thread", return_value=object()),
+    ):
+        approved, command = session._request_terminal_approval("git commit -m 'wip'", "save changes")
+
+    assert approved is False
+    assert command == "git commit -m 'wip'"
+
+
+@pytest.mark.unit
+def test_request_terminal_approval_timeout_falls_back_to_rejected() -> None:
+    """GIVEN supervised approval callback execution [PD-15-AF-006]
+
+    WHEN the callback completion signal is not received before timeout
+    THEN approval falls back to rejected with original command preserved.
+    """
+    session = object.__new__(AgentXSession)
+    session._enable_gui_chat = True
+    session.root = MagicMock()
+    session._show_terminal_approval_dialog = MagicMock(return_value=(True, "git commit -m 'edited'"))
+    session._safe_root_after = lambda _callback: None
+
+    with (
+        patch("agentx.session.threading.current_thread", return_value=object()),
+        patch("agentx.session.threading.main_thread", return_value=object()),
+        patch.object(threading.Event, "wait", return_value=False),
+    ):
+        approved, command = session._request_terminal_approval("git commit -m 'wip'", "save changes")
+
+    assert approved is False
+    assert command == "git commit -m 'wip'"
 
 
 @pytest.mark.unit

@@ -5,6 +5,30 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.6] - 2026-05-15
+
+### Test Changes
+
+#### Added
+
+- Added Issue #6 regression tests to encode approval-boundary crash/orphan risk paths.
+  - `tests/test_terminal_mode_and_approval.py::test_request_terminal_approval_dialog_exception_rejects_without_propagating`
+    - GIVEN approval callback path [PD-15-AF-006]
+    - WHEN dialog callback raises unexpectedly
+    - THEN approval should reject safely without exception propagation.
+  - `tests/test_terminal_mode_and_approval.py::test_request_terminal_approval_timeout_falls_back_to_rejected`
+    - GIVEN approval callback completion signal missing [PD-15-AF-006]
+    - WHEN timeout fallback is used
+    - THEN approval returns rejected and preserves original command.
+  - `tests/test_terminal_bridge.py::test_run_command_approval_callback_exception_is_rejected`
+    - GIVEN terminal bridge approval interaction boundary [PD-15-AF-006]
+    - WHEN approval callback raises
+    - THEN command execution should reject without propagating crash.
+
+#### Changed
+
+- Updated `docs/ux/UX_ISSUES.md` Issue #6 checklist and linked regression evidence comment.
+
 ## [0.48.5.post1] - 2026-05-15
 
 ### Documentation Changes

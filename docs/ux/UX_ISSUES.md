@@ -301,10 +301,11 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
   - **Issue checklist**:
     - [ ] reproduction pending
     - [ ] evidence pending
-    - [ ] regression tests pending
+    - [/] regression tests complete (defect encoded)
     - [ ] fix pending
     - [ ] verification pending
-  - **Next prompt**: `issue-reproduce-evidence`.
+  - **Regression test evidence**: <https://github.com/matthewapeters/agentX/issues/6#issuecomment-4461869543>.
+  - **Next prompt**: `issue-fix-close`.
 [/] launch_vibe.sh crashes - there is an issue working with the selected model (qwen3.6:latest)
 
 - **Intake/Triage (2026-05-14)**:
