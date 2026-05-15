@@ -305,7 +305,7 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
     - [ ] fix pending
     - [ ] verification pending
   - **Next prompt**: `issue-reproduce-evidence`.
-[ ] launch_vibe.sh crashes - there is an issue working with the selected model (qwen3.6:latest)
+[/] launch_vibe.sh crashes - there is an issue working with the selected model (qwen3.6:latest)
 
 - **Intake/Triage (2026-05-14)**:
   - **Decision**: new issue created: <https://github.com/matthewapeters/agentX/issues/7>.
@@ -323,7 +323,10 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
   - **Regression test evidence**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4460265372>.
   - **Fix summary evidence**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4460328653>.
   - **Verify-release evidence**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4461184032>.
-  - **UAT Status**: verification failed stability gate (5-trial run: 2 pass / 3 fail); issue remains open.
+  - **Final verify-release gate (v0.48.5)**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4461716958> (5/5 startup passes).
+  - **Issue closure comment**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4461718216>.
+  - **Final state**: closed as resolved-verified on 2026-05-15.
+  - **UAT Status (historical checkpoint)**: verification failed stability gate (5-trial run: 2 pass / 3 fail).
   - **Investigation hardening candidate (v0.48.5)**:
     - Increased preflight timeout budget via `AGENTX_OLLAMA_PREFLIGHT_TIMEOUT_SEC` (default `20`).
     - Reduced chat-probe work with `"num_predict": 1` in preflight payload.
@@ -331,4 +334,5 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
   - **Latest observed failure signatures**:
     - preflight retry exhaustion with `curl: (28)` and final `HTTP 000` launcher abort;
     - intermittent upstream `HTTP 500` including `CUDA error: out of memory` in model execution path.
-  - **Next prompt**: `issue-investigate`.
+  - **UAT Status (latest)**: resolved-verified for build `main@4219787` (v0.48.5); reopen on recurrence signatures per closure note.
+  - **Next prompt**: `issue-verify-release` (complete).
