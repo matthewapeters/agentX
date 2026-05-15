@@ -29,6 +29,8 @@
 #   AGENTX_TMUX_SESSION     tmux session name (default: agentx) — used as SESSION_ID for socket scoping
 #   AGENTX_TERMINAL_VISIBLE Default visibility for agent terminal panes (default: true)
 #   AGENTX_PYTHON           Python executable to use (default: resolved from venv or PATH)
+#   AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS Number of preflight attempts before failing (default: 2)
+#   AGENTX_OLLAMA_PREFLIGHT_RETRY_SEC Seconds to wait between preflight retries (default: 1)
 #   AGENTX_SOCKET_WAIT_LOOPS Number of nvim socket polling loops (default: 10)
 #   AGENTX_SOCKET_WAIT_SEC   Seconds per socket polling loop (default: 0.5)
 #
@@ -84,6 +86,8 @@ AUTO_STOP_ON_EXIT="${AGENTX_AUTO_STOP_ON_EXIT:-true}"
 TERMINAL_VISIBLE="${AGENTX_TERMINAL_VISIBLE:-true}"
 OLLAMA_HOST="${AGENTX_OLLAMA_HOST:-}"
 OLLAMA_MODEL="${AGENTX_OLLAMA_MODEL:-}"
+OLLAMA_PREFLIGHT_ATTEMPTS="${AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS:-2}"
+OLLAMA_PREFLIGHT_RETRY_SEC="${AGENTX_OLLAMA_PREFLIGHT_RETRY_SEC:-1}"
 SOCKET_WAIT_LOOPS="${AGENTX_SOCKET_WAIT_LOOPS:-10}"
 SOCKET_WAIT_SEC="${AGENTX_SOCKET_WAIT_SEC:-0.5}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -258,17 +262,37 @@ _preflight_ollama_chat_model() {
     local response_file
     response_file="$(mktemp)"
 
-    local http_code
-    http_code="$(curl -sS -m 10 -o "$response_file" -w '%{http_code}' \
-        -H 'Content-Type: application/json' \
-        "$chat_url" \
-        -d "{\"model\":\"${OLLAMA_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"stream\":false}" || true)"
-
-    if [[ "$http_code" == "200" ]]; then
-        rm -f "$response_file"
-        _green "  ✓ Ollama preflight passed (model '${OLLAMA_MODEL}' supports chat)"
-        return 0
+    local max_attempts="$OLLAMA_PREFLIGHT_ATTEMPTS"
+    if [[ -z "$max_attempts" || ! "$max_attempts" =~ ^[0-9]+$ || "$max_attempts" -lt 1 ]]; then
+        max_attempts=1
     fi
+
+    local retry_sec="$OLLAMA_PREFLIGHT_RETRY_SEC"
+    if [[ -z "$retry_sec" ]]; then
+        retry_sec=1
+    fi
+
+    local http_code=""
+    local attempt=1
+    while [[ "$attempt" -le "$max_attempts" ]]; do
+        http_code="$(curl -sS -m 10 -o "$response_file" -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            "$chat_url" \
+            -d "{\"model\":\"${OLLAMA_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"stream\":false}" || true)"
+
+        if [[ "$http_code" == "200" ]]; then
+            rm -f "$response_file"
+            _green "  ✓ Ollama preflight passed (model '${OLLAMA_MODEL}' supports chat)"
+            return 0
+        fi
+
+        if [[ "$attempt" -lt "$max_attempts" ]]; then
+            _yellow "  ⚠ Ollama preflight attempt ${attempt}/${max_attempts} failed (HTTP ${http_code:-unknown}); retrying..."
+            sleep "$retry_sec"
+        fi
+
+        attempt=$((attempt + 1))
+    done
 
     _red "  ✗ Ollama preflight failed for model '${OLLAMA_MODEL}' at '${chat_url}' (HTTP ${http_code:-unknown})."
     if [[ -s "$response_file" ]]; then

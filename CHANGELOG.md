@@ -5,6 +5,37 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.4] - 2026-05-15
+
+### Code Changes
+
+#### Fixed
+
+- `launch_vibe.sh` now retries Ollama chat-model preflight before failing startup for transient failures.
+  - Added bounded retry/backoff controls:
+    - `AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS` (default: `2`)
+    - `AGENTX_OLLAMA_PREFLIGHT_RETRY_SEC` (default: `1`)
+  - Root cause: a single-shot preflight probe (`/api/chat`) could fail with transient timeout (`HTTP 000`) even when subsequent probes succeed, causing false-negative launcher aborts.
+
+### Test Changes
+
+#### Added
+
+- `tests/test_launch_vibe_shutdown.py::test_start_preflight_timeout_defect_requires_retry`
+  - GIVEN transient preflight timeout sequence (`000,200`) [PD-15-AF-010]
+  - WHEN launcher starts with qwen model
+  - THEN launcher should retry preflight and continue startup.
+- `tests/test_launch_vibe_shutdown.py::test_start_fails_cleanly_when_preflight_stays_http_000`
+  - GIVEN repeated timeout (`HTTP 000`) [PD-15-AF-010]
+  - WHEN launcher starts
+  - THEN launcher exits with clear preflight failure signature.
+- `tests/test_launch_vibe_shutdown.py::test_start_preflight_uses_configured_model_payload`
+  - GIVEN project config sets `qwen3.6:latest` [PD-15-AF-010]
+  - WHEN launcher preflight runs
+  - THEN request payload contains configured model and `/api/chat` endpoint.
+
+---
+
 ## [0.48.3.post1] - 2025-05-13
 
 ### Documentation Changes

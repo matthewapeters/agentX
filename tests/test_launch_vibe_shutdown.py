@@ -115,6 +115,119 @@ def test_start_launches_agentx_with_gui_exit_shutdown_hook(tmp_path: Path) -> No
 
 
 @pytest.mark.unit
+def test_start_preflight_timeout_defect_requires_retry(tmp_path: Path) -> None:
+    """GIVEN a transient preflight timeout for qwen [PD-15-AF-010]
+
+    WHEN launch_vibe start is run and the next preflight attempt would succeed
+    THEN launcher should retry preflight and continue startup (defect expectation).
+    """
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_OLLAMA_HOST": "localhost:11434",
+            "AGENTX_OLLAMA_MODEL": "qwen3.6:latest",
+            "FAKE_CURL_SEQUENCE": "000,200",
+            "FAKE_CURL_STATE_FILE": str(tmp_path / "fake_curl_sequence.state"),
+            "FAKE_CURL_BODY": '{"error":"timeout"}',
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    # Expected user-visible behavior for the defect: transient preflight failure should not abort startup.
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.unit
+def test_start_fails_cleanly_when_preflight_stays_http_000(tmp_path: Path) -> None:
+    """GIVEN repeated preflight timeout behavior for qwen [PD-15-AF-010]
+
+    WHEN launch_vibe start is run
+    THEN launcher exits with a clear preflight failure signature and does not create a tmux session.
+    """
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_OLLAMA_HOST": "localhost:11434",
+            "AGENTX_OLLAMA_MODEL": "qwen3.6:latest",
+            "FAKE_CURL_HTTP_CODE": "000",
+            "FAKE_CURL_BODY": "",
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 1
+    assert "Ollama preflight failed for model 'qwen3.6:latest'" in result.stdout
+    assert "(HTTP 000)" in result.stdout
+    if log_path.exists():
+        log = log_path.read_text(encoding="utf-8")
+        assert "new-session\t-d\t-P\t-F\t#{pane_id}\t-s\tagentx" not in log
+
+
+@pytest.mark.integration
+def test_start_preflight_uses_configured_model_payload(tmp_path: Path) -> None:
+    """GIVEN project config sets qwen model [PD-15-AF-010]
+
+    WHEN launch_vibe start runs and preflight curl is invoked
+    THEN preflight request contains qwen model payload and the /api/chat endpoint.
+    """
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    curl_log_path = tmp_path / "curl.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "agentx.toml").write_text(
+        """
+[agentx]
+ollama_host = "localhost:11434"
+ollama_model = "qwen3.6:latest"
+""".strip() + "\n",
+        encoding="utf-8",
+    )
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "FAKE_CURL_HTTP_CODE": "000",
+            "FAKE_CURL_LOG": str(curl_log_path),
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 1
+    curl_log = curl_log_path.read_text(encoding="utf-8")
+    assert "/api/chat" in curl_log
+    assert '"model":"qwen3.6:latest"' in curl_log
+
+
+@pytest.mark.unit
 def test_multiple_sessions_use_scoped_sockets(tmp_path: Path) -> None:
     """GIVEN multiple launch_vibe.sh sessions with different AGENTX_TMUX_SESSION values WHEN started with default socket paths THEN each uses its own scoped socket and FIFO without collision. [PD-15-AF-009]"""
     fake_bin = _create_fake_bin(tmp_path)
@@ -791,5 +904,80 @@ exit 0
         encoding="utf-8",
     )
     python3_path.chmod(0o755)
+
+    curl_path = fake_bin / "curl"
+    curl_path.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+
+out_file=""
+write_fmt=""
+body="${FAKE_CURL_BODY:-{\"ok\":true}}"
+default_code="${FAKE_CURL_HTTP_CODE:-200}"
+http_code="$default_code"
+
+if [[ -n "${FAKE_CURL_SEQUENCE:-}" ]]; then
+    state_file="${FAKE_CURL_STATE_FILE:-/tmp/agentx_fake_curl_state}"
+    idx=0
+    if [[ -f "$state_file" ]]; then
+        idx="$(cat "$state_file")"
+    fi
+    IFS=',' read -r -a codes <<< "$FAKE_CURL_SEQUENCE"
+    if [[ "$idx" -lt "${#codes[@]}" ]]; then
+        http_code="${codes[$idx]}"
+    else
+        http_code="${codes[-1]}"
+    fi
+    echo "$((idx + 1))" > "$state_file"
+fi
+
+url_arg=""
+payload_arg=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o)
+            out_file="$2"
+            shift 2
+            ;;
+        -w)
+            write_fmt="$2"
+            shift 2
+            ;;
+        -d)
+            payload_arg="$2"
+            shift 2
+            ;;
+        -m|-H)
+            shift 2
+            ;;
+        -s|-sS)
+            shift
+            ;;
+        *)
+            if [[ "$1" == http*://* ]]; then
+                url_arg="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -n "${FAKE_CURL_LOG:-}" ]]; then
+    printf 'url=%s payload=%s code=%s\n' "$url_arg" "$payload_arg" "$http_code" >> "$FAKE_CURL_LOG"
+fi
+
+if [[ -n "$out_file" ]]; then
+    printf '%s' "$body" > "$out_file"
+fi
+
+if [[ -n "$write_fmt" ]]; then
+    printf '%s' "$http_code"
+fi
+
+exit 0
+""",
+        encoding="utf-8",
+    )
+    curl_path.chmod(0o755)
 
     return fake_bin

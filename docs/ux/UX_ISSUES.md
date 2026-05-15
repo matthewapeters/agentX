@@ -256,7 +256,7 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
 - **Attempted fix 1 (v0.33.0)**: Created `src/agentx/integration/vim_bridge.py`. Socket defaulted to `/tmp/agentx.nvim.sock`. **UAT failed** — socket not found because `launch_vibe.sh` creates a session-scoped socket at `/tmp/agentx_<session>.nvim.sock` (e.g. `/tmp/agentx_agentx.nvim.sock`).
 - **Attempted fix 2 (v0.33.1)**: Fixed socket resolution to mirror `launch_vibe.sh`. Priority: `AGENTX_NVIM_SOCKET` env var → `config["neovim"]["socket"]` → `/tmp/agentx_<AGENTX_TMUX_SESSION>.nvim.sock` (default: `/tmp/agentx_agentx.nvim.sock`). 19 tests, 100% coverage.
 - **UAT Status**: Ready for UAT — launch `./launch_vibe.sh` then use Edit in file explorer.
-[ ] TUI issue: resilts streaming from the LLM are written to the TUI with a CR or LF after each word is received.  Text should be continued on the same line - only carriage returns from the agent should be written until the end of the stream is complete - then an additional CR is added.  It is clear that only the first response is mirrored to the TUI - the pub/sub channels appear to be closed or not re-established with second and later prompts (from the GUI).  Prompts in the TUI do not appear to send, but it is unclear.
+[/] TUI issue: results streaming from the LLM are written to the TUI with a CR or LF after each word is received.  Text should be continued on the same line - only carriage returns from the agent should be written until the end of the stream is complete - then an additional CR is added.  It is clear that only the first response is mirrored to the TUI - the pub/sub channels appear to be closed or not re-established with second and later prompts (from the GUI).  Prompts in the TUI do not appear to send, but it is unclear.
 
 - **Root cause / attempted fix (v0.39.3)**:
   - Event-broker subscriptions used a queue that was never drained, so sustained publish streams eventually stalled TUI delivery after initial responses. Fixed by introducing per-subscriber worker threads that consume and dispatch queued events continuously.
@@ -279,3 +279,47 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
 - **Tests**: `tests/test_launch_vibe_shutdown.py` updated for TUI-first ordering and attach-window selection assertions.
 - **UAT Status**: latest fix candidate ready for UAT.
 - Tool/tooling backlog items were moved to `docs/tools/tools_issues.md` to keep UX and tooling triage separate.
+[ ] User requested that agent run 'nvtop' in BASH terminal.  Application presented modal to authorize.  When the user accepted, the GUI crashed, but the TUI remained running with no clear way to terminate (user had to close each panel).  Application crashes should cleanly close the application.  The application should not crash when attempting to run commands in the terminal.
+
+- **Intake/Triage (2026-05-14)**:
+  - **Decision**: new issue created: <https://github.com/matthewapeters/agentX/issues/6>
+  - **Severity/Priority/Type**: high / p1 / bug.
+  - **Expected behavior**: approving terminal command execution should run the command without crashing GUI; if a fatal error occurs, application shutdown should be coordinated and clean.
+  - **Actual behavior**: after approval modal accept, GUI crashed while TUI remained active and required manual pane-by-pane closure.
+  - **Reproduction summary**:
+    1. Start AgentX with terminal workflow enabled.
+    2. Request command execution for `nvtop` in BASH terminal.
+    3. Approve command from the modal.
+    4. Observe GUI crash and orphaned running TUI session.
+  - **Environment snapshot**: Linux, Python 3.14.4, current repo head `152c077`.
+  - **Evidence available**:
+    - user-reported crash path at approval boundary;
+    - related fix history for `PD-15-AF-006` recorded in `CHANGELOG.md` (terminal approval path).
+    - reproduction report comments:
+      - <https://github.com/matthewapeters/agentX/issues/6#issuecomment-4451342760> (initial run: not reproduced; blocked by preflight timeout path).
+      - <https://github.com/matthewapeters/agentX/issues/6#issuecomment-4451368911> (follow-up run: not reproduced; startup succeeds with model override, headless path fails on missing DISPLAY).
+  - **Issue checklist**:
+    - [ ] reproduction pending
+    - [ ] evidence pending
+    - [ ] regression tests pending
+    - [ ] fix pending
+    - [ ] verification pending
+  - **Next prompt**: `issue-reproduce-evidence`.
+[ ] launch_vibe.sh crashes - there is an issue working with the selected model (qwen3.6:latest)
+
+- **Intake/Triage (2026-05-14)**:
+  - **Decision**: new issue created: <https://github.com/matthewapeters/agentX/issues/7>.
+  - **Severity/Priority/Type**: high / p1 / bug.
+  - **Environment**: Linux, Python 3.14.4, commit `152c077`, `ollama_host=localhost:11434`, `ollama_model=qwen3.6:latest`.
+  - **Observed launcher failure**: `./launch_vibe.sh start` fails during preflight with `HTTP 000` after curl timeout (`Operation timed out after 10001 milliseconds with 0 bytes received`).
+  - **Direct probe evidence**: `POST /api/chat` with `qwen3.6:latest` returned `HTTP 500` and `CUDA error: out of memory` from `ggml-cuda`.
+  - **Runtime pressure evidence**: `nvidia-smi` showed RTX 4090 memory `23699 MiB / 24564 MiB` in use; `ollama ps` shows `qwen3.6:latest` resident with mixed CPU/GPU execution.
+  - **Hypothesis**: launcher preflight timeout can mask underlying VRAM saturation / model startup instability for large models.
+  - **Reproduction report**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4456384092>.
+  - **Reproduction verdict**: flaky (exact launcher path failed with preflight timeout while direct `/api/chat` probe for same model returned `HTTP 200` in a separate trial).
+  - **Attempted fix candidate (v0.48.4)**:
+    - Added bounded preflight retry/backoff in `launch_vibe.sh` to reduce false-negative startup aborts on transient `HTTP 000`.
+    - Added controls: `AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS` and `AGENTX_OLLAMA_PREFLIGHT_RETRY_SEC`.
+  - **Regression test evidence**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4460265372>.
+  - **UAT Status**: latest fix candidate ready for UAT.
+  - **Next prompt**: `issue-fix-close`.
