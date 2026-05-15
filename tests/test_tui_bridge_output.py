@@ -382,6 +382,43 @@ def test_streaming_controller_writes_classification_to_tui_when_gui_display_disa
     assert "###CLASSIFICATION 🤔" in classification_records[0]
 
 
+def test_streaming_controller_classification_emits_thinking_marker_when_enabled() -> None:
+    """GIVEN show_thinking=true WHEN classification callback runs THEN TUI receives thinking marker and classification block."""
+    session = _build_session(show_thinking=True)
+    controller = StreamingController(session)
+
+    callback = controller._make_classification_callback(
+        {
+            "agentix": {
+                "classification_display": {
+                    "enabled": True,
+                    "show_intent": True,
+                    "show_reasoning": True,
+                    "show_clarification": True,
+                    "show_next_step": True,
+                }
+            }
+        }
+    )
+    callback(
+        {
+            "intent": "simple_action",
+            "reasoning_summary": "Direct answer is sufficient.",
+            "needs_clarification": False,
+            "missing_fields": [],
+            "next_step": "respond_directly",
+        }
+    )
+
+    calls = [
+        call.args[1].get("text", "")
+        for call in session.event_broker.publish.call_args_list
+        if len(call.args) >= 2 and call.args[0] == EventType.AGENT_CONTENT
+    ]
+    assert any(record == "###THINKING 💭\n" for record in calls)
+    assert any(record.startswith("###CLASSIFICATION 🤔") for record in calls)
+
+
 @pytest.mark.unit
 def test_tui_bridge_reads_submit_messages_from_input_fifo(tmp_path: Path) -> None:
     """GIVEN TUI input fifo payloads WHEN submit sentinel appears THEN callback receives trimmed prompts."""

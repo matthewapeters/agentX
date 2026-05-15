@@ -83,8 +83,9 @@ class StreamingController:
             s._safe_root_after(lambda: s.gui.display_agent_thinking(header))
             s._write_log(header)
             s._thinking_header_shown = True
-            if show_thinking:
+            if show_thinking and not getattr(s, "_tui_thinking_marker_emitted", False):
                 self._write_tui_output("###THINKING 💭\n")
+                s._tui_thinking_marker_emitted = True
         s._safe_root_after(lambda: s.gui.display_agent_thinking(text))
         s._write_log(text)
         if show_thinking:
@@ -397,6 +398,11 @@ class StreamingController:
             if filtered.get("next_step"):
                 lines.append(f"💡 path: {filtered['next_step']}")
             if lines:
+                if bool(s.config.get("tui", {}).get("show_thinking", False)) and not getattr(
+                    s, "_tui_thinking_marker_emitted", False
+                ):
+                    self._write_tui_output("###THINKING 💭\n")
+                    s._tui_thinking_marker_emitted = True
                 s._write_log("\n".join(lines) + "\n")
                 classification_block = "\n".join(["###CLASSIFICATION 🤔", *lines, ""])
                 self._write_tui_output(classification_block + "\n")
@@ -517,6 +523,7 @@ class StreamingController:
 
             s._assistant_header_shown = False
             s._thinking_header_shown = False
+            s._tui_thinking_marker_emitted = False
 
             thinking_parts: list[str] = []
             content_parts: list[str] = []

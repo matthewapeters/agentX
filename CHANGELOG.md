@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.13] - 2026-05-15
+
+### Code Changes
+
+#### Fixed
+
+- Hardened TUI thinking visibility for turns without explicit THINKING chunks.
+  - Updated `src/agentx/streaming_controller.py` to emit `###THINKING 💭` from the classification callback when `tui.show_thinking=true`.
+  - Added per-turn de-duplication so TUI thinking marker is emitted at most once per turn.
+
+### Test Changes
+
+#### Added
+
+- Added regression test in `tests/test_tui_bridge_output.py` ensuring classification callback emits both thinking marker and classification block in TUI when thinking mirroring is enabled.
+
 ## [0.48.12] - 2026-05-15
 
 ### Code Changes
