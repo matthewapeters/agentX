@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-15 (v0.48.9)_
+_Last updated: 2026-05-15 (v0.48.10)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 

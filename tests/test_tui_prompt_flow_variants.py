@@ -90,7 +90,10 @@ def _start_nonblocking_fifo_reader(path: str, sink: list[str], stop_event: threa
                 readable, _, _ = select.select([fd], [], [], 0.05)
                 if not readable:
                     continue
-                data = os.read(fd, 4096)
+                try:
+                    data = os.read(fd, 4096)
+                except BlockingIOError:
+                    continue
                 if not data:
                     time.sleep(0.01)
                     continue

@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.10] - 2026-05-15
+
+### Code Changes
+
+#### Fixed
+
+- Refined Issue #8 TUI emoji parity by decorating raw streamed TUI records in `src/agentx/integration/tui_event_subscriber.py`.
+  - Adds `🤖` to raw `###AGENT` headers.
+  - Adds `👤` prefix to raw `###USER` prompt lines when not already present.
+
+### Test Changes
+
+#### Fixed
+
+- Stabilized nonblocking FIFO reader behavior in `tests/test_tui_prompt_flow_variants.py` by handling `BlockingIOError` during read loops.
+
 ## [0.48.9] - 2026-05-15
 
 ### Code Changes

@@ -140,7 +140,15 @@ class TUIEventSubscriber:
         elif event_type == EventType.AGENT_CONTENT:
             # Check if this is raw TUI output (from _write_tui_output)
             if data.get("is_raw_tui"):
-                return data.get("text", "")
+                raw_text = data.get("text", "")
+                if raw_text.startswith("###AGENT") and "🤖" not in raw_text.splitlines()[0]:
+                    return raw_text.replace("###AGENT", "###AGENT 🤖", 1)
+                if raw_text.startswith("###USER"):
+                    lines = raw_text.splitlines(keepends=True)
+                    if len(lines) >= 2 and not lines[1].startswith("👤"):
+                        lines[1] = f"👤 {lines[1]}"
+                        return "".join(lines)
+                return raw_text
             return data.get("text", "")
 
         elif event_type == EventType.TOOL_CALL:
