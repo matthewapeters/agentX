@@ -5,6 +5,25 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.11] - 2026-05-15
+
+### Code Changes
+
+#### Fixed
+
+- Added missing TUI thinking emoji marker output and classification output mirroring.
+  - Updated `src/agentx/streaming_controller.py` to emit `###THINKING 💭` in TUI when thinking mirroring is enabled.
+  - Updated `src/agentx/streaming_controller.py` classification callback to emit a `###CLASSIFICATION 🤔` block to TUI.
+  - Updated `src/agentx/integration/tui_event_subscriber.py` to normalize legacy `###THINKING` records with `💭` for parity.
+
+### Test Changes
+
+#### Changed
+
+- Updated and extended TUI output tests in `tests/test_tui_bridge_output.py`.
+  - Thinking marker assertion now validates `###THINKING 💭`.
+  - Added regression coverage that classification callback emits a TUI classification block with emoji and key fields.
+
 ## [0.48.10.post1] - 2026-05-15
 
 ### Documentation Changes

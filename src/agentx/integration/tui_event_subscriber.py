@@ -128,7 +128,7 @@ class TUIEventSubscriber:
         data = event.data
 
         if event_type == EventType.THINKING_START:
-            return "###THINKING\n"
+            return "###THINKING 💭\n"
 
         elif event_type == EventType.THINKING_CONTENT:
             return data.get("text", "")
@@ -143,6 +143,8 @@ class TUIEventSubscriber:
                 raw_text = data.get("text", "")
                 if raw_text.startswith("###AGENT") and "🤖" not in raw_text.splitlines()[0]:
                     return raw_text.replace("###AGENT", "###AGENT 🤖", 1)
+                if raw_text.startswith("###THINKING") and "💭" not in raw_text.splitlines()[0]:
+                    return raw_text.replace("###THINKING", "###THINKING 💭", 1)
                 if raw_text.startswith("###USER"):
                     lines = raw_text.splitlines(keepends=True)
                     if len(lines) >= 2 and not lines[1].startswith("👤"):

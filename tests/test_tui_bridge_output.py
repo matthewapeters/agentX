@@ -298,8 +298,48 @@ def test_streaming_controller_writes_thinking_when_enabled() -> None:
         for call in session.event_broker.publish.call_args_list
         if len(call.args) >= 2 and call.args[0] == EventType.AGENT_CONTENT
     ]
-    assert any(record == "###THINKING\n" for record in calls)
+    assert any(record == "###THINKING 💭\n" for record in calls)
     assert any(record == "internal" for record in calls)
+
+
+def test_streaming_controller_writes_classification_record_to_tui() -> None:
+    """GIVEN classification metadata WHEN callback runs THEN TUI receives a classification block with emoji."""
+    session = _build_session(show_thinking=False)
+    controller = StreamingController(session)
+
+    callback = controller._make_classification_callback(
+        {
+            "agentix": {
+                "classification_display": {
+                    "enabled": True,
+                    "show_intent": True,
+                    "show_reasoning": True,
+                    "show_clarification": True,
+                    "show_next_step": True,
+                }
+            }
+        }
+    )
+    callback(
+        {
+            "intent": "simple_action",
+            "reasoning_summary": "Direct answer is sufficient.",
+            "needs_clarification": False,
+            "missing_fields": [],
+            "next_step": "respond_directly",
+        }
+    )
+
+    calls = [
+        call.args[1].get("text", "")
+        for call in session.event_broker.publish.call_args_list
+        if len(call.args) >= 2 and call.args[0] == EventType.AGENT_CONTENT
+    ]
+    classification_records = [record for record in calls if record.startswith("###CLASSIFICATION")]
+    assert classification_records, "Expected at least one TUI classification record"
+    assert "###CLASSIFICATION 🤔" in classification_records[0]
+    assert "intent: simple_action" in classification_records[0]
+    assert "path: respond_directly" in classification_records[0]
 
 
 @pytest.mark.unit

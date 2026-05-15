@@ -84,7 +84,7 @@ class StreamingController:
             s._write_log(header)
             s._thinking_header_shown = True
             if show_thinking:
-                self._write_tui_output("###THINKING\n")
+                self._write_tui_output("###THINKING 💭\n")
         s._safe_root_after(lambda: s.gui.display_agent_thinking(text))
         s._write_log(text)
         if show_thinking:
@@ -398,6 +398,8 @@ class StreamingController:
                 lines.append(f"💡 path: {filtered['next_step']}")
             if lines:
                 s._write_log("\n".join(lines) + "\n")
+                classification_block = "\n".join(["###CLASSIFICATION 🤔", *lines, ""])
+                self._write_tui_output(classification_block + "\n")
             s._output_logger.log("classification", json.dumps(filtered, ensure_ascii=False))
 
         return _callback
