@@ -373,9 +373,22 @@ class TerminalBridge:
             approved = False
             edited_command = command
             if self._approval_callback is not None:
-                approved, maybe_edited = self._approval_callback(command, context)
-                if approved and maybe_edited:
-                    edited_command = maybe_edited
+                try:
+                    approved, maybe_edited = self._approval_callback(command, context)
+                    if approved and maybe_edited:
+                        edited_command = maybe_edited
+                except Exception as exc:
+                    result = TerminalResult(
+                        pane_id="",
+                        exit_code=-1,
+                        stdout=f"REJECTED: approval callback failed: {exc}",
+                        timed_out=False,
+                        decision="rejected",
+                        original_command=original_command,
+                        executed_command=command,
+                    )
+                    self._append_audit(result)
+                    return result
             if not approved:
                 result = TerminalResult(
                     pane_id="",
@@ -841,7 +854,10 @@ def evaluate_terminal_policy(command: str, context: str = "") -> tuple[bool, str
     if decision.verdict == "requires_approval":
         if bridge._approval_callback is None:
             return False, command, "rejected"
-        approved, edited = bridge._approval_callback(command, context)
+        try:
+            approved, edited = bridge._approval_callback(command, context)
+        except Exception:
+            return False, command, "rejected"
         if not approved:
             return False, command, "rejected"
         return True, edited or command, "approved"

@@ -5,6 +5,24 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.7] - 2026-05-15
+
+### Code Changes
+
+#### Fixed
+
+- Fixed Issue #6 approval exception handling to prevent GUI-side approval callback failures from propagating and leaving terminal workflows in an unstable state.
+  - Updated `AgentXSession._request_terminal_approval` to fail closed (reject) when dialog execution raises unexpectedly and to always signal worker completion.
+  - Updated `TerminalBridge.run_command` and `evaluate_terminal_policy` to catch approval callback exceptions and return deterministic rejected decisions.
+
+### Test Changes
+
+#### Changed
+
+- Re-ran Issue #6 regression suite after fix implementation; defect-encoding tests now pass.
+  - `tests/test_terminal_mode_and_approval.py` (7 passed)
+  - `tests/test_terminal_bridge.py` (12 passed)
+
 ## [0.48.6] - 2026-05-15
 
 ### Test Changes

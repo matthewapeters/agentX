@@ -430,16 +430,24 @@ class AgentXSession:
             return False, command
 
         if threading.current_thread() is threading.main_thread():
-            return self._show_terminal_approval_dialog(command, context)
+            try:
+                return self._show_terminal_approval_dialog(command, context)
+            except Exception:
+                return False, command
 
         done = threading.Event()
         result: dict[str, object] = {"approved": False, "command": command}
 
         def _run_dialog() -> None:
-            approved, updated = self._show_terminal_approval_dialog(command, context)
-            result["approved"] = approved
-            result["command"] = updated
-            done.set()
+            try:
+                approved, updated = self._show_terminal_approval_dialog(command, context)
+                result["approved"] = approved
+                result["command"] = updated
+            except Exception:
+                result["approved"] = False
+                result["command"] = command
+            finally:
+                done.set()
 
         self._safe_root_after(_run_dialog)
         if not done.wait(timeout=300):

@@ -302,10 +302,10 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
     - [ ] reproduction pending
     - [ ] evidence pending
     - [/] regression tests complete (defect encoded)
-    - [ ] fix pending
+    - [/] fix complete (ready for verify-release)
     - [ ] verification pending
   - **Regression test evidence**: <https://github.com/matthewapeters/agentX/issues/6#issuecomment-4461869543>.
-  - **Next prompt**: `issue-fix-close`.
+  - **Next prompt**: `issue-verify-release`.
 [/] launch_vibe.sh crashes - there is an issue working with the selected model (qwen3.6:latest)
 
 - **Intake/Triage (2026-05-14)**:
