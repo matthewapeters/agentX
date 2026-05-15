@@ -340,3 +340,28 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
     - intermittent upstream `HTTP 500` including `CUDA error: out of memory` in model execution path.
   - **UAT Status (latest)**: resolved-verified for build `main@4219787` (v0.48.5); reopen on recurrence signatures per closure note.
   - **Next prompt**: `issue-verify-release` (complete).
+
+[  ] Add emoji support to TUI agent responses - user responses lack emoji indicators
+
+- **Intake/Triage (2026-05-15)**:
+  - **Decision**: new issue created: <https://github.com/matthewapeters/agentX/issues/8>.
+  - **Severity/Priority/Type**: low / p3 / enhancement.
+  - **Summary**: TUI mode does not display emojis in agent responses, unlike the GUI which includes emoji indicators (person emoji for user, robot emoji for agent, etc.).
+  - **Expected behavior**: Agent responses in TUI mode should include emoji indicators matching or similar to GUI indicators.
+  - **Actual behavior**: No emojis are shown in TUI agent responses; responses appear without emoji indicators.
+  - **Reproduction summary**:
+    1. Start AgentX in TUI mode: `./launch_vibe.sh`
+    2. Interact with the agent by sending prompts.
+    3. Observe agent response output in terminal; no emoji indicators appear.
+  - **Environment snapshot**: Linux (Ubuntu 26.04), Python 3.12+, current repo head main branch.
+  - **Related components**:
+    - TUI rendering: `src/agentx/integration/tui_bridge.py`
+    - GUI emoji support comparison: `src/agentx/gui/` (chat_panel, context_renderer).
+    - Emoji dependency: project uses `emoji` package.
+  - **Issue checklist**:
+    - [ ] reproduction pending
+    - [ ] evidence pending (optional; feature request does not require reproduction)
+    - [ ] regression tests pending
+    - [ ] fix pending
+    - [ ] verification pending
+  - **Next prompt**: `issue-reproduce-evidence`.
