@@ -5,6 +5,26 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.8] - 2026-05-15
+
+### Test Changes
+
+#### Added
+
+- Added Issue #8 TUI emoji regression coverage in `tests/test_tui_emoji_regression.py`.
+  - `test_tui_event_formatting_includes_role_emoji`
+    - GIVEN TUI role events (happy/defect/boundary)
+    - WHEN events are formatted for output
+    - THEN role emoji indicators (`👤`, `🤖`) are present.
+  - `test_tui_submit_output_includes_user_and_agent_emojis`
+    - GIVEN a hermetic TUI FIFO prompt flow across `AgentXSession` + `StreamingController` + `EventBroker` + `TUIEventSubscriber`
+    - WHEN a prompt is submitted and response is streamed
+    - THEN mirrored TUI output includes user/agent emoji indicators.
+
+#### Changed
+
+- Updated `docs/ux/UX_ISSUES.md` Issue #8 checklist and linked reproduction/regression evidence comments.
+
 ## [0.48.7.post1] - 2026-05-15
 
 ### Documentation Changes

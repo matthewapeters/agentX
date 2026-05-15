@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-12 (v0.48.2)_
+_Last updated: 2026-05-15 (v0.48.8)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -341,7 +341,7 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
   - **UAT Status (latest)**: resolved-verified for build `main@4219787` (v0.48.5); reopen on recurrence signatures per closure note.
   - **Next prompt**: `issue-verify-release` (complete).
 
-[  ] Add emoji support to TUI agent responses - user responses lack emoji indicators
+[ ] Add emoji support to TUI agent responses - user responses lack emoji indicators
 
 - **Intake/Triage (2026-05-15)**:
   - **Decision**: new issue created: <https://github.com/matthewapeters/agentX/issues/8>.
@@ -359,9 +359,11 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
     - GUI emoji support comparison: `src/agentx/gui/` (chat_panel, context_renderer).
     - Emoji dependency: project uses `emoji` package.
   - **Issue checklist**:
-    - [ ] reproduction pending
-    - [ ] evidence pending (optional; feature request does not require reproduction)
-    - [ ] regression tests pending
+    - [/] reproduction complete (feature gap confirmed)
+    - [/] evidence complete
+    - [/] regression tests complete (defect encoded)
     - [ ] fix pending
     - [ ] verification pending
-  - **Next prompt**: `issue-reproduce-evidence`.
+  - **Reproduction evidence**: <https://github.com/matthewapeters/agentX/issues/8#issuecomment-4462913162>.
+  - **Regression test evidence**: <https://github.com/matthewapeters/agentX/issues/8#issuecomment-4463029769>.
+  - **Next prompt**: `issue-fix-close`.
