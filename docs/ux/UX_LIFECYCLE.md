@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-09 (v0.38.2.post1)_
+_Last updated: 2026-05-15 (v0.48.13.post1)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -386,6 +386,9 @@ implements it and the test that validates it.  Status legend:
 | `<leader>s` submit keymap writes input text to FIFO with submit sentinel | PD-16-AF-005 | generated `agentx_tui.lua` submit keymap block | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
 | `enable_gui_chat=false` mode uses headless `NullGUIManager` and enforces config constraint | PD-16-AF-006 | `config.validate_config()` + `AgentXSession` GUI-disabled path | `test_config_tui_phase1.py`, `test_session_gui_disabled.py` | module-level tests | ✅ |
 | `tui.enable` controls `TuiBridge` lifecycle and guarded call-sites | PD-16-AF-007 | `AgentXSession.__init__()` + `close()` + streaming guards | `test_tui_bridge_output.py`, `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
+
+Planned follow-up for PD-16 default-behavior migration is documented in
+`docs/ux/06_TUI_MIRROR.md` §12 (TUI-first default with `--gui` opt-in).
 
 ---
 

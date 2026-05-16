@@ -774,13 +774,11 @@ end, {
 vim.api.nvim_set_current_win(input_win)
 vim.cmd("startinsert")
 
-vim.schedule(function()
-    vim.notify(
-        "AgentX TUI ready. Submit with <leader>s (usually \\s), normal-mode Enter, or :AgentXSubmit.",
-        vim.log.levels.INFO,
-        { title = "AgentX TUI" }
-    )
-end)
+append_output({
+    "###SYSTEM",
+    "AgentX TUI ready. Submit with <leader>s (usually \\s), normal-mode Enter, or :AgentXSubmit.",
+    "",
+})
 LUA
         _green "  Wrote: $tui_lua_path"
 

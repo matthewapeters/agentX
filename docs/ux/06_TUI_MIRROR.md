@@ -1,6 +1,6 @@
 # AgentX — TUI Mirror: Neovim Chat Pane
 
-_Last updated: 2026-05-09 (v0.38.2.post1)_
+_Last updated: 2026-05-15 (v0.48.14)_
 
 > **Companion document to [`05_VIBE_CODING.md`](05_VIBE_CODING.md).**
 > Specifies the optional TUI mirror that surfaces the AgentX chat interface as a
@@ -28,6 +28,7 @@ _Last updated: 2026-05-09 (v0.38.2.post1)_
 9. [Implementation Plan](#9-implementation-plan)
 10. [Test Scenarios](#10-test-scenarios)
 11. [Open Design Questions](#11-open-design-questions)
+12. [TUI-First Migration Plan (Planned)](#12-tui-first-migration-plan-planned)
 
 ---
 
@@ -592,6 +593,14 @@ end, { buffer = output_buf, desc = "AgentX: Focus input" })
 
 vim.api.nvim_set_current_win(input_win)
 vim.cmd("startinsert")
+
+-- ── Non-blocking startup guidance (avoid command-line ENTER prompt) ─────
+
+append_output({
+  "###SYSTEM",
+  "AgentX TUI ready. Submit with <leader>s (usually \\s), normal-mode Enter, or :AgentXSubmit.",
+  "",
+})
 ```
 
 ---
@@ -732,3 +741,77 @@ real tmux).
 | OD-4 | How should the TUI handle streaming interruption (Stop)? | A) Write `###INTERRUPTED\n` to output; B) Write `###DONE\n` | A — gives TUI user visible feedback |
 | OD-5 | Should `NullGUIManager` log all calls at DEBUG? | A) Yes — useful for diagnosing headless issues; B) No — noise | A |
 | OD-6 | Headless mode process signal handling (no Tk mainloop) | A) `signal.pause()` loop; B) Thread join on reader thread | B — cleaner and the reader thread is always present in headless mode |
+
+---
+
+## 12. TUI-First Migration Plan (Planned)
+
+This section captures the planned change to make the TUI the default launch UX while
+keeping GUI available behind an explicit launcher switch.
+
+### 12.1 Target State
+
+- Default launch behavior: TUI-first workflow (`tui-chat` attached window).
+- GUI behavior: disabled by default, enabled only when launcher switch is passed.
+- Session model: one shared `AgentXSession`; TUI and GUI remain interoperable.
+
+### 12.2 Scope and Constraints
+
+| Area | In Scope | Out of Scope (for this change) |
+|------|----------|--------------------------------|
+| Launcher behavior | Default inversion + explicit GUI switch | Replacing tmux session architecture |
+| Runtime config | Optional env/config override for GUI enablement | Large config-schema redesign |
+| TUI parity | Semantic parity for key chat/status affordances | Pixel-identical parity with Tk widgets |
+| Docs/traceability | PD-16 updates across UX docs | Non-UX docs outside impacted file list |
+
+### 12.3 Proposed Launcher Contract
+
+| Invocation | Expected behavior |
+|------------|-------------------|
+| `./launch_vibe.sh` | Starts TUI-first session, GUI disabled |
+| `./launch_vibe.sh --gui` | Starts same session plus GUI enabled |
+| `./launch_vibe.sh start --gui` | Equivalent explicit form |
+
+Implementation note (planned): preserve `AGENTX_TUI_ENABLE` and add a GUI override
+switch/env bridge so launcher intent is authoritative for that run.
+
+### 12.4 Visual Parity Plan (GUI -> TUI)
+
+| GUI Element | TUI Representation | Parity Level |
+|-------------|--------------------|--------------|
+| User/assistant turns | `###USER` / `###AGENT` blocks with role icons | Full semantic |
+| Thinking stream | `###THINKING` section (config-gated) | Full semantic |
+| Tool call/result rows | `###TOOL_CALL` / `###TOOL_RESULT` lines | Full semantic |
+| Status phases (PD-12) | Structured phase markers in output stream | Partial -> target full semantic |
+| Context/history side panels | Command-driven summaries in TUI output | Planned minimal parity |
+| Settings controls | Launcher/config-driven (not in-pane widgets) | Intentional non-parity |
+
+### 12.5 Incremental Delivery Plan
+
+| Phase | Deliverable | Exit Criteria |
+|------|-------------|---------------|
+| P1 | Launcher switch + default inversion | `launch_vibe.sh` starts TUI by default; `--gui` enables GUI |
+| P2 | Config/env bridge for GUI enablement | Runtime respects launcher switch without manual config edits |
+| P3 | Status/phase parity uplift in TUI | Phase progression visible for classify/think/tool/respond |
+| P4 | UX docs reconciliation + UAT checklist | `docs/ux` matrix/index/issues updated and ready for UAT |
+
+### 12.6 docs/ux Impact Checklist
+
+The following files must be updated as part of implementation (same commit set per
+lifecycle policy):
+
+| File | Required Update |
+|------|------------------|
+| `docs/ux/00_INDEX.md` | Update status snapshot/priority queue with PD-16 migration progress |
+| `docs/ux/02_USER_FLOWS.md` | Add/adjust flow diagrams for TUI-default launch path |
+| `docs/ux/03_PANEL_DETAILS.md` | Add or update cut-sheet details for new PD-16 affordances |
+| `docs/ux/05_VIBE_CODING.md` | Update launch sequence and window expectations (`--gui` branch) |
+| `docs/ux/06_TUI_MIRROR.md` | Reconcile this plan section to as-built state |
+| `docs/ux/UX_LIFECYCLE.md` | Add/modify PD-16 affordance rows and statuses |
+| `docs/ux/UX_ISSUES.md` | Track fix candidate / UAT status wording per policy |
+
+### 12.7 UAT and Closure Policy
+
+All statements of completion for this migration must use "ready for UAT" language
+until user confirmation is recorded. Keep issue wording as "attempted fix" or
+"latest fix candidate" until UAT passes.

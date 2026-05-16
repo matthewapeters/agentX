@@ -5,6 +5,42 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.48.14] - 2026-05-15
+
+### Code Changes
+
+#### Fixed
+
+- Fixed intermittent TUI startup ENTER wait prompt by removing command-line startup notification from generated `agentx_tui.lua`.
+  - Updated `launch_vibe.sh` Lua template to append startup guidance directly into the TUI output buffer as a `###SYSTEM` message.
+  - This avoids Neovim command-line paging behavior (`Press ENTER or type command to continue`) during startup.
+
+### Test Changes
+
+#### Added
+
+- Added issue #9 regression tests in `tests/test_launch_vibe_shutdown.py`:
+  - `test_generated_tui_lua_uses_nonblocking_startup_hint_path` (unit)
+  - `test_generated_tui_lua_writes_ready_hint_into_output_buffer` (integration)
+
+### Documentation Changes
+
+#### Changed
+
+- Updated TUI contract documentation in `docs/ux/06_TUI_MIRROR.md` to reflect non-blocking startup guidance in output buffer.
+- Updated `docs/ux/UX_ISSUES.md` with issue #9 intake, reproduction verdict, regression evidence, and latest fix-candidate status.
+
+## [0.48.13.post1] - 2026-05-15
+
+### Documentation Changes
+
+#### Changed
+
+- Documented the planned TUI-first default migration with GUI opt-in launch behavior.
+  - Added a dedicated planning section in `docs/ux/06_TUI_MIRROR.md` covering target state, phased rollout, parity strategy, and docs/ux impact checklist.
+  - Updated `docs/ux/00_INDEX.md` to link the migration plan and add a PD-16 migration queue item.
+  - Updated `docs/ux/UX_LIFECYCLE.md` with a PD-16 planning cross-reference to the migration plan.
+
 ## [0.48.13] - 2026-05-15
 
 ### Code Changes

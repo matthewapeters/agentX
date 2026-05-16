@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-15 (v0.48.10.post1)_
+_Last updated: 2026-05-15 (v0.48.14)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -370,3 +370,26 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
   - **Closure comment**: <https://github.com/matthewapeters/agentX/issues/8#issuecomment-4463263445>.
   - **Final state**: closed as closed-unverified on 2026-05-15 (automated release-like validation passed; reporter live UAT pending).
   - **Next prompt**: `issue-intake`.
+
+[/] TUI startup intermittently shows a blocking ENTER prompt before full-screen initialization.
+
+- **Intake/Triage (2026-05-15)**:
+  - **Decision**: new issue created: <https://github.com/matthewapeters/agentX/issues/9>.
+  - **Severity/Priority/Type**: medium / p2 / ux.
+  - **Summary**: startup occasionally shows command-line prompt `Press ENTER or type command to continue` after TUI ready text (sometimes line-wrapped as `:Age` + `ntXSubmit.`), requiring extra user interaction.
+  - **Expected behavior**: TUI initializes without ENTER gating; readiness guidance appears non-blocking in output buffer.
+  - **Actual behavior**: intermittent command-line ENTER wait appears during startup, then clears after ENTER.
+  - **Reproduction verdict**: flaky (3 trials: 2 prompt-present, 1 prompt-absent).
+  - **Reproduction evidence**: <https://github.com/matthewapeters/agentX/issues/9> (Reproduction Report comment).
+  - **Regression test evidence**: <https://github.com/matthewapeters/agentX/issues/9> (Regression Test Evidence comment).
+  - **Root cause / attempted fix candidate (v0.48.14)**:
+    - Generated `agentx_tui.lua` used `vim.notify(...)` at startup, which intermittently triggered Neovim command-line paging behavior and an ENTER wait state.
+    - Replaced startup notify with direct `append_output({...})` system message written into the output buffer, avoiding command-line prompt flow.
+  - **Issue checklist**:
+    - [/] reproduction complete
+    - [/] evidence complete
+    - [/] regression tests complete (defect encoded)
+    - [/] fix complete
+    - [ ] verification pending (awaiting user UAT)
+  - **Status**: ready for UAT (latest fix candidate).
+  - **Next prompt**: `issue-verify-release`.

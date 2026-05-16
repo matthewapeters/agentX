@@ -372,6 +372,69 @@ def test_start_with_tui_enabled_launches_tui_window_and_env(tmp_path: Path) -> N
 
 
 @pytest.mark.unit
+def test_generated_tui_lua_uses_nonblocking_startup_hint_path(tmp_path: Path) -> None:
+    """GIVEN TUI startup guidance text [PD-16-AF-004]
+
+    WHEN launch_vibe.sh generates agentx_tui.lua
+    THEN startup guidance must avoid command-line vim.notify (defect path: ENTER prompt wait).
+    """
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_TUI_ENABLE": "true",
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    lua_text = (project_dir / "agentx_tui.lua").read_text(encoding="utf-8")
+    assert "vim.notify(" not in lua_text
+
+
+@pytest.mark.integration
+def test_generated_tui_lua_writes_ready_hint_into_output_buffer(tmp_path: Path) -> None:
+    """GIVEN TUI startup readiness guidance [PD-16-AF-004]
+
+    WHEN launch_vibe.sh start generates the TUI Lua script
+    THEN the ready hint should be appended to the output buffer (happy path) instead of command-line notify.
+    """
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_TUI_ENABLE": "true",
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    lua_text = (project_dir / "agentx_tui.lua").read_text(encoding="utf-8")
+    assert "append_output({" in lua_text
+    assert "AgentX TUI ready." in lua_text
+
+
+@pytest.mark.unit
 def test_start_with_tui_disabled_does_not_launch_tui_window_or_lua(tmp_path: Path) -> None:
     """GIVEN default launcher settings WHEN launch_vibe.sh start runs THEN no tui-chat window or TUI Lua file is created. [PD-16-AF-003]"""
     fake_bin = _create_fake_bin(tmp_path)
