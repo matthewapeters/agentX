@@ -71,8 +71,8 @@ run_trial() {
     local pane="$RUN_DIR/trial_${trial}_pane.txt"
     local stoplog="$RUN_DIR/trial_${trial}_stop.log"
 
-    AGENTX_TMUX_WIDTH="$TMUX_WIDTH" AGENTX_TMUX_HEIGHT="$TMUX_HEIGHT" ./launch_vibe.sh stop > "$prestop" 2>&1 || true
-    AGENTX_TMUX_WIDTH="$TMUX_WIDTH" AGENTX_TMUX_HEIGHT="$TMUX_HEIGHT" timeout "${TIMEOUT_SEC}s" ./launch_vibe.sh > "$startlog" 2>&1 || true
+    AGENTX_TMUX_WIDTH="$TMUX_WIDTH" AGENTX_TMUX_HEIGHT="$TMUX_HEIGHT" ./agentx stop > "$prestop" 2>&1 || true
+    AGENTX_TMUX_WIDTH="$TMUX_WIDTH" AGENTX_TMUX_HEIGHT="$TMUX_HEIGHT" timeout "${TIMEOUT_SEC}s" ./agentx > "$startlog" 2>&1 || true
 
     local session_present="0"
     if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
@@ -110,7 +110,7 @@ run_trial() {
     printf "%s,%s,%s,%s,%s,%s,%s,%s\n" \
         "$trial" "$width" "$height" "$enter_sig" "$e486_any_sig" "$e486_tmp_sig" "$ready_sig" "$session_present" >> "$SUMMARY_CSV"
 
-    AGENTX_TMUX_WIDTH="$TMUX_WIDTH" AGENTX_TMUX_HEIGHT="$TMUX_HEIGHT" ./launch_vibe.sh stop > "$stoplog" 2>&1 || true
+    AGENTX_TMUX_WIDTH="$TMUX_WIDTH" AGENTX_TMUX_HEIGHT="$TMUX_HEIGHT" ./agentx stop > "$stoplog" 2>&1 || true
 }
 
 for ((i = 1; i <= TRIALS; i++)); do

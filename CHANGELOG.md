@@ -31,7 +31,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 #### Added
 
 - Added deterministic tmux startup sizing for launcher-driven TUI sessions.
-  - `launch_vibe.sh` now supports `AGENTX_TMUX_WIDTH` and `AGENTX_TMUX_HEIGHT`.
+  - `agentx` now supports `AGENTX_TMUX_WIDTH` and `AGENTX_TMUX_HEIGHT`.
   - When set to positive integers, the launcher passes `-x/-y` to `tmux new-session` so headless and CI startup dimensions are stable.
   - Invalid values are ignored with a warning, preserving existing behavior.
 
@@ -49,7 +49,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 #### Fixed
 
 - Fixed intermittent TUI startup ENTER wait prompt by removing command-line startup notification from generated `agentx_tui.lua`.
-  - Updated `launch_vibe.sh` Lua template to append startup guidance directly into the TUI output buffer as a `###SYSTEM` message.
+  - Updated `agentx` Lua template to append startup guidance directly into the TUI output buffer as a `###SYSTEM` message.
   - This avoids Neovim command-line paging behavior (`Press ENTER or type command to continue`) during startup.
 
 ### Test Changes
@@ -270,7 +270,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Fixed
 
-- Hardened Ollama launcher preflight behavior in `launch_vibe.sh` for heavy model startup paths.
+- Hardened Ollama launcher preflight behavior in `agentx` for heavy model startup paths.
   - Added `AGENTX_OLLAMA_PREFLIGHT_TIMEOUT_SEC` (default: `20`) so startup can tolerate slower first-token latency.
   - Reduced preflight generation work by sending chat probe option `"num_predict": 1`.
   - Added OOM-aware diagnostics when preflight response indicates CUDA/VRAM memory pressure.
@@ -295,7 +295,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Fixed
 
-- `launch_vibe.sh` now retries Ollama chat-model preflight before failing startup for transient failures.
+- `agentx` now retries Ollama chat-model preflight before failing startup for transient failures.
   - Added bounded retry/backoff controls:
     - `AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS` (default: `2`)
     - `AGENTX_OLLAMA_PREFLIGHT_RETRY_SEC` (default: `1`)
@@ -373,7 +373,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 #### Fixed
 
 - Reordered tmux launcher windows for TUI-first workflow when TUI is enabled.
-  - [launch_vibe.sh](launch_vibe.sh)
+  - [agentx](agentx)
     - Changed startup window order to `0=tui-chat`, `1=editor`, `2=agent-bg`, `3=agentx-log` when `[tui].enable=true`.
     - Set explicit pre-attach window selection to make `tui-chat` the default visible pane when enabled.
     - Updated editor pane resolution fallback order to prefer named `editor` window before generic first-pane fallback.
@@ -401,7 +401,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 #### Fixed
 
 - Improved launcher startup UX by adding an Ollama model preflight before tmux session creation.
-  - [launch_vibe.sh](launch_vibe.sh)
+  - [agentx](agentx)
     - Added config-driven preflight using `[agentx].ollama_host` and `[agentx].ollama_model`.
     - Added fast `/api/chat` validation with actionable guidance when a non-chat model is configured.
     - Added clear failure output to avoid misleading "launcher crashed" behavior when AgentX would otherwise exit immediately.
@@ -767,8 +767,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 - `src/agentx/event_broker.py`: replaced per-publish fire-and-forget callback threads + never-consumed queues with per-subscriber worker threads that actively drain queued events. This prevents silent delivery stalls after repeated prompt streams.
 - `src/agentx/integration/tui_event_subscriber.py`: removed bounded `deque(maxlen=10000)` truncation and corrected writer-loop lock usage so idle waits do not occur while holding the queue lock.
-- `launch_vibe.sh`: fixed generated `agentx_tui.lua` submit framing to use real newline sentinel (`"\n---SUBMIT---\n"`) and real newline join for input text, matching Python submit parsing.
-- `launch_vibe.sh` / `agentx_tui.lua`: updated output pane append logic to coalesce partial stream chunks onto the current line and only emit new lines on explicit separators, preventing token-per-line rendering during streaming.
+- `agentx`: fixed generated `agentx_tui.lua` submit framing to use real newline sentinel (`"\n---SUBMIT---\n"`) and real newline join for input text, matching Python submit parsing.
+- `agentx` / `agentx_tui.lua`: updated output pane append logic to coalesce partial stream chunks onto the current line and only emit new lines on explicit separators, preventing token-per-line rendering during streaming.
 
 ### Test Changes
 
@@ -791,7 +791,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Fixed
 
-- `launch_vibe.sh`: updated generated TUI Lua output reader command from one-shot FIFO read to persistent reopen loop (`while true; do cat <fifo>; done`) so the TUI output mirror does not die after writer-side EOF.
+- `agentx`: updated generated TUI Lua output reader command from one-shot FIFO read to persistent reopen loop (`while true; do cat <fifo>; done`) so the TUI output mirror does not die after writer-side EOF.
 - `src/agentx/integration/tui_bridge.py`: changed input FIFO reader behavior to keep the read fd open across transient EOF, avoiding readerless reopen gaps that can stall or miss TUI submit writes.
 
 ### Test Changes
@@ -905,9 +905,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Changed
 
-- `launch_vibe.sh`: added support for `AGENTX_TUI_OUTPUT_SPLIT_RATIO` and
+- `agentx`: added support for `AGENTX_TUI_OUTPUT_SPLIT_RATIO` and
   `[tui].output_split_ratio` from `agentx.toml`.
-- `launch_vibe.sh` generated `agentx_tui.lua`: now enforces output-on-top/input-on-bottom
+- `agentx` generated `agentx_tui.lua`: now enforces output-on-top/input-on-bottom
   with `belowright split` and computes input-pane height from configurable
   output ratio.
 - `agentx_tui.lua`: aligned checked-in script with launcher-generated behavior
@@ -935,11 +935,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Fixed
 
-- `launch_vibe.sh`: fixed tmux window allocation to use the next available
+- `agentx`: fixed tmux window allocation to use the next available
   explicit window index for `editor` recovery, `agent-bg`, `agentx-log`, and
   `tui-chat`, eliminating startup failures such as
   `create window failed: index <N> in use`.
-- `launch_vibe.sh`: fixed generated `agentx_tui.lua` heredoc quoting so
+- `agentx`: fixed generated `agentx_tui.lua` heredoc quoting so
   launcher no longer fails under `set -u` with unbound `AGENTX_TUI_*`
   variables while writing the Lua file.
 
@@ -959,16 +959,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Fixed
 
-- `launch_vibe.sh`: fixed stale editor pane targeting by retrying target
+- `agentx`: fixed stale editor pane targeting by retrying target
   resolution when an initial `tmux send-keys` fails, preventing start failures
   like `can't find pane: %0`.
-- `launch_vibe.sh`: restored default tmux auto-shutdown on AgentX/GUI exit and
+- `agentx`: restored default tmux auto-shutdown on AgentX/GUI exit and
   made it configurable via `AGENTX_AUTO_STOP_ON_EXIT` and
   `[agentx].auto_stop_tmux_on_gui_exit`.
-- `launch_vibe.sh`: now reads `[tui]` defaults from project `agentx.toml`
+- `agentx`: now reads `[tui]` defaults from project `agentx.toml`
   (`enable`, `socket`, `output_fifo`, `input_fifo`) when launcher env overrides
   are not provided.
-- `launch_vibe.sh`: fixed `status`/`stop` early-exit regression under `set -e`
+- `agentx`: fixed `status`/`stop` early-exit regression under `set -e`
   in TOML default loading logic.
 
 ### Test Changes
@@ -1053,13 +1053,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Added
 
-- `launch_vibe.sh`: added runtime generation of `agentx_tui.lua` in the project
+- `agentx`: added runtime generation of `agentx_tui.lua` in the project
   root with split layout, FIFO tailing, and keymaps (`<leader>s`, `<leader>c`,
   `<leader>o`, `<leader>i`) for the TUI mirror workflow.
 
 #### Changed
 
-- `launch_vibe.sh`:
+- `agentx`:
   - TUI startup now launches neovim with `--cmd 'luafile .../agentx_tui.lua'`
     and scoped TUI FIFO environment variables.
   - adds generated `agentx_tui.lua` to `.gitignore` when the project already
@@ -1101,7 +1101,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - routes TUI submit callbacks to the Tk main thread (`_safe_root_after`)
   - preserves injected pending prompts in `stream_ollama_response` instead of
     always overriding with GUI input.
-- `launch_vibe.sh`:
+- `agentx`:
   - adds optional TUI lifecycle variables (`AGENTX_TUI_ENABLE`,
     `AGENTX_TUI_OUTPUT_FIFO`, `AGENTX_TUI_INPUT_FIFO`, `AGENTX_TUI_SOCKET`)
   - creates/removes TUI FIFOs and socket during start/stop cleanup
@@ -1321,7 +1321,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 #### Fixed
 
 - `VimBridge` socket path resolution: the hardcoded default `/tmp/agentx.nvim.sock` did not
-  match the session-scoped path created by `launch_vibe.sh`.  Resolution now mirrors the
+  match the session-scoped path created by `agentx`.  Resolution now mirrors the
   shell script exactly (highest priority first):
   1. `AGENTX_NVIM_SOCKET` environment variable
   2. `config["neovim"]["socket"]` from the runtime config dict
@@ -1641,8 +1641,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Fixed
 
-- `launch_vibe.sh`: launch `agentx` before starting neovim, then start neovim last so the editor pane target is stable during retries.
-- `launch_vibe.sh`: disable tmux `automatic-rename` on the editor window and trust the cached pane id directly so window renames no longer break editor recovery or shutdown.
+- `agentx`: launch `agentx` before starting neovim, then start neovim last so the editor pane target is stable during retries.
+- `agentx`: disable tmux `automatic-rename` on the editor window and trust the cached pane id directly so window renames no longer break editor recovery or shutdown.
 
 ### Test Changes
 
@@ -1658,7 +1658,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Fixed
 
-- `launch_vibe.sh`: fixed editor launch/recovery when tmux rejects named pane targets like `session:editor.0`.
+- `agentx`: fixed editor launch/recovery when tmux rejects named pane targets like `session:editor.0`.
   - Added robust window resolution helpers to map stable window names (`editor`, `agent-bg`, `agentx-log`) to numeric tmux targets at runtime.
   - All `send-keys` and pane command probes now use resolved numeric pane targets (`session:<index>.0`) while preserving name-based intent.
   - Added explicit error messages and hard-fail behavior when required windows cannot be resolved after creation.
@@ -1678,7 +1678,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Fixed
 
-- `launch_vibe.sh`: fixed tmux window targeting to support non-default `base-index` settings.
+- `agentx`: fixed tmux window targeting to support non-default `base-index` settings.
   - Replaced hardcoded numeric targets (`:0`, `:1`, `:2`) with named targets (`:editor`, `:agent-bg`, `:agentx-log`) so startup and recovery work when tmux window numbering starts at `1`.
   - Prevented startup abort under `set -euo pipefail` when optional window index lookup returns empty.
   - Updated launcher status/help messages to reference named windows and dynamic shortcuts.
@@ -1697,7 +1697,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Added
 
-- **Multi-session socket scoping**: `launch_vibe.sh` now automatically scopes neovim RPC socket and save-notification FIFO paths by tmux session name to prevent collisions between concurrent/sequential sessions.
+- **Multi-session socket scoping**: `agentx` now automatically scopes neovim RPC socket and save-notification FIFO paths by tmux session name to prevent collisions between concurrent/sequential sessions.
   - **Path scoping**: defaults changed from `/tmp/agentx.nvim.sock` and `/tmp/agentx_saves.fifo` to `/tmp/agentx_<SESSION_ID>.nvim.sock` and `/tmp/agentx_<SESSION_ID>.saves.fifo`.
   - **SESSION_ID derivation**: defaults to `AGENTX_TMUX_SESSION` (default: `agentx`) for deterministic, user-customizable scoping.
   - **Stale file cleanup**: new `_cleanup_stale_sockets()` function detects and removes stale/orphaned socket and FIFO files on startup, recovering from incomplete prior shutdowns.
@@ -1711,7 +1711,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 #### Changed
 
 - `docs/ux/05_VIBE_CODING.md`: updated Environment Variables table to reflect session-scoped socket/FIFO defaults; added "Multi-Session Collision Prevention" section with examples and explanation of stale file cleanup.
-- `launch_vibe.sh` header: updated environment override documentation to explain session scoping and added multi-session support section.
+- `agentx` header: updated environment override documentation to explain session scoping and added multi-session support section.
 
 ### Test Changes
 
@@ -1727,7 +1727,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Fixed
 
-- `launch_vibe.sh`: resolved UAT regressions from v0.24.0 lifecycle rollout.
+- `agentx`: resolved UAT regressions from v0.24.0 lifecycle rollout.
   - **Editor pane reliability**: added editor health-check verification and auto-recovery on `start`/reattach path when pane `0.0` is not running `nvim`.
   - **GUI-exit teardown**: AgentX runtime command in window `2` now includes a post-exit hook that tears down the tmux session, preventing orphaned panes after GUI close.
   - **Startup reliability tuning**: added `AGENTX_SOCKET_WAIT_LOOPS` and `AGENTX_SOCKET_WAIT_SEC` to control socket polling behavior in start/recovery paths.
@@ -1757,7 +1757,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Added
 
-- `launch_vibe.sh`: added explicit lifecycle command surface for consistent session management:
+- `agentx`: added explicit lifecycle command surface for consistent session management:
   - `start` (default), `stop`, `status`, `recover-editor`, and `restart`.
   - Introduced deterministic shutdown path (`stop`) that gracefully signals AgentX runtime and neovim before killing tmux session and cleaning stale socket.
   - Introduced editor recovery path (`recover-editor`) that recreates window 0 if missing and relaunches neovim in pane `0.0`.
@@ -1765,7 +1765,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Changed
 
-- `launch_vibe.sh`: startup flow refactored into command-oriented helper functions to separate dependency checks, start/stop operations, and editor recovery logic.
+- `agentx`: startup flow refactored into command-oriented helper functions to separate dependency checks, start/stop operations, and editor recovery logic.
 - Startup banner now includes explicit lifecycle command hints:
   - `./launch_vibe.sh stop`
   - `./launch_vibe.sh recover-editor`

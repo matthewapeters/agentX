@@ -214,7 +214,7 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
 [ ] Issue: When complex tasks are being performed, the user experience moving between output panes is slowed and the redraws are laggy.  It may be necessary to implement multi-processing with reliable state between processes to ensure reliable state management.
 [/] Need more TMUX panes! Running launch_vibe.sh creates the neovim pane, and then fills it with the agentx cli run-time logs!  Create a different pane for these! (not 0 or 1)
 
-- **Root cause / attempted fix (v0.23.0)**: `launch_vibe.sh` launched AgentX with `"$PYTHON_BIN" -m agentx &` as a background subprocess of the launcher script, then called `exec tmux attach`. The AgentX stdout/stderr FDs remained bound to the original TTY, which became the active tmux session — causing runtime logs to appear in pane 0.0 (the neovim window).
+- **Root cause / attempted fix (v0.23.0)**: `agentx` launched AgentX with `"$PYTHON_BIN" -m agentx &` as a background subprocess of the launcher script, then called `exec tmux attach`. The AgentX stdout/stderr FDs remained bound to the original TTY, which became the active tmux session — causing runtime logs to appear in pane 0.0 (the neovim window).
 - **Fix**: AgentX is now launched inside a dedicated tmux window (`window 2: agentx-log`, pane 2.0) via `tmux new-window` + `tmux send-keys`. Its stdout/stderr are captured by that pane and never reach pane 0.0. User can inspect logs at any time with `Ctrl+B, 2`.
 - **Design doc** (`docs/ux/05_VIBE_CODING.md`) updated with window 2 in layout diagram, component map, and navigation key table.
 - **UAT confirmation (2026-05-08)**: User approved the pane separation behavior. Logs are isolated to `window 2: agentx-log` and no longer render in the neovim pane.
@@ -225,8 +225,8 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
   - Editor pane regression: window `0.0` presented a bash shell instead of neovim.
   - Session shutdown regression: closing the AgentX GUI left tmux windows/panes running.
 
-- **Root cause / attempted fix (v0.24.0)**: `launch_vibe.sh` only provided a startup path; there was no canonical shutdown/recovery command set. This produced inconsistent behaviour when users closed GUI, exited neovim, detached tmux, or lost window 0.
-- **Fix**: Added lifecycle command interface to `launch_vibe.sh`: `start`, `stop`, `status`, `recover-editor`, `restart`.
+- **Root cause / attempted fix (v0.24.0)**: `agentx` only provided a startup path; there was no canonical shutdown/recovery command set. This produced inconsistent behaviour when users closed GUI, exited neovim, detached tmux, or lost window 0.
+- **Fix**: Added lifecycle command interface to `agentx`: `start`, `stop`, `status`, `recover-editor`, `restart`.
   - `stop`: graceful teardown (AgentX runtime pane Ctrl+C, neovim pane Ctrl+C + `:qa!`, `tmux kill-session`, stale socket cleanup).
   - `status`: reports session/socket/FIFO/window state.
   - `recover-editor`: recreates window 0 if missing and relaunches neovim in pane `0.0`.
@@ -245,7 +245,7 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
   - Upgraded fake tmux harness in launcher tests to be stateful across invocations in a single launcher run, so session/window lifecycle regressions are covered.
 - **Tests**: `tests/test_launch_vibe_shutdown.py` (5 unit tests, hermetic fake tmux/nvim harness).
 - **Design docs updated**: `docs/ux/05_VIBE_CODING.md` (launch architecture, lifecycle commands, permutations, and traceability test scenarios).
-- **UAT confirmation (2026-05-08)**: User confirmed launch and close behavior of `launch_vibe.sh` now passes in live use.
+- **UAT confirmation (2026-05-08)**: User confirmed launch and close behavior of `agentx` now passes in live use.
 - **UAT Status**: User-approved in UAT on 2026-05-08.
 
 ---
@@ -253,8 +253,8 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
 [/] issue: when user selects a file and choses "Edit" from the pop-down menu, the agent should open the selected file in the neovim editor in a new buffer.  Do not close any open buffers.
 
 - **Affordance**: PD-14-AF-002 — "Edit" FileExplorer context menu → `VimBridge.open_file()`
-- **Attempted fix 1 (v0.33.0)**: Created `src/agentx/integration/vim_bridge.py`. Socket defaulted to `/tmp/agentx.nvim.sock`. **UAT failed** — socket not found because `launch_vibe.sh` creates a session-scoped socket at `/tmp/agentx_<session>.nvim.sock` (e.g. `/tmp/agentx_agentx.nvim.sock`).
-- **Attempted fix 2 (v0.33.1)**: Fixed socket resolution to mirror `launch_vibe.sh`. Priority: `AGENTX_NVIM_SOCKET` env var → `config["neovim"]["socket"]` → `/tmp/agentx_<AGENTX_TMUX_SESSION>.nvim.sock` (default: `/tmp/agentx_agentx.nvim.sock`). 19 tests, 100% coverage.
+- **Attempted fix 1 (v0.33.0)**: Created `src/agentx/integration/vim_bridge.py`. Socket defaulted to `/tmp/agentx.nvim.sock`. **UAT failed** — socket not found because `agentx` creates a session-scoped socket at `/tmp/agentx_<session>.nvim.sock` (e.g. `/tmp/agentx_agentx.nvim.sock`).
+- **Attempted fix 2 (v0.33.1)**: Fixed socket resolution to mirror `agentx`. Priority: `AGENTX_NVIM_SOCKET` env var → `config["neovim"]["socket"]` → `/tmp/agentx_<AGENTX_TMUX_SESSION>.nvim.sock` (default: `/tmp/agentx_agentx.nvim.sock`). 19 tests, 100% coverage.
 - **UAT Status**: Ready for UAT — launch `./launch_vibe.sh` then use Edit in file explorer.
 [/] TUI issue: results streaming from the LLM are written to the TUI with a CR or LF after each word is received.  Text should be continued on the same line - only carriage returns from the agent should be written until the end of the stream is complete - then an additional CR is added.  It is clear that only the first response is mirrored to the TUI - the pub/sub channels appear to be closed or not re-established with second and later prompts (from the GUI).  Prompts in the TUI do not appear to send, but it is unclear.
 
@@ -273,7 +273,7 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
   - AgentX Logs
 - **Root cause / attempted fix (v0.48.2)**:
   - Launcher created the editor as window `0`, then added agent/log windows and optionally appended `tui-chat` later. This made attach behavior editor-first and inconsistent with the requested TUI-first workflow.
-  - Updated `launch_vibe.sh` session creation order when TUI is enabled to deterministic window order: `0=tui-chat`, `1=editor`, `2=agent-bg`, `3=agentx-log`.
+  - Updated `agentx` session creation order when TUI is enabled to deterministic window order: `0=tui-chat`, `1=editor`, `2=agent-bg`, `3=agentx-log`.
   - Added explicit `tmux select-window` before attach so default visible pane is `tui-chat` when enabled (editor remains default when TUI is disabled).
   - Adjusted editor-pane resolution fallback order to prefer named `editor` window before generic first-pane fallback, preventing mis-targeting in TUI-first sessions.
 - **Tests**: `tests/test_launch_vibe_shutdown.py` updated for TUI-first ordering and attach-window selection assertions.
@@ -322,7 +322,7 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
   - **Reproduction report**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4456384092>.
   - **Reproduction verdict**: flaky (exact launcher path failed with preflight timeout while direct `/api/chat` probe for same model returned `HTTP 200` in a separate trial).
   - **Attempted fix candidate (v0.48.4)**:
-    - Added bounded preflight retry/backoff in `launch_vibe.sh` to reduce false-negative startup aborts on transient `HTTP 000`.
+    - Added bounded preflight retry/backoff in `agentx` to reduce false-negative startup aborts on transient `HTTP 000`.
     - Added controls: `AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS` and `AGENTX_OLLAMA_PREFLIGHT_RETRY_SEC`.
   - **Regression test evidence**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4460265372>.
   - **Fix summary evidence**: <https://github.com/matthewapeters/agentX/issues/7#issuecomment-4460328653>.

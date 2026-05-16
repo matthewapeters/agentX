@@ -61,5 +61,5 @@ When adding a new issue-specific verification harness:
 
 - **Issue tracking**: [docs/ux/UX_ISSUES.md](../ux/UX_ISSUES.md)
 - **UX specs**: [docs/ux/03_PANEL_DETAILS.md](../ux/03_PANEL_DETAILS.md)
-- **Launcher source**: [launch_vibe.sh](../../launch_vibe.sh)
+- **Launcher source**: [agentx](../../agentx)
 - **Launcher tests**: [tests/test_launch_vibe_shutdown.py](../../tests/test_launch_vibe_shutdown.py)

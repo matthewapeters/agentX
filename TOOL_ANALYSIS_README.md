@@ -3,6 +3,7 @@
 ## 📋 Overview
 
 This analysis provides a comprehensive examination of the tool usage path in AgentX, including:
+
 1. **Full tool call flow end-to-end** - How prompts result in tool execution
 2. **Complete architecture** - All components involved
 3. **Critical gaps and missing implementations** - What's NOT working
@@ -12,7 +13,9 @@ This analysis provides a comprehensive examination of the tool usage path in Age
 ## 📄 Documents Included
 
 ### 1. `TOOL_USAGE_ANALYSIS.md` (911 lines)
+
 **Comprehensive analysis of the entire tool system**
+
 - Executive summary of current state
 - Tool call flow (end-to-end)
 - All files in src/agentix/ with purposes
@@ -28,7 +31,9 @@ This analysis provides a comprehensive examination of the tool usage path in Age
 - Agentix middleware architecture
 
 ### 2. `TOOL_GAPS_AND_EXAMPLES.md` (618 lines)
+
 **Detailed explanation of what's missing with code examples**
+
 - Critical gap #1: Multi-turn tool use NOT implemented (HIGHEST PRIORITY)
   - Current broken flow with code
   - What should happen
@@ -46,7 +51,9 @@ This analysis provides a comprehensive examination of the tool usage path in Age
 - Implementation priority matrix
 
 ### 3. [ARCHITECTURE_DIAGRAMS.md](docs/ARCHITECTURE_DIAGRAMS.md) (614 lines)
+
 **Visual ASCII diagrams of the system**
+
 - Complete tool execution flow (as implemented)
 - Tool execution context routing
 - Message role mapping for LLM
@@ -62,6 +69,7 @@ This analysis provides a comprehensive examination of the tool usage path in Age
 ### The Main Problem: NO MULTI-TURN TOOL USE
 
 The tool system is **fundamentally incomplete**. While individual components work:
+
 - ✅ Tools execute (client-side and server-side)
 - ✅ Results are stored in context
 - ✅ Results are displayed in GUI
@@ -74,12 +82,14 @@ The tool system is **fundamentally incomplete**. While individual components wor
 **User asks:** "Read config.py and tell me what needs to be refactored"
 
 **What happens now:**
+
 1. Prompt classified as "simple_action" → single_tool
 2. Bridge hits stub: "Tool execution coming soon..."
 3. Falls back to direct response (no tool called)
 4. Result: Generic response without reading the file ✗
 
 **What SHOULD happen:**
+
 1. Prompt classified as "simple_action" → single_tool
 2. LLM selects read_file tool with config.py parameter
 3. Tool executes, returns file contents
@@ -108,6 +118,7 @@ The tool system is **fundamentally incomplete**. While individual components wor
 ## 🎯 Implementation Priority
 
 ### Priority 1 (BLOCKING - Start here)
+
 1. **Implement `_stream_tool_response()` in bridge.py**
    - Select tool from available tools
    - Execute tool
@@ -121,18 +132,21 @@ The tool system is **fundamentally incomplete**. While individual components wor
    - Let LLM reason about output
 
 ### Priority 2 (IMPORTANT - After P1)
+
 3. Implement tool selection logic
-4. Implement planning/multi-step execution
-5. Add proper tool availability checking
+2. Implement planning/multi-step execution
+3. Add proper tool availability checking
 
 ### Priority 3 (NICE TO HAVE)
+
 6. Implement tool enablement persistence
-7. Add tool ID tracking for concurrency
-8. Implement tool-specific error recovery
+2. Add tool ID tracking for concurrency
+3. Implement tool-specific error recovery
 
 ## �� Key File Locations
 
 ### Tool Definitions & Types
+
 ```
 src/shared/models/tools.py
 ├─ ToolExecutionContext (CLIENT/SERVER/EITHER)
@@ -144,6 +158,7 @@ src/shared/models/tools.py
 ```
 
 ### Tool Execution (AgentX Layer)
+
 ```
 src/agentx/integration/
 ├─ client_tool_executor.py (read_file, write_file, etc.)
@@ -153,6 +168,7 @@ src/agentx/integration/
 ```
 
 ### Tool Routing & Selection (Agentix Layer)
+
 ```
 src/agentix/bridge/
 ├─ bridge.py (main API)
@@ -170,6 +186,7 @@ src/agentix/next_steps/
 ```
 
 ### Response Types
+
 ```
 src/shared/models/response.py
 ├─ ChunkType (CONTENT, THINKING, TOOL_CALL, TOOL_RESULT, etc.)
@@ -177,6 +194,7 @@ src/shared/models/response.py
 ```
 
 ### Session Coordination
+
 ```
 src/agentx/session.py
 ├─ process_prompt() - main entry point
@@ -189,6 +207,7 @@ src/agentx/session.py
 ## 💡 Key Insights
 
 ### The System Works Up To Tool Execution
+
 - Classification is working
 - Tool discovery is working
 - Client tool execution is working
@@ -197,18 +216,21 @@ src/agentx/session.py
 - Context storage is working
 
 ### The System Fails At Feedback Loop
+
 - Tool results NOT re-sent to LLM
 - LLM never gets second chance to reason
 - No agentic loop for multi-step tasks
 - Stubs return placeholders instead of executing
 
 ### The Data Structures Are In Place
+
 - Message roles correctly map to LLM API (TOOL_RESULT → "user")
 - Tool definitions follow OpenAI format
 - ResponseChunk has all needed fields
 - Context stores all message types correctly
 
 ### Just Needs Implementation
+
 - The framework is solid
 - Just needs to fill in the TODO stubs
 - Focus on multi-turn tool use first

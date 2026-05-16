@@ -7,6 +7,7 @@ You asked for an in-depth analysis of the tool usage path in AgentX. This is a c
 ## 🎯 TL;DR - The Main Finding
 
 **The tool system is fundamentally incomplete:**
+
 - ✅ Individual tools work (client-side and server-side)
 - ✅ Tool results are stored and displayed
 - ❌ **Tool results are NEVER sent back to the LLM**
@@ -44,17 +45,20 @@ You asked for an in-depth analysis of the tool usage path in AgentX. This is a c
 ## 🚀 Where to Start
 
 ### For Managers/Decision Makers
+
 1. Read this file
 2. Read `TOOL_ANALYSIS_README.md` (5 min)
 3. You'll understand the gaps and priority
 
 ### For Developers
+
 1. Read `TOOL_ANALYSIS_README.md` (5 min)
 2. Read `TOOL_GAPS_AND_EXAMPLES.md` Gap #1 (10 min)
 3. Review code at `src/agentix/bridge/bridge.py:315`
 4. Start implementing multi-turn support
 
 ### For Architects
+
 1. Read `TOOL_ANALYSIS_README.md` (5 min)
 2. Read full `TOOL_USAGE_ANALYSIS.md` (30 min)
 3. Review [ARCHITECTURE_DIAGRAMS.md](docs/ARCHITECTURE_DIAGRAMS.md) (10 min)
@@ -63,6 +67,7 @@ You asked for an in-depth analysis of the tool usage path in AgentX. This is a c
 ## 🔴 Critical Issue: No Multi-Turn Tool Use
 
 ### Current Problem
+
 ```
 User: "Read config.py and suggest refactoring"
      ↓
@@ -74,6 +79,7 @@ Result: Generic response without actually reading the file ✗
 ```
 
 ### What Should Happen
+
 ```
 User: "Read config.py and suggest refactoring"
      ↓
@@ -107,6 +113,7 @@ If more tools needed: Loop repeats
 ## �� Key Stubs to Fix (Priority Order)
 
 ### Priority 1 - CRITICAL (Do First)
+
 ```python
 # File: src/agentix/bridge/bridge.py, line 315
 def _stream_tool_response(self, prompt, context, classification):
@@ -118,11 +125,13 @@ def _stream_tool_response(self, prompt, context, classification):
 ```
 
 **Must add:**
+
 - Tool selection logic
 - Tool execution
 - **LLM feedback loop** (send results back to LLM)
 
 ### Priority 2 - IMPORTANT (After P1)
+
 ```python
 # File: src/agentix/next_steps/single_tool.py, line 10
 def single_tool(...):
@@ -135,18 +144,21 @@ def single_tool(...):
 ```
 
 ### Priority 3 - QUALITY (After P1/P2)
+
 - Tool enablement persistence (stub in tools.py:360)
 - Tool ID tracking for concurrent calls (unused in response.py:85)
 
 ## 💼 Business Impact
 
 ### Current State
+
 - Basic tool execution works
 - User can't have complex conversations
 - No multi-step reasoning
 - Limited usefulness for complex tasks
 
 ### After Fix
+
 - Full agentic capability
 - Multi-step reasoning
 - Complex task support
@@ -249,18 +261,21 @@ def single_tool(...):
 ## ✅ Next Steps
 
 ### Immediate (This Week)
+
 1. Read this analysis
 2. Review the code stubs
 3. Plan implementation
 4. Set up development environment
 
 ### Short Term (Next 1-2 weeks)
+
 1. Implement `_stream_tool_response()` with feedback loop
 2. Implement tool selection logic
 3. Add tests for multi-turn tool use
 4. Test with complex prompts
 
 ### Medium Term (After that)
+
 1. Implement planning route
 2. Add tool enablement persistence
 3. Implement concurrent tool handling
@@ -269,6 +284,7 @@ def single_tool(...):
 ## 🤝 Questions?
 
 See the four analysis documents for:
+
 - **Overview**: `TOOL_ANALYSIS_README.md`
 - **Complete details**: `TOOL_USAGE_ANALYSIS.md`
 - **Implementation guide**: `TOOL_GAPS_AND_EXAMPLES.md`
