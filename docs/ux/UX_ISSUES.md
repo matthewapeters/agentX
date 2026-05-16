@@ -1,6 +1,6 @@
 # UX ISSUES
 
-_Last updated: 2026-05-15 (v0.48.14)_
+_Last updated: 2026-05-16 (v0.49.1)_
 
 This file is the bug-tracking log for user-reported UX defects in AgentX.
 
@@ -390,6 +390,10 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
     - [/] evidence complete
     - [/] regression tests complete (defect encoded)
     - [/] fix complete
-    - [ ] verification pending (awaiting user UAT)
-  - **Status**: ready for UAT (latest fix candidate).
+    - [/] verification complete (deterministic wide-profile run; user UAT still required)
+  - **Deterministic verify profile (v0.49.1)**:
+    - Added `scripts/verify_issue9_wide.sh` to enforce fixed tmux dimensions during verify-release runs (default `200x60`).
+    - Profile writes unique per-run evidence under `/tmp/issue9_verify_profile.*` and computes signatures from explicit trial files.
+    - Latest wide-profile verification captured no ENTER prompt in valid `200x60` trials (one trial was startup-timeout/NA, not an ENTER signature).
+  - **Status**: ready for UAT (latest fix candidate with deterministic verify profile).
   - **Next prompt**: `issue-verify-release`.

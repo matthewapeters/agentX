@@ -27,6 +27,8 @@
 #   AGENTX_TUI_SOCKET       Path for TUI nvim socket (default: /tmp/agentx_<SESSION_ID>.tui.nvim.sock)
 #   AGENTX_TUI_OUTPUT_SPLIT_RATIO Fraction of TUI height used by output pane (default: 0.70)
 #   AGENTX_TMUX_SESSION     tmux session name (default: agentx) — used as SESSION_ID for socket scoping
+#   AGENTX_TMUX_WIDTH       tmux session width in columns for deterministic headless layout (optional)
+#   AGENTX_TMUX_HEIGHT      tmux session height in rows for deterministic headless layout (optional)
 #   AGENTX_TERMINAL_VISIBLE Default visibility for agent terminal panes (default: true)
 #   AGENTX_PYTHON           Python executable to use (default: resolved from venv or PATH)
 #   AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS Number of preflight attempts before failing (default: 2)
@@ -85,6 +87,8 @@ TUI_SOCKET="${AGENTX_TUI_SOCKET:-/tmp/agentx_${SESSION_ID}.tui.nvim.sock}"
 TUI_OUTPUT_SPLIT_RATIO="${AGENTX_TUI_OUTPUT_SPLIT_RATIO:-0.70}"
 AUTO_STOP_ON_EXIT="${AGENTX_AUTO_STOP_ON_EXIT:-true}"
 TERMINAL_VISIBLE="${AGENTX_TERMINAL_VISIBLE:-true}"
+TMUX_WIDTH="${AGENTX_TMUX_WIDTH:-}"
+TMUX_HEIGHT="${AGENTX_TMUX_HEIGHT:-}"
 OLLAMA_HOST="${AGENTX_OLLAMA_HOST:-}"
 OLLAMA_MODEL="${AGENTX_OLLAMA_MODEL:-}"
 OLLAMA_PREFLIGHT_ATTEMPTS="${AGENTX_OLLAMA_PREFLIGHT_ATTEMPTS:-2}"
@@ -151,6 +155,39 @@ _check_dep() {
     else
         _green "  ✓ $cmd  ($(command -v "$cmd"))"
         return 0
+    fi
+}
+
+_tmux_size_args() {
+    local args=()
+    if [[ -n "$TMUX_WIDTH" && "$TMUX_WIDTH" =~ ^[1-9][0-9]*$ ]]; then
+        args+=("-x" "$TMUX_WIDTH")
+    elif [[ -n "$TMUX_WIDTH" ]]; then
+        _yellow "  ⚠ ignoring invalid AGENTX_TMUX_WIDTH='$TMUX_WIDTH' (expected positive integer)."
+    fi
+
+    if [[ -n "$TMUX_HEIGHT" && "$TMUX_HEIGHT" =~ ^[1-9][0-9]*$ ]]; then
+        args+=("-y" "$TMUX_HEIGHT")
+    elif [[ -n "$TMUX_HEIGHT" ]]; then
+        _yellow "  ⚠ ignoring invalid AGENTX_TMUX_HEIGHT='$TMUX_HEIGHT' (expected positive integer)."
+    fi
+
+    printf '%s\n' "${args[@]}"
+}
+
+_apply_tmux_window_size() {
+    local target="$1"
+    local args=()
+
+    if [[ -n "$TMUX_WIDTH" && "$TMUX_WIDTH" =~ ^[1-9][0-9]*$ ]]; then
+        args+=("-x" "$TMUX_WIDTH")
+    fi
+    if [[ -n "$TMUX_HEIGHT" && "$TMUX_HEIGHT" =~ ^[1-9][0-9]*$ ]]; then
+        args+=("-y" "$TMUX_HEIGHT")
+    fi
+
+    if [[ ${#args[@]} -gt 0 ]]; then
+        tmux resize-window -t "$target" "${args[@]}" 2>/dev/null || true
     fi
 }
 
@@ -941,6 +978,10 @@ _recover_editor() {
 
 _start_session() {
     local python_bin="$1"
+    local tmux_size_args=()
+    while IFS= read -r arg; do
+        [[ -n "$arg" ]] && tmux_size_args+=("$arg")
+    done < <(_tmux_size_args)
 
     # Verify project dir exists
     if [[ ! -d "$PROJECT_DIR" ]]; then
@@ -1031,16 +1072,19 @@ _start_session() {
     local tui_pane_target
     if _tui_enabled; then
         # Keep TUI as window 0 and default attached view for fast prompt/response iteration.
-        tui_pane_target="$(tmux new-session -d -P -F '#{pane_id}' -s "$TMUX_SESSION" -n "$TUI_WINDOW_NAME" -c "$PROJECT_DIR")"
+        tui_pane_target="$(tmux new-session "${tmux_size_args[@]}" -d -P -F '#{pane_id}' -s "$TMUX_SESSION" -n "$TUI_WINDOW_NAME" -c "$PROJECT_DIR")"
         TUI_PANE_ID="$(_normalize_token "$tui_pane_target")"
+        _apply_tmux_window_size "${TMUX_SESSION}:${TUI_WINDOW_NAME}"
 
         local editor_idx_new
         editor_idx_new="$(_next_available_window_index)"
         editor_pane_target="$(tmux new-window -P -F '#{pane_id}' -t "${TMUX_SESSION}:${editor_idx_new}" -n "$EDITOR_WINDOW_NAME" -d -c "$PROJECT_DIR")"
         EDITOR_PANE_ID="$(_normalize_token "$editor_pane_target")"
+        _apply_tmux_window_size "${TMUX_SESSION}:${EDITOR_WINDOW_NAME}"
     else
-        editor_pane_target="$(tmux new-session -d -P -F '#{pane_id}' -s "$TMUX_SESSION" -n "$EDITOR_WINDOW_NAME" -c "$PROJECT_DIR")"
+        editor_pane_target="$(tmux new-session "${tmux_size_args[@]}" -d -P -F '#{pane_id}' -s "$TMUX_SESSION" -n "$EDITOR_WINDOW_NAME" -c "$PROJECT_DIR")"
         EDITOR_PANE_ID="$(_normalize_token "$editor_pane_target")"
+        _apply_tmux_window_size "${TMUX_SESSION}:${EDITOR_WINDOW_NAME}"
     fi
 
     # Prevent tmux from renaming the editor window after nvim starts — this keeps
@@ -1052,6 +1096,7 @@ _start_session() {
         local agent_bg_idx
         agent_bg_idx="$(_next_available_window_index)"
         agent_bg_pane_target="$(tmux new-window -P -F '#{pane_id}' -t "${TMUX_SESSION}:${agent_bg_idx}" -n "$AGENT_BG_WINDOW_NAME" -d -c "$PROJECT_DIR")"
+        _apply_tmux_window_size "${TMUX_SESSION}:${AGENT_BG_WINDOW_NAME}"
     else
         agent_bg_pane_target="$(_agent_bg_pane_target)"
     fi
@@ -1069,6 +1114,7 @@ _start_session() {
         local agentx_log_idx
         agentx_log_idx="$(_next_available_window_index)"
         agentx_log_pane_target="$(tmux new-window -P -F '#{pane_id}' -t "${TMUX_SESSION}:${agentx_log_idx}" -n "$AGENTX_LOG_WINDOW_NAME" -d -c "$PROJECT_DIR")"
+        _apply_tmux_window_size "${TMUX_SESSION}:${AGENTX_LOG_WINDOW_NAME}"
     else
         agentx_log_pane_target="$(_agentx_log_pane_target)"
     fi

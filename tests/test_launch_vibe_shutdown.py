@@ -673,6 +673,40 @@ auto_stop_tmux_on_gui_exit = false
     assert "tmux\tkill-session\t-t\t'agentx'" not in log
 
 
+@pytest.mark.unit
+def test_start_uses_configured_tmux_dimensions_for_new_session(tmp_path: Path) -> None:
+    """GIVEN explicit tmux size overrides [PD-16-AF-004]
+
+    WHEN launch_vibe.sh start runs in TUI mode
+    THEN new-session receives -x/-y so headless layout width and height are deterministic.
+    """
+    fake_bin = _create_fake_bin(tmp_path)
+    log_path = tmp_path / "tmux.log"
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    result = _run_launcher(
+        ["start", str(project_dir)],
+        fake_bin,
+        log_path,
+        {
+            "TMUX_HAS_SESSION": "0",
+            "TMUX_WINDOWS": "editor,agent-bg,agentx-log",
+            "TMUX_PANE_COMMAND": "nvim",
+            "AGENTX_TUI_ENABLE": "true",
+            "AGENTX_TMUX_WIDTH": "200",
+            "AGENTX_TMUX_HEIGHT": "60",
+            "AGENTX_SOCKET_WAIT_LOOPS": "1",
+            "AGENTX_SOCKET_WAIT_SEC": "0",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    log = log_path.read_text(encoding="utf-8")
+    assert "new-session\t-x\t200\t-y\t60\t-d\t-P\t-F\t#{pane_id}\t-s\tagentx\t-n\ttui-chat" in log
+    assert "resize-window\t-t\tagentx:tui-chat\t-x\t200\t-y\t60" in log
+
+
 def _run_launcher(
     args: list[str],
     fake_bin: Path,

@@ -5,6 +5,42 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.49.1] - 2026-05-16
+
+### Code Changes
+
+#### Added
+
+- Added deterministic Issue #9 verify-release harness: `scripts/verify_issue9_wide.sh`.
+  - Uses fixed tmux geometry profile (`ISSUE9_TMUX_WIDTH`, `ISSUE9_TMUX_HEIGHT`; default `200x60`).
+  - Writes unique per-run evidence under `/tmp/issue9_verify_profile.*`.
+  - Uses explicit per-trial files and summary parsing (no wildcard ambiguity).
+  - Emits a Markdown report (`report.md`) and CSV summary (`summary.csv`) for issue comments.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/ux/UX_ISSUES.md` Issue #9 notes with deterministic wide-profile verification status.
+
+## [0.49.0] - 2026-05-16
+
+### Code Changes
+
+#### Added
+
+- Added deterministic tmux startup sizing for launcher-driven TUI sessions.
+  - `launch_vibe.sh` now supports `AGENTX_TMUX_WIDTH` and `AGENTX_TMUX_HEIGHT`.
+  - When set to positive integers, the launcher passes `-x/-y` to `tmux new-session` so headless and CI startup dimensions are stable.
+  - Invalid values are ignored with a warning, preserving existing behavior.
+
+### Test Changes
+
+#### Added
+
+- Added unit coverage in `tests/test_launch_vibe_shutdown.py`:
+  - `test_start_uses_configured_tmux_dimensions_for_new_session`
+
 ## [0.48.14] - 2026-05-15
 
 ### Code Changes
