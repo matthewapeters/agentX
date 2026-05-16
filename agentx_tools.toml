@@ -56,6 +56,19 @@ description = "Search for files matching patterns"
 category = "filesystem"
 enabled = true
 
+[tools.cli.gh]
+description = "github command line tool"
+category = "source code version control"
+path = "/usr/bin/gh"
+enabled = "true"
+
+[tools.cli.nvtop]
+description = "observe GPU processes and load"
+category = "system"
+path = "/usr/bin/nvtop"
+enabled = "true"
+
+
 # Example external Python tool registration:
 # [tools.extract_todos]
 # description = "Extract TODO comments from source files"

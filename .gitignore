@@ -140,3 +140,4 @@ cython_debug/
 sessions/
 .nvimrc.agentx
 agentx_tui.lua
+logs/*
