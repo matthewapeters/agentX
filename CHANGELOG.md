@@ -11,11 +11,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Added
 
-- Added deterministic Issue #9 verify-release harness: `scripts/verify_issue9_wide.sh`.
+- Added deterministic Issue #9 verify-release harness: `docs/validation/verify_issue9_wide.sh`.
   - Uses fixed tmux geometry profile (`ISSUE9_TMUX_WIDTH`, `ISSUE9_TMUX_HEIGHT`; default `200x60`).
   - Writes unique per-run evidence under `/tmp/issue9_verify_profile.*`.
   - Uses explicit per-trial files and summary parsing (no wildcard ambiguity).
   - Emits a Markdown report (`report.md`) and CSV summary (`summary.csv`) for issue comments.
+  - Full documentation with usage examples: [docs/validation/01_ISSUE_9_WIDE_PROFILE_VERIFICATION.md](docs/validation/01_ISSUE_9_WIDE_PROFILE_VERIFICATION.md).
 
 ### Documentation Changes
 

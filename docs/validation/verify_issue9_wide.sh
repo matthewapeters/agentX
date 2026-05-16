@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Deterministic verify-release harness for Issue #9 startup ENTER prompt.
 # Uses fixed tmux geometry and unique evidence files per run.
+# Ref: docs/validation/01_ISSUE_9_WIDE_PROFILE_VERIFICATION.md
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../" && pwd)"
 cd "$ROOT_DIR"
 
 TRIALS="${ISSUE9_TRIALS:-5}"

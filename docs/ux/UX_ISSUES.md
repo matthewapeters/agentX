@@ -392,7 +392,8 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
     - [/] fix complete
     - [/] verification complete (deterministic wide-profile run; user UAT still required)
   - **Deterministic verify profile (v0.49.1)**:
-    - Added `scripts/verify_issue9_wide.sh` to enforce fixed tmux dimensions during verify-release runs (default `200x60`).
+    - Added verification harness [docs/validation/verify_issue9_wide.sh](../validation/verify_issue9_wide.sh) to enforce fixed tmux dimensions during verify-release runs (default `200x60`).
+    - Full documentation with usage examples and interpretation guide: [docs/validation/01_ISSUE_9_WIDE_PROFILE_VERIFICATION.md](../validation/01_ISSUE_9_WIDE_PROFILE_VERIFICATION.md).
     - Profile writes unique per-run evidence under `/tmp/issue9_verify_profile.*` and computes signatures from explicit trial files.
     - Latest wide-profile verification captured no ENTER prompt in valid `200x60` trials (one trial was startup-timeout/NA, not an ENTER signature).
   - **Status**: ready for UAT (latest fix candidate with deterministic verify profile).
