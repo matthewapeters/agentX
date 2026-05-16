@@ -45,7 +45,7 @@ This analysis provides a comprehensive examination of the tool usage path in Age
 - Gap #6: Tool ID tracking for concurrency
 - Implementation priority matrix
 
-### 3. `ARCHITECTURE_DIAGRAMS.md` (614 lines)
+### 3. [ARCHITECTURE_DIAGRAMS.md](docs/ARCHITECTURE_DIAGRAMS.md) (614 lines)
 **Visual ASCII diagrams of the system**
 - Complete tool execution flow (as implemented)
 - Tool execution context routing
@@ -241,7 +241,7 @@ src/agentx/session.py
 - **For Overview**: Read this README (you are here)
 - **For Deep Dive**: `TOOL_USAGE_ANALYSIS.md`
 - **For Gaps & Fixes**: `TOOL_GAPS_AND_EXAMPLES.md`
-- **For Visual Understanding**: `ARCHITECTURE_DIAGRAMS.md`
+- **For Visual Understanding**: [ARCHITECTURE_DIAGRAMS.md](docs/ARCHITECTURE_DIAGRAMS.md)
 
 ---
 

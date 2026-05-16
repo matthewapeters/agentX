@@ -35,7 +35,7 @@ You asked for an in-depth analysis of the tool usage path in AgentX. This is a c
    - Code examples of needed fixes
    - Implementation priorities
 
-4. **`ARCHITECTURE_DIAGRAMS.md`** ← Visual learners (614 lines)
+4. **[`ARCHITECTURE_DIAGRAMS.md`](docs/ARCHITECTURE_DIAGRAMS.md)** ← Visual learners (614 lines)
    - ASCII flow diagrams
    - System interactions
    - Data flow visualization
@@ -57,7 +57,7 @@ You asked for an in-depth analysis of the tool usage path in AgentX. This is a c
 ### For Architects
 1. Read `TOOL_ANALYSIS_README.md` (5 min)
 2. Read full `TOOL_USAGE_ANALYSIS.md` (30 min)
-3. Review `ARCHITECTURE_DIAGRAMS.md` (10 min)
+3. Review [ARCHITECTURE_DIAGRAMS.md](docs/ARCHITECTURE_DIAGRAMS.md) (10 min)
 4. Understand complete system design
 
 ## 🔴 Critical Issue: No Multi-Turn Tool Use
@@ -202,7 +202,7 @@ def single_tool(...):
 
 1. **This file** (2 min) - You are here
 2. **`TOOL_ANALYSIS_README.md`** (5 min) - Overview and priorities
-3. **`ARCHITECTURE_DIAGRAMS.md` sections 1-3** (10 min) - Understand flow
+3. **[ARCHITECTURE_DIAGRAMS.md](docs/ARCHITECTURE_DIAGRAMS.md) sections 1-3** (10 min) - Understand flow
 4. **`TOOL_GAPS_AND_EXAMPLES.md` Gap #1** (15 min) - Understand the main problem
 5. **`TOOL_USAGE_ANALYSIS.md` sections 1, 9** (20 min) - End-to-end and session
 6. **Code files** - Start implementing
@@ -218,7 +218,7 @@ def single_tool(...):
 ├─ TOOL_ANALYSIS_README.md          ← Read next
 ├─ TOOL_USAGE_ANALYSIS.md           ← Most detailed
 ├─ TOOL_GAPS_AND_EXAMPLES.md        ← For developers
-├─ ARCHITECTURE_DIAGRAMS.md         ← Visual reference
+├─ docs/ARCHITECTURE_DIAGRAMS.md    ← Visual reference
 │
 ├─ src/
 │  ├─ shared/models/
@@ -272,7 +272,7 @@ See the four analysis documents for:
 - **Overview**: `TOOL_ANALYSIS_README.md`
 - **Complete details**: `TOOL_USAGE_ANALYSIS.md`
 - **Implementation guide**: `TOOL_GAPS_AND_EXAMPLES.md`
-- **Visual reference**: `ARCHITECTURE_DIAGRAMS.md`
+- **Visual reference**: [ARCHITECTURE_DIAGRAMS.md](docs/ARCHITECTURE_DIAGRAMS.md)
 
 ---
 
