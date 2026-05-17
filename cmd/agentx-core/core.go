@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -107,6 +108,18 @@ func (ac *AgentXCore) StartHealthEndpoint(ctx context.Context) error {
 		}
 	}()
 	log.Printf("[AgentX Core] Health endpoint listening on %s", ac.healthAddr)
+	return nil
+}
+
+// AttachTmuxSession attaches the current terminal to the managed tmux session.
+func (ac *AgentXCore) AttachTmuxSession(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "tmux", "attach-session", "-t", ac.tmuxSessionName)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to attach tmux session: %w", err)
+	}
 	return nil
 }
 

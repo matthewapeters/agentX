@@ -17,6 +17,7 @@ func main() {
 		projectDir = flag.String("project-dir", ".", "Project directory for sessions and config")
 		username   = flag.String("user", os.Getenv("USER"), "Username for session isolation")
 		sessionID  = flag.String("session-id", "", "Session ID; auto-generated if empty")
+		attach     = flag.Bool("attach", false, "Attach to tmux session after startup")
 	)
 	flag.Parse()
 
@@ -66,6 +67,14 @@ func main() {
 		log.Fatalf("Failed to start health endpoint: %v", err)
 	}
 	fmt.Println("[AgentX Core] ✓ Health endpoint started")
+
+	if *attach {
+		fmt.Printf("[AgentX Core] Attaching to tmux session '%s'...\n", core.tmuxSessionName)
+		if err := core.AttachTmuxSession(ctx); err != nil {
+			log.Fatalf("Failed to attach tmux session: %v", err)
+		}
+		fmt.Println("[AgentX Core] tmux client detached; core still running")
+	}
 
 	// Wait for context cancellation (via signal or graceful shutdown).
 	<-ctx.Done()

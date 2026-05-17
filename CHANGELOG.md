@@ -5,6 +5,23 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.52.0] - 2026-05-17
+
+### Code Changes
+
+#### Added
+
+- Added tmux attach mode for the Go core runtime.
+  - Added `--attach` flag in `cmd/agentx-core/main.go` to auto-attach after startup.
+  - Added `AttachTmuxSession` in `cmd/agentx-core/core.go` for interactive tmux client attachment.
+  - Added `run-attached` target in `Makefile` for one-command startup + attach.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `README.md` Go core run instructions with attached-mode workflows.
+
 ## [0.51.1.post1] - 2026-05-17
 
 ### Documentation Changes

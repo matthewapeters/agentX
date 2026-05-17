@@ -186,8 +186,17 @@ cd cmd/agentx-core && go test ./...
 # Build and run core
 make run
 
+# Build, run, and immediately attach tmux client
+make run-attached
+
 # Build and run core with applets staged
 make run-with-applets
+```
+
+To launch manually with attach enabled:
+
+```bash
+./bin/agentx --project-dir . --user "$USER" --attach
 ```
 
 ### Lint and format

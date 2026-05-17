@@ -6,7 +6,7 @@ GO_CORE_BIN := bin/agentx
 .PHONY: help \
 	build build-core build-applets clean \
 	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e \
-	run run-with-applets
+	run run-attached run-with-applets
 
 help:
 	@echo "AgentX Make Targets"
@@ -27,6 +27,7 @@ help:
 	@echo ""
 	@echo "Run:"
 	@echo "  run                 Build and run Go core"
+	@echo "  run-attached        Build, run, and attach to tmux session"
 	@echo "  run-with-applets    Build and run Go core with applets prepared"
 
 build: build-core build-applets
@@ -73,6 +74,10 @@ go-test-e2e:
 run: build-core
 	@echo "Running Go core..."
 	./$(GO_CORE_BIN) --project-dir . --user $$USER
+
+run-attached: build-core
+	@echo "Running Go core and attaching to tmux..."
+	./$(GO_CORE_BIN) --project-dir . --user $$USER --attach
 
 run-with-applets: build
 	@echo "Running Go core with applets prepared..."
