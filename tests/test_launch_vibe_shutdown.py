@@ -366,7 +366,9 @@ def test_start_with_tui_enabled_launches_tui_window_and_env(tmp_path: Path) -> N
     assert 'vim.cmd("belowright split")' in lua_text
     assert "while true; do cat %q; done" in lua_text
     assert 'nvim_create_user_command("AgentXSubmit"' in lua_text
+    assert 'nvim_create_user_command("AgentXQuit"' in lua_text
     assert 'vim.keymap.set({ "n", "i" }, "<leader>s", submit_input' in lua_text
+    assert 'vim.keymap.set({ "n", "i" }, "<leader>q", quit_app' in lua_text
     assert 'vim.keymap.set("n", "<CR>", submit_input' in lua_text
     assert "AgentX TUI ready." in lua_text
 

@@ -80,3 +80,25 @@ def test_layout_skips_gui_setup_when_disabled(tmp_path) -> None:
 
     session.gui.create_layout.assert_not_called()
     session.close()
+
+
+def test_tui_quit_callback_requests_mainloop_shutdown(tmp_path) -> None:
+    """GIVEN TUI quit affordance WHEN callback runs.
+
+    THEN session interrupts streaming and requests root quit. [PD-16-AF-008]
+    """
+    root = tk.Tk(useTk=False)
+    root.quit = MagicMock()  # type: ignore[method-assign]
+    config = _minimal_config(enable_gui_chat=False, tui_enable=True)
+
+    session = AgentXSession(root=root, config=config, username="tester", session_dir=str(tmp_path))
+    session._safe_root_after = lambda callback: callback()
+    session.tui_bridge = MagicMock()
+    session._is_streaming.set()
+
+    session._on_tui_quit()
+
+    assert session._is_streaming.is_set() is False
+    root.quit.assert_called_once()
+    session.tui_bridge.write_output.assert_called_once()
+    session.close()

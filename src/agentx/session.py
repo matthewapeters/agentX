@@ -13,19 +13,20 @@ import logging
 import os
 import threading
 import tkinter as tk
-from tkinter import messagebox
 from datetime import UTC, datetime
 from pathlib import Path
+from tkinter import messagebox
 from typing import Any, Iterator, Optional
 
 import httpx
 
 from agentix.prompt_classification_response import PromptClassificationResponse
-from shared.providers.constants import FALLBACK_CONTEXT_WINDOW
 from shared.models.context import Context
 from shared.models.message import Message, MessageRole
 from shared.models.response import ChunkType, ResponseChunk
 from shared.models.working_memory import FactOwner, WorkingMemory
+from shared.providers import ILLMServiceProvider, OllamaServiceProvider
+from shared.providers.constants import FALLBACK_CONTEXT_WINDOW
 
 from .attachment_info import AttachmentInfo
 from .config import apply_config_defaults, save_config, validate_config
@@ -33,8 +34,8 @@ from .event_broker import EventBroker, EventType
 from .file_explorer import FileExplorer
 from .gui.gui_config import GUIConfig
 from .gui.gui_manager import GUIManager  # concrete class — used only for construction in __init__
-from .igui_manager import IGUIManager, NullGUIManager
 from .history import History
+from .igui_manager import IGUIManager, NullGUIManager
 from .integration import (
     AgentixBridgeAdapter,
     ClientToolExecutor,
@@ -44,13 +45,12 @@ from .integration import (
 )
 from .integration.tui_event_subscriber import TUIEventSubscriber
 from .integration.vim_bridge import VimBridge
+from .model_metadata_store import ModelMetadataStore
 from .output_logger import OutputLogger
 from .service_manager import ServiceManager
 from .session_state import SessionState
 from .streaming_controller import StreamingController
 from .tool_dispatcher import ToolDispatcher
-from .model_metadata_store import ModelMetadataStore
-from shared.providers import ILLMServiceProvider, OllamaServiceProvider
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +181,7 @@ class AgentXSession:
                 output_fifo=output_fifo,
                 input_fifo=input_fifo,
                 on_submit=self._on_tui_submit,
+                on_quit=self._on_tui_quit,
                 enabled=True,
                 write_timeout_sec=write_timeout_sec,
             )
@@ -741,6 +742,20 @@ class AgentXSession:
             self.stream_ollama_response()
 
         self._safe_root_after(_submit)
+
+    def _on_tui_quit(self) -> None:
+        """Schedule graceful application shutdown from TUI quit affordance. [PD-16-AF-008]"""
+
+        def _quit() -> None:
+            self.interrupt_streaming()
+            try:
+                if self.tui_bridge is not None:
+                    self.tui_bridge.write_output("###SYSTEM Quit requested from TUI (\\q). Shutting down...\n")
+            except Exception:
+                logger.debug("Failed to mirror TUI quit notice", exc_info=True)
+            self.root.quit()
+
+        self._safe_root_after(_quit)
 
     def _handle_interrupt(self) -> None:
         """Handle user interrupt button click."""

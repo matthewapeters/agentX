@@ -13,6 +13,7 @@ from collections.abc import Callable
 logger = logging.getLogger(__name__)
 
 SUBMIT_SENTINEL = "\n---SUBMIT---\n"
+QUIT_SENTINEL = "\n---QUIT---\n"
 
 
 class TuiBridge:
@@ -27,6 +28,7 @@ class TuiBridge:
         output_fifo: str,
         input_fifo: str | None = None,
         on_submit: Callable[[str], None] | None = None,
+        on_quit: Callable[[], None] | None = None,
         enabled: bool = True,
         write_timeout_sec: float = 0.1,
     ) -> None:
@@ -34,14 +36,16 @@ class TuiBridge:
 
         Args:
             output_fifo: FIFO path used for output records.
-            input_fifo: Optional FIFO path used for submit input records.
+            input_fifo: Optional FIFO path used for submit and control records.
             on_submit: Callback invoked with submitted text.
+            on_quit: Callback invoked when a quit control record is received.
             enabled: Whether output writes are enabled.
             write_timeout_sec: Maximum time to wait for writable FIFO state.
         """
         self.output_fifo = output_fifo
         self.input_fifo = input_fifo or ""
         self._on_submit = on_submit
+        self._on_quit = on_quit
         self._enabled = bool(enabled)
         self.write_timeout_sec = max(0.0, float(write_timeout_sec))
         self._started = False
@@ -57,7 +61,8 @@ class TuiBridge:
         """Enable runtime writes for this bridge."""
         self._stop_event.clear()
         self._started = True
-        if self.input_fifo and self._on_submit is not None and self._input_thread is None:
+        has_input_callback = self._on_submit is not None or self._on_quit is not None
+        if self.input_fifo and has_input_callback and self._input_thread is None:
             self._input_thread = threading.Thread(target=self._input_reader_loop, daemon=True)
             self._input_thread.start()
 
@@ -70,8 +75,7 @@ class TuiBridge:
         self._input_thread = None
 
     def _input_reader_loop(self) -> None:
-        """Read submit messages from input FIFO and dispatch callbacks."""
-        assert self._on_submit is not None
+        """Read submit and control messages from input FIFO and dispatch callbacks."""
         fd: int | None = None
         buffer = ""
 
@@ -106,10 +110,31 @@ class TuiBridge:
                     continue
 
                 buffer += chunk.decode("utf-8", errors="replace")
-                while SUBMIT_SENTINEL in buffer:
-                    raw_text, buffer = buffer.split(SUBMIT_SENTINEL, 1)
+                while True:
+                    submit_idx = buffer.find(SUBMIT_SENTINEL)
+                    quit_idx = buffer.find(QUIT_SENTINEL)
+                    if submit_idx == -1 and quit_idx == -1:
+                        break
+
+                    if quit_idx != -1 and (submit_idx == -1 or quit_idx < submit_idx):
+                        raw_text = buffer[:quit_idx]
+                        buffer = buffer[quit_idx + len(QUIT_SENTINEL) :]
+                        if raw_text.strip():
+                            logger.debug("TUI quit sentinel received with ignored inline text")
+                        if self._on_quit is None:
+                            continue
+                        try:
+                            self._on_quit()
+                        except Exception as exc:
+                            logger.debug("TUI quit callback failed: %s", exc)
+                        continue
+
+                    raw_text = buffer[:submit_idx]
+                    buffer = buffer[submit_idx + len(SUBMIT_SENTINEL) :]
                     submitted = raw_text.strip()
                     if not submitted:
+                        continue
+                    if self._on_submit is None:
                         continue
                     try:
                         self._on_submit(submitted)

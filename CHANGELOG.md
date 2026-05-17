@@ -5,6 +5,33 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.50.0] - 2026-05-17
+
+### Code Changes
+
+#### Added
+
+- Added TUI graceful quit affordance `PD-16-AF-008` using a new quit sentinel pipeline.
+  - Added `QUIT_SENTINEL` handling to `src/agentx/integration/tui_bridge.py` with `on_quit` callback dispatch.
+  - Wired TUI quit callback in `src/agentx/session.py` to interrupt streaming and request Tk mainloop shutdown.
+  - Updated launcher-generated Lua in `agentx` to provide `<leader>q` and `:AgentXQuit` for application quit.
+
+### Test Changes
+
+#### Added
+
+- Added unit coverage in `tests/test_tui_bridge_output.py` for quit sentinel dispatch and mixed submit/quit parsing.
+- Added integration coverage in `tests/test_session_gui_disabled.py` for session-level quit callback behavior.
+- Extended launcher assertions in `tests/test_launch_vibe_shutdown.py` for generated quit command and keymap.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated TUI mirror affordance spec in `docs/ux/06_TUI_MIRROR.md` with `PD-16-AF-008`.
+- Updated UX traceability matrix in `docs/ux/UX_LIFECYCLE.md` with `PD-16-AF-008` source/test linkage and status.
+- Updated `docs/ux/00_INDEX.md` status snapshot totals for the new tested affordance.
+
 ## [0.49.1] - 2026-05-16
 
 ### Code Changes

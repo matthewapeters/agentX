@@ -358,6 +358,7 @@ Key responsibilities:
 - Bind `<leader>s` in the input buffer to submit (write buffer content + sentinel
   to the input FIFO, then clear the buffer).
 - Bind `<leader>c` to clear the input buffer without submitting.
+- Bind `<leader>q` to request graceful application quit via input FIFO control sentinel.
 - Bind `<leader>o` to switch focus to the output split.
 - Bind `<leader>i` to switch focus back to the input split.
 
@@ -411,6 +412,25 @@ both are false.
 `true`, it constructs a `TuiBridge` instance and starts its threads.  When `false`,
 `self.tui_bridge` is `None` and all TuiBridge call-sites are guarded by
 `if self.tui_bridge:`.
+
+**Status**: ✅ Implemented and tested
+
+---
+
+### PD-16-AF-008: `<leader>q` Graceful Quit Keymap
+
+**What it does**: In the `agentx_input` buffer, `<leader>q` (normal or insert mode)
+writes a control sentinel (`\n---QUIT---\n`) to the input FIFO. `TuiBridge`
+dispatches an `on_quit` callback, and `AgentXSession` schedules graceful shutdown on
+the Tk event loop (`root.quit()`), allowing normal `finally` cleanup (`session.close()`
+and service shutdown) to run.
+
+```lua
+vim.keymap.set({ "n", "i" }, "<leader>q", quit_app, {
+  buffer = input_buf,
+  desc = "AgentX: Quit application",
+})
+```
 
 **Status**: ✅ Implemented and tested
 
@@ -516,6 +536,7 @@ spec; `launch_vibe.sh` must write exactly this content.
 
 local output_fifo = vim.fn.expand("$AGENTX_TUI_OUTPUT_FIFO")
 local input_fifo  = vim.fn.expand("$AGENTX_TUI_INPUT_FIFO")
+local quit_sentinel = "\n---QUIT---\n"
 
 -- ── Output buffer (top split, read-only) ─────────────────────────────────
 
@@ -578,6 +599,21 @@ vim.keymap.set({ "n", "i" }, "<leader>c", function()
   vim.api.nvim_buf_set_lines(input_buf, 0, -1, false, {})
 end, { buffer = input_buf, desc = "AgentX: Clear input" })
 
+-- ── Quit keymap (<leader>q) ───────────────────────────────────────────────
+
+local function quit_app()
+  local f = io.open(input_fifo, "a")
+  if f then
+    f:write(quit_sentinel)
+    f:close()
+  end
+end
+
+vim.keymap.set({ "n", "i" }, "<leader>q", quit_app, {
+  buffer = input_buf,
+  desc = "AgentX: Quit application",
+})
+
 -- ── Focus keymaps ─────────────────────────────────────────────────────────
 
 vim.keymap.set("n", "<leader>o", function()
@@ -598,7 +634,7 @@ vim.cmd("startinsert")
 
 append_output({
   "###SYSTEM",
-  "AgentX TUI ready. Submit with <leader>s (usually \\s), normal-mode Enter, or :AgentXSubmit.",
+  "AgentX TUI ready. Submit with <leader>s (usually \\s), quit with <leader>q (usually \\q), normal-mode Enter, or :AgentXSubmit.",
   "",
 })
 ```

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agentx.event_broker import EventType
-from agentx.integration.tui_bridge import SUBMIT_SENTINEL, TuiBridge
+from agentx.integration.tui_bridge import QUIT_SENTINEL, SUBMIT_SENTINEL, TuiBridge
 from agentx.streaming_controller import StreamingController
 
 
@@ -383,7 +383,10 @@ def test_streaming_controller_writes_classification_to_tui_when_gui_display_disa
 
 
 def test_streaming_controller_classification_emits_thinking_marker_when_enabled() -> None:
-    """GIVEN show_thinking=true WHEN classification callback runs THEN TUI receives thinking marker and classification block."""
+    """GIVEN show_thinking=true WHEN classification callback runs.
+
+    THEN TUI receives thinking marker and classification block.
+    """
     session = _build_session(show_thinking=True)
     controller = StreamingController(session)
 
@@ -469,6 +472,62 @@ def test_tui_bridge_ignores_empty_submit_messages(tmp_path: Path) -> None:
         bridge.stop()
 
     assert submitted == ["real input"]
+
+
+@pytest.mark.unit
+def test_tui_bridge_dispatches_quit_callback_from_quit_sentinel(tmp_path: Path) -> None:
+    """GIVEN quit sentinel payload WHEN parsed THEN quit callback is dispatched once. [PD-16-AF-008]"""
+    output_fifo = tmp_path / "output.fifo"
+    input_fifo = tmp_path / "input.fifo"
+    os.mkfifo(input_fifo)
+
+    quit_called: list[str] = []
+    bridge = TuiBridge(
+        output_fifo=str(output_fifo),
+        input_fifo=str(input_fifo),
+        on_quit=lambda: quit_called.append("quit"),
+        enabled=True,
+    )
+    bridge.start()
+    try:
+        _write_fifo_payload(str(input_fifo), QUIT_SENTINEL)
+        deadline = time.time() + 1.5
+        while len(quit_called) < 1 and time.time() < deadline:
+            time.sleep(0.01)
+    finally:
+        bridge.stop()
+
+    assert quit_called == ["quit"]
+
+
+@pytest.mark.unit
+def test_tui_bridge_parses_mixed_submit_and_quit_sentinels(tmp_path: Path) -> None:
+    """GIVEN submit and quit sentinels WHEN parsed THEN prompt callback and quit callback both run. [PD-16-AF-008]"""
+    output_fifo = tmp_path / "output.fifo"
+    input_fifo = tmp_path / "input.fifo"
+    os.mkfifo(input_fifo)
+
+    submitted: list[str] = []
+    quit_called: list[str] = []
+    bridge = TuiBridge(
+        output_fifo=str(output_fifo),
+        input_fifo=str(input_fifo),
+        on_submit=submitted.append,
+        on_quit=lambda: quit_called.append("quit"),
+        enabled=True,
+    )
+    bridge.start()
+    try:
+        payload = f"prompt one{SUBMIT_SENTINEL}{QUIT_SENTINEL}prompt two{SUBMIT_SENTINEL}"
+        _write_fifo_payload(str(input_fifo), payload)
+        deadline = time.time() + 1.5
+        while (len(submitted) < 2 or len(quit_called) < 1) and time.time() < deadline:
+            time.sleep(0.01)
+    finally:
+        bridge.stop()
+
+    assert submitted == ["prompt one", "prompt two"]
+    assert quit_called == ["quit"]
 
 
 @pytest.mark.unit

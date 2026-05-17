@@ -673,6 +673,7 @@ _write_tui_lua() {
 local output_fifo = vim.fn.expand("$AGENTX_TUI_OUTPUT_FIFO")
 local input_fifo = vim.fn.expand("$AGENTX_TUI_INPUT_FIFO")
 local submit_sentinel = "\n---SUBMIT---\n"
+local quit_sentinel = "\n---QUIT---\n"
 local output_ratio = tonumber(vim.fn.expand("$AGENTX_TUI_OUTPUT_SPLIT_RATIO")) or 0.70
 if output_ratio <= 0 or output_ratio >= 1 then
     output_ratio = 0.70
@@ -770,12 +771,24 @@ local function submit_input()
     vim.cmd("startinsert")
 end
 
+local function quit_app()
+    local f = io.open(input_fifo, "a")
+    if f then
+        f:write(quit_sentinel)
+        f:close()
+    end
+end
+
 vim.api.nvim_create_user_command("AgentXSubmit", submit_input, {
     desc = "AgentX: Submit TUI input",
 })
 
 vim.api.nvim_create_user_command("AgentXClear", clear_input, {
     desc = "AgentX: Clear TUI input",
+})
+
+vim.api.nvim_create_user_command("AgentXQuit", quit_app, {
+    desc = "AgentX: Quit application",
 })
 
 vim.keymap.set({ "n", "i" }, "<leader>s", submit_input, {
@@ -791,6 +804,11 @@ vim.keymap.set("n", "<CR>", submit_input, {
 vim.keymap.set({ "n", "i" }, "<leader>c", clear_input, {
     buffer = input_buf,
     desc = "AgentX: Clear input",
+})
+
+vim.keymap.set({ "n", "i" }, "<leader>q", quit_app, {
+    buffer = input_buf,
+    desc = "AgentX: Quit application",
 })
 
 vim.keymap.set("n", "<leader>o", function()
@@ -813,7 +831,7 @@ vim.cmd("startinsert")
 
 append_output({
     "###SYSTEM",
-    "AgentX TUI ready. Submit with <leader>s (usually \\s), normal-mode Enter, or :AgentXSubmit.",
+    "AgentX TUI ready. Submit with <leader>s (usually \\s), quit with <leader>q (usually \\q), normal-mode Enter, or :AgentXSubmit.",
     "",
 })
 LUA
