@@ -1,3 +1,13 @@
+#### Headless Terminal UX Layout Validation (tmux/CLI UI)
+
+- For any terminal-based or tmux-based UI, always implement a headless test that:
+  - Launches the layout in a CI or scriptable environment
+  - Captures pane metadata (titles, indices, placeholder text) using `tmux list-panes`, `tmux display-message`, and `tmux capture-pane`
+  - Parses the output to confirm all expected panes exist, are in the correct order, and contain the correct content
+  - Asserts that the output matches the intended UX specification ("forest not just trees")
+  - Fails the build if the layout does not match the spec
+- This approach enables automated, programmatic validation of UX layout and should be used for all CLI/tmux UI affordances
+- Document the test approach and sample scripts in `tests/test_tmux_layout_headless.md` and keep instructions up to date
 # AgentX – Copilot Instructions
 
 ## What This Project Is

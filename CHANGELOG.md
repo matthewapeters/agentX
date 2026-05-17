@@ -5,6 +5,32 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.53.1] - 2026-05-17
+
+### Code Changes
+
+#### Fixed
+
+- Fixed tmux pane identity handling in `cmd/agentx-core/core.go` by replacing brittle pane-index assumptions with pane-ID capture from `split-window -P -F "#{pane_id}"`.
+- Updated layout initialization to set pane titles and placeholders using captured pane IDs so context/input placement remains correct regardless of tmux pane reindexing.
+
+### Test Changes
+
+#### Added
+
+- Added deterministic Go unit tests in `cmd/agentx-core/core_layout_test.go` for tmux command builders and pane-target mapping.
+- Added headless terminal UX validation script in `tests/test_tmux_layout_headless.sh` that verifies pane geometry, placeholder content, and hidden logs window presence.
+
+### Documentation Changes
+
+#### Added
+
+- Added `tests/test_tmux_layout_headless.md` to document programmatic tmux layout validation approach.
+
+#### Changed
+
+- Updated `.github/copilot-instructions.md` to require headless terminal/tmux UX layout validation and CI-failing assertions for layout drift.
+
 ## [0.53.0] - 2026-05-17
 
 ### Code Changes

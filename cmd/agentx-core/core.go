@@ -7,19 +7,25 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
 
+type tmuxPaneTarget struct {
+	name   string
+	target string
+}
+
 // AgentXCore orchestrates the tmux session, applets, and IPC.
 type AgentXCore struct {
-	Config           *Config
-	SessionID        string
-	tmuxSessionName  string
-	applets          map[string]*AppletProcess
-	mu               sync.RWMutex
-	healthAddr       string // Address for health endpoint
-	contextManager   *ContextManager
+	Config          *Config
+	SessionID       string
+	tmuxSessionName string
+	applets         map[string]*AppletProcess
+	mu              sync.RWMutex
+	healthAddr      string // Address for health endpoint
+	contextManager  *ContextManager
 }
 
 // AppletProcess tracks a running Python applet.
@@ -60,67 +66,79 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 		return err
 	}
 
-	// Create new tmux session with default pane (will become chat).
-	cmd := exec.CommandContext(ctx, "tmux", "new-session", "-d", "-s", ac.tmuxSessionName, "-x", "120", "-y", "40")
-	if err := cmd.Run(); err != nil {
+	if err := ac.runTmux(ctx, buildNewSessionCommand(ac.tmuxSessionName)...); err != nil {
 		return fmt.Errorf("failed to create tmux session: %w", err)
 	}
 
-	// 1. Rename the default pane to 'chat'.
-	cmd = exec.CommandContext(ctx, "tmux", "rename-window", "-t", ac.tmuxSessionName, "chat")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to rename window to chat: %w", err)
+	chatPaneTarget := ac.tmuxSessionName + ":0.0"
+	if err := ac.runTmux(ctx, "select-pane", "-t", chatPaneTarget, "-T", "chat"); err != nil {
+		return fmt.Errorf("failed to set chat pane title: %w", err)
 	}
 
-	// 2. Split horizontally (vertical line): create input pane at bottom (20%).
-	//    This puts the chat pane at top (80%) and input pane at bottom (20%).
-	cmd = exec.CommandContext(ctx, "tmux", "split-window", "-t", ac.tmuxSessionName + ":0", "-v", "-p", "20")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to split window for input pane: %w", err)
+	inputPaneTarget, err := ac.runTmuxCapture(ctx, buildInputSplitCommand(chatPaneTarget)...)
+	if err != nil {
+		return fmt.Errorf("failed to split input pane: %w", err)
+	}
+	if err := ac.runTmux(ctx, "select-pane", "-t", inputPaneTarget, "-T", "input"); err != nil {
+		return fmt.Errorf("failed to set input pane title: %w", err)
 	}
 
-	// 3. Rename the bottom pane to 'input'.
-	cmd = exec.CommandContext(ctx, "tmux", "rename-window", "-t", ac.tmuxSessionName + ":0.1", "input")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to rename input pane: %w", err)
+	contextPaneTarget, err := ac.runTmuxCapture(ctx, buildContextSplitCommand(chatPaneTarget)...)
+	if err != nil {
+		return fmt.Errorf("failed to split context pane: %w", err)
+	}
+	if err := ac.runTmux(ctx, "select-pane", "-t", contextPaneTarget, "-T", "context"); err != nil {
+		return fmt.Errorf("failed to set context pane title: %w", err)
 	}
 
-	// 4. Focus on the top-left pane (chat) and split vertically (horizontal line):
-	//    create context pane on the right (20% width).
-	cmd = exec.CommandContext(ctx, "tmux", "split-window", "-t", ac.tmuxSessionName + ":0.0", "-h", "-p", "20")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to split top pane for context: %w", err)
-	}
-
-	// 5. Rename the top-right pane to 'context'.
-	cmd = exec.CommandContext(ctx, "tmux", "rename-window", "-t", ac.tmuxSessionName + ":0.1", "context")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to rename context pane: %w", err)
-	}
-
-	// 6. Create logs in a new hidden window (window:1).
-	cmd = exec.CommandContext(ctx, "tmux", "new-window", "-t", ac.tmuxSessionName + ":1", "-n", "logs")
-	if err := cmd.Run(); err != nil {
+	if err := ac.runTmux(ctx, "new-window", "-t", ac.tmuxSessionName+":1", "-n", "logs"); err != nil {
 		return fmt.Errorf("failed to create logs window: %w", err)
 	}
 
-	// 7. Write placeholder text to each visible pane.
-	panes := map[string]string{
-		"chat":    "0.0",
-		"context": "0.2",
-		"input":   "0.1",
-		"logs":    "1.0",
-	}
-	for paneName, paneTarget := range panes {
-		placeholderCmd := fmt.Sprintf("echo '🔶 Pane: %s (AgentX Core)'", paneName)
-		cmd := exec.CommandContext(ctx, "tmux", "send-keys", "-t", ac.tmuxSessionName + ":" + paneTarget, placeholderCmd, "Enter")
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to set placeholder in pane %s: %w", paneName, err)
+	for _, pane := range paneTargets(ac.tmuxSessionName, chatPaneTarget, inputPaneTarget, contextPaneTarget) {
+		placeholderCmd := fmt.Sprintf("echo '🔶 Pane: %s (AgentX Core)'", pane.name)
+		if err := ac.runTmux(ctx, "send-keys", "-t", pane.target, placeholderCmd, "Enter"); err != nil {
+			return fmt.Errorf("failed to set placeholder in pane %s: %w", pane.name, err)
 		}
 	}
 
 	log.Printf("[AgentX Core] tmux session '%s' initialized with layout: chat(80x80)|context(20x80) top, input(100x20) bottom, logs hidden", ac.tmuxSessionName)
 	return nil
+}
+
+func (ac *AgentXCore) runTmux(ctx context.Context, args ...string) error {
+	cmd := exec.CommandContext(ctx, "tmux", args...)
+	return cmd.Run()
+}
+
+func (ac *AgentXCore) runTmuxCapture(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "tmux", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func paneTargets(sessionName, chatTarget, inputTarget, contextTarget string) []tmuxPaneTarget {
+	return []tmuxPaneTarget{
+		{name: "chat", target: chatTarget},
+		{name: "input", target: inputTarget},
+		{name: "context", target: contextTarget},
+		{name: "logs", target: sessionName + ":1.0"},
+	}
+}
+
+func buildNewSessionCommand(sessionName string) []string {
+	return []string{"new-session", "-d", "-s", sessionName, "-x", "120", "-y", "40"}
+}
+
+func buildInputSplitCommand(chatPaneTarget string) []string {
+	return []string{"split-window", "-P", "-F", "#{pane_id}", "-t", chatPaneTarget, "-v", "-p", "20"}
+}
+
+func buildContextSplitCommand(chatPaneTarget string) []string {
+	return []string{"split-window", "-P", "-F", "#{pane_id}", "-t", chatPaneTarget, "-h", "-p", "20"}
 }
 
 // StartAppletSupervisor launches Python applets in goroutines.
