@@ -97,3 +97,20 @@ jobs:
           go-version-file: cmd/agentx-core/go.mod
       - name: Build
         run: go build ./...
+
+  tmux-layout-headless:
+    name: tmux Layout Headless Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Ensure tmux available
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux
+      - name: Run pane-layout unit tests
+        run: |
+          cd cmd/agentx-core
+          go test -run 'TestBuildNewSessionCommand|TestSplitCommandsUsePaneIDCapture|TestPaneTargets_MapsAllPanesCorrectly' ./...
+      - name: Run headless tmux UX layout validation
+        run: ./tests/test_tmux_layout_headless.sh

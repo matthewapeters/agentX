@@ -5,6 +5,21 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.53.1.post1] - 2026-05-17
+
+### Code Changes
+
+#### Changed
+
+- Added CI workflow coverage for terminal UX layout validation in `.github/workflows/hybrid-go-godog.yml`.
+  - Added a `tmux-layout-headless` job that installs tmux in CI, runs pane-layout unit tests, and executes `tests/test_tmux_layout_headless.sh`.
+
+### Test Changes
+
+#### Changed
+
+- Enforced automated headless tmux layout checks in CI so pane-position regressions fail the pipeline.
+
 ## [0.53.1] - 2026-05-17
 
 ### Code Changes
