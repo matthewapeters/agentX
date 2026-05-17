@@ -5,6 +5,16 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.51.1.post1] - 2026-05-17
+
+### Documentation Changes
+
+#### Added
+
+- Expanded `README.md` with a dedicated "Go Core (Hybrid) Build and Test" section.
+  - Documented Make-based workflows for build, run, and split GoDog test suites.
+  - Added direct Go command alternatives for test execution from both root and module paths.
+
 ## [0.51.1] - 2026-05-17
 
 ### Code Changes

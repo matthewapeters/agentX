@@ -146,6 +146,50 @@ Integration tests that require live services are marked `@pytest.mark.live`. Run
 AGENTIX_BENCH_RUN=1 uv run pytest -m live tests/integration/
 ```
 
+### Go Core (Hybrid) Build and Test
+
+The Go components currently live under `cmd/agentx-core` and are managed from the repository root with `make`.
+
+#### Build the Go core
+
+```bash
+# Build Go core binary to bin/agentx
+make build-core
+
+# Build core + prepare Python applets under bin/applets
+make build
+```
+
+#### Run Go tests
+
+```bash
+# Run all Go tests (including all GoDog suites)
+make go-test
+
+# Run split GoDog suites
+make go-test-unit
+make go-test-integration
+make go-test-functional
+make go-test-e2e
+```
+
+#### Run directly with Go commands (without Make)
+
+```bash
+# Run from module directory
+cd cmd/agentx-core && go test ./...
+```
+
+#### Run the Go core
+
+```bash
+# Build and run core
+make run
+
+# Build and run core with applets staged
+make run-with-applets
+```
+
 ### Lint and format
 
 ```bash
