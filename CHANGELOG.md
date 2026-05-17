@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.51.1] - 2026-05-17
+
+### Code Changes
+
+#### Added
+
+- Added repository root `Makefile` with consistent hybrid process targets.
+  - Added build and run targets: `build`, `build-core`, `build-applets`, `run`, `run-with-applets`, `clean`.
+  - Added Go test targets: `go-test`, `go-test-unit`, `go-test-integration`, `go-test-functional`, `go-test-e2e`.
+
+### Test Changes
+
+#### Changed
+
+- Standardized local test invocation through Make targets so GoDog suite execution is consistent with CI split-suite behavior.
+
 ## [0.51.0] - 2026-05-17
 
 ### Code Changes
