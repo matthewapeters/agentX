@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.53.1.post3] - 2026-05-17
+
+### Code Changes
+
+#### Changed
+
+- Updated `.gitignore` to ignore generated build and report artifacts:
+  - `bin/`
+  - `junit/test-results.xml*`
+
+### Test Changes
+
+#### Changed
+
+- Stopped tracking generated junit report output file in git index to keep repository state deterministic across local/CI test runs.
+
 ## [0.53.1.post2] - 2026-05-17
 
 ### Code Changes

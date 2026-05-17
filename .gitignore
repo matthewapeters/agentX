@@ -141,3 +141,9 @@ sessions/
 .nvimrc.agentx
 agentx_tui.lua
 logs/*
+
+# Generated build/runtime artifacts
+bin/
+
+# Generated test reports
+junit/test-results.xml*
