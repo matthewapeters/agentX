@@ -5,6 +5,32 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.51.0] - 2026-05-17
+
+### Code Changes
+
+#### Added
+
+- Added GoDog-based Gherkin testing foundation for the Go core in `cmd/agentx-core`.
+  - Added tagged feature suites: `@unit`, `@integration`, `@functional`, `@e2e` in `cmd/agentx-core/features/`.
+  - Added GoDog scenario runners and step definitions in `cmd/agentx-core/godog_test.go`.
+  - Added dedicated GitHub Actions workflow `.github/workflows/hybrid-go-godog.yml` to run each GoDog suite separately.
+
+#### Changed
+
+- Updated `.github/copilot-instructions.md` to require GoDog (`github.com/cucumber/godog`) for Go Gherkin tests and define hermetic test scope expectations.
+- Updated `cmd/agentx-core/ipc.go` FIFO creation to use a portable mkfifo syscall path.
+
+### Test Changes
+
+#### Added
+
+- Added hermetic GoDog scenarios for:
+  - Core configuration/layout primitives (unit)
+  - IPC FIFO provisioning (integration)
+  - Core lifecycle/context cancellation behavior (functional)
+  - Core shutdown path with empty applet registry (e2e)
+
 ## [0.50.0] - 2026-05-17
 
 ### Code Changes

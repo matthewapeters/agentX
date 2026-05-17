@@ -1,0 +1,313 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/cucumber/godog"
+)
+
+type bddState struct {
+	tmpDir        string
+	cfg           *Config
+	core          *AgentXCore
+	layout        []PaneConfig
+	router        *IPCRouter
+	inputFIFO     string
+	outputFIFO    string
+	err           error
+	contextMgr    *ContextManager
+	healthErr     error
+	cancelCtx     context.Context
+}
+
+func (s *bddState) reset() {
+	s.tmpDir = ""
+	s.cfg = nil
+	s.core = nil
+	s.layout = nil
+	s.router = nil
+	s.inputFIFO = ""
+	s.outputFIFO = ""
+	s.err = nil
+	s.contextMgr = nil
+	s.healthErr = nil
+	s.cancelCtx = nil
+}
+
+func (s *bddState) iHaveATemporaryProjectDirectory() error {
+	d, err := os.MkdirTemp("", "agentx-core-bdd-")
+	if err != nil {
+		return err
+	}
+	s.tmpDir = d
+	return nil
+}
+
+func (s *bddState) aConfigWithUsername(username string) error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+	s.cfg = &Config{ProjectDir: s.tmpDir, Username: username, SessionID: ""}
+	return nil
+}
+
+func (s *bddState) iEnsureSessionDirectoriesForSession(sessionID string) error {
+	if s.cfg == nil {
+		return errors.New("config not initialized")
+	}
+	s.err = s.cfg.EnsureSessionDirs(sessionID)
+	return nil
+}
+
+func (s *bddState) theSessionDirectoryStructureShouldExist() error {
+	if s.err != nil {
+		return s.err
+	}
+	paths := []string{
+		filepath.Join(s.tmpDir, "sessions", s.cfg.Username),
+		filepath.Join(s.tmpDir, "sessions", s.cfg.Username, "s1", "logs"),
+		filepath.Join(s.tmpDir, "sessions", s.cfg.Username, "s1", "context"),
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			return fmt.Errorf("expected path to exist: %s (%w)", p, err)
+		}
+	}
+	return nil
+}
+
+func (s *bddState) theDefaultPaneLayout() error {
+	s.layout = DefaultPaneLayout()
+	return nil
+}
+
+func (s *bddState) paneNamesShouldInclude(name string) error {
+	for _, pane := range s.layout {
+		if pane.Name == name {
+			return nil
+		}
+	}
+	return fmt.Errorf("expected pane name %q in layout", name)
+}
+
+func (s *bddState) anIPCRouterForSession(sessionID string) error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+	s.router = NewIPCRouter(sessionID, s.tmpDir)
+	return nil
+}
+
+func (s *bddState) iCreateAnIPCFIFOPairForApplet(applet string) error {
+	if s.router == nil {
+		return errors.New("router not initialized")
+	}
+	in, out, err := s.router.CreateFIFOPair(applet)
+	s.inputFIFO, s.outputFIFO, s.err = in, out, err
+	return nil
+}
+
+func (s *bddState) bothFIFOFilesShouldExist() error {
+	if s.err != nil {
+		return s.err
+	}
+	for _, p := range []string{s.inputFIFO, s.outputFIFO} {
+		if _, err := os.Stat(p); err != nil {
+			return fmt.Errorf("expected fifo to exist: %s (%w)", p, err)
+		}
+	}
+	return nil
+}
+
+func (s *bddState) fifoPathsShouldIncludeAppletName(applet string) error {
+	if !strings.Contains(s.inputFIFO, applet) || !strings.Contains(s.outputFIFO, applet) {
+		return fmt.Errorf("expected fifo paths to include applet name %q", applet)
+	}
+	return nil
+}
+
+func (s *bddState) aCoreConfigWithUsernameAndSession(username, session string) error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+	s.cfg = &Config{ProjectDir: s.tmpDir, Username: username, SessionID: session}
+	return nil
+}
+
+func (s *bddState) iConstructTheAgentXCore() error {
+	if s.cfg == nil {
+		return errors.New("config not initialized")
+	}
+	s.core = NewAgentXCore(s.cfg)
+	return nil
+}
+
+func (s *bddState) theCoreSessionIDShouldBeNonempty() error {
+	if s.core == nil || s.core.SessionID == "" {
+		return errors.New("expected non-empty session id")
+	}
+	return nil
+}
+
+func (s *bddState) theCoreTmuxSessionNameShouldIncludeUsername(username string) error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+	if !strings.Contains(s.core.tmuxSessionName, username) {
+		return fmt.Errorf("expected tmux session name to include %q", username)
+	}
+	return nil
+}
+
+func (s *bddState) aContextManagerWithATemporaryContextDirectory() error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+	s.contextMgr = NewContextManager(filepath.Join(s.tmpDir, "ctx"))
+	return nil
+}
+
+func (s *bddState) aCanceledContext() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.cancelCtx = ctx
+	return nil
+}
+
+func (s *bddState) iRunTheHealthServeRoutine() error {
+	if s.contextMgr == nil || s.cancelCtx == nil {
+		return errors.New("context manager or canceled context not initialized")
+	}
+	s.healthErr = s.contextMgr.ServeHealth(s.cancelCtx, "127.0.0.1:0")
+	return nil
+}
+
+func (s *bddState) theRoutineShouldReturnContextCanceled() error {
+	if !errors.Is(s.healthErr, context.Canceled) {
+		return fmt.Errorf("expected context canceled, got: %v", s.healthErr)
+	}
+	return nil
+}
+
+func (s *bddState) aConstructedAgentXCore() error {
+	if s.cfg == nil {
+		return errors.New("config not initialized")
+	}
+	s.core = NewAgentXCore(s.cfg)
+	return nil
+}
+
+func (s *bddState) iInvokeCoreShutdown() error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+	s.err = s.core.Shutdown(context.Background())
+	return nil
+}
+
+func (s *bddState) shutdownShouldCompleteWithoutError() error {
+	if s.err != nil {
+		return s.err
+	}
+	return nil
+}
+
+func InitializeScenario(ctx *godog.ScenarioContext) {
+	state := &bddState{}
+
+	ctx.Before(func(ctx context.Context, sc *godog.Scenario) (context.Context, error) {
+		state.reset()
+		return ctx, nil
+	})
+
+	ctx.After(func(ctx context.Context, sc *godog.Scenario, err error) (context.Context, error) {
+		if state.tmpDir != "" {
+			_ = os.RemoveAll(state.tmpDir)
+		}
+		return ctx, nil
+	})
+
+	ctx.Step(`^a temporary project directory$`, state.iHaveATemporaryProjectDirectory)
+	ctx.Step(`^a config with username "([^"]*)"$`, state.aConfigWithUsername)
+	ctx.Step(`^I ensure session directories for session "([^"]*)"$`, state.iEnsureSessionDirectoriesForSession)
+	ctx.Step(`^the session directory structure should exist$`, state.theSessionDirectoryStructureShouldExist)
+	ctx.Step(`^the default pane layout$`, state.theDefaultPaneLayout)
+	ctx.Step(`^pane names should include "([^"]*)"$`, state.paneNamesShouldInclude)
+	ctx.Step(`^an IPC router for session "([^"]*)"$`, state.anIPCRouterForSession)
+	ctx.Step(`^I create an IPC FIFO pair for applet "([^"]*)"$`, state.iCreateAnIPCFIFOPairForApplet)
+	ctx.Step(`^both FIFO files should exist$`, state.bothFIFOFilesShouldExist)
+	ctx.Step(`^FIFO paths should include applet name "([^"]*)"$`, state.fifoPathsShouldIncludeAppletName)
+	ctx.Step(`^a core config with username "([^"]*)" and session "([^"]*)"$`, state.aCoreConfigWithUsernameAndSession)
+	ctx.Step(`^I construct the AgentX core$`, state.iConstructTheAgentXCore)
+	ctx.Step(`^the core session id should be non-empty$`, state.theCoreSessionIDShouldBeNonempty)
+	ctx.Step(`^the core tmux session name should include username "([^"]*)"$`, state.theCoreTmuxSessionNameShouldIncludeUsername)
+	ctx.Step(`^a context manager with a temporary context directory$`, state.aContextManagerWithATemporaryContextDirectory)
+	ctx.Step(`^a canceled context$`, state.aCanceledContext)
+	ctx.Step(`^I run the health serve routine$`, state.iRunTheHealthServeRoutine)
+	ctx.Step(`^the routine should return context canceled$`, state.theRoutineShouldReturnContextCanceled)
+	ctx.Step(`^a constructed AgentX core$`, state.aConstructedAgentXCore)
+	ctx.Step(`^I invoke core shutdown$`, state.iInvokeCoreShutdown)
+	ctx.Step(`^shutdown should complete without error$`, state.shutdownShouldCompleteWithoutError)
+}
+
+func TestGoDogUnit(t *testing.T) {
+	suite := godog.TestSuite{
+		ScenarioInitializer: InitializeScenario,
+		Options: &godog.Options{
+			Format: "pretty",
+			Paths:  []string{"features"},
+			Tags:   "@unit",
+		},
+	}
+	if suite.Run() != 0 {
+		t.Fatal("unit godog suite failed")
+	}
+}
+
+func TestGoDogIntegration(t *testing.T) {
+	suite := godog.TestSuite{
+		ScenarioInitializer: InitializeScenario,
+		Options: &godog.Options{
+			Format: "pretty",
+			Paths:  []string{"features"},
+			Tags:   "@integration",
+		},
+	}
+	if suite.Run() != 0 {
+		t.Fatal("integration godog suite failed")
+	}
+}
+
+func TestGoDogFunctional(t *testing.T) {
+	suite := godog.TestSuite{
+		ScenarioInitializer: InitializeScenario,
+		Options: &godog.Options{
+			Format: "pretty",
+			Paths:  []string{"features"},
+			Tags:   "@functional",
+		},
+	}
+	if suite.Run() != 0 {
+		t.Fatal("functional godog suite failed")
+	}
+}
+
+func TestGoDogE2E(t *testing.T) {
+	suite := godog.TestSuite{
+		ScenarioInitializer: InitializeScenario,
+		Options: &godog.Options{
+			Format: "pretty",
+			Paths:  []string{"features"},
+			Tags:   "@e2e",
+		},
+	}
+	if suite.Run() != 0 {
+		t.Fatal("e2e godog suite failed")
+	}
+}

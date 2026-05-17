@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // IPCRouter manages named FIFOs for bidirectional communication with applets.
@@ -35,7 +36,7 @@ func (r *IPCRouter) CreateFIFOPair(appletName string) (inputFIFO, outputFIFO str
 	// Create FIFOs if they don't exist.
 	for _, fifo := range []string{inputFIFO, outputFIFO} {
 		if _, err := os.Stat(fifo); os.IsNotExist(err) {
-			if err := os.MkFifo(fifo, 0666); err != nil {
+			if err := syscall.Mkfifo(fifo, 0o666); err != nil {
 				return "", "", err
 			}
 		}

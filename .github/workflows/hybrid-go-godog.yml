@@ -1,0 +1,99 @@
+name: Hybrid Go Core GoDog
+
+on:
+  push:
+    branches:
+      - main
+      - feat/hybrid-go-core-tui-migration
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  godog-unit:
+    name: GoDog Unit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cmd/agentx-core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/agentx-core/go.mod
+      - name: Download dependencies
+        run: go mod download
+      - name: Run GoDog unit suite
+        run: go test -run TestGoDogUnit ./...
+
+  godog-integration:
+    name: GoDog Integration
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cmd/agentx-core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/agentx-core/go.mod
+      - name: Download dependencies
+        run: go mod download
+      - name: Run GoDog integration suite
+        run: go test -run TestGoDogIntegration ./...
+
+  godog-functional:
+    name: GoDog Functional
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cmd/agentx-core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/agentx-core/go.mod
+      - name: Download dependencies
+        run: go mod download
+      - name: Run GoDog functional suite
+        run: go test -run TestGoDogFunctional ./...
+
+  godog-e2e:
+    name: GoDog E2E
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cmd/agentx-core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/agentx-core/go.mod
+      - name: Download dependencies
+        run: go mod download
+      - name: Run GoDog e2e suite
+        run: go test -run TestGoDogE2E ./...
+
+  go-core-build:
+    name: Go Core Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cmd/agentx-core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/agentx-core/go.mod
+      - name: Build
+        run: go build ./...

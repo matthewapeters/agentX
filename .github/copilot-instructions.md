@@ -19,6 +19,12 @@ AgentX is a local-first AI agent framework with a Tkinter GUI. It connects to **
 - Tests must be paramaterized to cover full range of input permutation use-cases.  Each variance of the test should be clearly documented within the test docstrings.  Failing tests should identify the failing use-cases.
 - Permutations for parameterized tests and test data should be maintained under the `./tests/` folder.  Ignore the `./tests/` folder in coverage considerations.
 - Use Pytest marking on tests to clearly identify `Unit`, `Functional`, `Integration`, and `End-to-End` tests.  Unit, Functional and Integration tests must be created and maintained by the agent.  End-to-end tests should only be created with the explicit direction of the user.
+- For Go code, use GoDog (`github.com/cucumber/godog`) as the required Gherkin framework for behavior tests.
+  - Go test suites must be expressed in Gherkin `.feature` files and implemented with GoDog step definitions.
+  - GoDog scenarios must be tagged and executed by scope: `@unit`, `@integration`, `@functional`, and `@e2e`.
+  - Unit and integration GoDog scenarios must be hermetic (no network/filesystem/service side effects unless explicitly mocked or isolated to temp resources).
+  - Functional GoDog scenarios should validate cross-unit workflows with controlled dependencies.
+  - End-to-end GoDog scenarios should be added only with explicit user direction.
   - Unit tests must be hermetic in nature and must identify the unit they are testing.  Any access to filesystem, networking, or external services is to be faithfully mocked.
   - Integration tests must be hermetic in nature and apply only to the integration of two ore mroe project code units.  Each test must document the various units being tested.  Mocking of filesystem, networking, and external servicves is to be faithfully mocked.
   - Functional tests must clearly identify the internal and external units being tested.  When more than one external system is involved, multiple permutations of the test should be employed such that each external system is tested in isolation, and then with decreasing number of mocked external services.
@@ -202,6 +208,13 @@ python -m pytest                              # all tests
 python -m pytest tests/test_active_model.py  # single file
 python -m pytest tests/test_active_model.py::TestActiveModelProperty::test_active_model_initialized_from_config -v  # single test
 python -m pytest -m "not live"               # skip integration tests that need external services
+
+# Go core tests (GoDog + Go test)
+cd cmd/agentx-core && go test ./...                                              # run all Go tests (including GoDog suites)
+cd cmd/agentx-core && go test -run TestGoDogUnit ./...                           # GoDog unit scenarios
+cd cmd/agentx-core && go test -run TestGoDogIntegration ./...                    # GoDog integration scenarios
+cd cmd/agentx-core && go test -run TestGoDogFunctional ./...                     # GoDog functional scenarios
+cd cmd/agentx-core && go test -run TestGoDogE2E ./...                            # GoDog end-to-end scenarios
 
 # Lint / format
 black src/ tests/ --line-length=120
