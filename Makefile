@@ -5,7 +5,8 @@ GO_CORE_BIN := bin/agentx
 
 .PHONY: help \
 	build build-core build-applets clean \
-	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e \
+	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e go-test-pane-layout \
+	test-tmux-layout-headless verify-tmux-layout \
 	run run-attached run-with-applets
 
 help:
@@ -24,6 +25,9 @@ help:
 	@echo "  go-test-integration Run GoDog @integration suite"
 	@echo "  go-test-functional  Run GoDog @functional suite"
 	@echo "  go-test-e2e         Run GoDog @e2e suite"
+	@echo "  go-test-pane-layout Run pane-layout unit tests"
+	@echo "  test-tmux-layout-headless Run headless tmux UX layout validation script"
+	@echo "  verify-tmux-layout  Run pane-layout unit tests + headless tmux layout validation"
 	@echo ""
 	@echo "Run:"
 	@echo "  run                 Build and run Go core"
@@ -70,6 +74,15 @@ go-test-functional:
 
 go-test-e2e:
 	cd $(GO_CORE_DIR) && go test -v -run TestGoDogE2E ./...
+
+go-test-pane-layout:
+	cd $(GO_CORE_DIR) && go test -v -run 'TestBuildNewSessionCommand|TestSplitCommandsUsePaneIDCapture|TestPaneTargets_MapsAllPanesCorrectly' ./...
+
+test-tmux-layout-headless:
+	./tests/test_tmux_layout_headless.sh
+
+verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless
+	@echo "tmux layout verification complete"
 
 run: build-core
 	@echo "Running Go core..."

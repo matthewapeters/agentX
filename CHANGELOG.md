@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.53.1.post2] - 2026-05-17
+
+### Code Changes
+
+#### Changed
+
+- Added Make-driven tmux layout verification flow in `Makefile` for consistent local and CI execution.
+  - Added `go-test-pane-layout`, `test-tmux-layout-headless`, and `verify-tmux-layout` targets.
+- Updated `.github/workflows/hybrid-go-godog.yml` tmux job to call `make verify-tmux-layout` after installing tmux and Go dependencies.
+
+### Test Changes
+
+#### Changed
+
+- Standardized pane-layout unit tests and headless tmux UX checks behind a single Make target to reduce command drift.
+
 ## [0.53.1.post1] - 2026-05-17
 
 ### Code Changes
