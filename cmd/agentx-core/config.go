@@ -66,17 +66,22 @@ type AppletConfig struct {
 }
 
 // DefaultPaneLayout returns the initial tmux layout (pane placeholders).
+// Layout: Chat (80%x80% top-left) | Context (20%x80% top-right)
+//         Input (100%x20% bottom)
+//         Logs (hidden in separate window)
 func DefaultPaneLayout() []PaneConfig {
 	return []PaneConfig{
 		{
 			Name:   "chat",
 			Index:  0,
-			Height: 70, // 70% of window height
+			Width:  80, // 80% of window width (left, after vertical split)
+			Height: 80, // 80% of window height (top)
 		},
 		{
-			Name:   "logs",
+			Name:   "context",
 			Index:  1,
-			Width:  30, // 30% of remaining width
+			Width:  20, // 20% of window width (right, after vertical split)
+			Height: 80, // 80% of window height (top)
 		},
 		{
 			Name:   "input",
@@ -84,9 +89,9 @@ func DefaultPaneLayout() []PaneConfig {
 			Height: 20, // 20% of window height (bottom)
 		},
 		{
-			Name:   "context",
+			Name:   "logs",
 			Index:  3,
-			Width:  20, // 20% of remaining width
+			// Logs pane: created in separate hidden window
 		},
 	}
 }

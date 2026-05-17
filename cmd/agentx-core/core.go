@@ -50,45 +50,76 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 	}
 }
 
-// InitializeTmuxSession creates the tmux session and panes.
+// InitializeTmuxSession creates the tmux session and panes with the designed layout:
+// Top (80% height): Chat (80% width left) | Context (20% width right)
+// Bottom (20% height): Input (full width)
+// Separate window: Logs (hidden, navigable via ctrl-b)
 func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 	// Ensure session directories exist.
 	if err := ac.Config.EnsureSessionDirs(ac.SessionID); err != nil {
 		return err
 	}
 
-	// Create new tmux session.
+	// Create new tmux session with default pane (will become chat).
 	cmd := exec.CommandContext(ctx, "tmux", "new-session", "-d", "-s", ac.tmuxSessionName, "-x", "120", "-y", "40")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to create tmux session: %w", err)
 	}
 
-	// Create panes based on layout.
-	layout := DefaultPaneLayout()
-	for i, pane := range layout {
-		if i == 0 {
-			// First pane already exists; rename it.
-			cmd := exec.CommandContext(ctx, "tmux", "rename-window", "-t", ac.tmuxSessionName, pane.Name)
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("failed to rename pane: %w", err)
-			}
-		} else {
-			// Create new panes.
-			cmd := exec.CommandContext(ctx, "tmux", "split-window", "-t", ac.tmuxSessionName, "-v", "-p", fmt.Sprintf("%d", 100-pane.Height))
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("failed to split pane %d: %w", i, err)
-			}
-		}
+	// 1. Rename the default pane to 'chat'.
+	cmd = exec.CommandContext(ctx, "tmux", "rename-window", "-t", ac.tmuxSessionName, "chat")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to rename window to chat: %w", err)
+	}
 
-		// Write placeholder text to pane.
-		placeholderCmd := fmt.Sprintf("echo '🔶 Pane: %s (AgentX Core)'", pane.Name)
-		cmd := exec.CommandContext(ctx, "tmux", "send-keys", "-t", ac.tmuxSessionName, placeholderCmd, "Enter")
+	// 2. Split horizontally (vertical line): create input pane at bottom (20%).
+	//    This puts the chat pane at top (80%) and input pane at bottom (20%).
+	cmd = exec.CommandContext(ctx, "tmux", "split-window", "-t", ac.tmuxSessionName + ":0", "-v", "-p", "20")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to split window for input pane: %w", err)
+	}
+
+	// 3. Rename the bottom pane to 'input'.
+	cmd = exec.CommandContext(ctx, "tmux", "rename-window", "-t", ac.tmuxSessionName + ":0.1", "input")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to rename input pane: %w", err)
+	}
+
+	// 4. Focus on the top-left pane (chat) and split vertically (horizontal line):
+	//    create context pane on the right (20% width).
+	cmd = exec.CommandContext(ctx, "tmux", "split-window", "-t", ac.tmuxSessionName + ":0.0", "-h", "-p", "20")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to split top pane for context: %w", err)
+	}
+
+	// 5. Rename the top-right pane to 'context'.
+	cmd = exec.CommandContext(ctx, "tmux", "rename-window", "-t", ac.tmuxSessionName + ":0.1", "context")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to rename context pane: %w", err)
+	}
+
+	// 6. Create logs in a new hidden window (window:1).
+	cmd = exec.CommandContext(ctx, "tmux", "new-window", "-t", ac.tmuxSessionName + ":1", "-n", "logs")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create logs window: %w", err)
+	}
+
+	// 7. Write placeholder text to each visible pane.
+	panes := map[string]string{
+		"chat":    "0.0",
+		"context": "0.2",
+		"input":   "0.1",
+		"logs":    "1.0",
+	}
+	for paneName, paneTarget := range panes {
+		placeholderCmd := fmt.Sprintf("echo '🔶 Pane: %s (AgentX Core)'", paneName)
+		cmd := exec.CommandContext(ctx, "tmux", "send-keys", "-t", ac.tmuxSessionName + ":" + paneTarget, placeholderCmd, "Enter")
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to set placeholder in pane %s: %w", pane.Name, err)
+			return fmt.Errorf("failed to set placeholder in pane %s: %w", paneName, err)
 		}
 	}
 
-	log.Printf("[AgentX Core] tmux session '%s' initialized with %d panes", ac.tmuxSessionName, len(layout))
+	log.Printf("[AgentX Core] tmux session '%s' initialized with layout: chat(80x80)|context(20x80) top, input(100x20) bottom, logs hidden", ac.tmuxSessionName)
 	return nil
 }
 

@@ -5,6 +5,19 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.53.0] - 2026-05-17
+
+### Code Changes
+
+#### Changed
+
+- Refactored tmux pane layout in Go core to match UX design specification.
+  - Top panes (80% height): Chat (80% width left) | Context (20% width right) with vertical split.
+  - Bottom pane (20% height): Input spanning full width.
+  - Logs moved to separate hidden window (navigable via `ctrl-b w` / window switcher).
+  - Updated `InitializeTmuxSession()` in `cmd/agentx-core/core.go` to construct layout with explicit split sequence.
+  - Updated `DefaultPaneLayout()` in `cmd/agentx-core/config.go` to document new layout proportions.
+
 ## [0.52.0] - 2026-05-17
 
 ### Code Changes
