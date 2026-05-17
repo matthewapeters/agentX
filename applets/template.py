@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""
+AgentX Python Applet Template.
+
+Each applet runs in a dedicated tmux pane and communicates with the Go core via IPC (FIFOs, env vars).
+This template demonstrates the minimal structure for a TUI applet.
+
+Applet Lifecycle:
+1. Applet starts in tmux pane (launched by Go core)
+2. Applet reads env vars: AGENTX_APPLET_NAME, AGENTX_SESSION_ID, AGENTX_IPC_INPUT, AGENTX_IPC_OUTPUT
+3. Applet sends READY signal on startup: print("READY applet=<name>")
+4. Applet listens to Go core on input FIFO
+5. Applet responds on output FIFO
+6. Applet receives shutdown signal via ctx (or FIFO close)
+7. Applet exits cleanly
+"""
+
+import os
+import sys
+import json
+import time
+import signal
+from pathlib import Path
+
+# Applet metadata
+APPLET_NAME = os.getenv("AGENTX_APPLET_NAME", "template")
+SESSION_ID = os.getenv("AGENTX_SESSION_ID", "unknown")
+IPC_INPUT = os.getenv("AGENTX_IPC_INPUT", None)
+IPC_OUTPUT = os.getenv("AGENTX_IPC_OUTPUT", None)
+
+# Global shutdown flag
+shutdown_requested = False
+
+
+def signal_handler(signum, frame):
+    """Handle SIGTERM and SIGINT for graceful shutdown."""
+    global shutdown_requested
+    shutdown_requested = True
+    print(f"\n[{APPLET_NAME}] Received signal {signum}, shutting down...", file=sys.stderr)
+
+
+def print_ready():
+    """Signal to Go core that applet is ready."""
+    ready_msg = json.dumps(
+        {"type": "ready", "applet": APPLET_NAME, "session": SESSION_ID, "timestamp": int(time.time() * 1000)}
+    )
+    print(f"READY {ready_msg}")
+    sys.stdout.flush()
+
+
+def print_output(msg: str, level: str = "info"):
+    """Write output message (displayed in tmux pane)."""
+    timestamp = time.strftime("%H:%M:%S")
+    emoji = {"info": "ℹ️", "warn": "⚠️", "error": "❌", "ok": "✅"}.get(level, "•")
+    print(f"[{timestamp}] {emoji} {msg}")
+    sys.stdout.flush()
+
+
+def main():
+    """Main applet loop."""
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+    print_ready()
+    print_output(f"Applet '{APPLET_NAME}' started in session {SESSION_ID}")
+    print_output(f"IPC paths: input={IPC_INPUT}, output={IPC_OUTPUT}")
+
+    # Placeholder loop: read from stdin (or FIFO in production)
+    # In first iteration, applet just displays a placeholder and waits for shutdown.
+    try:
+        while not shutdown_requested:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        print_output(f"Applet '{APPLET_NAME}' shutting down...")
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
