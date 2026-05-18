@@ -5,6 +5,16 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.54.1] - 2026-05-18
+
+### Test Changes
+
+#### Changed
+
+- Wrapped long test docstrings in `tests/test_tui_bridge_output.py` and
+  `tests/test_active_model_meter_wiring.py` to restore line-length lint compliance.
+- Revalidated targeted TUI suites after docstring cleanup; all targeted tests pass.
+
 ## [0.54.0] - 2026-05-18
 
 ### Code Changes

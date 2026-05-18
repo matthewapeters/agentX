@@ -74,7 +74,11 @@ def test_active_model_uses_fallback_value() -> None:
 
 @pytest.mark.unit
 def test_on_context_assembled_updates_meter() -> None:
-    """GIVEN a shared context WHEN on_context_assembled is called THEN meter is redrawn using shared_context breakdown."""
+    """GIVEN a shared context.
+
+    WHEN on_context_assembled is called
+    THEN meter is redrawn using shared_context breakdown.
+    """
     session = _build_session_stub()
     shared_ctx = Mock(spec=Context)
     shared_ctx.token_breakdown.return_value = {"user": 50, "assistant": 20}
@@ -112,7 +116,11 @@ def test_compatibility_meter_wrappers_delegate_to_public_api() -> None:
 
 @pytest.mark.unit
 def test_schedule_meter_redraw_publishes_tui_context_visualization_once_per_signature() -> None:
-    """GIVEN TUI enabled WHEN schedule_meter_redraw repeats unchanged payload THEN context visualization is published once. [PD-16-AF-009]"""
+    """GIVEN TUI enabled.
+
+    WHEN schedule_meter_redraw repeats unchanged payload
+    THEN context visualization is published once. [PD-16-AF-009]
+    """
     session = _build_session_stub()
     session.tui_bridge = Mock()
 

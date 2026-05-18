@@ -247,7 +247,11 @@ def test_tui_bridge_write_output_handles_unicode(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_tui_bridge_context_visualization_renders_color_bar_and_top_contributors() -> None:
-    """GIVEN context-band usage WHEN visualization is rendered THEN ANSI color bar and contributor rows are emitted. [PD-16-AF-009]"""
+    """GIVEN context-band usage.
+
+    WHEN visualization is rendered
+    THEN ANSI color bar and contributor rows are emitted. [PD-16-AF-009]
+    """
     rendered = TuiBridge.render_context_visualization(
         max_tokens=100,
         breakdown={
@@ -276,7 +280,11 @@ def test_tui_bridge_context_visualization_renders_color_bar_and_top_contributors
 
 @pytest.mark.unit
 def test_tui_bridge_context_visualization_ascii_fallback_uses_single_char_symbols() -> None:
-    """GIVEN color-disabled rendering WHEN visualization is produced THEN bars use one-character ASCII symbols. [PD-16-AF-009]"""
+    """GIVEN color-disabled rendering.
+
+    WHEN visualization is produced
+    THEN bars use one-character ASCII symbols. [PD-16-AF-009]
+    """
     rendered = TuiBridge.render_context_visualization(
         max_tokens=100,
         breakdown={"user": 20, "assistant": 10, "working_memory": 15},
