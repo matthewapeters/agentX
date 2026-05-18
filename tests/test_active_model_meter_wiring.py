@@ -9,6 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from agentx.event_broker import EventType
 from agentx.providers.constants import FALLBACK_CONTEXT_WINDOW
 from agentx.session import AgentXSession
 from shared.models.context import Context
@@ -25,6 +26,9 @@ def _build_session_stub() -> AgentXSession:
     session._model_store = Mock()
     session._model_store.get_context_length.return_value = 8192
     session.gui = Mock()
+    session.tui_bridge = None
+    session.event_broker = Mock()
+    session._last_tui_context_signature = None
     session._safe_root_after = lambda cb: cb()
     return session
 
@@ -104,3 +108,20 @@ def test_compatibility_meter_wrappers_delegate_to_public_api() -> None:
     session._schedule_meter_redraw(max_tokens=max_tokens, breakdown=breakdown)
 
     session.gui.update_context_meter.assert_called_once_with(max_tokens=8192, breakdown={"assistant": 10})
+
+
+@pytest.mark.unit
+def test_schedule_meter_redraw_publishes_tui_context_visualization_once_per_signature() -> None:
+    """GIVEN TUI enabled WHEN schedule_meter_redraw repeats unchanged payload THEN context visualization is published once. [PD-16-AF-009]"""
+    session = _build_session_stub()
+    session.tui_bridge = Mock()
+
+    payload = {"assistant": 15, "user": 10, "working_memory": 20}
+    session.schedule_meter_redraw(max_tokens=100, breakdown=payload)
+    session.schedule_meter_redraw(max_tokens=100, breakdown=payload)
+
+    session.event_broker.publish.assert_called_once()
+    publish_args = session.event_broker.publish.call_args
+    assert publish_args.args[0] == EventType.AGENT_CONTENT
+    assert "###CONTEXT" in publish_args.args[1]["text"]
+    assert publish_args.args[1]["is_raw_tui"] is True

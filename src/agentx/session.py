@@ -159,6 +159,7 @@ class AgentXSession:
         # Optional TUI output mirror bridge.
         self.tui_bridge: Optional[TuiBridge] = None
         self.tui_event_subscriber: Optional[TUIEventSubscriber] = None
+        self._last_tui_context_signature: tuple[int, tuple[tuple[str, int], ...]] | None = None
         tui_cfg = config.get("tui", {})
         if bool(tui_cfg.get("enable", False)):
             tmux_session = os.getenv("AGENTX_TMUX_SESSION", "agentx")
@@ -700,6 +701,31 @@ class AgentXSession:
     def schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
         """Schedule a context-meter redraw safely on the Tk main thread."""
         self._safe_root_after(lambda: self.gui.update_context_meter(max_tokens=max_tokens, breakdown=breakdown))
+        self._emit_tui_context_visualization(max_tokens=max_tokens, breakdown=breakdown)
+
+    def _emit_tui_context_visualization(self, max_tokens: int, breakdown: dict[str, int]) -> None:
+        """Emit the PD-16-AF-009 context bar block to TUI output subscribers."""
+        if getattr(self, "tui_bridge", None) is None:
+            return
+
+        normalized_items = tuple(sorted((key, max(int(value), 0)) for key, value in breakdown.items()))
+        signature = (max(int(max_tokens), 1), normalized_items)
+        if signature == getattr(self, "_last_tui_context_signature", None):
+            return
+
+        self._last_tui_context_signature = signature
+        try:
+            context_block = TuiBridge.render_context_visualization(
+                max_tokens=max_tokens,
+                breakdown=breakdown,
+                use_color=True,
+            )
+            broker = getattr(self, "event_broker", None)
+            if broker is None:
+                return
+            broker.publish(EventType.AGENT_CONTENT, {"text": context_block, "is_raw_tui": True})
+        except Exception:
+            logger.exception("Failed to emit TUI context visualization")
 
     def _schedule_meter_redraw(self, max_tokens: int, breakdown: dict[str, int]) -> None:
         """Backward-compatible wrapper for the public redraw API."""

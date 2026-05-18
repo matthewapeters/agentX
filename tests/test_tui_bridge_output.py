@@ -245,6 +245,54 @@ def test_tui_bridge_write_output_handles_unicode(tmp_path: Path) -> None:
         reader_thread.join(timeout=1.0)
 
 
+@pytest.mark.unit
+def test_tui_bridge_context_visualization_renders_color_bar_and_top_contributors() -> None:
+    """GIVEN context-band usage WHEN visualization is rendered THEN ANSI color bar and contributor rows are emitted. [PD-16-AF-009]"""
+    rendered = TuiBridge.render_context_visualization(
+        max_tokens=100,
+        breakdown={
+            "user": 18,
+            "assistant": 14,
+            "thinking": 6,
+            "tool": 2,
+            "system": 3,
+            "attachments": 1,
+            "working_memory": 28,
+        },
+        use_color=True,
+        bar_width=20,
+        top_width=10,
+    )
+
+    assert rendered.startswith("###CONTEXT 72%")
+    assert "WARN" not in rendered
+    assert "\033[34m" in rendered  # User
+    assert "\033[32m" in rendered  # Agent
+    assert "\033[35m" in rendered  # Thinking
+    assert "Top Contributors:" in rendered
+    assert "💾 Working Memory" in rendered
+    assert "👤 User" in rendered
+
+
+@pytest.mark.unit
+def test_tui_bridge_context_visualization_ascii_fallback_uses_single_char_symbols() -> None:
+    """GIVEN color-disabled rendering WHEN visualization is produced THEN bars use one-character ASCII symbols. [PD-16-AF-009]"""
+    rendered = TuiBridge.render_context_visualization(
+        max_tokens=100,
+        breakdown={"user": 20, "assistant": 10, "working_memory": 15},
+        use_color=False,
+        bar_width=10,
+        top_width=10,
+    )
+
+    lines = [line for line in rendered.splitlines() if line]
+    assert lines[0].startswith("###CONTEXT 45%")
+    assert "\033[" not in rendered
+    assert any(ch in lines[1] for ch in ("U", "A", "M"))
+    assert "[" not in lines[1]
+    assert "Top Contributors:" in rendered
+
+
 def test_streaming_controller_writes_agent_and_tool_records_to_tui() -> None:
     """GIVEN TUI bridge enabled WHEN stream/tool events render THEN TUI records are emitted."""
     session = _build_session(show_thinking=False)

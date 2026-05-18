@@ -5,6 +5,37 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.54.0] - 2026-05-18
+
+### Code Changes
+
+#### Added
+
+- Added TUI context visualization renderer for PD-16-AF-009 in `src/agentx/integration/tui_bridge.py`.
+  - Added color-band main context bar rendering with ANSI segments.
+  - Added Top Contributors rows with emoji labels and color-matched bars.
+  - Added single-character ASCII fallback symbols for non-color terminals.
+- Added session-side TUI context visualization publishing in `src/agentx/session.py` from meter redraw events.
+  - Emits `###CONTEXT` blocks through the event broker as raw TUI records.
+  - Includes deduplication to avoid re-emitting unchanged context snapshots.
+
+### Test Changes
+
+#### Added
+
+- Added unit tests in `tests/test_tui_bridge_output.py` for PD-16-AF-009 rendering behavior.
+  - GIVEN color-enabled rendering WHEN context is formatted THEN ANSI band colors and Top Contributors output are present.
+  - GIVEN color-disabled rendering WHEN context is formatted THEN ASCII fallback uses single-character band symbols.
+- Added unit test in `tests/test_active_model_meter_wiring.py` for session event publication deduplication.
+  - GIVEN repeated meter redraws with identical payload WHEN schedule is called THEN a single TUI context event is published.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/ux/06_TUI_MIRROR.md` with as-built PD-16-AF-009 status and corrected PD-16 section structure.
+- Updated `docs/ux/UX_LIFECYCLE.md` traceability matrix to mark PD-16-AF-009 as implemented and tested.
+
 ## [0.53.1.post3] - 2026-05-17
 
 ### Code Changes

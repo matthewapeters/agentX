@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-15 (v0.48.13.post1)_
+_Last updated: 2026-05-18 (v0.54.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -387,6 +387,7 @@ implements it and the test that validates it.  Status legend:
 | `enable_gui_chat=false` mode uses headless `NullGUIManager` and enforces config constraint | PD-16-AF-006 | `config.validate_config()` + `AgentXSession` GUI-disabled path | `test_config_tui_phase1.py`, `test_session_gui_disabled.py` | module-level tests | ✅ |
 | `tui.enable` controls `TuiBridge` lifecycle and guarded call-sites | PD-16-AF-007 | `AgentXSession.__init__()` + `close()` + streaming guards | `test_tui_bridge_output.py`, `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
 | `<leader>q` writes quit sentinel and triggers graceful application shutdown from TUI | PD-16-AF-008 | generated `agentx_tui.lua` quit keymap + `TuiBridge._input_reader_loop()` + `AgentXSession._on_tui_quit()` | `test_tui_bridge_output.py`, `test_session_gui_disabled.py`, `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
+| TUI context visualization renders color-band meter and top-contributor bars with ASCII fallback | PD-16-AF-009 | `TuiBridge.render_context_visualization()` + `AgentXSession.schedule_meter_redraw()` | `test_tui_bridge_output.py`, `test_active_model_meter_wiring.py` | module-level tests | ✅ |
 
 Planned follow-up for PD-16 default-behavior migration is documented in
 `docs/ux/06_TUI_MIRROR.md` §12 (TUI-first default with `--gui` opt-in).

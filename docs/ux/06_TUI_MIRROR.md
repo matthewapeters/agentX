@@ -1,6 +1,6 @@
 # AgentX — TUI Mirror: Neovim Chat Pane
 
-_Last updated: 2026-05-15 (v0.48.14)_
+_Last updated: 2026-05-18 (v0.54.0)_
 
 > **Companion document to [`05_VIBE_CODING.md`](05_VIBE_CODING.md).**
 > Specifies the optional TUI mirror that surfaces the AgentX chat interface as a
@@ -281,9 +281,58 @@ remove the TUI FIFOs alongside the existing cleanup.
 **Source files** (planned):
 
 - `src/agentx/integration/tui_bridge.py`
+- `src/agentx/session.py`
+- `src/agentx/integration/tui_event_subscriber.py`
 - `src/agentx/config.py` (new `[tui]` section parsing)
 - `launch_vibe.sh` (new TUI window steps)
 - `agentx_tui.lua` (Lua config fragment, generated into project dir)
+
+### PD-16-AF-009: Context Bar and Top Contributors Visualization
+
+**What it does**: Renders a horizontal context usage bar in the TUI output, with each segment colored according to its context band (using ANSI color codes). Below the bar, a Top Contributors section shows the four largest contributors, each with a color-matched bar and emoji. This mirrors the GUI context meter but is optimized for terminal display.
+
+**Band Color & Emoji Mapping:**
+
+| Band                | Color (ANSI)   | Emoji | ASCII | Example |
+|---------------------|----------------|-------|-------|---------|
+| User                | Blue (34)      | 👤    | U     | \033[34m████\033[0m |
+| Agent               | Green (32)     | 🤖    | A     | \033[32m██\033[0m   |
+| Thinking            | Magenta (35)   | 🤔    | T     | \033[35m█\033[0m    |
+| Tools               | Yellow (33)    | 🔧    | L     | \033[33m█\033[0m    |
+| System              | Cyan (36)      | 🧠    | S     | \033[36m█\033[0m    |
+| Attachments         | Bright Yellow (93) | 📎 | P     | \033[93m█\033[0m    |
+| Working Memory      | Bright Cyan (96)   | 💾 | M     | \033[96m██\033[0m   |
+| Unused/Remaining    | Grey (90)      | ░     | ░     | \033[90m░░\033[0m   |
+
+**Behavior:**
+
+- The main bar is rendered as a sequence of colored blocks (e.g., `██████░░░░`), each segment's length proportional to its context share.
+- The bar is always a fixed width (e.g., 40 chars), adapting to terminal width if possible.
+- Below the bar, a line summarizes the percentage breakdown by band (e.g., `18% User | 14% Agent | ...`).
+- The Top Contributors section lists up to four largest bands, each with a color-matched bar, emoji, and percent.
+- If the terminal does not support color, an ASCII fallback is used (single-character symbols only, e.g., `MUUATLSP░░░`).
+
+**Mockup:**
+
+```
+Context: 72% WARN  ━━━━━━━━━━━━━━━━
+\033[34m██████\033[32m████\033[35m██\033[33m█\033[36m█\033[93m█\033[96m██████\033[90m░░░░░░░░░░\033[0m
+18% User | 14% Agent | 6% Think | 2% Tool | 3% System | 1% Attach | 28% WM
+
+Top Contributors:
+  1. \033[96m💾 Working Memory   ████████████████████\033[0m 28%
+  2. \033[34m👤 User Prompts     ███████████\033[0m 18%
+  3. \033[32m🤖 Agent Response   ██████████\033[0m 14%
+  4. \033[35m🤔 Thinking         ███\033[0m 6%
+```
+
+**Edge Cases:**
+
+- If fewer than four bands are present, only those are shown in Top Contributors.
+- If terminal width < 40, bar and contributor bars shrink proportionally.
+- If color is not supported, all bars use ASCII fallback and no ANSI codes.
+
+**Status:** ✅ Implemented and tested
 
 ---
 
