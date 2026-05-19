@@ -1,12 +1,100 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-17 (v0.50.0+hybrid)_
+_Last updated: 2026-05-19 (v0.54.3.post1)_
 
 ## Overview
 
 This document tracks the migration from pure-Python TUI to hybrid Go-core + Python-applets architecture.
 
 **Branch:** `feat/hybrid-go-core-tui-migration`
+
+## Status Snapshot (2026-05-19)
+
+Current state relative to recent issue verification and regression work:
+
+- Go core build/test workflow is stable from repo root (`make build-core`, GoDog split suites).
+- Startup now deterministically lands on window `0:tui-chat` with `logs` in background.
+- Regression coverage exists for startup window naming and window reselection behavior.
+- Headless tmux layout validation exists and is wired via `make verify-tmux-layout`.
+- Health endpoint, applet supervision depth, and real chat/input/log applet behavior remain the main open build-out areas.
+
+## Execution Board (Next 2 Sprints)
+
+This board converts roadmap phases into immediately actionable work with acceptance criteria and test gates.
+
+### Sprint A (Stabilize Foundation + Observability)
+
+1. **A1: Lock Phase-1 parity in docs**
+   - Scope: Update architecture and migration docs to match current implemented startup/layout behavior.
+   - Done when:
+     - `docs/HYBRID_MIGRATION_PLAN.md` status and checkpoint language reflects current behavior.
+     - `docs/architecture/HYBRID_ARCHITECTURE.md` pane/window descriptions match `cmd/agentx-core/core.go` behavior.
+   - Verification:
+     - Manual review + `git diff -- docs/`.
+
+2. **A2: Complete health endpoint payloads**
+   - Scope: Implement `GET /health`, `GET /panes`, `GET /applets` with real runtime state.
+   - Done when:
+     - Endpoints return deterministic JSON from active core state.
+     - Error path and empty-state behavior are covered.
+   - Verification:
+     - `cd cmd/agentx-core && go test ./...`
+     - Add/expand GoDog integration scenarios for endpoint responses.
+
+3. **A3: Harden applet supervision lifecycle**
+   - Scope: Track applet status transitions (starting/ready/stopped/crashed), expose in health, improve shutdown reliability.
+   - Done when:
+     - Crash and graceful-stop states are observable.
+     - Shutdown leaves no orphaned applet/tmux processes in test harness.
+   - Verification:
+     - `cd cmd/agentx-core && go test ./...`
+     - Add deterministic integration tests for crash/stop transitions.
+
+4. **A4: Expand headless UX assertions**
+   - Scope: Extend tmux headless validation to assert selected window and pane titles/ordering.
+   - Done when:
+     - Failure reproduces if selected window drifts from `tui-chat`.
+     - CI/local `make verify-tmux-layout` enforces these assertions.
+   - Verification:
+     - `make verify-tmux-layout`
+
+### Sprint B (Chat + Input Vertical Slice)
+
+1. **B1: Chat applet request/response MVP**
+   - Scope: Route one user prompt from input path to chat applet and render response in chat pane.
+   - Done when:
+     - Prompt ingress -> chat applet -> pane output works for a deterministic test prompt.
+     - Failure paths emit actionable logs.
+   - Verification:
+     - `cd cmd/agentx-core && go test ./...`
+     - Add GoDog integration scenario covering end-to-end prompt/response pipeline.
+
+2. **B2: Input applet command contract**
+   - Scope: Implement basic input command handling (`:clear`, `:q`) and normal prompt forwarding.
+   - Done when:
+     - Special commands are parsed and handled without breaking normal prompts.
+     - Input history behavior is deterministic in tests.
+   - Verification:
+     - `cd cmd/agentx-core && go test ./...`
+     - Add focused integration tests for command parsing and dispatch.
+
+3. **B3: Context sync MVP for chat turns**
+   - Scope: Persist and expose minimal conversation turn history for chat applet interactions.
+   - Done when:
+     - A completed turn is persisted and queryable via core state/endpoint path.
+     - Restart path preserves previously written history.
+   - Verification:
+     - `cd cmd/agentx-core && go test ./...`
+     - Add test fixture proving persistence across core restart.
+
+4. **B4: Merge readiness gate for default-branch promotion**
+   - Scope: Define and enforce a single checklist before hybrid default switch.
+   - Done when:
+     - Required checks are codified in docs and CI commands.
+     - No open P1/P2 blockers remain for startup, prompt flow, and observability.
+   - Verification:
+     - `make go-test`
+     - `make verify-tmux-layout`
 
 ## Phase Checklist
 

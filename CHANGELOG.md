@@ -5,6 +5,16 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.54.3.post1] - 2026-05-19
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with a current status snapshot and a concrete two-sprint execution board.
+  - Added Sprint A (foundation stabilization and observability hardening) with acceptance criteria and validation gates.
+  - Added Sprint B (chat/input vertical slice) with deterministic completion criteria and required test commands.
+
 ## [0.54.3] - 2026-05-19
 
 ### Code Changes
