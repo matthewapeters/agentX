@@ -5,6 +5,29 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.54.3] - 2026-05-19
+
+### Code Changes
+
+#### Fixed
+
+- Fixed Go core tmux startup default-window behavior in `cmd/agentx-core/core.go`.
+  - Session bootstrap now names window `0` as `tui-chat`.
+  - Startup now re-selects window `0` after creating the `logs` window so attach lands on the primary UX surface.
+
+### Test Changes
+
+#### Changed
+
+- Updated `cmd/agentx-core/core_layout_test.go` expected `new-session` command arguments to include `-n tui-chat`.
+- Re-ran issue #10 regression suite; unit, hermetic integration, and GoDog integration scenarios now pass.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `README.md` Go core run section to document that attached startup opens on `tui-chat` (window `0`) with logs in a background window.
+
 ## [0.54.2] - 2026-05-19
 
 ### Test Changes

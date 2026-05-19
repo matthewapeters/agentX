@@ -95,6 +95,10 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 		return fmt.Errorf("failed to create logs window: %w", err)
 	}
 
+	if err := ac.runTmux(ctx, "select-window", "-t", ac.tmuxSessionName+":0"); err != nil {
+		return fmt.Errorf("failed to re-select primary window: %w", err)
+	}
+
 	for _, pane := range paneTargets(ac.tmuxSessionName, chatPaneTarget, inputPaneTarget, contextPaneTarget) {
 		placeholderCmd := fmt.Sprintf("echo '🔶 Pane: %s (AgentX Core)'", pane.name)
 		if err := ac.runTmux(ctx, "send-keys", "-t", pane.target, placeholderCmd, "Enter"); err != nil {
@@ -130,7 +134,7 @@ func paneTargets(sessionName, chatTarget, inputTarget, contextTarget string) []t
 }
 
 func buildNewSessionCommand(sessionName string) []string {
-	return []string{"new-session", "-d", "-s", sessionName, "-x", "120", "-y", "40"}
+	return []string{"new-session", "-d", "-s", sessionName, "-n", "tui-chat", "-x", "120", "-y", "40"}
 }
 
 func buildInputSplitCommand(chatPaneTarget string) []string {

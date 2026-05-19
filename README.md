@@ -199,6 +199,8 @@ To launch manually with attach enabled:
 ./bin/agentx --project-dir . --user "$USER" --attach
 ```
 
+Attached startup opens tmux on the primary `tui-chat` window (window `0`), while logs remain in a separate background window.
+
 ### Lint and format
 
 ```bash

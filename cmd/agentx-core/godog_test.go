@@ -13,21 +13,21 @@ import (
 )
 
 type bddState struct {
-	tmpDir        string
-	cfg           *Config
-	core          *AgentXCore
-	layout        []PaneConfig
-	router        *IPCRouter
-	inputFIFO     string
-	outputFIFO    string
-	err           error
-	contextMgr    *ContextManager
-	healthErr     error
-	cancelCtx     context.Context
-	fakeTmuxLog   string
-	oldPath       string
-	oldTmuxLog    string
-	tmuxCommands  string
+	tmpDir       string
+	cfg          *Config
+	core         *AgentXCore
+	layout       []PaneConfig
+	router       *IPCRouter
+	inputFIFO    string
+	outputFIFO   string
+	err          error
+	contextMgr   *ContextManager
+	healthErr    error
+	cancelCtx    context.Context
+	fakeTmuxLog  string
+	oldPath      string
+	oldTmuxLog   string
+	tmuxCommands string
 }
 
 func (s *bddState) reset() {

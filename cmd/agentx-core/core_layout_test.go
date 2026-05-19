@@ -25,7 +25,7 @@ func TestBuildNewSessionCommand_NamesPrimaryWindowTUIChat(t *testing.T) {
 func TestBuildNewSessionCommand(t *testing.T) {
 	session := "agentx_test"
 	got := buildNewSessionCommand(session)
-	want := []string{"new-session", "-d", "-s", session, "-x", "120", "-y", "40"}
+	want := []string{"new-session", "-d", "-s", session, "-n", "tui-chat", "-x", "120", "-y", "40"}
 
 	if len(got) != len(want) {
 		t.Fatalf("new session command length mismatch: got %d want %d", len(got), len(want))
