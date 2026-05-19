@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cucumber/godog"
 )
@@ -28,6 +29,7 @@ type bddState struct {
 	oldPath      string
 	oldTmuxLog   string
 	tmuxCommands string
+	snapshot     HealthSnapshot
 }
 
 func (s *bddState) reset() {
@@ -46,6 +48,7 @@ func (s *bddState) reset() {
 	s.oldPath = ""
 	s.oldTmuxLog = ""
 	s.tmuxCommands = ""
+	s.snapshot = HealthSnapshot{}
 }
 
 func (s *bddState) iHaveATemporaryProjectDirectory() error {
@@ -304,6 +307,58 @@ func (s *bddState) startupShouldSelectWindowZero() error {
 	return nil
 }
 
+func (s *bddState) theCoreHasATrackedAppletOnPane(appletName, paneName string) error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+
+	s.core.mu.Lock()
+	defer s.core.mu.Unlock()
+
+	s.core.applets[appletName] = &AppletProcess{
+		Name:       appletName,
+		PaneName:   paneName,
+		StartedAt:  time.Now(),
+		CrashCount: 0,
+	}
+
+	return nil
+}
+
+func (s *bddState) iCaptureTheCoreHealthSnapshot() error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+
+	s.snapshot = s.core.healthSnapshot()
+	return nil
+}
+
+func (s *bddState) theHealthSnapshotShouldIncludeSessionID(sessionID string) error {
+	if s.snapshot.SessionID != sessionID {
+		return fmt.Errorf("expected snapshot session id %q, got %q", sessionID, s.snapshot.SessionID)
+	}
+	return nil
+}
+
+func (s *bddState) theHealthSnapshotShouldIncludePane(paneName string) error {
+	for _, pane := range s.snapshot.Panes {
+		if pane.Name == paneName {
+			return nil
+		}
+	}
+	return fmt.Errorf("expected snapshot to include pane %q", paneName)
+}
+
+func (s *bddState) theHealthSnapshotShouldIncludeApplet(appletName string) error {
+	for _, applet := range s.snapshot.Applets {
+		if applet.Name == appletName {
+			return nil
+		}
+	}
+	return fmt.Errorf("expected snapshot to include applet %q", appletName)
+}
+
 func InitializeScenario(ctx *godog.ScenarioContext) {
 	state := &bddState{}
 
@@ -352,6 +407,11 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^tmux commands should include "([^"]*)"$`, state.tmuxCommandsShouldInclude)
 	ctx.Step(`^startup should name window 0 as "([^"]*)"$`, state.startupShouldNameWindowZeroAs)
 	ctx.Step(`^startup should select window 0$`, state.startupShouldSelectWindowZero)
+	ctx.Step(`^the core has a tracked applet "([^"]*)" on pane "([^"]*)"$`, state.theCoreHasATrackedAppletOnPane)
+	ctx.Step(`^I capture the core health snapshot$`, state.iCaptureTheCoreHealthSnapshot)
+	ctx.Step(`^the health snapshot should include session id "([^"]*)"$`, state.theHealthSnapshotShouldIncludeSessionID)
+	ctx.Step(`^the health snapshot should include pane "([^"]*)"$`, state.theHealthSnapshotShouldIncludePane)
+	ctx.Step(`^the health snapshot should include applet "([^"]*)"$`, state.theHealthSnapshotShouldIncludeApplet)
 }
 
 func TestGoDogUnit(t *testing.T) {

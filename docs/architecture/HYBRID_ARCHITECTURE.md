@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-17 (v0.50.0+hybrid-draft)_
+_Last updated: 2026-05-19 (v0.55.0)_
 
 ## Overview
 
@@ -211,13 +211,13 @@ HTTP server on 127.0.0.1:9876 (configurable).
 
 ```
 GET /health
--> { "status": "ok", "session_id": "...", "uptime": "...", "applets": [...] }
+-> { "status": "ok", "session_id": "...", "uptime_seconds": 42, "pane_count": 4, "applet_count": 1 }
 
 GET /panes
--> { "panes": [ { "name": "chat", "applet": "chat", "status": "ready" } ] }
+-> { "session_id": "...", "panes": [ { "name": "chat", "applet": "chat", "status": "ready" } ] }
 
 GET /applets
--> { "applets": [ { "name": "chat", "pid": 12345, "uptime": "..." } ] }
+-> { "session_id": "...", "applets": [ { "name": "chat", "pane": "chat", "status": "running", "crash_count": 0 } ] }
 
 POST /request-focus?pane=chat
 -> { "status": "ok" }

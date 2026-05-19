@@ -3,10 +3,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,8 +28,33 @@ type AgentXCore struct {
 	tmuxSessionName string
 	applets         map[string]*AppletProcess
 	mu              sync.RWMutex
+	startedAt       time.Time
 	healthAddr      string // Address for health endpoint
 	contextManager  *ContextManager
+}
+
+// PaneStatus reports pane-level runtime state.
+type PaneStatus struct {
+	Name   string `json:"name"`
+	Applet string `json:"applet"`
+	Status string `json:"status"`
+}
+
+// AppletStatus reports applet-level runtime state.
+type AppletStatus struct {
+	Name       string `json:"name"`
+	Pane       string `json:"pane"`
+	Status     string `json:"status"`
+	CrashCount int    `json:"crash_count"`
+}
+
+// HealthSnapshot captures runtime status for health endpoints.
+type HealthSnapshot struct {
+	Status        string         `json:"status"`
+	SessionID     string         `json:"session_id"`
+	UptimeSeconds int64          `json:"uptime_seconds"`
+	Panes         []PaneStatus   `json:"panes"`
+	Applets       []AppletStatus `json:"applets"`
 }
 
 // AppletProcess tracks a running Python applet.
@@ -46,14 +75,20 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 		sessionID = fmt.Sprintf("agentx_%d", time.Now().Unix())
 	}
 
-	return &AgentXCore{
+	core := &AgentXCore{
 		Config:          cfg,
 		SessionID:       sessionID,
 		tmuxSessionName: fmt.Sprintf("agentx_%s_%s", cfg.Username, sessionID),
 		applets:         make(map[string]*AppletProcess),
+		startedAt:       time.Now(),
 		healthAddr:      "127.0.0.1:9876", // Default health endpoint
-		contextManager:  NewContextManager(cfg.SessionContextDir(sessionID)),
 	}
+
+	core.contextManager = NewContextManager(cfg.SessionContextDir(sessionID))
+	core.contextManager.SetSessionMetadata(core.SessionID, core.startedAt)
+	core.contextManager.SetSnapshotProvider(core.healthSnapshot)
+
+	return core
 }
 
 // InitializeTmuxSession creates the tmux session and panes with the designed layout:
@@ -153,6 +188,46 @@ func (ac *AgentXCore) StartAppletSupervisor(ctx context.Context) error {
 	return nil
 }
 
+func (ac *AgentXCore) healthSnapshot() HealthSnapshot {
+	ac.mu.RLock()
+	defer ac.mu.RUnlock()
+
+	panes := make([]PaneStatus, 0, len(DefaultPaneLayout()))
+	for _, pane := range DefaultPaneLayout() {
+		panes = append(panes, PaneStatus{
+			Name:   pane.Name,
+			Applet: pane.Name,
+			Status: "ready",
+		})
+	}
+
+	applets := make([]AppletStatus, 0, len(ac.applets))
+	for _, applet := range ac.applets {
+		status := "stopped"
+		if applet.Cmd != nil && applet.Cmd.Process != nil {
+			status = "running"
+		}
+		applets = append(applets, AppletStatus{
+			Name:       applet.Name,
+			Pane:       applet.PaneName,
+			Status:     status,
+			CrashCount: applet.CrashCount,
+		})
+	}
+
+	sort.Slice(applets, func(i, j int) bool {
+		return applets[i].Name < applets[j].Name
+	})
+
+	return HealthSnapshot{
+		Status:        "ok",
+		SessionID:     ac.SessionID,
+		UptimeSeconds: int64(time.Since(ac.startedAt).Seconds()),
+		Panes:         panes,
+		Applets:       applets,
+	}
+}
+
 // StartHealthEndpoint starts the health/status HTTP endpoint.
 func (ac *AgentXCore) StartHealthEndpoint(ctx context.Context) error {
 	go func() {
@@ -204,24 +279,140 @@ func (ac *AgentXCore) Shutdown(ctx context.Context) error {
 
 // ContextManager handles session context (state, messages, tools).
 type ContextManager struct {
-	contextDir string
+	contextDir       string
+	sessionID        string
+	startedAt        time.Time
+	snapshotProvider func() HealthSnapshot
+	mu               sync.RWMutex
 }
 
 // NewContextManager creates a new context manager.
 func NewContextManager(contextDir string) *ContextManager {
-	return &ContextManager{contextDir: contextDir}
+	return &ContextManager{
+		contextDir: contextDir,
+		startedAt:  time.Now(),
+	}
+}
+
+// SetSessionMetadata updates session metadata used by health responses.
+func (cm *ContextManager) SetSessionMetadata(sessionID string, startedAt time.Time) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.sessionID = sessionID
+	cm.startedAt = startedAt
+}
+
+// SetSnapshotProvider configures a runtime snapshot function for endpoint payloads.
+func (cm *ContextManager) SetSnapshotProvider(provider func() HealthSnapshot) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.snapshotProvider = provider
+}
+
+func (cm *ContextManager) snapshot() HealthSnapshot {
+	cm.mu.RLock()
+	provider := cm.snapshotProvider
+	sessionID := cm.sessionID
+	startedAt := cm.startedAt
+	cm.mu.RUnlock()
+
+	if provider != nil {
+		return provider()
+	}
+
+	return HealthSnapshot{
+		Status:        "ok",
+		SessionID:     sessionID,
+		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
+		Panes:         []PaneStatus{},
+		Applets:       []AppletStatus{},
+	}
+}
+
+// HealthHandler returns the HTTP handler for runtime health endpoints.
+func (cm *ContextManager) HealthHandler() http.Handler {
+	mux := http.NewServeMux()
+
+	writeJSON := func(w http.ResponseWriter, statusCode int, payload any) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		if err := json.NewEncoder(w).Encode(payload); err != nil {
+			log.Printf("[AgentX Core] Failed to encode health payload: %v", err)
+		}
+	}
+
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		snapshot := cm.snapshot()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":         snapshot.Status,
+			"session_id":     snapshot.SessionID,
+			"uptime_seconds": snapshot.UptimeSeconds,
+			"pane_count":     len(snapshot.Panes),
+			"applet_count":   len(snapshot.Applets),
+		})
+	})
+
+	mux.HandleFunc("/panes", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		snapshot := cm.snapshot()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"session_id": snapshot.SessionID,
+			"panes":      snapshot.Panes,
+		})
+	})
+
+	mux.HandleFunc("/applets", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		snapshot := cm.snapshot()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"session_id": snapshot.SessionID,
+			"applets":    snapshot.Applets,
+		})
+	})
+
+	return mux
 }
 
 // ServeHealth starts an HTTP health endpoint.
 func (cm *ContextManager) ServeHealth(ctx context.Context, addr string) error {
-	// TODO: Implement HTTP health endpoint with chi router.
-	// Endpoints:
-	//   GET /health -> { "status": "ok", "session_id": "...", "uptime": "..." }
-	//   GET /panes -> list of active panes
-	//   GET /applets -> list of running applets
-	//   POST /request-focus?pane=chat -> request focus change
+	server := &http.Server{
+		Addr:    addr,
+		Handler: cm.HealthHandler(),
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+
 	select {
 	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+		if err := <-errCh; err != nil {
+			return err
+		}
 		return ctx.Err()
+	case err := <-errCh:
+		return err
 	}
 }

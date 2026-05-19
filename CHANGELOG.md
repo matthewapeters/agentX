@@ -5,6 +5,33 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.55.0] - 2026-05-19
+
+### Code Changes
+
+#### Added
+
+- Implemented runtime health endpoint payloads in `cmd/agentx-core/core.go`.
+  - Added JSON handlers for `GET /health`, `GET /panes`, and `GET /applets`.
+  - Added runtime snapshot model wiring from `AgentXCore` into `ContextManager`.
+  - Added session metadata and snapshot provider hooks for deterministic health reporting.
+
+### Test Changes
+
+#### Added
+
+- Added hermetic endpoint tests in `cmd/agentx-core/core_health_endpoint_test.go`.
+  - GIVEN configured runtime snapshot WHEN `/health`, `/panes`, and `/applets` are queried THEN payloads include session and runtime state.
+  - GIVEN unsupported HTTP method WHEN posting to `/health` THEN handler returns method-not-allowed.
+- Added functional Gherkin coverage for health snapshots in `cmd/agentx-core/features/functional.feature` with step bindings in `cmd/agentx-core/godog_test.go`.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` health endpoint examples to match implemented payload shape.
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot to reflect delivered Sprint A2 health endpoint work.
+
 ## [0.54.3.post1] - 2026-05-19
 
 ### Documentation Changes

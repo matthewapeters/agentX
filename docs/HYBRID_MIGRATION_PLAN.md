@@ -15,6 +15,7 @@ Current state relative to recent issue verification and regression work:
 - Go core build/test workflow is stable from repo root (`make build-core`, GoDog split suites).
 - Startup now deterministically lands on window `0:tui-chat` with `logs` in background.
 - Regression coverage exists for startup window naming and window reselection behavior.
+- Health endpoint now returns runtime JSON payloads for `/health`, `/panes`, and `/applets`.
 - Headless tmux layout validation exists and is wired via `make verify-tmux-layout`.
 - Health endpoint, applet supervision depth, and real chat/input/log applet behavior remain the main open build-out areas.
 

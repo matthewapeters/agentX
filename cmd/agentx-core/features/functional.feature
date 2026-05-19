@@ -17,3 +17,14 @@ Feature: Core lifecycle behavior without external services
     And a canceled context
     When I run the health serve routine
     Then the routine should return context canceled
+
+  Scenario: Core health snapshot reports panes and tracked applets
+    Given a temporary project directory
+    And a core config with username "dev" and session "health-s1"
+    When I construct the AgentX core
+    And the core has a tracked applet "chat" on pane "chat"
+    And I capture the core health snapshot
+    Then the health snapshot should include session id "health-s1"
+    And the health snapshot should include pane "chat"
+    And the health snapshot should include pane "logs"
+    And the health snapshot should include applet "chat"
