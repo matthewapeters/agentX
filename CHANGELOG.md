@@ -5,6 +5,25 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.54.2] - 2026-05-19
+
+### Test Changes
+
+#### Added
+
+- Added unit regression coverage in `cmd/agentx-core/core_layout_test.go` for primary tmux window naming.
+  - GIVEN tmux session startup command generation WHEN window arguments are built THEN window `0` must be named `tui-chat`.
+- Added hermetic integration regression coverage in `cmd/agentx-core/core_tmux_startup_integration_test.go` using a fake `tmux` executable.
+  - GIVEN core startup with command capture WHEN tmux bootstrap runs THEN startup names window `0` as `tui-chat` and re-selects window `0` after creating logs.
+- Added integration Gherkin regression scenarios in `cmd/agentx-core/features/integration.feature` and step bindings in `cmd/agentx-core/godog_test.go`.
+  - Added happy path command bootstrap scenario.
+  - Added defect-path scenario asserting missing `tui-chat` startup naming.
+  - Added boundary scenario asserting explicit selection of window `0` after logs creation.
+
+#### Changed
+
+- Updated GoDog integration step definitions to support hermetic command-capture assertions for tmux startup behavior.
+
 ## [0.54.1] - 2026-05-18
 
 ### Test Changes

@@ -2,6 +2,26 @@ package main
 
 import "testing"
 
+// GIVEN tmux session startup is building the initial command
+// WHEN the command is generated for first attach view
+// THEN window 0 should be explicitly named tui-chat for UX parity.
+func TestBuildNewSessionCommand_NamesPrimaryWindowTUIChat(t *testing.T) {
+	session := "agentx_test"
+	got := buildNewSessionCommand(session)
+
+	found := false
+	for i := 0; i < len(got)-1; i++ {
+		if got[i] == "-n" && got[i+1] == "tui-chat" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf("expected new session command to include primary window name '-n tui-chat', got %v", got)
+	}
+}
+
 func TestBuildNewSessionCommand(t *testing.T) {
 	session := "agentx_test"
 	got := buildNewSessionCommand(session)

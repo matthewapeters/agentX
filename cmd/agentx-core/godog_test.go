@@ -24,6 +24,10 @@ type bddState struct {
 	contextMgr    *ContextManager
 	healthErr     error
 	cancelCtx     context.Context
+	fakeTmuxLog   string
+	oldPath       string
+	oldTmuxLog    string
+	tmuxCommands  string
 }
 
 func (s *bddState) reset() {
@@ -38,6 +42,10 @@ func (s *bddState) reset() {
 	s.contextMgr = nil
 	s.healthErr = nil
 	s.cancelCtx = nil
+	s.fakeTmuxLog = ""
+	s.oldPath = ""
+	s.oldTmuxLog = ""
+	s.tmuxCommands = ""
 }
 
 func (s *bddState) iHaveATemporaryProjectDirectory() error {
@@ -218,6 +226,84 @@ func (s *bddState) shutdownShouldCompleteWithoutError() error {
 	return nil
 }
 
+func (s *bddState) aFakeTmuxExecutableThatRecordsCommands() error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+
+	logPath := filepath.Join(s.tmpDir, "tmux_commands.log")
+	scriptPath := filepath.Join(s.tmpDir, "tmux")
+	script := "#!/usr/bin/env bash\n" +
+		"set -euo pipefail\n" +
+		"printf '%s\\n' \"$*\" >> \"${TMUX_LOG}\"\n" +
+		"if [[ \"$1\" == \"split-window\" ]]; then\n" +
+		"  if [[ \"$*\" == *\" -v \"* ]]; then echo \"%3\"; else echo \"%4\"; fi\n" +
+		"fi\n"
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		return fmt.Errorf("failed to write fake tmux executable: %w", err)
+	}
+
+	s.oldPath = os.Getenv("PATH")
+	s.oldTmuxLog = os.Getenv("TMUX_LOG")
+	s.fakeTmuxLog = logPath
+
+	if err := os.Setenv("PATH", s.tmpDir+":"+s.oldPath); err != nil {
+		return fmt.Errorf("failed to set PATH for fake tmux: %w", err)
+	}
+	if err := os.Setenv("TMUX_LOG", s.fakeTmuxLog); err != nil {
+		return fmt.Errorf("failed to set TMUX_LOG for fake tmux: %w", err)
+	}
+
+	return nil
+}
+
+func (s *bddState) iInitializeTheTmuxSession() error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+
+	s.err = s.core.InitializeTmuxSession(context.Background())
+	if s.fakeTmuxLog != "" {
+		data, readErr := os.ReadFile(s.fakeTmuxLog)
+		if readErr == nil {
+			s.tmuxCommands = string(data)
+		}
+	}
+
+	return nil
+}
+
+func (s *bddState) tmuxInitializationShouldCompleteWithoutError() error {
+	if s.err != nil {
+		return s.err
+	}
+	return nil
+}
+
+func (s *bddState) tmuxCommandsShouldInclude(substring string) error {
+	if !strings.Contains(s.tmuxCommands, substring) {
+		return fmt.Errorf("expected tmux commands to include %q, got:\n%s", substring, s.tmuxCommands)
+	}
+	return nil
+}
+
+func (s *bddState) startupShouldNameWindowZeroAs(windowName string) error {
+	expected := "new-session -d -s " + s.core.tmuxSessionName + " -n " + windowName
+	if !strings.Contains(s.tmuxCommands, expected) {
+		return fmt.Errorf("expected startup to include %q, got:\n%s", expected, s.tmuxCommands)
+	}
+	return nil
+}
+
+func (s *bddState) startupShouldSelectWindowZero() error {
+	expected := "select-window -t " + s.core.tmuxSessionName + ":0"
+	if !strings.Contains(s.tmuxCommands, expected) {
+		return fmt.Errorf("expected startup to include %q, got:\n%s", expected, s.tmuxCommands)
+	}
+	return nil
+}
+
 func InitializeScenario(ctx *godog.ScenarioContext) {
 	state := &bddState{}
 
@@ -227,6 +313,12 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	})
 
 	ctx.After(func(ctx context.Context, sc *godog.Scenario, err error) (context.Context, error) {
+		if state.oldPath != "" {
+			_ = os.Setenv("PATH", state.oldPath)
+		}
+		if state.oldTmuxLog != "" {
+			_ = os.Setenv("TMUX_LOG", state.oldTmuxLog)
+		}
 		if state.tmpDir != "" {
 			_ = os.RemoveAll(state.tmpDir)
 		}
@@ -254,6 +346,12 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^a constructed AgentX core$`, state.aConstructedAgentXCore)
 	ctx.Step(`^I invoke core shutdown$`, state.iInvokeCoreShutdown)
 	ctx.Step(`^shutdown should complete without error$`, state.shutdownShouldCompleteWithoutError)
+	ctx.Step(`^a fake tmux executable that records commands$`, state.aFakeTmuxExecutableThatRecordsCommands)
+	ctx.Step(`^I initialize the tmux session$`, state.iInitializeTheTmuxSession)
+	ctx.Step(`^tmux initialization should complete without error$`, state.tmuxInitializationShouldCompleteWithoutError)
+	ctx.Step(`^tmux commands should include "([^"]*)"$`, state.tmuxCommandsShouldInclude)
+	ctx.Step(`^startup should name window 0 as "([^"]*)"$`, state.startupShouldNameWindowZeroAs)
+	ctx.Step(`^startup should select window 0$`, state.startupShouldSelectWindowZero)
 }
 
 func TestGoDogUnit(t *testing.T) {
