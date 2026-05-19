@@ -318,6 +318,7 @@ func (s *bddState) theCoreHasATrackedAppletOnPane(appletName, paneName string) e
 	s.core.applets[appletName] = &AppletProcess{
 		Name:       appletName,
 		PaneName:   paneName,
+		Status:     AppletStatusReady,
 		StartedAt:  time.Now(),
 		CrashCount: 0,
 	}
@@ -357,6 +358,39 @@ func (s *bddState) theHealthSnapshotShouldIncludeApplet(appletName string) error
 		}
 	}
 	return fmt.Errorf("expected snapshot to include applet %q", appletName)
+}
+
+func (s *bddState) theAppletIsMarkedAsCrashed(appletName string) error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+
+	s.core.markAppletStatus(appletName, AppletStatusCrashed, errors.New("simulated crash"))
+	return nil
+}
+
+func (s *bddState) theHealthSnapshotShouldReportAppletStatus(appletName, status string) error {
+	for _, applet := range s.snapshot.Applets {
+		if applet.Name == appletName {
+			if applet.Status != status {
+				return fmt.Errorf("expected applet %q status %q, got %q", appletName, status, applet.Status)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("expected applet %q in snapshot", appletName)
+}
+
+func (s *bddState) theHealthSnapshotShouldReportAppletCrashCount(appletName string, count int) error {
+	for _, applet := range s.snapshot.Applets {
+		if applet.Name == appletName {
+			if applet.CrashCount != count {
+				return fmt.Errorf("expected applet %q crash count %d, got %d", appletName, count, applet.CrashCount)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("expected applet %q in snapshot", appletName)
 }
 
 func InitializeScenario(ctx *godog.ScenarioContext) {
@@ -412,6 +446,9 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^the health snapshot should include session id "([^"]*)"$`, state.theHealthSnapshotShouldIncludeSessionID)
 	ctx.Step(`^the health snapshot should include pane "([^"]*)"$`, state.theHealthSnapshotShouldIncludePane)
 	ctx.Step(`^the health snapshot should include applet "([^"]*)"$`, state.theHealthSnapshotShouldIncludeApplet)
+	ctx.Step(`^the applet "([^"]*)" is marked as crashed$`, state.theAppletIsMarkedAsCrashed)
+	ctx.Step(`^the health snapshot should report applet "([^"]*)" status "([^"]*)"$`, state.theHealthSnapshotShouldReportAppletStatus)
+	ctx.Step(`^the health snapshot should report applet "([^"]*)" crash count (\d+)$`, state.theHealthSnapshotShouldReportAppletCrashCount)
 }
 
 func TestGoDogUnit(t *testing.T) {

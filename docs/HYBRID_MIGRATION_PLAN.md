@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-19 (v0.54.3.post1)_
+_Last updated: 2026-05-19 (v0.56.0)_
 
 ## Overview
 
@@ -16,8 +16,9 @@ Current state relative to recent issue verification and regression work:
 - Startup now deterministically lands on window `0:tui-chat` with `logs` in background.
 - Regression coverage exists for startup window naming and window reselection behavior.
 - Health endpoint now returns runtime JSON payloads for `/health`, `/panes`, and `/applets`.
+- Applet supervision now tracks lifecycle state transitions (`starting`, `ready`, `running`, `stopped`, `crashed`) and crash counts.
 - Headless tmux layout validation exists and is wired via `make verify-tmux-layout`.
-- Health endpoint, applet supervision depth, and real chat/input/log applet behavior remain the main open build-out areas.
+- Real chat/input/log applet behavior remains the main open build-out area.
 
 ## Execution Board (Next 2 Sprints)
 

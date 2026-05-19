@@ -21,6 +21,17 @@ type tmuxPaneTarget struct {
 	target string
 }
 
+// AppletLifecycleStatus represents applet runtime state.
+type AppletLifecycleStatus string
+
+const (
+	AppletStatusStarting AppletLifecycleStatus = "starting"
+	AppletStatusReady    AppletLifecycleStatus = "ready"
+	AppletStatusRunning  AppletLifecycleStatus = "running"
+	AppletStatusStopped  AppletLifecycleStatus = "stopped"
+	AppletStatusCrashed  AppletLifecycleStatus = "crashed"
+)
+
 // AgentXCore orchestrates the tmux session, applets, and IPC.
 type AgentXCore struct {
 	Config          *Config
@@ -61,6 +72,8 @@ type HealthSnapshot struct {
 type AppletProcess struct {
 	Name       string
 	PaneName   string
+	Status     AppletLifecycleStatus
+	LastError  string
 	Cmd        *exec.Cmd
 	Cancel     context.CancelFunc
 	DoneChan   chan error
@@ -182,10 +195,69 @@ func buildContextSplitCommand(chatPaneTarget string) []string {
 
 // StartAppletSupervisor launches Python applets in goroutines.
 func (ac *AgentXCore) StartAppletSupervisor(ctx context.Context) error {
-	// In first iteration, applets are placeholders.
-	// They will be populated as functionality migrates from Python.
-	log.Printf("[AgentX Core] Applet supervisor ready (0 applets in first iteration)")
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+
+	for _, pane := range DefaultPaneLayout() {
+		if _, exists := ac.applets[pane.Name]; exists {
+			continue
+		}
+
+		ac.applets[pane.Name] = &AppletProcess{
+			Name:      pane.Name,
+			PaneName:  pane.Name,
+			Status:    AppletStatusReady,
+			StartedAt: time.Now(),
+		}
+	}
+
+	log.Printf("[AgentX Core] Applet supervisor ready (%d tracked applets)", len(ac.applets))
 	return nil
+}
+
+func (ac *AgentXCore) ensureTrackedAppletLocked(appletName, paneName string) *AppletProcess {
+	if applet, exists := ac.applets[appletName]; exists {
+		if paneName != "" {
+			applet.PaneName = paneName
+		}
+		if applet.StartedAt.IsZero() {
+			applet.StartedAt = time.Now()
+		}
+		return applet
+	}
+
+	applet := &AppletProcess{
+		Name:      appletName,
+		PaneName:  paneName,
+		Status:    AppletStatusStarting,
+		StartedAt: time.Now(),
+	}
+	ac.applets[appletName] = applet
+	return applet
+}
+
+func (ac *AgentXCore) markAppletStatus(appletName string, status AppletLifecycleStatus, statusErr error) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+
+	applet := ac.ensureTrackedAppletLocked(appletName, appletName)
+	applet.Status = status
+	if statusErr != nil {
+		applet.LastError = statusErr.Error()
+	}
+	if status == AppletStatusCrashed {
+		applet.CrashCount++
+	}
+}
+
+func resolveAppletStatus(applet *AppletProcess) AppletLifecycleStatus {
+	if applet.Status != "" {
+		return applet.Status
+	}
+	if applet.Cmd != nil && applet.Cmd.Process != nil {
+		return AppletStatusRunning
+	}
+	return AppletStatusStopped
 }
 
 func (ac *AgentXCore) healthSnapshot() HealthSnapshot {
@@ -194,23 +266,30 @@ func (ac *AgentXCore) healthSnapshot() HealthSnapshot {
 
 	panes := make([]PaneStatus, 0, len(DefaultPaneLayout()))
 	for _, pane := range DefaultPaneLayout() {
+		paneApplet := pane.Name
+		paneStatus := AppletStatusReady
+		for _, applet := range ac.applets {
+			if applet.PaneName == pane.Name {
+				paneApplet = applet.Name
+				paneStatus = resolveAppletStatus(applet)
+				break
+			}
+		}
+
 		panes = append(panes, PaneStatus{
 			Name:   pane.Name,
-			Applet: pane.Name,
-			Status: "ready",
+			Applet: paneApplet,
+			Status: string(paneStatus),
 		})
 	}
 
 	applets := make([]AppletStatus, 0, len(ac.applets))
 	for _, applet := range ac.applets {
-		status := "stopped"
-		if applet.Cmd != nil && applet.Cmd.Process != nil {
-			status = "running"
-		}
+		status := resolveAppletStatus(applet)
 		applets = append(applets, AppletStatus{
 			Name:       applet.Name,
 			Pane:       applet.PaneName,
-			Status:     status,
+			Status:     string(status),
 			CrashCount: applet.CrashCount,
 		})
 	}
@@ -258,6 +337,7 @@ func (ac *AgentXCore) Shutdown(ctx context.Context) error {
 
 	// Stop all applets.
 	for name, applet := range ac.applets {
+		applet.Status = AppletStatusStopped
 		if applet.Cancel != nil {
 			applet.Cancel()
 		}

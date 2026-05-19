@@ -28,3 +28,13 @@ Feature: Core lifecycle behavior without external services
     And the health snapshot should include pane "chat"
     And the health snapshot should include pane "logs"
     And the health snapshot should include applet "chat"
+
+  Scenario: Crashed applet status is visible in health snapshot
+    Given a temporary project directory
+    And a core config with username "dev" and session "health-s2"
+    When I construct the AgentX core
+    And the core has a tracked applet "chat" on pane "chat"
+    And the applet "chat" is marked as crashed
+    And I capture the core health snapshot
+    Then the health snapshot should report applet "chat" status "crashed"
+    And the health snapshot should report applet "chat" crash count 1

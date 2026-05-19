@@ -5,6 +5,35 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.56.0] - 2026-05-19
+
+### Code Changes
+
+#### Added
+
+- Hardened applet supervision lifecycle in `cmd/agentx-core/core.go`.
+  - Added tracked applet runtime states: `starting`, `ready`, `running`, `stopped`, `crashed`.
+  - Added crash accounting updates on state transitions.
+  - Updated health snapshots to surface pane/app applet state from runtime supervision data.
+  - Updated supervisor bootstrap to seed tracked pane applets and shutdown to mark applets stopped.
+
+### Test Changes
+
+#### Added
+
+- Added deterministic unit lifecycle tests in `cmd/agentx-core/core_applet_supervisor_test.go`.
+  - GIVEN a new core WHEN applet supervisor starts THEN default pane applets are tracked as ready.
+  - GIVEN a tracked applet WHEN it transitions through crashed then stopped THEN status and crash count are reflected in snapshots.
+- Added functional GoDog scenario coverage in `cmd/agentx-core/features/functional.feature` with step bindings in `cmd/agentx-core/godog_test.go`.
+  - GIVEN a tracked applet WHEN it is marked crashed THEN health snapshot reports `crashed` status and crash count.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot to reflect applet lifecycle supervision implementation.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to document lifecycle/crash visibility in health snapshot behavior.
+
 ## [0.55.0] - 2026-05-19
 
 ### Code Changes
