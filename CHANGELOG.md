@@ -5,6 +5,24 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.56.1] - 2026-05-19
+
+### Test Changes
+
+#### Changed
+
+- Expanded headless tmux UX validation in `tests/test_tmux_layout_headless.sh`.
+  - Added active primary window assertion (`0:tui-chat`).
+  - Added logs window presence/inactive assertion (`1:logs`).
+  - Added strict pane title/index assertions (`chat`, `context`, `input`) alongside geometry and placeholder checks.
+- Updated `tests/test_tmux_layout_headless.md` to document the expanded active-window and pane-order checks.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot to reflect completed Sprint A4-style headless UX assertions.
+
 ## [0.56.0] - 2026-05-19
 
 ### Code Changes

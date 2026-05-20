@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-19 (v0.56.0)_
+_Last updated: 2026-05-19 (v0.56.1)_
 
 ## Overview
 
@@ -17,7 +17,7 @@ Current state relative to recent issue verification and regression work:
 - Regression coverage exists for startup window naming and window reselection behavior.
 - Health endpoint now returns runtime JSON payloads for `/health`, `/panes`, and `/applets`.
 - Applet supervision now tracks lifecycle state transitions (`starting`, `ready`, `running`, `stopped`, `crashed`) and crash counts.
-- Headless tmux layout validation exists and is wired via `make verify-tmux-layout`.
+- Headless tmux layout validation now asserts active window selection (`0:tui-chat`), logs window presence (`1:logs`), and pane title/index ordering.
 - Real chat/input/log applet behavior remains the main open build-out area.
 
 ## Execution Board (Next 2 Sprints)
