@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-20 (v0.59.0)_
+_Last updated: 2026-05-20 (v0.60.0)_
 
 ## Overview
 
@@ -8,7 +8,7 @@ This document tracks the migration from pure-Python TUI to hybrid Go-core + Pyth
 
 **Branch:** `feat/hybrid-go-core-tui-migration`
 
-## Status Snapshot (2026-05-19)
+## Status Snapshot (2026-05-20)
 
 Current state relative to recent issue verification and regression work:
 
@@ -21,6 +21,7 @@ Current state relative to recent issue verification and regression work:
 - Prompt ingress MVP is now wired from input routing through chat applet handling with deterministic chat-pane rendering.
 - Input command contract now handles `:clear`, `:q`, and normal prompt forwarding with deterministic history tracking in tests.
 - Completed turns are now persisted in session context with reload support across core reconstruction and query via `/context` endpoint.
+- B4 merge-readiness gate is now codified as a single command (`make hybrid-merge-gate`) and enforced in CI.
 - Real LLM-backed chat applet behavior and logs/context applet fidelity remain open build-out areas.
 
 ## Execution Board (Next 2 Sprints)
@@ -100,6 +101,21 @@ This board converts roadmap phases into immediately actionable work with accepta
    - Verification:
      - `make go-test`
      - `make verify-tmux-layout`
+
+## B4 Hybrid Merge-Readiness Checklist (Authoritative)
+
+Before opening or approving default-branch promotion for hybrid core, all items must be true in the same branch state:
+
+- [ ] `make hybrid-merge-gate` passes locally with no modifications afterward.
+- [ ] CI workflow `Hybrid Merge Readiness Gate` passes for the same commit.
+- [ ] No open P1/P2 blockers remain for startup determinism, prompt path, or observability path.
+- [ ] `CHANGELOG.md` and `pyproject.toml` reflect the latest delivered scope.
+
+Authoritative gate command:
+
+```bash
+make hybrid-merge-gate
+```
 
 ## Phase Checklist
 

@@ -118,3 +118,20 @@ jobs:
           sudo apt-get install -y tmux
       - name: Run verify-tmux-layout Make target
         run: make verify-tmux-layout
+
+  hybrid-merge-gate:
+    name: Hybrid Merge Readiness Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cmd/agentx-core/go.mod
+      - name: Ensure tmux available
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux
+      - name: Run hybrid merge gate
+        run: make hybrid-merge-gate

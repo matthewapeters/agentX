@@ -5,6 +5,23 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.60.0] - 2026-05-20
+
+### Code Changes
+
+#### Added
+
+- Implemented Sprint B4 merge-readiness gate workflow.
+  - Added `hybrid-merge-gate` target in `Makefile` to enforce required pre-merge checks (`go-test`, `verify-tmux-layout`, `build-core`).
+  - Added CI job `Hybrid Merge Readiness Gate` in `.github/workflows/hybrid-go-godog.yml` to run `make hybrid-merge-gate` on push/PR.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with an authoritative B4 merge-readiness checklist and single gate command.
+- Updated project version metadata for B4 delivery.
+
 ## [0.59.0] - 2026-05-20
 
 ### Code Changes

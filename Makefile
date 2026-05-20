@@ -6,7 +6,7 @@ GO_CORE_BIN := bin/agentx
 .PHONY: help \
 	build build-core build-applets clean \
 	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e go-test-pane-layout \
-	test-tmux-layout-headless verify-tmux-layout \
+	test-tmux-layout-headless verify-tmux-layout hybrid-merge-gate \
 	run run-attached run-with-applets
 
 help:
@@ -28,6 +28,7 @@ help:
 	@echo "  go-test-pane-layout Run pane-layout unit tests"
 	@echo "  test-tmux-layout-headless Run headless tmux UX layout validation script"
 	@echo "  verify-tmux-layout  Run pane-layout unit tests + headless tmux layout validation"
+	@echo "  hybrid-merge-gate   Run required B4 checks for hybrid default-branch readiness"
 	@echo ""
 	@echo "Run:"
 	@echo "  run                 Build and run Go core"
@@ -83,6 +84,9 @@ test-tmux-layout-headless:
 
 verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless
 	@echo "tmux layout verification complete"
+
+hybrid-merge-gate: go-test verify-tmux-layout build-core
+	@echo "hybrid merge-readiness gate complete"
 
 run: build-core
 	@echo "Running Go core..."

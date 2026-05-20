@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-20 (v0.59.0)_
+_Last updated: 2026-05-20 (v0.60.0)_
 
 ## Overview
 
@@ -236,6 +236,20 @@ GET /context
 - Integration tests: core + mock applets
 - End-to-end tests: full session lifecycle
 - Applet tests: Python template + real applets
+
+## Merge Readiness Gate
+
+Hybrid default-branch promotion is enforced through a single gate command:
+
+```bash
+make hybrid-merge-gate
+```
+
+This gate runs required checks for startup, behavior, and layout invariants:
+
+- `make go-test`
+- `make verify-tmux-layout`
+- `make build-core`
 
 ## References
 
