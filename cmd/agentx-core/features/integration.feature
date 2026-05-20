@@ -48,3 +48,24 @@ Feature: IPC router integration
     Then prompt routing should complete without error
     And routed response should equal "Echo: hello from input"
     And tmux should include rendered chat response "Echo: hello from input"
+
+  Scenario: Input command contract handles clear, quit, and prompt forwarding
+    Given a temporary project directory
+    And a core config with username "dev" and session "sess-5"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I handle input line ":clear"
+    Then input handling should complete without error
+    And input response should equal "cleared"
+    And input exit flag should be false
+    And tmux commands should include "send-keys -t"
+    When I handle input line ":q"
+    Then input handling should complete without error
+    And input response should equal "quit"
+    And input exit flag should be true
+    When I handle input line "hello command contract"
+    Then input handling should complete without error
+    And input response should equal "Echo: hello command contract"
+    And tmux should include rendered chat response "Echo: hello command contract"

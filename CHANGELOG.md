@@ -5,6 +5,36 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.58.0] - 2026-05-20
+
+### Code Changes
+
+#### Added
+
+- Implemented Sprint B2 input command contract in `cmd/agentx-core/core.go`.
+  - Added `HandleInputLine` with command parsing for `:clear`, `:q`, and normal prompt forwarding.
+  - Added deterministic input history tracking via `InputHistorySnapshot`.
+  - Added exit-request state handling for quit command contract.
+
+### Test Changes
+
+#### Added
+
+- Added focused command-dispatch tests in `cmd/agentx-core/core_input_contract_test.go`.
+  - GIVEN `:clear` WHEN input line is handled THEN chat pane clear command is emitted.
+  - GIVEN `:q` WHEN input line is handled THEN exit flag is set without prompt routing.
+  - GIVEN normal prompt WHEN input line is handled THEN prompt forwarding and chat rendering remain intact.
+  - GIVEN mixed command/prompt sequence WHEN inputs are handled THEN history ordering is deterministic.
+- Added integration scenario coverage in `cmd/agentx-core/features/integration.feature` with step bindings in `cmd/agentx-core/godog_test.go`.
+  - GIVEN fake tmux and applet supervisor WHEN clear/quit/prompt inputs are handled THEN command parsing and dispatch behave deterministically.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot to include delivered B2 input command contract behavior.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` capability checklist to include input command parsing and prompt forwarding support.
+
 ## [0.57.0] - 2026-05-19
 
 ### Code Changes

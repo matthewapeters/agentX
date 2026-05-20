@@ -38,6 +38,8 @@ type AgentXCore struct {
 	SessionID       string
 	tmuxSessionName string
 	applets         map[string]*AppletProcess
+	inputHistory    []string
+	exitRequested   bool
 	mu              sync.RWMutex
 	startedAt       time.Time
 	healthAddr      string // Address for health endpoint
@@ -94,6 +96,7 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 		SessionID:       sessionID,
 		tmuxSessionName: fmt.Sprintf("agentx_%s_%s", cfg.Username, sessionID),
 		applets:         make(map[string]*AppletProcess),
+		inputHistory:    make([]string, 0),
 		startedAt:       time.Now(),
 		healthAddr:      "127.0.0.1:9876", // Default health endpoint
 	}
@@ -290,6 +293,62 @@ func (ac *AgentXCore) RouteInputPrompt(ctx context.Context, prompt string) (stri
 	ac.markAppletStatus(chatApplet.Name, AppletStatusReady, nil)
 	log.Printf("[AgentX Core] Prompt routed and response rendered")
 	return response, nil
+}
+
+func (ac *AgentXCore) appendInputHistory(input string) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	ac.inputHistory = append(ac.inputHistory, input)
+}
+
+// InputHistorySnapshot returns a deterministic copy of recorded input lines.
+func (ac *AgentXCore) InputHistorySnapshot() []string {
+	ac.mu.RLock()
+	defer ac.mu.RUnlock()
+	history := make([]string, len(ac.inputHistory))
+	copy(history, ac.inputHistory)
+	return history
+}
+
+// HandleInputLine handles input command contract for the input applet.
+// Supported commands:
+//   - :clear clears chat pane output
+//   - :q requests session exit
+//
+// Any non-command input is routed as a chat prompt.
+func (ac *AgentXCore) HandleInputLine(ctx context.Context, line string) (response string, shouldExit bool, err error) {
+	trimmedLine := strings.TrimSpace(line)
+	if trimmedLine == "" {
+		return "", false, nil
+	}
+
+	ac.appendInputHistory(trimmedLine)
+
+	if strings.HasPrefix(trimmedLine, ":") {
+		switch trimmedLine {
+		case ":clear":
+			if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("chat"), "clear", "Enter"); err != nil {
+				return "", false, fmt.Errorf("failed to clear chat pane: %w", err)
+			}
+			log.Printf("[AgentX Core] Input command handled: :clear")
+			return "cleared", false, nil
+		case ":q":
+			ac.mu.Lock()
+			ac.exitRequested = true
+			ac.mu.Unlock()
+			log.Printf("[AgentX Core] Input command handled: :q")
+			return "quit", true, nil
+		default:
+			return "", false, fmt.Errorf("unsupported command: %s", trimmedLine)
+		}
+	}
+
+	routedResponse, routeErr := ac.RouteInputPrompt(ctx, trimmedLine)
+	if routeErr != nil {
+		return "", false, routeErr
+	}
+
+	return routedResponse, false, nil
 }
 
 func (ac *AgentXCore) ensureTrackedAppletLocked(appletName, paneName string) *AppletProcess {
