@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -68,6 +69,13 @@ type HealthSnapshot struct {
 	UptimeSeconds int64          `json:"uptime_seconds"`
 	Panes         []PaneStatus   `json:"panes"`
 	Applets       []AppletStatus `json:"applets"`
+}
+
+// ChatTurn captures one persisted user/assistant exchange.
+type ChatTurn struct {
+	Prompt    string `json:"prompt"`
+	Response  string `json:"response"`
+	CreatedAt int64  `json:"created_at"`
 }
 
 // AppletProcess tracks a running Python applet.
@@ -290,9 +298,20 @@ func (ac *AgentXCore) RouteInputPrompt(ctx context.Context, prompt string) (stri
 		return "", err
 	}
 
+	if err := ac.contextManager.RecordTurn(trimmedPrompt, response); err != nil {
+		ac.markAppletStatus(chatApplet.Name, AppletStatusCrashed, err)
+		log.Printf("[AgentX Core] Prompt persistence failed: %v", err)
+		return "", err
+	}
+
 	ac.markAppletStatus(chatApplet.Name, AppletStatusReady, nil)
 	log.Printf("[AgentX Core] Prompt routed and response rendered")
 	return response, nil
+}
+
+// ContextTurnsSnapshot returns persisted chat turns for the current session.
+func (ac *AgentXCore) ContextTurnsSnapshot() []ChatTurn {
+	return ac.contextManager.TurnsSnapshot()
 }
 
 func (ac *AgentXCore) appendInputHistory(input string) {
@@ -499,6 +518,8 @@ type ContextManager struct {
 	sessionID        string
 	startedAt        time.Time
 	snapshotProvider func() HealthSnapshot
+	turns            []ChatTurn
+	turnsLoaded      bool
 	mu               sync.RWMutex
 }
 
@@ -507,7 +528,103 @@ func NewContextManager(contextDir string) *ContextManager {
 	return &ContextManager{
 		contextDir: contextDir,
 		startedAt:  time.Now(),
+		turns:      make([]ChatTurn, 0),
 	}
+}
+
+func (cm *ContextManager) turnsFilePath() string {
+	return filepath.Join(cm.contextDir, "turns.jsonl")
+}
+
+func (cm *ContextManager) loadTurnsLocked() error {
+	if cm.turnsLoaded {
+		return nil
+	}
+
+	cm.turns = make([]ChatTurn, 0)
+	data, err := os.ReadFile(cm.turnsFilePath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			cm.turnsLoaded = true
+			return nil
+		}
+		return err
+	}
+
+	trimmedData := strings.TrimSpace(string(data))
+	if trimmedData == "" {
+		cm.turnsLoaded = true
+		return nil
+	}
+
+	for _, line := range strings.Split(trimmedData, "\n") {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == "" {
+			continue
+		}
+
+		var turn ChatTurn
+		if err := json.Unmarshal([]byte(trimmedLine), &turn); err != nil {
+			return fmt.Errorf("invalid turn record: %w", err)
+		}
+		cm.turns = append(cm.turns, turn)
+	}
+
+	cm.turnsLoaded = true
+	return nil
+}
+
+// RecordTurn appends a completed chat turn to in-memory and persisted context.
+func (cm *ContextManager) RecordTurn(prompt, response string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if err := cm.loadTurnsLocked(); err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(cm.contextDir, 0o755); err != nil {
+		return err
+	}
+
+	turn := ChatTurn{
+		Prompt:    prompt,
+		Response:  response,
+		CreatedAt: time.Now().UnixMilli(),
+	}
+
+	encoded, err := json.Marshal(turn)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(cm.turnsFilePath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if _, err := file.Write(append(encoded, '\n')); err != nil {
+		return err
+	}
+
+	cm.turns = append(cm.turns, turn)
+	return nil
+}
+
+// TurnsSnapshot returns a deterministic copy of persisted turns.
+func (cm *ContextManager) TurnsSnapshot() []ChatTurn {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if err := cm.loadTurnsLocked(); err != nil {
+		log.Printf("[AgentX Core] Failed to load turns snapshot: %v", err)
+		return []ChatTurn{}
+	}
+
+	turns := make([]ChatTurn, len(cm.turns))
+	copy(turns, cm.turns)
+	return turns
 }
 
 // SetSessionMetadata updates session metadata used by health responses.
@@ -596,6 +713,21 @@ func (cm *ContextManager) HealthHandler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"session_id": snapshot.SessionID,
 			"applets":    snapshot.Applets,
+		})
+	})
+
+	mux.HandleFunc("/context", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		snapshot := cm.snapshot()
+		turns := cm.TurnsSnapshot()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"session_id": snapshot.SessionID,
+			"turn_count": len(turns),
+			"turns":      turns,
 		})
 	})
 

@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-20 (v0.58.0)_
+_Last updated: 2026-05-20 (v0.59.0)_
 
 ## Overview
 
@@ -118,6 +118,7 @@ Each applet is a Python template that:
 - ✅ Track applet lifecycle transitions and crash counts in health snapshot payloads
 - ✅ Route deterministic input prompts through chat applet handling and render responses into chat pane
 - ✅ Parse input command contract (`:clear`, `:q`) and preserve normal prompt forwarding behavior
+- ✅ Persist minimal chat turns and expose queryable context turn snapshots via `/context`
 - ✅ Handle SIGTERM/SIGINT gracefully
 - ✅ Kill all applets and tmux session on shutdown
 - ❌ Full IPC-backed message routing (implemented later)

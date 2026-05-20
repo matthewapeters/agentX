@@ -33,6 +33,7 @@ type bddState struct {
 	routedResp   string
 	inputResp    string
 	inputExit    bool
+	contextTurns []ChatTurn
 }
 
 func (s *bddState) reset() {
@@ -55,6 +56,7 @@ func (s *bddState) reset() {
 	s.routedResp = ""
 	s.inputResp = ""
 	s.inputExit = false
+	s.contextTurns = nil
 }
 
 func (s *bddState) iHaveATemporaryProjectDirectory() error {
@@ -375,6 +377,38 @@ func (s *bddState) inputExitFlagShouldBe(expected string) error {
 	return nil
 }
 
+func (s *bddState) iReconstructTheAgentXCoreWithTheSameConfig() error {
+	if s.cfg == nil {
+		return errors.New("config not initialized")
+	}
+	s.core = NewAgentXCore(s.cfg)
+	return nil
+}
+
+func (s *bddState) iCaptureTheContextTurnsSnapshot() error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+	s.contextTurns = s.core.ContextTurnsSnapshot()
+	return nil
+}
+
+func (s *bddState) contextTurnsShouldHaveLength(expected int) error {
+	if len(s.contextTurns) != expected {
+		return fmt.Errorf("expected context turns length %d, got %d", expected, len(s.contextTurns))
+	}
+	return nil
+}
+
+func (s *bddState) contextTurnsShouldIncludePrompt(prompt string) error {
+	for _, turn := range s.contextTurns {
+		if turn.Prompt == prompt {
+			return nil
+		}
+	}
+	return fmt.Errorf("expected context turns to include prompt %q", prompt)
+}
+
 func (s *bddState) tmuxInitializationShouldCompleteWithoutError() error {
 	if s.err != nil {
 		return s.err
@@ -538,6 +572,8 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^I start the applet supervisor$`, state.iStartTheAppletSupervisor)
 	ctx.Step(`^I route input prompt "([^"]*)"$`, state.iRouteInputPrompt)
 	ctx.Step(`^I handle input line "([^"]*)"$`, state.iHandleInputLine)
+	ctx.Step(`^I reconstruct the AgentX core with the same config$`, state.iReconstructTheAgentXCoreWithTheSameConfig)
+	ctx.Step(`^I capture the context turns snapshot$`, state.iCaptureTheContextTurnsSnapshot)
 	ctx.Step(`^tmux initialization should complete without error$`, state.tmuxInitializationShouldCompleteWithoutError)
 	ctx.Step(`^tmux commands should include "([^"]*)"$`, state.tmuxCommandsShouldInclude)
 	ctx.Step(`^prompt routing should complete without error$`, state.promptRoutingShouldCompleteWithoutError)
@@ -546,6 +582,8 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^input handling should complete without error$`, state.inputHandlingShouldCompleteWithoutError)
 	ctx.Step(`^input response should equal "([^"]*)"$`, state.inputResponseShouldEqual)
 	ctx.Step(`^input exit flag should be (true|false)$`, state.inputExitFlagShouldBe)
+	ctx.Step(`^context turns should have length (\d+)$`, state.contextTurnsShouldHaveLength)
+	ctx.Step(`^context turns should include prompt "([^"]*)"$`, state.contextTurnsShouldIncludePrompt)
 	ctx.Step(`^startup should name window 0 as "([^"]*)"$`, state.startupShouldNameWindowZeroAs)
 	ctx.Step(`^startup should select window 0$`, state.startupShouldSelectWindowZero)
 	ctx.Step(`^the core has a tracked applet "([^"]*)" on pane "([^"]*)"$`, state.theCoreHasATrackedAppletOnPane)

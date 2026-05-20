@@ -5,6 +5,36 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.59.0] - 2026-05-20
+
+### Code Changes
+
+#### Added
+
+- Implemented Sprint B3 minimal turn persistence in `cmd/agentx-core/core.go`.
+  - Added persisted turn model and JSONL turn logging under session context directory.
+  - Added core/context snapshot access for persisted turns.
+  - Added `/context` endpoint returning `session_id`, `turn_count`, and persisted turns.
+  - Wired prompt routing to persist completed user/assistant turns.
+
+### Test Changes
+
+#### Added
+
+- Added persistence tests in `cmd/agentx-core/core_context_persistence_test.go`.
+  - GIVEN a routed prompt WHEN route completes THEN turn is persisted and queryable via core snapshot.
+  - GIVEN a reconstructed core with same session id WHEN turns are queried THEN persisted turns are reloaded.
+- Extended endpoint tests in `cmd/agentx-core/core_health_endpoint_test.go` for `/context` payload and method constraints.
+- Added integration scenario and steps in `cmd/agentx-core/features/integration.feature` and `cmd/agentx-core/godog_test.go`.
+  - GIVEN routed prompt and reconstructed core WHEN context turns snapshot is captured THEN persisted prompt remains available.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot for delivered B3 persisted-turn behavior.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` capability checklist to include context turn persistence and context endpoint querying.
+
 ## [0.58.0] - 2026-05-20
 
 ### Code Changes

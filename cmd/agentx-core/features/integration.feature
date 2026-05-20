@@ -69,3 +69,17 @@ Feature: IPC router integration
     Then input handling should complete without error
     And input response should equal "Echo: hello command contract"
     And tmux should include rendered chat response "Echo: hello command contract"
+
+  Scenario: Persisted turns survive core reconstruction
+    Given a temporary project directory
+    And a core config with username "dev" and session "sess-6"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "persist across restart"
+    Then prompt routing should complete without error
+    When I reconstruct the AgentX core with the same config
+    And I capture the context turns snapshot
+    Then context turns should have length 1
+    And context turns should include prompt "persist across restart"

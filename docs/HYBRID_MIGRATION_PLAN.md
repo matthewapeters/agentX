@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-20 (v0.58.0)_
+_Last updated: 2026-05-20 (v0.59.0)_
 
 ## Overview
 
@@ -20,6 +20,7 @@ Current state relative to recent issue verification and regression work:
 - Headless tmux layout validation now asserts active window selection (`0:tui-chat`), logs window presence (`1:logs`), and pane title/index ordering.
 - Prompt ingress MVP is now wired from input routing through chat applet handling with deterministic chat-pane rendering.
 - Input command contract now handles `:clear`, `:q`, and normal prompt forwarding with deterministic history tracking in tests.
+- Completed turns are now persisted in session context with reload support across core reconstruction and query via `/context` endpoint.
 - Real LLM-backed chat applet behavior and logs/context applet fidelity remain open build-out areas.
 
 ## Execution Board (Next 2 Sprints)

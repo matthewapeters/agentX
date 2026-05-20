@@ -107,6 +107,41 @@ func TestContextManagerHealthHandler_ReportsRuntimeState(t *testing.T) {
 	if appletsPayload.Applets[0].Name != "chat" {
 		t.Fatalf("expected first applet name chat, got %q", appletsPayload.Applets[0].Name)
 	}
+
+	if err := cm.RecordTurn("hello", "Echo: hello"); err != nil {
+		t.Fatalf("failed to record turn: %v", err)
+	}
+
+	contextResp, err := http.Get(server.URL + "/context")
+	if err != nil {
+		t.Fatalf("failed to query /context: %v", err)
+	}
+	defer contextResp.Body.Close()
+
+	if contextResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected /context status 200, got %d", contextResp.StatusCode)
+	}
+
+	var contextPayload struct {
+		SessionID string     `json:"session_id"`
+		TurnCount int        `json:"turn_count"`
+		Turns     []ChatTurn `json:"turns"`
+	}
+	if err := json.NewDecoder(contextResp.Body).Decode(&contextPayload); err != nil {
+		t.Fatalf("failed to decode /context payload: %v", err)
+	}
+	if contextPayload.SessionID != "sess-health" {
+		t.Fatalf("expected /context session_id sess-health, got %q", contextPayload.SessionID)
+	}
+	if contextPayload.TurnCount != 1 {
+		t.Fatalf("expected /context turn_count 1, got %d", contextPayload.TurnCount)
+	}
+	if len(contextPayload.Turns) != 1 {
+		t.Fatalf("expected /context turns length 1, got %d", len(contextPayload.Turns))
+	}
+	if contextPayload.Turns[0].Prompt != "hello" {
+		t.Fatalf("expected first turn prompt hello, got %q", contextPayload.Turns[0].Prompt)
+	}
 }
 
 // GIVEN endpoint method constraints for runtime health handlers
@@ -130,5 +165,20 @@ func TestContextManagerHealthHandler_RejectsNonGetMethods(t *testing.T) {
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("expected /health status 405 for POST, got %d", resp.StatusCode)
+	}
+
+	contextReq, err := http.NewRequest(http.MethodPost, server.URL+"/context", nil)
+	if err != nil {
+		t.Fatalf("failed to build POST /context request: %v", err)
+	}
+
+	contextResp, err := http.DefaultClient.Do(contextReq)
+	if err != nil {
+		t.Fatalf("failed to execute POST /context request: %v", err)
+	}
+	defer contextResp.Body.Close()
+
+	if contextResp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected /context status 405 for POST, got %d", contextResp.StatusCode)
 	}
 }
