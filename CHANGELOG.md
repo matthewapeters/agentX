@@ -5,6 +5,35 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.57.0] - 2026-05-19
+
+### Code Changes
+
+#### Added
+
+- Implemented Sprint B1 prompt routing MVP in `cmd/agentx-core/core.go`.
+  - Added `RouteInputPrompt` to route deterministic prompts through tracked chat applet handling.
+  - Added chat-pane rendering via tmux send-keys (`[assistant] <response>` output contract).
+  - Added deterministic default prompt handler wiring for supervised applets.
+  - Added actionable failure behavior for missing chat applet and render/handler failures.
+
+### Test Changes
+
+#### Added
+
+- Added deterministic unit coverage in `cmd/agentx-core/core_chat_pipeline_test.go`.
+  - GIVEN initialized core and applet supervisor WHEN routing prompt `hello from input` THEN deterministic response is returned and rendered in chat pane.
+  - GIVEN missing chat applet WHEN routing a prompt THEN deterministic registration error is returned.
+- Added GoDog integration scenario in `cmd/agentx-core/features/integration.feature` and step bindings in `cmd/agentx-core/godog_test.go`.
+  - GIVEN fake tmux bootstrap and applet supervisor WHEN routing input prompt THEN prompt pipeline completes and rendered response command is emitted.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot for delivered B1 prompt ingress MVP.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` capability checklist to include deterministic prompt routing/rendering support.
+
 ## [0.56.1] - 2026-05-19
 
 ### Test Changes

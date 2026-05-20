@@ -30,6 +30,7 @@ type bddState struct {
 	oldTmuxLog   string
 	tmuxCommands string
 	snapshot     HealthSnapshot
+	routedResp   string
 }
 
 func (s *bddState) reset() {
@@ -49,6 +50,7 @@ func (s *bddState) reset() {
 	s.oldTmuxLog = ""
 	s.tmuxCommands = ""
 	s.snapshot = HealthSnapshot{}
+	s.routedResp = ""
 }
 
 func (s *bddState) iHaveATemporaryProjectDirectory() error {
@@ -277,6 +279,56 @@ func (s *bddState) iInitializeTheTmuxSession() error {
 	return nil
 }
 
+func (s *bddState) iStartTheAppletSupervisor() error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+
+	s.err = s.core.StartAppletSupervisor(context.Background())
+	return nil
+}
+
+func (s *bddState) iRouteInputPrompt(prompt string) error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+
+	response, err := s.core.RouteInputPrompt(context.Background(), prompt)
+	s.routedResp = response
+	s.err = err
+
+	if s.fakeTmuxLog != "" {
+		data, readErr := os.ReadFile(s.fakeTmuxLog)
+		if readErr == nil {
+			s.tmuxCommands = string(data)
+		}
+	}
+
+	return nil
+}
+
+func (s *bddState) promptRoutingShouldCompleteWithoutError() error {
+	if s.err != nil {
+		return s.err
+	}
+	return nil
+}
+
+func (s *bddState) routedResponseShouldEqual(expected string) error {
+	if s.routedResp != expected {
+		return fmt.Errorf("expected routed response %q, got %q", expected, s.routedResp)
+	}
+	return nil
+}
+
+func (s *bddState) tmuxShouldIncludeRenderedChatResponse(response string) error {
+	expected := "echo '[assistant] " + response + "' Enter"
+	if !strings.Contains(s.tmuxCommands, expected) {
+		return fmt.Errorf("expected tmux render command %q, got:\n%s", expected, s.tmuxCommands)
+	}
+	return nil
+}
+
 func (s *bddState) tmuxInitializationShouldCompleteWithoutError() error {
 	if s.err != nil {
 		return s.err
@@ -437,8 +489,13 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^shutdown should complete without error$`, state.shutdownShouldCompleteWithoutError)
 	ctx.Step(`^a fake tmux executable that records commands$`, state.aFakeTmuxExecutableThatRecordsCommands)
 	ctx.Step(`^I initialize the tmux session$`, state.iInitializeTheTmuxSession)
+	ctx.Step(`^I start the applet supervisor$`, state.iStartTheAppletSupervisor)
+	ctx.Step(`^I route input prompt "([^"]*)"$`, state.iRouteInputPrompt)
 	ctx.Step(`^tmux initialization should complete without error$`, state.tmuxInitializationShouldCompleteWithoutError)
 	ctx.Step(`^tmux commands should include "([^"]*)"$`, state.tmuxCommandsShouldInclude)
+	ctx.Step(`^prompt routing should complete without error$`, state.promptRoutingShouldCompleteWithoutError)
+	ctx.Step(`^routed response should equal "([^"]*)"$`, state.routedResponseShouldEqual)
+	ctx.Step(`^tmux should include rendered chat response "([^"]*)"$`, state.tmuxShouldIncludeRenderedChatResponse)
 	ctx.Step(`^startup should name window 0 as "([^"]*)"$`, state.startupShouldNameWindowZeroAs)
 	ctx.Step(`^startup should select window 0$`, state.startupShouldSelectWindowZero)
 	ctx.Step(`^the core has a tracked applet "([^"]*)" on pane "([^"]*)"$`, state.theCoreHasATrackedAppletOnPane)

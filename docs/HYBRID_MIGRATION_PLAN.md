@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-19 (v0.56.1)_
+_Last updated: 2026-05-19 (v0.57.0)_
 
 ## Overview
 
@@ -18,7 +18,8 @@ Current state relative to recent issue verification and regression work:
 - Health endpoint now returns runtime JSON payloads for `/health`, `/panes`, and `/applets`.
 - Applet supervision now tracks lifecycle state transitions (`starting`, `ready`, `running`, `stopped`, `crashed`) and crash counts.
 - Headless tmux layout validation now asserts active window selection (`0:tui-chat`), logs window presence (`1:logs`), and pane title/index ordering.
-- Real chat/input/log applet behavior remains the main open build-out area.
+- Prompt ingress MVP is now wired from input routing through chat applet handling with deterministic chat-pane rendering.
+- Input command handling, real LLM-backed chat applet behavior, and logs/context applet fidelity remain open build-out areas.
 
 ## Execution Board (Next 2 Sprints)
 

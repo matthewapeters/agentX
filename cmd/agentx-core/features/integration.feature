@@ -36,3 +36,15 @@ Feature: IPC router integration
     When I construct the AgentX core
     And I initialize the tmux session
     Then startup should select window 0
+
+  Scenario: Input prompt routes through chat applet and renders response
+    Given a temporary project directory
+    And a core config with username "dev" and session "sess-4"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "hello from input"
+    Then prompt routing should complete without error
+    And routed response should equal "Echo: hello from input"
+    And tmux should include rendered chat response "Echo: hello from input"

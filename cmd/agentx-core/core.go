@@ -70,15 +70,16 @@ type HealthSnapshot struct {
 
 // AppletProcess tracks a running Python applet.
 type AppletProcess struct {
-	Name       string
-	PaneName   string
-	Status     AppletLifecycleStatus
-	LastError  string
-	Cmd        *exec.Cmd
-	Cancel     context.CancelFunc
-	DoneChan   chan error
-	StartedAt  time.Time
-	CrashCount int
+	Name         string
+	PaneName     string
+	Status       AppletLifecycleStatus
+	LastError    string
+	HandlePrompt func(context.Context, string) (string, error)
+	Cmd          *exec.Cmd
+	Cancel       context.CancelFunc
+	DoneChan     chan error
+	StartedAt    time.Time
+	CrashCount   int
 }
 
 // NewAgentXCore creates a new orchestrator instance.
@@ -204,15 +205,91 @@ func (ac *AgentXCore) StartAppletSupervisor(ctx context.Context) error {
 		}
 
 		ac.applets[pane.Name] = &AppletProcess{
-			Name:      pane.Name,
-			PaneName:  pane.Name,
-			Status:    AppletStatusReady,
-			StartedAt: time.Now(),
+			Name:         pane.Name,
+			PaneName:     pane.Name,
+			Status:       AppletStatusReady,
+			HandlePrompt: defaultPromptHandler(pane.Name),
+			StartedAt:    time.Now(),
 		}
 	}
 
 	log.Printf("[AgentX Core] Applet supervisor ready (%d tracked applets)", len(ac.applets))
 	return nil
+}
+
+func defaultPromptHandler(appletName string) func(context.Context, string) (string, error) {
+	return func(_ context.Context, prompt string) (string, error) {
+		trimmedPrompt := strings.TrimSpace(prompt)
+		if trimmedPrompt == "" {
+			return "", fmt.Errorf("empty prompt for applet %s", appletName)
+		}
+		return fmt.Sprintf("Echo: %s", trimmedPrompt), nil
+	}
+}
+
+func shellSingleQuote(input string) string {
+	return "'" + strings.ReplaceAll(input, "'", "'\"'\"'") + "'"
+}
+
+func (ac *AgentXCore) paneTargetForName(paneName string) string {
+	if paneName == "logs" {
+		return ac.tmuxSessionName + ":1.0"
+	}
+	return ac.tmuxSessionName + ":0." + map[string]string{
+		"chat":    "0",
+		"context": "1",
+		"input":   "2",
+	}[paneName]
+}
+
+func (ac *AgentXCore) renderChatResponse(ctx context.Context, response string) error {
+	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote("[assistant] "+response))
+	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("chat"), renderCmd, "Enter"); err != nil {
+		return fmt.Errorf("failed rendering chat response: %w", err)
+	}
+	return nil
+}
+
+// RouteInputPrompt routes an input prompt through the tracked chat applet and renders the response.
+func (ac *AgentXCore) RouteInputPrompt(ctx context.Context, prompt string) (string, error) {
+	trimmedPrompt := strings.TrimSpace(prompt)
+	if trimmedPrompt == "" {
+		return "", fmt.Errorf("prompt cannot be empty")
+	}
+
+	log.Printf("[AgentX Core] Routing input prompt to chat applet")
+
+	ac.mu.RLock()
+	chatApplet, exists := ac.applets["chat"]
+	ac.mu.RUnlock()
+	if !exists {
+		err := fmt.Errorf("chat applet is not registered")
+		log.Printf("[AgentX Core] Prompt routing failed: %v", err)
+		return "", err
+	}
+
+	handler := chatApplet.HandlePrompt
+	if handler == nil {
+		handler = defaultPromptHandler(chatApplet.Name)
+	}
+
+	ac.markAppletStatus(chatApplet.Name, AppletStatusRunning, nil)
+	response, err := handler(ctx, trimmedPrompt)
+	if err != nil {
+		ac.markAppletStatus(chatApplet.Name, AppletStatusCrashed, err)
+		log.Printf("[AgentX Core] Prompt routing failed in chat applet: %v", err)
+		return "", err
+	}
+
+	if err := ac.renderChatResponse(ctx, response); err != nil {
+		ac.markAppletStatus(chatApplet.Name, AppletStatusCrashed, err)
+		log.Printf("[AgentX Core] Prompt rendering failed: %v", err)
+		return "", err
+	}
+
+	ac.markAppletStatus(chatApplet.Name, AppletStatusReady, nil)
+	log.Printf("[AgentX Core] Prompt routed and response rendered")
+	return response, nil
 }
 
 func (ac *AgentXCore) ensureTrackedAppletLocked(appletName, paneName string) *AppletProcess {
