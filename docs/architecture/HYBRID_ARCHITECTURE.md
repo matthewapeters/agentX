@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-21 (v0.63.0)_
+_Last updated: 2026-05-21 (v0.64.0)_
 
 ## Overview
 
@@ -45,6 +45,7 @@ AGENTX_SESSION_DIR=/path/to/sessions/...
 AGENTX_CHAT_BACKEND=echo|ollama   # Bridge chat backend selector
 AGENTX_OLLAMA_HOST=localhost:11434 # Ollama host for bridge chat backend
 AGENTX_OLLAMA_MODEL=llama3.2       # Ollama model for bridge chat backend
+AGENTX_CHAT_BRIDGE_RESPONSE_TIMEOUT_SEC=45 # Max wait for bridge response before fallback
 ```
 
 ### Startup Signal

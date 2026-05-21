@@ -5,6 +5,32 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.64.0] - 2026-05-21
+
+### Code Changes
+
+#### Added
+
+- Added bounded response wait handling for persistent chat bridge in `cmd/agentx-core/core.go`.
+  - Introduced `AGENTX_CHAT_BRIDGE_RESPONSE_TIMEOUT_SEC` configuration for bridge response timeout control.
+  - Prompt routing now times out and tears down hung bridge process instead of blocking indefinitely.
+  - Public prompt route path continues to fall back to deterministic handler when bridge timeout occurs.
+
+### Test Changes
+
+#### Added
+
+- Extended `cmd/agentx-core/core_phase2_chat_bridge_test.go` with timeout reliability coverage.
+  - GIVEN a hanging bridge process WHEN direct bridge route is called THEN timeout error is returned.
+  - GIVEN a hanging bridge process WHEN `RouteInputPrompt` is called THEN deterministic fallback response is returned.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot for bounded bridge response waits.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` env var contract to include bridge response timeout control.
+
 ## [0.63.0] - 2026-05-21
 
 ### Code Changes

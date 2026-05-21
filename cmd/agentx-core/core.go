@@ -37,18 +37,19 @@ const (
 
 // AgentXCore orchestrates the tmux session, applets, and IPC.
 type AgentXCore struct {
-	Config           *Config
-	SessionID        string
-	tmuxSessionName  string
-	applets          map[string]*AppletProcess
-	pythonExecutable string
-	chatAppletScript string
-	inputHistory     []string
-	exitRequested    bool
-	mu               sync.RWMutex
-	startedAt        time.Time
-	healthAddr       string // Address for health endpoint
-	contextManager   *ContextManager
+	Config                    *Config
+	SessionID                 string
+	tmuxSessionName           string
+	applets                   map[string]*AppletProcess
+	pythonExecutable          string
+	chatAppletScript          string
+	chatBridgeResponseTimeout time.Duration
+	inputHistory              []string
+	exitRequested             bool
+	mu                        sync.RWMutex
+	startedAt                 time.Time
+	healthAddr                string // Address for health endpoint
+	contextManager            *ContextManager
 }
 
 // PaneStatus reports pane-level runtime state.
@@ -118,15 +119,16 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 	}
 
 	core := &AgentXCore{
-		Config:           cfg,
-		SessionID:        sessionID,
-		tmuxSessionName:  fmt.Sprintf("agentx_%s_%s", cfg.Username, sessionID),
-		applets:          make(map[string]*AppletProcess),
-		pythonExecutable: "python3",
-		chatAppletScript: filepath.Join(cfg.ProjectDir, "applets", "template.py"),
-		inputHistory:     make([]string, 0),
-		startedAt:        time.Now(),
-		healthAddr:       "127.0.0.1:9876", // Default health endpoint
+		Config:                    cfg,
+		SessionID:                 sessionID,
+		tmuxSessionName:           fmt.Sprintf("agentx_%s_%s", cfg.Username, sessionID),
+		applets:                   make(map[string]*AppletProcess),
+		pythonExecutable:          "python3",
+		chatAppletScript:          filepath.Join(cfg.ProjectDir, "applets", "template.py"),
+		chatBridgeResponseTimeout: resolveChatBridgeResponseTimeout(),
+		inputHistory:              make([]string, 0),
+		startedAt:                 time.Now(),
+		healthAddr:                "127.0.0.1:9876", // Default health endpoint
 	}
 
 	core.contextManager = NewContextManager(cfg.SessionContextDir(sessionID))
@@ -297,13 +299,45 @@ func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt
 		return "", err
 	}
 
-	response, err := readChatBridgeResponseFromScanner(chatApplet.BridgeStdout)
-	if err != nil {
-		ac.teardownChatBridgeProcessLocked(chatApplet)
-		return "", err
+	type chatBridgeReadResult struct {
+		response string
+		err      error
 	}
 
-	return response, nil
+	readResultChan := make(chan chatBridgeReadResult, 1)
+	go func() {
+		response, readErr := readChatBridgeResponseFromScanner(chatApplet.BridgeStdout)
+		readResultChan <- chatBridgeReadResult{response: response, err: readErr}
+	}()
+
+	select {
+	case readResult := <-readResultChan:
+		if readResult.err != nil {
+			ac.teardownChatBridgeProcessLocked(chatApplet)
+			return "", readResult.err
+		}
+		return readResult.response, nil
+	case <-ctx.Done():
+		ac.teardownChatBridgeProcessLocked(chatApplet)
+		return "", ctx.Err()
+	case <-time.After(ac.chatBridgeResponseTimeout):
+		ac.teardownChatBridgeProcessLocked(chatApplet)
+		return "", fmt.Errorf("chat bridge response timeout after %s", ac.chatBridgeResponseTimeout)
+	}
+}
+
+func resolveChatBridgeResponseTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("AGENTX_CHAT_BRIDGE_RESPONSE_TIMEOUT_SEC"))
+	if raw == "" {
+		return 45 * time.Second
+	}
+
+	parsedSeconds, err := time.ParseDuration(raw + "s")
+	if err != nil || parsedSeconds <= 0 {
+		return 45 * time.Second
+	}
+
+	return parsedSeconds
 }
 
 func (ac *AgentXCore) ensureChatBridgeProcessLocked(chatApplet *AppletProcess) error {
