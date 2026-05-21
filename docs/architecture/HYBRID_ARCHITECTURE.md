@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-20 (v0.61.0)_
+_Last updated: 2026-05-21 (v0.62.0.post1)_
 
 ## Overview
 
@@ -98,11 +98,9 @@ When user quits or core receives SIGTERM:
 
 The current Go-core runtime does not yet spawn real Python applet processes in panes.
 
-
 ### Go Core Features
 
-
- ✅ Python chat applet bridge path exists for prompt/response handoff (`template.py --bridge-chat`)
+ ✅ Python chat applet bridge path exists for prompt/response handoff (`template.py --bridge-chat-server`)
 
 ```bash
 # Build Go core

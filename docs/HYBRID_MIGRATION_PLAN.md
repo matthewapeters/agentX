@@ -1,10 +1,12 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-20 (v0.62.0)_
+_Last updated: 2026-05-21 (v0.62.0.post1)_
 
 ## Overview
 
 This document tracks the migration from pure-Python TUI to hybrid Go-core + Python-applets architecture.
+
+Authoritative status source: this file is the single source of truth for hybrid migration status and checkpoints.
 
 **Branch:** `feat/hybrid-go-core-tui-migration`
 

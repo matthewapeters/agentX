@@ -5,6 +5,19 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.62.0.post1] - 2026-05-21
+
+### Documentation Changes
+
+#### Changed
+
+- Established a single authoritative migration status source in `docs/HYBRID_MIGRATION_PLAN.md`.
+- Updated revision stamps and wording in hybrid docs to reflect current bridge mode naming.
+
+#### Removed
+
+- Removed stale duplicate branch status document `HYBRID_STATUS.md` to eliminate split-brain status drift.
+
 ## [0.62.0] - 2026-05-20
 
 ### Code Changes
