@@ -5,6 +5,33 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.62.0] - 2026-05-20
+
+### Code Changes
+
+#### Added
+
+- Implemented persistent Phase 2 Python chat bridge lifecycle in `cmd/agentx-core/core.go`.
+  - Chat routing now starts a long-lived `template.py --bridge-chat-server` process on first use.
+  - Subsequent prompts reuse the same Python bridge process instead of spawning one process per prompt.
+  - Added synchronized request/response handling and process teardown/recovery path on bridge failure.
+- Updated `applets/template.py` with persistent server mode (`--bridge-chat-server`) while retaining one-shot mode.
+
+### Test Changes
+
+#### Added
+
+- Extended `cmd/agentx-core/core_phase2_chat_bridge_test.go` with process reuse validation.
+  - GIVEN template applet is staged WHEN two prompts are routed THEN the chat applet process PID remains stable.
+- Added GoDog integration coverage in `cmd/agentx-core/features/integration.feature` and `cmd/agentx-core/godog_test.go`.
+  - GIVEN template applet is staged WHEN two prompts are routed THEN tracked chat applet PID remains unchanged.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot to capture persistent bridge process reuse behavior.
+
 ## [0.61.0] - 2026-05-20
 
 ### Code Changes

@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-20 (v0.61.0)_
+_Last updated: 2026-05-20 (v0.62.0)_
 
 ## Overview
 
@@ -22,7 +22,7 @@ Current state relative to recent issue verification and regression work:
 - Input command contract now handles `:clear`, `:q`, and normal prompt forwarding with deterministic history tracking in tests.
 - Completed turns are now persisted in session context with reload support across core reconstruction and query via `/context` endpoint.
 - B4 merge-readiness gate is now codified as a single command (`make hybrid-merge-gate`) and enforced in CI.
-- Phase 2 has started with a Python chat applet bridge path (`template.py --bridge-chat`) used by the Go chat handler when available.
+- Phase 2 now keeps a persistent Python chat bridge process (`template.py --bridge-chat-server`) and reuses it across prompts.
 - Real LLM-backed chat applet behavior and logs/context applet fidelity remain open build-out areas.
 
 ## Execution Board (Next 2 Sprints)

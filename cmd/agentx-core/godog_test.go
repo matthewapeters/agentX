@@ -34,6 +34,7 @@ type bddState struct {
 	inputResp    string
 	inputExit    bool
 	contextTurns []ChatTurn
+	chatPID      int
 }
 
 func (s *bddState) reset() {
@@ -57,6 +58,30 @@ func (s *bddState) reset() {
 	s.inputResp = ""
 	s.inputExit = false
 	s.contextTurns = nil
+	s.chatPID = 0
+}
+
+func (s *bddState) theProjectContainsTemplateChatApplet() error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+
+	templatePath := filepath.Join("..", "..", "applets", "template.py")
+	templateContent, err := os.ReadFile(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed reading template applet: %w", err)
+	}
+
+	appletsDir := filepath.Join(s.tmpDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		return fmt.Errorf("failed creating applets directory: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(appletsDir, "template.py"), templateContent, 0o755); err != nil {
+		return fmt.Errorf("failed writing template applet: %w", err)
+	}
+
+	return nil
 }
 
 func (s *bddState) iHaveATemporaryProjectDirectory() error {
@@ -409,6 +434,47 @@ func (s *bddState) contextTurnsShouldIncludePrompt(prompt string) error {
 	return fmt.Errorf("expected context turns to include prompt %q", prompt)
 }
 
+func (s *bddState) iCaptureTheTrackedChatAppletProcessPID() error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+
+	s.core.mu.RLock()
+	defer s.core.mu.RUnlock()
+
+	chatApplet, exists := s.core.applets["chat"]
+	if !exists || chatApplet == nil || chatApplet.Cmd == nil || chatApplet.Cmd.Process == nil {
+		return errors.New("tracked chat applet process unavailable")
+	}
+
+	s.chatPID = chatApplet.Cmd.Process.Pid
+	return nil
+}
+
+func (s *bddState) trackedChatAppletProcessPIDShouldRemainTheSame() error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+
+	s.core.mu.RLock()
+	defer s.core.mu.RUnlock()
+
+	chatApplet, exists := s.core.applets["chat"]
+	if !exists || chatApplet == nil || chatApplet.Cmd == nil || chatApplet.Cmd.Process == nil {
+		return errors.New("tracked chat applet process unavailable")
+	}
+
+	currentPID := chatApplet.Cmd.Process.Pid
+	if s.chatPID == 0 {
+		return errors.New("expected prior chat applet pid capture")
+	}
+	if s.chatPID != currentPID {
+		return fmt.Errorf("expected persistent chat applet pid %d, got %d", s.chatPID, currentPID)
+	}
+
+	return nil
+}
+
 func (s *bddState) tmuxInitializationShouldCompleteWithoutError() error {
 	if s.err != nil {
 		return s.err
@@ -547,6 +613,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	})
 
 	ctx.Step(`^a temporary project directory$`, state.iHaveATemporaryProjectDirectory)
+	ctx.Step(`^the project contains template chat applet$`, state.theProjectContainsTemplateChatApplet)
 	ctx.Step(`^a config with username "([^"]*)"$`, state.aConfigWithUsername)
 	ctx.Step(`^I ensure session directories for session "([^"]*)"$`, state.iEnsureSessionDirectoriesForSession)
 	ctx.Step(`^the session directory structure should exist$`, state.theSessionDirectoryStructureShouldExist)
@@ -584,6 +651,8 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^input exit flag should be (true|false)$`, state.inputExitFlagShouldBe)
 	ctx.Step(`^context turns should have length (\d+)$`, state.contextTurnsShouldHaveLength)
 	ctx.Step(`^context turns should include prompt "([^"]*)"$`, state.contextTurnsShouldIncludePrompt)
+	ctx.Step(`^I capture the tracked chat applet process pid$`, state.iCaptureTheTrackedChatAppletProcessPID)
+	ctx.Step(`^the tracked chat applet process pid should remain the same$`, state.trackedChatAppletProcessPIDShouldRemainTheSame)
 	ctx.Step(`^startup should name window 0 as "([^"]*)"$`, state.startupShouldNameWindowZeroAs)
 	ctx.Step(`^startup should select window 0$`, state.startupShouldSelectWindowZero)
 	ctx.Step(`^the core has a tracked applet "([^"]*)" on pane "([^"]*)"$`, state.theCoreHasATrackedAppletOnPane)

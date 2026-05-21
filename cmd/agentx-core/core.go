@@ -103,6 +103,9 @@ type AppletProcess struct {
 	Cmd          *exec.Cmd
 	Cancel       context.CancelFunc
 	DoneChan     chan error
+	BridgeStdin  io.WriteCloser
+	BridgeStdout *bufio.Scanner
+	BridgeMu     sync.Mutex
 	StartedAt    time.Time
 	CrashCount   int
 }
@@ -272,11 +275,57 @@ func (ac *AgentXCore) pythonChatPromptHandler() func(context.Context, string) (s
 }
 
 func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt string) (string, error) {
-	if _, err := os.Stat(ac.chatAppletScript); err != nil {
-		return "", fmt.Errorf("chat applet script unavailable: %w", err)
+	_ = ctx
+
+	ac.mu.RLock()
+	chatApplet, exists := ac.applets["chat"]
+	ac.mu.RUnlock()
+	if !exists {
+		return "", fmt.Errorf("chat applet is not registered")
 	}
 
-	cmd := exec.CommandContext(ctx, ac.pythonExecutable, ac.chatAppletScript, "--bridge-chat")
+	chatApplet.BridgeMu.Lock()
+	defer chatApplet.BridgeMu.Unlock()
+
+	if err := ac.ensureChatBridgeProcessLocked(chatApplet); err != nil {
+		return "", err
+	}
+
+	request := chatBridgeRequest{Type: "prompt", Prompt: prompt}
+	if err := json.NewEncoder(chatApplet.BridgeStdin).Encode(request); err != nil {
+		ac.teardownChatBridgeProcessLocked(chatApplet)
+		return "", err
+	}
+
+	response, err := readChatBridgeResponseFromScanner(chatApplet.BridgeStdout)
+	if err != nil {
+		ac.teardownChatBridgeProcessLocked(chatApplet)
+		return "", err
+	}
+
+	return response, nil
+}
+
+func (ac *AgentXCore) ensureChatBridgeProcessLocked(chatApplet *AppletProcess) error {
+	if _, err := os.Stat(ac.chatAppletScript); err != nil {
+		return fmt.Errorf("chat applet script unavailable: %w", err)
+	}
+
+	if chatApplet.Cmd != nil && chatApplet.BridgeStdin != nil && chatApplet.BridgeStdout != nil {
+		if chatApplet.DoneChan != nil {
+			select {
+			case <-chatApplet.DoneChan:
+				ac.teardownChatBridgeProcessLocked(chatApplet)
+			default:
+				return nil
+			}
+		} else {
+			return nil
+		}
+	}
+
+	processCtx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(processCtx, ac.pythonExecutable, ac.chatAppletScript, "--bridge-chat-server")
 	cmd.Env = append(os.Environ(),
 		"AGENTX_APPLET_NAME=chat",
 		"AGENTX_SESSION_ID="+ac.SessionID,
@@ -284,48 +333,61 @@ func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return "", err
+		cancel()
+		return err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return "", err
+		cancel()
+		return err
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return "", err
+		cancel()
+		return err
 	}
 
 	if err := cmd.Start(); err != nil {
-		return "", err
+		cancel()
+		return err
 	}
 
-	request := chatBridgeRequest{Type: "prompt", Prompt: prompt}
-	if err := json.NewEncoder(stdin).Encode(request); err != nil {
-		_ = stdin.Close()
-		_ = cmd.Wait()
-		return "", err
-	}
-	_ = stdin.Close()
+	chatApplet.Cmd = cmd
+	chatApplet.Cancel = cancel
+	chatApplet.BridgeStdin = stdin
+	chatApplet.BridgeStdout = bufio.NewScanner(stdout)
+	chatApplet.DoneChan = make(chan error, 1)
+	doneChan := chatApplet.DoneChan
 
-	response, err := readChatBridgeResponse(stdout)
-	if err != nil {
-		stderrBytes, _ := io.ReadAll(stderr)
-		_ = cmd.Wait()
-		if len(stderrBytes) > 0 {
-			return "", fmt.Errorf("chat bridge response error: %w (%s)", err, strings.TrimSpace(string(stderrBytes)))
-		}
-		return "", err
-	}
+	go func(applet *AppletProcess, process *exec.Cmd, processStderr io.Reader) {
+		_, _ = io.Copy(io.Discard, processStderr)
+		err := process.Wait()
+		doneChan <- err
+	}(chatApplet, cmd, stderr)
 
-	if err := cmd.Wait(); err != nil {
-		return "", err
-	}
-
-	return response, nil
+	ac.markAppletStatus(chatApplet.Name, AppletStatusRunning, nil)
+	return nil
 }
 
-func readChatBridgeResponse(stdout io.Reader) (string, error) {
-	scanner := bufio.NewScanner(stdout)
+func (ac *AgentXCore) teardownChatBridgeProcessLocked(chatApplet *AppletProcess) {
+	if chatApplet.BridgeStdin != nil {
+		_ = chatApplet.BridgeStdin.Close()
+	}
+	if chatApplet.Cancel != nil {
+		chatApplet.Cancel()
+	}
+	if chatApplet.Cmd != nil && chatApplet.Cmd.Process != nil {
+		_ = chatApplet.Cmd.Process.Kill()
+	}
+
+	chatApplet.BridgeStdin = nil
+	chatApplet.BridgeStdout = nil
+	chatApplet.Cmd = nil
+	chatApplet.Cancel = nil
+	chatApplet.DoneChan = nil
+}
+
+func readChatBridgeResponseFromScanner(scanner *bufio.Scanner) (string, error) {
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "READY ") {

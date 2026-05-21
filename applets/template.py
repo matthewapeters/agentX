@@ -62,13 +62,18 @@ def main():
     parser.add_argument(
         "--bridge-chat", action="store_true", help="Run one-shot chat bridge mode over stdin/stdout JSONL"
     )
+    parser.add_argument(
+        "--bridge-chat-server",
+        action="store_true",
+        help="Run persistent chat bridge server mode over stdin/stdout JSONL",
+    )
     args = parser.parse_args()
 
     # Register signal handlers
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
-    if args.bridge_chat:
+    if args.bridge_chat or args.bridge_chat_server:
         print_ready()
         for raw_line in sys.stdin:
             line = raw_line.strip()
@@ -94,7 +99,8 @@ def main():
 
             print(json.dumps({"type": "response", "response": f"Echo: {prompt}"}))
             sys.stdout.flush()
-            return 0
+            if args.bridge_chat:
+                return 0
 
         print(json.dumps({"type": "error", "error": "no prompt received"}))
         sys.stdout.flush()

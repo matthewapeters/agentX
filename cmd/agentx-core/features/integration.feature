@@ -83,3 +83,20 @@ Feature: IPC router integration
     And I capture the context turns snapshot
     Then context turns should have length 1
     And context turns should include prompt "persist across restart"
+
+  Scenario: Python chat bridge process is reused across routed prompts
+    Given a temporary project directory
+    And the project contains template chat applet
+    And a core config with username "dev" and session "sess-7"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "bridge prompt one"
+    Then prompt routing should complete without error
+    And routed response should equal "Echo: bridge prompt one"
+    And I capture the tracked chat applet process pid
+    When I route input prompt "bridge prompt two"
+    Then prompt routing should complete without error
+    And routed response should equal "Echo: bridge prompt two"
+    And the tracked chat applet process pid should remain the same
