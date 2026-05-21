@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-20 (v0.60.0)_
+_Last updated: 2026-05-20 (v0.60.0.post1)_
 
 ## Overview
 
@@ -94,26 +94,19 @@ When user quits or core receives SIGTERM:
 └─────────────────────────────────────────────────────────┘
 ```
 
-### Initial Applets (Placeholders)
+### Current Runtime Behavior (Hybrid Migration Branch)
 
-1. **chat**: Display pane name and placeholder text
-2. **logs**: Display pane name and placeholder text
-3. **input**: Display pane name and placeholder text
-4. **context**: Display pane name and placeholder text
-5. **system**: Display pane name and placeholder text
+The current Go-core runtime does not yet spawn real Python applet processes in panes.
 
-Each applet is a Python template that:
-
-- Sends `READY` signal
-- Displays pane name and emoji
-- Waits for shutdown signal
-- Exits cleanly
+- Pane lifecycle is tracked in-memory by the Go supervisor (`starting|ready|running|stopped|crashed`).
+- Prompt handling is deterministic in-process routing (`Echo: <prompt>`) through the tracked `chat` handler.
+- Input command contract is implemented for `:clear`, `:q`, and normal prompt forwarding.
+- Completed turns are persisted in session context (`turns.jsonl`) and exposed by `/context`.
 
 ### Go Core Features
 
-- ✅ Create tmux session with 5 panes
-- ✅ Launch Python applets in each pane
-- ✅ Wait for `READY` signal from each applet
+- ✅ Create tmux session and deterministic pane layout (`chat`, `context`, `input`, `logs`)
+- ✅ Track pane/app lifecycle states in Go supervisor
 - ✅ Expose `/health` HTTP endpoint (port 9876)
 - ✅ Track applet lifecycle transitions and crash counts in health snapshot payloads
 - ✅ Route deterministic input prompts through chat applet handling and render responses into chat pane
@@ -146,9 +139,9 @@ go build -o ../../bin/agentx
 
 ### Phase 1: Hybrid Foundation (Current)
 
-- ✅ Go core orchestrates tmux and applets
-- ✅ Python applets run in panes
-- ✅ Placeholder functionality
+- ✅ Go core orchestrates tmux and tracked pane handlers
+- ✅ Deterministic prompt/input/context persistence path is implemented
+- ✅ Placeholder applet process model remains migration-in-progress
 
 ### Phase 2: LLM Integration
 
@@ -223,11 +216,11 @@ GET /panes
 GET /applets
 -> { "session_id": "...", "applets": [ { "name": "chat", "pane": "chat", "status": "running", "crash_count": 0 } ] }
 
+GET /context
+-> { "session_id": "...", "turn_count": 1, "turns": [ { "prompt": "...", "response": "...", "created_at": 1715974800000 } ] }
+
 POST /request-focus?pane=chat
 -> { "status": "ok" }
-
-GET /context
--> { "session": {...}, "messages": [...] }
 ```
 
 ## Testing Strategy

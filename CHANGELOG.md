@@ -5,6 +5,18 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.60.0.post1] - 2026-05-20
+
+### Documentation Changes
+
+#### Changed
+
+- Aligned runtime documentation with implemented hybrid-branch behavior.
+  - Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to reflect deterministic in-process routing and turn persistence via `/context`.
+  - Removed stale claims that Python applet process launch/`READY` signaling is already active runtime behavior.
+  - Updated endpoint examples to include current `/context` payload shape.
+- Updated `README.md` Go-core section to clearly distinguish implemented deterministic runtime path from still-pending full Python applet/LLM wiring.
+
 ## [0.60.0] - 2026-05-20
 
 ### Code Changes

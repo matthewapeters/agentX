@@ -201,6 +201,11 @@ To launch manually with attach enabled:
 
 Attached startup opens tmux on the primary `tui-chat` window (window `0`), while logs remain in a separate background window.
 
+Current hybrid-branch runtime behavior:
+
+- The Go core path currently provides deterministic in-process prompt routing (`Echo: <prompt>`), input command handling (`:clear`, `:q`), and persisted turn snapshots via `/context`.
+- Full Python applet process wiring and live LLM-backed pane behavior are still in migration and not yet the default runtime path.
+
 ### Lint and format
 
 ```bash
