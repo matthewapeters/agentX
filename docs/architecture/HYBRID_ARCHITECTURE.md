@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-21 (v0.62.0.post1)_
+_Last updated: 2026-05-21 (v0.63.0)_
 
 ## Overview
 
@@ -42,6 +42,9 @@ AGENTX_IPC_INPUT=/tmp/agentx_...  # Input FIFO path (core → applet)
 AGENTX_IPC_OUTPUT=/tmp/agentx_...  # Output FIFO path (applet → core)
 AGENTX_PROJECT_DIR=/path/to/project
 AGENTX_SESSION_DIR=/path/to/sessions/...
+AGENTX_CHAT_BACKEND=echo|ollama   # Bridge chat backend selector
+AGENTX_OLLAMA_HOST=localhost:11434 # Ollama host for bridge chat backend
+AGENTX_OLLAMA_MODEL=llama3.2       # Ollama model for bridge chat backend
 ```
 
 ### Startup Signal

@@ -129,3 +129,42 @@ func TestRouteInputPrompt_PythonBridgeProcessReusedAcrossPrompts(t *testing.T) {
 		t.Fatalf("Shutdown failed: %v", err)
 	}
 }
+
+// GIVEN chat backend is configured for Ollama with an unreachable host
+// WHEN a prompt is routed through the persistent Python bridge
+// THEN the applet falls back to deterministic echo response without failing routing.
+func TestRouteInputPrompt_OllamaBackendFallsBackToEcho(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available in test environment")
+	}
+
+	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
+	t.Setenv("AGENTX_OLLAMA_HOST", "127.0.0.1:1")
+	t.Setenv("AGENTX_OLLAMA_MODEL", "llama3.2")
+
+	projectDir := t.TempDir()
+	stageTemplateApplet(t, projectDir)
+
+	setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-ollama-fallback"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	response, err := core.RouteInputPrompt(context.Background(), "ollama fallback prompt")
+	if err != nil {
+		t.Fatalf("RouteInputPrompt failed: %v", err)
+	}
+	if response != "Echo: ollama fallback prompt" {
+		t.Fatalf("expected fallback echo response, got %q", response)
+	}
+
+	if err := core.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+}

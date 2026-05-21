@@ -326,9 +326,24 @@ func (ac *AgentXCore) ensureChatBridgeProcessLocked(chatApplet *AppletProcess) e
 
 	processCtx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(processCtx, ac.pythonExecutable, ac.chatAppletScript, "--bridge-chat-server")
+	chatBackend := strings.TrimSpace(os.Getenv("AGENTX_CHAT_BACKEND"))
+	if chatBackend == "" {
+		chatBackend = "echo"
+	}
+	ollamaHost := strings.TrimSpace(os.Getenv("AGENTX_OLLAMA_HOST"))
+	if ollamaHost == "" {
+		ollamaHost = "localhost:11434"
+	}
+	ollamaModel := strings.TrimSpace(os.Getenv("AGENTX_OLLAMA_MODEL"))
+	if ollamaModel == "" {
+		ollamaModel = "llama3.2"
+	}
 	cmd.Env = append(os.Environ(),
 		"AGENTX_APPLET_NAME=chat",
 		"AGENTX_SESSION_ID="+ac.SessionID,
+		"AGENTX_CHAT_BACKEND="+chatBackend,
+		"AGENTX_OLLAMA_HOST="+ollamaHost,
+		"AGENTX_OLLAMA_MODEL="+ollamaModel,
 	)
 
 	stdin, err := cmd.StdinPipe()

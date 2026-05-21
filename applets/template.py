@@ -21,12 +21,18 @@ import os
 import signal
 import sys
 import time
+import urllib.error
+import urllib.request
 
 # Applet metadata
 APPLET_NAME = os.getenv("AGENTX_APPLET_NAME", "template")
 SESSION_ID = os.getenv("AGENTX_SESSION_ID", "unknown")
 IPC_INPUT = os.getenv("AGENTX_IPC_INPUT", None)
 IPC_OUTPUT = os.getenv("AGENTX_IPC_OUTPUT", None)
+CHAT_BACKEND = os.getenv("AGENTX_CHAT_BACKEND", "echo").strip().lower()
+OLLAMA_HOST = os.getenv("AGENTX_OLLAMA_HOST", "localhost:11434").strip()
+OLLAMA_MODEL = os.getenv("AGENTX_OLLAMA_MODEL", "llama3.2").strip()
+OLLAMA_TIMEOUT_SEC = float(os.getenv("AGENTX_OLLAMA_TIMEOUT_SEC", "30"))
 
 # Global shutdown flag
 shutdown_requested = False
@@ -54,6 +60,58 @@ def print_output(msg: str, level: str = "info"):
     emoji = {"info": "ℹ️", "warn": "⚠️", "error": "❌", "ok": "✅"}.get(level, "•")
     print(f"[{timestamp}] {emoji} {msg}")
     sys.stdout.flush()
+
+
+def _normalize_ollama_base_url(host_or_url: str) -> str:
+    """Normalize Ollama host into an absolute base URL."""
+    value = host_or_url.strip()
+    if value.startswith("http://") or value.startswith("https://"):
+        return value.rstrip("/")
+    return f"http://{value.rstrip('/')}"
+
+
+def _chat_with_ollama(prompt: str) -> str:
+    """Send a non-streaming chat request to Ollama and return model text."""
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+    }
+    data = json.dumps(payload).encode("utf-8")
+    base_url = _normalize_ollama_base_url(OLLAMA_HOST)
+    request = urllib.request.Request(
+        url=f"{base_url}/api/chat",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    with urllib.request.urlopen(request, timeout=OLLAMA_TIMEOUT_SEC) as response:
+        body = response.read().decode("utf-8")
+
+    decoded = json.loads(body)
+    message = decoded.get("message", {})
+    content = ""
+    if isinstance(message, dict):
+        content = str(message.get("content", "")).strip()
+    if not content:
+        content = str(decoded.get("response", "")).strip()
+    if not content:
+        raise ValueError("ollama response missing content")
+    return content
+
+
+def generate_chat_response(prompt: str) -> str:
+    """Generate response using configured backend with deterministic fallback."""
+    if CHAT_BACKEND != "ollama":
+        return f"Echo: {prompt}"
+
+    try:
+        return _chat_with_ollama(prompt)
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+        # Keep the bridge responsive even when Ollama is unavailable.
+        print(f"[{APPLET_NAME}] Ollama request failed, falling back to echo: {exc}", file=sys.stderr)
+        return f"Echo: {prompt}"
 
 
 def main():
@@ -97,7 +155,8 @@ def main():
                 sys.stdout.flush()
                 continue
 
-            print(json.dumps({"type": "response", "response": f"Echo: {prompt}"}))
+            response_text = generate_chat_response(prompt)
+            print(json.dumps({"type": "response", "response": response_text}))
             sys.stdout.flush()
             if args.bridge_chat:
                 return 0

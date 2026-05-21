@@ -5,6 +5,32 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.63.0] - 2026-05-21
+
+### Code Changes
+
+#### Added
+
+- Added initial LLM-backed response capability for persistent hybrid chat bridge in `applets/template.py`.
+  - Introduced backend selection via `AGENTX_CHAT_BACKEND` (`echo` or `ollama`).
+  - Added Ollama request path using `AGENTX_OLLAMA_HOST` and `AGENTX_OLLAMA_MODEL` in bridge server mode.
+  - Added resilient deterministic fallback to `Echo:` responses if Ollama is unavailable.
+- Updated `cmd/agentx-core/core.go` to pass chat backend/model/host settings into the Python bridge process environment.
+
+### Test Changes
+
+#### Added
+
+- Extended `cmd/agentx-core/core_phase2_chat_bridge_test.go` with fallback coverage.
+  - GIVEN `AGENTX_CHAT_BACKEND=ollama` with unreachable host WHEN prompt routing occurs THEN deterministic echo fallback is returned without routing failure.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot to reflect initial LLM-backed bridge support with safe fallback behavior.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` revision stamp and environment-variable contract for bridge backend selection.
+
 ## [0.62.0.post1] - 2026-05-21
 
 ### Documentation Changes
