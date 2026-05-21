@@ -2,10 +2,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -35,16 +37,18 @@ const (
 
 // AgentXCore orchestrates the tmux session, applets, and IPC.
 type AgentXCore struct {
-	Config          *Config
-	SessionID       string
-	tmuxSessionName string
-	applets         map[string]*AppletProcess
-	inputHistory    []string
-	exitRequested   bool
-	mu              sync.RWMutex
-	startedAt       time.Time
-	healthAddr      string // Address for health endpoint
-	contextManager  *ContextManager
+	Config           *Config
+	SessionID        string
+	tmuxSessionName  string
+	applets          map[string]*AppletProcess
+	pythonExecutable string
+	chatAppletScript string
+	inputHistory     []string
+	exitRequested    bool
+	mu               sync.RWMutex
+	startedAt        time.Time
+	healthAddr       string // Address for health endpoint
+	contextManager   *ContextManager
 }
 
 // PaneStatus reports pane-level runtime state.
@@ -78,6 +82,17 @@ type ChatTurn struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+type chatBridgeRequest struct {
+	Type   string `json:"type"`
+	Prompt string `json:"prompt"`
+}
+
+type chatBridgeResponse struct {
+	Type     string `json:"type"`
+	Response string `json:"response,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
 // AppletProcess tracks a running Python applet.
 type AppletProcess struct {
 	Name         string
@@ -100,13 +115,15 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 	}
 
 	core := &AgentXCore{
-		Config:          cfg,
-		SessionID:       sessionID,
-		tmuxSessionName: fmt.Sprintf("agentx_%s_%s", cfg.Username, sessionID),
-		applets:         make(map[string]*AppletProcess),
-		inputHistory:    make([]string, 0),
-		startedAt:       time.Now(),
-		healthAddr:      "127.0.0.1:9876", // Default health endpoint
+		Config:           cfg,
+		SessionID:        sessionID,
+		tmuxSessionName:  fmt.Sprintf("agentx_%s_%s", cfg.Username, sessionID),
+		applets:          make(map[string]*AppletProcess),
+		pythonExecutable: "python3",
+		chatAppletScript: filepath.Join(cfg.ProjectDir, "applets", "template.py"),
+		inputHistory:     make([]string, 0),
+		startedAt:        time.Now(),
+		healthAddr:       "127.0.0.1:9876", // Default health endpoint
 	}
 
 	core.contextManager = NewContextManager(cfg.SessionContextDir(sessionID))
@@ -215,11 +232,16 @@ func (ac *AgentXCore) StartAppletSupervisor(ctx context.Context) error {
 			continue
 		}
 
+		handler := defaultPromptHandler(pane.Name)
+		if pane.Name == "chat" {
+			handler = ac.pythonChatPromptHandler()
+		}
+
 		ac.applets[pane.Name] = &AppletProcess{
 			Name:         pane.Name,
 			PaneName:     pane.Name,
 			Status:       AppletStatusReady,
-			HandlePrompt: defaultPromptHandler(pane.Name),
+			HandlePrompt: handler,
 			StartedAt:    time.Now(),
 		}
 	}
@@ -236,6 +258,101 @@ func defaultPromptHandler(appletName string) func(context.Context, string) (stri
 		}
 		return fmt.Sprintf("Echo: %s", trimmedPrompt), nil
 	}
+}
+
+func (ac *AgentXCore) pythonChatPromptHandler() func(context.Context, string) (string, error) {
+	return func(ctx context.Context, prompt string) (string, error) {
+		response, err := ac.routePromptViaPythonChatApplet(ctx, prompt)
+		if err != nil {
+			log.Printf("[AgentX Core] Python chat bridge unavailable, falling back to default handler: %v", err)
+			return defaultPromptHandler("chat")(ctx, prompt)
+		}
+		return response, nil
+	}
+}
+
+func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt string) (string, error) {
+	if _, err := os.Stat(ac.chatAppletScript); err != nil {
+		return "", fmt.Errorf("chat applet script unavailable: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, ac.pythonExecutable, ac.chatAppletScript, "--bridge-chat")
+	cmd.Env = append(os.Environ(),
+		"AGENTX_APPLET_NAME=chat",
+		"AGENTX_SESSION_ID="+ac.SessionID,
+	)
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return "", err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+
+	request := chatBridgeRequest{Type: "prompt", Prompt: prompt}
+	if err := json.NewEncoder(stdin).Encode(request); err != nil {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+		return "", err
+	}
+	_ = stdin.Close()
+
+	response, err := readChatBridgeResponse(stdout)
+	if err != nil {
+		stderrBytes, _ := io.ReadAll(stderr)
+		_ = cmd.Wait()
+		if len(stderrBytes) > 0 {
+			return "", fmt.Errorf("chat bridge response error: %w (%s)", err, strings.TrimSpace(string(stderrBytes)))
+		}
+		return "", err
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return "", err
+	}
+
+	return response, nil
+}
+
+func readChatBridgeResponse(stdout io.Reader) (string, error) {
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "READY ") {
+			continue
+		}
+
+		var response chatBridgeResponse
+		if err := json.Unmarshal([]byte(line), &response); err != nil {
+			continue
+		}
+
+		switch response.Type {
+		case "response":
+			return response.Response, nil
+		case "error":
+			if response.Error == "" {
+				return "", fmt.Errorf("chat bridge returned empty error")
+			}
+			return "", fmt.Errorf("chat bridge error: %s", response.Error)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+
+	return "", fmt.Errorf("chat bridge produced no response")
 }
 
 func shellSingleQuote(input string) string {

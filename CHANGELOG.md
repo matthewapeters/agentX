@@ -5,6 +5,32 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.61.0] - 2026-05-20
+
+### Code Changes
+
+#### Added
+
+- Began Phase 2 chat integration by wiring a Python bridge path for chat prompt handling.
+  - Updated `cmd/agentx-core/core.go` to route `chat` prompts through `applets/template.py --bridge-chat` when available.
+  - Added resilient fallback to deterministic in-process routing if bridge script/runtime is unavailable.
+  - Added bridge request/response parsing for JSONL stdin/stdout applet communication.
+- Updated `applets/template.py` with `--bridge-chat` mode to process one prompt from stdin and return a JSON response.
+
+### Test Changes
+
+#### Added
+
+- Added `cmd/agentx-core/core_phase2_chat_bridge_test.go`.
+  - GIVEN a project with template applet available WHEN chat prompt is routed THEN Python bridge response is returned deterministically.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot to record Phase 2 bridge kickoff.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` capability checklist to include Python chat bridge handoff.
+
 ## [0.60.0.post1] - 2026-05-20
 
 ### Documentation Changes

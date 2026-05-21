@@ -15,12 +15,12 @@ Applet Lifecycle:
 7. Applet exits cleanly
 """
 
-import os
-import sys
+import argparse
 import json
-import time
+import os
 import signal
-from pathlib import Path
+import sys
+import time
 
 # Applet metadata
 APPLET_NAME = os.getenv("AGENTX_APPLET_NAME", "template")
@@ -58,9 +58,47 @@ def print_output(msg: str, level: str = "info"):
 
 def main():
     """Main applet loop."""
+    parser = argparse.ArgumentParser(description="AgentX applet template")
+    parser.add_argument(
+        "--bridge-chat", action="store_true", help="Run one-shot chat bridge mode over stdin/stdout JSONL"
+    )
+    args = parser.parse_args()
+
     # Register signal handlers
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
+
+    if args.bridge_chat:
+        print_ready()
+        for raw_line in sys.stdin:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                request = json.loads(line)
+            except json.JSONDecodeError as exc:
+                print(json.dumps({"type": "error", "error": f"invalid json request: {exc}"}))
+                sys.stdout.flush()
+                continue
+
+            if request.get("type") != "prompt":
+                print(json.dumps({"type": "error", "error": "unsupported request type"}))
+                sys.stdout.flush()
+                continue
+
+            prompt = str(request.get("prompt", "")).strip()
+            if not prompt:
+                print(json.dumps({"type": "error", "error": "empty prompt"}))
+                sys.stdout.flush()
+                continue
+
+            print(json.dumps({"type": "response", "response": f"Echo: {prompt}"}))
+            sys.stdout.flush()
+            return 0
+
+        print(json.dumps({"type": "error", "error": "no prompt received"}))
+        sys.stdout.flush()
+        return 1
 
     print_ready()
     print_output(f"Applet '{APPLET_NAME}' started in session {SESSION_ID}")

@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-20 (v0.60.0.post1)_
+_Last updated: 2026-05-20 (v0.61.0)_
 
 ## Overview
 
@@ -98,27 +98,11 @@ When user quits or core receives SIGTERM:
 
 The current Go-core runtime does not yet spawn real Python applet processes in panes.
 
-- Pane lifecycle is tracked in-memory by the Go supervisor (`starting|ready|running|stopped|crashed`).
-- Prompt handling is deterministic in-process routing (`Echo: <prompt>`) through the tracked `chat` handler.
-- Input command contract is implemented for `:clear`, `:q`, and normal prompt forwarding.
-- Completed turns are persisted in session context (`turns.jsonl`) and exposed by `/context`.
 
 ### Go Core Features
 
-- ✅ Create tmux session and deterministic pane layout (`chat`, `context`, `input`, `logs`)
-- ✅ Track pane/app lifecycle states in Go supervisor
-- ✅ Expose `/health` HTTP endpoint (port 9876)
-- ✅ Track applet lifecycle transitions and crash counts in health snapshot payloads
-- ✅ Route deterministic input prompts through chat applet handling and render responses into chat pane
-- ✅ Parse input command contract (`:clear`, `:q`) and preserve normal prompt forwarding behavior
-- ✅ Persist minimal chat turns and expose queryable context turn snapshots via `/context`
-- ✅ Handle SIGTERM/SIGINT gracefully
-- ✅ Kill all applets and tmux session on shutdown
-- ❌ Full IPC-backed message routing (implemented later)
-- ❌ Auto-restart on crash (implemented later)
-- ❌ Python LLM features (implemented later)
 
-### Build & Run (First Iteration)
+ ✅ Python chat applet bridge path exists for prompt/response handoff (`template.py --bridge-chat`)
 
 ```bash
 # Build Go core
