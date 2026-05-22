@@ -249,10 +249,10 @@ func runDemoModeWithOptions(
 		resultText, runErr := runner(testCase)
 		runStatus := demoStatusPass
 		if runErr != nil {
-			fmt.Fprintf(writer, "\r[AgentX Demo] Result: FAIL (%v)\n", runErr)
+			fmt.Fprintf(writer, "[AgentX Demo] Result: FAIL (%v)\n", runErr)
 			runStatus = demoStatusFail
 		} else {
-			fmt.Fprintf(writer, "\r[AgentX Demo] Result: PASS (%s)\n", sanitizeDemoResultText(resultText))
+			fmt.Fprintf(writer, "[AgentX Demo] Result: PASS (%s)\n", sanitizeDemoResultText(resultText))
 		}
 
 		decision, promptErr := readDemoDecision(options.decisionCtx, inputReader, writer)

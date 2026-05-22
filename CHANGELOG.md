@@ -5,6 +5,14 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.17] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Fixed left-pane whitespace bleed in controller result lines by removing carriage-return (`\r`) prefix from DemoMode PASS/FAIL output rendering.
+
 ## [0.79.16] - 2026-05-22
 
 ### Code Changes
