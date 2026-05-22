@@ -5,6 +5,14 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.18] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Suppressed core runtime logger output during interactive split DemoMode attach to prevent core log bleed into the left controller pane.
+
 ## [0.79.17] - 2026-05-22
 
 ### Code Changes

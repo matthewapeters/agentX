@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -164,6 +165,12 @@ func main() {
 	if *demo {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
+
+		// Suppress core runtime log interleaving while tmux split demo is attached.
+		// Demo UX output is rendered by the controller pane and explicit demo prints.
+		originalLogWriter := log.Writer()
+		log.SetOutput(io.Discard)
+		defer log.SetOutput(originalLogWriter)
 
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
