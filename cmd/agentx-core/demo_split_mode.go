@@ -87,7 +87,7 @@ func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, star
 
 func buildLiveCoreMirrorArgs(coreSessionName string) []string {
 	attachScript := fmt.Sprintf(
-		`TMUX= exec tmux attach-session -r -t %s`,
+		`TMUX= tmux attach-session -r -t %s; printf '\n[AgentX Demo] demo complete. Press N or X to exit\n'; tail -f /dev/null`,
 		shellQuote(coreSessionName),
 	)
 	return []string{"bash", "-lc", attachScript}

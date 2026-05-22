@@ -24,6 +24,9 @@ type DemoTestCase struct {
 	Prompt         string
 	ApproxDuration string
 	Tags           []string
+	Given          string
+	When           string
+	Then           string
 }
 
 // DemoTestRunner executes one demo test case and returns a short result string.
@@ -73,6 +76,9 @@ func defaultDemoSequence() []DemoTestCase {
 			Prompt:         "hello from input",
 			ApproxDuration: "~15s",
 			Tags:           []string{"e2e", "routing", "context"},
+			Given:          "core session and applets are running",
+			When:           "a normal input prompt is submitted",
+			Then:           "chat and context panes both update with the same turn",
 		},
 		{
 			ID:             "e2e-002",
@@ -80,6 +86,9 @@ func defaultDemoSequence() []DemoTestCase {
 			Prompt:         ":clear",
 			ApproxDuration: "~10s",
 			Tags:           []string{"e2e", "input"},
+			Given:          "chat contains visible prior output",
+			When:           "the :clear input command is submitted",
+			Then:           "chat pane is cleared and input loop remains active",
 		},
 		{
 			ID:             "e2e-003",
@@ -87,6 +96,9 @@ func defaultDemoSequence() []DemoTestCase {
 			Prompt:         ":q",
 			ApproxDuration: "~10s",
 			Tags:           []string{"e2e", "shutdown"},
+			Given:          "controller has reached the final E2E test",
+			When:           "the :q command is submitted",
+			Then:           "live right pane exits and displays completion guidance",
 		},
 	}
 }
@@ -267,22 +279,17 @@ func runDemoModeWithOptions(
 
 func renderDemoSequence(writer io.Writer, sequence []DemoTestCase, startIndex int) {
 	fmt.Fprintln(writer, "[AgentX Demo] Mode enabled")
-	fmt.Fprintln(writer, "[AgentX Demo] Ordered test sequence:")
+	fmt.Fprintln(writer, "[AgentX Demo] Ordered test sequence (Gherkin):")
 	for idx, testCase := range sequence {
 		marker := " "
 		if idx == startIndex {
 			marker = "*"
 		}
-		fmt.Fprintf(
-			writer,
-			"  %s %d) %s - %s (%s) tags=%s\n",
-			marker,
-			idx+1,
-			testCase.ID,
-			testCase.Title,
-			testCase.ApproxDuration,
-			strings.Join(testCase.Tags, ","),
-		)
+		fmt.Fprintf(writer, "  %s %d) %s (%s)\n", marker, idx+1, testCase.ID, testCase.ApproxDuration)
+		fmt.Fprintf(writer, "      Name: %s\n", testCase.Title)
+		fmt.Fprintf(writer, "      GIVEN %s\n", testCase.Given)
+		fmt.Fprintf(writer, "      WHEN  %s\n", testCase.When)
+		fmt.Fprintf(writer, "      THEN  %s\n", testCase.Then)
 	}
 
 	fmt.Fprintf(

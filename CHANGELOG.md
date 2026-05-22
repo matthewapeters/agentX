@@ -5,6 +5,28 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.14] - 2026-05-22
+
+### Code Changes
+
+#### Changed
+
+- Refined DemoMode left-pane readability with structured Gherkin sequence output (`GIVEN/WHEN/THEN`) to reduce noisy wrapped lines and clarify expected assertions.
+- Updated split-pane sizing to keep more width available for the controller pane.
+
+#### Added
+
+- Final E2E shutdown behavior now closes the live core session on successful `e2e-003` (`:q`) in controller mode.
+- Right pane now shows explicit completion guidance after the live session exits:
+  - `"[AgentX Demo] demo complete. Press N or X to exit"`
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode tests for weighted split command and right-pane completion guidance script.
+- Updated demo harness tests for Gherkin sequence rendering.
+
 ## [0.79.13] - 2026-05-22
 
 ### Code Changes

@@ -131,7 +131,18 @@ func main() {
 		}
 
 		demoRunner := func(testCase DemoTestCase) (string, error) {
-			return submitDemoPrompt(ctx, runtimeConfig.HealthURL(), demoPromptForTestCase(testCase))
+			response, err := submitDemoPrompt(ctx, runtimeConfig.HealthURL(), demoPromptForTestCase(testCase))
+			if err != nil {
+				return "", err
+			}
+
+			if strings.TrimSpace(testCase.ID) == "e2e-003" && strings.EqualFold(strings.TrimSpace(response), "quit") {
+				if killErr := runTmux(context.Background(), "kill-session", "-t", runtimeConfig.TmuxSessionName); killErr != nil && !isTmuxMissingSessionError(killErr) {
+					return "", fmt.Errorf("failed to close live core session after final shutdown test: %w", killErr)
+				}
+			}
+
+			return response, nil
 		}
 		if err := runDemoModeWithConfigAndContext(ctx, os.Stdin, os.Stdout, *demoStart, demoRunner, runtimeConfig); err != nil {
 			if closeErr := closeCurrentTmuxSession(context.Background()); closeErr != nil {

@@ -102,6 +102,9 @@ func TestRunDemoMode_StartSelectionAndUserFailStopsSequence(t *testing.T) {
 	}
 
 	content := output.String()
+	if !strings.Contains(content, "[AgentX Demo] Ordered test sequence (Gherkin):") {
+		t.Fatalf("expected gherkin sequence heading, got:\n%s", content)
+	}
 	if !strings.Contains(content, "[AgentX Demo] Start selection: 2) e2e-002") {
 		t.Fatalf("expected selected start output, got:\n%s", content)
 	}

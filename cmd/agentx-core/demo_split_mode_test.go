@@ -173,8 +173,11 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "split-window -h -p 45 -t agentx_tester_sess-split_demo:0 bash -lc") {
 		t.Fatalf("expected weighted vertical split with live core attach command, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "TMUX= exec tmux attach-session -r -t 'agentx_tester_sess-split'") {
-		t.Fatalf("expected right pane to run nested read-only tmux attach, commands:\n%s", commands)
+	if !strings.Contains(commands, "TMUX= tmux attach-session -r -t 'agentx_tester_sess-split'") {
+		t.Fatalf("expected right pane to run nested read-only tmux attach before completion message, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[AgentX Demo] demo complete. Press N or X to exit") {
+		t.Fatalf("expected right pane completion guidance after live session exits, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "attach-session -t agentx_tester_sess-split_demo") {
 		t.Fatalf("expected final attach to split demo session, commands:\n%s", commands)
