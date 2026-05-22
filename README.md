@@ -208,7 +208,7 @@ Current hybrid-branch runtime behavior:
 
 - The Go core path currently provides deterministic in-process prompt routing (`Echo: <prompt>`), input command handling (`:clear`, `:q`), and persisted turn snapshots via `/context`.
 - Full Python applet process wiring and live LLM-backed pane behavior are still in migration and not yet the default runtime path.
-- DemoMode now opens a split tmux session: the left pane is the controller sequence/input loop, the right pane mirrors the live core session, and the controller submits prompts to the running app over `/submit`.
+- DemoMode now opens a split tmux session: the left pane is the controller sequence/input loop, the right pane mirrors the live core pane set (chat/context/input), and the controller submits prompts to the running app over `/submit`.
 - `make demo-smoke` uses the internal `--demo-headless` path so CI-style artifact validation stays deterministic while the interactive `--demo` UX is split-pane.
 
 ### Lint and format

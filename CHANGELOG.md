@@ -5,6 +5,30 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.2] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Fixed DemoMode diagnostics capture quality:
+  - session-scoped pane capture now targets only the active demo core session.
+  - `tmux display-message` invocation now uses a valid target argument ordering.
+- Improved the split DemoMode right pane:
+  - live-core mirror now renders all primary core panes (chat/context/input) instead of a single clipped pane snapshot.
+
+### Test Changes
+
+#### Changed
+
+- Updated split-pane orchestration assertions to validate multi-pane live-core mirror command behavior.
+
+### Documentation Changes
+
+#### Changed
+
+- Refreshed DemoMode notes to reflect multi-pane live-core mirror behavior and improved diagnostics scope.
+
 ## [0.79.1] - 2026-05-22
 
 ### Code Changes

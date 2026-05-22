@@ -85,7 +85,7 @@ func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, star
 
 func buildLiveCoreMirrorArgs(coreSessionName string) []string {
 	mirrorScript := fmt.Sprintf(
-		`while true; do clear; tmux capture-pane -p -t %s; sleep 0.5; done`,
+		`session=%s; while true; do clear; printf 'Live core mirror: %%s\n' "$session"; tmux list-panes -t "$session:0" -F '#{pane_id}|#{pane_title}' 2>/dev/null | while IFS='|' read -r pane_id pane_title; do [ -z "$pane_id" ] && continue; printf '\n=== %%s (%%s) ===\n' "$pane_title" "$pane_id"; tmux capture-pane -p -t "$pane_id" | tail -n 18; done; sleep 0.4; done`,
 		shellQuote(coreSessionName),
 	)
 	return []string{"bash", "-lc", mirrorScript}

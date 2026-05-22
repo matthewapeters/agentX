@@ -334,7 +334,7 @@ func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase D
 	}
 
 	paneTargets := []string{}
-	listOutput, listErr := runTmuxCommand(runtimeConfig.TmuxSessionName, "list-panes", "-a", "-F", "#{pane_id}|#{pane_title}")
+	listOutput, listErr := runTmuxCommand(runtimeConfig.TmuxSessionName, "list-panes", "-F", "#{pane_id}|#{pane_title}")
 	if listErr != nil {
 		_ = os.WriteFile(filepath.Join(artifactDir, "tmux_list_panes.error.txt"), []byte(listErr.Error()+"\n"), 0o644)
 	} else {
@@ -348,7 +348,14 @@ func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase D
 		}
 	}
 
-	displayOutput, displayErr := runTmuxCommand(runtimeConfig.TmuxSessionName, "display-message", "-p", "#{session_name}:#{window_index}.#{pane_index}")
+	displayTarget := strings.TrimSpace(runtimeConfig.TmuxSessionName)
+	var displayOutput string
+	var displayErr error
+	if displayTarget == "" {
+		displayOutput, displayErr = runTmuxCommand(runtimeConfig.TmuxSessionName, "display-message", "-p", "#{session_name}:#{window_index}.#{pane_index}")
+	} else {
+		displayOutput, displayErr = runTmuxCommand("", "display-message", "-p", "-t", displayTarget, "#{session_name}:#{window_index}.#{pane_index}")
+	}
 	if displayErr != nil {
 		_ = os.WriteFile(filepath.Join(artifactDir, "tmux_display_message.error.txt"), []byte(displayErr.Error()+"\n"), 0o644)
 	} else {

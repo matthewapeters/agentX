@@ -137,8 +137,11 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "split-window -h -t agentx_tester_sess-split_demo:0 bash -lc") {
 		t.Fatalf("expected vertical split with live core mirror loop, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "tmux capture-pane -p -t 'agentx_tester_sess-split'") {
-		t.Fatalf("expected live core capture command in mirror loop, commands:\n%s", commands)
+	if !strings.Contains(commands, "tmux list-panes -t \"$session:0\" -F") {
+		t.Fatalf("expected mirror loop to enumerate core panes, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "tmux capture-pane -p -t \"$pane_id\"") {
+		t.Fatalf("expected mirror loop to capture each core pane, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "attach-session -t agentx_tester_sess-split_demo") {
 		t.Fatalf("expected final attach to split demo session, commands:\n%s", commands)
