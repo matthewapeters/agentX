@@ -5,6 +5,23 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.81.1] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Updated DemoMode pending status marker from `[S]` to `[ ]` for not-yet-executed tests.
+- Moved stories-pane navigation instructions into the lower controller pane as the primary operator guidance.
+- Refined split controller pane clearing to use tmux-native clear/reset commands (`clear-history`, `send-keys -R`, `C-u`) with ANSI fallback to reduce resize-related display artifacts.
+
+### Test Changes
+
+#### Changed
+
+- Updated DemoMode harness tests for `[ ]` pending marker expectations.
+- Updated split-view controller tests to assert in-pane navigation guidance and non-duplicated sequence rendering.
+
 ## [0.81.0] - 2026-05-22
 
 ### Code Changes

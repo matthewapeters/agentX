@@ -381,6 +381,15 @@ func runDemoModeWithOptions(
 }
 
 func clearControllerPane(writer io.Writer) {
+	paneID := strings.TrimSpace(os.Getenv("TMUX_PANE"))
+	if paneID != "" {
+		_, _ = runTmuxCommand("", "clear-history", "-t", paneID)
+		_, _ = runTmuxCommand("", "send-keys", "-t", paneID, "-R")
+		_, _ = runTmuxCommand("", "send-keys", "-t", paneID, "C-u")
+		return
+	}
+
+	// Fallback for non-tmux test/runtime contexts.
 	fmt.Fprint(writer, "\033[H\033[2J")
 }
 
@@ -388,6 +397,7 @@ func renderControllerHeader(writer io.Writer, sequence []DemoTestCase, startInde
 	fmt.Fprintln(writer, "[AgentX Demo] Controller Pane")
 	fmt.Fprintf(writer, "[AgentX Demo] Start selection: %d) %s\n", startIndex+1, sequence[startIndex].ID)
 	fmt.Fprintln(writer, "[AgentX Demo] Decision commands: N=next, J <num>=jump, X <feedback>=fail")
+	fmt.Fprintln(writer, "[AgentX Demo] Stories navigation: Ctrl-b o (focus stories), Ctrl-b [ (scroll), Up/Down/PgUp/PgDn, q (exit), Ctrl-b o (return)")
 	fmt.Fprintln(writer)
 }
 
@@ -407,13 +417,12 @@ func writeDemoStoriesBoard(storiesFilePath string, sequence []DemoTestCase, star
 func renderDemoStoriesBoard(sequence []DemoTestCase, startIndex int, statusByTestID map[string]string, activeTestID string) string {
 	var builder strings.Builder
 	builder.WriteString("[AgentX Demo] Story Browser\n")
-	builder.WriteString("[AgentX Demo] Status markers: [S]=pending/skip, [/]=active, [P]=pass, [X]=fail\n")
-	builder.WriteString("[AgentX Demo] Scroll affordance: select this pane, then use Ctrl-b [ and PgUp/PgDn; press q to exit copy-mode.\n")
+	builder.WriteString("[AgentX Demo] Status markers: [ ]=pending/skip, [/]=active, [P]=pass, [X]=fail\n")
 	builder.WriteString("\n")
 	builder.WriteString("[AgentX Demo] Ordered test sequence (Gherkin):\n")
 
 	for idx, testCase := range sequence {
-		statusMarker := "S"
+		statusMarker := " "
 		if strings.EqualFold(strings.TrimSpace(testCase.ID), strings.TrimSpace(activeTestID)) {
 			statusMarker = "/"
 		} else {
@@ -423,7 +432,7 @@ func renderDemoStoriesBoard(sequence []DemoTestCase, startIndex int, statusByTes
 			case demoStatusFail:
 				statusMarker = "X"
 			default:
-				statusMarker = "S"
+				statusMarker = " "
 			}
 		}
 

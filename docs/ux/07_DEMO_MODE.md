@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.81.0)_
+_Last updated: 2026-05-22 (v0.81.1)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -19,17 +19,18 @@ In this release, `agentx --demo` opens a split tmux view with a split-left contr
 
 The story browser is now a live status board with explicit per-test markers:
 
-- `[S]` pending/skip
+- `[ ]` pending/skip
 - `[/]` active test
 - `[P]` pass
 - `[X]` fail
 
-The story browser supports long-list navigation via tmux copy-mode:
+Navigation instructions are rendered in the lower controller pane. The stories pane supports long-list navigation via tmux copy-mode:
 
-- select stories pane
+- `Ctrl-b o` to focus stories pane
 - `Ctrl-b` then `[` to enter copy-mode
-- `PgUp` / `PgDn` to scroll
+- arrow keys or `PgUp` / `PgDn` to scroll
 - `q` to exit copy-mode
+- `Ctrl-b o` to return to controller pane
 
 The controller submits prompts over the core `/submit` endpoint so the operator watches the actual running application respond in real time without replacing the split.
 
@@ -70,7 +71,7 @@ At demo start, the user must see:
 - Gherkin `GIVEN/WHEN/THEN` expectations for each test
 - story browser pane (left-top) remains visible while the command prompt pane (left-bottom) accepts input
 - live core session remains visible on the right for the duration of the run
-- story browser lines include per-test status marker (`[S]`, `[/]`, `[P]`, `[X]`) beside each test id
+- story browser lines include per-test status marker (`[ ]`, `[/]`, `[P]`, `[X]`) beside each test id
 
 ### Start Selection
 

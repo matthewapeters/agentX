@@ -429,7 +429,7 @@ exit 1
 func TestRunDemoModeWithConfigAndContext_SplitViewSuppressesSequenceAndClearsPane(t *testing.T) {
 	// GIVEN split-view controller mode with a stories board file
 	// WHEN the first test is marked failed using X
-	// THEN controller output is compact (no duplicated sequence) and pane-clear ANSI is emitted.
+	// THEN controller output is compact and includes split navigation guidance.
 	var output bytes.Buffer
 	input := strings.NewReader("X split mode failure feedback\n")
 	storiesFilePath := filepath.Join(t.TempDir(), "stories_board.txt")
@@ -453,11 +453,11 @@ func TestRunDemoModeWithConfigAndContext_SplitViewSuppressesSequenceAndClearsPan
 	if strings.Contains(content, "[AgentX Demo] Ordered test sequence (Gherkin):") {
 		t.Fatalf("expected split view to suppress full sequence in controller pane, got:\n%s", content)
 	}
-	if !strings.Contains(content, "\033[H\033[2J") {
-		t.Fatalf("expected split view controller pane clear ANSI sequence, got:\n%s", content)
-	}
 	if !strings.Contains(content, "[AgentX Demo] Controller Pane") {
 		t.Fatalf("expected compact controller header in split view, got:\n%s", content)
+	}
+	if !strings.Contains(content, "Stories navigation") {
+		t.Fatalf("expected stories navigation guidance in controller pane, got:\n%s", content)
 	}
 }
 
@@ -484,10 +484,10 @@ func TestRenderDemoStoriesBoard_ShowsStatusMarkers(t *testing.T) {
 	if !strings.Contains(board, "3 [X] e2e-003") {
 		t.Fatalf("expected fail marker for third test, board:\n%s", board)
 	}
-	if !strings.Contains(board, "4 [S] e2e-004") {
+	if !strings.Contains(board, "4 [ ] e2e-004") {
 		t.Fatalf("expected pending marker for unrun test, board:\n%s", board)
 	}
-	if !strings.Contains(board, "Scroll affordance") {
-		t.Fatalf("expected scroll affordance guidance in stories board, board:\n%s", board)
+	if !strings.Contains(board, "Status markers: [ ]=pending/skip") {
+		t.Fatalf("expected pending marker legend in stories board, board:\n%s", board)
 	}
 }
