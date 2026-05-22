@@ -270,6 +270,7 @@ func (ac *AgentXCore) pythonChatPromptHandler() func(context.Context, string) (s
 	return func(ctx context.Context, prompt string) (string, error) {
 		response, err := ac.routePromptViaPythonChatApplet(ctx, prompt)
 		if err != nil {
+			ac.emitBridgeLog(ctx, "bridge_fallback", err.Error())
 			log.Printf("[AgentX Core] Python chat bridge unavailable, falling back to default handler: %v", err)
 			return defaultPromptHandler("chat")(ctx, prompt)
 		}
@@ -278,12 +279,13 @@ func (ac *AgentXCore) pythonChatPromptHandler() func(context.Context, string) (s
 }
 
 func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt string) (string, error) {
-	_ = ctx
+	ac.emitBridgeLog(ctx, "bridge_route_start", fmt.Sprintf("prompt_chars=%d", len(prompt)))
 
 	ac.mu.RLock()
 	chatApplet, exists := ac.applets["chat"]
 	ac.mu.RUnlock()
 	if !exists {
+		ac.emitBridgeLog(ctx, "bridge_route_error", "chat applet not registered")
 		return "", fmt.Errorf("chat applet is not registered")
 	}
 
@@ -291,11 +293,13 @@ func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt
 	defer chatApplet.BridgeMu.Unlock()
 
 	if err := ac.ensureChatBridgeProcessLocked(chatApplet); err != nil {
+		ac.emitBridgeLog(ctx, "bridge_start_error", err.Error())
 		return "", err
 	}
 
 	request := chatBridgeRequest{Type: "prompt", Prompt: prompt}
 	if err := json.NewEncoder(chatApplet.BridgeStdin).Encode(request); err != nil {
+		ac.emitBridgeLog(ctx, "bridge_request_error", err.Error())
 		ac.teardownChatBridgeProcessLocked(chatApplet)
 		return "", err
 	}
@@ -310,14 +314,18 @@ func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt
 	select {
 	case readResult := <-readResultChan:
 		if readResult.err != nil {
+			ac.emitBridgeLog(ctx, "bridge_response_error", readResult.err.Error())
 			ac.teardownChatBridgeProcessLocked(chatApplet)
 			return "", readResult.err
 		}
+		ac.emitBridgeLog(ctx, "bridge_response_ok", fmt.Sprintf("response_chars=%d", len(readResult.response)))
 		return readResult.response, nil
 	case <-ctx.Done():
+		ac.emitBridgeLog(ctx, "bridge_canceled", ctx.Err().Error())
 		ac.teardownChatBridgeProcessLocked(chatApplet)
 		return "", ctx.Err()
 	case <-time.After(ac.chatBridgeResponseTimeout):
+		ac.emitBridgeLog(ctx, "bridge_timeout", fmt.Sprintf("timeout=%s", ac.chatBridgeResponseTimeout))
 		ac.teardownChatBridgeProcessLocked(chatApplet)
 		return "", fmt.Errorf("chat bridge response timeout after %s", ac.chatBridgeResponseTimeout)
 	}
@@ -342,6 +350,7 @@ func (ac *AgentXCore) renderChatStreamChunk(ctx context.Context, delta string) e
 	if trimmed == "" {
 		return nil
 	}
+	ac.emitBridgeLog(ctx, "bridge_chunk", fmt.Sprintf("chunk_chars=%d", len(trimmed)))
 	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote("[assistant-stream] "+trimmed))
 	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("chat"), renderCmd, "Enter"); err != nil {
 		return fmt.Errorf("failed rendering chat stream chunk: %w", err)
@@ -415,6 +424,7 @@ func (ac *AgentXCore) ensureChatBridgeProcessLocked(chatApplet *AppletProcess) e
 	chatApplet.BridgeStdin = stdin
 	chatApplet.BridgeStdout = bufio.NewScanner(stdout)
 	chatApplet.DoneChan = make(chan error, 1)
+	ac.emitBridgeLog(context.Background(), "bridge_start", "backend="+chatBackend)
 	doneChan := chatApplet.DoneChan
 
 	go func(applet *AppletProcess, process *exec.Cmd, processStderr io.Reader) {
@@ -425,6 +435,27 @@ func (ac *AgentXCore) ensureChatBridgeProcessLocked(chatApplet *AppletProcess) e
 
 	ac.markAppletStatus(chatApplet.Name, AppletStatusRunning, nil)
 	return nil
+}
+
+func (ac *AgentXCore) emitBridgeLog(ctx context.Context, event string, details string) {
+	trimmedEvent := strings.TrimSpace(event)
+	if trimmedEvent == "" {
+		trimmedEvent = "bridge_event"
+	}
+	trimmedDetails := strings.TrimSpace(details)
+	if len(trimmedDetails) > 180 {
+		trimmedDetails = trimmedDetails[:180]
+	}
+
+	message := "[bridge] event=" + trimmedEvent
+	if trimmedDetails != "" {
+		message += " details=" + trimmedDetails
+	}
+
+	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote(message))
+	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("logs"), renderCmd, "Enter"); err != nil {
+		log.Printf("[AgentX Core] Bridge log render failed: %v", err)
+	}
 }
 
 func (ac *AgentXCore) teardownChatBridgeProcessLocked(chatApplet *AppletProcess) {

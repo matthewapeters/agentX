@@ -387,6 +387,15 @@ func TestRouteInputPrompt_OllamaStreamingBackendRendersChunks(t *testing.T) {
 	if !strings.Contains(commands, "[assistant] Ollama stream reply") {
 		t.Fatalf("expected final ollama response render in tmux log, got:\n%s", commands)
 	}
+	if !strings.Contains(commands, "[bridge] event=bridge_start") {
+		t.Fatalf("expected bridge_start event in logs pane commands, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[bridge] event=bridge_chunk") {
+		t.Fatalf("expected bridge_chunk event in logs pane commands, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
+		t.Fatalf("expected bridge_response_ok event in logs pane commands, got:\n%s", commands)
+	}
 
 	if err := core.Shutdown(context.Background()); err != nil {
 		t.Fatalf("Shutdown failed: %v", err)

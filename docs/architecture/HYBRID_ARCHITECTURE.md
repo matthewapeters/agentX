@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-21 (v0.66.0)_
+_Last updated: 2026-05-22 (v0.67.0)_
 
 ## Overview
 
@@ -70,6 +70,8 @@ Messages between core and applets use JSON:
 }
 
 For bridge-chat server mode, `chunk` events are emitted incrementally during backend generation and `response` carries the final consolidated assistant text.
+
+The Go core also mirrors structured bridge lifecycle events into the logs pane (`[bridge] event=...`) to support runtime diagnosis of start, chunking, completion, timeout, and fallback behavior.
 ```
 
 ### Shutdown Protocol

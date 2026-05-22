@@ -5,6 +5,30 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.67.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Added structured bridge lifecycle logging to logs pane in `cmd/agentx-core/core.go`.
+  - Bridge now emits `[bridge] event=...` records for start, chunk receipt, response success, timeout, request/response errors, and fallback.
+  - Logging path is best-effort (does not block prompt routing on log render failures).
+
+### Test Changes
+
+#### Added
+
+- Extended `cmd/agentx-core/core_phase2_chat_bridge_test.go` to assert logs-pane bridge lifecycle events.
+  - GIVEN streaming Ollama backend routing WHEN prompt runs THEN `bridge_start`, `bridge_chunk`, and `bridge_response_ok` records are emitted.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot to include logs-pane bridge lifecycle instrumentation.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to document bridge event mirroring into logs pane.
+
 ## [0.66.0] - 2026-05-21
 
 ### Code Changes
