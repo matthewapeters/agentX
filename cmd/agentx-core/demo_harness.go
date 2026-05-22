@@ -3,9 +3,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +35,18 @@ type DemoRuntimeConfig struct {
 	Username        string
 	SessionID       string
 	TmuxSessionName string
+	HealthAddr      string
+}
+
+func (cfg DemoRuntimeConfig) HealthURL() string {
+	addr := strings.TrimSpace(cfg.HealthAddr)
+	if addr == "" {
+		addr = "127.0.0.1:9876"
+	}
+	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		return strings.TrimRight(addr, "/")
+	}
+	return "http://" + strings.TrimRight(addr, "/")
 }
 
 // DemoDiagnosticsCollector captures diagnostics artifacts when user marks a test failed.
@@ -351,6 +366,43 @@ func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase D
 	}
 
 	return []string{artifactDir}, nil
+}
+
+func submitDemoPrompt(ctx context.Context, healthURL, prompt string) (string, error) {
+	endpoint := strings.TrimRight(strings.TrimSpace(healthURL), "/") + "/submit"
+	requestBody, err := json.Marshal(map[string]string{"prompt": prompt})
+	if err != nil {
+		return "", fmt.Errorf("failed to encode demo submit request: %w", err)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create demo submit request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("failed to post demo submit request: %w", err)
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read demo submit response: %w", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("demo submit returned %s: %s", response.Status, strings.TrimSpace(string(body)))
+	}
+
+	var payload struct {
+		Response string `json:"response"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", fmt.Errorf("failed to decode demo submit response: %w", err)
+	}
+
+	return payload.Response, nil
 }
 
 func runTmuxCommand(tmuxSessionName string, args ...string) (string, error) {

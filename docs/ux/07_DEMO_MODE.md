@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.78.1)_
+_Last updated: 2026-05-22 (v0.79.0)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -11,7 +11,7 @@ It is explicitly user-visible and interactive by design.
 
 Demo mode allows the UAT team to run the current E2E terminal sequence in a live tmux/terminal session and provide per-test feedback before formal UAT closure.
 
-In this release, the live session is the actual AgentX core session, and the review loop routes real input handling through the running application.
+In this release, `agentx --demo` opens a split tmux view: the left pane is the controller sequence/input loop and the right pane attaches to the live AgentX core session. The controller submits prompts over the core `/submit` endpoint so the operator watches the actual running application respond in real time.
 
 Command-line entry contract:
 
@@ -25,6 +25,8 @@ Optional start-selection contract:
 agentx --demo --demo-start <test-id-or-index>
 ```
 
+The internal smoke gate uses `--demo-headless` to preserve deterministic artifact coverage without presenting the split-pane controller UI.
+
 ---
 
 ## Explicit Contract
@@ -34,6 +36,8 @@ agentx --demo --demo-start <test-id-or-index>
 - Demo mode runs terminal E2E scenarios in a user-visible terminal.
 - Demo mode is not a replacement for unit/integration/functional suites.
 - Demo mode is a gate before UAT sign-off and after automated E2E checks.
+- `--demo` is the interactive split-pane UX.
+- `--demo-headless` is the internal non-interactive validation path used by smoke tests.
 
 ### Sequence Presentation
 
@@ -43,6 +47,7 @@ At demo start, the user must see:
 - stable test id and short human-readable title per test
 - estimated duration per test (best-effort)
 - selected starting point (default first test)
+- controller pane must remain on the left and the live core session must remain visible on the right for the duration of the run.
 
 ### Start Selection
 
@@ -160,7 +165,7 @@ Status: COMPLETE in `tests/test_demo_smoke_headless.sh` and `Makefile`.
 2. Add headless integration tests for diagnostics artifact creation.
 3. Add terminal E2E tests for demo interaction semantics where feasible.
 4. Add a dedicated make target:
-   - `make demo-smoke` (non-interactive subset)
+   - `make demo-smoke` (non-interactive subset via `--demo-headless`)
 
 Exit criteria:
 
@@ -170,7 +175,7 @@ Exit criteria:
 ## D4 Smoke Gate
 
 - `make demo-smoke` runs the headless artifact-capture smoke path.
-- the script launches `agentx --demo`, sends `X` at the first prompt, and verifies the bundle under `logs/demo/<session>/<test>/`.
+- the script launches `agentx --demo-headless`, sends `X` at the first prompt, and verifies the bundle under `logs/demo/<session>/<test>/`.
 
 ---
 

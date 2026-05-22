@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test_demo_smoke_headless.sh
 # Headless smoke test for DemoMode artifact capture.
-# It runs the AgentX binary in --demo mode against a fake tmux executable,
+# It runs the AgentX binary in --demo-headless mode against a fake tmux executable,
 # sends X at the first prompt, and verifies deterministic artifact output.
 
 set -euo pipefail
@@ -67,7 +67,7 @@ PATH="$TMP_DIR:$PATH" \
   --project-dir "$ROOT_DIR" \
   --user "$USERNAME" \
   --session-id "$SESSION_ID" \
-  --demo \
+  --demo-headless \
   --demo-start e2e-001 \
   <<'EOF_INPUT'
 X

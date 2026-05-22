@@ -5,6 +5,37 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Added a split-pane interactive DemoMode controller:
+  - `agentx --demo` now opens an outer tmux session with a left controller pane and a right live-core pane.
+  - the controller submits test prompts to the live core via its `/submit` endpoint so the user can watch the real app respond while reviewing the sequence.
+  - `--demo-headless` preserves the internal non-interactive smoke path for deterministic artifact checks.
+
+### Test Changes
+
+#### Added
+
+- Added split-pane orchestration coverage in `cmd/agentx-core/demo_split_mode_test.go`:
+  - GIVEN a live core and fake tmux WHEN split demo mode launches THEN the controller pane and live-core attach pane are created.
+  - GIVEN a live health endpoint WHEN the controller submits a prompt THEN the routed response is returned.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated the DemoMode contract, lifecycle matrix, migration notes, and README to describe the split-pane controller layout and hidden headless smoke path.
+
+### Build and Test Changes
+
+#### Changed
+
+- `make demo-smoke` now exercises `--demo-headless` so the smoke gate remains deterministic while the user-facing `--demo` path becomes split-pane interactive.
+
 ## [0.78.0] - 2026-05-22
 
 ### Code Changes

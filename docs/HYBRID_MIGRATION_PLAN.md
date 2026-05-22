@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.78.1)_
+_Last updated: 2026-05-22 (v0.79.0)_
 
 ## Overview
 
@@ -38,6 +38,7 @@ Current state relative to recent issue verification and regression work:
 - Fault-injection permutations now cover malformed JSON bridge frames and explicit error-frame behavior with lifecycle observability assertions (unit + GoDog).
 - Backend-specific streaming edge-case assertions now cover empty chunk handling and parser-level duplicate/late-frame semantics.
 - Launch UX fix: `./bin/agentx` now attaches to the tmux TUI by default for user-facing runs (`-attach=false` remains available for headless mode).
+- Demo UX refinement: `./bin/agentx --demo` now opens a split tmux controller with the live core session on the right; the smoke gate uses `--demo-headless` to keep artifact validation deterministic.
 - Pane UX fix: applet supervisor now launches live pane applet processes for `chat`, `context`, and `input` so panes are not idle shell sessions at startup.
 - Pane affordance fix: role-specific pane behavior now routes user input through core `/submit`, displays agent output in chat pane, and surfaces context metadata in context pane.
 - Pane UX contract fix: interactive panes now suppress operational noise (READY payloads, IPC path diagnostics, shell echo traces) in favor of sanctioned user-facing output.

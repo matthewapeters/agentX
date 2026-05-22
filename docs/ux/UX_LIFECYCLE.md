@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-22 (v0.78.1)_
+_Last updated: 2026-05-22 (v0.79.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -394,7 +394,7 @@ implements it and the test that validates it.  Status legend:
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |---|---|---|---|---|---|
-| `--demo` enters DemoMode execution path | PD-17-AF-001 | `main.go` flag parse + `runDemoMode` entry path | `demo_harness_test.go` | package-level tests | ✅ |
+| `--demo` enters DemoMode execution path | PD-17-AF-001 | `main.go` flag parse + `runDemoSplitMode()` / controller entry paths | `demo_split_mode_test.go`, `demo_harness_test.go` | package-level tests | ✅ |
 | Demo sequence list shown before execution | PD-17-AF-002 | `renderDemoSequence()` ordered sequence renderer | `demo_harness_test.go` | package-level tests | ✅ |
 | Start test selection by id/index (`--demo-start`) | PD-17-AF-003 | `resolveDemoStartIndex()` selector parser | `demo_harness_test.go` | package-level tests | ✅ |
 | Per-test user feedback prompt (`N`/`X`) | PD-17-AF-004 | `readDemoDecision()` with invalid-input re-prompt in `runDemoMode()` | `demo_harness_test.go` | package-level tests | ✅ |
