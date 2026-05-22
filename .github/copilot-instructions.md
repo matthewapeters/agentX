@@ -8,6 +8,18 @@
   - Fails the build if the layout does not match the spec
 - This approach enables automated, programmatic validation of UX layout and should be used for all CLI/tmux UI affordances
 - Document the test approach and sample scripts in `tests/test_tmux_layout_headless.md` and keep instructions up to date
+
+#### Build and Clean Contract
+
+- Treat `make build` as the canonical full build wrapper for the project.
+  - `make build` should always invoke the most complete build sequence required for a user-ready artifact.
+  - When new artifact-producing steps are introduced, add them to `make build` or a build target that `make build` calls so the default build remains the fullest supported build.
+  - Add narrower build targets only for targeted developer workflows; do not let them replace the default full build wrapper.
+- Treat `make clean` as the canonical environment reset for build artifacts.
+  - When new build outputs or generated artifacts are added, update `make clean` to remove them.
+  - `make clean` should return the repository to a clean post-build state for all artifacts produced by the supported build sequence.
+- Keep these contracts synchronized with `Makefile`, `CHANGELOG.md`, and the project version when they change.
+
 # AgentX – Copilot Instructions
 
 ## What This Project Is

@@ -5,6 +5,18 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.74.4.post1] - 2026-05-22
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `.github/copilot-instructions.md` to define the build/clean contract:
+  - `make build` must remain the canonical wrapper for the most complete supported build sequence.
+  - narrower build targets may exist for targeted workflows, but they must not replace the default full build.
+  - `make clean` must be updated whenever new build artifacts are introduced so the workspace returns to a clean post-build state.
+- Added the expectation that build/clean contract changes stay synchronized with `Makefile`, `CHANGELOG.md`, and project versioning.
+
 ## [0.74.4] - 2026-05-22
 
 ### Code Changes
