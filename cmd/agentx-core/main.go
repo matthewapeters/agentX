@@ -17,7 +17,7 @@ func main() {
 		projectDir = flag.String("project-dir", ".", "Project directory for sessions and config")
 		username   = flag.String("user", os.Getenv("USER"), "Username for session isolation")
 		sessionID  = flag.String("session-id", "", "Session ID; auto-generated if empty")
-		attach     = flag.Bool("attach", false, "Attach to tmux session after startup")
+		attach     = flag.Bool("attach", true, "Attach to tmux session after startup (use -attach=false for headless mode)")
 	)
 	flag.Parse()
 

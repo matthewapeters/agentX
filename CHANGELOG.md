@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.74.1] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Updated launch UX in `cmd/agentx-core/main.go` so `./bin/agentx` attaches to the tmux TUI by default.
+- Headless operation remains available via `-attach=false` for automation or non-interactive runs.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` to note the default attach launch behavior.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to document user-facing launch semantics.
+
 ## [0.74.0] - 2026-05-22
 
 ### Code Changes
