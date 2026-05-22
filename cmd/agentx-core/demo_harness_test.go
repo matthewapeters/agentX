@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -79,7 +81,17 @@ func TestRunDemoMode_StartSelectionAndUserFailStopsSequence(t *testing.T) {
 		return "ok", nil
 	}
 
-	err := runDemoMode(input, &output, "e2e-002", runner)
+	err := runDemoModeWithOptions(
+		input,
+		&output,
+		"e2e-002",
+		runner,
+		demoModeOptions{
+			collector: func(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase) ([]string, error) {
+				return nil, nil
+			},
+		},
+	)
 	if err != nil {
 		t.Fatalf("expected demo mode to succeed, got %v", err)
 	}
@@ -95,11 +107,42 @@ func TestRunDemoMode_StartSelectionAndUserFailStopsSequence(t *testing.T) {
 	if !strings.Contains(content, "[AgentX Demo] Failed test: e2e-002") {
 		t.Fatalf("expected failed test summary, got:\n%s", content)
 	}
-	if !strings.Contains(content, "[AgentX Demo] Artifact paths: none (D3 diagnostics pending)") {
+	if !strings.Contains(content, "[AgentX Demo] Artifact paths: none") {
 		t.Fatalf("expected artifact-path summary line, got:\n%s", content)
 	}
 	if !strings.Contains(content, "[AgentX Demo] Readiness: Not ready for UAT") {
 		t.Fatalf("expected not-ready summary, got:\n%s", content)
+	}
+}
+
+func TestRunDemoMode_FailureDecisionReportsCollectedArtifactPath(t *testing.T) {
+	// GIVEN DemoMode receives a custom diagnostics collector
+	// WHEN user enters X at the first test
+	// THEN collector artifact path is printed in the summary.
+	var output bytes.Buffer
+	input := strings.NewReader("X\n")
+
+	collector := func(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase) ([]string, error) {
+		return []string{"logs/demo/test-session/e2e-001"}, nil
+	}
+
+	err := runDemoModeWithOptions(
+		input,
+		&output,
+		"",
+		nil,
+		demoModeOptions{
+			runtimeConfig: DemoRuntimeConfig{SessionID: "test-session"},
+			collector:     collector,
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected demo mode to succeed, got %v", err)
+	}
+
+	content := output.String()
+	if !strings.Contains(content, "[AgentX Demo] Artifact paths: logs/demo/test-session/e2e-001") {
+		t.Fatalf("expected collected artifact path in summary, got:\n%s", content)
 	}
 }
 
@@ -149,5 +192,81 @@ func TestRunDemoMode_AllAcceptedShowsReadyForUAT(t *testing.T) {
 	content := output.String()
 	if !strings.Contains(content, "[AgentX Demo] Readiness: Ready for UAT") {
 		t.Fatalf("expected ready summary, got:\n%s", content)
+	}
+	if !strings.Contains(content, "[AgentX Demo] Artifact paths: none") {
+		t.Fatalf("expected no-artifact summary line, got:\n%s", content)
+	}
+}
+
+func TestDefaultDemoDiagnosticsCollector_WritesArtifacts(t *testing.T) {
+	// GIVEN a fake tmux executable and a writable project directory
+	// WHEN diagnostics are collected for a failed demo test
+	// THEN deterministic artifact files are written under logs/demo/<session>/<test>.
+	tmpDir := t.TempDir()
+	tmuxScriptPath := filepath.Join(tmpDir, "tmux")
+	tmuxScript := `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "list-panes" ]]; then
+  echo '%1|chat'
+  echo '%2|context'
+  exit 0
+fi
+if [[ "$1" == "display-message" ]]; then
+  echo 'demo-session:0.0'
+  exit 0
+fi
+if [[ "$1" == "capture-pane" ]]; then
+  if [[ "$4" == "%1" ]]; then
+    echo 'chat pane content'
+  else
+    echo 'context pane content'
+  fi
+  exit 0
+fi
+echo "unexpected tmux args: $*" >&2
+exit 1
+`
+
+	if err := os.WriteFile(tmuxScriptPath, []byte(tmuxScript), 0o755); err != nil {
+		t.Fatalf("failed to write fake tmux script: %v", err)
+	}
+
+	originalPath := os.Getenv("PATH")
+	if err := os.Setenv("PATH", tmpDir+":"+originalPath); err != nil {
+		t.Fatalf("failed to set PATH: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("PATH", originalPath)
+	})
+
+	artifacts, err := defaultDemoDiagnosticsCollector(
+		DemoRuntimeConfig{
+			ProjectDir:      tmpDir,
+			SessionID:       "session-1",
+			Username:        "tester",
+			TmuxSessionName: "demo-session",
+		},
+		DemoTestCase{ID: "e2e-001", Title: "test"},
+	)
+	if err != nil {
+		t.Fatalf("expected diagnostics collector to succeed, got %v", err)
+	}
+	if len(artifacts) != 1 {
+		t.Fatalf("expected one artifact directory path, got %d", len(artifacts))
+	}
+
+	artifactDir := artifacts[0]
+	expectedFiles := []string{
+		"metadata.json",
+		"tmux_list_panes.txt",
+		"tmux_display_message.txt",
+		"pane_%1.txt",
+		"pane_%2.txt",
+	}
+
+	for _, name := range expectedFiles {
+		if _, statErr := os.Stat(filepath.Join(artifactDir, name)); statErr != nil {
+			t.Fatalf("expected artifact file %s to exist: %v", name, statErr)
+		}
 	}
 }

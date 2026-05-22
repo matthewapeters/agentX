@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.76.0)_
+_Last updated: 2026-05-22 (v0.77.0)_
 
 ## Overview
 
@@ -78,6 +78,8 @@ Status: COMPLETE (implemented in `cmd/agentx-core/demo_harness.go` with unit tes
   - pane/window metadata
   - test id/title and timestamp
 - Persist under deterministic `logs/demo/<session>/<test>/` artifact paths.
+
+Status: COMPLETE (implemented in `cmd/agentx-core/demo_harness.go` with diagnostics artifact persistence).
 
 ### D4 — Automation and Readiness
 

@@ -18,8 +18,9 @@ func main() {
 		username   = flag.String("user", os.Getenv("USER"), "Username for session isolation")
 		sessionID  = flag.String("session-id", "", "Session ID; auto-generated if empty")
 		attach     = flag.Bool("attach", true, "Attach to tmux session after startup (use -attach=false for headless mode)")
-		demo       = flag.Bool("demo", false, "Run DemoMode scaffolding and exit")
+		demo       = flag.Bool("demo", false, "Run DemoMode interactive harness")
 		demoStart  = flag.String("demo-start", "", "Demo start selector (test id or 1-based index). Requires -demo")
+		demoTmux   = flag.String("demo-tmux-session", os.Getenv("AGENTX_DEMO_TMUX_SESSION"), "tmux session name for demo diagnostics capture")
 	)
 	flag.Parse()
 
@@ -35,7 +36,13 @@ func main() {
 	}
 
 	if *demo {
-		if err := runDemoMode(os.Stdin, os.Stdout, *demoStart, nil); err != nil {
+		demoConfig := DemoRuntimeConfig{
+			ProjectDir:      *projectDir,
+			Username:        *username,
+			SessionID:       *sessionID,
+			TmuxSessionName: *demoTmux,
+		}
+		if err := runDemoModeWithConfig(os.Stdin, os.Stdout, *demoStart, nil, demoConfig); err != nil {
 			log.Fatalf("Failed to initialize demo mode: %v", err)
 		}
 		return

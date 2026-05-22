@@ -5,6 +5,41 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.77.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Implemented DemoMode D3 failure diagnostics capture in Go core:
+  - `cmd/agentx-core/demo_harness.go`
+    - added diagnostics collector flow on `X` decisions,
+    - persists deterministic artifacts under `logs/demo/<session>/<test>/`,
+    - captures metadata, tmux pane listings, display-message snapshot, and pane capture outputs,
+    - reports artifact paths in end-of-run summary.
+  - `cmd/agentx-core/main.go`
+    - added `--demo-tmux-session` (or `AGENTX_DEMO_TMUX_SESSION`) to target diagnostics capture against a specific tmux session.
+
+### Test Changes
+
+#### Added
+
+- Expanded DemoMode unit coverage in `cmd/agentx-core/demo_harness_test.go`:
+  - GIVEN custom diagnostics collector WHEN user enters `X` THEN artifact path is shown in run summary.
+  - GIVEN fake tmux executable WHEN default diagnostics collector runs THEN expected artifact files are created.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated UX and architecture docs to mark DemoMode D3 complete and PD-17 fully implemented:
+  - `docs/ux/00_INDEX.md`
+  - `docs/ux/03_PANEL_DETAILS.md`
+  - `docs/ux/07_DEMO_MODE.md`
+  - `docs/ux/UX_LIFECYCLE.md`
+  - `docs/architecture/HYBRID_ARCHITECTURE.md`
+  - `docs/HYBRID_MIGRATION_PLAN.md`
+
 ## [0.76.0] - 2026-05-22
 
 ### Code Changes

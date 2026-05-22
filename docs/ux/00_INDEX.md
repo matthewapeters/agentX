@@ -1,11 +1,11 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-22 (v0.76.0)_
+_Last updated: 2026-05-22 (v0.77.0)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-22 (v0.76.0 — DemoMode D2 per-test loop and readiness summary implemented)
+**Last updated**: 2026-05-22 (v0.77.0 — DemoMode D3 diagnostics artifacts implemented)
 **Current version**: see `pyproject.toml`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
@@ -60,9 +60,9 @@ _Last updated: 2026-05-22 (v0.76.0)_
 | PD-14 VimBridge GUI | 3 | 0 | 6 | 0 |
 | PD-15 TerminalPane GUI | 8 | 0 | 0 | 0 |
 | PD-16 TuiMirror | 8 | 0 | 0 | 0 |
-| PD-17 DemoMode | 5 | 0 | 1 | 0 |
+| PD-17 DemoMode | 6 | 0 | 0 | 0 |
 
-**Totals**: 109 ✅ · 6 ⚠️ · 9 📝 · 0 ❌
+**Totals**: 110 ✅ · 6 ⚠️ · 8 📝 · 0 ❌
 
 ---
 
@@ -85,7 +85,6 @@ _Last updated: 2026-05-22 (v0.76.0)_
 - [/] **PD-01-AF-010** — Output panel right-click copy context menu (Wayland-safe)
 - [/] **PD-02-AF-008..012** — Input panel right-click context menu: popup, Copy/Paste visibility, Copy action, Paste action
 - [/] **PD-16 (TuiMirror)** — implemented: config + NullGUI path, bridge I/O, launcher lifecycle, and traceability/test reconciliation completed
-- [ ] **PD-17 (DemoMode)** — implement D3: failure pane-dump diagnostics artifact bundle on `X`.
 - [ ] **PD-16 migration (planned)** — invert launcher default to TUI-first, add `--gui` opt-in path, and reconcile docs/ux artifacts per `06_TUI_MIRROR.md §12.6`
 
 ---

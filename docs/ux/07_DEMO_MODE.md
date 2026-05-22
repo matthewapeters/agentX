@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.76.0)_
+_Last updated: 2026-05-22 (v0.77.0)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -118,8 +118,8 @@ Status: COMPLETE in `cmd/agentx-core`.
 
 Exit criteria:
 
-- `agentx --demo` prints ordered sequence and exits with clear scaffolding notice.
-- `agentx --demo --demo-start` validates test id/index and highlights selected start point.
+- `agentx --demo` presents ordered sequence before interactive test execution.
+- `agentx --demo --demo-start` validates test id/index and begins from the selected start point.
 
 ### Phase D2 — Interactive Execution Loop
 
@@ -138,6 +138,8 @@ Exit criteria:
 - starting from arbitrary index/id is functional.
 
 ### Phase D3 — Failure Diagnostics
+
+Status: COMPLETE in `cmd/agentx-core/demo_harness.go`.
 
 1. On `X`, run pane capture bundle:
    - `tmux list-panes`, `tmux display-message`, `tmux capture-pane` for each pane.

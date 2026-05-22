@@ -3,10 +3,15 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DemoTestCase defines one demo scenario entry shown to users.
@@ -19,6 +24,22 @@ type DemoTestCase struct {
 
 // DemoTestRunner executes one demo test case and returns a short result string.
 type DemoTestRunner func(DemoTestCase) (string, error)
+
+// DemoRuntimeConfig contains runtime values needed for diagnostics capture.
+type DemoRuntimeConfig struct {
+	ProjectDir      string
+	Username        string
+	SessionID       string
+	TmuxSessionName string
+}
+
+// DemoDiagnosticsCollector captures diagnostics artifacts when user marks a test failed.
+type DemoDiagnosticsCollector func(DemoRuntimeConfig, DemoTestCase) ([]string, error)
+
+type demoModeOptions struct {
+	runtimeConfig DemoRuntimeConfig
+	collector     DemoDiagnosticsCollector
+}
 
 // defaultDemoSequence returns the stable, ordered demo manifest for D1.
 func defaultDemoSequence() []DemoTestCase {
@@ -75,8 +96,37 @@ func resolveDemoStartIndex(sequence []DemoTestCase, selector string) (int, error
 
 // runDemoMode executes the D2 interactive review loop for selected demo tests.
 func runDemoMode(reader io.Reader, writer io.Writer, startSelector string, runner DemoTestRunner) error {
+	return runDemoModeWithOptions(reader, writer, startSelector, runner, demoModeOptions{})
+}
+
+func runDemoModeWithConfig(
+	reader io.Reader,
+	writer io.Writer,
+	startSelector string,
+	runner DemoTestRunner,
+	runtimeConfig DemoRuntimeConfig,
+) error {
+	return runDemoModeWithOptions(
+		reader,
+		writer,
+		startSelector,
+		runner,
+		demoModeOptions{runtimeConfig: runtimeConfig},
+	)
+}
+
+func runDemoModeWithOptions(
+	reader io.Reader,
+	writer io.Writer,
+	startSelector string,
+	runner DemoTestRunner,
+	options demoModeOptions,
+) error {
 	if runner == nil {
 		runner = defaultDemoTestRunner
+	}
+	if options.collector == nil {
+		options.collector = defaultDemoDiagnosticsCollector
 	}
 
 	sequence := defaultDemoSequence()
@@ -91,6 +141,7 @@ func runDemoMode(reader io.Reader, writer io.Writer, startSelector string, runne
 	runCount := 0
 	acceptedCount := 0
 	failedTestID := ""
+	artifactPaths := []string{}
 
 	inputReader := bufio.NewReader(reader)
 	for idx := startIndex; idx < len(sequence); idx++ {
@@ -120,6 +171,13 @@ func runDemoMode(reader io.Reader, writer io.Writer, startSelector string, runne
 
 		if decision == "X" {
 			failedTestID = testCase.ID
+			capturedPaths, captureErr := options.collector(options.runtimeConfig, testCase)
+			if len(capturedPaths) > 0 {
+				artifactPaths = capturedPaths
+			}
+			if captureErr != nil {
+				fmt.Fprintf(writer, "[AgentX Demo] Diagnostics capture failed: %v\n", captureErr)
+			}
 			fmt.Fprintf(writer, "[AgentX Demo] Marked failed by user at %s\n", testCase.ID)
 			break
 		}
@@ -128,7 +186,7 @@ func runDemoMode(reader io.Reader, writer io.Writer, startSelector string, runne
 		fmt.Fprintf(writer, "[AgentX Demo] Accepted %s, advancing\n", testCase.ID)
 	}
 
-	renderDemoSummary(writer, selectedCount, runCount, acceptedCount, failedTestID)
+	renderDemoSummary(writer, selectedCount, runCount, acceptedCount, failedTestID, artifactPaths)
 	return nil
 }
 
@@ -177,12 +235,16 @@ func readDemoDecision(reader *bufio.Reader, writer io.Writer) (string, error) {
 	}
 }
 
-func renderDemoSummary(writer io.Writer, selectedCount, runCount, acceptedCount int, failedTestID string) {
+func renderDemoSummary(writer io.Writer, selectedCount, runCount, acceptedCount int, failedTestID string, artifactPaths []string) {
 	fmt.Fprintln(writer, "[AgentX Demo] Run summary:")
 	fmt.Fprintf(writer, "[AgentX Demo] Selected tests: %d\n", selectedCount)
 	fmt.Fprintf(writer, "[AgentX Demo] Tests run: %d\n", runCount)
 	fmt.Fprintf(writer, "[AgentX Demo] Accepted tests: %d\n", acceptedCount)
-	fmt.Fprintln(writer, "[AgentX Demo] Artifact paths: none (D3 diagnostics pending)")
+	if len(artifactPaths) == 0 {
+		fmt.Fprintln(writer, "[AgentX Demo] Artifact paths: none")
+	} else {
+		fmt.Fprintf(writer, "[AgentX Demo] Artifact paths: %s\n", strings.Join(artifactPaths, ", "))
+	}
 	if failedTestID != "" {
 		fmt.Fprintf(writer, "[AgentX Demo] Failed test: %s\n", failedTestID)
 		fmt.Fprintln(writer, "[AgentX Demo] Readiness: Not ready for UAT")
@@ -199,4 +261,106 @@ func renderDemoSummary(writer io.Writer, selectedCount, runCount, acceptedCount 
 
 func defaultDemoTestRunner(testCase DemoTestCase) (string, error) {
 	return "scaffold execution placeholder", nil
+}
+
+func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase) ([]string, error) {
+	projectDir := strings.TrimSpace(runtimeConfig.ProjectDir)
+	if projectDir == "" {
+		return nil, nil
+	}
+
+	sessionID := strings.TrimSpace(runtimeConfig.SessionID)
+	if sessionID == "" {
+		sessionID = fmt.Sprintf("demo_%d", time.Now().Unix())
+	}
+
+	artifactDir := filepath.Join(projectDir, "logs", "demo", sanitizePathComponent(sessionID), sanitizePathComponent(testCase.ID))
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create diagnostics directory: %w", err)
+	}
+
+	metadata := map[string]string{
+		"session_id":        sessionID,
+		"test_id":           testCase.ID,
+		"test_title":        testCase.Title,
+		"username":          runtimeConfig.Username,
+		"tmux_session_name": runtimeConfig.TmuxSessionName,
+		"timestamp_utc":     time.Now().UTC().Format(time.RFC3339),
+	}
+
+	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode diagnostics metadata: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "metadata.json"), metadataJSON, 0o644); err != nil {
+		return nil, fmt.Errorf("failed to write diagnostics metadata: %w", err)
+	}
+
+	paneTargets := []string{}
+	listOutput, listErr := runTmuxCommand(runtimeConfig.TmuxSessionName, "list-panes", "-a", "-F", "#{pane_id}|#{pane_title}")
+	if listErr != nil {
+		_ = os.WriteFile(filepath.Join(artifactDir, "tmux_list_panes.error.txt"), []byte(listErr.Error()+"\n"), 0o644)
+	} else {
+		_ = os.WriteFile(filepath.Join(artifactDir, "tmux_list_panes.txt"), []byte(listOutput), 0o644)
+		for _, line := range strings.Split(strings.TrimSpace(listOutput), "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			parts := strings.SplitN(line, "|", 2)
+			paneTargets = append(paneTargets, strings.TrimSpace(parts[0]))
+		}
+	}
+
+	displayOutput, displayErr := runTmuxCommand(runtimeConfig.TmuxSessionName, "display-message", "-p", "#{session_name}:#{window_index}.#{pane_index}")
+	if displayErr != nil {
+		_ = os.WriteFile(filepath.Join(artifactDir, "tmux_display_message.error.txt"), []byte(displayErr.Error()+"\n"), 0o644)
+	} else {
+		_ = os.WriteFile(filepath.Join(artifactDir, "tmux_display_message.txt"), []byte(displayOutput), 0o644)
+	}
+
+	for _, paneTarget := range paneTargets {
+		captureOutput, captureErr := runTmuxCommand(runtimeConfig.TmuxSessionName, "capture-pane", "-p", "-t", paneTarget)
+		capturePath := filepath.Join(artifactDir, fmt.Sprintf("pane_%s.txt", sanitizePathComponent(paneTarget)))
+		if captureErr != nil {
+			_ = os.WriteFile(capturePath, []byte("capture error: "+captureErr.Error()+"\n"), 0o644)
+			continue
+		}
+		_ = os.WriteFile(capturePath, []byte(captureOutput), 0o644)
+	}
+
+	return []string{artifactDir}, nil
+}
+
+func runTmuxCommand(tmuxSessionName string, args ...string) (string, error) {
+	commandArgs := make([]string, 0, len(args)+2)
+	commandArgs = append(commandArgs, args...)
+	hasExplicitTarget := false
+	for idx, value := range commandArgs {
+		if value == "-t" && idx+1 < len(commandArgs) {
+			hasExplicitTarget = true
+			break
+		}
+	}
+
+	if strings.TrimSpace(tmuxSessionName) != "" && !hasExplicitTarget {
+		commandArgs = append(commandArgs, "-t", tmuxSessionName)
+	}
+
+	cmd := exec.Command("tmux", commandArgs...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("tmux %s failed: %w (%s)", strings.Join(commandArgs, " "), err, strings.TrimSpace(string(output)))
+	}
+
+	return string(output), nil
+}
+
+func sanitizePathComponent(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "unknown"
+	}
+	cleaned := strings.ReplaceAll(trimmed, "/", "_")
+	cleaned = strings.ReplaceAll(cleaned, " ", "_")
+	return cleaned
 }

@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-22 (v0.76.0)_
+_Last updated: 2026-05-22 (v0.77.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -398,7 +398,7 @@ implements it and the test that validates it.  Status legend:
 | Demo sequence list shown before execution | PD-17-AF-002 | `renderDemoSequence()` ordered sequence renderer | `demo_harness_test.go` | package-level tests | ✅ |
 | Start test selection by id/index (`--demo-start`) | PD-17-AF-003 | `resolveDemoStartIndex()` selector parser | `demo_harness_test.go` | package-level tests | ✅ |
 | Per-test user feedback prompt (`N`/`X`) | PD-17-AF-004 | `readDemoDecision()` with invalid-input re-prompt in `runDemoMode()` | `demo_harness_test.go` | package-level tests | ✅ |
-| `X` triggers pane/metadata dump artifact bundle | PD-17-AF-005 | diagnostics capture pipeline (planned) | — | — | 📝 |
+| `X` triggers pane/metadata dump artifact bundle | PD-17-AF-005 | `defaultDemoDiagnosticsCollector()` tmux capture + metadata/log persistence | `demo_harness_test.go` | package-level tests | ✅ |
 | End-of-run readiness and artifact summary output | PD-17-AF-006 | `renderDemoSummary()` readiness and artifact-path line | `demo_harness_test.go` | package-level tests | ✅ |
 
 Planned follow-up for PD-16 default-behavior migration is documented in
@@ -710,9 +710,7 @@ tests.
 
 ### High Priority (visible to users, behaviour is non-trivial)
 
-| Affordance ID | Description |
-|---------------|-------------|
-| PD-17-AF-005 | DemoMode failure diagnostics artifact bundle (`X` pane/metadata capture to logs) |
+_(No outstanding high-priority gaps.)_
 
 ### Medium Priority (settings / configuration)
 
