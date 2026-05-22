@@ -1,6 +1,6 @@
 # AgentX — Panel Details
 
-_Last updated: 2026-05-22 (v0.78.0)_
+_Last updated: 2026-05-22 (v0.78.1)_
 
 Detailed affordance specifications for each GUI panel/widget.  Each section
 documents the widget's purpose, all user-visible controls, and the callback

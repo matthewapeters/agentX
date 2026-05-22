@@ -11,7 +11,6 @@ BIN_PATH="$ROOT_DIR/bin/agentx"
 TMP_DIR="$(mktemp -d)"
 USERNAME="demo-smoke"
 SESSION_ID="smoke_${RANDOM}_$$"
-TMUX_SESSION="demo_smoke_session"
 ARTIFACT_DIR="$ROOT_DIR/logs/demo/$SESSION_ID/e2e-001"
 
 cleanup() {
@@ -53,7 +52,7 @@ if [[ "$1" == "capture-pane" ]]; then
   exit 0
 fi
 
-if [[ "$1" == "new-session" || "$1" == "select-pane" || "$1" == "split-window" || "$1" == "new-window" || "$1" == "select-window" ]]; then
+if [[ "$1" == "new-session" || "$1" == "select-pane" || "$1" == "split-window" || "$1" == "new-window" || "$1" == "select-window" || "$1" == "respawn-pane" || "$1" == "send-keys" ]]; then
   exit 0
 fi
 
@@ -70,7 +69,6 @@ PATH="$TMP_DIR:$PATH" \
   --session-id "$SESSION_ID" \
   --demo \
   --demo-start e2e-001 \
-  --demo-tmux-session "$TMUX_SESSION" \
   <<'EOF_INPUT'
 X
 EOF_INPUT

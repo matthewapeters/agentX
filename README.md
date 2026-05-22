@@ -208,6 +208,7 @@ Current hybrid-branch runtime behavior:
 
 - The Go core path currently provides deterministic in-process prompt routing (`Echo: <prompt>`), input command handling (`:clear`, `:q`), and persisted turn snapshots via `/context`.
 - Full Python applet process wiring and live LLM-backed pane behavior are still in migration and not yet the default runtime path.
+- DemoMode now boots the live tmux-backed core session, routes actual input lines through the running app, and still keeps the per-test N/X review loop and artifact capture.
 
 ### Lint and format
 

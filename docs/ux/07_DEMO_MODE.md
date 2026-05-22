@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.78.0)_
+_Last updated: 2026-05-22 (v0.78.1)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -10,6 +10,8 @@ It is explicitly user-visible and interactive by design.
 ## Purpose
 
 Demo mode allows the UAT team to run the current E2E terminal sequence in a live tmux/terminal session and provide per-test feedback before formal UAT closure.
+
+In this release, the live session is the actual AgentX core session, and the review loop routes real input handling through the running application.
 
 Command-line entry contract:
 

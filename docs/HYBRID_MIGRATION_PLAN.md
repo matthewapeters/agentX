@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.78.0)_
+_Last updated: 2026-05-22 (v0.78.1)_
 
 ## Overview
 

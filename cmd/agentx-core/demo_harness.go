@@ -18,6 +18,7 @@ import (
 type DemoTestCase struct {
 	ID             string
 	Title          string
+	Prompt         string
 	ApproxDuration string
 	Tags           []string
 }
@@ -47,21 +48,42 @@ func defaultDemoSequence() []DemoTestCase {
 		{
 			ID:             "e2e-001",
 			Title:          "Prompt route updates chat and context",
+			Prompt:         "hello from input",
 			ApproxDuration: "~15s",
 			Tags:           []string{"e2e", "routing", "context"},
 		},
 		{
 			ID:             "e2e-002",
 			Title:          "Input command contract clear/quit",
+			Prompt:         ":clear",
 			ApproxDuration: "~10s",
 			Tags:           []string{"e2e", "input"},
 		},
 		{
 			ID:             "e2e-003",
 			Title:          "Session shutdown path",
+			Prompt:         ":q",
 			ApproxDuration: "~10s",
 			Tags:           []string{"e2e", "shutdown"},
 		},
+	}
+}
+
+func demoPromptForTestCase(testCase DemoTestCase) string {
+	trimmed := strings.TrimSpace(testCase.Prompt)
+	if trimmed != "" {
+		return trimmed
+	}
+
+	switch testCase.ID {
+	case "e2e-001":
+		return "hello from input"
+	case "e2e-002":
+		return ":clear"
+	case "e2e-003":
+		return ":q"
+	default:
+		return strings.TrimSpace(testCase.Title)
 	}
 }
 
