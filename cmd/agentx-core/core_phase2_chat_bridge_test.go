@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -200,6 +201,90 @@ for raw_line in sys.stdin:
 
 	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("failed to write error-frame bridge applet: %v", err)
+	}
+
+	return scriptPath
+}
+
+func stageEmptyChunkBridgeApplet(t *testing.T, projectDir string) string {
+	t.Helper()
+
+	appletsDir := filepath.Join(projectDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		t.Fatalf("failed to create applets dir: %v", err)
+	}
+
+	scriptPath := filepath.Join(appletsDir, "empty_chunk_bridge.py")
+	script := `#!/usr/bin/env python3
+import argparse
+import json
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--bridge-chat-server", action="store_true")
+args = parser.parse_args()
+
+print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
+sys.stdout.flush()
+
+for raw_line in sys.stdin:
+    if not raw_line.strip():
+        continue
+    req = json.loads(raw_line)
+    if req.get("type") != "prompt":
+        continue
+
+    prompt = req.get("prompt", "")
+    print(json.dumps({"type": "chunk", "delta": "   "}))
+    sys.stdout.flush()
+    print(json.dumps({"type": "response", "response": f"Empty-chunk recovered: {prompt}"}))
+    sys.stdout.flush()
+`
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write empty-chunk bridge applet: %v", err)
+	}
+
+	return scriptPath
+}
+
+func stageDuplicateResponseBridgeApplet(t *testing.T, projectDir string) string {
+	t.Helper()
+
+	appletsDir := filepath.Join(projectDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		t.Fatalf("failed to create applets dir: %v", err)
+	}
+
+	scriptPath := filepath.Join(appletsDir, "duplicate_response_bridge.py")
+	script := `#!/usr/bin/env python3
+import argparse
+import json
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--bridge-chat-server", action="store_true")
+args = parser.parse_args()
+
+print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
+sys.stdout.flush()
+
+for raw_line in sys.stdin:
+    if not raw_line.strip():
+        continue
+    req = json.loads(raw_line)
+    if req.get("type") != "prompt":
+        continue
+
+    prompt = req.get("prompt", "")
+    print(json.dumps({"type": "response", "response": f"Primary response: {prompt}"}))
+    sys.stdout.flush()
+    print(json.dumps({"type": "response", "response": f"Secondary response: {prompt}"}))
+    sys.stdout.flush()
+`
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write duplicate-response bridge applet: %v", err)
 	}
 
 	return scriptPath
@@ -719,5 +804,135 @@ func TestRouteInputPrompt_ErrorFrameFallbackThenRecovery(t *testing.T) {
 
 	if err := core.Shutdown(context.Background()); err != nil {
 		t.Fatalf("Shutdown failed: %v", err)
+	}
+}
+
+// GIVEN a bridge response stream that includes empty chunk payloads
+// WHEN a prompt is routed through the bridge
+// THEN empty chunks do not render stream output while final response and persistence still succeed.
+func TestRouteInputPrompt_EmptyChunkIgnoredWithPersistence(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available in test environment")
+	}
+
+	projectDir := t.TempDir()
+	scriptPath := stageEmptyChunkBridgeApplet(t, projectDir)
+
+	logPath := setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-empty-chunk"}
+	core := NewAgentXCore(cfg)
+	core.chatAppletScript = scriptPath
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	response, err := core.RouteInputPrompt(context.Background(), "empty chunk route")
+	if err != nil {
+		t.Fatalf("RouteInputPrompt failed: %v", err)
+	}
+	if response != "Empty-chunk recovered: empty chunk route" {
+		t.Fatalf("unexpected response %q", response)
+	}
+
+	turns := core.ContextTurnsSnapshot()
+	if len(turns) != 1 {
+		t.Fatalf("expected one persisted turn, got %d", len(turns))
+	}
+	if turns[0].Response != "Empty-chunk recovered: empty chunk route" {
+		t.Fatalf("expected persisted response to match final response, got %q", turns[0].Response)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if strings.Contains(commands, "[assistant-stream]") {
+		t.Fatalf("did not expect assistant stream render for empty chunks, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=bridge_chunk") {
+		t.Fatalf("did not expect bridge_chunk events for empty chunks, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
+		t.Fatalf("expected bridge_response_ok event, got:\n%s", commands)
+	}
+
+	if err := core.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+}
+
+// GIVEN a bridge response stream with duplicate response frames
+// WHEN parsing bridge output
+// THEN the first response frame is authoritative.
+func TestReadChatBridgeResponseFromScanner_DuplicateResponseUsesFirst(t *testing.T) {
+	t.Parallel()
+
+	scanner := bufio.NewScanner(strings.NewReader(strings.Join([]string{
+		`READY {"type":"ready"}`,
+		`{"type":"response","response":"primary"}`,
+		`{"type":"response","response":"secondary"}`,
+	}, "\n")))
+
+	result := readChatBridgeResponseFromScanner(scanner, nil)
+	if result.err != nil {
+		t.Fatalf("expected no error, got %v", result.err)
+	}
+	if result.response != "primary" {
+		t.Fatalf("expected primary response, got %q", result.response)
+	}
+}
+
+// GIVEN a bridge stream containing malformed frames before valid frames
+// WHEN parsing bridge output
+// THEN malformed frames are ignored and valid chunk/response frames are processed.
+func TestReadChatBridgeResponseFromScanner_MalformedFramesIgnored(t *testing.T) {
+	t.Parallel()
+
+	chunks := []string{}
+	scanner := bufio.NewScanner(strings.NewReader(strings.Join([]string{
+		`READY {"type":"ready"}`,
+		`not-json`,
+		`{"type":"chunk","delta":"valid"}`,
+		`{"type":"response","response":"valid response"}`,
+	}, "\n")))
+
+	result := readChatBridgeResponseFromScanner(scanner, func(delta string) error {
+		chunks = append(chunks, delta)
+		return nil
+	})
+	if result.err != nil {
+		t.Fatalf("expected no error, got %v", result.err)
+	}
+	if result.response != "valid response" {
+		t.Fatalf("unexpected response %q", result.response)
+	}
+	if len(chunks) != 1 || chunks[0] != "valid" {
+		t.Fatalf("expected one valid chunk callback, got %v", chunks)
+	}
+}
+
+// GIVEN a bridge stream with a terminal response followed by late error frame
+// WHEN parsing bridge output
+// THEN terminal response is returned and late frames are ignored for that parse cycle.
+func TestReadChatBridgeResponseFromScanner_LateErrorAfterResponseIgnored(t *testing.T) {
+	t.Parallel()
+
+	scanner := bufio.NewScanner(strings.NewReader(strings.Join([]string{
+		`READY {"type":"ready"}`,
+		`{"type":"response","response":"done"}`,
+		`{"type":"error","error":"late"}`,
+	}, "\n")))
+
+	result := readChatBridgeResponseFromScanner(scanner, nil)
+	if result.err != nil {
+		t.Fatalf("expected no error, got %v", result.err)
+	}
+	if result.response != "done" {
+		t.Fatalf("expected done response, got %q", result.response)
 	}
 }

@@ -5,6 +5,36 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.74.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Expanded backend streaming edge-case coverage in:
+  - `cmd/agentx-core/core_phase2_chat_bridge_test.go`
+  - `cmd/agentx-core/features/integration.feature`
+  - `cmd/agentx-core/godog_test.go`
+
+### Test Changes
+
+#### Added
+
+- Added route-level test: empty chunk frames are ignored while final response persists and `bridge_response_ok` is emitted without `bridge_chunk` events.
+- Added parser-level tests for deterministic stream semantics:
+  - duplicate response frames use the first response as authoritative,
+  - malformed frames are ignored when valid frames follow,
+  - late error frame after terminal response is ignored within that parse cycle.
+- Added GoDog integration scenario for empty-chunk behavior with observability assertions (`bridge_response_ok` present; `bridge_chunk`/stream render absent).
+- Added BDD fixture support for empty-chunk bridge applet.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with backend-specific streaming edge-case milestone.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` with parser-level duplicate/late-frame handling notes.
+
 ## [0.73.0] - 2026-05-22
 
 ### Code Changes

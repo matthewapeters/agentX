@@ -193,3 +193,19 @@ Feature: IPC router integration
     And tmux command snippet "[bridge] event=bridge_response_error" should appear before "[bridge] event=bridge_fallback"
     And tmux command snippet "[bridge] event=bridge_fallback" should appear before "[bridge] event=bridge_response_ok"
     And tmux commands should include "[bridge] event=bridge_start" at least 2 times
+
+  Scenario: Empty chunk frames do not emit stream chunk events
+    Given a temporary project directory
+    And the project contains empty-chunk chat bridge applet
+    And a core config with username "dev" and session "sess-13"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I configure core chat bridge to use prepared applet script with timeout 300 ms
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "empty chunk integration"
+    Then prompt routing should complete without error
+    And routed response should equal "Empty recovered: empty chunk integration"
+    And tmux commands should include "[bridge] event=bridge_response_ok"
+    And tmux commands should not include "[bridge] event=bridge_chunk"
+    And tmux commands should not include "[assistant-stream]"

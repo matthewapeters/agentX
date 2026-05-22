@@ -207,6 +207,46 @@ for raw_line in sys.stdin:
 	return scriptPath, nil
 }
 
+func stageEmptyChunkBridgeAppletBDD(projectDir string) (string, error) {
+	appletsDir := filepath.Join(projectDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create applets dir: %w", err)
+	}
+
+	scriptPath := filepath.Join(appletsDir, "empty_chunk_bridge.py")
+	script := `#!/usr/bin/env python3
+import argparse
+import json
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--bridge-chat-server", action="store_true")
+args = parser.parse_args()
+
+print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
+sys.stdout.flush()
+
+for raw_line in sys.stdin:
+	if not raw_line.strip():
+		continue
+	req = json.loads(raw_line)
+	if req.get("type") != "prompt":
+		continue
+
+	prompt = req.get("prompt", "")
+	print(json.dumps({"type": "chunk", "delta": "   "}))
+	sys.stdout.flush()
+	print(json.dumps({"type": "response", "response": f"Empty recovered: {prompt}"}))
+	sys.stdout.flush()
+`
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		return "", fmt.Errorf("failed to write empty-chunk bridge applet: %w", err)
+	}
+
+	return scriptPath, nil
+}
+
 func (s *bddState) theProjectContainsTemplateChatApplet() error {
 	if s.tmpDir == "" {
 		return errors.New("temporary project directory not initialized")
@@ -273,6 +313,20 @@ func (s *bddState) theProjectContainsErrorFrameChatBridgeApplet() error {
 	}
 
 	scriptPath, err := stageErrorFrameBridgeAppletBDD(s.tmpDir)
+	if err != nil {
+		return err
+	}
+
+	s.bridgeScript = scriptPath
+	return nil
+}
+
+func (s *bddState) theProjectContainsEmptyChunkChatBridgeApplet() error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+
+	scriptPath, err := stageEmptyChunkBridgeAppletBDD(s.tmpDir)
 	if err != nil {
 		return err
 	}
@@ -854,6 +908,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^the project contains flaky chat bridge applet$`, state.theProjectContainsFlakyChatBridgeApplet)
 	ctx.Step(`^the project contains malformed chat bridge applet$`, state.theProjectContainsMalformedChatBridgeApplet)
 	ctx.Step(`^the project contains error-frame chat bridge applet$`, state.theProjectContainsErrorFrameChatBridgeApplet)
+	ctx.Step(`^the project contains empty-chunk chat bridge applet$`, state.theProjectContainsEmptyChunkChatBridgeApplet)
 	ctx.Step(`^a config with username "([^"]*)"$`, state.aConfigWithUsername)
 	ctx.Step(`^I ensure session directories for session "([^"]*)"$`, state.iEnsureSessionDirectoriesForSession)
 	ctx.Step(`^the session directory structure should exist$`, state.theSessionDirectoryStructureShouldExist)
