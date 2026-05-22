@@ -5,6 +5,16 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.7] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Polished split DemoMode interaction and shutdown UX:
+  - per-test `N/X` decision prompt now always starts on a new line so cursor placement is deterministic.
+  - split-session cleanup now uses captured tmux kill output, suppressing noisy `can't find session` terminal bleed when the demo session is already closed.
+
 ## [0.79.6] - 2026-05-22
 
 ### Code Changes

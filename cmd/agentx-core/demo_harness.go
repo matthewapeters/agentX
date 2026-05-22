@@ -282,7 +282,7 @@ func readDemoDecision(decisionCtx context.Context, reader *bufio.Reader, writer 
 		default:
 		}
 
-		fmt.Fprint(writer, "[AgentX Demo] Enter decision [N=next, X=fail]: ")
+		fmt.Fprint(writer, "\n[AgentX Demo] Enter decision [N=next, X=fail]: ")
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			return "", fmt.Errorf("failed to read demo decision: %w", err)

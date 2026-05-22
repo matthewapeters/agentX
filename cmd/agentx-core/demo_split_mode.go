@@ -59,7 +59,7 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	fmt.Printf("[AgentX Demo] Attach to the split demo session with: tmux attach -t %s\n", demoSessionName)
 
 	attachErr := attachTmuxSession(ctx, demoSessionName)
-	if killErr := runTmuxInteractive(ctx, "kill-session", "-t", demoSessionName); killErr != nil && !isTmuxMissingSessionError(killErr) {
+	if killErr := runTmux(ctx, "kill-session", "-t", demoSessionName); killErr != nil && !isTmuxMissingSessionError(killErr) {
 		fmt.Printf("[AgentX Demo] Warning: failed to clean up demo session %s: %v\n", demoSessionName, killErr)
 	}
 	if attachErr != nil {
