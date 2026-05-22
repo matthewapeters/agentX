@@ -59,7 +59,7 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	fmt.Printf("[AgentX Demo] Attach to the split demo session with: tmux attach -t %s\n", demoSessionName)
 
 	attachErr := attachTmuxSession(ctx, demoSessionName)
-	if killErr := runTmuxInteractive(ctx, "kill-session", "-t", demoSessionName); killErr != nil {
+	if killErr := runTmuxInteractive(ctx, "kill-session", "-t", demoSessionName); killErr != nil && !isTmuxMissingSessionError(killErr) {
 		fmt.Printf("[AgentX Demo] Warning: failed to clean up demo session %s: %v\n", demoSessionName, killErr)
 	}
 	if attachErr != nil {
@@ -85,10 +85,27 @@ func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, star
 
 func buildLiveCoreMirrorArgs(coreSessionName string) []string {
 	mirrorScript := fmt.Sprintf(
-		`session=%s; last=''; while true; do chat="$(tmux capture-pane -p -t "$session:0.0" 2>/dev/null | tail -n 16)"; context="$(tmux capture-pane -p -t "$session:0.2" 2>/dev/null | tail -n 12)"; frame="Live core mirror: $session\n\n=== chat ($session:0.0) ===\n$chat\n\n=== context ($session:0.2) ===\n$context"; if [[ "$frame" != "$last" ]]; then printf '\n[%%s]\n%%s\n' "$(date '+%%H:%%M:%%S')" "$frame"; last="$frame"; fi; sleep 0.6; done`,
+		`session=%s; last=''; while true; do chat_id="$(tmux list-panes -t "$session:0" -F '#{pane_id}|#{pane_title}' 2>/dev/null | awk -F'|' '$2=="chat" {print $1; exit}')"; context_id="$(tmux list-panes -t "$session:0" -F '#{pane_id}|#{pane_title}' 2>/dev/null | awk -F'|' '$2=="context" {print $1; exit}')"; chat_target="${chat_id:-$session:0.0}"; context_target="${context_id:-$session:0.2}"; chat="$(tmux capture-pane -p -t "$chat_target" 2>/dev/null | tail -n 16)"; context="$(tmux capture-pane -p -t "$context_target" 2>/dev/null | tail -n 12)"; frame="$(printf 'Live core mirror: %%s\n\n=== chat (%%s) ===\n%%s\n\n=== context (%%s) ===\n%%s' "$session" "$chat_target" "$chat" "$context_target" "$context")"; if [[ "$frame" != "$last" ]]; then printf '\n[%%s]\n%%s\n' "$(date '+%%H:%%M:%%S')" "$frame"; last="$frame"; fi; sleep 0.7; done`,
 		shellQuote(coreSessionName),
 	)
 	return []string{"bash", "-lc", mirrorScript}
+}
+
+func closeCurrentTmuxSession(ctx context.Context) error {
+	sessionName, err := runTmuxCapture(ctx, "display-message", "-p", "#{session_name}")
+	if err != nil {
+		return err
+	}
+
+	target := strings.TrimSpace(sessionName)
+	if target == "" {
+		return fmt.Errorf("unable to resolve current tmux session")
+	}
+
+	if err := runTmux(ctx, "kill-session", "-t", target); err != nil && !isTmuxMissingSessionError(err) {
+		return err
+	}
+	return nil
 }
 
 func attachTmuxSession(ctx context.Context, sessionName string) error {
@@ -111,6 +128,32 @@ func runTmuxInteractive(ctx context.Context, args ...string) error {
 		return fmt.Errorf("tmux %s failed: %w", strings.Join(args, " "), err)
 	}
 	return nil
+}
+
+func runTmux(ctx context.Context, args ...string) error {
+	cmd := exec.CommandContext(ctx, "tmux", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tmux %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func runTmuxCapture(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "tmux", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("tmux %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func isTmuxMissingSessionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "can't find session") || strings.Contains(lower, "no server running")
 }
 
 func waitForDemoHealthEndpoint(ctx context.Context, healthURL string) error {

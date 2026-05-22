@@ -137,11 +137,17 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "split-window -h -t agentx_tester_sess-split_demo:0 bash -lc") {
 		t.Fatalf("expected vertical split with live core mirror loop, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "tmux capture-pane -p -t \"$session:0.0\"") {
-		t.Fatalf("expected mirror loop to capture chat pane, commands:\n%s", commands)
+	if !strings.Contains(commands, "tmux list-panes -t \"$session:0\" -F '#{pane_id}|#{pane_title}'") {
+		t.Fatalf("expected mirror loop to enumerate pane titles, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "tmux capture-pane -p -t \"$session:0.2\"") {
-		t.Fatalf("expected mirror loop to capture context pane, commands:\n%s", commands)
+	if !strings.Contains(commands, "$2==\"chat\"") {
+		t.Fatalf("expected mirror loop to resolve chat pane by title, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "$2==\"context\"") {
+		t.Fatalf("expected mirror loop to resolve context pane by title, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "printf 'Live core mirror: %s") {
+		t.Fatalf("expected mirror loop to build newline-safe frame with printf, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "attach-session -t agentx_tester_sess-split_demo") {
 		t.Fatalf("expected final attach to split demo session, commands:\n%s", commands)

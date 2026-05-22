@@ -135,6 +135,9 @@ func main() {
 		if err := runDemoModeWithConfig(os.Stdin, os.Stdout, *demoStart, demoRunner, runtimeConfig); err != nil {
 			log.Fatalf("Demo controller failed: %v", err)
 		}
+		if err := closeCurrentTmuxSession(ctx); err != nil {
+			log.Printf("[AgentX Demo] Warning: failed to close demo session from controller: %v", err)
+		}
 		fmt.Println("[AgentX Demo] ✓ Controller complete")
 		return
 	}

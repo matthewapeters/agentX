@@ -5,6 +5,24 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.4] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Fixed DemoMode completion behavior after `X` in split mode:
+  - controller now closes the whole demo split session on completion so tmux does not expand the remaining mirror pane.
+- Fixed right-pane mirror rendering quality:
+  - pane titles are resolved dynamically (`chat` / `context`) instead of relying on fixed pane indexes.
+  - mirror frames now render true newlines (no literal `\n` text output).
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode tests to assert title-based pane resolution and newline-safe mirror frame generation.
+
 ## [0.79.3] - 2026-05-22
 
 ### Code Changes

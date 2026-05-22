@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.79.2)_
+_Last updated: 2026-05-22 (v0.79.4)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -65,6 +65,8 @@ Prompt contract:
 
 - `N` = mark current demo test as accepted and continue to next test
 - `X` = mark current demo test as failed, capture diagnostics, and stop sequence
+
+In split mode, completion from the controller pane now closes the full demo split session so the remaining mirror pane does not expand into a one-pane terminal.
 
 Any other input must re-prompt without advancing.
 
