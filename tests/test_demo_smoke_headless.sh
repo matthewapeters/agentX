@@ -29,10 +29,25 @@ cat > "$TMP_DIR/tmux" <<'EOF'
 set -euo pipefail
 
 if [[ "$1" == "list-panes" ]]; then
-  echo '%1|chat'
-  echo '%2|context'
-  echo '%3|input'
-  echo '%4|logs'
+  if [[ "$3" == *"_demo" ]]; then
+    echo 'demo_smoke_session_demo|0|0|%8|controller|1'
+    echo 'demo_smoke_session_demo|0|1|%9|live-core|0'
+    exit 0
+  fi
+  echo 'demo_smoke_session|0|0|%1|chat|0'
+  echo 'demo_smoke_session|0|1|%2|context|1'
+  echo 'demo_smoke_session|0|2|%3|input|0'
+  echo 'demo_smoke_session|1|0|%4|logs|0'
+  exit 0
+fi
+
+if [[ "$1" == "list-windows" ]]; then
+  if [[ "$3" == *"_demo" ]]; then
+    echo '0|demo-control|1'
+  else
+    echo '0|tui-chat|1'
+    echo '1|logs|0'
+  fi
   exit 0
 fi
 
@@ -78,11 +93,29 @@ if [[ ! -d "$ARTIFACT_DIR" ]]; then
   exit 1
 fi
 
-for required in metadata.json tmux_list_panes.txt tmux_display_message.txt pane_%1.txt pane_%2.txt pane_%3.txt pane_%4.txt; do
+for required in metadata.json core_tmux_list_windows.txt core_tmux_list_panes.txt core_tmux_display_message.txt tmux_list_panes.txt tmux_display_message.txt; do
   if [[ ! -f "$ARTIFACT_DIR/$required" ]]; then
     echo "FAIL: missing artifact file $ARTIFACT_DIR/$required"
     exit 1
   fi
 done
+
+CORE_PANES_FILE="$ARTIFACT_DIR/core_tmux_list_panes.txt"
+if [[ ! -s "$CORE_PANES_FILE" ]]; then
+  echo "FAIL: expected non-empty pane metadata in $CORE_PANES_FILE"
+  exit 1
+fi
+
+while IFS='|' read -r _ _ _ PANE_ID _ _; do
+  [[ -z "${PANE_ID:-}" ]] && continue
+  if [[ ! -f "$ARTIFACT_DIR/core_pane_${PANE_ID}.txt" ]]; then
+    echo "FAIL: missing core pane capture for $PANE_ID"
+    exit 1
+  fi
+  if [[ ! -f "$ARTIFACT_DIR/pane_${PANE_ID}.txt" ]]; then
+    echo "FAIL: missing legacy pane capture for $PANE_ID"
+    exit 1
+  fi
+done < "$CORE_PANES_FILE"
 
 echo "PASS: demo smoke artifact capture matches UX contract."

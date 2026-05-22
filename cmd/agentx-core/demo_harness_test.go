@@ -241,20 +241,42 @@ func TestDefaultDemoDiagnosticsCollector_WritesArtifacts(t *testing.T) {
 	tmuxScriptPath := filepath.Join(tmpDir, "tmux")
 	tmuxScript := `#!/usr/bin/env bash
 set -euo pipefail
+if [[ "$1" == "list-windows" ]]; then
+	if [[ "$3" == "demo-session_demo" ]]; then
+		echo '0|demo-control|1'
+	else
+		echo '0|tui-chat|1'
+		echo '1|logs|0'
+	fi
+	exit 0
+fi
 if [[ "$1" == "list-panes" ]]; then
-  echo '%1|chat'
-  echo '%2|context'
+	if [[ "$3" == "demo-session_demo" ]]; then
+		echo 'demo-session_demo|0|0|%3|controller|1'
+		echo 'demo-session_demo|0|1|%4|live-core|0'
+		exit 0
+	fi
+	echo 'demo-session|0|0|%1|chat|0'
+	echo 'demo-session|0|1|%2|context|1'
   exit 0
 fi
 if [[ "$1" == "display-message" ]]; then
-  echo 'demo-session:0.0'
+	if [[ "$4" == "demo-session_demo" ]]; then
+		echo 'demo-session_demo:0.0'
+	else
+		echo 'demo-session:0.0'
+	fi
   exit 0
 fi
 if [[ "$1" == "capture-pane" ]]; then
-  if [[ "$4" == "%1" ]]; then
+	if [[ "$6" == "%1" ]]; then
     echo 'chat pane content'
+	elif [[ "$6" == "%2" ]]; then
+		echo 'context pane content'
+	elif [[ "$6" == "%3" ]]; then
+		echo 'controller pane content'
   else
-    echo 'context pane content'
+		echo 'live core pane content'
   fi
   exit 0
 fi
@@ -297,6 +319,16 @@ exit 1
 		"tmux_display_message.txt",
 		"pane_%1.txt",
 		"pane_%2.txt",
+		"core_tmux_list_windows.txt",
+		"core_tmux_list_panes.txt",
+		"core_tmux_display_message.txt",
+		"core_pane_%1.txt",
+		"core_pane_%2.txt",
+		"split_tmux_list_windows.txt",
+		"split_tmux_list_panes.txt",
+		"split_tmux_display_message.txt",
+		"split_pane_%3.txt",
+		"split_pane_%4.txt",
 	}
 
 	for _, name := range expectedFiles {

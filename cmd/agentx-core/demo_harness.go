@@ -358,38 +358,59 @@ func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase D
 		return nil, fmt.Errorf("failed to write diagnostics metadata: %w", err)
 	}
 
+	coreSessionName := strings.TrimSpace(runtimeConfig.TmuxSessionName)
+	if coreSessionName != "" {
+		captureTmuxSessionDiagnostics(artifactDir, "core", coreSessionName)
+		captureTmuxSessionDiagnostics(artifactDir, "split", coreSessionName+"_demo")
+	}
+
+	return []string{artifactDir}, nil
+}
+
+func captureTmuxSessionDiagnostics(artifactDir, prefix, sessionName string) {
 	paneTargets := []string{}
-	listOutput, listErr := runTmuxCommand(runtimeConfig.TmuxSessionName, "list-panes", "-F", "#{pane_id}|#{pane_title}")
-	if listErr != nil {
-		_ = os.WriteFile(filepath.Join(artifactDir, "tmux_list_panes.error.txt"), []byte(listErr.Error()+"\n"), 0o644)
+
+	listWindowsOutput, listWindowsErr := runTmuxCommand("", "list-windows", "-t", sessionName, "-F", "#{window_index}|#{window_name}|#{window_active}")
+	if listWindowsErr != nil {
+		_ = os.WriteFile(filepath.Join(artifactDir, fmt.Sprintf("%s_tmux_list_windows.error.txt", prefix)), []byte(listWindowsErr.Error()+"\n"), 0o644)
 	} else {
-		_ = os.WriteFile(filepath.Join(artifactDir, "tmux_list_panes.txt"), []byte(listOutput), 0o644)
-		for _, line := range strings.Split(strings.TrimSpace(listOutput), "\n") {
+		_ = os.WriteFile(filepath.Join(artifactDir, fmt.Sprintf("%s_tmux_list_windows.txt", prefix)), []byte(listWindowsOutput), 0o644)
+	}
+
+	listPanesOutput, listPanesErr := runTmuxCommand(
+		"",
+		"list-panes",
+		"-t",
+		sessionName,
+		"-F",
+		"#{session_name}|#{window_index}|#{pane_index}|#{pane_id}|#{pane_title}|#{pane_active}",
+	)
+	if listPanesErr != nil {
+		_ = os.WriteFile(filepath.Join(artifactDir, fmt.Sprintf("%s_tmux_list_panes.error.txt", prefix)), []byte(listPanesErr.Error()+"\n"), 0o644)
+	} else {
+		_ = os.WriteFile(filepath.Join(artifactDir, fmt.Sprintf("%s_tmux_list_panes.txt", prefix)), []byte(listPanesOutput), 0o644)
+		for _, line := range strings.Split(strings.TrimSpace(listPanesOutput), "\n") {
 			if strings.TrimSpace(line) == "" {
 				continue
 			}
-			parts := strings.SplitN(line, "|", 2)
-			paneTargets = append(paneTargets, strings.TrimSpace(parts[0]))
+			parts := strings.Split(line, "|")
+			if len(parts) < 4 {
+				continue
+			}
+			paneTargets = append(paneTargets, strings.TrimSpace(parts[3]))
 		}
 	}
 
-	displayTarget := strings.TrimSpace(runtimeConfig.TmuxSessionName)
-	var displayOutput string
-	var displayErr error
-	if displayTarget == "" {
-		displayOutput, displayErr = runTmuxCommand(runtimeConfig.TmuxSessionName, "display-message", "-p", "#{session_name}:#{window_index}.#{pane_index}")
-	} else {
-		displayOutput, displayErr = runTmuxCommand("", "display-message", "-p", "-t", displayTarget, "#{session_name}:#{window_index}.#{pane_index}")
-	}
+	displayOutput, displayErr := runTmuxCommand("", "display-message", "-p", "-t", sessionName, "#{session_name}:#{window_index}.#{pane_index}")
 	if displayErr != nil {
-		_ = os.WriteFile(filepath.Join(artifactDir, "tmux_display_message.error.txt"), []byte(displayErr.Error()+"\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(artifactDir, fmt.Sprintf("%s_tmux_display_message.error.txt", prefix)), []byte(displayErr.Error()+"\n"), 0o644)
 	} else {
-		_ = os.WriteFile(filepath.Join(artifactDir, "tmux_display_message.txt"), []byte(displayOutput), 0o644)
+		_ = os.WriteFile(filepath.Join(artifactDir, fmt.Sprintf("%s_tmux_display_message.txt", prefix)), []byte(displayOutput), 0o644)
 	}
 
 	for _, paneTarget := range paneTargets {
-		captureOutput, captureErr := runTmuxCommand(runtimeConfig.TmuxSessionName, "capture-pane", "-p", "-t", paneTarget)
-		capturePath := filepath.Join(artifactDir, fmt.Sprintf("pane_%s.txt", sanitizePathComponent(paneTarget)))
+		captureOutput, captureErr := runTmuxCommand("", "capture-pane", "-p", "-S", "-200", "-t", paneTarget)
+		capturePath := filepath.Join(artifactDir, fmt.Sprintf("%s_pane_%s.txt", prefix, sanitizePathComponent(paneTarget)))
 		if captureErr != nil {
 			_ = os.WriteFile(capturePath, []byte("capture error: "+captureErr.Error()+"\n"), 0o644)
 			continue
@@ -397,7 +418,26 @@ func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase D
 		_ = os.WriteFile(capturePath, []byte(captureOutput), 0o644)
 	}
 
-	return []string{artifactDir}, nil
+	// Backward-compatible filenames for existing tooling/scripts that read legacy artifact names.
+	if prefix == "core" {
+		copyFileIfPresent(filepath.Join(artifactDir, "core_tmux_list_panes.txt"), filepath.Join(artifactDir, "tmux_list_panes.txt"))
+		copyFileIfPresent(filepath.Join(artifactDir, "core_tmux_list_panes.error.txt"), filepath.Join(artifactDir, "tmux_list_panes.error.txt"))
+		copyFileIfPresent(filepath.Join(artifactDir, "core_tmux_display_message.txt"), filepath.Join(artifactDir, "tmux_display_message.txt"))
+		copyFileIfPresent(filepath.Join(artifactDir, "core_tmux_display_message.error.txt"), filepath.Join(artifactDir, "tmux_display_message.error.txt"))
+		for _, paneTarget := range paneTargets {
+			sourcePath := filepath.Join(artifactDir, fmt.Sprintf("core_pane_%s.txt", sanitizePathComponent(paneTarget)))
+			targetPath := filepath.Join(artifactDir, fmt.Sprintf("pane_%s.txt", sanitizePathComponent(paneTarget)))
+			copyFileIfPresent(sourcePath, targetPath)
+		}
+	}
+}
+
+func copyFileIfPresent(sourcePath, targetPath string) {
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(targetPath, data, 0o644)
 }
 
 func submitDemoPrompt(ctx context.Context, healthURL, prompt string) (string, error) {

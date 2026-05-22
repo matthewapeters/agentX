@@ -5,6 +5,28 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.10] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Enhanced DemoMode failure diagnostics (`X` path) to capture pane/window artifacts across both sessions:
+  - `core` session (live app panes)
+  - `split` session (controller + nested live pane)
+- Added expanded capture depth (`capture-pane -S -200`) for richer screen-scrape context.
+
+#### Changed
+
+- Preserved legacy artifact filenames while introducing prefixed multi-session artifacts for better traceability.
+
+### Test Changes
+
+#### Changed
+
+- Updated diagnostics unit test coverage for multi-session tmux artifact capture.
+- Updated headless demo smoke test to validate pane artifacts dynamically from pane metadata instead of fixed pane IDs.
+
 ## [0.79.9] - 2026-05-22
 
 ### Code Changes
