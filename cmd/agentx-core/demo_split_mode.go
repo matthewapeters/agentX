@@ -97,6 +97,8 @@ func buildLiveCoreMirrorArgs(coreSessionName string) []string {
 }
 
 func prepareCoreSessionForSplitView(ctx context.Context, coreSessionName string) error {
+	const minInputPaneHeight = 3
+
 	windowTarget := coreSessionName + ":0"
 
 	if err := runTmux(ctx, "set-window-option", "-t", windowTarget, "window-size", "smallest"); err != nil {
@@ -122,10 +124,15 @@ func prepareCoreSessionForSplitView(ctx context.Context, coreSessionName string)
 	if err != nil {
 		return fmt.Errorf("invalid input pane height %q: %w", inputHeightRaw, err)
 	}
-	if inputHeight < 1 {
-		if err := runTmux(ctx, "resize-pane", "-t", inputTarget, "-y", "1"); err != nil {
+	if inputHeight < minInputPaneHeight {
+		if err := runTmux(ctx, "resize-pane", "-t", inputTarget, "-y", strconv.Itoa(minInputPaneHeight)); err != nil {
 			return err
 		}
+	}
+
+	// Make the input pane the active pane before nested attach so the prompt is visible on entry.
+	if err := runTmux(ctx, "select-pane", "-t", inputTarget); err != nil {
+		return err
 	}
 
 	return nil

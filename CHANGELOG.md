@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.11] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Hardened split DemoMode live-core presentation so input is visible on entry:
+  - enforce minimum input pane height of 3 rows before nested attach.
+  - focus the input pane before opening the right-pane nested client.
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode tests to validate minimum input height enforcement and input-pane focus before nested attach.
+
 ## [0.79.10] - 2026-05-22
 
 ### Code Changes

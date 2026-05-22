@@ -101,7 +101,7 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 		"  fi\n" +
 		"fi\n" +
 		"case \"$1\" in\n" +
-		"  new-session|split-window|select-pane|select-layout|attach-session|kill-session|set-window-option|display-message) exit 0 ;;\n" +
+		"  new-session|split-window|select-pane|select-layout|attach-session|kill-session|set-window-option|display-message|resize-pane) exit 0 ;;\n" +
 		"  *) echo \"unexpected tmux args: $*\" >&2; exit 1 ;;\n" +
 		"esac\n"
 	if err := os.WriteFile(fakeTmuxPath, []byte(fakeTmuxScript), 0o755); err != nil {
@@ -160,6 +160,12 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	}
 	if !strings.Contains(commands, "display-message -p -t agentx_tester_sess-split:0.2 #{pane_height}") {
 		t.Fatalf("expected input pane height check before nested attach, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "resize-pane -t agentx_tester_sess-split:0.2 -y 3") {
+		t.Fatalf("expected input pane minimum height enforcement before nested attach, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split:0.2") {
+		t.Fatalf("expected input pane focus before nested attach so prompt is visible, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "split-window -h -t agentx_tester_sess-split_demo:0 bash -lc") {
 		t.Fatalf("expected vertical split with live core attach command, commands:\n%s", commands)
