@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.69.0)_
+_Last updated: 2026-05-22 (v0.70.0)_
 
 ## Overview
 
@@ -32,7 +32,8 @@ Current state relative to recent issue verification and regression work:
 - Phase 2 now emits bridge lifecycle events into the logs pane (`bridge_start`, `bridge_chunk`, `bridge_response_ok`, timeout/error/fallback paths).
 - Phase 2 now emits compact per-turn context summaries to the context pane after successful turn persistence.
 - Phase 2 mid-stream cancellation/retry flow is hardened: canceled routes propagate cancellation (no echo fallback), bridge teardown/restart is validated, and immediate retry succeeds.
-- Remaining applet fidelity work is focused on richer context detail views and expanded BDD streaming assertions.
+- GoDog integration coverage now includes a streaming scenario that asserts chunk rendering and persisted final-turn prompt/response integrity.
+- Remaining applet fidelity work is focused on richer context detail views and additional observability-level assertions.
 
 ## Execution Board (Next 2 Sprints)
 

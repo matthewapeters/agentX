@@ -5,6 +5,32 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.70.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Expanded GoDog integration coverage artifacts for Phase 2 bridge streaming behavior in:
+  - `cmd/agentx-core/features/integration.feature`
+  - `cmd/agentx-core/godog_test.go`
+
+### Test Changes
+
+#### Added
+
+- Added integration scenario: `Python bridge streaming renders chunks and persists final turn`.
+  - GIVEN template chat bridge streaming output WHEN routing a prompt THEN tmux commands include assistant stream rendering and final assistant response rendering.
+  - GIVEN completed routing WHEN context turns snapshot is captured THEN persisted turn includes expected prompt and expected response.
+- Added GoDog step assertion for persisted response content: `context turns should include response "..."`.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` to mark BDD streaming assertions milestone complete.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` with BDD coverage statement for streaming + persistence integrity.
+
 ## [0.69.0] - 2026-05-22
 
 ### Code Changes

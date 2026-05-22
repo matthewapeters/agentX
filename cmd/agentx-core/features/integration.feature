@@ -100,3 +100,21 @@ Feature: IPC router integration
     Then prompt routing should complete without error
     And routed response should equal "Echo: bridge prompt two"
     And the tracked chat applet process pid should remain the same
+
+  Scenario: Python bridge streaming renders chunks and persists final turn
+    Given a temporary project directory
+    And the project contains template chat applet
+    And a core config with username "dev" and session "sess-8"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "streaming godog prompt"
+    Then prompt routing should complete without error
+    And routed response should equal "Echo: streaming godog prompt"
+    And tmux commands should include "[assistant-stream]"
+    And tmux should include rendered chat response "Echo: streaming godog prompt"
+    When I capture the context turns snapshot
+    Then context turns should have length 1
+    And context turns should include prompt "streaming godog prompt"
+    And context turns should include response "Echo: streaming godog prompt"

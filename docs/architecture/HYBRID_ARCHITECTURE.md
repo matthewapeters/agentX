@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-22 (v0.69.0)_
+_Last updated: 2026-05-22 (v0.70.0)_
 
 ## Overview
 
@@ -76,6 +76,8 @@ The Go core also mirrors structured bridge lifecycle events into the logs pane (
 After each successfully persisted turn, the Go core emits a compact context-pane summary (`[context] turn=N ...`) so the context pane reflects persisted interaction progress in real time.
 
 For mid-stream cancellation, the core now propagates context cancellation/deadline errors instead of converting them into fallback echo responses; the persistent bridge is torn down and restarted on the next prompt attempt.
+
+Integration BDD coverage now validates bridge streaming behavior together with persisted-turn integrity assertions (prompt and response content) in a single end-to-end routing scenario.
 ```
 
 ### Shutdown Protocol

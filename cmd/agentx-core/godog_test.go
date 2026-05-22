@@ -434,6 +434,15 @@ func (s *bddState) contextTurnsShouldIncludePrompt(prompt string) error {
 	return fmt.Errorf("expected context turns to include prompt %q", prompt)
 }
 
+func (s *bddState) contextTurnsShouldIncludeResponse(response string) error {
+	for _, turn := range s.contextTurns {
+		if turn.Response == response {
+			return nil
+		}
+	}
+	return fmt.Errorf("expected context turns to include response %q", response)
+}
+
 func (s *bddState) iCaptureTheTrackedChatAppletProcessPID() error {
 	if s.core == nil {
 		return errors.New("core not initialized")
@@ -651,6 +660,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^input exit flag should be (true|false)$`, state.inputExitFlagShouldBe)
 	ctx.Step(`^context turns should have length (\d+)$`, state.contextTurnsShouldHaveLength)
 	ctx.Step(`^context turns should include prompt "([^"]*)"$`, state.contextTurnsShouldIncludePrompt)
+	ctx.Step(`^context turns should include response "([^"]*)"$`, state.contextTurnsShouldIncludeResponse)
 	ctx.Step(`^I capture the tracked chat applet process pid$`, state.iCaptureTheTrackedChatAppletProcessPID)
 	ctx.Step(`^the tracked chat applet process pid should remain the same$`, state.trackedChatAppletProcessPIDShouldRemainTheSame)
 	ctx.Step(`^startup should name window 0 as "([^"]*)"$`, state.startupShouldNameWindowZeroAs)
