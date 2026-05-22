@@ -114,6 +114,15 @@ func TestRunDemoMode_StartSelectionAndUserFailStopsSequence(t *testing.T) {
 	if !strings.Contains(content, "[AgentX Demo] Readiness: Not ready for UAT") {
 		t.Fatalf("expected not-ready summary, got:\n%s", content)
 	}
+	if !strings.Contains(content, "[AgentX Demo]   - e2e-001: SKIP") {
+		t.Fatalf("expected skipped status for unselected earlier test, got:\n%s", content)
+	}
+	if !strings.Contains(content, "[AgentX Demo]   - e2e-002: FAIL") {
+		t.Fatalf("expected failed status for X-marked test, got:\n%s", content)
+	}
+	if !strings.Contains(content, "[AgentX Demo]   - e2e-003: SKIP") {
+		t.Fatalf("expected skipped status for non-executed trailing test, got:\n%s", content)
+	}
 }
 
 func TestRunDemoMode_FailureDecisionReportsCollectedArtifactPath(t *testing.T) {
@@ -196,6 +205,15 @@ func TestRunDemoMode_AllAcceptedShowsReadyForUAT(t *testing.T) {
 	}
 	if !strings.Contains(content, "[AgentX Demo] Artifact paths: none") {
 		t.Fatalf("expected no-artifact summary line, got:\n%s", content)
+	}
+	if !strings.Contains(content, "[AgentX Demo]   - e2e-001: SKIP") {
+		t.Fatalf("expected skipped status for pre-start tests, got:\n%s", content)
+	}
+	if !strings.Contains(content, "[AgentX Demo]   - e2e-002: SKIP") {
+		t.Fatalf("expected skipped status for pre-start tests, got:\n%s", content)
+	}
+	if !strings.Contains(content, "[AgentX Demo]   - e2e-003: PASS") {
+		t.Fatalf("expected pass status for accepted test, got:\n%s", content)
 	}
 }
 

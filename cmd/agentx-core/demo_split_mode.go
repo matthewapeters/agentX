@@ -41,7 +41,7 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	}
 
 	liveCoreMirrorArgs := buildLiveCoreMirrorArgs(core.tmuxSessionName)
-	if err := runTmuxInteractive(ctx, append([]string{"split-window", "-h", "-t", demoSessionName + ":0"}, liveCoreMirrorArgs...)...); err != nil {
+	if err := runTmuxInteractive(ctx, append([]string{"split-window", "-h", "-p", "45", "-t", demoSessionName + ":0"}, liveCoreMirrorArgs...)...); err != nil {
 		return fmt.Errorf("failed to create live core mirror pane: %w", err)
 	}
 
@@ -50,9 +50,6 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	}
 	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.1", "-T", "live-core"); err != nil {
 		return fmt.Errorf("failed to label live core pane: %w", err)
-	}
-	if err := runTmuxInteractive(ctx, "select-layout", "-t", demoSessionName+":0", "even-horizontal"); err != nil {
-		return fmt.Errorf("failed to set demo layout: %w", err)
 	}
 	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.0"); err != nil {
 		return fmt.Errorf("failed to focus controller pane: %w", err)

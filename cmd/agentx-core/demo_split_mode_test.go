@@ -170,8 +170,8 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split:0.2") {
 		t.Fatalf("expected input pane focus before nested attach so prompt is visible, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "split-window -h -t agentx_tester_sess-split_demo:0 bash -lc") {
-		t.Fatalf("expected vertical split with live core attach command, commands:\n%s", commands)
+	if !strings.Contains(commands, "split-window -h -p 45 -t agentx_tester_sess-split_demo:0 bash -lc") {
+		t.Fatalf("expected weighted vertical split with live core attach command, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "TMUX= exec tmux attach-session -r -t 'agentx_tester_sess-split'") {
 		t.Fatalf("expected right pane to run nested read-only tmux attach, commands:\n%s", commands)

@@ -58,6 +58,12 @@ type demoModeOptions struct {
 	decisionCtx   context.Context
 }
 
+const (
+	demoStatusPass = "PASS"
+	demoStatusFail = "FAIL"
+	demoStatusSkip = "SKIP"
+)
+
 // defaultDemoSequence returns the stable, ordered demo manifest for D1.
 func defaultDemoSequence() []DemoTestCase {
 	return []DemoTestCase{
@@ -198,6 +204,10 @@ func runDemoModeWithOptions(
 	acceptedCount := 0
 	failedTestID := ""
 	artifactPaths := []string{}
+	statusByTestID := map[string]string{}
+	for _, testCase := range sequence {
+		statusByTestID[testCase.ID] = demoStatusSkip
+	}
 
 	inputReader := bufio.NewReader(reader)
 	for idx := startIndex; idx < len(sequence); idx++ {
@@ -214,8 +224,10 @@ func runDemoModeWithOptions(
 		)
 
 		resultText, runErr := runner(testCase)
+		runStatus := demoStatusPass
 		if runErr != nil {
 			fmt.Fprintf(writer, "[AgentX Demo] Result: FAIL (%v)\n", runErr)
+			runStatus = demoStatusFail
 		} else {
 			fmt.Fprintf(writer, "[AgentX Demo] Result: PASS (%s)\n", resultText)
 		}
@@ -227,6 +239,8 @@ func runDemoModeWithOptions(
 
 		if decision == "X" {
 			failedTestID = testCase.ID
+			runStatus = demoStatusFail
+			statusByTestID[testCase.ID] = runStatus
 			capturedPaths, captureErr := options.collector(options.runtimeConfig, testCase)
 			if len(capturedPaths) > 0 {
 				artifactPaths = capturedPaths
@@ -238,11 +252,16 @@ func runDemoModeWithOptions(
 			break
 		}
 
-		acceptedCount++
-		fmt.Fprintf(writer, "[AgentX Demo] Accepted %s, advancing\n", testCase.ID)
+		statusByTestID[testCase.ID] = runStatus
+		if runStatus == demoStatusPass {
+			acceptedCount++
+			fmt.Fprintf(writer, "[AgentX Demo] Accepted %s, advancing\n", testCase.ID)
+		} else {
+			fmt.Fprintf(writer, "[AgentX Demo] Recorded %s for %s, advancing\n", runStatus, testCase.ID)
+		}
 	}
 
-	renderDemoSummary(writer, selectedCount, runCount, acceptedCount, failedTestID, artifactPaths)
+	renderDemoSummary(writer, sequence, selectedCount, runCount, acceptedCount, failedTestID, artifactPaths, statusByTestID)
 	return nil
 }
 
@@ -297,11 +316,28 @@ func readDemoDecision(decisionCtx context.Context, reader *bufio.Reader, writer 
 	}
 }
 
-func renderDemoSummary(writer io.Writer, selectedCount, runCount, acceptedCount int, failedTestID string, artifactPaths []string) {
+func renderDemoSummary(
+	writer io.Writer,
+	sequence []DemoTestCase,
+	selectedCount,
+	runCount,
+	acceptedCount int,
+	failedTestID string,
+	artifactPaths []string,
+	statusByTestID map[string]string,
+) {
 	fmt.Fprintln(writer, "[AgentX Demo] Run summary:")
 	fmt.Fprintf(writer, "[AgentX Demo] Selected tests: %d\n", selectedCount)
 	fmt.Fprintf(writer, "[AgentX Demo] Tests run: %d\n", runCount)
 	fmt.Fprintf(writer, "[AgentX Demo] Accepted tests: %d\n", acceptedCount)
+	fmt.Fprintln(writer, "[AgentX Demo] Status ledger:")
+	for _, testCase := range sequence {
+		status := statusByTestID[testCase.ID]
+		if strings.TrimSpace(status) == "" {
+			status = demoStatusSkip
+		}
+		fmt.Fprintf(writer, "[AgentX Demo]   - %s: %s\n", testCase.ID, status)
+	}
 	if len(artifactPaths) == 0 {
 		fmt.Fprintln(writer, "[AgentX Demo] Artifact paths: none")
 	} else {

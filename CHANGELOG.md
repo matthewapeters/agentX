@@ -5,6 +5,28 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.13] - 2026-05-22
+
+### Code Changes
+
+#### Changed
+
+- Polished split DemoMode left-pane readability by biasing the split width toward the controller pane (`split-window -h -p 45`) to reduce hard wraps.
+
+#### Added
+
+- Added explicit per-test status ledger in DemoMode summary:
+  - `N` accepted test => `PASS`
+  - `X` marked test => `FAIL`
+  - non-executed tests (including pre-start or trailing tests) => `SKIP`
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode command assertions for weighted controller-pane split.
+- Added/updated demo harness tests for PASS/FAIL/SKIP status-ledger semantics.
+
 ## [0.79.12] - 2026-05-22
 
 ### Code Changes
