@@ -22,6 +22,7 @@ func TestBuildDemoControllerArgs_IncludesControllerFlags(t *testing.T) {
 		"sess-1",
 		"e2e-002",
 		"agentx_tester_sess-1",
+		"/proj/logs/demo/sess-1/stories_board.txt",
 	)
 
 	joined := strings.Join(args, " ")
@@ -31,8 +32,14 @@ func TestBuildDemoControllerArgs_IncludesControllerFlags(t *testing.T) {
 	if !strings.Contains(joined, "--demo-controller") {
 		t.Fatalf("expected demo controller flag in args, got %q", joined)
 	}
+	if !strings.Contains(joined, "--demo-split") {
+		t.Fatalf("expected demo split flag in args, got %q", joined)
+	}
 	if !strings.Contains(joined, "--demo-core-session agentx_tester_sess-1") {
 		t.Fatalf("expected core session flag in args, got %q", joined)
+	}
+	if !strings.Contains(joined, "--demo-stories-file /proj/logs/demo/sess-1/stories_board.txt") {
+		t.Fatalf("expected stories board path in args, got %q", joined)
 	}
 	if !strings.Contains(joined, "--demo-start e2e-002") {
 		t.Fatalf("expected demo start selector in args, got %q", joined)
@@ -149,11 +156,17 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "new-session -d -s agentx_tester_sess-split_demo -n demo-control bash -lc") {
 		t.Fatalf("expected story-browser session bootstrap, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "[AgentX Demo] Story Browser") {
-		t.Fatalf("expected story browser text in left-top pane bootstrap command, commands:\n%s", commands)
+	if !strings.Contains(commands, "tail -n +1 -f") {
+		t.Fatalf("expected story board tail command in left-top pane bootstrap command, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "--demo-controller") {
 		t.Fatalf("expected controller launch flag in prompt pane command, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "--demo-split") {
+		t.Fatalf("expected split-view flag in prompt pane command, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "--demo-stories-file") {
+		t.Fatalf("expected stories-board flag in prompt pane command, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "set-window-option -t agentx_tester_sess-split:0 window-size smallest") {
 		t.Fatalf("expected core window to use smallest client sizing for split view, commands:\n%s", commands)

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,8 +31,19 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	}
 
 	demoSessionName := fmt.Sprintf("%s_demo", core.tmuxSessionName)
-	controllerArgs := buildDemoControllerArgs(executablePath, cfg, core.SessionID, startSelector, core.tmuxSessionName)
-	storiesArgs := buildDemoStoriesPaneArgs(startSelector)
+	storiesFilePath, err := prepareDemoStoriesBoardFile(cfg.ProjectDir, core.SessionID, startSelector)
+	if err != nil {
+		return err
+	}
+	controllerArgs := buildDemoControllerArgs(
+		executablePath,
+		cfg,
+		core.SessionID,
+		startSelector,
+		core.tmuxSessionName,
+		storiesFilePath,
+	)
+	storiesArgs := buildDemoStoriesPaneArgs(storiesFilePath)
 
 	if err := prepareCoreSessionForSplitView(ctx, core.tmuxSessionName); err != nil {
 		return fmt.Errorf("failed to prepare core session for split view: %w", err)
@@ -80,13 +92,15 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	return nil
 }
 
-func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, startSelector, coreSessionName string) []string {
+func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, startSelector, coreSessionName, storiesFilePath string) []string {
 	args := []string{
 		"--project-dir", cfg.ProjectDir,
 		"--user", cfg.Username,
 		"--session-id", sessionID,
 		"--demo-controller",
+		"--demo-split",
 		"--demo-core-session", coreSessionName,
+		"--demo-stories-file", storiesFilePath,
 	}
 	if trimmed := strings.TrimSpace(startSelector); trimmed != "" {
 		args = append(args, "--demo-start", trimmed)
@@ -102,35 +116,33 @@ func buildLiveCoreMirrorArgs(coreSessionName string) []string {
 	return []string{"bash", "-lc", attachScript}
 }
 
-func buildDemoStoriesPaneArgs(startSelector string) []string {
+func buildDemoStoriesPaneArgs(storiesFilePath string) []string {
+	storiesScript := fmt.Sprintf("tail -n +1 -f %s", shellQuote(storiesFilePath))
+	return []string{"bash", "-lc", storiesScript}
+}
+
+func prepareDemoStoriesBoardFile(projectDir, sessionID, startSelector string) (string, error) {
 	sequence := defaultDemoSequence()
 	startIndex, err := resolveDemoStartIndex(sequence, startSelector)
 	if err != nil {
 		startIndex = 0
 	}
 
-	var builder strings.Builder
-	builder.WriteString("[AgentX Demo] Story Browser\\n")
-	builder.WriteString("[AgentX Demo] Ordered test sequence (Gherkin):\\n")
-	for idx, testCase := range sequence {
-		marker := " "
-		if idx == startIndex {
-			marker = "*"
-		}
-		builder.WriteString(fmt.Sprintf("  %s %d) %s (%s)\\n", marker, idx+1, testCase.ID, testCase.ApproxDuration))
-		builder.WriteString(fmt.Sprintf("      Name: %s\\n", testCase.Title))
-		builder.WriteString(fmt.Sprintf("      GIVEN %s\\n", testCase.Given))
-		builder.WriteString(fmt.Sprintf("      WHEN  %s\\n", testCase.When))
-		builder.WriteString(fmt.Sprintf("      THEN  %s\\n", testCase.Then))
+	baseDir := filepath.Join(projectDir, "logs", "demo", sessionID)
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create stories board directory: %w", err)
 	}
-	builder.WriteString("\\n")
-	builder.WriteString("[AgentX Demo] Prompt commands in controller pane:\\n")
-	builder.WriteString("  N            -> run next test\\n")
-	builder.WriteString("  J <number>   -> jump ahead to test number\\n")
-	builder.WriteString("  X <feedback> -> fail current test and capture diagnostics\\n")
 
-	storiesScript := fmt.Sprintf("printf %s; tail -f /dev/null", shellQuote(builder.String()))
-	return []string{"bash", "-lc", storiesScript}
+	storiesFilePath := filepath.Join(baseDir, "stories_board.txt")
+	statusByTestID := map[string]string{}
+	for _, testCase := range sequence {
+		statusByTestID[testCase.ID] = demoStatusSkip
+	}
+	if err := writeDemoStoriesBoard(storiesFilePath, sequence, startIndex, statusByTestID, sequence[startIndex].ID); err != nil {
+		return "", err
+	}
+
+	return storiesFilePath, nil
 }
 
 func prepareCoreSessionForSplitView(ctx context.Context, coreSessionName string) error {

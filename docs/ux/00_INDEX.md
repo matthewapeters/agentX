@@ -1,11 +1,11 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-22 (v0.80.0)_
+_Last updated: 2026-05-22 (v0.81.0)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-22 (v0.80.0 — DemoMode split-left workspace ships with stories + controller panes)
+**Last updated**: 2026-05-22 (v0.81.0 — DemoMode story-board statuses, scroll affordance, and controller refresh added)
 **Current version**: see `pyproject.toml`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
@@ -60,9 +60,9 @@ _Last updated: 2026-05-22 (v0.80.0)_
 | PD-14 VimBridge GUI | 3 | 0 | 6 | 0 |
 | PD-15 TerminalPane GUI | 8 | 0 | 0 | 0 |
 | PD-16 TuiMirror | 8 | 0 | 0 | 0 |
-| PD-17 DemoMode | 8 | 0 | 0 | 0 |
+| PD-17 DemoMode | 10 | 0 | 0 | 0 |
 
-**Totals**: 110 ✅ · 6 ⚠️ · 8 📝 · 0 ❌
+**Totals**: 112 ✅ · 6 ⚠️ · 8 📝 · 0 ❌
 
 ---
 

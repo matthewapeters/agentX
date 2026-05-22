@@ -24,6 +24,8 @@ func main() {
 		demo            = flag.Bool("demo", false, "Run DemoMode with a split tmux controller and live core session")
 		demoHeadless    = flag.Bool("demo-headless", false, "Run DemoMode without the split-pane controller (internal)")
 		demoController  = flag.Bool("demo-controller", false, "Run the split-pane DemoMode controller pane (internal)")
+		demoSplit       = flag.Bool("demo-split", false, "Enable split-view controller behavior (internal)")
+		demoStoriesFile = flag.String("demo-stories-file", "", "Stories board file path for split-view demo mode (internal)")
 		demoStart       = flag.String("demo-start", "", "Demo start selector (test id or 1-based index). Requires a demo mode flag")
 		demoCoreSession = flag.String("demo-core-session", "", "Live core tmux session used by the DemoMode controller (internal)")
 	)
@@ -126,6 +128,8 @@ func main() {
 			SessionID:       *sessionID,
 			TmuxSessionName: *demoCoreSession,
 			HealthAddr:      "127.0.0.1:9876",
+			SplitView:       *demoSplit,
+			StoriesFilePath: strings.TrimSpace(*demoStoriesFile),
 		}
 		if err := waitForDemoHealthEndpoint(ctx, runtimeConfig.HealthURL()); err != nil {
 			log.Fatalf("Demo controller could not reach live core: %v", err)

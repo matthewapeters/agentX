@@ -5,6 +5,38 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.81.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Expanded DemoMode story manifest from 3 to 6 E2E stories, including harness-focused stories (jump semantics, diagnostics capture behavior, controller readability).
+- Added split-controller internal wiring for a shared stories board file (`--demo-split`, `--demo-stories-file`) so top-pane content and controller progress stay synchronized.
+
+#### Changed
+
+- Top-left split pane now renders a status board with inline markers next to each test:
+  - `[S]` pending/skip
+  - `[/]` active
+  - `[P]` pass
+  - `[X]` fail
+- Story browser content is isolated to use-cases/status (no duplicate command-loop output from controller).
+- Bottom-left controller pane now clears/refreshes between decision steps to reduce muddled prompt history.
+- Split stories pane now tails a board file so status updates remain visible while preserving tmux copy-mode scrolling.
+
+### Test Changes
+
+#### Added
+
+- Added `demo_harness_test.go` coverage for split-view controller suppression/refresh behavior.
+- Added `demo_harness_test.go` coverage for status-marker rendering in story board output.
+
+#### Changed
+
+- Updated split-mode tests for new internal split flags and stories-board file handoff.
+- Updated readiness test start selector to align with expanded 6-test demo manifest.
+
 ## [0.80.0] - 2026-05-22
 
 ### Code Changes

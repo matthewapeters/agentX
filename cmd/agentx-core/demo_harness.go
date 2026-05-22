@@ -39,6 +39,8 @@ type DemoRuntimeConfig struct {
 	SessionID       string
 	TmuxSessionName string
 	HealthAddr      string
+	SplitView       bool
+	StoriesFilePath string
 }
 
 func (cfg DemoRuntimeConfig) HealthURL() string {
@@ -56,9 +58,12 @@ func (cfg DemoRuntimeConfig) HealthURL() string {
 type DemoDiagnosticsCollector func(DemoRuntimeConfig, DemoTestCase, string) ([]string, error)
 
 type demoModeOptions struct {
-	runtimeConfig DemoRuntimeConfig
-	collector     DemoDiagnosticsCollector
-	decisionCtx   context.Context
+	runtimeConfig    DemoRuntimeConfig
+	collector        DemoDiagnosticsCollector
+	decisionCtx      context.Context
+	suppressSequence bool
+	clearController  bool
+	storiesFilePath  string
 }
 
 type demoDecision struct {
@@ -105,6 +110,36 @@ func defaultDemoSequence() []DemoTestCase {
 			Given:          "controller has reached the final E2E test",
 			When:           "the :q command is submitted",
 			Then:           "live right pane exits and shows completion guidance",
+		},
+		{
+			ID:             "e2e-004",
+			Title:          "Demo harness jump-ahead behavior",
+			Prompt:         "demo harness jump sanity check",
+			ApproxDuration: "~10s",
+			Tags:           []string{"e2e", "harness", "jump"},
+			Given:          "a split demo controller is active",
+			When:           "the operator jumps to a later test",
+			Then:           "intervening tests remain SKIP in the status board",
+		},
+		{
+			ID:             "e2e-005",
+			Title:          "Demo diagnostics artifact path capture",
+			Prompt:         "demo diagnostics artifact marker",
+			ApproxDuration: "~10s",
+			Tags:           []string{"e2e", "harness", "diagnostics"},
+			Given:          "a running demo test case",
+			When:           "the operator fails the test with X <feedback>",
+			Then:           "artifact paths and feedback are recorded in the summary",
+		},
+		{
+			ID:             "e2e-006",
+			Title:          "Controller pane refresh readability",
+			Prompt:         "demo controller refresh check",
+			ApproxDuration: "~10s",
+			Tags:           []string{"e2e", "harness", "ux"},
+			Given:          "multiple controller decisions have occurred",
+			When:           "the next test view is rendered",
+			Then:           "the controller pane is refreshed without muddled prior prompts",
 		},
 	}
 }
@@ -195,12 +230,19 @@ func runDemoModeWithConfigAndContext(
 		decisionCtx = context.Background()
 	}
 
+	options := demoModeOptions{runtimeConfig: runtimeConfig, decisionCtx: decisionCtx}
+	if runtimeConfig.SplitView {
+		options.suppressSequence = true
+		options.clearController = true
+		options.storiesFilePath = strings.TrimSpace(runtimeConfig.StoriesFilePath)
+	}
+
 	return runDemoModeWithOptions(
 		reader,
 		writer,
 		startSelector,
 		runner,
-		demoModeOptions{runtimeConfig: runtimeConfig, decisionCtx: decisionCtx},
+		options,
 	)
 }
 
@@ -227,7 +269,9 @@ func runDemoModeWithOptions(
 		return err
 	}
 
-	renderDemoSequence(writer, sequence, startIndex)
+	if !options.suppressSequence {
+		renderDemoSequence(writer, sequence, startIndex)
+	}
 
 	selectedCount := len(sequence) - startIndex
 	runCount := 0
@@ -240,9 +284,23 @@ func runDemoModeWithOptions(
 		statusByTestID[testCase.ID] = demoStatusSkip
 	}
 
+	if options.suppressSequence {
+		renderControllerHeader(writer, sequence, startIndex)
+	}
+	if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, sequence[startIndex].ID); err != nil {
+		return err
+	}
+
 	inputReader := bufio.NewReader(reader)
 	for idx := startIndex; idx < len(sequence); {
 		testCase := sequence[idx]
+		if options.clearController {
+			clearControllerPane(writer)
+			renderControllerHeader(writer, sequence, startIndex)
+		}
+		if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, testCase.ID); err != nil {
+			return err
+		}
 		runCount++
 
 		fmt.Fprintf(
@@ -283,6 +341,9 @@ func runDemoModeWithOptions(
 				fmt.Fprintf(writer, "[AgentX Demo] Failure feedback: %s\n", failureFeedback)
 			}
 			fmt.Fprintf(writer, "[AgentX Demo] Marked failed by user at %s\n", testCase.ID)
+			if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, ""); err != nil {
+				return err
+			}
 			break
 		}
 
@@ -295,16 +356,90 @@ func runDemoModeWithOptions(
 		}
 
 		if decision.action == "J" {
+			nextIndex := decision.jumpToIndex
+			if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, sequence[nextIndex].ID); err != nil {
+				return err
+			}
 			idx = decision.jumpToIndex
 			fmt.Fprintf(writer, "[AgentX Demo] Jumped to %d) %s\n", idx+1, sequence[idx].ID)
 			continue
 		}
 
 		idx++
+		if idx < len(sequence) {
+			if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, sequence[idx].ID); err != nil {
+				return err
+			}
+		}
+	}
+	if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, ""); err != nil {
+		return err
 	}
 
 	renderDemoSummary(writer, sequence, selectedCount, runCount, acceptedCount, failedTestID, failureFeedback, artifactPaths, statusByTestID)
 	return nil
+}
+
+func clearControllerPane(writer io.Writer) {
+	fmt.Fprint(writer, "\033[H\033[2J")
+}
+
+func renderControllerHeader(writer io.Writer, sequence []DemoTestCase, startIndex int) {
+	fmt.Fprintln(writer, "[AgentX Demo] Controller Pane")
+	fmt.Fprintf(writer, "[AgentX Demo] Start selection: %d) %s\n", startIndex+1, sequence[startIndex].ID)
+	fmt.Fprintln(writer, "[AgentX Demo] Decision commands: N=next, J <num>=jump, X <feedback>=fail")
+	fmt.Fprintln(writer)
+}
+
+func writeDemoStoriesBoard(storiesFilePath string, sequence []DemoTestCase, startIndex int, statusByTestID map[string]string, activeTestID string) error {
+	path := strings.TrimSpace(storiesFilePath)
+	if path == "" {
+		return nil
+	}
+
+	board := renderDemoStoriesBoard(sequence, startIndex, statusByTestID, activeTestID)
+	if err := os.WriteFile(path, []byte(board), 0o644); err != nil {
+		return fmt.Errorf("failed to write stories board: %w", err)
+	}
+	return nil
+}
+
+func renderDemoStoriesBoard(sequence []DemoTestCase, startIndex int, statusByTestID map[string]string, activeTestID string) string {
+	var builder strings.Builder
+	builder.WriteString("[AgentX Demo] Story Browser\n")
+	builder.WriteString("[AgentX Demo] Status markers: [S]=pending/skip, [/]=active, [P]=pass, [X]=fail\n")
+	builder.WriteString("[AgentX Demo] Scroll affordance: select this pane, then use Ctrl-b [ and PgUp/PgDn; press q to exit copy-mode.\n")
+	builder.WriteString("\n")
+	builder.WriteString("[AgentX Demo] Ordered test sequence (Gherkin):\n")
+
+	for idx, testCase := range sequence {
+		statusMarker := "S"
+		if strings.EqualFold(strings.TrimSpace(testCase.ID), strings.TrimSpace(activeTestID)) {
+			statusMarker = "/"
+		} else {
+			switch strings.ToUpper(strings.TrimSpace(statusByTestID[testCase.ID])) {
+			case demoStatusPass:
+				statusMarker = "P"
+			case demoStatusFail:
+				statusMarker = "X"
+			default:
+				statusMarker = "S"
+			}
+		}
+
+		startMarker := " "
+		if idx == startIndex {
+			startMarker = "*"
+		}
+
+		builder.WriteString(fmt.Sprintf("  %s %d [%s] %s (%s)\n", startMarker, idx+1, statusMarker, testCase.ID, testCase.ApproxDuration))
+		builder.WriteString(fmt.Sprintf("      Name: %s\n", testCase.Title))
+		builder.WriteString(fmt.Sprintf("      GIVEN %s\n", testCase.Given))
+		builder.WriteString(fmt.Sprintf("      WHEN  %s\n", testCase.When))
+		builder.WriteString(fmt.Sprintf("      THEN  %s\n", testCase.Then))
+	}
+
+	return builder.String()
 }
 
 func renderDemoSequence(writer io.Writer, sequence []DemoTestCase, startIndex int) {

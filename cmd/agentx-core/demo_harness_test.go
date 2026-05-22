@@ -263,7 +263,7 @@ func TestRunDemoMode_AllAcceptedShowsReadyForUAT(t *testing.T) {
 	var output bytes.Buffer
 	input := strings.NewReader("N\n")
 
-	err := runDemoMode(input, &output, "e2e-003", nil)
+	err := runDemoMode(input, &output, "e2e-006", nil)
 	if err != nil {
 		t.Fatalf("expected demo mode to succeed, got %v", err)
 	}
@@ -281,8 +281,8 @@ func TestRunDemoMode_AllAcceptedShowsReadyForUAT(t *testing.T) {
 	if !strings.Contains(content, "[AgentX Demo]   - e2e-002: SKIP") {
 		t.Fatalf("expected skipped status for pre-start tests, got:\n%s", content)
 	}
-	if !strings.Contains(content, "[AgentX Demo]   - e2e-003: PASS") {
-		t.Fatalf("expected pass status for accepted test, got:\n%s", content)
+	if !strings.Contains(content, "[AgentX Demo]   - e2e-006: PASS") {
+		t.Fatalf("expected pass status for accepted final test, got:\n%s", content)
 	}
 }
 
@@ -423,5 +423,71 @@ exit 1
 		if _, statErr := os.Stat(filepath.Join(artifactDir, name)); statErr != nil {
 			t.Fatalf("expected artifact file %s to exist: %v", name, statErr)
 		}
+	}
+}
+
+func TestRunDemoModeWithConfigAndContext_SplitViewSuppressesSequenceAndClearsPane(t *testing.T) {
+	// GIVEN split-view controller mode with a stories board file
+	// WHEN the first test is marked failed using X
+	// THEN controller output is compact (no duplicated sequence) and pane-clear ANSI is emitted.
+	var output bytes.Buffer
+	input := strings.NewReader("X split mode failure feedback\n")
+	storiesFilePath := filepath.Join(t.TempDir(), "stories_board.txt")
+
+	err := runDemoModeWithConfigAndContext(
+		context.Background(),
+		input,
+		&output,
+		"",
+		nil,
+		DemoRuntimeConfig{
+			SplitView:       true,
+			StoriesFilePath: storiesFilePath,
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected split view demo mode to succeed, got %v", err)
+	}
+
+	content := output.String()
+	if strings.Contains(content, "[AgentX Demo] Ordered test sequence (Gherkin):") {
+		t.Fatalf("expected split view to suppress full sequence in controller pane, got:\n%s", content)
+	}
+	if !strings.Contains(content, "\033[H\033[2J") {
+		t.Fatalf("expected split view controller pane clear ANSI sequence, got:\n%s", content)
+	}
+	if !strings.Contains(content, "[AgentX Demo] Controller Pane") {
+		t.Fatalf("expected compact controller header in split view, got:\n%s", content)
+	}
+}
+
+func TestRenderDemoStoriesBoard_ShowsStatusMarkers(t *testing.T) {
+	// GIVEN a demo sequence with mixed statuses
+	// WHEN rendering the stories board with an active test
+	// THEN status markers are shown inline for pending, active, pass, and fail states.
+	sequence := defaultDemoSequence()
+	statusByTestID := map[string]string{}
+	for _, testCase := range sequence {
+		statusByTestID[testCase.ID] = demoStatusSkip
+	}
+	statusByTestID["e2e-001"] = demoStatusPass
+	statusByTestID["e2e-003"] = demoStatusFail
+
+	board := renderDemoStoriesBoard(sequence, 0, statusByTestID, "e2e-002")
+
+	if !strings.Contains(board, "1 [P] e2e-001") {
+		t.Fatalf("expected pass marker for first test, board:\n%s", board)
+	}
+	if !strings.Contains(board, "2 [/] e2e-002") {
+		t.Fatalf("expected active marker for second test, board:\n%s", board)
+	}
+	if !strings.Contains(board, "3 [X] e2e-003") {
+		t.Fatalf("expected fail marker for third test, board:\n%s", board)
+	}
+	if !strings.Contains(board, "4 [S] e2e-004") {
+		t.Fatalf("expected pending marker for unrun test, board:\n%s", board)
+	}
+	if !strings.Contains(board, "Scroll affordance") {
+		t.Fatalf("expected scroll affordance guidance in stories board, board:\n%s", board)
 	}
 }

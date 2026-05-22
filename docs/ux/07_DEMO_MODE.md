@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.80.0)_
+_Last updated: 2026-05-22 (v0.81.0)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -16,6 +16,20 @@ In this release, `agentx --demo` opens a split tmux view with a split-left contr
 - left-top pane: story browser (numbered Gherkin use-cases)
 - left-bottom pane: operator command prompt
 - right pane: live AgentX core session (chat/context/input)
+
+The story browser is now a live status board with explicit per-test markers:
+
+- `[S]` pending/skip
+- `[/]` active test
+- `[P]` pass
+- `[X]` fail
+
+The story browser supports long-list navigation via tmux copy-mode:
+
+- select stories pane
+- `Ctrl-b` then `[` to enter copy-mode
+- `PgUp` / `PgDn` to scroll
+- `q` to exit copy-mode
 
 The controller submits prompts over the core `/submit` endpoint so the operator watches the actual running application respond in real time without replacing the split.
 
@@ -56,6 +70,7 @@ At demo start, the user must see:
 - Gherkin `GIVEN/WHEN/THEN` expectations for each test
 - story browser pane (left-top) remains visible while the command prompt pane (left-bottom) accepts input
 - live core session remains visible on the right for the duration of the run
+- story browser lines include per-test status marker (`[S]`, `[/]`, `[P]`, `[X]`) beside each test id
 
 ### Start Selection
 
@@ -78,6 +93,8 @@ Prompt contract:
 In split mode, completion from the controller pane now closes the full demo split session so the remaining mirror pane does not expand into a one-pane terminal.
 
 In split mode, `Ctrl-C` cancellation now exits the controller decision loop and triggers split-session teardown instead of leaving a re-prompting controller pane.
+
+In split mode, the controller pane is refreshed between decisions so stale prompts/results are cleared and the current step remains legible.
 
 Any other input must re-prompt without advancing.
 
@@ -140,6 +157,8 @@ At sequence end (or stop on `X`), demo mode must print:
 - `PD-17-AF-006` — `X` triggers full pane-dump diagnostics to log artifacts
 - `PD-17-AF-007` — inline `X <feedback>` is persisted into diagnostics artifacts
 - `PD-17-AF-008` — end-of-run summary and readiness result is displayed
+- `PD-17-AF-009` — story-browser shows inline per-test status markers (`[S]`, `[/]`, `[P]`, `[X]`)
+- `PD-17-AF-010` — controller pane refreshes/clears between decisions to prevent muddled prompt history
 
 ---
 
