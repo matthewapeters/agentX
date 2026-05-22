@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-21 (v0.65.0)_
+_Last updated: 2026-05-21 (v0.66.0)_
 
 ## Overview
 
@@ -68,6 +68,8 @@ Messages between core and applets use JSON:
   "applet": "chat",
   "payload": { "text": "...", "..." }
 }
+
+For bridge-chat server mode, `chunk` events are emitted incrementally during backend generation and `response` carries the final consolidated assistant text.
 ```
 
 ### Shutdown Protocol

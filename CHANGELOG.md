@@ -5,6 +5,31 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.66.0] - 2026-05-21
+
+### Code Changes
+
+#### Added
+
+- Replaced simulated chunk generation for Ollama backend with true backend streaming in `applets/template.py`.
+  - Bridge now consumes streamed `/api/chat` JSON lines from Ollama when `AGENTX_CHAT_BACKEND=ollama`.
+  - Streamed deltas are emitted as bridge `chunk` events in real-time before final `response` envelope.
+  - Existing deterministic fallback path remains for unavailable/invalid Ollama responses.
+
+### Test Changes
+
+#### Added
+
+- Extended `cmd/agentx-core/core_phase2_chat_bridge_test.go` with backend-stream integration coverage.
+  - GIVEN a fake streaming Ollama endpoint WHEN prompt routing runs with `AGENTX_CHAT_BACKEND=ollama` THEN streamed chunk lines and final consolidated response are rendered.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` status snapshot to record true backend-sourced streaming chunks.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to reflect bridge chunk/response protocol in backend streaming flow.
+
 ## [0.65.0] - 2026-05-21
 
 ### Code Changes

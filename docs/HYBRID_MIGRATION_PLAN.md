@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-21 (v0.65.0)_
+_Last updated: 2026-05-21 (v0.66.0)_
 
 ## Overview
 
@@ -28,6 +28,7 @@ Current state relative to recent issue verification and regression work:
 - Phase 2 now includes initial LLM-backed bridge support via `AGENTX_CHAT_BACKEND=ollama` with deterministic fallback when Ollama is unavailable.
 - Phase 2 now enforces bounded bridge response waits (`AGENTX_CHAT_BRIDGE_RESPONSE_TIMEOUT_SEC`) to prevent hung prompt routes.
 - Phase 2 bridge now supports chunked response events for incremental chat-pane streaming while preserving final turn persistence.
+- Phase 2 now sources chunk events from true Ollama backend streaming (not only local response tokenization) when `AGENTX_CHAT_BACKEND=ollama`.
 - Logs/context applet fidelity remain open build-out areas.
 
 ## Execution Board (Next 2 Sprints)

@@ -101,6 +101,45 @@ def _chat_with_ollama(prompt: str) -> str:
     return content
 
 
+def _stream_chat_with_ollama(prompt: str):
+    """Stream chat deltas from Ollama and return accumulated response text."""
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": True,
+    }
+    data = json.dumps(payload).encode("utf-8")
+    base_url = _normalize_ollama_base_url(OLLAMA_HOST)
+    request = urllib.request.Request(
+        url=f"{base_url}/api/chat",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    chunks = []
+    with urllib.request.urlopen(request, timeout=OLLAMA_TIMEOUT_SEC) as response:
+        for raw_line in response:
+            line = raw_line.decode("utf-8").strip()
+            if not line:
+                continue
+            decoded = json.loads(line)
+            message = decoded.get("message", {})
+            delta = ""
+            if isinstance(message, dict):
+                delta = str(message.get("content", "")).strip()
+            if delta:
+                chunks.append(delta)
+                yield delta
+            if decoded.get("done"):
+                break
+
+    if not chunks:
+        raise ValueError("ollama stream produced no chunks")
+
+    return " ".join(chunks)
+
+
 def generate_chat_response(prompt: str) -> str:
     """Generate response using configured backend with deterministic fallback."""
     if CHAT_BACKEND != "ollama":
@@ -128,6 +167,25 @@ def emit_streaming_bridge_events(response_text: str):
 
     print(json.dumps({"type": "response", "response": response_text}))
     sys.stdout.flush()
+
+
+def emit_ollama_streaming_bridge_events(prompt: str) -> str:
+    """Emit chunk events from real Ollama stream and return final response text."""
+    stream_iter = _stream_chat_with_ollama(prompt)
+    chunks = []
+    try:
+        while True:
+            delta = next(stream_iter)
+            chunks.append(delta)
+            print(json.dumps({"type": "chunk", "delta": delta}))
+            sys.stdout.flush()
+    except StopIteration as stop:
+        final_response = stop.value if stop.value else " ".join(chunks)
+        if not final_response:
+            raise ValueError("ollama stream returned empty final response")
+        print(json.dumps({"type": "response", "response": final_response}))
+        sys.stdout.flush()
+        return final_response
 
 
 def main():
@@ -171,8 +229,22 @@ def main():
                 sys.stdout.flush()
                 continue
 
-            response_text = generate_chat_response(prompt)
-            emit_streaming_bridge_events(response_text)
+            if CHAT_BACKEND == "ollama":
+                try:
+                    emit_ollama_streaming_bridge_events(prompt)
+                except (
+                    urllib.error.URLError,
+                    urllib.error.HTTPError,
+                    TimeoutError,
+                    ValueError,
+                    json.JSONDecodeError,
+                ) as exc:
+                    print(f"[{APPLET_NAME}] Ollama stream failed, falling back to echo: {exc}", file=sys.stderr)
+                    response_text = f"Echo: {prompt}"
+                    emit_streaming_bridge_events(response_text)
+            else:
+                response_text = generate_chat_response(prompt)
+                emit_streaming_bridge_events(response_text)
             if args.bridge_chat:
                 return 0
 

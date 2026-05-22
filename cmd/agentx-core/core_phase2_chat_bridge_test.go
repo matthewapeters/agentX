@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -320,6 +323,69 @@ func TestRouteInputPrompt_RendersStreamChunksAndFinalResponse(t *testing.T) {
 	}
 	if !strings.Contains(commands, "[assistant] Echo: stream chunk demo") {
 		t.Fatalf("expected final consolidated render in tmux commands, got:\n%s", commands)
+	}
+
+	if err := core.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+}
+
+// GIVEN chat backend is configured for Ollama with a streaming endpoint
+// WHEN a prompt is routed through the persistent bridge
+// THEN chunk events are sourced from backend stream and final response is rendered.
+func TestRouteInputPrompt_OllamaStreamingBackendRendersChunks(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available in test environment")
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"Ollama"},"done":false}`)
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"stream"},"done":false}`)
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"reply"},"done":true}`)
+	}))
+	defer server.Close()
+
+	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
+	t.Setenv("AGENTX_OLLAMA_HOST", server.URL)
+	t.Setenv("AGENTX_OLLAMA_MODEL", "test-model")
+
+	projectDir := t.TempDir()
+	stageTemplateApplet(t, projectDir)
+
+	logPath := setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-ollama-stream"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	response, err := core.RouteInputPrompt(context.Background(), "ollama stream prompt")
+	if err != nil {
+		t.Fatalf("RouteInputPrompt failed: %v", err)
+	}
+	if response != "Ollama stream reply" {
+		t.Fatalf("expected ollama streamed response, got %q", response)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "[assistant-stream] Ollama") {
+		t.Fatalf("expected ollama stream chunk render in tmux log, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[assistant] Ollama stream reply") {
+		t.Fatalf("expected final ollama response render in tmux log, got:\n%s", commands)
 	}
 
 	if err := core.Shutdown(context.Background()); err != nil {
