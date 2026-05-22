@@ -5,6 +5,32 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.71.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Added richer context-pane fidelity verification logic across unit and integration BDD coverage.
+
+### Test Changes
+
+#### Added
+
+- Added unit tests in `cmd/agentx-core/core_context_persistence_test.go`:
+  - `TestTrimForPaneSummary_BoundsLength` validates bounded truncation behavior for context summaries.
+  - `TestRouteInputPrompt_ContextSummaryOrderingAndTruncation` validates multi-turn context summary ordering and truncation markers in tmux output.
+- Expanded GoDog integration coverage:
+  - New scenario in `cmd/agentx-core/features/integration.feature` validates context-pane summary ordering (`turn=1` before `turn=2`) and bounded formatting signal (`...`).
+  - New GoDog step in `cmd/agentx-core/godog_test.go`: `tmux command snippet "..." should appear before "..."`.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with completed context-pane ordering/bounded-format assertion milestone.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to reflect summary truncation and ordering validation coverage.
+
 ## [0.70.0] - 2026-05-22
 
 ### Code Changes

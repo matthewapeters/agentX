@@ -118,3 +118,19 @@ Feature: IPC router integration
     Then context turns should have length 1
     And context turns should include prompt "streaming godog prompt"
     And context turns should include response "Echo: streaming godog prompt"
+
+  Scenario: Context pane summaries preserve turn order with bounded formatting
+    Given a temporary project directory
+    And a core config with username "dev" and session "sess-9"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "first context turn"
+    Then prompt routing should complete without error
+    When I route input prompt "this second prompt is intentionally long for bounded context pane formatting validation"
+    Then prompt routing should complete without error
+    And tmux commands should include "[context] turn=1"
+    And tmux commands should include "[context] turn=2"
+    And tmux command snippet "[context] turn=1" should appear before "[context] turn=2"
+    And tmux commands should include "..."

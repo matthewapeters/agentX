@@ -498,6 +498,18 @@ func (s *bddState) tmuxCommandsShouldInclude(substring string) error {
 	return nil
 }
 
+func (s *bddState) tmuxCommandSnippetShouldAppearBefore(first, second string) error {
+	firstIdx := strings.Index(s.tmuxCommands, first)
+	secondIdx := strings.Index(s.tmuxCommands, second)
+	if firstIdx == -1 || secondIdx == -1 {
+		return fmt.Errorf("expected tmux commands to include both %q and %q, got:\n%s", first, second, s.tmuxCommands)
+	}
+	if firstIdx >= secondIdx {
+		return fmt.Errorf("expected %q before %q in tmux commands, got:\n%s", first, second, s.tmuxCommands)
+	}
+	return nil
+}
+
 func (s *bddState) startupShouldNameWindowZeroAs(windowName string) error {
 	expected := "new-session -d -s " + s.core.tmuxSessionName + " -n " + windowName
 	if !strings.Contains(s.tmuxCommands, expected) {
@@ -652,6 +664,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^I capture the context turns snapshot$`, state.iCaptureTheContextTurnsSnapshot)
 	ctx.Step(`^tmux initialization should complete without error$`, state.tmuxInitializationShouldCompleteWithoutError)
 	ctx.Step(`^tmux commands should include "([^"]*)"$`, state.tmuxCommandsShouldInclude)
+	ctx.Step(`^tmux command snippet "([^"]*)" should appear before "([^"]*)"$`, state.tmuxCommandSnippetShouldAppearBefore)
 	ctx.Step(`^prompt routing should complete without error$`, state.promptRoutingShouldCompleteWithoutError)
 	ctx.Step(`^routed response should equal "([^"]*)"$`, state.routedResponseShouldEqual)
 	ctx.Step(`^tmux should include rendered chat response "([^"]*)"$`, state.tmuxShouldIncludeRenderedChatResponse)
