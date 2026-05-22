@@ -1,11 +1,11 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-15 (v0.48.13.post1)_
+_Last updated: 2026-05-22 (v0.74.4.post2)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-15 (v0.48.13.post1 — TUI-first migration planning documented)
+**Last updated**: 2026-05-22 (v0.74.4.post2 — Demo Mode UX contract added)
 **Current version**: see `pyproject.toml`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
@@ -24,6 +24,7 @@ _Last updated: 2026-05-15 (v0.48.13.post1)_
 | Follow a user interaction end-to-end | [02_USER_FLOWS.md](02_USER_FLOWS.md) |
 | Vibe coding (neovim + tmux integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
 | TUI mirror chat pane (spec + plan) | [06_TUI_MIRROR.md](06_TUI_MIRROR.md) |
+| Demo mode contract and harness plan | [07_DEMO_MODE.md](07_DEMO_MODE.md) |
 | TUI-default migration plan and docs impact list | [06_TUI_MIRROR.md §12](06_TUI_MIRROR.md#12-tui-first-migration-plan-planned) |
 | Tool/tooling backlog (non-UX) | [../tools/tools_issues.md](../tools/tools_issues.md) |
 | Run the UX review+enforce cycle (agent slash-command) | `/ux-review` in Copilot Chat |
@@ -59,8 +60,9 @@ _Last updated: 2026-05-15 (v0.48.13.post1)_
 | PD-14 VimBridge GUI | 3 | 0 | 6 | 0 |
 | PD-15 TerminalPane GUI | 8 | 0 | 0 | 0 |
 | PD-16 TuiMirror | 8 | 0 | 0 | 0 |
+| PD-17 DemoMode | 0 | 0 | 6 | 0 |
 
-**Totals**: 104 ✅ · 6 ⚠️ · 8 📝 · 0 ❌
+**Totals**: 104 ✅ · 6 ⚠️ · 14 📝 · 0 ❌
 
 ---
 
@@ -83,6 +85,7 @@ _Last updated: 2026-05-15 (v0.48.13.post1)_
 - [/] **PD-01-AF-010** — Output panel right-click copy context menu (Wayland-safe)
 - [/] **PD-02-AF-008..012** — Input panel right-click context menu: popup, Copy/Paste visibility, Copy action, Paste action
 - [/] **PD-16 (TuiMirror)** — implemented: config + NullGUI path, bridge I/O, launcher lifecycle, and traceability/test reconciliation completed
+- [ ] **PD-17 (DemoMode)** — define and implement `agentx --demo` sequence UX, per-test `N/X` feedback loop, and failure pane-dump artifacts.
 - [ ] **PD-16 migration (planned)** — invert launcher default to TUI-first, add `--gui` opt-in path, and reconcile docs/ux artifacts per `06_TUI_MIRROR.md §12.6`
 
 ---
@@ -163,6 +166,7 @@ docs/ux/
 ├── 02_USER_FLOWS.md                   ← End-to-end user interaction flows (Mermaid)
 ├── 03_PANEL_DETAILS.md                ← Per-panel: affordance tables, state fields, diagrams
 ├── 04_COMPONENT_CUT_SHEET_TEMPLATE.md ← Blank template for new component cut-sheets
+├── 07_DEMO_MODE.md                    ← Demo mode UX contract and implementation plan
 └── UX_ISSUES.md                       ← Bug-tracking log for user-reported UX defects
 
 .github/prompts/

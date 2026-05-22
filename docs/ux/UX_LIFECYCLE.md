@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-18 (v0.54.0)_
+_Last updated: 2026-05-22 (v0.74.4.post2)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -165,6 +165,7 @@ Examples:
 | PD-14 | VimBridge GUI | `src/agentx/integration/vim_bridge.py` |
 | PD-15 | TerminalPane GUI | `src/agentx/integration/terminal_bridge.py` + `src/agentx/gui/` |
 | PD-16 | TuiMirror | `src/agentx/integration/tui_bridge.py`, `launch_vibe.sh` |
+| PD-17 | DemoMode | `cmd/agentx-core/main.go`, demo harness package (planned) |
 
 When a new panel or top-level widget is added, assign the next available PD number,
 add a row to this table, and create a section in `03_PANEL_DETAILS.md`.
@@ -388,6 +389,17 @@ implements it and the test that validates it.  Status legend:
 | `tui.enable` controls `TuiBridge` lifecycle and guarded call-sites | PD-16-AF-007 | `AgentXSession.__init__()` + `close()` + streaming guards | `test_tui_bridge_output.py`, `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
 | `<leader>q` writes quit sentinel and triggers graceful application shutdown from TUI | PD-16-AF-008 | generated `agentx_tui.lua` quit keymap + `TuiBridge._input_reader_loop()` + `AgentXSession._on_tui_quit()` | `test_tui_bridge_output.py`, `test_session_gui_disabled.py`, `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
 | TUI context visualization renders color-band meter and top-contributor bars with ASCII fallback | PD-16-AF-009 | `TuiBridge.render_context_visualization()` + `AgentXSession.schedule_meter_redraw()` | `test_tui_bridge_output.py`, `test_active_model_meter_wiring.py` | module-level tests | ✅ |
+
+### PD-17 — DemoMode
+
+| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
+|---|---|---|---|---|---|
+| `--demo` enters DemoMode execution path | PD-17-AF-001 | `main.go` demo flag parse + harness bootstrap (planned) | — | — | 📝 |
+| Demo sequence list shown before execution | PD-17-AF-002 | `DemoHarness` sequence presenter (planned) | — | — | 📝 |
+| Start test selection by id/index (`--demo-start`) | PD-17-AF-003 | `DemoHarness` selector (planned) | — | — | 📝 |
+| Per-test user feedback prompt (`N`/`X`) | PD-17-AF-004 | `DemoHarness` per-test controller (planned) | — | — | 📝 |
+| `X` triggers pane/metadata dump artifact bundle | PD-17-AF-005 | diagnostics capture pipeline (planned) | — | — | 📝 |
+| End-of-run readiness and artifact summary output | PD-17-AF-006 | `DemoHarness` terminal summary renderer (planned) | — | — | 📝 |
 
 Planned follow-up for PD-16 default-behavior migration is documented in
 `docs/ux/06_TUI_MIRROR.md` §12 (TUI-first default with `--gui` opt-in).
@@ -698,7 +710,9 @@ tests.
 
 ### High Priority (visible to users, behaviour is non-trivial)
 
-_(No outstanding high-priority gaps.)_
+| Affordance ID | Description |
+|---------------|-------------|
+| PD-17-AF-001..006 | DemoMode CLI UX contract (`agentx --demo`, per-test N/X loop, start-selection, failure artifact bundle) |
 
 ### Medium Priority (settings / configuration)
 

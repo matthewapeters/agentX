@@ -1,6 +1,6 @@
 # AgentX — User Flows
 
-_Last updated: 2026-05-06 (v0.22.20.post3)_
+_Last updated: 2026-05-22 (v0.74.4.post2)_
 
 Each section contains a Mermaid sequence or flowchart diagram documenting how
 user actions map to system behaviour.
@@ -410,3 +410,45 @@ sequenceDiagram
 - Show users where logs are written without requiring filesystem discovery.
 - Display before first assistant response so operational context is immediately visible.
 - Allow suppression via `agentx.show_log_locations_on_startup=false`.
+
+---
+
+## UF-14: Demo Mode (Per-Test UAT Review Loop)
+
+**Trigger**: UAT operator launches `agentx --demo`.
+
+```mermaid
+sequenceDiagram
+    participant User as UAT Operator
+    participant CLI as agentx --demo
+    participant Harness as DemoHarness
+    participant E2E as E2E Runner
+    participant Tmux as tmux Session
+    participant Logs as logs/demo/<session>
+
+    User->>CLI: starts demo mode
+    CLI->>Harness: initialize demo manifest
+    Harness-->>User: print ordered test sequence
+    User->>Harness: choose start test (id/index)
+    loop for each selected test
+        Harness->>E2E: execute test scenario in visible terminal
+        E2E->>Tmux: interact with panes (input/read/capture)
+        E2E-->>Harness: pass/fail result
+        Harness-->>User: prompt [N] next or [X] fail
+        alt user enters N
+            Harness->>Harness: record accepted test
+        else user enters X
+            Harness->>Tmux: capture all panes + pane metadata
+            Harness->>Logs: write artifact bundle
+            Harness-->>User: print failure summary and artifact paths
+            break
+        end
+    end
+    Harness-->>User: print end-of-run readiness summary
+```
+
+**Behavior goals**:
+
+- feedback is collected after each test, not after the full sequence.
+- operator can start from any test to review newly added scenarios quickly.
+- failure path always produces full pane-capture artifacts for agent analysis.

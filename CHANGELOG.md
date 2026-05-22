@@ -5,6 +5,30 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.74.4.post2] - 2026-05-22
+
+### Documentation Changes
+
+#### Added
+
+- Added `docs/ux/07_DEMO_MODE.md` as the authoritative DemoMode UX contract and implementation plan.
+  - defines `agentx --demo` and `--demo-start <id-or-index>` command contract (planned).
+  - defines per-test feedback semantics (`N`/`X`) at the end of each test.
+  - defines deterministic pane-dump diagnostics artifact contract on `X`.
+
+#### Changed
+
+- Updated UX authority docs to make DemoMode concrete and traceable:
+  - `docs/ux/00_INDEX.md`
+  - `docs/ux/README.md`
+  - `docs/ux/03_PANEL_DETAILS.md`
+  - `docs/ux/02_USER_FLOWS.md`
+  - `docs/ux/UX_LIFECYCLE.md`
+- Added `PD-17 DemoMode` affordance mapping (`PD-17-AF-001..006`) as spec-only rows in lifecycle traceability matrix.
+- Updated migration and architecture docs with explicit pre-UAT DemoMode plan and CLI contract notes:
+  - `docs/HYBRID_MIGRATION_PLAN.md`
+  - `docs/architecture/HYBRID_ARCHITECTURE.md`
+
 ## [0.74.4.post1] - 2026-05-22
 
 ### Documentation Changes

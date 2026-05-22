@@ -1,6 +1,6 @@
 # AgentX — Panel Details
 
-_Last updated: 2026-05-06 (v0.22.20.post3)_
+_Last updated: 2026-05-22 (v0.74.4.post2)_
 
 Detailed affordance specifications for each GUI panel/widget.  Each section
 documents the widget's purpose, all user-visible controls, and the callback
@@ -1202,6 +1202,56 @@ restarted carry the `🔁` icon appended to their label text.
 | `agentx.working_memory.enabled` | `Enabled 🔁` |
 | `agentix.classification_torch_model` | `Torch model 🔁` |
 | `agentix.classification_torch_device` | `Torch device 🔁` |
+
+---
+
+## PD-17: DemoMode
+
+**Panel/Surface**: Terminal-first demo harness (`agentx --demo`)  
+**Type**: CLI UX mode for pre-UAT validation  
+**Primary source (planned)**: `cmd/agentx-core/main.go`, demo harness orchestration package
+
+DemoMode is a user-visible, interactive pre-UAT flow that runs E2E test sequences and requests user feedback after every test.
+
+### Affordance Inventory
+
+| Affordance | ID | Expected Behavior | Status |
+|-----------|----|-------------------|--------|
+| `--demo` enters DemoMode | PD-17-AF-001 | Launches demo harness path instead of normal interactive run | 📝 |
+| Demo test sequence preview | PD-17-AF-002 | Displays ordered E2E tests with id/title before running | 📝 |
+| Start selection from id/index | PD-17-AF-003 | User can choose where to start sequence (`--demo-start` or interactive pick) | 📝 |
+| Per-test `N/X` user feedback loop | PD-17-AF-004 | End of each test returns control and accepts only `N` or `X` | 📝 |
+| `X` failure artifact bundle | PD-17-AF-005 | Captures all panes + metadata to deterministic logs for analysis | 📝 |
+| End-of-run readiness summary | PD-17-AF-006 | Prints run totals, failed step if any, and artifact paths | 📝 |
+
+### Interaction Contract
+
+```gherkin
+# PD-17-AF-004 — feedback prompt runs per test (not end of sequence)
+GIVEN demo mode is running an ordered test sequence
+WHEN an individual test finishes
+THEN control returns to the user immediately
+ AND prompt accepts only N (next) or X (fail)
+
+# PD-17-AF-005 — fail path captures diagnostics
+GIVEN demo mode feedback prompt is visible for a completed test
+WHEN the user enters X
+THEN demo execution stops
+ AND all panes are dumped to log artifacts
+ AND artifact paths are printed to terminal
+
+# PD-17-AF-003 — start selection
+GIVEN a demo test sequence is available
+WHEN the user provides --demo-start <id-or-index>
+THEN demo execution begins at the selected test
+ AND prior tests are listed as skipped by selection
+```
+
+### UX Notes
+
+- DemoMode is a UX surface and must remain operator-friendly.
+- Output must be clear and structured, with explicit current-test identity.
+- Failure artifacts must be deterministic and easy to locate under `logs/`.
 
 The `_RESTART_REQUIRED` module-level set in `settings_tab.py` is the authoritative list of
 keys that require restart.

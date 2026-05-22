@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.74.4)_
+_Last updated: 2026-05-22 (v0.74.4.post2)_
 
 ## Overview
 
@@ -43,6 +43,43 @@ Current state relative to recent issue verification and regression work:
 - Pane UX contract fix: interactive panes now suppress operational noise (READY payloads, IPC path diagnostics, shell echo traces) in favor of sanctioned user-facing output.
 - Headless UX coverage now includes pane-affordance behavior validation (`tests/test_tmux_pane_affordances_headless.sh`) in addition to structural layout validation.
 - Remaining applet fidelity work is focused on potential richer context-pane metadata views and any additional backend compatibility permutations requested.
+
+## DemoMode Implementation Plan (Pre-UAT Gate)
+
+Goal: provide a user-visible terminal harness (`agentx --demo`) that executes E2E scenarios and captures structured feedback after each test.
+
+### D0 — Contract Freeze
+
+- Define DemoMode UX contract in `docs/ux/07_DEMO_MODE.md`.
+- Trace affordances in `UX_LIFECYCLE.md` as `PD-17-AF-001..006`.
+
+### D1 — CLI Surface
+
+- Add `--demo` flag to `agentx` command.
+- Add `--demo-start <id-or-index>` selector.
+- At startup, print ordered demo test sequence and active start point.
+
+### D2 — Per-Test User Feedback Loop
+
+- Run demo tests sequentially in visible terminal.
+- At end of each test, prompt user for:
+  - `N` = accept and continue
+  - `X` = fail and stop
+- Invalid input must re-prompt without advancing.
+
+### D3 — Failure Diagnostics
+
+- On `X`, dump:
+  - all pane captures
+  - pane/window metadata
+  - test id/title and timestamp
+- Persist under deterministic `logs/demo/<session>/<test>/` artifact paths.
+
+### D4 — Automation and Readiness
+
+- Add unit tests for selector and prompt-state logic.
+- Add headless integration tests for artifact bundle creation.
+- Add end summary with run totals and readiness outcome.
 
 ## Execution Board (Next 2 Sprints)
 
