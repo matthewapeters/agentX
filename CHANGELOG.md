@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.5] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Fixed split DemoMode interruption behavior:
+  - decision prompt now respects cancellation context, so `Ctrl-C` exits the controller loop instead of re-prompting indefinitely.
+  - controller interruption/error path now attempts to close the full split tmux session before returning.
+
+### Test Changes
+
+#### Added
+
+- Added cancellation regression coverage in `demo_harness_test.go` to ensure demo decision loop exits on cancelled context.
+
 ## [0.79.4] - 2026-05-22
 
 ### Code Changes

@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -132,7 +133,14 @@ func main() {
 		demoRunner := func(testCase DemoTestCase) (string, error) {
 			return submitDemoPrompt(ctx, runtimeConfig.HealthURL(), demoPromptForTestCase(testCase))
 		}
-		if err := runDemoModeWithConfig(os.Stdin, os.Stdout, *demoStart, demoRunner, runtimeConfig); err != nil {
+		if err := runDemoModeWithConfigAndContext(ctx, os.Stdin, os.Stdout, *demoStart, demoRunner, runtimeConfig); err != nil {
+			if closeErr := closeCurrentTmuxSession(context.Background()); closeErr != nil {
+				log.Printf("[AgentX Demo] Warning: failed to close demo session from controller error path: %v", closeErr)
+			}
+			if errors.Is(err, context.Canceled) {
+				fmt.Println("[AgentX Demo] Controller interrupted; demo session closed")
+				return
+			}
 			log.Fatalf("Demo controller failed: %v", err)
 		}
 		if err := closeCurrentTmuxSession(ctx); err != nil {

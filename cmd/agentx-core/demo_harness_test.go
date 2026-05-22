@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,6 +196,40 @@ func TestRunDemoMode_AllAcceptedShowsReadyForUAT(t *testing.T) {
 	}
 	if !strings.Contains(content, "[AgentX Demo] Artifact paths: none") {
 		t.Fatalf("expected no-artifact summary line, got:\n%s", content)
+	}
+}
+
+func TestRunDemoMode_ContextCancelledExitsPromptLoop(t *testing.T) {
+	// GIVEN DemoMode waiting for a per-test decision
+	// WHEN controller context is cancelled (for example via Ctrl-C)
+	// THEN the loop exits instead of leaving an orphaned pane prompt.
+	var output bytes.Buffer
+	input := strings.NewReader("invalid\n")
+	runCount := 0
+
+	runner := func(testCase DemoTestCase) (string, error) {
+		runCount++
+		return "ok", nil
+	}
+
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := runDemoModeWithOptions(
+		input,
+		&output,
+		"",
+		runner,
+		demoModeOptions{decisionCtx: cancelledCtx},
+	)
+	if err == nil {
+		t.Fatal("expected cancellation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "demo decision cancelled") {
+		t.Fatalf("expected cancellation message, got %v", err)
+	}
+	if runCount != 1 {
+		t.Fatalf("expected runner to execute once before cancellation, got %d", runCount)
 	}
 }
 

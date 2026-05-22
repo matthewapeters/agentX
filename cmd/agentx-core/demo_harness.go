@@ -55,6 +55,7 @@ type DemoDiagnosticsCollector func(DemoRuntimeConfig, DemoTestCase) ([]string, e
 type demoModeOptions struct {
 	runtimeConfig DemoRuntimeConfig
 	collector     DemoDiagnosticsCollector
+	decisionCtx   context.Context
 }
 
 // defaultDemoSequence returns the stable, ordered demo manifest for D1.
@@ -143,12 +144,27 @@ func runDemoModeWithConfig(
 	runner DemoTestRunner,
 	runtimeConfig DemoRuntimeConfig,
 ) error {
+	return runDemoModeWithConfigAndContext(context.Background(), reader, writer, startSelector, runner, runtimeConfig)
+}
+
+func runDemoModeWithConfigAndContext(
+	decisionCtx context.Context,
+	reader io.Reader,
+	writer io.Writer,
+	startSelector string,
+	runner DemoTestRunner,
+	runtimeConfig DemoRuntimeConfig,
+) error {
+	if decisionCtx == nil {
+		decisionCtx = context.Background()
+	}
+
 	return runDemoModeWithOptions(
 		reader,
 		writer,
 		startSelector,
 		runner,
-		demoModeOptions{runtimeConfig: runtimeConfig},
+		demoModeOptions{runtimeConfig: runtimeConfig, decisionCtx: decisionCtx},
 	)
 }
 
@@ -164,6 +180,9 @@ func runDemoModeWithOptions(
 	}
 	if options.collector == nil {
 		options.collector = defaultDemoDiagnosticsCollector
+	}
+	if options.decisionCtx == nil {
+		options.decisionCtx = context.Background()
 	}
 
 	sequence := defaultDemoSequence()
@@ -201,7 +220,7 @@ func runDemoModeWithOptions(
 			fmt.Fprintf(writer, "[AgentX Demo] Result: PASS (%s)\n", resultText)
 		}
 
-		decision, promptErr := readDemoDecision(inputReader, writer)
+		decision, promptErr := readDemoDecision(options.decisionCtx, inputReader, writer)
 		if promptErr != nil {
 			return promptErr
 		}
@@ -255,8 +274,14 @@ func renderDemoSequence(writer io.Writer, sequence []DemoTestCase, startIndex in
 	)
 }
 
-func readDemoDecision(reader *bufio.Reader, writer io.Writer) (string, error) {
+func readDemoDecision(decisionCtx context.Context, reader *bufio.Reader, writer io.Writer) (string, error) {
 	for {
+		select {
+		case <-decisionCtx.Done():
+			return "", fmt.Errorf("demo decision cancelled: %w", decisionCtx.Err())
+		default:
+		}
+
 		fmt.Fprint(writer, "[AgentX Demo] Enter decision [N=next, X=fail]: ")
 		line, err := reader.ReadString('\n')
 		if err != nil {
