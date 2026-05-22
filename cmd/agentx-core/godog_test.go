@@ -35,6 +35,7 @@ type bddState struct {
 	inputExit    bool
 	contextTurns []ChatTurn
 	chatPID      int
+	bridgeScript string
 }
 
 func (s *bddState) reset() {
@@ -59,6 +60,62 @@ func (s *bddState) reset() {
 	s.inputExit = false
 	s.contextTurns = nil
 	s.chatPID = 0
+	s.bridgeScript = ""
+}
+
+func stageFlakyBridgeApplet(projectDir string) (string, error) {
+	appletsDir := filepath.Join(projectDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create applets dir: %w", err)
+	}
+
+	scriptPath := filepath.Join(appletsDir, "flaky_bridge.py")
+	markerPath := filepath.Join(appletsDir, ".flaky_once_marker")
+	script := fmt.Sprintf(`#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+import time
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--bridge-chat-server", action="store_true")
+args = parser.parse_args()
+
+marker_path = %q
+
+print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
+sys.stdout.flush()
+
+for raw_line in sys.stdin:
+	if not raw_line.strip():
+		continue
+	req = json.loads(raw_line)
+	if req.get("type") != "prompt":
+		continue
+
+	if not os.path.exists(marker_path):
+		with open(marker_path, "w", encoding="utf-8") as marker_file:
+			marker_file.write("first-timeout-done\n")
+		time.sleep(1.0)
+		continue
+
+	prompt = req.get("prompt", "")
+	print(json.dumps({"type": "chunk", "delta": "Flaky"}))
+	sys.stdout.flush()
+	print(json.dumps({"type": "chunk", "delta": "recovered:"}))
+	sys.stdout.flush()
+	print(json.dumps({"type": "chunk", "delta": prompt}))
+	sys.stdout.flush()
+	print(json.dumps({"type": "response", "response": f"Flaky recovered: {prompt}"}))
+	sys.stdout.flush()
+`, markerPath)
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		return "", fmt.Errorf("failed to write flaky bridge applet: %w", err)
+	}
+
+	return scriptPath, nil
 }
 
 func (s *bddState) theProjectContainsTemplateChatApplet() error {
@@ -90,6 +147,20 @@ func (s *bddState) iHaveATemporaryProjectDirectory() error {
 		return err
 	}
 	s.tmpDir = d
+	return nil
+}
+
+func (s *bddState) theProjectContainsFlakyChatBridgeApplet() error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+
+	scriptPath, err := stageFlakyBridgeApplet(s.tmpDir)
+	if err != nil {
+		return err
+	}
+
+	s.bridgeScript = scriptPath
 	return nil
 }
 
@@ -189,6 +260,19 @@ func (s *bddState) iConstructTheAgentXCore() error {
 		return errors.New("config not initialized")
 	}
 	s.core = NewAgentXCore(s.cfg)
+	return nil
+}
+
+func (s *bddState) iConfigureCoreChatBridgeToUsePreparedAppletScriptWithTimeoutMs(timeoutMs int) error {
+	if s.core == nil {
+		return errors.New("core not initialized")
+	}
+	if s.bridgeScript == "" {
+		return errors.New("prepared bridge script not initialized")
+	}
+
+	s.core.chatAppletScript = s.bridgeScript
+	s.core.chatBridgeResponseTimeout = time.Duration(timeoutMs) * time.Millisecond
 	return nil
 }
 
@@ -510,6 +594,14 @@ func (s *bddState) tmuxCommandSnippetShouldAppearBefore(first, second string) er
 	return nil
 }
 
+func (s *bddState) tmuxCommandsShouldIncludeAtLeast(substring string, count int) error {
+	actual := strings.Count(s.tmuxCommands, substring)
+	if actual < count {
+		return fmt.Errorf("expected tmux commands to include %q at least %d times, got %d; commands:\n%s", substring, count, actual, s.tmuxCommands)
+	}
+	return nil
+}
+
 func (s *bddState) startupShouldNameWindowZeroAs(windowName string) error {
 	expected := "new-session -d -s " + s.core.tmuxSessionName + " -n " + windowName
 	if !strings.Contains(s.tmuxCommands, expected) {
@@ -635,6 +727,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 
 	ctx.Step(`^a temporary project directory$`, state.iHaveATemporaryProjectDirectory)
 	ctx.Step(`^the project contains template chat applet$`, state.theProjectContainsTemplateChatApplet)
+	ctx.Step(`^the project contains flaky chat bridge applet$`, state.theProjectContainsFlakyChatBridgeApplet)
 	ctx.Step(`^a config with username "([^"]*)"$`, state.aConfigWithUsername)
 	ctx.Step(`^I ensure session directories for session "([^"]*)"$`, state.iEnsureSessionDirectoriesForSession)
 	ctx.Step(`^the session directory structure should exist$`, state.theSessionDirectoryStructureShouldExist)
@@ -646,6 +739,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^FIFO paths should include applet name "([^"]*)"$`, state.fifoPathsShouldIncludeAppletName)
 	ctx.Step(`^a core config with username "([^"]*)" and session "([^"]*)"$`, state.aCoreConfigWithUsernameAndSession)
 	ctx.Step(`^I construct the AgentX core$`, state.iConstructTheAgentXCore)
+	ctx.Step(`^I configure core chat bridge to use prepared applet script with timeout (\d+) ms$`, state.iConfigureCoreChatBridgeToUsePreparedAppletScriptWithTimeoutMs)
 	ctx.Step(`^the core session id should be non-empty$`, state.theCoreSessionIDShouldBeNonempty)
 	ctx.Step(`^the core tmux session name should include username "([^"]*)"$`, state.theCoreTmuxSessionNameShouldIncludeUsername)
 	ctx.Step(`^a context manager with a temporary context directory$`, state.aContextManagerWithATemporaryContextDirectory)
@@ -665,6 +759,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^tmux initialization should complete without error$`, state.tmuxInitializationShouldCompleteWithoutError)
 	ctx.Step(`^tmux commands should include "([^"]*)"$`, state.tmuxCommandsShouldInclude)
 	ctx.Step(`^tmux command snippet "([^"]*)" should appear before "([^"]*)"$`, state.tmuxCommandSnippetShouldAppearBefore)
+	ctx.Step(`^tmux commands should include "([^"]*)" at least (\d+) times$`, state.tmuxCommandsShouldIncludeAtLeast)
 	ctx.Step(`^prompt routing should complete without error$`, state.promptRoutingShouldCompleteWithoutError)
 	ctx.Step(`^routed response should equal "([^"]*)"$`, state.routedResponseShouldEqual)
 	ctx.Step(`^tmux should include rendered chat response "([^"]*)"$`, state.tmuxShouldIncludeRenderedChatResponse)

@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-22 (v0.71.0)_
+_Last updated: 2026-05-22 (v0.72.0)_
 
 ## Overview
 
@@ -80,6 +80,8 @@ For mid-stream cancellation, the core now propagates context cancellation/deadli
 Integration BDD coverage now validates bridge streaming behavior together with persisted-turn integrity assertions (prompt and response content) in a single end-to-end routing scenario.
 
 Context-pane summary behavior is additionally validated for bounded truncation and deterministic turn ordering across multi-turn routing sequences.
+
+Observability-level BDD assertions now cover bridge lifecycle event sequencing for timeout/fallback paths and subsequent bridge restart/recovery behavior.
 ```
 
 ### Shutdown Protocol

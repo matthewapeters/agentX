@@ -5,6 +5,36 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.72.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Expanded BDD observability coverage and helpers in:
+  - `cmd/agentx-core/features/integration.feature`
+  - `cmd/agentx-core/godog_test.go`
+
+### Test Changes
+
+#### Added
+
+- Added integration scenario: `Bridge lifecycle events reflect timeout fallback and subsequent recovery`.
+  - GIVEN a flaky bridge applet and tight timeout WHEN first prompt routes THEN timeout/fallback events are emitted with deterministic fallback response.
+  - GIVEN immediate second prompt WHEN bridge restarts THEN recovery response is emitted and lifecycle sequence assertions pass.
+- Added GoDog helper steps for observability assertions:
+  - Configure core to use prepared bridge script with timeout.
+  - Assert tmux command snippets ordering.
+  - Assert tmux command occurrence counts (at least N times).
+- Added flaky bridge applet fixture that persists first-time timeout state across process restarts to faithfully validate restart behavior.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with completed lifecycle-sequencing observability milestone.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to document timeout/fallback/restart/recovery sequencing validation.
+
 ## [0.71.0] - 2026-05-22
 
 ### Code Changes

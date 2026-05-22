@@ -134,3 +134,25 @@ Feature: IPC router integration
     And tmux commands should include "[context] turn=2"
     And tmux command snippet "[context] turn=1" should appear before "[context] turn=2"
     And tmux commands should include "..."
+
+  Scenario: Bridge lifecycle events reflect timeout fallback and subsequent recovery
+    Given a temporary project directory
+    And the project contains flaky chat bridge applet
+    And a core config with username "dev" and session "sess-10"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I configure core chat bridge to use prepared applet script with timeout 150 ms
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "first timeout"
+    Then prompt routing should complete without error
+    And routed response should equal "Echo: first timeout"
+    And tmux commands should include "[bridge] event=bridge_timeout"
+    And tmux commands should include "[bridge] event=bridge_fallback"
+    When I route input prompt "second recovery"
+    Then prompt routing should complete without error
+    And routed response should equal "Flaky recovered: second recovery"
+    And tmux commands should include "[bridge] event=bridge_response_ok"
+    And tmux command snippet "[bridge] event=bridge_timeout" should appear before "[bridge] event=bridge_fallback"
+    And tmux command snippet "[bridge] event=bridge_fallback" should appear before "[bridge] event=bridge_response_ok"
+    And tmux commands should include "[bridge] event=bridge_start" at least 2 times
