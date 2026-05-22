@@ -31,12 +31,13 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 
 	demoSessionName := fmt.Sprintf("%s_demo", core.tmuxSessionName)
 	controllerArgs := buildDemoControllerArgs(executablePath, cfg, core.SessionID, startSelector, core.tmuxSessionName)
+	storiesArgs := buildDemoStoriesPaneArgs(startSelector)
 
 	if err := prepareCoreSessionForSplitView(ctx, core.tmuxSessionName); err != nil {
 		return fmt.Errorf("failed to prepare core session for split view: %w", err)
 	}
 
-	if err := runTmuxInteractive(ctx, append([]string{"new-session", "-d", "-s", demoSessionName, "-n", "demo-control"}, controllerArgs...)...); err != nil {
+	if err := runTmuxInteractive(ctx, append([]string{"new-session", "-d", "-s", demoSessionName, "-n", "demo-control"}, storiesArgs...)...); err != nil {
 		return fmt.Errorf("failed to create demo controller session: %w", err)
 	}
 
@@ -45,18 +46,26 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 		return fmt.Errorf("failed to create live core mirror pane: %w", err)
 	}
 
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.0", "-T", "controller"); err != nil {
+	if err := runTmuxInteractive(ctx, append([]string{"split-window", "-v", "-p", "35", "-t", demoSessionName + ":0.0"}, controllerArgs...)...); err != nil {
+		return fmt.Errorf("failed to create demo prompt pane: %w", err)
+	}
+
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.0", "-T", "stories"); err != nil {
+		return fmt.Errorf("failed to label stories pane: %w", err)
+	}
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.2", "-T", "controller"); err != nil {
 		return fmt.Errorf("failed to label controller pane: %w", err)
 	}
 	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.1", "-T", "live-core"); err != nil {
 		return fmt.Errorf("failed to label live core pane: %w", err)
 	}
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.0"); err != nil {
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.2"); err != nil {
 		return fmt.Errorf("failed to focus controller pane: %w", err)
 	}
 
 	fmt.Printf("[AgentX Demo] Split demo session initialized: %s\n", demoSessionName)
-	fmt.Printf("[AgentX Demo] Left pane: controller prompt loop\n")
+	fmt.Printf("[AgentX Demo] Left-top pane: story browser\n")
+	fmt.Printf("[AgentX Demo] Left-bottom pane: controller prompt loop\n")
 	fmt.Printf("[AgentX Demo] Right pane: live core session %s\n", core.tmuxSessionName)
 	fmt.Printf("[AgentX Demo] Attach to the split demo session with: tmux attach -t %s\n", demoSessionName)
 
@@ -91,6 +100,37 @@ func buildLiveCoreMirrorArgs(coreSessionName string) []string {
 		shellQuote(coreSessionName),
 	)
 	return []string{"bash", "-lc", attachScript}
+}
+
+func buildDemoStoriesPaneArgs(startSelector string) []string {
+	sequence := defaultDemoSequence()
+	startIndex, err := resolveDemoStartIndex(sequence, startSelector)
+	if err != nil {
+		startIndex = 0
+	}
+
+	var builder strings.Builder
+	builder.WriteString("[AgentX Demo] Story Browser\\n")
+	builder.WriteString("[AgentX Demo] Ordered test sequence (Gherkin):\\n")
+	for idx, testCase := range sequence {
+		marker := " "
+		if idx == startIndex {
+			marker = "*"
+		}
+		builder.WriteString(fmt.Sprintf("  %s %d) %s (%s)\\n", marker, idx+1, testCase.ID, testCase.ApproxDuration))
+		builder.WriteString(fmt.Sprintf("      Name: %s\\n", testCase.Title))
+		builder.WriteString(fmt.Sprintf("      GIVEN %s\\n", testCase.Given))
+		builder.WriteString(fmt.Sprintf("      WHEN  %s\\n", testCase.When))
+		builder.WriteString(fmt.Sprintf("      THEN  %s\\n", testCase.Then))
+	}
+	builder.WriteString("\\n")
+	builder.WriteString("[AgentX Demo] Prompt commands in controller pane:\\n")
+	builder.WriteString("  N            -> run next test\\n")
+	builder.WriteString("  J <number>   -> jump ahead to test number\\n")
+	builder.WriteString("  X <feedback> -> fail current test and capture diagnostics\\n")
+
+	storiesScript := fmt.Sprintf("printf %s; tail -f /dev/null", shellQuote(builder.String()))
+	return []string{"bash", "-lc", storiesScript}
 }
 
 func prepareCoreSessionForSplitView(ctx context.Context, coreSessionName string) error {

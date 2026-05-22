@@ -5,6 +5,34 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.80.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Implemented DemoMode split-left workspace in `agentx --demo`:
+  - left-top `stories` pane renders ordered Gherkin use-cases
+  - left-bottom `controller` pane runs the prompt loop
+  - right `live-core` pane remains attached to the running application
+- Added `make` target `test-demo-split-layout-headless` for dedicated split-layout UX validation.
+
+#### Changed
+
+- Updated `verify-tmux-layout` to include split-demo headless validation.
+- Reconciled UX lifecycle/index documentation to mark `PD-17-AF-004` as implemented.
+
+### Test Changes
+
+#### Added
+
+- Added `tests/test_demo_split_layout_headless.sh` to validate DemoMode split pane titles, geometry, and active controller-pane affordance.
+
+#### Changed
+
+- Updated split-mode command assertions in `demo_split_mode_test.go` for controller command invocation under `go test` dynamic binary paths.
+- Updated `tests/test_tmux_layout_headless.md` to document the new split-layout contract test.
+
 ## [0.79.19] - 2026-05-22
 
 ### Code Changes

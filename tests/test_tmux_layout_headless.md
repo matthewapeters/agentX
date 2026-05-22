@@ -3,6 +3,7 @@
 These scripts validate tmux UX contracts programmatically:
 
 - `tests/test_tmux_layout_headless.sh`: layout geometry/titles contract
+- `tests/test_demo_split_layout_headless.sh`: DemoMode split geometry/titles contract
 - `tests/test_tmux_pane_affordances_headless.sh`: interactive pane content contract
 
 ## Steps
@@ -43,6 +44,24 @@ Required outcomes:
 
 This validates that panes are not just present; they provide intended affordances with clean, navigable output.
 
+## Demo Split Layout Contract
+
+`tests/test_demo_split_layout_headless.sh` validates the split DemoMode workspace shape used by `agentx --demo`:
+
+- left-top pane: `stories`
+- left-bottom pane: `controller`
+- right pane: `live-core`
+
+Required outcomes:
+
+- Exactly three panes exist in demo window `0`.
+- Geometry contract holds:
+  - stories is top-left
+  - controller is below stories in the left column
+  - live-core occupies right column
+- Active-pane contract holds:
+  - controller pane is active so operator input is immediately accepted.
+
 ## Example (Bash)
 
 ```bash
@@ -67,4 +86,4 @@ tmux kill-session -t "$SESSION"
 - Fail the build if layout does not match spec.
 
 ---
-_Last updated: 2026-05-22 (v0.74.4)_
+_Last updated: 2026-05-22 (v0.80.0)_

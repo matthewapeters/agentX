@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.79.5)_
+_Last updated: 2026-05-22 (v0.80.0)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -11,7 +11,13 @@ It is explicitly user-visible and interactive by design.
 
 Demo mode allows the UAT team to run the current E2E terminal sequence in a live tmux/terminal session and provide per-test feedback before formal UAT closure.
 
-In this release, `agentx --demo` opens a split tmux view: the left pane is the controller sequence/input loop and the right pane mirrors the live AgentX core pane set (chat/context/input). The controller submits prompts over the core `/submit` endpoint so the operator watches the actual running application respond in real time without replacing the split.
+In this release, `agentx --demo` opens a split tmux view with a split-left controller workspace:
+
+- left-top pane: story browser (numbered Gherkin use-cases)
+- left-bottom pane: operator command prompt
+- right pane: live AgentX core session (chat/context/input)
+
+The controller submits prompts over the core `/submit` endpoint so the operator watches the actual running application respond in real time without replacing the split.
 
 Command-line entry contract:
 
@@ -47,7 +53,9 @@ At demo start, the user must see:
 - stable test id and short human-readable title per test
 - estimated duration per test (best-effort)
 - selected starting point (default first test)
-- controller pane must remain on the left and the live core session must remain visible on the right for the duration of the run.
+- Gherkin `GIVEN/WHEN/THEN` expectations for each test
+- story browser pane (left-top) remains visible while the command prompt pane (left-bottom) accepts input
+- live core session remains visible on the right for the duration of the run
 
 ### Start Selection
 
@@ -64,13 +72,20 @@ At the end of each test (not end of full sequence), control is returned to the u
 Prompt contract:
 
 - `N` = mark current demo test as accepted and continue to next test
-- `X` = mark current demo test as failed, capture diagnostics, and stop sequence
+- `J <test number>` = jump ahead to a specific test number in the same run
+- `X <feedback>` = mark current demo test as failed, optionally attach inline feedback, capture diagnostics, and stop sequence
 
 In split mode, completion from the controller pane now closes the full demo split session so the remaining mirror pane does not expand into a one-pane terminal.
 
 In split mode, `Ctrl-C` cancellation now exits the controller decision loop and triggers split-session teardown instead of leaving a re-prompting controller pane.
 
 Any other input must re-prompt without advancing.
+
+Jump rules:
+
+- jump target must be within valid range (`1..N`)
+- jump target must be ahead of the current test (no backward jump)
+- jumped-over tests are marked `SKIP` in the status ledger
 
 ### Failure Capture (`X`)
 
@@ -80,16 +95,28 @@ On `X`, demo mode must capture complete diagnostics for agent analysis:
 - pane metadata (`list-panes`, `display-message`) and active window/pane info
 - executed test id/title and timestamp
 - session id and runtime config snapshot (safe, non-secret fields)
+- optional inline feedback text from `X <feedback>`
 
 Artifacts must be written to a deterministic log path under repository `logs/`.
 
-### Success Progression (`N`)
+If inline feedback is provided, it must be persisted to:
+
+- `metadata.json` (`failure_feedback` field)
+- `demo_feedback.txt`
+
+### Success Progression (`N` / `J`)
 
 On `N`, demo mode must:
 
 - persist per-test pass record
 - advance to next test in sequence
 - preserve cumulative pass/fail summary
+
+On `J <test number>`, demo mode must:
+
+- confirm jump target and print jump confirmation
+- continue execution from selected test number
+- preserve prior statuses and keep skipped intervening tests as `SKIP`
 
 ### End-of-Run Summary
 
@@ -108,9 +135,11 @@ At sequence end (or stop on `X`), demo mode must print:
 - `PD-17-AF-001` — `--demo` CLI flag enters demo mode
 - `PD-17-AF-002` — demo sequence list is shown before execution
 - `PD-17-AF-003` — user selects start test id/index before sequence begins
-- `PD-17-AF-004` — per-test user feedback prompt accepts only `N` or `X`
-- `PD-17-AF-005` — `X` triggers full pane-dump diagnostics to log artifacts
-- `PD-17-AF-006` — end-of-run summary and readiness result is displayed
+- `PD-17-AF-004` — split demo left workspace is split into story-browser (top) and prompt pane (bottom)
+- `PD-17-AF-005` — per-test user feedback prompt accepts `N`, `J <num>`, `X <feedback>`
+- `PD-17-AF-006` — `X` triggers full pane-dump diagnostics to log artifacts
+- `PD-17-AF-007` — inline `X <feedback>` is persisted into diagnostics artifacts
+- `PD-17-AF-008` — end-of-run summary and readiness result is displayed
 
 ---
 

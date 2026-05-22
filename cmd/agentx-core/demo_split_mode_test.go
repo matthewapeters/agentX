@@ -146,11 +146,14 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 		t.Fatalf("failed to read tmux log: %v", err)
 	}
 	commands := string(data)
-	if !strings.Contains(commands, "new-session -d -s agentx_tester_sess-split_demo -n demo-control") {
-		t.Fatalf("expected controller session creation, commands:\n%s", commands)
+	if !strings.Contains(commands, "new-session -d -s agentx_tester_sess-split_demo -n demo-control bash -lc") {
+		t.Fatalf("expected story-browser session bootstrap, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[AgentX Demo] Story Browser") {
+		t.Fatalf("expected story browser text in left-top pane bootstrap command, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "--demo-controller") {
-		t.Fatalf("expected controller launch flag, commands:\n%s", commands)
+		t.Fatalf("expected controller launch flag in prompt pane command, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "set-window-option -t agentx_tester_sess-split:0 window-size smallest") {
 		t.Fatalf("expected core window to use smallest client sizing for split view, commands:\n%s", commands)
@@ -173,6 +176,12 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "split-window -h -p 45 -t agentx_tester_sess-split_demo:0 bash -lc") {
 		t.Fatalf("expected weighted vertical split with live core attach command, commands:\n%s", commands)
 	}
+	if !strings.Contains(commands, "split-window -v -p 35 -t agentx_tester_sess-split_demo:0.0") {
+		t.Fatalf("expected bottom-left prompt pane split from stories pane, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "--demo-controller") {
+		t.Fatalf("expected prompt pane split to launch demo controller command, commands:\n%s", commands)
+	}
 	if !strings.Contains(commands, "TMUX= tmux attach-session -r -t 'agentx_tester_sess-split'") {
 		t.Fatalf("expected right pane to run nested read-only tmux attach before completion message, commands:\n%s", commands)
 	}
@@ -181,6 +190,15 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	}
 	if !strings.Contains(commands, "attach-session -t agentx_tester_sess-split_demo") {
 		t.Fatalf("expected final attach to split demo session, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split_demo:0.0 -T stories") {
+		t.Fatalf("expected stories pane title assignment, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split_demo:0.2 -T controller") {
+		t.Fatalf("expected controller pane title assignment on bottom-left pane, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split_demo:0.2") {
+		t.Fatalf("expected controller focus on bottom-left pane, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "kill-session -t agentx_tester_sess-split_demo") {
 		t.Fatalf("expected demo session cleanup, commands:\n%s", commands)

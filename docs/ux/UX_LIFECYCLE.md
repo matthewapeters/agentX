@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-22 (v0.79.2)_
+_Last updated: 2026-05-22 (v0.80.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -397,9 +397,11 @@ implements it and the test that validates it.  Status legend:
 | `--demo` enters DemoMode execution path | PD-17-AF-001 | `main.go` flag parse + `runDemoSplitMode()` / controller entry paths | `demo_split_mode_test.go`, `demo_harness_test.go` | package-level tests | ✅ |
 | Demo sequence list shown before execution | PD-17-AF-002 | `renderDemoSequence()` ordered sequence renderer | `demo_harness_test.go` | package-level tests | ✅ |
 | Start test selection by id/index (`--demo-start`) | PD-17-AF-003 | `resolveDemoStartIndex()` selector parser | `demo_harness_test.go` | package-level tests | ✅ |
-| Per-test user feedback prompt (`N`/`X`) | PD-17-AF-004 | `readDemoDecision()` with invalid-input re-prompt in `runDemoMode()` | `demo_harness_test.go` | package-level tests | ✅ |
-| `X` triggers pane/metadata dump artifact bundle | PD-17-AF-005 | `defaultDemoDiagnosticsCollector()` tmux capture + metadata/log persistence | `demo_harness_test.go` | package-level tests | ✅ |
-| End-of-run readiness and artifact summary output | PD-17-AF-006 | `renderDemoSummary()` readiness and artifact-path line | `demo_harness_test.go` | package-level tests | ✅ |
+| Split demo left workspace has story-browser (top) and prompt pane (bottom) | PD-17-AF-004 | `runDemoSplitMode()` pane layout orchestration | `demo_split_mode_test.go` | package-level tests | ✅ |
+| Per-test prompt supports `N`, `J <num>`, `X <feedback>` with validation | PD-17-AF-005 | `readDemoDecision()` and `runDemoMode()` decision state machine | `demo_harness_test.go` | package-level tests | ✅ |
+| `X` triggers pane/metadata dump artifact bundle | PD-17-AF-006 | `defaultDemoDiagnosticsCollector()` tmux capture + metadata/log persistence | `demo_harness_test.go` | package-level tests | ✅ |
+| Inline `X <feedback>` persisted to artifact bundle (`metadata.json`, `demo_feedback.txt`) | PD-17-AF-007 | `defaultDemoDiagnosticsCollector()` feedback persistence | `demo_harness_test.go` | package-level tests | ✅ |
+| End-of-run readiness and artifact summary output | PD-17-AF-008 | `renderDemoSummary()` readiness and artifact-path line | `demo_harness_test.go` | package-level tests | ✅ |
 
 Planned follow-up for PD-16 default-behavior migration is documented in
 `docs/ux/06_TUI_MIRROR.md` §12 (TUI-first default with `--gui` opt-in).

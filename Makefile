@@ -6,7 +6,7 @@ GO_CORE_BIN := bin/agentx
 .PHONY: help \
 	build build-core build-applets clean \
 	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e go-test-pane-layout \
-	test-tmux-layout-headless test-tmux-pane-affordances-headless demo-smoke verify-tmux-layout hybrid-merge-gate \
+	test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless demo-smoke verify-tmux-layout hybrid-merge-gate \
 	run run-attached run-with-applets
 
 help:
@@ -27,6 +27,7 @@ help:
 	@echo "  go-test-e2e         Run GoDog @e2e suite"
 	@echo "  go-test-pane-layout Run pane-layout unit tests"
 	@echo "  test-tmux-layout-headless Run headless tmux UX layout validation script"
+	@echo "  test-demo-split-layout-headless Run headless DemoMode split-layout validation script"
 	@echo "  test-tmux-pane-affordances-headless Run headless pane-affordance UX contract script"
 	@echo "  demo-smoke          Run headless DemoMode smoke test"
 	@echo "  verify-tmux-layout  Run pane-layout unit tests + headless tmux layout validation"
@@ -84,13 +85,16 @@ go-test-pane-layout:
 test-tmux-layout-headless:
 	./tests/test_tmux_layout_headless.sh
 
+test-demo-split-layout-headless:
+	./tests/test_demo_split_layout_headless.sh
+
 test-tmux-pane-affordances-headless: build-core
 	./tests/test_tmux_pane_affordances_headless.sh
 
 demo-smoke: build-core
 	./tests/test_demo_smoke_headless.sh
 
-verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless test-tmux-pane-affordances-headless
+verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless
 	@echo "tmux layout verification complete"
 
 hybrid-merge-gate: build-core go-test verify-tmux-layout
