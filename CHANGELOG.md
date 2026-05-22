@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.12] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Balanced split DemoMode nested live view to keep system/context visibility while preserving input visibility:
+  - normalize core window to `tiled` layout before nested attach in split mode.
+  - retain minimum input pane height enforcement and input-pane focus.
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode tests to assert core tiled-layout normalization before nested attach.
+
 ## [0.79.11] - 2026-05-22
 
 ### Code Changes

@@ -164,6 +164,9 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "resize-pane -t agentx_tester_sess-split:0.2 -y 3") {
 		t.Fatalf("expected input pane minimum height enforcement before nested attach, commands:\n%s", commands)
 	}
+	if !strings.Contains(commands, "select-layout -t agentx_tester_sess-split:0 tiled") {
+		t.Fatalf("expected core tiled layout normalization before nested attach, commands:\n%s", commands)
+	}
 	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split:0.2") {
 		t.Fatalf("expected input pane focus before nested attach so prompt is visible, commands:\n%s", commands)
 	}

@@ -130,6 +130,11 @@ func prepareCoreSessionForSplitView(ctx context.Context, coreSessionName string)
 		}
 	}
 
+	// In nested split-demo attach, tiled view keeps all panes represented in narrow right-pane clients.
+	if err := runTmux(ctx, "select-layout", "-t", windowTarget, "tiled"); err != nil {
+		return err
+	}
+
 	// Make the input pane the active pane before nested attach so the prompt is visible on entry.
 	if err := runTmux(ctx, "select-pane", "-t", inputTarget); err != nil {
 		return err
