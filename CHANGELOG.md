@@ -5,6 +5,36 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.73.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Expanded fault-injection coverage for bridge protocol handling in:
+  - `cmd/agentx-core/core_phase2_chat_bridge_test.go`
+  - `cmd/agentx-core/features/integration.feature`
+  - `cmd/agentx-core/godog_test.go`
+
+### Test Changes
+
+#### Added
+
+- Added unit tests for bridge protocol fault permutations:
+  - malformed JSON frames are tolerated and successful responses still render without fallback.
+  - explicit bridge error frames trigger fallback on first request and recovery on subsequent request.
+- Added GoDog integration scenarios for:
+  - malformed frame tolerance with `bridge_response_ok` and no fallback event.
+  - error-frame fallback followed by restart/recovery with ordered lifecycle event assertions.
+- Added GoDog fixture helpers for malformed and error-frame bridge applets and a negative tmux assertion step (`tmux commands should not include ...`).
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with completed malformed/error-frame fault-injection milestone.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` with bridge frame fault-handling observability coverage.
+
 ## [0.72.0] - 2026-05-22
 
 ### Code Changes

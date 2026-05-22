@@ -110,6 +110,101 @@ for raw_line in sys.stdin:
 	return scriptPath
 }
 
+func stageMalformedBridgeApplet(t *testing.T, projectDir string) string {
+	t.Helper()
+
+	appletsDir := filepath.Join(projectDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		t.Fatalf("failed to create applets dir: %v", err)
+	}
+
+	scriptPath := filepath.Join(appletsDir, "malformed_bridge.py")
+	script := `#!/usr/bin/env python3
+import argparse
+import json
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--bridge-chat-server", action="store_true")
+args = parser.parse_args()
+
+print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
+sys.stdout.flush()
+
+for raw_line in sys.stdin:
+	if not raw_line.strip():
+		continue
+	req = json.loads(raw_line)
+	if req.get("type") != "prompt":
+		continue
+
+	print("not-json")
+	sys.stdout.flush()
+	prompt = req.get("prompt", "")
+	print(json.dumps({"type": "chunk", "delta": "Noisy"}))
+	sys.stdout.flush()
+	print(json.dumps({"type": "response", "response": f"Noisy recovered: {prompt}"}))
+	sys.stdout.flush()
+`
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write malformed bridge applet: %v", err)
+	}
+
+	return scriptPath
+}
+
+func stageErrorFrameBridgeApplet(t *testing.T, projectDir string) string {
+	t.Helper()
+
+	appletsDir := filepath.Join(projectDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		t.Fatalf("failed to create applets dir: %v", err)
+	}
+
+	scriptPath := filepath.Join(appletsDir, "error_frame_bridge.py")
+	markerPath := filepath.Join(appletsDir, ".error_frame_once_marker")
+	script := fmt.Sprintf(`#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--bridge-chat-server", action="store_true")
+args = parser.parse_args()
+
+marker_path = %q
+
+print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
+sys.stdout.flush()
+
+for raw_line in sys.stdin:
+	if not raw_line.strip():
+		continue
+	req = json.loads(raw_line)
+	if req.get("type") != "prompt":
+		continue
+
+	prompt = req.get("prompt", "")
+	if not os.path.exists(marker_path):
+		with open(marker_path, "w", encoding="utf-8") as marker_file:
+			marker_file.write("error-frame-triggered\n")
+		print(json.dumps({"type": "error", "error": "synthetic bridge error"}))
+		sys.stdout.flush()
+		continue
+
+	print(json.dumps({"type": "response", "response": f"Error-frame recovered: {prompt}"}))
+	sys.stdout.flush()
+`, markerPath)
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write error-frame bridge applet: %v", err)
+	}
+
+	return scriptPath
+}
+
 // GIVEN a project with Python template applet available
 // WHEN a prompt is routed through the chat handler
 // THEN the handler uses the Python bridge and returns a deterministic response.
@@ -510,6 +605,116 @@ func TestRouteInputPrompt_CanceledMidStreamRecoversOnImmediateRetry(t *testing.T
 	}
 	if !strings.Contains(commands, "[assistant] Echo: recover after cancel") {
 		t.Fatalf("expected successful retry render in tmux log, got:\n%s", commands)
+	}
+
+	if err := core.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+}
+
+// GIVEN a bridge that emits malformed JSON before valid stream events
+// WHEN a prompt is routed through the bridge
+// THEN malformed frames are ignored and final response succeeds with response-ok observability.
+func TestRouteInputPrompt_MalformedJSONIsIgnoredAndResponseSucceeds(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available in test environment")
+	}
+
+	projectDir := t.TempDir()
+	scriptPath := stageMalformedBridgeApplet(t, projectDir)
+
+	logPath := setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-malformed-json"}
+	core := NewAgentXCore(cfg)
+	core.chatAppletScript = scriptPath
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	response, err := core.RouteInputPrompt(context.Background(), "malformed input")
+	if err != nil {
+		t.Fatalf("RouteInputPrompt failed: %v", err)
+	}
+	if response != "Noisy recovered: malformed input" {
+		t.Fatalf("expected recovered response, got %q", response)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
+		t.Fatalf("expected bridge_response_ok event in tmux log, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=bridge_fallback") {
+		t.Fatalf("did not expect fallback for malformed-json tolerant route, got:\n%s", commands)
+	}
+
+	if err := core.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+}
+
+// GIVEN a bridge that emits an explicit error frame on first request
+// WHEN prompts are routed twice
+// THEN first route falls back and second route recovers after restart with response-ok observability.
+func TestRouteInputPrompt_ErrorFrameFallbackThenRecovery(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available in test environment")
+	}
+
+	projectDir := t.TempDir()
+	scriptPath := stageErrorFrameBridgeApplet(t, projectDir)
+
+	logPath := setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-error-frame"}
+	core := NewAgentXCore(cfg)
+	core.chatAppletScript = scriptPath
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	firstResponse, err := core.RouteInputPrompt(context.Background(), "first error-frame")
+	if err != nil {
+		t.Fatalf("first RouteInputPrompt failed: %v", err)
+	}
+	if firstResponse != "Echo: first error-frame" {
+		t.Fatalf("expected fallback echo response, got %q", firstResponse)
+	}
+
+	secondResponse, err := core.RouteInputPrompt(context.Background(), "second error-frame")
+	if err != nil {
+		t.Fatalf("second RouteInputPrompt failed: %v", err)
+	}
+	if secondResponse != "Error-frame recovered: second error-frame" {
+		t.Fatalf("expected recovered response, got %q", secondResponse)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "[bridge] event=bridge_response_error") {
+		t.Fatalf("expected bridge_response_error in tmux log, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[bridge] event=bridge_fallback") {
+		t.Fatalf("expected bridge_fallback in tmux log, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
+		t.Fatalf("expected bridge_response_ok in tmux log, got:\n%s", commands)
+	}
+	if strings.Count(commands, "[bridge] event=bridge_start") < 2 {
+		t.Fatalf("expected bridge restart across fallback/recovery, got:\n%s", commands)
 	}
 
 	if err := core.Shutdown(context.Background()); err != nil {

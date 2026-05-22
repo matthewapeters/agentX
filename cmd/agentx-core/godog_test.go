@@ -118,6 +118,95 @@ for raw_line in sys.stdin:
 	return scriptPath, nil
 }
 
+func stageMalformedBridgeAppletBDD(projectDir string) (string, error) {
+	appletsDir := filepath.Join(projectDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create applets dir: %w", err)
+	}
+
+	scriptPath := filepath.Join(appletsDir, "malformed_bridge.py")
+	script := `#!/usr/bin/env python3
+import argparse
+import json
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--bridge-chat-server", action="store_true")
+args = parser.parse_args()
+
+print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
+sys.stdout.flush()
+
+for raw_line in sys.stdin:
+	if not raw_line.strip():
+		continue
+	req = json.loads(raw_line)
+	if req.get("type") != "prompt":
+		continue
+
+	print("not-json")
+	sys.stdout.flush()
+	prompt = req.get("prompt", "")
+	print(json.dumps({"type": "response", "response": f"Malformed recovered: {prompt}"}))
+	sys.stdout.flush()
+`
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		return "", fmt.Errorf("failed to write malformed bridge applet: %w", err)
+	}
+
+	return scriptPath, nil
+}
+
+func stageErrorFrameBridgeAppletBDD(projectDir string) (string, error) {
+	appletsDir := filepath.Join(projectDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create applets dir: %w", err)
+	}
+
+	scriptPath := filepath.Join(appletsDir, "error_frame_bridge.py")
+	markerPath := filepath.Join(appletsDir, ".error_frame_once_marker")
+	script := fmt.Sprintf(`#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--bridge-chat-server", action="store_true")
+args = parser.parse_args()
+
+marker_path = %q
+
+print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
+sys.stdout.flush()
+
+for raw_line in sys.stdin:
+	if not raw_line.strip():
+		continue
+	req = json.loads(raw_line)
+	if req.get("type") != "prompt":
+		continue
+
+	prompt = req.get("prompt", "")
+	if not os.path.exists(marker_path):
+		with open(marker_path, "w", encoding="utf-8") as marker_file:
+			marker_file.write("error-triggered\n")
+		print(json.dumps({"type": "error", "error": "synthetic error frame"}))
+		sys.stdout.flush()
+		continue
+
+	print(json.dumps({"type": "response", "response": f"Error recovered: {prompt}"}))
+	sys.stdout.flush()
+`, markerPath)
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		return "", fmt.Errorf("failed to write error-frame bridge applet: %w", err)
+	}
+
+	return scriptPath, nil
+}
+
 func (s *bddState) theProjectContainsTemplateChatApplet() error {
 	if s.tmpDir == "" {
 		return errors.New("temporary project directory not initialized")
@@ -156,6 +245,34 @@ func (s *bddState) theProjectContainsFlakyChatBridgeApplet() error {
 	}
 
 	scriptPath, err := stageFlakyBridgeApplet(s.tmpDir)
+	if err != nil {
+		return err
+	}
+
+	s.bridgeScript = scriptPath
+	return nil
+}
+
+func (s *bddState) theProjectContainsMalformedChatBridgeApplet() error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+
+	scriptPath, err := stageMalformedBridgeAppletBDD(s.tmpDir)
+	if err != nil {
+		return err
+	}
+
+	s.bridgeScript = scriptPath
+	return nil
+}
+
+func (s *bddState) theProjectContainsErrorFrameChatBridgeApplet() error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+
+	scriptPath, err := stageErrorFrameBridgeAppletBDD(s.tmpDir)
 	if err != nil {
 		return err
 	}
@@ -582,6 +699,13 @@ func (s *bddState) tmuxCommandsShouldInclude(substring string) error {
 	return nil
 }
 
+func (s *bddState) tmuxCommandsShouldNotInclude(substring string) error {
+	if strings.Contains(s.tmuxCommands, substring) {
+		return fmt.Errorf("expected tmux commands to not include %q, got:\n%s", substring, s.tmuxCommands)
+	}
+	return nil
+}
+
 func (s *bddState) tmuxCommandSnippetShouldAppearBefore(first, second string) error {
 	firstIdx := strings.Index(s.tmuxCommands, first)
 	secondIdx := strings.Index(s.tmuxCommands, second)
@@ -728,6 +852,8 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^a temporary project directory$`, state.iHaveATemporaryProjectDirectory)
 	ctx.Step(`^the project contains template chat applet$`, state.theProjectContainsTemplateChatApplet)
 	ctx.Step(`^the project contains flaky chat bridge applet$`, state.theProjectContainsFlakyChatBridgeApplet)
+	ctx.Step(`^the project contains malformed chat bridge applet$`, state.theProjectContainsMalformedChatBridgeApplet)
+	ctx.Step(`^the project contains error-frame chat bridge applet$`, state.theProjectContainsErrorFrameChatBridgeApplet)
 	ctx.Step(`^a config with username "([^"]*)"$`, state.aConfigWithUsername)
 	ctx.Step(`^I ensure session directories for session "([^"]*)"$`, state.iEnsureSessionDirectoriesForSession)
 	ctx.Step(`^the session directory structure should exist$`, state.theSessionDirectoryStructureShouldExist)
@@ -758,6 +884,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^I capture the context turns snapshot$`, state.iCaptureTheContextTurnsSnapshot)
 	ctx.Step(`^tmux initialization should complete without error$`, state.tmuxInitializationShouldCompleteWithoutError)
 	ctx.Step(`^tmux commands should include "([^"]*)"$`, state.tmuxCommandsShouldInclude)
+	ctx.Step(`^tmux commands should not include "([^"]*)"$`, state.tmuxCommandsShouldNotInclude)
 	ctx.Step(`^tmux command snippet "([^"]*)" should appear before "([^"]*)"$`, state.tmuxCommandSnippetShouldAppearBefore)
 	ctx.Step(`^tmux commands should include "([^"]*)" at least (\d+) times$`, state.tmuxCommandsShouldIncludeAtLeast)
 	ctx.Step(`^prompt routing should complete without error$`, state.promptRoutingShouldCompleteWithoutError)

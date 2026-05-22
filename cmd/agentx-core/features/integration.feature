@@ -156,3 +156,40 @@ Feature: IPC router integration
     And tmux command snippet "[bridge] event=bridge_timeout" should appear before "[bridge] event=bridge_fallback"
     And tmux command snippet "[bridge] event=bridge_fallback" should appear before "[bridge] event=bridge_response_ok"
     And tmux commands should include "[bridge] event=bridge_start" at least 2 times
+
+  Scenario: Malformed bridge frames are tolerated without fallback
+    Given a temporary project directory
+    And the project contains malformed chat bridge applet
+    And a core config with username "dev" and session "sess-11"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I configure core chat bridge to use prepared applet script with timeout 300 ms
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "malformed case"
+    Then prompt routing should complete without error
+    And routed response should equal "Malformed recovered: malformed case"
+    And tmux commands should include "[bridge] event=bridge_response_ok"
+    And tmux commands should not include "[bridge] event=bridge_fallback"
+
+  Scenario: Error frame triggers fallback then recovery on next prompt
+    Given a temporary project directory
+    And the project contains error-frame chat bridge applet
+    And a core config with username "dev" and session "sess-12"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I configure core chat bridge to use prepared applet script with timeout 300 ms
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "error first"
+    Then prompt routing should complete without error
+    And routed response should equal "Echo: error first"
+    And tmux commands should include "[bridge] event=bridge_response_error"
+    And tmux commands should include "[bridge] event=bridge_fallback"
+    When I route input prompt "recover second"
+    Then prompt routing should complete without error
+    And routed response should equal "Error recovered: recover second"
+    And tmux commands should include "[bridge] event=bridge_response_ok"
+    And tmux command snippet "[bridge] event=bridge_response_error" should appear before "[bridge] event=bridge_fallback"
+    And tmux command snippet "[bridge] event=bridge_fallback" should appear before "[bridge] event=bridge_response_ok"
+    And tmux commands should include "[bridge] event=bridge_start" at least 2 times

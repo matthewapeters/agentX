@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-22 (v0.72.0)_
+_Last updated: 2026-05-22 (v0.73.0)_
 
 ## Overview
 
@@ -82,6 +82,8 @@ Integration BDD coverage now validates bridge streaming behavior together with p
 Context-pane summary behavior is additionally validated for bounded truncation and deterministic turn ordering across multi-turn routing sequences.
 
 Observability-level BDD assertions now cover bridge lifecycle event sequencing for timeout/fallback paths and subsequent bridge restart/recovery behavior.
+
+Fault-injection coverage additionally validates malformed bridge frame tolerance (no fallback on recoverable streams) and explicit bridge error-frame fallback/recovery sequencing.
 ```
 
 ### Shutdown Protocol

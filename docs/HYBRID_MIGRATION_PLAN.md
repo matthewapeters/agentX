@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.72.0)_
+_Last updated: 2026-05-22 (v0.73.0)_
 
 ## Overview
 
@@ -35,7 +35,8 @@ Current state relative to recent issue verification and regression work:
 - GoDog integration coverage now includes a streaming scenario that asserts chunk rendering and persisted final-turn prompt/response integrity.
 - Context-pane fidelity assertions now verify bounded summary formatting and deterministic multi-turn ordering (unit + GoDog).
 - GoDog observability assertions now validate bridge lifecycle sequencing across timeout, fallback, restart, and recovery.
-- Remaining applet fidelity work is focused on potential richer context-pane metadata views and additional fault-injection permutations.
+- Fault-injection permutations now cover malformed JSON bridge frames and explicit error-frame behavior with lifecycle observability assertions (unit + GoDog).
+- Remaining applet fidelity work is focused on potential richer context-pane metadata views and optional additional backend-specific permutations.
 
 ## Execution Board (Next 2 Sprints)
 
