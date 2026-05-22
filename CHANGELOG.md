@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.6] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Improved split DemoMode right-pane live display readability:
+  - replaced hardcoded chat/context mapping with pane-index snapshot rendering sourced from tmux pane metadata.
+  - mirror now renders concise non-empty pane tails and avoids mislabeled pane content.
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode tests to assert pane-index snapshot mirror behavior and newline-decoded frame rendering.
+
 ## [0.79.5] - 2026-05-22
 
 ### Code Changes
