@@ -748,8 +748,8 @@ func (ac *AgentXCore) HandleInputLine(ctx context.Context, line string) (respons
 			if err := ac.runTmux(ctx, "clear-history", "-t", chatPaneTarget); err != nil {
 				return "", false, fmt.Errorf("failed to clear live-core chat pane history: %w", err)
 			}
-			if err := ac.runTmux(ctx, "send-keys", "-t", chatPaneTarget, "C-l"); err != nil {
-				return "", false, fmt.Errorf("failed to clear live-core chat pane display: %w", err)
+			if err := ac.runTmux(ctx, "send-keys", "-R", "-t", chatPaneTarget); err != nil {
+				return "", false, fmt.Errorf("failed to reset live-core chat pane display: %w", err)
 			}
 			if err := ac.runTmux(ctx, "clear-history", "-t", inputPaneTarget); err != nil {
 				return "", false, fmt.Errorf("failed to clear live-core input pane history: %w", err)
@@ -757,8 +757,8 @@ func (ac *AgentXCore) HandleInputLine(ctx context.Context, line string) (respons
 			if err := ac.runTmux(ctx, "send-keys", "-t", inputPaneTarget, "C-u"); err != nil {
 				return "", false, fmt.Errorf("failed to reset live-core input line: %w", err)
 			}
-			if err := ac.runTmux(ctx, "send-keys", "-t", inputPaneTarget, "C-l"); err != nil {
-				return "", false, fmt.Errorf("failed to clear live-core input pane display: %w", err)
+			if err := ac.runTmux(ctx, "send-keys", "-R", "-t", inputPaneTarget); err != nil {
+				return "", false, fmt.Errorf("failed to reset live-core input pane display: %w", err)
 			}
 			log.Printf("[AgentX Core] Input command handled: :clear")
 			return "cleared", false, nil

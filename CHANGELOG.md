@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.16] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Reduced left-pane wrap/whitespace bleed by shortening controller run-step and Gherkin expectation lines.
+- Updated `:clear` live-core behavior to avoid visible control-glyph artifacts in pane output:
+  - use tmux pane reset (`send-keys -R`) after history clear instead of `C-l`.
+
+### Test Changes
+
+#### Changed
+
+- Updated input command contract tests to assert tmux reset-based clear behavior.
+
 ## [0.79.15] - 2026-05-22
 
 ### Code Changes

@@ -78,7 +78,7 @@ func defaultDemoSequence() []DemoTestCase {
 			Tags:           []string{"e2e", "routing", "context"},
 			Given:          "core session and applets are running",
 			When:           "a normal input prompt is submitted",
-			Then:           "live-core Chat pane and live-core Context pane both update with the same turn",
+			Then:           "live-core Chat and Context panes both show the same new turn",
 		},
 		{
 			ID:             "e2e-002",
@@ -88,7 +88,7 @@ func defaultDemoSequence() []DemoTestCase {
 			Tags:           []string{"e2e", "input"},
 			Given:          "chat contains visible prior output",
 			When:           "the :clear input command is submitted",
-			Then:           "live-core Chat pane is cleared and live-core Input pane prompt remains active",
+			Then:           "live-core Chat clears and live-core Input prompt remains active",
 		},
 		{
 			ID:             "e2e-003",
@@ -98,7 +98,7 @@ func defaultDemoSequence() []DemoTestCase {
 			Tags:           []string{"e2e", "shutdown"},
 			Given:          "controller has reached the final E2E test",
 			When:           "the :q command is submitted",
-			Then:           "live right pane exits and displays completion guidance",
+			Then:           "live right pane exits and shows completion guidance",
 		},
 	}
 }
@@ -240,11 +240,10 @@ func runDemoModeWithOptions(
 
 		fmt.Fprintf(
 			writer,
-			"[AgentX Demo] Running test %d/%d: %s - %s\n",
+			"[AgentX Demo] Running test %d/%d: %s\n",
 			runCount,
 			selectedCount,
 			testCase.ID,
-			testCase.Title,
 		)
 
 		resultText, runErr := runner(testCase)
