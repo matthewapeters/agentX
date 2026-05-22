@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-22 (v0.79.0)_
+_Last updated: 2026-05-22 (v0.79.1)_
 
 ## Overview
 
@@ -89,7 +89,7 @@ Streaming parser coverage now includes empty chunk suppression and deterministic
 
 User-facing launch behavior now defaults to attaching the current terminal to the managed tmux session (`-attach=true` by default), with optional headless mode via `-attach=false`.
 
-DemoMode now uses a split tmux controller for the user-facing `--demo` path: the left pane owns the sequence/N-X review loop, and the right pane attaches to the live core session while the controller submits prompts over the core `/submit` endpoint. The smoke gate retains a hidden headless path for deterministic artifact validation.
+DemoMode now uses a split tmux controller for the user-facing `--demo` path: the left pane owns the sequence/N-X review loop, and the right pane mirrors the live core session while the controller submits prompts over the core `/submit` endpoint. The smoke gate retains a hidden headless path for deterministic artifact validation.
 
 After tmux initialization, supervisor startup now launches live Python applet processes in the primary panes (`chat`, `context`, `input`) using the project-local template applet entrypoint.
 

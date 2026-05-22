@@ -5,6 +5,26 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.1] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Fixed the DemoMode split-pane right side so it mirrors the live core session instead of launching a nested tmux attach that collapsed the outer split.
+
+### Test Changes
+
+#### Changed
+
+- Updated split-pane orchestration coverage to assert the right pane runs a passive live-core mirror loop instead of a nested tmux client.
+
+### Documentation Changes
+
+#### Changed
+
+- Reworded the DemoMode contract and user-facing notes to describe the right pane as a live-core mirror pane.
+
 ## [0.79.0] - 2026-05-22
 
 ### Code Changes

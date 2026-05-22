@@ -1,6 +1,6 @@
 # AgentX — Panel Details
 
-_Last updated: 2026-05-22 (v0.79.0)_
+_Last updated: 2026-05-22 (v0.79.1)_
 
 Detailed affordance specifications for each GUI panel/widget.  Each section
 documents the widget's purpose, all user-visible controls, and the callback
@@ -1213,13 +1213,13 @@ restarted carry the `🔁` icon appended to their label text.
 
 DemoMode is a user-visible, interactive pre-UAT flow that runs E2E test sequences and requests user feedback after every test.
 
-In the interactive path, `agentx --demo` opens a split tmux session: the left pane shows the ordered sequence and accepts `N`/`X`, while the right pane attaches to the live AgentX core session so the operator can watch the actual app respond.
+In the interactive path, `agentx --demo` opens a split tmux session: the left pane shows the ordered sequence and accepts `N`/`X`, while the right pane mirrors the live AgentX core session so the operator can watch the actual app respond without collapsing the outer split.
 
 ### Affordance Inventory
 
 | Affordance | ID | Expected Behavior | Status |
 |-----------|----|-------------------|--------|
-| `--demo` enters DemoMode | PD-17-AF-001 | Launches the split-pane demo controller and live-core session instead of normal interactive run | ✅ |
+| `--demo` enters DemoMode | PD-17-AF-001 | Launches the split-pane demo controller and live-core mirror instead of normal interactive run | ✅ |
 | Demo test sequence preview | PD-17-AF-002 | Displays ordered E2E tests with id/title before running | ✅ |
 | Start selection from id/index | PD-17-AF-003 | User can choose where to start sequence (`--demo-start` or interactive pick) | ✅ |
 | Per-test `N/X` user feedback loop | PD-17-AF-004 | End of each test returns control and accepts only `N` or `X` | ✅ |

@@ -35,14 +35,15 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 		return fmt.Errorf("failed to create demo controller session: %w", err)
 	}
 
-	if err := runTmuxInteractive(ctx, "split-window", "-h", "-t", demoSessionName+":0", "tmux", "attach", "-t", core.tmuxSessionName); err != nil {
-		return fmt.Errorf("failed to create live core attach pane: %w", err)
+	liveCoreMirrorArgs := buildLiveCoreMirrorArgs(core.tmuxSessionName)
+	if err := runTmuxInteractive(ctx, append([]string{"split-window", "-h", "-t", demoSessionName + ":0"}, liveCoreMirrorArgs...)...); err != nil {
+		return fmt.Errorf("failed to create live core mirror pane: %w", err)
 	}
 
 	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.0", "-T", "controller"); err != nil {
 		return fmt.Errorf("failed to label controller pane: %w", err)
 	}
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.1", "-T", "live-core"); err != nil {
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.1", "-T", "live-core-mirror"); err != nil {
 		return fmt.Errorf("failed to label live core pane: %w", err)
 	}
 	if err := runTmuxInteractive(ctx, "select-layout", "-t", demoSessionName+":0", "even-horizontal"); err != nil {
@@ -54,7 +55,7 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 
 	fmt.Printf("[AgentX Demo] Split demo session initialized: %s\n", demoSessionName)
 	fmt.Printf("[AgentX Demo] Left pane: controller prompt loop\n")
-	fmt.Printf("[AgentX Demo] Right pane: live core session %s\n", core.tmuxSessionName)
+	fmt.Printf("[AgentX Demo] Right pane: live core mirror for session %s\n", core.tmuxSessionName)
 	fmt.Printf("[AgentX Demo] Attach to the split demo session with: tmux attach -t %s\n", demoSessionName)
 
 	attachErr := attachTmuxSession(ctx, demoSessionName)
@@ -82,8 +83,23 @@ func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, star
 	return append([]string{executablePath}, args...)
 }
 
+func buildLiveCoreMirrorArgs(coreSessionName string) []string {
+	mirrorScript := fmt.Sprintf(
+		`while true; do clear; tmux capture-pane -p -t %s; sleep 0.5; done`,
+		shellQuote(coreSessionName),
+	)
+	return []string{"bash", "-lc", mirrorScript}
+}
+
 func attachTmuxSession(ctx context.Context, sessionName string) error {
 	return runTmuxInteractive(ctx, "attach-session", "-t", sessionName)
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func runTmuxInteractive(ctx context.Context, args ...string) error {

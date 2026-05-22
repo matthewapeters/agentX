@@ -75,7 +75,7 @@ func TestSubmitDemoPrompt_PostsPromptToHealthEndpoint(t *testing.T) {
 func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	// GIVEN a live core with a reachable health endpoint and a fake tmux binary
 	// WHEN split demo mode is launched
-	// THEN the tmux layout should create a controller pane and a live core attach pane.
+	// THEN the tmux layout should create a controller pane and a live core mirror pane.
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "tmux.log")
 	fakeTmuxPath := filepath.Join(tmpDir, "tmux")
@@ -134,8 +134,11 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "--demo-controller") {
 		t.Fatalf("expected controller launch flag, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "split-window -h -t agentx_tester_sess-split_demo:0 tmux attach -t agentx_tester_sess-split") {
-		t.Fatalf("expected vertical split with live core attach, commands:\n%s", commands)
+	if !strings.Contains(commands, "split-window -h -t agentx_tester_sess-split_demo:0 bash -lc") {
+		t.Fatalf("expected vertical split with live core mirror loop, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "tmux capture-pane -p -t 'agentx_tester_sess-split'") {
+		t.Fatalf("expected live core capture command in mirror loop, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "attach-session -t agentx_tester_sess-split_demo") {
 		t.Fatalf("expected final attach to split demo session, commands:\n%s", commands)
