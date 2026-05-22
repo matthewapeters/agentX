@@ -5,6 +5,31 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.69.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Hardened mid-stream cancellation semantics in `cmd/agentx-core/core.go`.
+  - Cancellation/deadline errors from bridge routing are now propagated (no deterministic echo fallback on canceled contexts).
+  - Cancellation telemetry events are emitted with a live background context so observability is preserved even when request context is canceled.
+
+### Test Changes
+
+#### Added
+
+- Added `TestRouteInputPrompt_CanceledMidStreamRecoversOnImmediateRetry` in `cmd/agentx-core/core_phase2_chat_bridge_test.go`.
+  - GIVEN chunked bridge output with delayed completion WHEN first route is canceled mid-stream THEN cancellation error is returned and no turn is persisted.
+  - GIVEN immediate retry after cancellation WHEN prompt is routed again THEN bridge restarts and successful response is rendered/persisted.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with cancellation/retry hardening milestone completion.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to document cancellation propagation and bridge restart behavior.
+
 ## [0.68.0] - 2026-05-22
 
 ### Code Changes

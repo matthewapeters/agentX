@@ -270,6 +270,10 @@ func (ac *AgentXCore) pythonChatPromptHandler() func(context.Context, string) (s
 	return func(ctx context.Context, prompt string) (string, error) {
 		response, err := ac.routePromptViaPythonChatApplet(ctx, prompt)
 		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				ac.emitBridgeLog(context.Background(), "bridge_fallback_skipped", err.Error())
+				return "", err
+			}
 			ac.emitBridgeLog(ctx, "bridge_fallback", err.Error())
 			log.Printf("[AgentX Core] Python chat bridge unavailable, falling back to default handler: %v", err)
 			return defaultPromptHandler("chat")(ctx, prompt)
@@ -321,7 +325,7 @@ func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt
 		ac.emitBridgeLog(ctx, "bridge_response_ok", fmt.Sprintf("response_chars=%d", len(readResult.response)))
 		return readResult.response, nil
 	case <-ctx.Done():
-		ac.emitBridgeLog(ctx, "bridge_canceled", ctx.Err().Error())
+		ac.emitBridgeLog(context.Background(), "bridge_canceled", ctx.Err().Error())
 		ac.teardownChatBridgeProcessLocked(chatApplet)
 		return "", ctx.Err()
 	case <-time.After(ac.chatBridgeResponseTimeout):

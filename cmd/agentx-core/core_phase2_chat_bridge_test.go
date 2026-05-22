@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -61,6 +62,49 @@ for raw_line in sys.stdin:
 
 	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("failed to write hanging bridge applet: %v", err)
+	}
+
+	return scriptPath
+}
+
+func stageSlowChunkBridgeApplet(t *testing.T, projectDir string) string {
+	t.Helper()
+
+	appletsDir := filepath.Join(projectDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		t.Fatalf("failed to create applets dir: %v", err)
+	}
+
+	scriptPath := filepath.Join(appletsDir, "slow_chunk_bridge.py")
+	script := `#!/usr/bin/env python3
+import argparse
+import json
+import sys
+import time
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--bridge-chat-server", action="store_true")
+args = parser.parse_args()
+
+print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
+sys.stdout.flush()
+
+for raw_line in sys.stdin:
+    if not raw_line.strip():
+        continue
+    req = json.loads(raw_line)
+    if req.get("type") != "prompt":
+        continue
+
+    print(json.dumps({"type": "chunk", "delta": "partial"}))
+    sys.stdout.flush()
+    time.sleep(1.0)
+    print(json.dumps({"type": "response", "response": f"Echo: {req.get('prompt', '')}"}))
+    sys.stdout.flush()
+`
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write slow chunk bridge applet: %v", err)
 	}
 
 	return scriptPath
@@ -395,6 +439,77 @@ func TestRouteInputPrompt_OllamaStreamingBackendRendersChunks(t *testing.T) {
 	}
 	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
 		t.Fatalf("expected bridge_response_ok event in logs pane commands, got:\n%s", commands)
+	}
+
+	if err := core.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+}
+
+// GIVEN a bridge that emits one chunk and then stalls
+// WHEN the first route is canceled mid-stream and a second prompt is routed immediately
+// THEN cancellation is propagated and the next prompt succeeds via a restarted bridge process.
+func TestRouteInputPrompt_CanceledMidStreamRecoversOnImmediateRetry(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available in test environment")
+	}
+
+	projectDir := t.TempDir()
+	slowScript := stageSlowChunkBridgeApplet(t, projectDir)
+
+	logPath := setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-cancel-retry"}
+	core := NewAgentXCore(cfg)
+	core.chatAppletScript = slowScript
+	core.chatBridgeResponseTimeout = 3 * time.Second
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	cancelCtx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	_, err := core.RouteInputPrompt(cancelCtx, "cancel me")
+	if err == nil {
+		t.Fatal("expected cancellation error, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context deadline exceeded error, got %v", err)
+	}
+
+	if turns := core.ContextTurnsSnapshot(); len(turns) != 0 {
+		t.Fatalf("expected no persisted turns after canceled route, got %d", len(turns))
+	}
+
+	retryResponse, retryErr := core.RouteInputPrompt(context.Background(), "recover after cancel")
+	if retryErr != nil {
+		t.Fatalf("retry RouteInputPrompt failed: %v", retryErr)
+	}
+	if retryResponse != "Echo: recover after cancel" {
+		t.Fatalf("unexpected retry response %q", retryResponse)
+	}
+
+	if turns := core.ContextTurnsSnapshot(); len(turns) != 1 {
+		t.Fatalf("expected exactly one persisted turn after retry, got %d", len(turns))
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "[bridge] event=bridge_canceled") {
+		t.Fatalf("expected bridge_canceled event in tmux log, got:\n%s", commands)
+	}
+	if strings.Count(commands, "[bridge] event=bridge_start") < 2 {
+		t.Fatalf("expected bridge restart after cancellation, got commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[assistant] Echo: recover after cancel") {
+		t.Fatalf("expected successful retry render in tmux log, got:\n%s", commands)
 	}
 
 	if err := core.Shutdown(context.Background()); err != nil {
