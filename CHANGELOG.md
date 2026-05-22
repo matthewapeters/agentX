@@ -5,6 +5,43 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.74.4] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Sanitized interactive pane UX output so user-facing panes no longer include startup command traces or IPC diagnostics.
+  - `cmd/agentx-core/core.go`:
+    - pane applets now launch via `tmux respawn-pane` instead of shell `send-keys` command injection.
+    - core-to-pane direct rendering is now opt-in via `AGENTX_PANE_RENDER_MODE=core` (used in fake-tmux tests), with runtime default delegated to pane applets.
+  - `applets/template.py`:
+    - input/chat/context pane loops now emit plain, sanctioned UX lines.
+    - non-bridge interactive panes clear startup noise on entry and suppress READY/IPC diagnostics.
+    - fixed `SyntaxWarning` path by removing `return` from `finally` block.
+
+### Test Changes
+
+#### Added
+
+- Added headless pane-affordance UX contract test: `tests/test_tmux_pane_affordances_headless.sh`.
+  - GIVEN a live headless core WHEN a prompt is sent through the input pane THEN chat/context panes must show sanctioned outputs and exclude operational noise.
+- Added `@e2e` GoDog scenario in `cmd/agentx-core/features/e2e.feature` for prompt-routing flow with response + persisted context assertions.
+
+#### Changed
+
+- Updated startup integration expectations in `cmd/agentx-core/features/integration.feature` to reflect clean initialization without placeholder `send-keys` injection.
+- Updated fake-tmux harnesses (`cmd/agentx-core/core_chat_pipeline_test.go`, `cmd/agentx-core/godog_test.go`) to enable deterministic core-render mode only in test environments.
+- Updated `tests/test_tmux_layout_headless.sh` and `tests/test_tmux_layout_headless.md` to align with clean-pane startup and expanded UX contract validation.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` with explicit interactive-pane output contract and headless validation coverage.
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with clean-pane contract milestone and pane-affordance test coverage.
+- Updated `Makefile` verification flow to include `test-tmux-pane-affordances-headless` and run `build-core` before gate checks.
+
 ## [0.74.3] - 2026-05-22
 
 ### Code Changes

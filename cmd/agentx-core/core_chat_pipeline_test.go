@@ -27,15 +27,20 @@ func setupFakeTmux(t *testing.T) string {
 
 	oldPath := os.Getenv("PATH")
 	oldTmuxLog := os.Getenv("TMUX_LOG")
+	oldPaneRenderMode := os.Getenv("AGENTX_PANE_RENDER_MODE")
 	if err := os.Setenv("PATH", tmpDir+":"+oldPath); err != nil {
 		t.Fatalf("failed to set PATH: %v", err)
 	}
 	if err := os.Setenv("TMUX_LOG", logPath); err != nil {
 		t.Fatalf("failed to set TMUX_LOG: %v", err)
 	}
+	if err := os.Setenv("AGENTX_PANE_RENDER_MODE", "core"); err != nil {
+		t.Fatalf("failed to set AGENTX_PANE_RENDER_MODE: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = os.Setenv("PATH", oldPath)
 		_ = os.Setenv("TMUX_LOG", oldTmuxLog)
+		_ = os.Setenv("AGENTX_PANE_RENDER_MODE", oldPaneRenderMode)
 	})
 
 	return logPath

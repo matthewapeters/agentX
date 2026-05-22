@@ -24,10 +24,6 @@ CHAT_PANE="$SESSION:0.0"
 CONTEXT_PANE="$(tmux split-window -P -F '#{pane_id}' -t "$CHAT_PANE" -h -p 20)"
 # Title right pane as context
 tmux select-pane -t "$CONTEXT_PANE" -T context
-# Set placeholder text
-tmux send-keys -t "$CHAT_PANE" "echo '🔶 Pane: chat (AgentX Core)'" Enter
-tmux send-keys -t "$INPUT_PANE" "echo '🔶 Pane: input (AgentX Core)'" Enter
-tmux send-keys -t "$CONTEXT_PANE" "echo '🔶 Pane: context (AgentX Core)'" Enter
 # Create logs window (hidden)
 tmux new-window -t "$SESSION:1" -n logs
 # Re-select primary window so attach defaults to main UX
@@ -99,14 +95,5 @@ if [[ "$INPUT_TOP" -le 0 || "$INPUT_LEFT" -ne 0 ]]; then
   echo "FAIL: Input pane is not at the bottom"
   exit 1
 fi
-
-# Validate placeholder text
-CHAT_OUT="$(tmux capture-pane -t "$CHAT_PANE" -p | grep 'Pane:')"
-INPUT_OUT="$(tmux capture-pane -t "$INPUT_PANE" -p | grep 'Pane:')"
-CONTEXT_OUT="$(tmux capture-pane -t "$CONTEXT_PANE" -p | grep 'Pane:')"
-
-[[ "$CHAT_OUT" == *"chat"* ]] || { echo "FAIL: Chat pane missing chat placeholder"; exit 1; }
-[[ "$INPUT_OUT" == *"input"* ]] || { echo "FAIL: Input pane missing input placeholder"; exit 1; }
-[[ "$CONTEXT_OUT" == *"context"* ]] || { echo "FAIL: Context pane missing context placeholder"; exit 1; }
 
 echo "PASS: tmux layout matches UX spec."

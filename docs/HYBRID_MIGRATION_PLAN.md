@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.74.3)_
+_Last updated: 2026-05-22 (v0.74.4)_
 
 ## Overview
 
@@ -40,6 +40,8 @@ Current state relative to recent issue verification and regression work:
 - Launch UX fix: `./bin/agentx` now attaches to the tmux TUI by default for user-facing runs (`-attach=false` remains available for headless mode).
 - Pane UX fix: applet supervisor now launches live pane applet processes for `chat`, `context`, and `input` so panes are not idle shell sessions at startup.
 - Pane affordance fix: role-specific pane behavior now routes user input through core `/submit`, displays agent output in chat pane, and surfaces context metadata in context pane.
+- Pane UX contract fix: interactive panes now suppress operational noise (READY payloads, IPC path diagnostics, shell echo traces) in favor of sanctioned user-facing output.
+- Headless UX coverage now includes pane-affordance behavior validation (`tests/test_tmux_pane_affordances_headless.sh`) in addition to structural layout validation.
 - Remaining applet fidelity work is focused on potential richer context-pane metadata views and any additional backend compatibility permutations requested.
 
 ## Execution Board (Next 2 Sprints)

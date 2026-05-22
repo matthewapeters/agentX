@@ -19,7 +19,7 @@ Feature: IPC router integration
     And I initialize the tmux session
     Then tmux initialization should complete without error
     And tmux commands should include "new-window -t"
-    And tmux commands should include "send-keys -t"
+    And tmux commands should include "select-window -t"
 
   Scenario: Core startup names primary window as tui-chat
     Given a temporary project directory

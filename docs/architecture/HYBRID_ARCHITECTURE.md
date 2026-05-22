@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-22 (v0.74.3)_
+_Last updated: 2026-05-22 (v0.74.4)_
 
 ## Overview
 
@@ -92,6 +92,13 @@ User-facing launch behavior now defaults to attaching the current terminal to th
 After tmux initialization, supervisor startup now launches live Python applet processes in the primary panes (`chat`, `context`, `input`) using the project-local template applet entrypoint.
 
 Interactive pane affordances are now role-specific: `input` submits prompts via core `/submit`, `chat` polls `/context` for agent output display, and `context` polls `/context` for turn metadata updates.
+
+Interactive-pane output contract is now explicit:
+
+- `chat` pane shows sanctioned conversation output (`User: ...`, `Agent: ...`).
+- `context` pane shows sanctioned context metadata (`Turn count: ...`, `Latest prompt: ...`).
+- Operational noise (READY payloads, IPC path diagnostics, and shell echo traces) is not rendered in user-facing interactive panes.
+- Logs/bridge lifecycle diagnostics remain in the logs/system surface.
 ```
 
 ### Shutdown Protocol
@@ -107,7 +114,7 @@ When user quits or core receives SIGTERM:
 
 ## First Iteration MVP
 
-**Goal:** Establish core + applet infrastructure with placeholder panes.
+**Goal:** Establish core + applet infrastructure with interactive pane affordances.
 
 ### Pane Layout
 
@@ -124,7 +131,12 @@ When user quits or core receives SIGTERM:
 
 ### Current Runtime Behavior (Hybrid Migration Branch)
 
-The current Go-core runtime does not yet spawn real Python applet processes in panes.
+The Go-core runtime now spawns real Python applet processes in `chat`, `context`, and `input` panes and routes prompt submission through `/submit`.
+
+Headless UX validation now runs in two layers:
+
+- `tests/test_tmux_layout_headless.sh` validates layout geometry and pane ordering.
+- `tests/test_tmux_pane_affordances_headless.sh` validates end-user pane behavior by writing a prompt through input and asserting sanctioned output in chat/context panes.
 
 ### Go Core Features
 

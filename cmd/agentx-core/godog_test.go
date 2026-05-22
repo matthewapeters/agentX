@@ -28,6 +28,7 @@ type bddState struct {
 	fakeTmuxLog  string
 	oldPath      string
 	oldTmuxLog   string
+	oldPaneMode  string
 	tmuxCommands string
 	snapshot     HealthSnapshot
 	routedResp   string
@@ -53,6 +54,7 @@ func (s *bddState) reset() {
 	s.fakeTmuxLog = ""
 	s.oldPath = ""
 	s.oldTmuxLog = ""
+	s.oldPaneMode = ""
 	s.tmuxCommands = ""
 	s.snapshot = HealthSnapshot{}
 	s.routedResp = ""
@@ -537,6 +539,7 @@ func (s *bddState) aFakeTmuxExecutableThatRecordsCommands() error {
 
 	s.oldPath = os.Getenv("PATH")
 	s.oldTmuxLog = os.Getenv("TMUX_LOG")
+	s.oldPaneMode = os.Getenv("AGENTX_PANE_RENDER_MODE")
 	s.fakeTmuxLog = logPath
 
 	if err := os.Setenv("PATH", s.tmpDir+":"+s.oldPath); err != nil {
@@ -544,6 +547,9 @@ func (s *bddState) aFakeTmuxExecutableThatRecordsCommands() error {
 	}
 	if err := os.Setenv("TMUX_LOG", s.fakeTmuxLog); err != nil {
 		return fmt.Errorf("failed to set TMUX_LOG for fake tmux: %w", err)
+	}
+	if err := os.Setenv("AGENTX_PANE_RENDER_MODE", "core"); err != nil {
+		return fmt.Errorf("failed to set AGENTX_PANE_RENDER_MODE for fake tmux: %w", err)
 	}
 
 	return nil
@@ -897,6 +903,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		if state.oldTmuxLog != "" {
 			_ = os.Setenv("TMUX_LOG", state.oldTmuxLog)
 		}
+		_ = os.Setenv("AGENTX_PANE_RENDER_MODE", state.oldPaneMode)
 		if state.tmpDir != "" {
 			_ = os.RemoveAll(state.tmpDir)
 		}

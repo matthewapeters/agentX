@@ -64,6 +64,18 @@ def print_output(msg: str, level: str = "info"):
     sys.stdout.flush()
 
 
+def print_ui_line(msg: str):
+    """Write a plain user-facing line in interactive pane modes."""
+    print(msg)
+    sys.stdout.flush()
+
+
+def clear_visible_screen():
+    """Clear pane viewport so startup command noise is not kept on screen."""
+    print("\033[2J\033[H", end="")
+    sys.stdout.flush()
+
+
 def _get_json(path: str):
     """Fetch JSON payload from a core endpoint path."""
     url = f"{CORE_BASE_URL}{path}"
@@ -94,8 +106,8 @@ def _submit_prompt(prompt: str) -> str:
 
 def run_input_affordance_loop():
     """Run line-based input affordance for interactive tmux input pane."""
-    print_output("Input affordance ready. Type and press Enter to submit.", level="ok")
-    print_output("Commands: :q to stop this pane loop, :clear to clear chat pane via core.")
+    print_ui_line("Input ready. Enter prompt and press Enter.")
+    print_ui_line("Commands: :q exits input loop, :clear clears chat output.")
     while not shutdown_requested:
         try:
             prompt = input("agentx> ")
@@ -110,22 +122,22 @@ def run_input_affordance_loop():
         if not prompt:
             continue
         if prompt == ":q":
-            print_output("Input pane loop exiting by user command.", level="warn")
+            print_ui_line("Input loop exiting.")
             return 0
 
         try:
             routed_response = _submit_prompt(prompt)
-            print_output(f"Submitted: {prompt}")
-            print_output(f"Response: {routed_response}", level="ok")
+            print_ui_line(f"Submitted: {prompt}")
+            print_ui_line(f"Response: {routed_response}")
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-            print_output(f"Submit failed: {exc}", level="error")
+            print_ui_line(f"Submit failed: {exc}")
 
     return 0
 
 
 def run_chat_affordance_loop():
     """Poll context endpoint and display assistant responses as they arrive."""
-    print_output("Chat output affordance ready (polling /context).", level="ok")
+    print_ui_line("Chat ready.")
     last_turn_count = 0
     while not shutdown_requested:
         try:
@@ -138,9 +150,9 @@ def run_chat_affordance_loop():
                     prompt = str(turn.get("prompt", "")).strip()
                     response = str(turn.get("response", "")).strip()
                     if prompt:
-                        print_output(f"User: {prompt}")
+                        print_ui_line(f"User: {prompt}")
                     if response:
-                        print_output(f"Agent: {response}", level="ok")
+                        print_ui_line(f"Agent: {response}")
                 last_turn_count = turn_count
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
             pass
@@ -150,7 +162,7 @@ def run_chat_affordance_loop():
 
 def run_context_affordance_loop():
     """Poll context endpoint and surface concise context consumption metadata."""
-    print_output("Context affordance ready (turn metadata view).", level="ok")
+    print_ui_line("Context ready.")
     last_signature = ""
     while not shutdown_requested:
         try:
@@ -162,9 +174,9 @@ def run_context_affordance_loop():
                 last_prompt = str(turns[-1].get("prompt", "")).strip()
             signature = f"{turn_count}:{last_prompt}"
             if signature != last_signature:
-                print_output(f"Turn count: {turn_count}")
+                print_ui_line(f"Turn count: {turn_count}")
                 if last_prompt:
-                    print_output(f"Latest prompt: {last_prompt}")
+                    print_ui_line(f"Latest prompt: {last_prompt}")
                 last_signature = signature
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
             pass
@@ -362,9 +374,8 @@ def main():
         sys.stdout.flush()
         return 1
 
-    print_ready()
-    print_output(f"Applet '{APPLET_NAME}' started in session {SESSION_ID}")
-    print_output(f"IPC paths: input={IPC_INPUT}, output={IPC_OUTPUT}")
+    if APPLET_NAME in {"input", "chat", "context"}:
+        clear_visible_screen()
 
     if APPLET_NAME == "input":
         return run_input_affordance_loop()
@@ -375,13 +386,16 @@ def main():
 
     # Logs/other panes retain a passive heartbeat loop.
     try:
+        print_ready()
+        print_output(f"Applet '{APPLET_NAME}' started in session {SESSION_ID}")
+        print_output(f"IPC paths: input={IPC_INPUT}, output={IPC_OUTPUT}")
         while not shutdown_requested:
             time.sleep(0.5)
     except KeyboardInterrupt:
         pass
-    finally:
-        print_output(f"Applet '{APPLET_NAME}' shutting down...")
-        return 0
+
+    print_output(f"Applet '{APPLET_NAME}' shutting down...")
+    return 0
 
 
 if __name__ == "__main__":

@@ -196,13 +196,6 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 		return fmt.Errorf("failed to re-select primary window: %w", err)
 	}
 
-	for _, pane := range paneTargets(ac.tmuxSessionName, chatPaneTarget, inputPaneTarget, contextPaneTarget) {
-		placeholderCmd := fmt.Sprintf("echo '🔶 Pane: %s (AgentX Core)'", pane.name)
-		if err := ac.runTmux(ctx, "send-keys", "-t", pane.target, placeholderCmd, "Enter"); err != nil {
-			return fmt.Errorf("failed to set placeholder in pane %s: %w", pane.name, err)
-		}
-	}
-
 	log.Printf("[AgentX Core] tmux session '%s' initialized with layout: chat(80x80)|context(20x80) top, input(100x20) bottom, logs hidden", ac.tmuxSessionName)
 	ac.tmuxInitialized = true
 	return nil
@@ -299,7 +292,7 @@ func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
 			shellSingleQuote(ac.chatAppletScript),
 		)
 
-		if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(pane.Name), launchCmd, "Enter"); err != nil {
+		if err := ac.runTmux(ctx, "respawn-pane", "-k", "-t", ac.paneTargetForName(pane.Name), launchCmd); err != nil {
 			return fmt.Errorf("failed launching %s pane applet: %w", pane.Name, err)
 		}
 	}
@@ -400,7 +393,19 @@ func resolveChatBridgeResponseTimeout() time.Duration {
 	return parsedSeconds
 }
 
+func shouldRenderInteractivePanesViaCore() bool {
+	mode := strings.TrimSpace(strings.ToLower(os.Getenv("AGENTX_PANE_RENDER_MODE")))
+	if mode == "" {
+		return false
+	}
+	return mode == "core" || mode == "1" || mode == "true"
+}
+
 func (ac *AgentXCore) renderChatStreamChunk(ctx context.Context, delta string) error {
+	if !shouldRenderInteractivePanesViaCore() {
+		return nil
+	}
+
 	trimmed := strings.TrimSpace(delta)
 	if trimmed == "" {
 		return nil
@@ -609,6 +614,10 @@ func (ac *AgentXCore) paneTargetForName(paneName string) string {
 }
 
 func (ac *AgentXCore) renderChatResponse(ctx context.Context, response string) error {
+	if !shouldRenderInteractivePanesViaCore() {
+		return nil
+	}
+
 	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote("[assistant] "+response))
 	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("chat"), renderCmd, "Enter"); err != nil {
 		return fmt.Errorf("failed rendering chat response: %w", err)
@@ -625,6 +634,10 @@ func trimForPaneSummary(value string, maxLen int) string {
 }
 
 func (ac *AgentXCore) renderContextTurnSummary(ctx context.Context, turnIndex int, prompt string, response string) error {
+	if !shouldRenderInteractivePanesViaCore() {
+		return nil
+	}
+
 	summary := fmt.Sprintf(
 		"[context] turn=%d prompt=%q response=%q",
 		turnIndex,

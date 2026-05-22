@@ -1,6 +1,9 @@
 # Headless tmux Layout Test for AgentX
 
-This script launches the AgentX tmux layout, captures pane metadata, and validates the UX layout programmatically.
+These scripts validate tmux UX contracts programmatically:
+
+- `tests/test_tmux_layout_headless.sh`: layout geometry/titles contract
+- `tests/test_tmux_pane_affordances_headless.sh`: interactive pane content contract
 
 ## Steps
 
@@ -11,7 +14,6 @@ This script launches the AgentX tmux layout, captures pane metadata, and validat
    - Each pane is in the correct position (by index and title)
    - Primary window `0:tui-chat` is active after logs window creation
    - Logs window exists as `1:logs` and remains inactive
-   - Placeholder text matches the intended UX
 4. Assert the layout matches the UX spec:
    - Active window: `0:tui-chat`
    - Top left: chat
@@ -20,6 +22,26 @@ This script launches the AgentX tmux layout, captures pane metadata, and validat
    - Pane order in primary window: index 0=chat, 1=context, 2=input
    - Hidden/logs window present as `1:logs`
 5. Report pass/fail with details for CI or developer review.
+
+## Pane Affordance Contract
+
+`tests/test_tmux_pane_affordances_headless.sh` launches the real core in headless mode, writes a prompt through the input pane, then captures chat/context panes with `tmux capture-pane`.
+
+Required outcomes:
+
+- Input interaction works: prompt entered in input pane is processed.
+- Chat pane shows sanctioned user-facing lines:
+  - `User: <prompt>`
+  - `Agent: <response>`
+- Context pane shows sanctioned context lines:
+  - `Turn count: <N>`
+  - `Latest prompt: <prompt>`
+- Chat/context panes do **not** show operational noise:
+  - `READY { ... }`
+  - `IPC paths:`
+  - shell command traces like `echo '[assistant-stream] ...'` or `send-keys -t`
+
+This validates that panes are not just present; they provide intended affordances with clean, navigable output.
 
 ## Example (Bash)
 
@@ -45,4 +67,4 @@ tmux kill-session -t "$SESSION"
 - Fail the build if layout does not match spec.
 
 ---
-_Last updated: 2026-05-19 (v0.56.1)_
+_Last updated: 2026-05-22 (v0.74.4)_
