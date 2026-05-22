@@ -43,7 +43,7 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.0", "-T", "controller"); err != nil {
 		return fmt.Errorf("failed to label controller pane: %w", err)
 	}
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.1", "-T", "live-core-mirror"); err != nil {
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.1", "-T", "live-core"); err != nil {
 		return fmt.Errorf("failed to label live core pane: %w", err)
 	}
 	if err := runTmuxInteractive(ctx, "select-layout", "-t", demoSessionName+":0", "even-horizontal"); err != nil {
@@ -55,7 +55,7 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 
 	fmt.Printf("[AgentX Demo] Split demo session initialized: %s\n", demoSessionName)
 	fmt.Printf("[AgentX Demo] Left pane: controller prompt loop\n")
-	fmt.Printf("[AgentX Demo] Right pane: live core mirror for session %s\n", core.tmuxSessionName)
+	fmt.Printf("[AgentX Demo] Right pane: live core session %s\n", core.tmuxSessionName)
 	fmt.Printf("[AgentX Demo] Attach to the split demo session with: tmux attach -t %s\n", demoSessionName)
 
 	attachErr := attachTmuxSession(ctx, demoSessionName)
@@ -84,11 +84,11 @@ func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, star
 }
 
 func buildLiveCoreMirrorArgs(coreSessionName string) []string {
-	mirrorScript := fmt.Sprintf(
-		`session=%s; last=''; while true; do panes="$(tmux list-panes -t "$session:0" -F '#{pane_index}|#{pane_title}|#{pane_id}' 2>/dev/null || true)"; frame="$(printf 'Live core mirror: %%s' "$session")"; while IFS='|' read -r pane_idx pane_title pane_id; do [[ -z "$pane_id" ]] && continue; snippet="$(tmux capture-pane -p -t "$pane_id" 2>/dev/null | awk 'NF{buf[++n]=$0} END{if(n==0){print "<no output>"; exit} start=n-10; if(start<1){start=1} for(i=start;i<=n;i++){print buf[i]}}')"; frame="$frame\n\n=== pane $pane_idx (${pane_title:-untitled}, $pane_id) ===\n$snippet"; done <<< "$panes"; if [[ "$frame" != "$last" ]]; then printf '\n[%%s]\n%%b\n' "$(date '+%%H:%%M:%%S')" "$frame"; last="$frame"; fi; sleep 0.8; done`,
+	attachScript := fmt.Sprintf(
+		`TMUX= exec tmux attach-session -r -t %s`,
 		shellQuote(coreSessionName),
 	)
-	return []string{"bash", "-lc", mirrorScript}
+	return []string{"bash", "-lc", attachScript}
 }
 
 func closeCurrentTmuxSession(ctx context.Context) error {

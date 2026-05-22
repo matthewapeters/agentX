@@ -5,6 +5,21 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.8] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Switched split DemoMode right pane from scripted snapshot rendering to a native nested tmux attach (`TMUX` unset, read-only attach).
+- This makes the right side display the actual live application panes instead of synthesized mirror frames.
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode tests to assert native read-only nested attach command wiring.
+
 ## [0.79.7] - 2026-05-22
 
 ### Code Changes
