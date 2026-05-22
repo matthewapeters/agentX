@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.3] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Fixed DemoMode right-pane mirror UX instability:
+  - removed fast clear/redraw loop that caused flashing and made screen capture difficult.
+  - switched to change-detected live monitoring for chat/context captures to keep the pane stable.
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode mirror command assertions to match the stable change-detected monitoring loop.
+
 ## [0.79.2] - 2026-05-22
 
 ### Code Changes
