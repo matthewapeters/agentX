@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,6 +31,10 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 
 	demoSessionName := fmt.Sprintf("%s_demo", core.tmuxSessionName)
 	controllerArgs := buildDemoControllerArgs(executablePath, cfg, core.SessionID, startSelector, core.tmuxSessionName)
+
+	if err := prepareCoreSessionForSplitView(ctx, core.tmuxSessionName); err != nil {
+		return fmt.Errorf("failed to prepare core session for split view: %w", err)
+	}
 
 	if err := runTmuxInteractive(ctx, append([]string{"new-session", "-d", "-s", demoSessionName, "-n", "demo-control"}, controllerArgs...)...); err != nil {
 		return fmt.Errorf("failed to create demo controller session: %w", err)
@@ -89,6 +94,41 @@ func buildLiveCoreMirrorArgs(coreSessionName string) []string {
 		shellQuote(coreSessionName),
 	)
 	return []string{"bash", "-lc", attachScript}
+}
+
+func prepareCoreSessionForSplitView(ctx context.Context, coreSessionName string) error {
+	windowTarget := coreSessionName + ":0"
+
+	if err := runTmux(ctx, "set-window-option", "-t", windowTarget, "window-size", "smallest"); err != nil {
+		return err
+	}
+
+	zoomedFlag, err := runTmuxCapture(ctx, "display-message", "-p", "-t", windowTarget, "#{window_zoomed_flag}")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(zoomedFlag) == "1" {
+		if err := runTmux(ctx, "resize-pane", "-t", windowTarget+".0", "-Z"); err != nil {
+			return err
+		}
+	}
+
+	inputTarget := windowTarget + ".2"
+	inputHeightRaw, err := runTmuxCapture(ctx, "display-message", "-p", "-t", inputTarget, "#{pane_height}")
+	if err != nil {
+		return err
+	}
+	inputHeight, err := strconv.Atoi(strings.TrimSpace(inputHeightRaw))
+	if err != nil {
+		return fmt.Errorf("invalid input pane height %q: %w", inputHeightRaw, err)
+	}
+	if inputHeight < 1 {
+		if err := runTmux(ctx, "resize-pane", "-t", inputTarget, "-y", "1"); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func closeCurrentTmuxSession(ctx context.Context) error {

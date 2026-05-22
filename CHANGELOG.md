@@ -5,6 +5,23 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.9] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Normalized core tmux window state before opening split DemoMode nested live view:
+  - force core window sizing policy to `smallest` so the nested client adapts to split-pane dimensions.
+  - clear accidental zoomed window state before attach.
+  - verify input pane height target exists and remains visible in the live pane session.
+
+### Test Changes
+
+#### Changed
+
+- Expanded split-mode tmux orchestration tests to cover pre-attach core-window normalization commands.
+
 ## [0.79.8] - 2026-05-22
 
 ### Code Changes

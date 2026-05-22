@@ -82,8 +82,26 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	fakeTmuxScript := "#!/usr/bin/env bash\n" +
 		"set -euo pipefail\n" +
 		"printf '%s\\n' \"$*\" >> \"${TMUX_LOG}\"\n" +
+		"if [[ \"$1\" == \"display-message\" ]]; then\n" +
+		"  target=\"\"\n" +
+		"  for ((i=1; i<=$#; i++)); do\n" +
+		"    if [[ \"${!i}\" == \"-t\" ]]; then\n" +
+		"      j=$((i+1))\n" +
+		"      target=\"${!j}\"\n" +
+		"      break\n" +
+		"    fi\n" +
+		"  done\n" +
+		"  if [[ \"$target\" == *\":0\" ]]; then\n" +
+		"    printf '0\\n'\n" +
+		"    exit 0\n" +
+		"  fi\n" +
+		"  if [[ \"$target\" == *\":0.2\" ]]; then\n" +
+		"    printf '1\\n'\n" +
+		"    exit 0\n" +
+		"  fi\n" +
+		"fi\n" +
 		"case \"$1\" in\n" +
-		"  new-session|split-window|select-pane|select-layout|attach-session|kill-session) exit 0 ;;\n" +
+		"  new-session|split-window|select-pane|select-layout|attach-session|kill-session|set-window-option|display-message) exit 0 ;;\n" +
 		"  *) echo \"unexpected tmux args: $*\" >&2; exit 1 ;;\n" +
 		"esac\n"
 	if err := os.WriteFile(fakeTmuxPath, []byte(fakeTmuxScript), 0o755); err != nil {
@@ -133,6 +151,15 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	}
 	if !strings.Contains(commands, "--demo-controller") {
 		t.Fatalf("expected controller launch flag, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "set-window-option -t agentx_tester_sess-split:0 window-size smallest") {
+		t.Fatalf("expected core window to use smallest client sizing for split view, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "display-message -p -t agentx_tester_sess-split:0 #{window_zoomed_flag}") {
+		t.Fatalf("expected zoom flag check for core window before nested attach, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "display-message -p -t agentx_tester_sess-split:0.2 #{pane_height}") {
+		t.Fatalf("expected input pane height check before nested attach, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "split-window -h -t agentx_tester_sess-split_demo:0 bash -lc") {
 		t.Fatalf("expected vertical split with live core attach command, commands:\n%s", commands)
