@@ -53,12 +53,18 @@ func (cfg DemoRuntimeConfig) HealthURL() string {
 }
 
 // DemoDiagnosticsCollector captures diagnostics artifacts when user marks a test failed.
-type DemoDiagnosticsCollector func(DemoRuntimeConfig, DemoTestCase) ([]string, error)
+type DemoDiagnosticsCollector func(DemoRuntimeConfig, DemoTestCase, string) ([]string, error)
 
 type demoModeOptions struct {
 	runtimeConfig DemoRuntimeConfig
 	collector     DemoDiagnosticsCollector
 	decisionCtx   context.Context
+}
+
+type demoDecision struct {
+	action      string
+	jumpToIndex int
+	feedback    string
 }
 
 const (
@@ -227,6 +233,7 @@ func runDemoModeWithOptions(
 	runCount := 0
 	acceptedCount := 0
 	failedTestID := ""
+	failureFeedback := ""
 	artifactPaths := []string{}
 	statusByTestID := map[string]string{}
 	for _, testCase := range sequence {
@@ -234,7 +241,7 @@ func runDemoModeWithOptions(
 	}
 
 	inputReader := bufio.NewReader(reader)
-	for idx := startIndex; idx < len(sequence); idx++ {
+	for idx := startIndex; idx < len(sequence); {
 		testCase := sequence[idx]
 		runCount++
 
@@ -255,21 +262,25 @@ func runDemoModeWithOptions(
 			fmt.Fprintf(writer, "[AgentX Demo] Result: PASS (%s)\n", sanitizeDemoResultText(resultText))
 		}
 
-		decision, promptErr := readDemoDecision(options.decisionCtx, inputReader, writer)
+		decision, promptErr := readDemoDecision(options.decisionCtx, inputReader, writer, len(sequence), idx)
 		if promptErr != nil {
 			return promptErr
 		}
 
-		if decision == "X" {
+		if decision.action == "X" {
 			failedTestID = testCase.ID
+			failureFeedback = strings.TrimSpace(decision.feedback)
 			runStatus = demoStatusFail
 			statusByTestID[testCase.ID] = runStatus
-			capturedPaths, captureErr := options.collector(options.runtimeConfig, testCase)
+			capturedPaths, captureErr := options.collector(options.runtimeConfig, testCase, failureFeedback)
 			if len(capturedPaths) > 0 {
 				artifactPaths = capturedPaths
 			}
 			if captureErr != nil {
 				fmt.Fprintf(writer, "[AgentX Demo] Diagnostics capture failed: %v\n", captureErr)
+			}
+			if failureFeedback != "" {
+				fmt.Fprintf(writer, "[AgentX Demo] Failure feedback: %s\n", failureFeedback)
 			}
 			fmt.Fprintf(writer, "[AgentX Demo] Marked failed by user at %s\n", testCase.ID)
 			break
@@ -278,13 +289,21 @@ func runDemoModeWithOptions(
 		statusByTestID[testCase.ID] = runStatus
 		if runStatus == demoStatusPass {
 			acceptedCount++
-			fmt.Fprintf(writer, "[AgentX Demo] Accepted %s, advancing\n", testCase.ID)
+			fmt.Fprintf(writer, "[AgentX Demo] Accepted %s\n", testCase.ID)
 		} else {
-			fmt.Fprintf(writer, "[AgentX Demo] Recorded %s for %s, advancing\n", runStatus, testCase.ID)
+			fmt.Fprintf(writer, "[AgentX Demo] Recorded %s for %s\n", runStatus, testCase.ID)
 		}
+
+		if decision.action == "J" {
+			idx = decision.jumpToIndex
+			fmt.Fprintf(writer, "[AgentX Demo] Jumped to %d) %s\n", idx+1, sequence[idx].ID)
+			continue
+		}
+
+		idx++
 	}
 
-	renderDemoSummary(writer, sequence, selectedCount, runCount, acceptedCount, failedTestID, artifactPaths, statusByTestID)
+	renderDemoSummary(writer, sequence, selectedCount, runCount, acceptedCount, failedTestID, failureFeedback, artifactPaths, statusByTestID)
 	return nil
 }
 
@@ -311,26 +330,57 @@ func renderDemoSequence(writer io.Writer, sequence []DemoTestCase, startIndex in
 	)
 }
 
-func readDemoDecision(decisionCtx context.Context, reader *bufio.Reader, writer io.Writer) (string, error) {
+func readDemoDecision(
+	decisionCtx context.Context,
+	reader *bufio.Reader,
+	writer io.Writer,
+	sequenceLen int,
+	currentIndex int,
+) (demoDecision, error) {
 	for {
 		select {
 		case <-decisionCtx.Done():
-			return "", fmt.Errorf("demo decision cancelled: %w", decisionCtx.Err())
+			return demoDecision{}, fmt.Errorf("demo decision cancelled: %w", decisionCtx.Err())
 		default:
 		}
 
-		fmt.Fprint(writer, "\n[AgentX Demo] Enter decision [N=next, X=fail]: ")
+		fmt.Fprint(writer, "\n[AgentX Demo] Enter decision [N=next, J <num>=jump, X <feedback>=fail]: ")
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			return "", fmt.Errorf("failed to read demo decision: %w", err)
+			return demoDecision{}, fmt.Errorf("failed to read demo decision: %w", err)
 		}
 
-		decision := strings.ToUpper(strings.TrimSpace(line))
-		if decision == "N" || decision == "X" {
-			return decision, nil
+		trimmed := strings.TrimSpace(line)
+		upper := strings.ToUpper(trimmed)
+		if upper == "N" {
+			return demoDecision{action: "N"}, nil
 		}
 
-		fmt.Fprintln(writer, "[AgentX Demo] Invalid decision; enter N or X")
+		if strings.HasPrefix(upper, "X") {
+			feedback := strings.TrimSpace(trimmed[1:])
+			return demoDecision{action: "X", feedback: feedback}, nil
+		}
+
+		if strings.HasPrefix(upper, "J") {
+			rest := strings.TrimSpace(trimmed[1:])
+			jumpToOneBased, convErr := strconv.Atoi(rest)
+			if convErr != nil {
+				fmt.Fprintln(writer, "[AgentX Demo] Invalid jump; use J <test number>.")
+				continue
+			}
+			jumpToIndex := jumpToOneBased - 1
+			if jumpToIndex < 0 || jumpToIndex >= sequenceLen {
+				fmt.Fprintf(writer, "[AgentX Demo] Invalid jump index %d (valid range 1..%d).\n", jumpToOneBased, sequenceLen)
+				continue
+			}
+			if jumpToIndex <= currentIndex {
+				fmt.Fprintf(writer, "[AgentX Demo] Jump target must be ahead of current test (%d).\n", currentIndex+1)
+				continue
+			}
+			return demoDecision{action: "J", jumpToIndex: jumpToIndex}, nil
+		}
+
+		fmt.Fprintln(writer, "[AgentX Demo] Invalid decision; use N, J <test number>, or X <feedback>.")
 	}
 }
 
@@ -341,6 +391,7 @@ func renderDemoSummary(
 	runCount,
 	acceptedCount int,
 	failedTestID string,
+	failureFeedback string,
 	artifactPaths []string,
 	statusByTestID map[string]string,
 ) {
@@ -363,6 +414,9 @@ func renderDemoSummary(
 	}
 	if failedTestID != "" {
 		fmt.Fprintf(writer, "[AgentX Demo] Failed test: %s\n", failedTestID)
+		if strings.TrimSpace(failureFeedback) != "" {
+			fmt.Fprintf(writer, "[AgentX Demo] Feedback: %s\n", strings.TrimSpace(failureFeedback))
+		}
 		fmt.Fprintln(writer, "[AgentX Demo] Readiness: Not ready for UAT")
 		return
 	}
@@ -379,7 +433,7 @@ func defaultDemoTestRunner(testCase DemoTestCase) (string, error) {
 	return "scaffold execution placeholder", nil
 }
 
-func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase) ([]string, error) {
+func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase, feedback string) ([]string, error) {
 	projectDir := strings.TrimSpace(runtimeConfig.ProjectDir)
 	if projectDir == "" {
 		return nil, nil
@@ -403,6 +457,9 @@ func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase D
 		"tmux_session_name": runtimeConfig.TmuxSessionName,
 		"timestamp_utc":     time.Now().UTC().Format(time.RFC3339),
 	}
+	if strings.TrimSpace(feedback) != "" {
+		metadata["failure_feedback"] = strings.TrimSpace(feedback)
+	}
 
 	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
@@ -410,6 +467,12 @@ func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase D
 	}
 	if err := os.WriteFile(filepath.Join(artifactDir, "metadata.json"), metadataJSON, 0o644); err != nil {
 		return nil, fmt.Errorf("failed to write diagnostics metadata: %w", err)
+	}
+
+	if strings.TrimSpace(feedback) != "" {
+		if err := os.WriteFile(filepath.Join(artifactDir, "demo_feedback.txt"), []byte(strings.TrimSpace(feedback)+"\n"), 0o644); err != nil {
+			return nil, fmt.Errorf("failed to write diagnostics feedback: %w", err)
+		}
 	}
 
 	coreSessionName := strings.TrimSpace(runtimeConfig.TmuxSessionName)

@@ -88,7 +88,7 @@ func TestRunDemoMode_StartSelectionAndUserFailStopsSequence(t *testing.T) {
 		"e2e-002",
 		runner,
 		demoModeOptions{
-			collector: func(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase) ([]string, error) {
+			collector: func(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase, feedback string) ([]string, error) {
 				return nil, nil
 			},
 		},
@@ -135,7 +135,7 @@ func TestRunDemoMode_FailureDecisionReportsCollectedArtifactPath(t *testing.T) {
 	var output bytes.Buffer
 	input := strings.NewReader("X\n")
 
-	collector := func(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase) ([]string, error) {
+	collector := func(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase, feedback string) ([]string, error) {
 		return []string{"logs/demo/test-session/e2e-001"}, nil
 	}
 
@@ -156,6 +156,72 @@ func TestRunDemoMode_FailureDecisionReportsCollectedArtifactPath(t *testing.T) {
 	content := output.String()
 	if !strings.Contains(content, "[AgentX Demo] Artifact paths: logs/demo/test-session/e2e-001") {
 		t.Fatalf("expected collected artifact path in summary, got:\n%s", content)
+	}
+}
+
+func TestRunDemoMode_FailureDecisionCapturesInlineFeedback(t *testing.T) {
+	// GIVEN DemoMode with a collector that records feedback
+	// WHEN user enters X with inline feedback text
+	// THEN feedback is surfaced in summary and passed to diagnostics collector.
+	var output bytes.Buffer
+	input := strings.NewReader("X observed context truncation in live-core pane\n")
+	collectorFeedback := ""
+
+	err := runDemoModeWithOptions(
+		input,
+		&output,
+		"",
+		nil,
+		demoModeOptions{
+			runtimeConfig: DemoRuntimeConfig{SessionID: "test-session"},
+			collector: func(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase, feedback string) ([]string, error) {
+				collectorFeedback = feedback
+				return []string{"logs/demo/test-session/e2e-001"}, nil
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected demo mode to succeed, got %v", err)
+	}
+
+	if collectorFeedback != "observed context truncation in live-core pane" {
+		t.Fatalf("expected feedback passed to collector, got %q", collectorFeedback)
+	}
+
+	content := output.String()
+	if !strings.Contains(content, "[AgentX Demo] Feedback: observed context truncation in live-core pane") {
+		t.Fatalf("expected summary to include feedback text, got:\n%s", content)
+	}
+}
+
+func TestRunDemoMode_JumpDecisionSkipsInterveningTests(t *testing.T) {
+	// GIVEN DemoMode started at first test
+	// WHEN user accepts first test then jumps to test 3 and marks it failed
+	// THEN test 2 remains SKIP and test 3 is executed.
+	var output bytes.Buffer
+	input := strings.NewReader("J 3\nX\n")
+	runOrder := make([]string, 0)
+
+	runner := func(testCase DemoTestCase) (string, error) {
+		runOrder = append(runOrder, testCase.ID)
+		return "ok", nil
+	}
+
+	err := runDemoMode(input, &output, "", runner)
+	if err != nil {
+		t.Fatalf("expected demo mode to succeed, got %v", err)
+	}
+
+	if len(runOrder) != 2 || runOrder[0] != "e2e-001" || runOrder[1] != "e2e-003" {
+		t.Fatalf("expected run order [e2e-001 e2e-003], got %v", runOrder)
+	}
+
+	content := output.String()
+	if !strings.Contains(content, "[AgentX Demo] Jumped to 3) e2e-003") {
+		t.Fatalf("expected jump confirmation in output, got:\n%s", content)
+	}
+	if !strings.Contains(content, "[AgentX Demo]   - e2e-002: SKIP") {
+		t.Fatalf("expected skipped status for jumped-over test, got:\n%s", content)
 	}
 }
 
@@ -182,10 +248,10 @@ func TestRunDemoMode_InvalidDecisionReprompts(t *testing.T) {
 	}
 
 	content := output.String()
-	if !strings.Contains(content, "[AgentX Demo] Invalid decision; enter N or X") {
+	if !strings.Contains(content, "[AgentX Demo] Invalid decision; use N, J <test number>, or X <feedback>.") {
 		t.Fatalf("expected invalid-input re-prompt message, got:\n%s", content)
 	}
-	if !strings.Contains(content, "[AgentX Demo] Enter decision [N=next, X=fail]:") {
+	if !strings.Contains(content, "[AgentX Demo] Enter decision [N=next, J <num>=jump, X <feedback>=fail]:") {
 		t.Fatalf("expected per-test prompt, got:\n%s", content)
 	}
 }
@@ -325,6 +391,7 @@ exit 1
 			TmuxSessionName: "demo-session",
 		},
 		DemoTestCase{ID: "e2e-001", Title: "test"},
+		"",
 	)
 	if err != nil {
 		t.Fatalf("expected diagnostics collector to succeed, got %v", err)

@@ -5,6 +5,32 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.19] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Enhanced DemoMode decision prompt commands:
+  - `N` run next
+  - `J <test number>` jump ahead to a specific test during the same run
+  - `X <feedback>` fail current test with optional inline user feedback
+
+#### Changed
+
+- Demo diagnostics collector now stores inline failure feedback in artifacts (`metadata.json` and `demo_feedback.txt`).
+- Demo summary now includes captured feedback when a run is failed.
+
+### Test Changes
+
+#### Added
+
+- Added coverage for jump-ahead command behavior and inline failure-feedback propagation.
+
+#### Changed
+
+- Updated decision prompt/validation tests for the new command grammar.
+
 ## [0.79.18] - 2026-05-22
 
 ### Code Changes
