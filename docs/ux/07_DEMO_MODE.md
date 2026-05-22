@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.74.4.post2)_
+_Last updated: 2026-05-22 (v0.75.0)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -11,13 +11,13 @@ It is explicitly user-visible and interactive by design.
 
 Demo mode allows the UAT team to run the current E2E terminal sequence in a live tmux/terminal session and provide per-test feedback before formal UAT closure.
 
-Command-line entry contract (planned):
+Command-line entry contract:
 
 ```bash
 agentx --demo
 ```
 
-Optional start-selection contract (planned):
+Optional start-selection contract:
 
 ```bash
 agentx --demo --demo-start <test-id-or-index>
@@ -107,6 +107,8 @@ At sequence end (or stop on `X`), demo mode must print:
 
 ### Phase D1 — Contract Scaffolding
 
+Status: COMPLETE in `cmd/agentx-core`.
+
 1. Add CLI flags in Go core entry:
    - `--demo`
    - `--demo-start`
@@ -116,8 +118,8 @@ At sequence end (or stop on `X`), demo mode must print:
 
 Exit criteria:
 
-- `agentx --demo` prints planned sequence and exits with clear "not yet implemented" if execution path not wired.
-- `agentx --demo --demo-start` validates test id/index.
+- `agentx --demo` prints ordered sequence and exits with clear scaffolding notice.
+- `agentx --demo --demo-start` validates test id/index and highlights selected start point.
 
 ### Phase D2 — Interactive Execution Loop
 

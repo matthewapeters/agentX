@@ -18,6 +18,8 @@ func main() {
 		username   = flag.String("user", os.Getenv("USER"), "Username for session isolation")
 		sessionID  = flag.String("session-id", "", "Session ID; auto-generated if empty")
 		attach     = flag.Bool("attach", true, "Attach to tmux session after startup (use -attach=false for headless mode)")
+		demo       = flag.Bool("demo", false, "Run DemoMode scaffolding and exit")
+		demoStart  = flag.String("demo-start", "", "Demo start selector (test id or 1-based index). Requires -demo")
 	)
 	flag.Parse()
 
@@ -26,6 +28,17 @@ func main() {
 	}
 	if *username == "" {
 		*username = "agentx"
+	}
+
+	if *demoStart != "" && !*demo {
+		log.Fatalf("--demo-start requires --demo")
+	}
+
+	if *demo {
+		if err := runDemoScaffolding(os.Stdout, *demoStart); err != nil {
+			log.Fatalf("Failed to initialize demo mode: %v", err)
+		}
+		return
 	}
 
 	// Create root context with cancellation for graceful shutdown.

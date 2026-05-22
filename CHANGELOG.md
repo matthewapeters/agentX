@@ -5,6 +5,39 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.75.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Added DemoMode D1 CLI scaffolding in Go core:
+  - `cmd/agentx-core/main.go`: new `--demo` and `--demo-start` flags with validation (`--demo-start` requires `--demo`).
+  - `cmd/agentx-core/demo_harness.go`: stable ordered demo sequence manifest, start-selector resolution (id or 1-based index), and scaffold output rendering.
+
+### Test Changes
+
+#### Added
+
+- Added `cmd/agentx-core/demo_harness_test.go` unit coverage for D1 contracts:
+  - GIVEN empty selector WHEN resolving start THEN first test is selected.
+  - GIVEN id selector WHEN resolving start THEN matching test index is selected.
+  - GIVEN 1-based index selector WHEN resolving start THEN normalized zero-based index is selected.
+  - GIVEN invalid selector WHEN resolving start THEN error is returned.
+  - GIVEN `--demo-start` with scaffolding WHEN rendering output THEN sequence heading and selected start marker are shown.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated DemoMode UX and architecture docs to reflect implemented D1 behavior and remaining planned phases D2-D4:
+  - `docs/ux/07_DEMO_MODE.md`
+  - `docs/ux/03_PANEL_DETAILS.md`
+  - `docs/ux/UX_LIFECYCLE.md`
+  - `docs/ux/00_INDEX.md`
+  - `docs/architecture/HYBRID_ARCHITECTURE.md`
+  - `docs/HYBRID_MIGRATION_PLAN.md`
+
 ## [0.74.4.post2] - 2026-05-22
 
 ### Documentation Changes

@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.74.4.post2)_
+_Last updated: 2026-05-22 (v0.75.0)_
 
 ## Overview
 
@@ -58,6 +58,8 @@ Goal: provide a user-visible terminal harness (`agentx --demo`) that executes E2
 - Add `--demo` flag to `agentx` command.
 - Add `--demo-start <id-or-index>` selector.
 - At startup, print ordered demo test sequence and active start point.
+
+Status: COMPLETE (implemented in `cmd/agentx-core/main.go` and `cmd/agentx-core/demo_harness.go`).
 
 ### D2 — Per-Test User Feedback Loop
 

@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-22 (v0.74.4.post2)_
+_Last updated: 2026-05-22 (v0.75.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -394,9 +394,9 @@ implements it and the test that validates it.  Status legend:
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |---|---|---|---|---|---|
-| `--demo` enters DemoMode execution path | PD-17-AF-001 | `main.go` demo flag parse + harness bootstrap (planned) | — | — | 📝 |
-| Demo sequence list shown before execution | PD-17-AF-002 | `DemoHarness` sequence presenter (planned) | — | — | 📝 |
-| Start test selection by id/index (`--demo-start`) | PD-17-AF-003 | `DemoHarness` selector (planned) | — | — | 📝 |
+| `--demo` enters DemoMode execution path | PD-17-AF-001 | `main.go` flag parse + `runDemoScaffolding` entry path | `demo_harness_test.go` | package-level tests | ✅ |
+| Demo sequence list shown before execution | PD-17-AF-002 | `runDemoScaffolding()` ordered sequence renderer | `demo_harness_test.go` | package-level tests | ✅ |
+| Start test selection by id/index (`--demo-start`) | PD-17-AF-003 | `resolveDemoStartIndex()` selector parser | `demo_harness_test.go` | package-level tests | ✅ |
 | Per-test user feedback prompt (`N`/`X`) | PD-17-AF-004 | `DemoHarness` per-test controller (planned) | — | — | 📝 |
 | `X` triggers pane/metadata dump artifact bundle | PD-17-AF-005 | diagnostics capture pipeline (planned) | — | — | 📝 |
 | End-of-run readiness and artifact summary output | PD-17-AF-006 | `DemoHarness` terminal summary renderer (planned) | — | — | 📝 |
@@ -712,7 +712,7 @@ tests.
 
 | Affordance ID | Description |
 |---------------|-------------|
-| PD-17-AF-001..006 | DemoMode CLI UX contract (`agentx --demo`, per-test N/X loop, start-selection, failure artifact bundle) |
+| PD-17-AF-004..006 | DemoMode per-test N/X loop, failure artifact bundle, and readiness summary |
 
 ### Medium Priority (settings / configuration)
 
