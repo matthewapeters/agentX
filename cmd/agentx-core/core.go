@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -51,6 +52,14 @@ type AgentXCore struct {
 	startedAt                 time.Time
 	healthAddr                string // Address for health endpoint
 	contextManager            *ContextManager
+}
+
+type submitRequest struct {
+	Prompt string `json:"prompt"`
+}
+
+type submitResponse struct {
+	Response string `json:"response"`
 }
 
 // PaneStatus reports pane-level runtime state.
@@ -136,6 +145,10 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 	core.contextManager = NewContextManager(cfg.SessionContextDir(sessionID))
 	core.contextManager.SetSessionMetadata(core.SessionID, core.startedAt)
 	core.contextManager.SetSnapshotProvider(core.healthSnapshot)
+	core.contextManager.SetSubmitProvider(func(ctx context.Context, prompt string) (string, error) {
+		response, _, err := core.HandleInputLine(ctx, prompt)
+		return response, err
+	})
 
 	return core
 }
@@ -887,6 +900,7 @@ type ContextManager struct {
 	sessionID        string
 	startedAt        time.Time
 	snapshotProvider func() HealthSnapshot
+	submitProvider   func(context.Context, string) (string, error)
 	turns            []ChatTurn
 	turnsLoaded      bool
 	mu               sync.RWMutex
@@ -1011,6 +1025,13 @@ func (cm *ContextManager) SetSnapshotProvider(provider func() HealthSnapshot) {
 	cm.snapshotProvider = provider
 }
 
+// SetSubmitProvider configures interactive prompt submission for /submit endpoint.
+func (cm *ContextManager) SetSubmitProvider(provider func(context.Context, string) (string, error)) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.submitProvider = provider
+}
+
 func (cm *ContextManager) snapshot() HealthSnapshot {
 	cm.mu.RLock()
 	provider := cm.snapshotProvider
@@ -1098,6 +1119,47 @@ func (cm *ContextManager) HealthHandler() http.Handler {
 			"turn_count": len(turns),
 			"turns":      turns,
 		})
+	})
+
+	mux.HandleFunc("/submit", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		cm.mu.RLock()
+		submitProvider := cm.submitProvider
+		cm.mu.RUnlock()
+		if submitProvider == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "submit unavailable"})
+			return
+		}
+
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "failed reading request body"})
+			return
+		}
+
+		var req submitRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request json"})
+			return
+		}
+
+		prompt := strings.TrimSpace(req.Prompt)
+		if prompt == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "prompt cannot be empty"})
+			return
+		}
+
+		response, err := submitProvider(r.Context(), prompt)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, submitResponse{Response: response})
 	})
 
 	return mux

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -180,5 +183,85 @@ func TestContextManagerHealthHandler_RejectsNonGetMethods(t *testing.T) {
 
 	if contextResp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("expected /context status 405 for POST, got %d", contextResp.StatusCode)
+	}
+
+	submitReq, err := http.NewRequest(http.MethodGet, server.URL+"/submit", nil)
+	if err != nil {
+		t.Fatalf("failed to build GET /submit request: %v", err)
+	}
+
+	submitResp, err := http.DefaultClient.Do(submitReq)
+	if err != nil {
+		t.Fatalf("failed to execute GET /submit request: %v", err)
+	}
+	defer submitResp.Body.Close()
+
+	if submitResp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected /submit status 405 for GET, got %d", submitResp.StatusCode)
+	}
+}
+
+// GIVEN a context manager submit provider
+// WHEN /submit is called with a valid prompt
+// THEN routed response is returned as JSON.
+func TestContextManagerHealthHandler_SubmitRoutesPrompt(t *testing.T) {
+	cm := NewContextManager(t.TempDir())
+	cm.SetSessionMetadata("sess-submit", time.Now())
+	cm.SetSubmitProvider(func(_ context.Context, prompt string) (string, error) {
+		return "Echo: " + prompt, nil
+	})
+
+	server := httptest.NewServer(cm.HealthHandler())
+	defer server.Close()
+
+	body := []byte(`{"prompt":"hello submit"}`)
+	resp, err := http.Post(server.URL+"/submit", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to POST /submit: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected /submit status 200, got %d", resp.StatusCode)
+	}
+
+	var payload map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode /submit payload: %v", err)
+	}
+	if payload["response"] != "Echo: hello submit" {
+		t.Fatalf("expected routed response Echo: hello submit, got %q", payload["response"])
+	}
+}
+
+// GIVEN submit endpoint validation constraints
+// WHEN /submit receives invalid payloads
+// THEN endpoint returns bad-request errors.
+func TestContextManagerHealthHandler_SubmitValidatesRequest(t *testing.T) {
+	cm := NewContextManager(t.TempDir())
+	cm.SetSessionMetadata("sess-submit-validate", time.Now())
+	cm.SetSubmitProvider(func(_ context.Context, prompt string) (string, error) {
+		return "Echo: " + prompt, nil
+	})
+
+	server := httptest.NewServer(cm.HealthHandler())
+	defer server.Close()
+
+	invalidJSONResp, err := http.Post(server.URL+"/submit", "application/json", strings.NewReader("{"))
+	if err != nil {
+		t.Fatalf("failed to POST invalid json: %v", err)
+	}
+	defer invalidJSONResp.Body.Close()
+	if invalidJSONResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected invalid json status 400, got %d", invalidJSONResp.StatusCode)
+	}
+
+	emptyPromptResp, err := http.Post(server.URL+"/submit", "application/json", strings.NewReader(`{"prompt":"   "}`))
+	if err != nil {
+		t.Fatalf("failed to POST empty prompt: %v", err)
+	}
+	defer emptyPromptResp.Body.Close()
+	if emptyPromptResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected empty prompt status 400, got %d", emptyPromptResp.StatusCode)
 	}
 }

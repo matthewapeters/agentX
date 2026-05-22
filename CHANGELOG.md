@@ -5,6 +5,35 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.74.3] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Fixed pane affordance behavior so TUI panes expose role-appropriate UX instead of only passive logs.
+  - `cmd/agentx-core/core.go`: added `/submit` endpoint plumbing via `ContextManager` submit provider.
+  - `applets/template.py`: added role-specific non-bridge loops:
+    - `input` pane: line-based submit workflow posting prompts to `/submit`.
+    - `chat` pane: `/context` polling and agent output display.
+    - `context` pane: `/context` polling for turn metadata display.
+
+### Test Changes
+
+#### Added
+
+- Added submit endpoint coverage in `cmd/agentx-core/core_health_endpoint_test.go`:
+  - successful prompt submit routing,
+  - request validation failures,
+  - method constraint enforcement.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with interactive pane affordance milestone.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to describe role-specific pane behavior and submit endpoint flow.
+
 ## [0.74.2] - 2026-05-22
 
 ### Code Changes

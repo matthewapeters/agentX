@@ -24,6 +24,8 @@ import time
 import urllib.error
 import urllib.request
 
+CORE_BASE_URL = os.getenv("AGENTX_CORE_HTTP", "http://127.0.0.1:9876").rstrip("/")
+
 # Applet metadata
 APPLET_NAME = os.getenv("AGENTX_APPLET_NAME", "template")
 SESSION_ID = os.getenv("AGENTX_SESSION_ID", "unknown")
@@ -60,6 +62,114 @@ def print_output(msg: str, level: str = "info"):
     emoji = {"info": "ℹ️", "warn": "⚠️", "error": "❌", "ok": "✅"}.get(level, "•")
     print(f"[{timestamp}] {emoji} {msg}")
     sys.stdout.flush()
+
+
+def _get_json(path: str):
+    """Fetch JSON payload from a core endpoint path."""
+    url = f"{CORE_BASE_URL}{path}"
+    request = urllib.request.Request(url=url, method="GET")
+    with urllib.request.urlopen(request, timeout=OLLAMA_TIMEOUT_SEC) as response:
+        body = response.read().decode("utf-8")
+    return json.loads(body)
+
+
+def _submit_prompt(prompt: str) -> str:
+    """Submit prompt to core and return routed response text."""
+    url = f"{CORE_BASE_URL}/submit"
+    payload = json.dumps({"prompt": prompt}).encode("utf-8")
+    request = urllib.request.Request(
+        url=url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=OLLAMA_TIMEOUT_SEC) as response:
+        body = response.read().decode("utf-8")
+    decoded = json.loads(body)
+    routed = str(decoded.get("response", "")).strip()
+    if not routed:
+        raise ValueError("submit endpoint returned empty response")
+    return routed
+
+
+def run_input_affordance_loop():
+    """Run line-based input affordance for interactive tmux input pane."""
+    print_output("Input affordance ready. Type and press Enter to submit.", level="ok")
+    print_output("Commands: :q to stop this pane loop, :clear to clear chat pane via core.")
+    while not shutdown_requested:
+        try:
+            prompt = input("agentx> ")
+        except EOFError:
+            time.sleep(0.1)
+            continue
+        except KeyboardInterrupt:
+            print_output("Input interrupt received.", level="warn")
+            continue
+
+        prompt = prompt.strip()
+        if not prompt:
+            continue
+        if prompt == ":q":
+            print_output("Input pane loop exiting by user command.", level="warn")
+            return 0
+
+        try:
+            routed_response = _submit_prompt(prompt)
+            print_output(f"Submitted: {prompt}")
+            print_output(f"Response: {routed_response}", level="ok")
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            print_output(f"Submit failed: {exc}", level="error")
+
+    return 0
+
+
+def run_chat_affordance_loop():
+    """Poll context endpoint and display assistant responses as they arrive."""
+    print_output("Chat output affordance ready (polling /context).", level="ok")
+    last_turn_count = 0
+    while not shutdown_requested:
+        try:
+            payload = _get_json("/context")
+            turns = payload.get("turns", [])
+            turn_count = int(payload.get("turn_count", len(turns)))
+            if turn_count > last_turn_count:
+                new_turns = turns[last_turn_count:turn_count]
+                for turn in new_turns:
+                    prompt = str(turn.get("prompt", "")).strip()
+                    response = str(turn.get("response", "")).strip()
+                    if prompt:
+                        print_output(f"User: {prompt}")
+                    if response:
+                        print_output(f"Agent: {response}", level="ok")
+                last_turn_count = turn_count
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
+            pass
+        time.sleep(0.5)
+    return 0
+
+
+def run_context_affordance_loop():
+    """Poll context endpoint and surface concise context consumption metadata."""
+    print_output("Context affordance ready (turn metadata view).", level="ok")
+    last_signature = ""
+    while not shutdown_requested:
+        try:
+            payload = _get_json("/context")
+            turn_count = int(payload.get("turn_count", 0))
+            turns = payload.get("turns", [])
+            last_prompt = ""
+            if turns:
+                last_prompt = str(turns[-1].get("prompt", "")).strip()
+            signature = f"{turn_count}:{last_prompt}"
+            if signature != last_signature:
+                print_output(f"Turn count: {turn_count}")
+                if last_prompt:
+                    print_output(f"Latest prompt: {last_prompt}")
+                last_signature = signature
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
+            pass
+        time.sleep(1.0)
+    return 0
 
 
 def _normalize_ollama_base_url(host_or_url: str) -> str:
@@ -256,8 +366,14 @@ def main():
     print_output(f"Applet '{APPLET_NAME}' started in session {SESSION_ID}")
     print_output(f"IPC paths: input={IPC_INPUT}, output={IPC_OUTPUT}")
 
-    # Placeholder loop: read from stdin (or FIFO in production)
-    # In first iteration, applet just displays a placeholder and waits for shutdown.
+    if APPLET_NAME == "input":
+        return run_input_affordance_loop()
+    if APPLET_NAME == "chat":
+        return run_chat_affordance_loop()
+    if APPLET_NAME == "context":
+        return run_context_affordance_loop()
+
+    # Logs/other panes retain a passive heartbeat loop.
     try:
         while not shutdown_requested:
             time.sleep(0.5)
