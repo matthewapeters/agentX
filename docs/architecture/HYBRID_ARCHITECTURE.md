@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-22 (v0.75.0)_
+_Last updated: 2026-05-22 (v0.76.0)_
 
 ## Overview
 
@@ -138,12 +138,12 @@ Headless UX validation now runs in two layers:
 - `tests/test_tmux_layout_headless.sh` validates layout geometry and pane ordering.
 - `tests/test_tmux_pane_affordances_headless.sh` validates end-user pane behavior by writing a prompt through input and asserting sanctioned output in chat/context panes.
 
-Pre-UAT DemoMode contract (D1 implemented):
+Pre-UAT DemoMode contract (D1-D2 implemented):
 
-- `agentx --demo` now renders an ordered demo sequence scaffold and exits.
-- `agentx --demo --demo-start <id-or-index>` now validates start selection by id/index and marks selected start.
-- at the end of each test, control is returned to the user for `N` (next) or `X` (fail) (planned D2).
-- on `X`, all panes and metadata are dumped to deterministic log artifacts for agent analysis (planned D3).
+- `agentx --demo` now runs the interactive demo review loop.
+- `agentx --demo --demo-start <id-or-index>` validates start selection by id/index and starts from the selected test.
+- at the end of each test, control is returned to the user for `N` (next) or `X` (fail).
+- on `X`, pane/metadata diagnostics artifact capture remains planned for D3.
 
 ### Go Core Features
 

@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.75.0)_
+_Last updated: 2026-05-22 (v0.76.0)_
 
 ## Overview
 
@@ -68,6 +68,8 @@ Status: COMPLETE (implemented in `cmd/agentx-core/main.go` and `cmd/agentx-core/
   - `N` = accept and continue
   - `X` = fail and stop
 - Invalid input must re-prompt without advancing.
+
+Status: COMPLETE (implemented in `cmd/agentx-core/demo_harness.go` with unit tests in `cmd/agentx-core/demo_harness_test.go`).
 
 ### D3 — Failure Diagnostics
 

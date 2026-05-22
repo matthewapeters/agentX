@@ -1,6 +1,6 @@
 # AgentX — Panel Details
 
-_Last updated: 2026-05-22 (v0.75.0)_
+_Last updated: 2026-05-22 (v0.76.0)_
 
 Detailed affordance specifications for each GUI panel/widget.  Each section
 documents the widget's purpose, all user-visible controls, and the callback
@@ -1220,9 +1220,9 @@ DemoMode is a user-visible, interactive pre-UAT flow that runs E2E test sequence
 | `--demo` enters DemoMode | PD-17-AF-001 | Launches demo harness path instead of normal interactive run | ✅ |
 | Demo test sequence preview | PD-17-AF-002 | Displays ordered E2E tests with id/title before running | ✅ |
 | Start selection from id/index | PD-17-AF-003 | User can choose where to start sequence (`--demo-start` or interactive pick) | ✅ |
-| Per-test `N/X` user feedback loop | PD-17-AF-004 | End of each test returns control and accepts only `N` or `X` | 📝 |
+| Per-test `N/X` user feedback loop | PD-17-AF-004 | End of each test returns control and accepts only `N` or `X` | ✅ |
 | `X` failure artifact bundle | PD-17-AF-005 | Captures all panes + metadata to deterministic logs for analysis | 📝 |
-| End-of-run readiness summary | PD-17-AF-006 | Prints run totals, failed step if any, and artifact paths | 📝 |
+| End-of-run readiness summary | PD-17-AF-006 | Prints run totals, failed step if any, and artifact paths | ✅ |
 
 ### Interaction Contract
 

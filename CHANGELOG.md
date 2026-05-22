@@ -5,6 +5,42 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.76.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Implemented DemoMode D2 interactive review loop in Go core:
+  - `cmd/agentx-core/demo_harness.go`
+    - runs selected demo tests in sequence from `--demo-start` selector,
+    - prompts for per-test user feedback (`N`/`X`) after each test,
+    - re-prompts on invalid input,
+    - prints end-of-run readiness summary with artifact-path placeholder (`D3 diagnostics pending`).
+  - `cmd/agentx-core/main.go`
+    - `--demo` now executes the interactive DemoMode loop (instead of scaffold-only exit).
+
+### Test Changes
+
+#### Added
+
+- Expanded DemoMode unit coverage in `cmd/agentx-core/demo_harness_test.go`:
+  - GIVEN start selector by id WHEN user enters `X` THEN sequence stops and summary shows not-ready.
+  - GIVEN invalid decision input WHEN prompt is shown THEN loop re-prompts until `N` or `X`.
+  - GIVEN final-test start and `N` decision WHEN run completes THEN summary shows ready-for-UAT.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated DemoMode UX and architecture documentation to reflect D2 completion and remaining D3 diagnostics work:
+  - `docs/ux/00_INDEX.md`
+  - `docs/ux/03_PANEL_DETAILS.md`
+  - `docs/ux/07_DEMO_MODE.md`
+  - `docs/ux/UX_LIFECYCLE.md`
+  - `docs/architecture/HYBRID_ARCHITECTURE.md`
+  - `docs/HYBRID_MIGRATION_PLAN.md`
+
 ## [0.75.0] - 2026-05-22
 
 ### Code Changes

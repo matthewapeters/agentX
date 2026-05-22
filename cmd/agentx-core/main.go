@@ -35,7 +35,7 @@ func main() {
 	}
 
 	if *demo {
-		if err := runDemoScaffolding(os.Stdout, *demoStart); err != nil {
+		if err := runDemoMode(os.Stdin, os.Stdout, *demoStart, nil); err != nil {
 			log.Fatalf("Failed to initialize demo mode: %v", err)
 		}
 		return
