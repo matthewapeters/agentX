@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.67.0)_
+_Last updated: 2026-05-22 (v0.68.0)_
 
 ## Overview
 
@@ -30,7 +30,8 @@ Current state relative to recent issue verification and regression work:
 - Phase 2 bridge now supports chunked response events for incremental chat-pane streaming while preserving final turn persistence.
 - Phase 2 now sources chunk events from true Ollama backend streaming (not only local response tokenization) when `AGENTX_CHAT_BACKEND=ollama`.
 - Phase 2 now emits bridge lifecycle events into the logs pane (`bridge_start`, `bridge_chunk`, `bridge_response_ok`, timeout/error/fallback paths).
-- Logs/context applet fidelity remain open build-out areas.
+- Phase 2 now emits compact per-turn context summaries to the context pane after successful turn persistence.
+- Remaining applet fidelity work is focused on richer context detail views and streaming cancellation observability.
 
 ## Execution Board (Next 2 Sprints)
 

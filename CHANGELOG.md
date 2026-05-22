@@ -5,6 +5,30 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.68.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Added context-pane fidelity updates in `cmd/agentx-core/core.go`.
+  - `RouteInputPrompt` now emits a compact per-turn context summary after successful turn persistence.
+  - New context summary output format: `[context] turn=N prompt=... response=...`.
+
+### Test Changes
+
+#### Added
+
+- Extended `cmd/agentx-core/core_context_persistence_test.go` to assert context-pane update rendering.
+  - GIVEN successful prompt routing WHEN turn is persisted THEN tmux commands include context-pane summary output.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with completed context-pane summary milestone.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to document post-persistence context-pane updates.
+
 ## [0.67.0] - 2026-05-22
 
 ### Code Changes

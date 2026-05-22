@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 )
@@ -12,7 +13,7 @@ import (
 // WHEN a prompt is routed successfully
 // THEN one chat turn is persisted and queryable via core state.
 func TestRouteInputPrompt_PersistsTurn(t *testing.T) {
-	_ = setupFakeTmux(t)
+	logPath := setupFakeTmux(t)
 	cfg := &Config{ProjectDir: t.TempDir(), Username: "tester", SessionID: "s-turn"}
 	core := NewAgentXCore(cfg)
 
@@ -35,6 +36,18 @@ func TestRouteInputPrompt_PersistsTurn(t *testing.T) {
 	}
 	if turns[0].Response != "Echo: persist this" {
 		t.Fatalf("expected response Echo: persist this, got %q", turns[0].Response)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.1") {
+		t.Fatalf("expected context pane render command, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "echo '[context] turn=1 prompt=\"persist this\" response=\"Echo: persist this\"' Enter") {
+		t.Fatalf("expected context summary render command in tmux log, got:\n%s", commands)
 	}
 }
 

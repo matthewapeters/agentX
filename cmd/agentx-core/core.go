@@ -561,6 +561,28 @@ func (ac *AgentXCore) renderChatResponse(ctx context.Context, response string) e
 	return nil
 }
 
+func trimForPaneSummary(value string, maxLen int) string {
+	trimmed := strings.TrimSpace(value)
+	if maxLen <= 3 || len(trimmed) <= maxLen {
+		return trimmed
+	}
+	return trimmed[:maxLen-3] + "..."
+}
+
+func (ac *AgentXCore) renderContextTurnSummary(ctx context.Context, turnIndex int, prompt string, response string) error {
+	summary := fmt.Sprintf(
+		"[context] turn=%d prompt=%q response=%q",
+		turnIndex,
+		trimForPaneSummary(prompt, 48),
+		trimForPaneSummary(response, 72),
+	)
+	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote(summary))
+	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("context"), renderCmd, "Enter"); err != nil {
+		return fmt.Errorf("failed rendering context turn summary: %w", err)
+	}
+	return nil
+}
+
 // RouteInputPrompt routes an input prompt through the tracked chat applet and renders the response.
 func (ac *AgentXCore) RouteInputPrompt(ctx context.Context, prompt string) (string, error) {
 	trimmedPrompt := strings.TrimSpace(prompt)
@@ -602,6 +624,11 @@ func (ac *AgentXCore) RouteInputPrompt(ctx context.Context, prompt string) (stri
 		ac.markAppletStatus(chatApplet.Name, AppletStatusCrashed, err)
 		log.Printf("[AgentX Core] Prompt persistence failed: %v", err)
 		return "", err
+	}
+
+	turnCount := len(ac.ContextTurnsSnapshot())
+	if err := ac.renderContextTurnSummary(ctx, turnCount, trimmedPrompt, response); err != nil {
+		log.Printf("[AgentX Core] Context pane update failed: %v", err)
 	}
 
 	ac.markAppletStatus(chatApplet.Name, AppletStatusReady, nil)
