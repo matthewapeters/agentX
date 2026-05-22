@@ -171,6 +171,9 @@ make go-test-unit
 make go-test-integration
 make go-test-functional
 make go-test-e2e
+
+# Run DemoMode smoke gate
+make demo-smoke
 ```
 
 #### Run directly with Go commands (without Make)

@@ -5,6 +5,35 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.78.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Added a headless DemoMode smoke gate:
+  - `tests/test_demo_smoke_headless.sh` runs the built binary in `--demo` mode against a fake tmux executable.
+  - verifies `X` writes deterministic diagnostics artifacts under `logs/demo/<session>/<test>/`.
+  - `Makefile` target `demo-smoke` invokes the smoke gate after building `bin/agentx`.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated DemoMode UX / migration docs and README to reflect D4 completion and the new `make demo-smoke` workflow:
+  - `docs/ux/00_INDEX.md`
+  - `docs/ux/03_PANEL_DETAILS.md`
+  - `docs/ux/07_DEMO_MODE.md`
+  - `docs/ux/UX_LIFECYCLE.md`
+  - `docs/HYBRID_MIGRATION_PLAN.md`
+  - `README.md`
+
+### Test Changes
+
+#### Added
+
+- Added the DemoMode headless smoke test script coverage for the artifact bundle path and required log files.
+
 ## [0.77.0] - 2026-05-22
 
 ### Code Changes

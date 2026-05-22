@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.77.0)_
+_Last updated: 2026-05-22 (v0.78.0)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -152,6 +152,8 @@ Exit criteria:
 
 ### Phase D4 — Test and Gate Integration
 
+Status: COMPLETE in `tests/test_demo_smoke_headless.sh` and `Makefile`.
+
 1. Add hermetic unit tests for manifest parsing, start-selection logic, and prompt-state machine.
 2. Add headless integration tests for diagnostics artifact creation.
 3. Add terminal E2E tests for demo interaction semantics where feasible.
@@ -162,6 +164,11 @@ Exit criteria:
 
 - demo-mode control logic covered by automated tests.
 - docs and matrix status updated from `📝` to `✅` as implementations land.
+
+## D4 Smoke Gate
+
+- `make demo-smoke` runs the headless artifact-capture smoke path.
+- the script launches `agentx --demo`, sends `X` at the first prompt, and verifies the bundle under `logs/demo/<session>/<test>/`.
 
 ---
 

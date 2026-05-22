@@ -6,7 +6,7 @@ GO_CORE_BIN := bin/agentx
 .PHONY: help \
 	build build-core build-applets clean \
 	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e go-test-pane-layout \
-	test-tmux-layout-headless test-tmux-pane-affordances-headless verify-tmux-layout hybrid-merge-gate \
+	test-tmux-layout-headless test-tmux-pane-affordances-headless demo-smoke verify-tmux-layout hybrid-merge-gate \
 	run run-attached run-with-applets
 
 help:
@@ -28,6 +28,7 @@ help:
 	@echo "  go-test-pane-layout Run pane-layout unit tests"
 	@echo "  test-tmux-layout-headless Run headless tmux UX layout validation script"
 	@echo "  test-tmux-pane-affordances-headless Run headless pane-affordance UX contract script"
+	@echo "  demo-smoke          Run headless DemoMode smoke test"
 	@echo "  verify-tmux-layout  Run pane-layout unit tests + headless tmux layout validation"
 	@echo "  hybrid-merge-gate   Run required B4 checks for hybrid default-branch readiness"
 	@echo ""
@@ -85,6 +86,9 @@ test-tmux-layout-headless:
 
 test-tmux-pane-affordances-headless: build-core
 	./tests/test_tmux_pane_affordances_headless.sh
+
+demo-smoke: build-core
+	./tests/test_demo_smoke_headless.sh
 
 verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless test-tmux-pane-affordances-headless
 	@echo "tmux layout verification complete"

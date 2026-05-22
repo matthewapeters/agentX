@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.77.0)_
+_Last updated: 2026-05-22 (v0.78.0)_
 
 ## Overview
 
@@ -86,6 +86,8 @@ Status: COMPLETE (implemented in `cmd/agentx-core/demo_harness.go` with diagnost
 - Add unit tests for selector and prompt-state logic.
 - Add headless integration tests for artifact bundle creation.
 - Add end summary with run totals and readiness outcome.
+
+Status: COMPLETE (smoke gate implemented via `tests/test_demo_smoke_headless.sh` and `Makefile`).
 
 ## Execution Board (Next 2 Sprints)
 
