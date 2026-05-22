@@ -5,6 +5,27 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.79.15] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Improved DemoMode controller output formatting by sanitizing result text to a single concise line, reducing wrap/indent artifacts in the left pane.
+- Fixed `:clear` command behavior in live core panes:
+  - no longer sends literal `clear` text into the Chat pane.
+  - now clears live-core Chat and Input pane history/display using tmux control commands.
+
+#### Changed
+
+- Updated Gherkin expectation text to use explicit live-core pane terminology (`Chat`, `Context`, `Input`) for clearer UAT assertions.
+
+### Test Changes
+
+#### Changed
+
+- Updated input command contract tests to validate tmux-based clear behavior and prevent regression to literal `clear` text injection.
+
 ## [0.79.14] - 2026-05-22
 
 ### Code Changes

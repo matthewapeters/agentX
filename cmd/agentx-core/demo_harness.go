@@ -78,7 +78,7 @@ func defaultDemoSequence() []DemoTestCase {
 			Tags:           []string{"e2e", "routing", "context"},
 			Given:          "core session and applets are running",
 			When:           "a normal input prompt is submitted",
-			Then:           "chat and context panes both update with the same turn",
+			Then:           "live-core Chat pane and live-core Context pane both update with the same turn",
 		},
 		{
 			ID:             "e2e-002",
@@ -88,7 +88,7 @@ func defaultDemoSequence() []DemoTestCase {
 			Tags:           []string{"e2e", "input"},
 			Given:          "chat contains visible prior output",
 			When:           "the :clear input command is submitted",
-			Then:           "chat pane is cleared and input loop remains active",
+			Then:           "live-core Chat pane is cleared and live-core Input pane prompt remains active",
 		},
 		{
 			ID:             "e2e-003",
@@ -101,6 +101,18 @@ func defaultDemoSequence() []DemoTestCase {
 			Then:           "live right pane exits and displays completion guidance",
 		},
 	}
+}
+
+func sanitizeDemoResultText(resultText string) string {
+	trimmed := strings.TrimSpace(resultText)
+	if trimmed == "" {
+		return "ok"
+	}
+	oneLine := strings.Join(strings.Fields(trimmed), " ")
+	if len(oneLine) > 120 {
+		return oneLine[:120] + "..."
+	}
+	return oneLine
 }
 
 func demoPromptForTestCase(testCase DemoTestCase) string {
@@ -238,10 +250,10 @@ func runDemoModeWithOptions(
 		resultText, runErr := runner(testCase)
 		runStatus := demoStatusPass
 		if runErr != nil {
-			fmt.Fprintf(writer, "[AgentX Demo] Result: FAIL (%v)\n", runErr)
+			fmt.Fprintf(writer, "\r[AgentX Demo] Result: FAIL (%v)\n", runErr)
 			runStatus = demoStatusFail
 		} else {
-			fmt.Fprintf(writer, "[AgentX Demo] Result: PASS (%s)\n", resultText)
+			fmt.Fprintf(writer, "\r[AgentX Demo] Result: PASS (%s)\n", sanitizeDemoResultText(resultText))
 		}
 
 		decision, promptErr := readDemoDecision(options.decisionCtx, inputReader, writer)

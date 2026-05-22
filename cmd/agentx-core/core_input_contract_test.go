@@ -11,7 +11,7 @@ import (
 //
 // GIVEN an initialized core with fake tmux and applet supervisor
 // WHEN the input line is :clear
-// THEN the chat pane clear command is emitted and no prompt routing occurs.
+// THEN live-core chat/input panes are cleared via tmux control sequences and no prompt routing occurs.
 func TestHandleInputLine_ClearCommand(t *testing.T) {
 	logPath := setupFakeTmux(t)
 	cfg := &Config{ProjectDir: t.TempDir(), Username: "tester", SessionID: "s-clear"}
@@ -40,8 +40,23 @@ func TestHandleInputLine_ClearCommand(t *testing.T) {
 		t.Fatalf("failed reading tmux command log: %v", err)
 	}
 	commands := string(commandsRaw)
-	if !strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.0 clear Enter") {
-		t.Fatalf("expected clear command in tmux log, got:\n%s", commands)
+	if !strings.Contains(commands, "clear-history -t "+core.tmuxSessionName+":0.0") {
+		t.Fatalf("expected chat pane history clear command in tmux log, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.0 C-l") {
+		t.Fatalf("expected chat pane display clear command in tmux log, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "clear-history -t "+core.tmuxSessionName+":0.2") {
+		t.Fatalf("expected input pane history clear command in tmux log, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.2 C-u") {
+		t.Fatalf("expected input line reset command in tmux log, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.2 C-l") {
+		t.Fatalf("expected input pane display clear command in tmux log, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.0 clear Enter") {
+		t.Fatalf("did not expect literal clear text to be sent to chat pane, got:\n%s", commands)
 	}
 	if strings.Contains(commands, "[assistant] Echo:") {
 		t.Fatalf("did not expect chat routing echo for :clear, got:\n%s", commands)

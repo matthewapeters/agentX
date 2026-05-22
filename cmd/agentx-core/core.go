@@ -741,8 +741,24 @@ func (ac *AgentXCore) HandleInputLine(ctx context.Context, line string) (respons
 	if strings.HasPrefix(trimmedLine, ":") {
 		switch trimmedLine {
 		case ":clear":
-			if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("chat"), "clear", "Enter"); err != nil {
-				return "", false, fmt.Errorf("failed to clear chat pane: %w", err)
+			chatPaneTarget := ac.paneTargetForName("chat")
+			inputPaneTarget := ac.paneTargetForName("input")
+
+			// Clear visible terminal state and scrollback for the live-core chat/input panes.
+			if err := ac.runTmux(ctx, "clear-history", "-t", chatPaneTarget); err != nil {
+				return "", false, fmt.Errorf("failed to clear live-core chat pane history: %w", err)
+			}
+			if err := ac.runTmux(ctx, "send-keys", "-t", chatPaneTarget, "C-l"); err != nil {
+				return "", false, fmt.Errorf("failed to clear live-core chat pane display: %w", err)
+			}
+			if err := ac.runTmux(ctx, "clear-history", "-t", inputPaneTarget); err != nil {
+				return "", false, fmt.Errorf("failed to clear live-core input pane history: %w", err)
+			}
+			if err := ac.runTmux(ctx, "send-keys", "-t", inputPaneTarget, "C-u"); err != nil {
+				return "", false, fmt.Errorf("failed to reset live-core input line: %w", err)
+			}
+			if err := ac.runTmux(ctx, "send-keys", "-t", inputPaneTarget, "C-l"); err != nil {
+				return "", false, fmt.Errorf("failed to clear live-core input pane display: %w", err)
 			}
 			log.Printf("[AgentX Core] Input command handled: :clear")
 			return "cleared", false, nil
