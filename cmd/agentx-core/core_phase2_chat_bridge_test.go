@@ -279,3 +279,50 @@ func TestRouteInputPrompt_HangingBridgeFallsBackToEcho(t *testing.T) {
 		t.Fatalf("Shutdown failed: %v", err)
 	}
 }
+
+// GIVEN template bridge emits chunk events for multi-token responses
+// WHEN a prompt is routed through the chat path
+// THEN stream chunk lines and final consolidated response are both rendered.
+func TestRouteInputPrompt_RendersStreamChunksAndFinalResponse(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available in test environment")
+	}
+
+	projectDir := t.TempDir()
+	stageTemplateApplet(t, projectDir)
+
+	logPath := setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-stream-render"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	response, err := core.RouteInputPrompt(context.Background(), "stream chunk demo")
+	if err != nil {
+		t.Fatalf("RouteInputPrompt failed: %v", err)
+	}
+	if response != "Echo: stream chunk demo" {
+		t.Fatalf("unexpected response %q", response)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "[assistant-stream] Echo:") {
+		t.Fatalf("expected stream chunk render in tmux commands, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[assistant] Echo: stream chunk demo") {
+		t.Fatalf("expected final consolidated render in tmux commands, got:\n%s", commands)
+	}
+
+	if err := core.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+}

@@ -114,6 +114,22 @@ def generate_chat_response(prompt: str) -> str:
         return f"Echo: {prompt}"
 
 
+def emit_streaming_bridge_events(response_text: str):
+    """Emit chunk events followed by a final response envelope."""
+    parts = [part for part in response_text.split() if part]
+    if len(parts) <= 1:
+        print(json.dumps({"type": "response", "response": response_text}))
+        sys.stdout.flush()
+        return
+
+    for part in parts:
+        print(json.dumps({"type": "chunk", "delta": part}))
+        sys.stdout.flush()
+
+    print(json.dumps({"type": "response", "response": response_text}))
+    sys.stdout.flush()
+
+
 def main():
     """Main applet loop."""
     parser = argparse.ArgumentParser(description="AgentX applet template")
@@ -156,8 +172,7 @@ def main():
                 continue
 
             response_text = generate_chat_response(prompt)
-            print(json.dumps({"type": "response", "response": response_text}))
-            sys.stdout.flush()
+            emit_streaming_bridge_events(response_text)
             if args.bridge_chat:
                 return 0
 

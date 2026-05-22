@@ -91,6 +91,7 @@ type chatBridgeRequest struct {
 type chatBridgeResponse struct {
 	Type     string `json:"type"`
 	Response string `json:"response,omitempty"`
+	Delta    string `json:"delta,omitempty"`
 	Error    string `json:"error,omitempty"`
 }
 
@@ -299,15 +300,11 @@ func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt
 		return "", err
 	}
 
-	type chatBridgeReadResult struct {
-		response string
-		err      error
-	}
-
 	readResultChan := make(chan chatBridgeReadResult, 1)
 	go func() {
-		response, readErr := readChatBridgeResponseFromScanner(chatApplet.BridgeStdout)
-		readResultChan <- chatBridgeReadResult{response: response, err: readErr}
+		readResultChan <- readChatBridgeResponseFromScanner(chatApplet.BridgeStdout, func(delta string) error {
+			return ac.renderChatStreamChunk(ctx, delta)
+		})
 	}()
 
 	select {
@@ -338,6 +335,18 @@ func resolveChatBridgeResponseTimeout() time.Duration {
 	}
 
 	return parsedSeconds
+}
+
+func (ac *AgentXCore) renderChatStreamChunk(ctx context.Context, delta string) error {
+	trimmed := strings.TrimSpace(delta)
+	if trimmed == "" {
+		return nil
+	}
+	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote("[assistant-stream] "+trimmed))
+	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("chat"), renderCmd, "Enter"); err != nil {
+		return fmt.Errorf("failed rendering chat stream chunk: %w", err)
+	}
+	return nil
 }
 
 func (ac *AgentXCore) ensureChatBridgeProcessLocked(chatApplet *AppletProcess) error {
@@ -436,7 +445,16 @@ func (ac *AgentXCore) teardownChatBridgeProcessLocked(chatApplet *AppletProcess)
 	chatApplet.DoneChan = nil
 }
 
-func readChatBridgeResponseFromScanner(scanner *bufio.Scanner) (string, error) {
+type chatBridgeReadResult struct {
+	response string
+	streamed bool
+	err      error
+}
+
+func readChatBridgeResponseFromScanner(scanner *bufio.Scanner, onChunk func(string) error) chatBridgeReadResult {
+	var responseBuilder strings.Builder
+	streamed := false
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "READY ") {
@@ -449,21 +467,44 @@ func readChatBridgeResponseFromScanner(scanner *bufio.Scanner) (string, error) {
 		}
 
 		switch response.Type {
+		case "chunk":
+			trimmedDelta := strings.TrimSpace(response.Delta)
+			if trimmedDelta == "" {
+				continue
+			}
+			if onChunk != nil {
+				if err := onChunk(trimmedDelta); err != nil {
+					return chatBridgeReadResult{err: err}
+				}
+			}
+			if responseBuilder.Len() > 0 {
+				responseBuilder.WriteString(" ")
+			}
+			responseBuilder.WriteString(trimmedDelta)
+			streamed = true
+			continue
 		case "response":
-			return response.Response, nil
+			finalResponse := strings.TrimSpace(response.Response)
+			if finalResponse == "" {
+				finalResponse = strings.TrimSpace(responseBuilder.String())
+			}
+			if finalResponse == "" {
+				return chatBridgeReadResult{err: fmt.Errorf("chat bridge returned empty response")}
+			}
+			return chatBridgeReadResult{response: finalResponse, streamed: streamed}
 		case "error":
 			if response.Error == "" {
-				return "", fmt.Errorf("chat bridge returned empty error")
+				return chatBridgeReadResult{err: fmt.Errorf("chat bridge returned empty error")}
 			}
-			return "", fmt.Errorf("chat bridge error: %s", response.Error)
+			return chatBridgeReadResult{err: fmt.Errorf("chat bridge error: %s", response.Error)}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return "", err
+		return chatBridgeReadResult{err: err}
 	}
 
-	return "", fmt.Errorf("chat bridge produced no response")
+	return chatBridgeReadResult{err: fmt.Errorf("chat bridge produced no response")}
 }
 
 func shellSingleQuote(input string) string {

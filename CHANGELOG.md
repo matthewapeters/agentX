@@ -5,6 +5,30 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.65.0] - 2026-05-21
+
+### Code Changes
+
+#### Added
+
+- Added chunked bridge response protocol support for hybrid chat path.
+  - `applets/template.py` now emits `{"type":"chunk","delta":"..."}` events before final `response` in bridge modes.
+  - `cmd/agentx-core/core.go` now parses chunk events and renders incremental stream lines to chat pane while preserving final consolidated response handling.
+
+### Test Changes
+
+#### Added
+
+- Extended `cmd/agentx-core/core_phase2_chat_bridge_test.go` with stream rendering coverage.
+  - GIVEN chunk-emitting bridge responses WHEN prompt is routed THEN stream chunk lines and final consolidated assistant response are rendered.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` to reflect streamed bridge response handling in Phase 2.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` bridge message contract to include `chunk` events.
+
 ## [0.64.0] - 2026-05-21
 
 ### Code Changes

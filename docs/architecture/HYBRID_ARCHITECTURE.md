@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-21 (v0.64.0)_
+_Last updated: 2026-05-21 (v0.65.0)_
 
 ## Overview
 
@@ -64,7 +64,7 @@ Messages between core and applets use JSON:
 
 ```json
 {
-  "type": "output|input|control|error",
+   "type": "output|input|control|error|chunk|response",
   "applet": "chat",
   "payload": { "text": "...", "..." }
 }
