@@ -40,6 +40,7 @@ type AgentXCore struct {
 	Config                    *Config
 	SessionID                 string
 	tmuxSessionName           string
+	tmuxInitialized           bool
 	applets                   map[string]*AppletProcess
 	pythonExecutable          string
 	chatAppletScript          string
@@ -190,6 +191,7 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 	}
 
 	log.Printf("[AgentX Core] tmux session '%s' initialized with layout: chat(80x80)|context(20x80) top, input(100x20) bottom, logs hidden", ac.tmuxSessionName)
+	ac.tmuxInitialized = true
 	return nil
 }
 
@@ -231,10 +233,13 @@ func buildContextSplitCommand(chatPaneTarget string) []string {
 // StartAppletSupervisor launches Python applets in goroutines.
 func (ac *AgentXCore) StartAppletSupervisor(ctx context.Context) error {
 	ac.mu.Lock()
-	defer ac.mu.Unlock()
+	shouldLaunchPaneApplets := ac.tmuxInitialized
+	ac.mu.Unlock()
 
 	for _, pane := range DefaultPaneLayout() {
+		ac.mu.Lock()
 		if _, exists := ac.applets[pane.Name]; exists {
+			ac.mu.Unlock()
 			continue
 		}
 
@@ -250,9 +255,42 @@ func (ac *AgentXCore) StartAppletSupervisor(ctx context.Context) error {
 			HandlePrompt: handler,
 			StartedAt:    time.Now(),
 		}
+		ac.mu.Unlock()
 	}
 
-	log.Printf("[AgentX Core] Applet supervisor ready (%d tracked applets)", len(ac.applets))
+	if shouldLaunchPaneApplets {
+		if err := ac.launchPaneAppletProcesses(ctx); err != nil {
+			return err
+		}
+	}
+
+	ac.mu.RLock()
+	trackedApplets := len(ac.applets)
+	ac.mu.RUnlock()
+	log.Printf("[AgentX Core] Applet supervisor ready (%d tracked applets)", trackedApplets)
+	return nil
+}
+
+func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
+	if _, err := os.Stat(ac.chatAppletScript); err != nil {
+		log.Printf("[AgentX Core] Pane applet launch skipped (template unavailable): %v", err)
+		return nil
+	}
+
+	for _, pane := range DefaultPaneLayout() {
+		launchCmd := fmt.Sprintf(
+			"AGENTX_APPLET_NAME=%s AGENTX_SESSION_ID=%s %s %s",
+			shellSingleQuote(pane.Name),
+			shellSingleQuote(ac.SessionID),
+			shellSingleQuote(ac.pythonExecutable),
+			shellSingleQuote(ac.chatAppletScript),
+		)
+
+		if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(pane.Name), launchCmd, "Enter"); err != nil {
+			return fmt.Errorf("failed launching %s pane applet: %w", pane.Name, err)
+		}
+	}
+
 	return nil
 }
 

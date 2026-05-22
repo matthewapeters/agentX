@@ -1,6 +1,6 @@
 # AgentX Hybrid Architecture: Go Core + Python Applets
 
-_Last updated: 2026-05-22 (v0.74.1)_
+_Last updated: 2026-05-22 (v0.74.2)_
 
 ## Overview
 
@@ -88,6 +88,8 @@ Fault-injection coverage additionally validates malformed bridge frame tolerance
 Streaming parser coverage now includes empty chunk suppression and deterministic handling of duplicate response frames and late error frames within a parse cycle.
 
 User-facing launch behavior now defaults to attaching the current terminal to the managed tmux session (`-attach=true` by default), with optional headless mode via `-attach=false`.
+
+After tmux initialization, supervisor startup now launches live Python applet processes in the primary panes (`chat`, `context`, `input`) using the project-local template applet entrypoint.
 ```
 
 ### Shutdown Protocol

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -65,5 +67,42 @@ func TestMarkAppletStatusTracksCrashLifecycle(t *testing.T) {
 	}
 	if snapshot.Applets[0].CrashCount != 1 {
 		t.Fatalf("expected crash count to stay 1, got %d", snapshot.Applets[0].CrashCount)
+	}
+}
+
+// TestStartAppletSupervisor_LaunchesPaneAppletProcesses validates pane process launch wiring.
+//
+// GIVEN initialized tmux session and project-local template applet
+// WHEN StartAppletSupervisor is invoked
+// THEN each primary pane receives a launched Python applet command.
+func TestStartAppletSupervisor_LaunchesPaneAppletProcesses(t *testing.T) {
+	logPath := setupFakeTmux(t)
+	projectDir := t.TempDir()
+	stageTemplateApplet(t, projectDir)
+
+	cfg := &Config{ProjectDir: projectDir, Username: "dev", SessionID: "s-launch-pane-applets"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor returned error: %v", err)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+
+	if !strings.Contains(commands, "AGENTX_APPLET_NAME='chat'") {
+		t.Fatalf("expected chat pane applet launch command, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "AGENTX_APPLET_NAME='context'") {
+		t.Fatalf("expected context pane applet launch command, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "AGENTX_APPLET_NAME='input'") {
+		t.Fatalf("expected input pane applet launch command, got:\n%s", commands)
 	}
 }

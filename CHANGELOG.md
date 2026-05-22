@@ -5,6 +5,30 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.74.2] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Fixed TUI pane startup behavior in `cmd/agentx-core/core.go`:
+  - `StartAppletSupervisor` now launches live applet processes into the primary panes (`chat`, `context`, `input`) when tmux is initialized.
+  - Pane launch is best-effort and skipped when the template applet script is unavailable.
+
+### Test Changes
+
+#### Added
+
+- Added `TestStartAppletSupervisor_LaunchesPaneAppletProcesses` in `cmd/agentx-core/core_applet_supervisor_test.go`.
+  - GIVEN initialized tmux and template applet WHEN supervisor starts THEN pane applet launch commands are sent for chat/context/input.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/HYBRID_MIGRATION_PLAN.md` with pane-process launch milestone.
+- Updated `docs/architecture/HYBRID_ARCHITECTURE.md` to document supervisor pane applet startup behavior.
+
 ## [0.74.1] - 2026-05-22
 
 ### Code Changes

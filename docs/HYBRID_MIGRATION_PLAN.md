@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.74.1)_
+_Last updated: 2026-05-22 (v0.74.2)_
 
 ## Overview
 
@@ -38,6 +38,7 @@ Current state relative to recent issue verification and regression work:
 - Fault-injection permutations now cover malformed JSON bridge frames and explicit error-frame behavior with lifecycle observability assertions (unit + GoDog).
 - Backend-specific streaming edge-case assertions now cover empty chunk handling and parser-level duplicate/late-frame semantics.
 - Launch UX fix: `./bin/agentx` now attaches to the tmux TUI by default for user-facing runs (`-attach=false` remains available for headless mode).
+- Pane UX fix: applet supervisor now launches live pane applet processes for `chat`, `context`, and `input` so panes are not idle shell sessions at startup.
 - Remaining applet fidelity work is focused on potential richer context-pane metadata views and any additional backend compatibility permutations requested.
 
 ## Execution Board (Next 2 Sprints)
