@@ -286,21 +286,31 @@ def run_chat_affordance_loop():
     return 0
 
 
-def run_context_affordance_loop():
-    """Poll context endpoint and render the deterministic system-pane surface."""
-    last_signature = ""
+def run_thin_render_loop():
+    """Thin renderer: read rendering instructions/data from stdin (or FIFO) and print directly."""
+    print_ui_line("Thin renderer ready. Waiting for rendering instructions...")
     while not shutdown_requested:
         try:
-            payload = _get_json("/context")
-            rendered = _render_system_surface(payload)
-            signature = rendered
-            if signature != last_signature:
+            # Read a line of JSON from stdin (or FIFO)
+            raw_line = sys.stdin.readline()
+            if not raw_line:
+                time.sleep(0.1)
+                continue
+            try:
+                payload = json.loads(raw_line)
+            except json.JSONDecodeError as exc:
+                print_ui_line(f"[thin-renderer] Invalid JSON: {exc}")
+                continue
+            # Expect a 'render' key with the content to display
+            render_content = payload.get("render")
+            if render_content is not None:
                 clear_visible_screen()
-                print_ui_line(rendered)
-                last_signature = signature
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
-            pass
-        time.sleep(1.0)
+                print_ui_line(str(render_content))
+            else:
+                print_ui_line(f"[thin-renderer] No 'render' key in payload: {payload}")
+        except Exception as exc:
+            print_ui_line(f"[thin-renderer] Exception: {exc}")
+            time.sleep(0.1)
     return 0
 
 
@@ -502,7 +512,7 @@ def main():
     if APPLET_NAME == "chat":
         return run_chat_affordance_loop()
     if APPLET_NAME == "context":
-        return run_context_affordance_loop()
+        return run_thin_render_loop()
 
     # Logs/other panes retain a passive heartbeat loop.
     try:

@@ -1,6 +1,6 @@
 # Hybrid Runtime Split: Go Core vs Python Applet
 
-_Last updated: 2026-05-16 (v0.84.1)_
+_Last updated: 2026-05-16 (v0.85.0)_
 
 ## Purpose
 

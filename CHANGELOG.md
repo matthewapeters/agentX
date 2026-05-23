@@ -1,12 +1,37 @@
+## [0.85.0] - 2026-05-16
+
+### Code Changes
+
+#### Changed
+- Refactored `applets/template.py` to act as a thin renderer: all output/system panel logic, context visualization, and deterministic formatting removed from Python applet layer.
+- Output/system panel logic, context visualization, and deterministic formatting are now owned by the Go core (see runtime split doc).
+- Python applet now receives rendering instructions/data from Go core via IPC and prints them directly.
+
+### Documentation Changes
+
+#### Changed
+- Updated `docs/architecture.md` and `docs/architecture/runtime_split.md` revision stamps and project version to v0.85.0 to reflect the thin-renderer migration.
+- Updated `docs/ux/UX_LIFECYCLE.md` revision stamp to v0.85.0 for traceability.
+
+### Test Changes
+
+#### Changed
+- All tests re-run and pass after migration to thin-renderer model. No test failures or regressions.
+
+### Version
+- Bumped project version to 0.85.0 (minor, non-breaking feature addition: output/system panel logic migrated to Go core, Python applet is now a thin renderer).
 ## [0.84.1] - 2026-05-16 (continued)
 
 ### Documentation Changes
 
 #### Added
+
 - Authored authoritative runtime split doc: `docs/architecture/runtime_split.md` (Go core vs Python applet, IPC contract, migration phases, thin-GUI contract).
 
 #### Changed
+
 - Updated `docs/architecture.md`, `docs/ux/UX_LIFECYCLE.md`, and `docs/hybrid_ux_parity_execution_plan.md` to trace and mark runtime split doc as completed.
+
 ## [0.84.1] - 2026-05-16
 
 ### Documentation Changes

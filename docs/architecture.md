@@ -1,9 +1,10 @@
+
 # AgentX — Architecture Reference
 
-_Last updated: 2026-05-16 (v0.84.1)_
+_Last updated: 2026-05-16 (v0.85.0)_
 Version: 2026-05-16  
 Branch: main  
-Project version: 0.84.1
+Project version: 0.85.0
 
 ---
 
@@ -60,7 +61,7 @@ See [docs/architecture/runtime_split.md](architecture/runtime_split.md) for the 
 15. [Persistence Layout](#15-persistence-layout)
 16. [Configuration Reference](#16-configuration-reference)
 
-18. [Runtime Split (Go Core vs Python Applet)](architecture/runtime_split.md)
+17. [Runtime Split (Go Core vs Python Applet)](architecture/runtime_split.md)
 
 ---
 
