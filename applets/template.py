@@ -238,11 +238,17 @@ def run_input_affordance_loop():
                 ValueError,
                 json.JSONDecodeError,
             ) as exc:
-                    try:
-                        _submit_prompt(":q")
-                        print_ui_line("Session shutdown requested via submit fallback.")
-                    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as submit_exc:
-                        print_ui_line(f"Shutdown failed: {exc}; submit fallback failed: {submit_exc}")
+                try:
+                    _submit_prompt(":q")
+                    print_ui_line("Session shutdown requested via submit fallback.")
+                except (
+                    urllib.error.URLError,
+                    urllib.error.HTTPError,
+                    TimeoutError,
+                    ValueError,
+                    json.JSONDecodeError,
+                ) as submit_exc:
+                    print_ui_line(f"Shutdown failed: {exc}; submit fallback failed: {submit_exc}")
             return 0
 
         try:
