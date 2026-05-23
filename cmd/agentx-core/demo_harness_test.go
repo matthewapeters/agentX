@@ -456,7 +456,7 @@ func TestRunDemoModeWithConfigAndContext_SplitViewSuppressesSequenceAndClearsPan
 	if !strings.Contains(content, "[AgentX Demo] Controller Pane") {
 		t.Fatalf("expected compact controller header in split view, got:\n%s", content)
 	}
-	if !strings.Contains(content, "Stories navigation") {
+	if !strings.Contains(content, "Stories navigation") || !strings.Contains(content, "Up/Down/PgUp/PgDn") {
 		t.Fatalf("expected stories navigation guidance in controller pane, got:\n%s", content)
 	}
 }

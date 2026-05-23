@@ -156,8 +156,8 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "new-session -d -s agentx_tester_sess-split_demo -n demo-control bash -lc") {
 		t.Fatalf("expected story-browser session bootstrap, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "tail -n +1 -f") {
-		t.Fatalf("expected story board tail command in left-top pane bootstrap command, commands:\n%s", commands)
+	if !strings.Contains(commands, "less -R -c +g") {
+		t.Fatalf("expected story board pager command in left-top pane bootstrap command, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "--demo-controller") {
 		t.Fatalf("expected controller launch flag in prompt pane command, commands:\n%s", commands)

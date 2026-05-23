@@ -1,11 +1,11 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-22 (v0.81.1)_
+_Last updated: 2026-05-22 (v0.81.2)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-22 (v0.81.1 — DemoMode pending marker, controller navigation guidance, and clear behavior refined)
+**Last updated**: 2026-05-22 (v0.81.2 — DemoMode stories pane now supports direct arrow-key scrolling)
 **Current version**: see `pyproject.toml`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.

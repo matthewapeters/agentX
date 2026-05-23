@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.81.1)_
+_Last updated: 2026-05-22 (v0.81.2)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -24,12 +24,11 @@ The story browser is now a live status board with explicit per-test markers:
 - `[P]` pass
 - `[X]` fail
 
-Navigation instructions are rendered in the lower controller pane. The stories pane supports long-list navigation via tmux copy-mode:
+Navigation instructions are rendered in the lower controller pane. The stories pane supports long-list navigation directly via pager controls:
 
 - `Ctrl-b o` to focus stories pane
-- `Ctrl-b` then `[` to enter copy-mode
 - arrow keys or `PgUp` / `PgDn` to scroll
-- `q` to exit copy-mode
+- `R` to refresh content manually (status updates are also auto-refreshed)
 - `Ctrl-b o` to return to controller pane
 
 The controller submits prompts over the core `/submit` endpoint so the operator watches the actual running application respond in real time without replacing the split.

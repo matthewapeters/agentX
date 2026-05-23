@@ -290,6 +290,7 @@ func runDemoModeWithOptions(
 	if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, sequence[startIndex].ID); err != nil {
 		return err
 	}
+	refreshDemoStoriesPane(options.runtimeConfig)
 
 	inputReader := bufio.NewReader(reader)
 	for idx := startIndex; idx < len(sequence); {
@@ -301,6 +302,7 @@ func runDemoModeWithOptions(
 		if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, testCase.ID); err != nil {
 			return err
 		}
+		refreshDemoStoriesPane(options.runtimeConfig)
 		runCount++
 
 		fmt.Fprintf(
@@ -344,6 +346,7 @@ func runDemoModeWithOptions(
 			if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, ""); err != nil {
 				return err
 			}
+			refreshDemoStoriesPane(options.runtimeConfig)
 			break
 		}
 
@@ -360,6 +363,7 @@ func runDemoModeWithOptions(
 			if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, sequence[nextIndex].ID); err != nil {
 				return err
 			}
+			refreshDemoStoriesPane(options.runtimeConfig)
 			idx = decision.jumpToIndex
 			fmt.Fprintf(writer, "[AgentX Demo] Jumped to %d) %s\n", idx+1, sequence[idx].ID)
 			continue
@@ -370,11 +374,13 @@ func runDemoModeWithOptions(
 			if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, sequence[idx].ID); err != nil {
 				return err
 			}
+			refreshDemoStoriesPane(options.runtimeConfig)
 		}
 	}
 	if err := writeDemoStoriesBoard(options.storiesFilePath, sequence, startIndex, statusByTestID, ""); err != nil {
 		return err
 	}
+	refreshDemoStoriesPane(options.runtimeConfig)
 
 	renderDemoSummary(writer, sequence, selectedCount, runCount, acceptedCount, failedTestID, failureFeedback, artifactPaths, statusByTestID)
 	return nil
@@ -397,7 +403,7 @@ func renderControllerHeader(writer io.Writer, sequence []DemoTestCase, startInde
 	fmt.Fprintln(writer, "[AgentX Demo] Controller Pane")
 	fmt.Fprintf(writer, "[AgentX Demo] Start selection: %d) %s\n", startIndex+1, sequence[startIndex].ID)
 	fmt.Fprintln(writer, "[AgentX Demo] Decision commands: N=next, J <num>=jump, X <feedback>=fail")
-	fmt.Fprintln(writer, "[AgentX Demo] Stories navigation: Ctrl-b o (focus stories), Ctrl-b [ (scroll), Up/Down/PgUp/PgDn, q (exit), Ctrl-b o (return)")
+	fmt.Fprintln(writer, "[AgentX Demo] Stories navigation: Ctrl-b o (focus stories), Up/Down/PgUp/PgDn (scroll), R (refresh), Ctrl-b o (return)")
 	fmt.Fprintln(writer)
 }
 
@@ -412,6 +418,18 @@ func writeDemoStoriesBoard(storiesFilePath string, sequence []DemoTestCase, star
 		return fmt.Errorf("failed to write stories board: %w", err)
 	}
 	return nil
+}
+
+func refreshDemoStoriesPane(runtimeConfig DemoRuntimeConfig) {
+	if !runtimeConfig.SplitView {
+		return
+	}
+	coreSessionName := strings.TrimSpace(runtimeConfig.TmuxSessionName)
+	if coreSessionName == "" {
+		return
+	}
+	storiesPaneTarget := coreSessionName + "_demo:0.0"
+	_, _ = runTmuxCommand("", "send-keys", "-t", storiesPaneTarget, "R")
 }
 
 func renderDemoStoriesBoard(sequence []DemoTestCase, startIndex int, statusByTestID map[string]string, activeTestID string) string {

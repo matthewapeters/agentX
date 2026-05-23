@@ -117,7 +117,7 @@ func buildLiveCoreMirrorArgs(coreSessionName string) []string {
 }
 
 func buildDemoStoriesPaneArgs(storiesFilePath string) []string {
-	storiesScript := fmt.Sprintf("tail -n +1 -f %s", shellQuote(storiesFilePath))
+	storiesScript := fmt.Sprintf("if command -v less >/dev/null 2>&1; then exec less -R -c +g %s; else exec tail -n +1 -f %s; fi", shellQuote(storiesFilePath), shellQuote(storiesFilePath))
 	return []string{"bash", "-lc", storiesScript}
 }
 

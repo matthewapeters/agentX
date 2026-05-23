@@ -5,6 +5,23 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.81.2] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Updated split DemoMode stories pane from passive tail rendering to pager-backed rendering so arrow keys and page keys scroll directly in the top pane.
+- Added stories-pane refresh hook (`R` key injection) when status-board content is rewritten, keeping visible content aligned with live test status updates.
+- Updated lower controller-pane navigation instructions to match direct scrolling controls.
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode tests to assert pager-based stories pane command.
+- Updated harness tests for revised stories navigation guidance.
+
 ## [0.81.1] - 2026-05-22
 
 ### Code Changes
