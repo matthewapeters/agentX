@@ -77,13 +77,23 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 		return fmt.Errorf("failed to capture controller pane id")
 	}
 
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", storiesPaneID, "-T", "stories"); err != nil {
+	if err := validatePaneTitle(PaneTitleStores); err != nil {
+		return err
+	}
+	if err := validatePaneTitle(PaneTitleTestControler); err != nil {
+		return err
+	}
+	if err := validatePaneTitle(PaneTitleLiveCore); err != nil {
+		return err
+	}
+
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", storiesPaneID, "-T", PaneTitleStores); err != nil {
 		return fmt.Errorf("failed to label stories pane: %w", err)
 	}
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", controllerPaneID, "-T", "controller"); err != nil {
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", controllerPaneID, "-T", PaneTitleTestControler); err != nil {
 		return fmt.Errorf("failed to label controller pane: %w", err)
 	}
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", liveCorePaneID, "-T", "live-core"); err != nil {
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", liveCorePaneID, "-T", PaneTitleLiveCore); err != nil {
 		return fmt.Errorf("failed to label live core pane: %w", err)
 	}
 	if err := runTmuxInteractive(ctx, "select-pane", "-t", controllerPaneID); err != nil {

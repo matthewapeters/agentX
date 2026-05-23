@@ -5,6 +5,46 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.83.1] - 2026-05-23
+
+### Code Changes
+
+#### Fixed
+
+- Added an authoritative Go pane-title registry for hybrid runtime and demo panes so runtime titles must match documented UX names.
+- Renamed hybrid core pane titles to align with GUI expectations:
+  - `output`
+  - `system`
+  - `input`
+  - `logs`
+- Renamed demo split pane titles to the approved authoritative names:
+  - `stores`
+  - `testControler`
+  - `liveCore`
+- Updated tmux pane-target resolution to preserve runtime behavior while exposing the approved public pane titles.
+- Updated startup layout behavior to keep the interactive cursor focused on the input pane before attach.
+
+#### Added
+
+- Added Go contract coverage in `cmd/agentx-core/pane_titles_docs_contract_test.go` to fail when a registered pane title is not documented in UX specs.
+
+### Test Changes
+
+#### Changed
+
+- Updated Go and shell headless tmux tests to validate the approved pane-title contract across:
+  - startup layout
+  - split demo layout
+  - pane affordances
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/ux/06_TUI_MIRROR.md` and `docs/ux/07_DEMO_MODE.md` with authoritative pane-title contracts.
+- Refreshed `docs/ux/UX_LIFECYCLE.md §7` with a new hybrid gap chart including a `Newly Discovered In This Pass` column.
+- Updated `docs/ux/00_INDEX.md` and `tests/test_tmux_layout_headless.md` to reflect the aligned pane vocabulary.
+
 ## [0.83.0] - 2026-05-23
 
 ### Code Changes

@@ -56,4 +56,7 @@ func TestInitializeTmuxSession_PrimaryWindowSelectionRegression(t *testing.T) {
 	if !strings.Contains(commands, "select-window -t "+core.tmuxSessionName+":0") {
 		t.Fatalf("expected startup to re-select window 0 after logs creation, commands:\n%s", commands)
 	}
+	if !strings.Contains(commands, "select-pane -t %3") {
+		t.Fatalf("expected startup to focus input pane, commands:\n%s", commands)
+	}
 }

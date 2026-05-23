@@ -55,8 +55,8 @@ CONTEXT_TARGET=""
 for _ in $(seq 1 40); do
   PANE_TABLE="$(tmux list-panes -t "$TMUX_SESSION:0" -F '#{pane_id}|#{pane_title}')"
   INPUT_TARGET="$(grep '|input$' <<< "$PANE_TABLE" | cut -d'|' -f1 | head -n 1 || true)"
-  CHAT_TARGET="$(grep '|chat$' <<< "$PANE_TABLE" | cut -d'|' -f1 | head -n 1 || true)"
-  CONTEXT_TARGET="$(grep '|context$' <<< "$PANE_TABLE" | cut -d'|' -f1 | head -n 1 || true)"
+  CHAT_TARGET="$(grep '|output$' <<< "$PANE_TABLE" | cut -d'|' -f1 | head -n 1 || true)"
+  CONTEXT_TARGET="$(grep '|system$' <<< "$PANE_TABLE" | cut -d'|' -f1 | head -n 1 || true)"
   if [[ -n "$INPUT_TARGET" && -n "$CHAT_TARGET" && -n "$CONTEXT_TARGET" ]]; then
     break
   fi
@@ -64,7 +64,7 @@ for _ in $(seq 1 40); do
 done
 
 if [[ -z "$INPUT_TARGET" || -z "$CHAT_TARGET" || -z "$CONTEXT_TARGET" ]]; then
-  echo "FAIL: could not resolve chat/context/input pane targets by title"
+  echo "FAIL: could not resolve output/system/input pane targets by title"
   exit 1
 fi
 

@@ -58,10 +58,10 @@ func TestPaneTargets_MapsAllPanesCorrectly(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"chat":    "%1",
-		"input":   "%3",
-		"context": "%4",
-		"logs":    "agentx_test:1.0",
+		PaneTitleOutput: "%1",
+		PaneTitleInput:  "%3",
+		PaneTitleSystem: "%4",
+		PaneTitleLogs:   "agentx_test:1.0",
 	}
 
 	for _, target := range targets {

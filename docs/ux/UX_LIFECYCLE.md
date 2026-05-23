@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-22 (v0.82.0)_
+_Last updated: 2026-05-23 (v0.83.1)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -717,7 +717,14 @@ tests.
 
 ### High Priority (visible to users, behaviour is non-trivial)
 
-_(No outstanding high-priority gaps.)_
+| Gap ID | Surface | Gap | Evidence | Newly Discovered In This Pass | Required Closure |
+|--------|---------|-----|----------|-------------------------------|------------------|
+| HX-001 | `output` pane / `PD-17-AF-011` | Startup greeting is not yet bootstrapped into the live hybrid runtime output pane at session start. | `docs/hybrid_ux_parity_execution_plan.md` still has A1-A4 open; user launch on 2026-05-23 did not show the default greeting. | No | Implement A1-A4 and add an attached-runtime E2E that proves one-shot greeting render + persistence. |
+| HX-002 | `output` pane / `PD-17-AF-012` | Lifecycle stages are logged to `logs`, but not yet rendered in the user-facing `output` pane in GUI-equivalent order. | W0.2 added lifecycle observability hooks only; B1-B4 remain open in `docs/hybrid_ux_parity_execution_plan.md`. | No | Implement B1-B4 and assert `submitted -> classified -> thinking -> tool -> final response` in the `output` pane. |
+| HX-003 | `system` pane / `PD-17-AF-013` | The `system` title now implies GUI System-pane parity, but the current pane only exposes a minimal context summary rather than files, configuration, context, context history, and context visualizer affordances. | `docs/ux/07_DEMO_MODE.md` Flow C contract requires all five tabs; current headless pane-affordance contract checks only turn count / latest prompt. | Yes | Complete C1-C5 and replace the current summary-only contract with per-tab data-provider assertions. |
+| HX-004 | `input` pane exit semantics | `:q` does not terminate the full attached hybrid runtime; it exits the input loop while the remaining panes stay alive. | User-observed on 2026-05-23; this behavior is consistent with the current attached runtime path and is not covered by an attached-session E2E. | Yes | Fix runtime shutdown propagation and add a real attached-runtime test that proves `:q` tears down the full session cleanly. |
+| HX-005 | Attached startup focus | No attached-runtime E2E currently proves the cursor lands in the `input` pane after real tmux attach; pre-attach/headless checks are insufficient. | User-observed focus landing in `system`; current tests validate layout and pre-attach selection only. | Yes | Add an attached-session focus contract test that checks the active pane after real attach startup. |
+| HX-006 | Demo and smoke scope | Existing demo/headless checks prove structure, artifacts, and pane contracts, but they do not prove full attached-runtime parity for startup greeting, quit semantics, or system-pane parity. | Regressions reported from live startup were not caught by `demo-smoke` or current headless layout checks. | Yes | Split gates explicitly into layout-contract, attached-runtime, and demo-parity suites, and require all three before parity claims. |
 
 ### Medium Priority (settings / configuration)
 

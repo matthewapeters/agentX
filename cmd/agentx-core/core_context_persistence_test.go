@@ -76,7 +76,7 @@ func TestRouteInputPrompt_PersistsTurn(t *testing.T) {
 		t.Fatalf("failed reading tmux command log: %v", err)
 	}
 	commands := string(commandsRaw)
-	if !strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.1") {
+	if !strings.Contains(commands, "send-keys -t %4") && !strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.1") {
 		t.Fatalf("expected context pane render command, got:\n%s", commands)
 	}
 	if !strings.Contains(commands, "echo '[context] turn=1 prompt=\"persist this\" response=\"Echo: persist this\"' Enter") {

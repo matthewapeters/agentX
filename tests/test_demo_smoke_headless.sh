@@ -30,12 +30,12 @@ set -euo pipefail
 
 if [[ "$1" == "list-panes" ]]; then
   if [[ "$3" == *"_demo" ]]; then
-    echo 'demo_smoke_session_demo|0|0|%8|controller|1'
-    echo 'demo_smoke_session_demo|0|1|%9|live-core|0'
+    echo 'demo_smoke_session_demo|0|0|%8|testControler|1'
+    echo 'demo_smoke_session_demo|0|1|%9|liveCore|0'
     exit 0
   fi
-  echo 'demo_smoke_session|0|0|%1|chat|0'
-  echo 'demo_smoke_session|0|1|%2|context|1'
+  echo 'demo_smoke_session|0|0|%1|output|0'
+  echo 'demo_smoke_session|0|1|%2|system|1'
   echo 'demo_smoke_session|0|2|%3|input|0'
   echo 'demo_smoke_session|1|0|%4|logs|0'
   exit 0

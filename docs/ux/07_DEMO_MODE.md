@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.82.0)_
+_Last updated: 2026-05-23 (v0.83.1)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -13,9 +13,21 @@ Demo mode allows the UAT team to run the current E2E terminal sequence in a live
 
 In this release, `agentx --demo` opens a split tmux view with a split-left controller workspace:
 
-- left-top pane: story browser (numbered Gherkin use-cases)
-- left-bottom pane: operator command prompt
-- right pane: live AgentX core session (chat/context/input)
+- left-top pane: stores (numbered Gherkin use-cases)
+- left-bottom pane: testControler command prompt
+- right pane: live AgentX core session (`output` / `system` / `input`)
+
+### Authoritative Demo Pane Titles
+
+The demo split pane-title contract is authoritative:
+
+| Demo pane role | Required title |
+|------|-------------|
+| Story board pane | `stores` |
+| Test control pane | `testControler` |
+| Live runtime mirror pane | `liveCore` |
+
+No additional demo pane titles may be introduced without first updating this document and matching tests.
 
 The story browser is now a live status board with explicit per-test markers:
 
@@ -24,14 +36,14 @@ The story browser is now a live status board with explicit per-test markers:
 - `[P]` pass
 - `[X]` fail
 
-Navigation instructions are rendered in the lower controller pane. The stories pane supports long-list navigation directly via pager controls:
+Navigation instructions are rendered in the lower testControler pane. The stores pane supports long-list navigation directly via pager controls:
 
-- `Ctrl-b o` to focus stories pane
+- `Ctrl-b o` to focus stores pane
 - arrow keys or `PgUp` / `PgDn` to scroll
 - `R` to refresh content manually (status updates are also auto-refreshed)
-- `Ctrl-b o` to return to controller pane
+- `Ctrl-b o` to return to testControler pane
 
-The controller submits prompts over the core `/submit` endpoint so the operator watches the actual running application respond in real time without replacing the split.
+The testControler submits prompts over the core `/submit` endpoint so the operator watches the actual running application respond in real time without replacing the split.
 
 Command-line entry contract:
 
@@ -90,11 +102,11 @@ Prompt contract:
 - `J <test number>` = jump ahead to a specific test number in the same run
 - `X <feedback>` = mark current demo test as failed, optionally attach inline feedback, capture diagnostics, and stop sequence
 
-In split mode, completion from the controller pane now closes the full demo split session so the remaining mirror pane does not expand into a one-pane terminal.
+In split mode, completion from the testControler pane now closes the full demo split session so the remaining mirror pane does not expand into a one-pane terminal.
 
-In split mode, `Ctrl-C` cancellation now exits the controller decision loop and triggers split-session teardown instead of leaving a re-prompting controller pane.
+In split mode, `Ctrl-C` cancellation now exits the testControler decision loop and triggers split-session teardown instead of leaving a re-prompting testControler pane.
 
-In split mode, the controller pane is refreshed between decisions so stale prompts/results are cleared and the current step remains legible.
+In split mode, the testControler pane is refreshed between decisions so stale prompts/results are cleared and the current step remains legible.
 
 Any other input must re-prompt without advancing.
 

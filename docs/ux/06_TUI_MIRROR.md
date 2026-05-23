@@ -1,6 +1,6 @@
 # AgentX — TUI Mirror: Neovim Chat Pane
 
-_Last updated: 2026-05-18 (v0.54.0)_
+_Last updated: 2026-05-23 (v0.83.1)_
 
 > **Companion document to [`05_VIBE_CODING.md`](05_VIBE_CODING.md).**
 > Specifies the optional TUI mirror that surfaces the AgentX chat interface as a
@@ -60,6 +60,19 @@ no separate window manager involvement required.
 ---
 
 ## 2. Architecture
+
+### Authoritative Pane Titles
+
+The hybrid core pane-title contract is authoritative and must remain synchronized with runtime code:
+
+| Pane role | Required title |
+|------|-------------|
+| Output pane | `output` |
+| System pane | `system` |
+| Input pane | `input` |
+| Logs pane | `logs` |
+
+No additional pane titles may be introduced in the core runtime without first updating this document and its corresponding tests.
 
 ### 2.1 IPC Channels
 

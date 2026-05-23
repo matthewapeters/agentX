@@ -216,10 +216,10 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "attach-session -t agentx_tester_sess-split_demo") {
 		t.Fatalf("expected final attach to split demo session, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "select-pane -t %1 -T stories") {
+	if !strings.Contains(commands, "select-pane -t %1 -T stores") {
 		t.Fatalf("expected stories pane title assignment, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "select-pane -t %3 -T controller") {
+	if !strings.Contains(commands, "select-pane -t %3 -T testControler") {
 		t.Fatalf("expected controller pane title assignment on bottom-left pane, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "select-pane -t %3") {

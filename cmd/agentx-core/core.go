@@ -62,6 +62,7 @@ type AgentXCore struct {
 	contextManager            *ContextManager
 	lifecycleEventCounter     int
 	startupLifecycleEmitted   bool
+	paneTargetByName          map[string]string
 }
 
 type submitRequest struct {
@@ -152,6 +153,7 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 		inputHistory:              make([]string, 0),
 		startedAt:                 time.Now(),
 		healthAddr:                "127.0.0.1:9876", // Default health endpoint
+		paneTargetByName:          make(map[string]string),
 	}
 
 	core.contextManager = NewContextManager(cfg.SessionContextDir(sessionID))
@@ -180,7 +182,7 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 	}
 
 	chatPaneTarget := ac.tmuxSessionName + ":0.0"
-	if err := ac.runTmux(ctx, "select-pane", "-t", chatPaneTarget, "-T", "chat"); err != nil {
+	if err := ac.setPaneTitle(ctx, chatPaneTarget, PaneTitleOutput); err != nil {
 		return fmt.Errorf("failed to set chat pane title: %w", err)
 	}
 
@@ -188,7 +190,7 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to split input pane: %w", err)
 	}
-	if err := ac.runTmux(ctx, "select-pane", "-t", inputPaneTarget, "-T", "input"); err != nil {
+	if err := ac.setPaneTitle(ctx, inputPaneTarget, PaneTitleInput); err != nil {
 		return fmt.Errorf("failed to set input pane title: %w", err)
 	}
 
@@ -196,7 +198,7 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to split context pane: %w", err)
 	}
-	if err := ac.runTmux(ctx, "select-pane", "-t", contextPaneTarget, "-T", "context"); err != nil {
+	if err := ac.setPaneTitle(ctx, contextPaneTarget, PaneTitleSystem); err != nil {
 		return fmt.Errorf("failed to set context pane title: %w", err)
 	}
 
@@ -206,6 +208,19 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 
 	if err := ac.runTmux(ctx, "select-window", "-t", ac.tmuxSessionName+":0"); err != nil {
 		return fmt.Errorf("failed to re-select primary window: %w", err)
+	}
+
+	ac.paneTargetByName[PaneTitleOutput] = chatPaneTarget
+	ac.paneTargetByName["chat"] = chatPaneTarget
+	ac.paneTargetByName[PaneTitleInput] = inputPaneTarget
+	ac.paneTargetByName[PaneTitleSystem] = contextPaneTarget
+	ac.paneTargetByName["context"] = contextPaneTarget
+	ac.paneTargetByName[PaneTitleLogs] = ac.tmuxSessionName + ":1.0"
+	ac.paneTargetByName["logs"] = ac.tmuxSessionName + ":1.0"
+
+	// Keep startup cursor in the interactive input pane.
+	if err := ac.runTmux(ctx, "select-pane", "-t", inputPaneTarget); err != nil {
+		return fmt.Errorf("failed to focus input pane: %w", err)
 	}
 
 	log.Printf("[AgentX Core] tmux session '%s' initialized with layout: chat(80x80)|context(20x80) top, input(100x20) bottom, logs hidden", ac.tmuxSessionName)
@@ -229,10 +244,10 @@ func (ac *AgentXCore) runTmuxCapture(ctx context.Context, args ...string) (strin
 
 func paneTargets(sessionName, chatTarget, inputTarget, contextTarget string) []tmuxPaneTarget {
 	return []tmuxPaneTarget{
-		{name: "chat", target: chatTarget},
-		{name: "input", target: inputTarget},
-		{name: "context", target: contextTarget},
-		{name: "logs", target: sessionName + ":1.0"},
+		{name: PaneTitleOutput, target: chatTarget},
+		{name: PaneTitleInput, target: inputTarget},
+		{name: PaneTitleSystem, target: contextTarget},
+		{name: PaneTitleLogs, target: sessionName + ":1.0"},
 	}
 }
 
@@ -344,7 +359,7 @@ func (ac *AgentXCore) emitLifecycleEvent(ctx context.Context, stage string, deta
 	}
 
 	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote(message))
-	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("logs"), renderCmd, "Enter"); err != nil {
+	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(PaneTitleLogs), renderCmd, "Enter"); err != nil {
 		log.Printf("[AgentX Core] Lifecycle log render failed: %v", err)
 	}
 }
@@ -484,7 +499,7 @@ func (ac *AgentXCore) renderChatStreamChunk(ctx context.Context, delta string) e
 	}
 	ac.emitBridgeLog(ctx, "bridge_chunk", fmt.Sprintf("chunk_chars=%d", len(trimmed)))
 	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote("[assistant-stream] "+trimmed))
-	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("chat"), renderCmd, "Enter"); err != nil {
+	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(PaneTitleOutput), renderCmd, "Enter"); err != nil {
 		return fmt.Errorf("failed rendering chat stream chunk: %w", err)
 	}
 	return nil
@@ -576,7 +591,7 @@ func (ac *AgentXCore) emitBridgeLog(ctx context.Context, event string, details s
 	}
 
 	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote(message))
-	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("logs"), renderCmd, "Enter"); err != nil {
+	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(PaneTitleLogs), renderCmd, "Enter"); err != nil {
 		log.Printf("[AgentX Core] Bridge log render failed: %v", err)
 	}
 }
@@ -666,14 +681,28 @@ func shellSingleQuote(input string) string {
 }
 
 func (ac *AgentXCore) paneTargetForName(paneName string) string {
-	if paneName == "logs" {
+	if target, ok := ac.paneTargetByName[paneName]; ok && strings.TrimSpace(target) != "" {
+		return target
+	}
+
+	if paneName == PaneTitleLogs {
 		return ac.tmuxSessionName + ":1.0"
 	}
+
 	return ac.tmuxSessionName + ":0." + map[string]string{
-		"chat":    "0",
-		"context": "1",
-		"input":   "2",
+		PaneTitleOutput: "0",
+		"chat":          "0",
+		PaneTitleSystem: "1",
+		"context":       "1",
+		PaneTitleInput:  "2",
 	}[paneName]
+}
+
+func (ac *AgentXCore) setPaneTitle(ctx context.Context, target string, title string) error {
+	if err := validatePaneTitle(title); err != nil {
+		return err
+	}
+	return ac.runTmux(ctx, "select-pane", "-t", target, "-T", title)
 }
 
 func (ac *AgentXCore) renderChatResponse(ctx context.Context, response string) error {
@@ -682,7 +711,7 @@ func (ac *AgentXCore) renderChatResponse(ctx context.Context, response string) e
 	}
 
 	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote("[assistant] "+response))
-	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("chat"), renderCmd, "Enter"); err != nil {
+	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(PaneTitleOutput), renderCmd, "Enter"); err != nil {
 		return fmt.Errorf("failed rendering chat response: %w", err)
 	}
 	return nil
@@ -708,7 +737,7 @@ func (ac *AgentXCore) renderContextTurnSummary(ctx context.Context, turnIndex in
 		trimForPaneSummary(response, 72),
 	)
 	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote(summary))
-	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("context"), renderCmd, "Enter"); err != nil {
+	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(PaneTitleSystem), renderCmd, "Enter"); err != nil {
 		return fmt.Errorf("failed rendering context turn summary: %w", err)
 	}
 	return nil
@@ -812,8 +841,8 @@ func (ac *AgentXCore) HandleInputLine(ctx context.Context, line string) (respons
 	if strings.HasPrefix(trimmedLine, ":") {
 		switch trimmedLine {
 		case ":clear":
-			chatPaneTarget := ac.paneTargetForName("chat")
-			inputPaneTarget := ac.paneTargetForName("input")
+			chatPaneTarget := ac.paneTargetForName(PaneTitleOutput)
+			inputPaneTarget := ac.paneTargetForName(PaneTitleInput)
 
 			// Clear visible terminal state and scrollback for the live-core chat/input panes.
 			if err := ac.runTmux(ctx, "clear-history", "-t", chatPaneTarget); err != nil {

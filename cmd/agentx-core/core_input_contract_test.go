@@ -46,13 +46,13 @@ func TestHandleInputLine_ClearCommand(t *testing.T) {
 	if !strings.Contains(commands, "send-keys -R -t "+core.tmuxSessionName+":0.0") {
 		t.Fatalf("expected chat pane display reset command in tmux log, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "clear-history -t "+core.tmuxSessionName+":0.2") {
+	if !strings.Contains(commands, "clear-history -t %3") && !strings.Contains(commands, "clear-history -t "+core.tmuxSessionName+":0.2") {
 		t.Fatalf("expected input pane history clear command in tmux log, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.2 C-u") {
+	if !strings.Contains(commands, "send-keys -t %3 C-u") && !strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.2 C-u") {
 		t.Fatalf("expected input line reset command in tmux log, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "send-keys -R -t "+core.tmuxSessionName+":0.2") {
+	if !strings.Contains(commands, "send-keys -R -t %3") && !strings.Contains(commands, "send-keys -R -t "+core.tmuxSessionName+":0.2") {
 		t.Fatalf("expected input pane display reset command in tmux log, got:\n%s", commands)
 	}
 	if strings.Contains(commands, "send-keys -t "+core.tmuxSessionName+":0.0 clear Enter") {

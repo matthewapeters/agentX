@@ -1,11 +1,11 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-22 (v0.82.0)_
+_Last updated: 2026-05-23 (v0.83.1)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-22 (v0.82.0 — Hybrid parity baseline criteria and placeholder demo stories added)
+**Last updated**: 2026-05-23 (v0.83.1 — Pane-title alignment pass reviewed and UX gap chart refreshed)
 **Current version**: see `pyproject.toml`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
@@ -23,12 +23,12 @@ _Last updated: 2026-05-22 (v0.82.0)_
 | Understand the window layout and zone map | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) |
 | Follow a user interaction end-to-end | [02_USER_FLOWS.md](02_USER_FLOWS.md) |
 | Vibe coding (neovim + tmux integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
-| TUI mirror chat pane (spec + plan) | [06_TUI_MIRROR.md](06_TUI_MIRROR.md) |
+| TUI mirror / hybrid pane contract (spec + plan) | [06_TUI_MIRROR.md](06_TUI_MIRROR.md) |
 | Demo mode contract and harness plan | [07_DEMO_MODE.md](07_DEMO_MODE.md) |
 | TUI-default migration plan and docs impact list | [06_TUI_MIRROR.md §12](06_TUI_MIRROR.md#12-tui-first-migration-plan-planned) |
 | Tool/tooling backlog (non-UX) | [../tools/tools_issues.md](../tools/tools_issues.md) |
 | Run the UX review+enforce cycle (agent slash-command) | `/ux-review` in Copilot Chat |
-| See test coverage gaps | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-known-coverage-gaps) |
+| See test coverage gaps and pane-alignment re-evaluation | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-known-coverage-gaps) |
 | Detect spec/code/test drift | [UX_LIFECYCLE.md §5.4](UX_LIFECYCLE.md#54-detecting-drift-without-a-planned-change) |
 | Add a new panel/affordance (checklist) | [UX_LIFECYCLE.md §5.1](UX_LIFECYCLE.md#51-adding-a-new-affordance) |
 | Modify an existing affordance (checklist) | [UX_LIFECYCLE.md §5.2](UX_LIFECYCLE.md#52-modifying-an-existing-affordance) |

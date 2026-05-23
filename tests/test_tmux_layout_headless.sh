@@ -13,17 +13,17 @@ trap cleanup EXIT
 
 # Launch session and create layout (mimic Go logic)
 tmux new-session -d -s "$SESSION" -n tui-chat -x 120 -y 40
-# Set chat pane title
-tmux select-pane -t "$SESSION:0.0" -T chat
+# Set output pane title
+tmux select-pane -t "$SESSION:0.0" -T output
 # Split horizontally (input at bottom, 20%) and capture pane id
 INPUT_PANE="$(tmux split-window -P -F '#{pane_id}' -t "$SESSION:0.0" -v -p 20)"
 # Title bottom pane as input
 tmux select-pane -t "$INPUT_PANE" -T input
-# Focus top pane and split vertically (context right, 20%)
+# Focus top pane and split vertically (system right, 20%)
 CHAT_PANE="$SESSION:0.0"
 CONTEXT_PANE="$(tmux split-window -P -F '#{pane_id}' -t "$CHAT_PANE" -h -p 20)"
-# Title right pane as context
-tmux select-pane -t "$CONTEXT_PANE" -T context
+# Title right pane as system
+tmux select-pane -t "$CONTEXT_PANE" -T system
 # Create logs window (hidden)
 tmux new-window -t "$SESSION:1" -n logs
 # Re-select primary window so attach defaults to main UX
@@ -52,12 +52,12 @@ if [[ "$(wc -l <<< "$PANE_META" | awk '{print $1}')" -ne 3 ]]; then
   exit 1
 fi
 
-CHAT_RECORD="$(grep '|chat|' <<< "$PANE_META" || true)"
+CHAT_RECORD="$(grep '|output|' <<< "$PANE_META" || true)"
 INPUT_RECORD="$(grep '|input|' <<< "$PANE_META" || true)"
-CONTEXT_RECORD="$(grep '|context|' <<< "$PANE_META" || true)"
+CONTEXT_RECORD="$(grep '|system|' <<< "$PANE_META" || true)"
 
 if [[ -z "$CHAT_RECORD" || -z "$INPUT_RECORD" || -z "$CONTEXT_RECORD" ]]; then
-  echo "FAIL: Missing one or more titled panes (chat/input/context)"
+  echo "FAIL: Missing one or more titled panes (output/input/system)"
   exit 1
 fi
 
@@ -66,7 +66,7 @@ IFS='|' read -r INPUT_INDEX _ INPUT_LEFT INPUT_TOP _ _ <<< "$INPUT_RECORD"
 IFS='|' read -r CONTEXT_INDEX _ CONTEXT_LEFT CONTEXT_TOP _ _ <<< "$CONTEXT_RECORD"
 
 if [[ "$CHAT_INDEX" -ne 0 ]]; then
-  echo "FAIL: Chat pane is expected at index 0"
+  echo "FAIL: Output pane is expected at index 0"
   exit 1
 fi
 
@@ -76,18 +76,18 @@ if [[ "$INPUT_INDEX" -ne 2 ]]; then
 fi
 
 if [[ "$CONTEXT_INDEX" -ne 1 ]]; then
-  echo "FAIL: Context pane is expected at index 1"
+  echo "FAIL: System pane is expected at index 1"
   exit 1
 fi
 
-# Validate geometry: chat is top-left, context is top-right, input is bottom full width.
+# Validate geometry: output is top-left, system is top-right, input is bottom full width.
 if [[ "$CHAT_LEFT" -ne 0 || "$CHAT_TOP" -ne 0 ]]; then
-  echo "FAIL: Chat pane is not at top-left"
+  echo "FAIL: Output pane is not at top-left"
   exit 1
 fi
 
 if [[ "$CONTEXT_TOP" -ne 0 || "$CONTEXT_LEFT" -le "$CHAT_LEFT" ]]; then
-  echo "FAIL: Context pane is not in top-right position"
+  echo "FAIL: System pane is not in top-right position"
   exit 1
 fi
 
