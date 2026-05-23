@@ -5,6 +5,28 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.82.1] - 2026-05-23
+
+### Code Changes
+
+#### Fixed
+
+- Updated Go hybrid core runtime config resolution so chat backend and Ollama host/model are sourced from `agentx.toml` before bridge launch, with environment variables still taking precedence.
+- Removed hardcoded-only backend/host/model fallback wiring in chat bridge process setup by routing through resolved runtime config.
+
+#### Added
+
+- Added Go unit coverage for runtime config precedence in `cmd/agentx-core/config_runtime_test.go`:
+  - TOML values are loaded from `agentx.toml`
+  - `AGENTX_*` environment overrides win over TOML
+  - default values are used when neither TOML nor env overrides are present
+
+### Documentation Changes
+
+#### Changed
+
+- Accepted and included latest update in `docs/ux/07_DEMO_MODE.md` in this commit.
+
 ## [0.82.0] - 2026-05-22
 
 ### Code Changes

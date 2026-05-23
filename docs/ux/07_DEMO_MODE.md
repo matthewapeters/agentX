@@ -176,22 +176,22 @@ The following acceptance criteria define parity targets for the hybrid architect
 ### Flow B - Prompt Lifecycle Parity (`PD-17-AF-012`)
 
 - A representative prompt must visibly traverse all lifecycle stages:
-   - submitted
-   - classified
-   - thinking
-   - tool activity (when applicable)
-   - final response
+  - submitted
+  - classified
+  - thinking
+  - tool activity (when applicable)
+  - final response
 - Lifecycle ordering must be deterministic for test assertions.
 - Demo coverage placeholder: `e2e-cycle-001`.
 
 ### Flow C - System Panel Parity (`PD-17-AF-013`)
 
 - Hybrid runtime must provide functional parity for system tabs:
-   - files
-   - configuration
-   - context
-   - context history
-   - context visualizer
+  - files
+  - configuration
+  - context
+  - context history
+  - context visualizer
 - Tab navigation and state rendering must be deterministic and testable.
 - Demo coverage placeholder: `e2e-system-001`.
 

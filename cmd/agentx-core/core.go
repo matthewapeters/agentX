@@ -39,6 +39,7 @@ const (
 // AgentXCore orchestrates the tmux session, applets, and IPC.
 type AgentXCore struct {
 	Config                    *Config
+	runtimeConfig             CoreRuntimeConfig
 	SessionID                 string
 	tmuxSessionName           string
 	tmuxInitialized           bool
@@ -128,9 +129,11 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 	if sessionID == "" {
 		sessionID = fmt.Sprintf("agentx_%d", time.Now().Unix())
 	}
+	runtimeConfig := resolveCoreRuntimeConfig(cfg.ProjectDir)
 
 	core := &AgentXCore{
 		Config:                    cfg,
+		runtimeConfig:             runtimeConfig,
 		SessionID:                 sessionID,
 		tmuxSessionName:           fmt.Sprintf("agentx_%s_%s", cfg.Username, sessionID),
 		applets:                   make(map[string]*AppletProcess),
@@ -438,18 +441,9 @@ func (ac *AgentXCore) ensureChatBridgeProcessLocked(chatApplet *AppletProcess) e
 
 	processCtx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(processCtx, ac.pythonExecutable, ac.chatAppletScript, "--bridge-chat-server")
-	chatBackend := strings.TrimSpace(os.Getenv("AGENTX_CHAT_BACKEND"))
-	if chatBackend == "" {
-		chatBackend = "echo"
-	}
-	ollamaHost := strings.TrimSpace(os.Getenv("AGENTX_OLLAMA_HOST"))
-	if ollamaHost == "" {
-		ollamaHost = "localhost:11434"
-	}
-	ollamaModel := strings.TrimSpace(os.Getenv("AGENTX_OLLAMA_MODEL"))
-	if ollamaModel == "" {
-		ollamaModel = "llama3.2"
-	}
+	chatBackend := ac.runtimeConfig.ChatBackend
+	ollamaHost := ac.runtimeConfig.OllamaHost
+	ollamaModel := ac.runtimeConfig.OllamaModel
 	cmd.Env = append(os.Environ(),
 		"AGENTX_APPLET_NAME=chat",
 		"AGENTX_SESSION_ID="+ac.SessionID,
