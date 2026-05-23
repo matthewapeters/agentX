@@ -49,29 +49,44 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 		return fmt.Errorf("failed to prepare core session for split view: %w", err)
 	}
 
-	if err := runTmuxInteractive(ctx, append([]string{"new-session", "-d", "-s", demoSessionName, "-n", "demo-control"}, storiesArgs...)...); err != nil {
+	storiesPaneID, err := runTmuxCapture(ctx, append([]string{"new-session", "-d", "-P", "-F", "#{pane_id}", "-s", demoSessionName, "-n", "demo-control"}, storiesArgs...)...)
+	if err != nil {
 		return fmt.Errorf("failed to create demo controller session: %w", err)
+	}
+	storiesPaneID = strings.TrimSpace(storiesPaneID)
+	if storiesPaneID == "" {
+		return fmt.Errorf("failed to capture stories pane id")
 	}
 
 	liveCoreMirrorArgs := buildLiveCoreMirrorArgs(core.tmuxSessionName)
-	if err := runTmuxInteractive(ctx, append([]string{"split-window", "-h", "-p", "45", "-t", demoSessionName + ":0"}, liveCoreMirrorArgs...)...); err != nil {
+	liveCorePaneID, err := runTmuxCapture(ctx, append([]string{"split-window", "-P", "-F", "#{pane_id}", "-h", "-p", "45", "-t", storiesPaneID}, liveCoreMirrorArgs...)...)
+	if err != nil {
 		return fmt.Errorf("failed to create live core mirror pane: %w", err)
 	}
+	liveCorePaneID = strings.TrimSpace(liveCorePaneID)
+	if liveCorePaneID == "" {
+		return fmt.Errorf("failed to capture live core pane id")
+	}
 
-	if err := runTmuxInteractive(ctx, append([]string{"split-window", "-v", "-p", "35", "-t", demoSessionName + ":0.0"}, controllerArgs...)...); err != nil {
+	controllerPaneID, err := runTmuxCapture(ctx, append([]string{"split-window", "-P", "-F", "#{pane_id}", "-v", "-p", "35", "-t", storiesPaneID}, controllerArgs...)...)
+	if err != nil {
 		return fmt.Errorf("failed to create demo prompt pane: %w", err)
 	}
+	controllerPaneID = strings.TrimSpace(controllerPaneID)
+	if controllerPaneID == "" {
+		return fmt.Errorf("failed to capture controller pane id")
+	}
 
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.0", "-T", "stories"); err != nil {
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", storiesPaneID, "-T", "stories"); err != nil {
 		return fmt.Errorf("failed to label stories pane: %w", err)
 	}
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.2", "-T", "controller"); err != nil {
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", controllerPaneID, "-T", "controller"); err != nil {
 		return fmt.Errorf("failed to label controller pane: %w", err)
 	}
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.1", "-T", "live-core"); err != nil {
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", liveCorePaneID, "-T", "live-core"); err != nil {
 		return fmt.Errorf("failed to label live core pane: %w", err)
 	}
-	if err := runTmuxInteractive(ctx, "select-pane", "-t", demoSessionName+":0.2"); err != nil {
+	if err := runTmuxInteractive(ctx, "select-pane", "-t", controllerPaneID); err != nil {
 		return fmt.Errorf("failed to focus controller pane: %w", err)
 	}
 

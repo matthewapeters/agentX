@@ -89,6 +89,18 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	fakeTmuxScript := "#!/usr/bin/env bash\n" +
 		"set -euo pipefail\n" +
 		"printf '%s\\n' \"$*\" >> \"${TMUX_LOG}\"\n" +
+		"if [[ \"$1\" == \"new-session\" && \"$*\" == *\"-P -F #{pane_id}\"* ]]; then\n" +
+		"  printf '%%1\\n'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"if [[ \"$1\" == \"split-window\" && \"$*\" == *\"-P -F #{pane_id}\"* ]]; then\n" +
+		"  if [[ \"$*\" == *\" -h \"* ]]; then\n" +
+		"    printf '%%2\\n'\n" +
+		"  else\n" +
+		"    printf '%%3\\n'\n" +
+		"  fi\n" +
+		"  exit 0\n" +
+		"fi\n" +
 		"if [[ \"$1\" == \"display-message\" ]]; then\n" +
 		"  target=\"\"\n" +
 		"  for ((i=1; i<=$#; i++)); do\n" +
@@ -153,7 +165,7 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 		t.Fatalf("failed to read tmux log: %v", err)
 	}
 	commands := string(data)
-	if !strings.Contains(commands, "new-session -d -s agentx_tester_sess-split_demo -n demo-control bash -lc") {
+	if !strings.Contains(commands, "new-session -d -P -F #{pane_id} -s agentx_tester_sess-split_demo -n demo-control bash -lc") {
 		t.Fatalf("expected story-browser session bootstrap, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "less -R -c +g") {
@@ -186,10 +198,10 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split:0.0") {
 		t.Fatalf("expected chat pane focus before nested attach so right-side cursor does not dominate, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "split-window -h -p 45 -t agentx_tester_sess-split_demo:0 bash -lc") {
+	if !strings.Contains(commands, "split-window -P -F #{pane_id} -h -p 45 -t %1 bash -lc") {
 		t.Fatalf("expected weighted vertical split with live core attach command, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "split-window -v -p 35 -t agentx_tester_sess-split_demo:0.0") {
+	if !strings.Contains(commands, "split-window -P -F #{pane_id} -v -p 35 -t %1") {
 		t.Fatalf("expected bottom-left prompt pane split from stories pane, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "--demo-controller") {
@@ -204,13 +216,13 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "attach-session -t agentx_tester_sess-split_demo") {
 		t.Fatalf("expected final attach to split demo session, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split_demo:0.0 -T stories") {
+	if !strings.Contains(commands, "select-pane -t %1 -T stories") {
 		t.Fatalf("expected stories pane title assignment, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split_demo:0.2 -T controller") {
+	if !strings.Contains(commands, "select-pane -t %3 -T controller") {
 		t.Fatalf("expected controller pane title assignment on bottom-left pane, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split_demo:0.2") {
+	if !strings.Contains(commands, "select-pane -t %3") {
 		t.Fatalf("expected controller focus on bottom-left pane, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "kill-session -t agentx_tester_sess-split_demo") {

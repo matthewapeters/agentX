@@ -5,6 +5,21 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.81.4] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Updated split DemoMode pane orchestration to capture tmux pane IDs (`-P -F #{pane_id}`) for stories, live-core, and controller panes, then apply titles/focus by pane ID rather than positional indexes.
+- Ensures controller pane is deterministically the active pane at demo attach, fixing cases where cursor focus landed in output pane due to pane-index drift.
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode fake tmux harness and assertions for pane-id-based split/selection commands.
+
 ## [0.81.3] - 2026-05-22
 
 ### Code Changes
