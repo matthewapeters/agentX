@@ -41,6 +41,7 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 		core.SessionID,
 		startSelector,
 		core.tmuxSessionName,
+		healthAddr,
 		storiesFilePath,
 	)
 	storiesArgs := buildDemoStoriesPaneArgs(storiesFilePath)
@@ -117,7 +118,7 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	return nil
 }
 
-func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, startSelector, coreSessionName, storiesFilePath string) []string {
+func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, startSelector, coreSessionName, healthAddr, storiesFilePath string) []string {
 	args := []string{
 		"--project-dir", cfg.ProjectDir,
 		"--user", cfg.Username,
@@ -125,6 +126,7 @@ func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, star
 		"--demo-controller",
 		"--demo-split",
 		"--demo-core-session", coreSessionName,
+		"--health-addr", healthAddr,
 		"--demo-stories-file", storiesFilePath,
 	}
 	if trimmed := strings.TrimSpace(startSelector); trimmed != "" {

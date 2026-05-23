@@ -21,6 +21,7 @@ import os
 import signal
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 
@@ -35,6 +36,8 @@ CHAT_BACKEND = os.getenv("AGENTX_CHAT_BACKEND", "echo").strip().lower()
 OLLAMA_HOST = os.getenv("AGENTX_OLLAMA_HOST", "localhost:11434").strip()
 OLLAMA_MODEL = os.getenv("AGENTX_OLLAMA_MODEL", "llama3.2").strip()
 OLLAMA_TIMEOUT_SEC = float(os.getenv("AGENTX_OLLAMA_TIMEOUT_SEC", "30"))
+PROJECT_DIR = os.getenv("AGENTX_PROJECT_DIR", os.getcwd()).strip() or os.getcwd()
+USERNAME = os.getenv("AGENTX_USERNAME", os.getenv("USER", "agentx")).strip() or "agentx"
 
 # Global shutdown flag
 shutdown_requested = False
@@ -104,10 +107,113 @@ def _submit_prompt(prompt: str) -> str:
     return routed
 
 
+def _request_shutdown() -> None:
+    """Request graceful runtime shutdown from the core."""
+    url = f"{CORE_BASE_URL}/shutdown"
+    request = urllib.request.Request(url=url, data=b"{}", headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(request, timeout=OLLAMA_TIMEOUT_SEC) as response:
+        body = response.read().decode("utf-8")
+    decoded = json.loads(body)
+    if str(decoded.get("status", "")).strip() != "shutting_down":
+        raise ValueError("shutdown endpoint returned unexpected payload")
+
+
+def _load_runtime_config() -> dict:
+    """Load AgentX runtime configuration from agentx.toml when available."""
+    config_path = os.path.join(PROJECT_DIR, "agentx.toml")
+    if not os.path.exists(config_path):
+        return {}
+    with open(config_path, "rb") as handle:
+        return tomllib.load(handle)
+
+
+def _trim_single_line(value: str, limit: int = 72) -> str:
+    """Normalize user-facing values into one stable rendered line."""
+    single_line = " ".join(str(value).split())
+    if not single_line:
+        return "none"
+    if len(single_line) <= limit:
+        return single_line
+    return single_line[: limit - 3].rstrip() + "..."
+
+
+def _safe_listdir(path: str) -> list[str]:
+    """Return a sorted directory listing or an empty list when unavailable."""
+    try:
+        return sorted(os.listdir(path))
+    except OSError:
+        return []
+
+
+def _classify_entry(path: str) -> str:
+    """Return a short entry type label for system pane previews."""
+    if os.path.isdir(path):
+        return "dir"
+    if os.path.isfile(path):
+        return "file"
+    return "other"
+
+
+def _context_visualizer(turns: list[dict]) -> dict[str, int]:
+    """Build a small deterministic token-style summary from current turns."""
+    user_tokens = sum(max(1, len(str(turn.get("prompt", "")).split())) for turn in turns if turn.get("prompt"))
+    assistant_tokens = sum(max(1, len(str(turn.get("response", "")).split())) for turn in turns if turn.get("response"))
+    return {
+        "max_tokens": 0,
+        "working_memory": 0,
+        "system": 0,
+        "user": user_tokens,
+        "attachments": 0,
+        "thinking": 0,
+        "assistant": assistant_tokens,
+        "tool": 0,
+    }
+
+
+def _render_system_surface(payload: dict) -> str:
+    """Render the deterministic text contract for the system pane."""
+    config = _load_runtime_config()
+    agentx_cfg = config.get("agentx", {}) if isinstance(config.get("agentx"), dict) else {}
+    agentix_cfg = config.get("agentix", {}) if isinstance(config.get("agentix"), dict) else {}
+    turns = payload.get("turns", []) or []
+    turn_count = int(payload.get("turn_count", len(turns)))
+    last_turn = turns[-1] if turns else {}
+    entries = _safe_listdir(PROJECT_DIR)
+    session_dir = os.path.join(PROJECT_DIR, "sessions", USERNAME)
+    session_history = _safe_listdir(session_dir)
+    recent_history = list(reversed(turns[-2:]))
+    visualizer = _context_visualizer(turns)
+
+    preview_entry = "none"
+    if entries:
+        preview_path = os.path.join(PROJECT_DIR, entries[0])
+        preview_entry = f"{_classify_entry(preview_path)} {entries[0]}"
+
+    lines = [
+        "[SYSTEM]",
+        "== FILES ==",
+        f"root: {_trim_single_line(PROJECT_DIR, 48)} | entries: {len(entries)} | preview: {_trim_single_line(preview_entry, 24)}",
+        "== CONFIGURATION ==",
+        f"model: {_trim_single_line(agentx_cfg.get('ollama_model', OLLAMA_MODEL), 24)} | theme: {_trim_single_line(agentx_cfg.get('theme_mode', 'none'), 16)} | backend: {_trim_single_line(CHAT_BACKEND, 12)}",
+        f"ollama_host: {_trim_single_line(agentx_cfg.get('ollama_host', OLLAMA_HOST), 40)} | prompts: {_trim_single_line(agentix_cfg.get('system_prompts_dir', 'none'), 18)}",
+        "== CONTEXT ==",
+        f"session_id: {_trim_single_line(payload.get('session_id', SESSION_ID), 28)} | turn_count: {turn_count}",
+        f"last_user: {_trim_single_line(last_turn.get('prompt', 'none'), 56)}",
+        f"last_assistant: {_trim_single_line(last_turn.get('response', 'none'), 51)}",
+        "== CONTEXT HISTORY ==",
+        f"history_context_count: {len(session_history)} | latest_history_session: {_trim_single_line(session_history[-1] if session_history else 'none', 20)}",
+        f"recent_prompt: {_trim_single_line(recent_history[0].get('prompt', 'none') if recent_history else 'none', 57)}",
+        "== CONTEXT VISUALIZER ==",
+        f"max_tokens: {visualizer['max_tokens']} | user: {visualizer['user']} | assistant: {visualizer['assistant']} | tool: {visualizer['tool']}",
+        f"working_memory: {visualizer['working_memory']} | system: {visualizer['system']} | attachments: {visualizer['attachments']} | thinking: {visualizer['thinking']}",
+    ]
+    return "\n".join(lines)
+
+
 def run_input_affordance_loop():
     """Run line-based input affordance for interactive tmux input pane."""
     print_ui_line("Input ready. Enter prompt and press Enter.")
-    print_ui_line("Commands: :q exits input loop, :clear clears chat output.")
+    print_ui_line("Commands: :q shuts down the session, :clear clears chat output.")
     while not shutdown_requested:
         try:
             prompt = input("agentx> ")
@@ -122,7 +228,21 @@ def run_input_affordance_loop():
         if not prompt:
             continue
         if prompt == ":q":
-            print_ui_line("Input loop exiting.")
+            try:
+                _request_shutdown()
+                print_ui_line("Session shutdown requested.")
+            except (
+                urllib.error.URLError,
+                urllib.error.HTTPError,
+                TimeoutError,
+                ValueError,
+                json.JSONDecodeError,
+            ) as exc:
+                    try:
+                        _submit_prompt(":q")
+                        print_ui_line("Session shutdown requested via submit fallback.")
+                    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as submit_exc:
+                        print_ui_line(f"Shutdown failed: {exc}; submit fallback failed: {submit_exc}")
             return 0
 
         try:
@@ -161,22 +281,16 @@ def run_chat_affordance_loop():
 
 
 def run_context_affordance_loop():
-    """Poll context endpoint and surface concise context consumption metadata."""
-    print_ui_line("Context ready.")
+    """Poll context endpoint and render the deterministic system-pane surface."""
     last_signature = ""
     while not shutdown_requested:
         try:
             payload = _get_json("/context")
-            turn_count = int(payload.get("turn_count", 0))
-            turns = payload.get("turns", [])
-            last_prompt = ""
-            if turns:
-                last_prompt = str(turns[-1].get("prompt", "")).strip()
-            signature = f"{turn_count}:{last_prompt}"
+            rendered = _render_system_surface(payload)
+            signature = rendered
             if signature != last_signature:
-                print_ui_line(f"Turn count: {turn_count}")
-                if last_prompt:
-                    print_ui_line(f"Latest prompt: {last_prompt}")
+                clear_visible_screen()
+                print_ui_line(rendered)
                 last_signature = signature
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
             pass

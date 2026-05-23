@@ -22,6 +22,7 @@ func TestBuildDemoControllerArgs_IncludesControllerFlags(t *testing.T) {
 		"sess-1",
 		"e2e-002",
 		"agentx_tester_sess-1",
+		"127.0.0.1:34567",
 		"/proj/logs/demo/sess-1/stories_board.txt",
 	)
 
@@ -37,6 +38,9 @@ func TestBuildDemoControllerArgs_IncludesControllerFlags(t *testing.T) {
 	}
 	if !strings.Contains(joined, "--demo-core-session agentx_tester_sess-1") {
 		t.Fatalf("expected core session flag in args, got %q", joined)
+	}
+	if !strings.Contains(joined, "--health-addr 127.0.0.1:34567") {
+		t.Fatalf("expected health address flag in args, got %q", joined)
 	}
 	if !strings.Contains(joined, "--demo-stories-file /proj/logs/demo/sess-1/stories_board.txt") {
 		t.Fatalf("expected stories board path in args, got %q", joined)

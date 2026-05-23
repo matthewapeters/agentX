@@ -199,6 +199,21 @@ func TestContextManagerHealthHandler_RejectsNonGetMethods(t *testing.T) {
 	if submitResp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("expected /submit status 405 for GET, got %d", submitResp.StatusCode)
 	}
+
+	shutdownReq, err := http.NewRequest(http.MethodGet, server.URL+"/shutdown", nil)
+	if err != nil {
+		t.Fatalf("failed to build GET /shutdown request: %v", err)
+	}
+
+	shutdownResp, err := http.DefaultClient.Do(shutdownReq)
+	if err != nil {
+		t.Fatalf("failed to execute GET /shutdown request: %v", err)
+	}
+	defer shutdownResp.Body.Close()
+
+	if shutdownResp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected /shutdown status 405 for GET, got %d", shutdownResp.StatusCode)
+	}
 }
 
 // GIVEN a context manager submit provider
@@ -263,5 +278,44 @@ func TestContextManagerHealthHandler_SubmitValidatesRequest(t *testing.T) {
 	defer emptyPromptResp.Body.Close()
 	if emptyPromptResp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected empty prompt status 400, got %d", emptyPromptResp.StatusCode)
+	}
+}
+
+// GIVEN a context manager shutdown provider
+// WHEN /shutdown is called
+// THEN the endpoint acknowledges immediately and triggers asynchronous shutdown.
+func TestContextManagerHealthHandler_ShutdownAcknowledgesAndTriggersAsync(t *testing.T) {
+	cm := NewContextManager(t.TempDir())
+	shutdownCh := make(chan struct{}, 1)
+	cm.SetShutdownProvider(func(context.Context) error {
+		shutdownCh <- struct{}{}
+		return nil
+	})
+
+	server := httptest.NewServer(cm.HealthHandler())
+	defer server.Close()
+
+	resp, err := http.Post(server.URL+"/shutdown", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("failed to POST /shutdown: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected /shutdown status 200, got %d", resp.StatusCode)
+	}
+
+	var payload map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode /shutdown payload: %v", err)
+	}
+	if payload["status"] != "shutting_down" {
+		t.Fatalf("expected shutting_down status, got %q", payload["status"])
+	}
+
+	select {
+	case <-shutdownCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected shutdown provider to be triggered asynchronously")
 	}
 }

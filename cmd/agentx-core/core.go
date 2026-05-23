@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -59,10 +60,12 @@ type AgentXCore struct {
 	mu                        sync.RWMutex
 	startedAt                 time.Time
 	healthAddr                string // Address for health endpoint
+	healthListener            net.Listener
 	contextManager            *ContextManager
 	lifecycleEventCounter     int
 	startupLifecycleEmitted   bool
 	paneTargetByName          map[string]string
+	shutdownProvider          func()
 }
 
 type submitRequest struct {
@@ -152,7 +155,7 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 		chatBridgeResponseTimeout: resolveChatBridgeResponseTimeout(),
 		inputHistory:              make([]string, 0),
 		startedAt:                 time.Now(),
-		healthAddr:                "127.0.0.1:9876", // Default health endpoint
+		healthAddr:                "127.0.0.1:0",
 		paneTargetByName:          make(map[string]string),
 	}
 
@@ -160,11 +163,40 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 	core.contextManager.SetSessionMetadata(core.SessionID, core.startedAt)
 	core.contextManager.SetSnapshotProvider(core.healthSnapshot)
 	core.contextManager.SetSubmitProvider(func(ctx context.Context, prompt string) (string, error) {
-		response, _, err := core.HandleInputLine(ctx, prompt)
+		response, shouldExit, err := core.HandleInputLine(ctx, prompt)
+		if shouldExit {
+			go core.requestRuntimeShutdown()
+		}
 		return response, err
+	})
+	core.contextManager.SetShutdownProvider(func(context.Context) error {
+		core.requestRuntimeShutdown()
+		return nil
 	})
 
 	return core
+}
+
+func (ac *AgentXCore) SetShutdownProvider(provider func()) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	ac.shutdownProvider = provider
+}
+
+func (ac *AgentXCore) requestRuntimeShutdown() {
+	ac.mu.RLock()
+	provider := ac.shutdownProvider
+	ac.mu.RUnlock()
+	if provider != nil {
+		provider()
+	}
+	if err := ac.runTmux(context.Background(), "kill-session", "-t", ac.tmuxSessionName); err != nil && !isTmuxMissingSessionError(err) {
+		log.Printf("[AgentX Core] Runtime shutdown session kill failed: %v", err)
+	}
+}
+
+func (ac *AgentXCore) FocusInputPane(ctx context.Context) error {
+	return ac.runTmux(ctx, "select-pane", "-t", ac.paneTargetForName(PaneTitleInput))
 }
 
 // InitializeTmuxSession creates the tmux session and panes with the designed layout:
@@ -372,9 +404,12 @@ func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
 
 	for _, pane := range DefaultPaneLayout() {
 		launchCmd := fmt.Sprintf(
-			"AGENTX_APPLET_NAME=%s AGENTX_SESSION_ID=%s %s %s",
+			"AGENTX_APPLET_NAME=%s AGENTX_SESSION_ID=%s AGENTX_CORE_HTTP=%s AGENTX_PROJECT_DIR=%s AGENTX_USERNAME=%s %s %s",
 			shellSingleQuote(pane.Name),
 			shellSingleQuote(ac.SessionID),
+			shellSingleQuote("http://"+ac.healthAddr),
+			shellSingleQuote(ac.Config.ProjectDir),
+			shellSingleQuote(ac.Config.Username),
 			shellSingleQuote(ac.pythonExecutable),
 			shellSingleQuote(ac.chatAppletScript),
 		)
@@ -384,6 +419,23 @@ func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
 		}
 	}
 
+	return nil
+}
+
+func (ac *AgentXCore) PrepareHealthEndpoint() error {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+
+	if ac.healthListener != nil {
+		return nil
+	}
+
+	listener, err := net.Listen("tcp", ac.healthAddr)
+	if err != nil {
+		return err
+	}
+	ac.healthListener = listener
+	ac.healthAddr = listener.Addr().String()
 	return nil
 }
 
@@ -975,12 +1027,21 @@ func (ac *AgentXCore) healthSnapshot() HealthSnapshot {
 
 // StartHealthEndpoint starts the health/status HTTP endpoint.
 func (ac *AgentXCore) StartHealthEndpoint(ctx context.Context) error {
+	if err := ac.PrepareHealthEndpoint(); err != nil {
+		return err
+	}
+
+	ac.mu.RLock()
+	listener := ac.healthListener
+	addr := ac.healthAddr
+	ac.mu.RUnlock()
+
 	go func() {
-		if err := ac.contextManager.ServeHealth(ctx, ac.healthAddr); err != nil {
+		if err := ac.contextManager.ServeHealthListener(ctx, listener); err != nil {
 			log.Printf("[AgentX Core] Health endpoint error: %v", err)
 		}
 	}()
-	log.Printf("[AgentX Core] Health endpoint listening on %s", ac.healthAddr)
+	log.Printf("[AgentX Core] Health endpoint listening on %s", addr)
 	return nil
 }
 
@@ -1014,9 +1075,15 @@ func (ac *AgentXCore) Shutdown(ctx context.Context) error {
 	}
 
 	// Kill tmux session.
-	cmd := exec.CommandContext(ctx, "tmux", "kill-session", "-t", ac.tmuxSessionName)
+	tmuxKillCtx, tmuxKillCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer tmuxKillCancel()
+	cmd := exec.CommandContext(tmuxKillCtx, "tmux", "kill-session", "-t", ac.tmuxSessionName)
 	if err := cmd.Run(); err != nil {
 		log.Printf("[AgentX Core] Warning: failed to kill tmux session: %v", err)
+	}
+	if ac.healthListener != nil {
+		_ = ac.healthListener.Close()
+		ac.healthListener = nil
 	}
 
 	log.Printf("[AgentX Core] Shutdown complete")
@@ -1030,6 +1097,7 @@ type ContextManager struct {
 	startedAt        time.Time
 	snapshotProvider func() HealthSnapshot
 	submitProvider   func(context.Context, string) (string, error)
+	shutdownProvider func(context.Context) error
 	turns            []ChatTurn
 	turnsLoaded      bool
 	mu               sync.RWMutex
@@ -1159,6 +1227,13 @@ func (cm *ContextManager) SetSubmitProvider(provider func(context.Context, strin
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.submitProvider = provider
+}
+
+// SetShutdownProvider configures graceful shutdown for /shutdown endpoint.
+func (cm *ContextManager) SetShutdownProvider(provider func(context.Context) error) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.shutdownProvider = provider
 }
 
 func (cm *ContextManager) snapshot() HealthSnapshot {
@@ -1291,19 +1366,50 @@ func (cm *ContextManager) HealthHandler() http.Handler {
 		writeJSON(w, http.StatusOK, submitResponse{Response: response})
 	})
 
+	mux.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		cm.mu.RLock()
+		shutdownProvider := cm.shutdownProvider
+		cm.mu.RUnlock()
+		if shutdownProvider == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "shutdown unavailable"})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "shutting_down"})
+		go func() {
+			if err := shutdownProvider(context.Background()); err != nil {
+				log.Printf("[AgentX Core] Shutdown request failed: %v", err)
+			}
+		}()
+	})
+
 	return mux
 }
 
 // ServeHealth starts an HTTP health endpoint.
+
 func (cm *ContextManager) ServeHealth(ctx context.Context, addr string) error {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return cm.ServeHealthListener(ctx, listener)
+}
+
+func (cm *ContextManager) ServeHealthListener(ctx context.Context, listener net.Listener) error {
 	server := &http.Server{
-		Addr:    addr,
+		Addr:    listener.Addr().String(),
 		Handler: cm.HealthHandler(),
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		err := server.ListenAndServe()
+		err := server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 			return

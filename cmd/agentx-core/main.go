@@ -28,6 +28,7 @@ func main() {
 		demoStoriesFile = flag.String("demo-stories-file", "", "Stories board file path for split-view demo mode (internal)")
 		demoStart       = flag.String("demo-start", "", "Demo start selector (test id or 1-based index). Requires a demo mode flag")
 		demoCoreSession = flag.String("demo-core-session", "", "Live core tmux session used by the DemoMode controller (internal)")
+		healthAddr      = flag.String("health-addr", "", "Health endpoint address override for internal controller/runtime wiring")
 	)
 	flag.Parse()
 
@@ -61,8 +62,12 @@ func main() {
 		}
 
 		core := NewAgentXCore(cfg)
+		core.SetShutdownProvider(cancel)
 		if err := core.InitializeTmuxSession(ctx); err != nil {
 			log.Fatalf("Failed to initialize demo tmux session: %v", err)
+		}
+		if err := core.PrepareHealthEndpoint(); err != nil {
+			log.Fatalf("Failed to prepare demo health endpoint: %v", err)
 		}
 		fmt.Printf("[AgentX Demo] Live TUI session initialized: %s\n", core.tmuxSessionName)
 		fmt.Printf("[AgentX Demo] Attach in another terminal with: tmux attach -t %s\n", core.tmuxSessionName)
@@ -127,7 +132,7 @@ func main() {
 			Username:        *username,
 			SessionID:       *sessionID,
 			TmuxSessionName: *demoCoreSession,
-			HealthAddr:      "127.0.0.1:9876",
+			HealthAddr:      strings.TrimSpace(*healthAddr),
 			SplitView:       *demoSplit,
 			StoriesFilePath: strings.TrimSpace(*demoStoriesFile),
 		}
@@ -190,7 +195,7 @@ func main() {
 			SessionID:  *sessionID,
 		}
 
-		core, err := startAgentXCore(ctx, cfg, false)
+		core, err := startAgentXCore(ctx, cancel, cfg, false)
 		if err != nil {
 			log.Fatalf("Failed to start live demo core: %v", err)
 		}
@@ -224,7 +229,7 @@ func main() {
 		SessionID:  *sessionID,
 	}
 
-	core, err := startAgentXCore(ctx, cfg, *attach)
+	core, err := startAgentXCore(ctx, cancel, cfg, *attach)
 	if err != nil {
 		log.Fatalf("Failed to start AgentX core: %v", err)
 	}
@@ -238,18 +243,27 @@ func main() {
 	fmt.Println("[AgentX Core] ✓ Shutdown complete")
 }
 
-func startAgentXCore(ctx context.Context, cfg *Config, attach bool) (*AgentXCore, error) {
+func startAgentXCore(ctx context.Context, cancel context.CancelFunc, cfg *Config, attach bool) (*AgentXCore, error) {
 	core := NewAgentXCore(cfg)
+	core.SetShutdownProvider(cancel)
 
 	if err := core.InitializeTmuxSession(ctx); err != nil {
 		return nil, err
 	}
 	fmt.Println("[AgentX Core] ✓ tmux session initialized")
 
+	if err := core.PrepareHealthEndpoint(); err != nil {
+		return nil, err
+	}
+
 	if err := core.StartAppletSupervisor(ctx); err != nil {
 		return nil, err
 	}
 	fmt.Println("[AgentX Core] ✓ Applet supervisor started")
+
+	if err := core.FocusInputPane(ctx); err != nil {
+		return nil, err
+	}
 
 	if err := core.StartHealthEndpoint(ctx); err != nil {
 		return nil, err

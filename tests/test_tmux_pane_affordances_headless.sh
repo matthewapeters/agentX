@@ -76,7 +76,7 @@ for _ in $(seq 1 80); do
   if tmux capture-pane -t "$CHAT_TARGET" -p | grep -q "Agent: Echo: what is 2+2\?"; then
     CHAT_READY=1
   fi
-  if tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "Latest prompt: what is 2+2"; then
+  if tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "== CONTEXT ==" && tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "last_user: what is 2+2\?"; then
     CONTEXT_READY=1
   fi
   if [[ "$CHAT_READY" -eq 1 && "$CONTEXT_READY" -eq 1 ]]; then
@@ -99,14 +99,25 @@ if ! grep -q "Agent: Echo: what is 2+2?" <<< "$CHAT_CAPTURE"; then
   exit 1
 fi
 
-if ! grep -q "Turn count: 1" <<< "$CONTEXT_CAPTURE"; then
-  echo "FAIL: context pane missing turn count update"
+for required in "== FILES ==" "== CONFIGURATION ==" "== CONTEXT ==" "== CONTEXT HISTORY ==" "== CONTEXT VISUALIZER =="; do
+  if ! grep -Fq "$required" <<< "$CONTEXT_CAPTURE"; then
+    echo "FAIL: system pane missing required content: $required"
+    echo "--- system capture ---"
+    echo "$CONTEXT_CAPTURE"
+    exit 1
+  fi
+done
+
+if ! grep -Eq "last_user:\s*what is 2\+2\?" <<< "$CONTEXT_NORMALIZED"; then
+  echo "FAIL: system pane missing normalized last_user"
+  echo "--- system capture ---"
+  echo "$CONTEXT_CAPTURE"
   exit 1
 fi
 
-if ! grep -Eq "Latest prompt: what is 2.*\+2\?" <<< "$CONTEXT_NORMALIZED"; then
-  echo "FAIL: context pane missing latest prompt update"
-  echo "--- context capture ---"
+if ! grep -Fq "recent_prompt:" <<< "$CONTEXT_NORMALIZED" || ! grep -Eq "2\s*\+\s*2\?" <<< "$CONTEXT_NORMALIZED"; then
+  echo "FAIL: system pane missing normalized recent_prompt"
+  echo "--- system capture ---"
   echo "$CONTEXT_CAPTURE"
   exit 1
 fi

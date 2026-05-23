@@ -5,6 +5,45 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.84.0] - 2026-05-23
+
+### Code Changes
+
+#### Added
+
+- Added hybrid runtime shutdown endpoint plumbing (`/shutdown`) with core shutdown-provider wiring so runtime-initiated exit requests can terminate the full session.
+- Added pre-bound dynamic health-listener allocation and applet endpoint propagation (`AGENTX_CORE_HTTP`) to avoid fixed-port collisions across parallel/runtime-residual sessions.
+- Added attached-runtime E2E harness `tests/test_tmux_attached_runtime_headless.sh` and Makefile target `test-tmux-attached-runtime-headless`.
+- Added deterministic system-pane rendering slice in `applets/template.py` with five GUI-mapped sections:
+  - `FILES`
+  - `CONFIGURATION`
+  - `CONTEXT`
+  - `CONTEXT HISTORY`
+  - `CONTEXT VISUALIZER`
+
+#### Changed
+
+- Updated core applet launch environment wiring to include project/session context (`AGENTX_PROJECT_DIR`, `AGENTX_USERNAME`) for system-pane data sourcing.
+- Updated demo split controller argument plumbing to pass explicit health address (`--health-addr`) from live core session.
+- Updated startup flow to prepare the health listener before applet launch and then focus input pane deterministically.
+
+#### Fixed
+
+- Fixed health endpoint contract so `/shutdown` acknowledges first and performs shutdown asynchronously, preventing client-side hangs during self-termination.
+
+### Test Changes
+
+#### Added
+
+- Added shutdown endpoint tests in `cmd/agentx-core/core_health_endpoint_test.go` covering:
+  - method guard behavior for `/shutdown`
+  - async shutdown-provider trigger contract
+
+#### Changed
+
+- Updated `tests/test_tmux_pane_affordances_headless.sh` to validate the new five-section system-pane contract while tolerating tmux hard-wrap behavior in captured text.
+- Updated `cmd/agentx-core/demo_split_mode_test.go` for new demo-controller health-address argument expectations.
+
 ## [0.83.1] - 2026-05-23
 
 ### Code Changes
