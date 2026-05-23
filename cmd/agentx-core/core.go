@@ -34,6 +34,13 @@ const (
 	AppletStatusRunning  AppletLifecycleStatus = "running"
 	AppletStatusStopped  AppletLifecycleStatus = "stopped"
 	AppletStatusCrashed  AppletLifecycleStatus = "crashed"
+
+	lifecycleStageStartupGreeting = "startup_greeting"
+	lifecycleStageSubmitted       = "submitted"
+	lifecycleStageClassified      = "classified"
+	lifecycleStageThinking        = "thinking"
+	lifecycleStageTool            = "tool"
+	lifecycleStageFinalResponse   = "final_response"
 )
 
 // AgentXCore orchestrates the tmux session, applets, and IPC.
@@ -53,6 +60,8 @@ type AgentXCore struct {
 	startedAt                 time.Time
 	healthAddr                string // Address for health endpoint
 	contextManager            *ContextManager
+	lifecycleEventCounter     int
+	startupLifecycleEmitted   bool
 }
 
 type submitRequest struct {
@@ -276,8 +285,68 @@ func (ac *AgentXCore) StartAppletSupervisor(ctx context.Context) error {
 	ac.mu.RLock()
 	trackedApplets := len(ac.applets)
 	ac.mu.RUnlock()
+
+	ac.emitStartupGreetingLifecycleEvent(ctx)
 	log.Printf("[AgentX Core] Applet supervisor ready (%d tracked applets)", trackedApplets)
 	return nil
+}
+
+func promptLifecycleStages() []string {
+	return []string{
+		lifecycleStageSubmitted,
+		lifecycleStageClassified,
+		lifecycleStageThinking,
+		lifecycleStageTool,
+		lifecycleStageFinalResponse,
+	}
+}
+
+func lifecycleEventDetails(stage string, prompt string, response string) string {
+	switch stage {
+	case lifecycleStageSubmitted, lifecycleStageClassified, lifecycleStageThinking:
+		return fmt.Sprintf("prompt_chars=%d", len(strings.TrimSpace(prompt)))
+	case lifecycleStageTool:
+		return "tool_activity=none"
+	case lifecycleStageFinalResponse:
+		return fmt.Sprintf("response_chars=%d", len(strings.TrimSpace(response)))
+	default:
+		return ""
+	}
+}
+
+func (ac *AgentXCore) emitStartupGreetingLifecycleEvent(ctx context.Context) {
+	ac.mu.Lock()
+	if ac.startupLifecycleEmitted {
+		ac.mu.Unlock()
+		return
+	}
+	ac.startupLifecycleEmitted = true
+	ac.mu.Unlock()
+
+	ac.emitLifecycleEvent(ctx, lifecycleStageStartupGreeting, "hook=runtime_ready")
+}
+
+func (ac *AgentXCore) emitLifecycleEvent(ctx context.Context, stage string, details string) {
+	trimmedStage := strings.TrimSpace(stage)
+	if trimmedStage == "" {
+		return
+	}
+
+	ac.mu.Lock()
+	ac.lifecycleEventCounter++
+	seq := ac.lifecycleEventCounter
+	ac.mu.Unlock()
+
+	message := fmt.Sprintf("[lifecycle] seq=%d stage=%s", seq, trimmedStage)
+	trimmedDetails := strings.TrimSpace(details)
+	if trimmedDetails != "" {
+		message += " details=" + trimmedDetails
+	}
+
+	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote(message))
+	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName("logs"), renderCmd, "Enter"); err != nil {
+		log.Printf("[AgentX Core] Lifecycle log render failed: %v", err)
+	}
 }
 
 func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
@@ -668,6 +737,10 @@ func (ac *AgentXCore) RouteInputPrompt(ctx context.Context, prompt string) (stri
 		handler = defaultPromptHandler(chatApplet.Name)
 	}
 
+	for _, stage := range promptLifecycleStages()[:3] {
+		ac.emitLifecycleEvent(ctx, stage, lifecycleEventDetails(stage, trimmedPrompt, ""))
+	}
+
 	ac.markAppletStatus(chatApplet.Name, AppletStatusRunning, nil)
 	response, err := handler(ctx, trimmedPrompt)
 	if err != nil {
@@ -682,11 +755,15 @@ func (ac *AgentXCore) RouteInputPrompt(ctx context.Context, prompt string) (stri
 		return "", err
 	}
 
+	ac.emitLifecycleEvent(ctx, lifecycleStageTool, lifecycleEventDetails(lifecycleStageTool, trimmedPrompt, response))
+
 	if err := ac.contextManager.RecordTurn(trimmedPrompt, response); err != nil {
 		ac.markAppletStatus(chatApplet.Name, AppletStatusCrashed, err)
 		log.Printf("[AgentX Core] Prompt persistence failed: %v", err)
 		return "", err
 	}
+
+	ac.emitLifecycleEvent(ctx, lifecycleStageFinalResponse, lifecycleEventDetails(lifecycleStageFinalResponse, trimmedPrompt, response))
 
 	turnCount := len(ac.ContextTurnsSnapshot())
 	if err := ac.renderContextTurnSummary(ctx, turnCount, trimmedPrompt, response); err != nil {

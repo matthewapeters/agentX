@@ -5,6 +5,38 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.83.0] - 2026-05-23
+
+### Code Changes
+
+#### Added
+
+- Added deterministic hybrid lifecycle observability hooks in the Go core runtime for:
+  - `startup_greeting`
+  - `submitted`
+  - `classified`
+  - `thinking`
+  - `tool`
+  - `final_response`
+- Added lifecycle event sequencing and details rendering to the logs pane for contract verification during demo/runtime execution.
+- Added lifecycle observability tests in `cmd/agentx-core/core_lifecycle_observability_test.go` covering:
+  - one-shot startup lifecycle emission
+  - deterministic prompt lifecycle ordering
+
+### Test Changes
+
+#### Added
+
+- Added unit/integration coverage for lifecycle observability ordering contract in Go core test suite.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/hybrid_ux_parity_execution_plan.md`:
+  - marked W0.2 complete
+  - added W0.2 evidence and session log entry
+
 ## [0.82.1] - 2026-05-23
 
 ### Code Changes

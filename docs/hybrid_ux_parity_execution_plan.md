@@ -1,6 +1,6 @@
 # Hybrid UX Parity Execution Plan
 
-_Last updated: 2026-05-22 (v0.81.4.post1)_
+_Last updated: 2026-05-23 (v0.83.0)_
 
 ## Purpose
 
@@ -48,10 +48,13 @@ At the end of every session:
     - Traceability matrix rows added: `PD-17-AF-011`, `PD-17-AF-012`, `PD-17-AF-013` in `docs/ux/UX_LIFECYCLE.md`.
     - Placeholder stories added in `cmd/agentx-core/demo_harness.go`: `e2e-greet-001`, `e2e-cycle-001`, `e2e-system-001`.
 
-- [ ] W0.2 Add observability hooks for lifecycle events (startup greeting, classify, thinking, tool, final response).
+- [/] W0.2 Add observability hooks for lifecycle events (startup greeting, classify, thinking, tool, final response). ✓ completed 2026-05-23
   - Complete when:
     - Events are emitted in deterministic order in logs.
     - Unit tests verify event ordering contract.
+  - Evidence:
+    - Lifecycle hooks added in `cmd/agentx-core/core.go` for `startup_greeting`, `submitted`, `classified`, `thinking`, `tool`, and `final_response` stages.
+    - Deterministic ordering contract validated in `cmd/agentx-core/core_lifecycle_observability_test.go`.
 
 ## Wave 1 - Flow A: Startup Greeting Parity
 
@@ -164,4 +167,22 @@ Use this lightweight template after each session:
   - Story execution marked as placeholder-only baseline (full pass criteria deferred to A4/B4/C5)
 - Status updates applied:
   - W0.1 set to `[/]`
+- Commit hash:
+
+### Session 2026-05-23 (W0.2)
+
+- Date: 2026-05-23
+- Agent/session: Copilot (hybrid parity continuation)
+- Step(s) touched: W0.2
+- Commands run:
+  - `cd cmd/agentx-core && gofmt -w core.go core_lifecycle_observability_test.go`
+  - `cd cmd/agentx-core && go test ./...`
+  - `cd /Projects/agentX && make demo-smoke`
+- Test results:
+  - Go test suite: pass
+  - Demo smoke: pass
+- Demo story results:
+  - Demo harness run remained stable after lifecycle hook insertion.
+- Status updates applied:
+  - W0.2 set to `[/]`
 - Commit hash:
