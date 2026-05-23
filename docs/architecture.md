@@ -1,8 +1,41 @@
 # AgentX — Architecture Reference
 
-Version: 2026-04-27  
+
+_Last updated: 2026-05-16 (v0.39.4)_
+Version: 2026-05-16  
 Branch: main  
-Project version: 0.19.2
+Project version: 0.84.1
+
+---
+
+
+## Tab/Surface Parity Matrix (Architecture Anchor)
+
+See [docs/hybrid_ux_parity_execution_plan.md](hybrid_ux_parity_execution_plan.md) and [docs/ux/UX_LIFECYCLE.md](ux/UX_LIFECYCLE.md) for full matrix and next steps.
+
+## Channel Registry (Authoritative)
+
+See [docs/architecture/channel_registry.md](architecture/channel_registry.md) for the authoritative channel registry: channel names, schemas, pub/sub wiring, and policy. All changes to event channels must be reflected there.
+
+| GUI Tab / Surface         | TUI Analog / Surface      | Owner (Go/Py) | Status   |
+|--------------------------|---------------------------|---------------|----------|
+| Chat (Output)            | Output Pane (chat)        | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
+| Tool Processing (Output) | Output Pane (tool)        | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
+| File Edit (Output)       | Output Pane (file edit)   | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
+| Context Visualization    | System Pane (context viz) | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
+| Files Navigation         | System Pane (files)       | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
+| Context History/Current  | System Pane (context hist)| Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
+| Configuration            | System Pane (config)      | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
+
+**Blockers:** All output/system tabs still Py-owned. No Go-driven agentic orchestration. No TUI analogs for tab navigation. All must migrate to Go for true parity. All unmapped = blocker.
+
+**Next Steps:**
+
+- Ratify matrix in plan/UX_LIFECYCLE
+- Define TUI analogs, Go owner in code/spec
+- Implement Go-driven output/system panel logic
+- Author channel registry, runtime split docs
+- Update all tests for Go path
 
 ---
 

@@ -6,6 +6,38 @@ _Last updated: 2026-05-23 (v0.83.0)_
 
 Track and execute UX parity work between established UX flows and the hybrid architecture in a way that is reliable across multiple agent sessions.
 
+## Tab/Surface Parity Matrix (Source of Truth)
+
+| GUI Tab / Surface         | TUI Analog / Surface      | Owner (Go/Py) | Test / Contract                        | Status   |
+|--------------------------|---------------------------|---------------|----------------------------------------|----------|
+| Chat (Output)            | Output Pane (chat)        | Py (now), Go (target) | test_chat_panel_turn_rendering.py      | ⚠️ Py-owned, Go TODO |
+| Tool Processing (Output) | Output Pane (tool)        | Py (now), Go (target) | test_chat_panel_turn_rendering.py      | ⚠️ Py-owned, Go TODO |
+| File Edit (Output)       | Output Pane (file edit)   | Py (now), Go (target) | test_chat_panel_turn_rendering.py      | ⚠️ Py-owned, Go TODO |
+| Context Visualization    | System Pane (context viz) | Py (now), Go (target) | test_status_tab.py, test_context_meter_widget.py | ⚠️ Py-owned, Go TODO |
+| Files Navigation         | System Pane (files)       | Py (now), Go (target) | test_file_explorer_coverage.py         | ⚠️ Py-owned, Go TODO |
+| Context History/Current  | System Pane (context hist)| Py (now), Go (target) | test_phase6_context_panel.py           | ⚠️ Py-owned, Go TODO |
+| Configuration            | System Pane (config)      | Py (now), Go (target) | test_settings_tab_sections.py           | ⚠️ Py-owned, Go TODO |
+
+**Blockers:** All output/system tabs still Py-owned. No Go-driven agentic orchestration. No TUI analogs for tab navigation. All must migrate to Go for true parity. All unmapped = blocker.
+
+**Links:**
+
+- [docs/ux/UX_LIFECYCLE.md](docs/ux/UX_LIFECYCLE.md) — traceability, affordance IDs, test mapping
+- [docs/architecture.md](docs/architecture.md) — module map, runtime split, channel registry (to add)
+
+## Next Steps Checklist (until 100% parity)
+
+1. [ ] Ratify and commit this matrix in plan and UX_LIFECYCLE.
+2. [ ] For each tab/surface, define TUI analog and Go owner in code/spec.
+3. [ ] Implement Go-driven output loop (input/classify/think/tool/respond) for all output tabs.
+4. [ ] Implement Go-driven system panel routing and data providers for all system tabs.
+5. [/] Author channel registry doc: channel name, schema, pub/sub, policy, code link. ✓ See [docs/architecture/channel_registry.md](docs/architecture/channel_registry.md)
+6. [ ] Author runtime split doc: Python applet vs Go routine, migration phases, thin-GUI contract.
+7. [ ] Update all tests to cover Go-driven path; mark blockers in UX_LIFECYCLE.
+8. [ ] No parity claim until all blockers resolved and all tests pass.
+
+---
+
 This plan is execution-first:
 
 - each step has an explicit status marker
