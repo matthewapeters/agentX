@@ -5,6 +5,20 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.81.3] - 2026-05-22
+
+### Code Changes
+
+#### Fixed
+
+- Updated split DemoMode pre-attach focus behavior so the live-core chat pane is focused in the mirrored right session, reducing right-side input cursor dominance and preserving left/bottom controller as the operator interaction focus.
+
+### Test Changes
+
+#### Changed
+
+- Updated split-mode tests to assert live-core chat pre-focus before nested attach.
+
 ## [0.81.2] - 2026-05-22
 
 ### Code Changes

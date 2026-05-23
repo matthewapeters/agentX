@@ -184,8 +184,8 @@ func prepareCoreSessionForSplitView(ctx context.Context, coreSessionName string)
 		return err
 	}
 
-	// Make the input pane the active pane before nested attach so the prompt is visible on entry.
-	if err := runTmux(ctx, "select-pane", "-t", inputTarget); err != nil {
+	// Keep live-core input visible but avoid right-pane cursor dominance by focusing chat before nested attach.
+	if err := runTmux(ctx, "select-pane", "-t", windowTarget+".0"); err != nil {
 		return err
 	}
 

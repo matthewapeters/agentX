@@ -183,8 +183,8 @@ func TestRunDemoSplitMode_UsesVerticalControllerAndLiveCorePanes(t *testing.T) {
 	if !strings.Contains(commands, "select-layout -t agentx_tester_sess-split:0 tiled") {
 		t.Fatalf("expected core tiled layout normalization before nested attach, commands:\n%s", commands)
 	}
-	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split:0.2") {
-		t.Fatalf("expected input pane focus before nested attach so prompt is visible, commands:\n%s", commands)
+	if !strings.Contains(commands, "select-pane -t agentx_tester_sess-split:0.0") {
+		t.Fatalf("expected chat pane focus before nested attach so right-side cursor does not dominate, commands:\n%s", commands)
 	}
 	if !strings.Contains(commands, "split-window -h -p 45 -t agentx_tester_sess-split_demo:0 bash -lc") {
 		t.Fatalf("expected weighted vertical split with live core attach command, commands:\n%s", commands)
