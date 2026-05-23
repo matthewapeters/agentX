@@ -17,7 +17,7 @@ These scripts validate tmux UX contracts programmatically:
 - Primary window `0:tui-chat` is active after logs window creation
 - Logs window exists as `1:logs` and remains inactive
 
-4. Assert the layout matches the UX spec:
+1. Assert the layout matches the UX spec:
    - Active window: `0:tui-chat`
 
 - Top left: output
@@ -26,7 +26,7 @@ These scripts validate tmux UX contracts programmatically:
 - Pane order in primary window: index 0=output, 1=system, 2=input
 - Hidden/logs window present as `1:logs`
 
-5. Report pass/fail with details for CI or developer review.
+1. Report pass/fail with details for CI or developer review.
 
 ## Pane Affordance Contract
 
