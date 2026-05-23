@@ -5,6 +5,22 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.81.4.post1] - 2026-05-22
+
+### Code Changes
+
+#### Changed
+
+- Added a new multi-session execution plan document for hybrid UX parity work:
+  - `docs/hybrid_ux_parity_execution_plan.md`
+- Plan includes explicit status markers per step (`[ ]`, `[/]`, `[X]`), demo-pass completion criteria, and a required session handoff protocol for reliable cross-session execution.
+
+### Test Changes
+
+#### Changed
+
+- No code/test logic changes in this release; documentation-only planning update.
+
 ## [0.81.4] - 2026-05-22
 
 ### Code Changes
