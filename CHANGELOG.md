@@ -1,17 +1,30 @@
+## [0.84.1] - 2026-05-16 (continued)
+
+### Documentation Changes
+
+#### Added
+- Authored authoritative runtime split doc: `docs/architecture/runtime_split.md` (Go core vs Python applet, IPC contract, migration phases, thin-GUI contract).
+
+#### Changed
+- Updated `docs/architecture.md`, `docs/ux/UX_LIFECYCLE.md`, and `docs/hybrid_ux_parity_execution_plan.md` to trace and mark runtime split doc as completed.
 ## [0.84.1] - 2026-05-16
 
 ### Documentation Changes
 
 #### Added
+
 - Authored authoritative channel registry: `docs/architecture/channel_registry.md` (channel names, schemas, pub/sub wiring, policy, code links).
 - Added channel registry to architecture index and traceability matrix.
 
 #### Changed
+
 - Updated `docs/ux/UX_LIFECYCLE.md` and `docs/hybrid_ux_parity_execution_plan.md` next steps to mark channel registry doc as completed and traceable.
 - Updated `docs/architecture.md` revision stamp and index for channel registry doc.
 
 ### Version
+
 - Bumped project version to 0.84.1 (minor, non-breaking feature addition).
+
 # Changelog
 
 All notable changes to AgentX are documented in this file.

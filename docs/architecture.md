@@ -1,13 +1,11 @@
 # AgentX — Architecture Reference
 
-
-_Last updated: 2026-05-16 (v0.39.4)_
+_Last updated: 2026-05-16 (v0.84.1)_
 Version: 2026-05-16  
 Branch: main  
 Project version: 0.84.1
 
 ---
-
 
 ## Tab/Surface Parity Matrix (Architecture Anchor)
 
@@ -16,6 +14,10 @@ See [docs/hybrid_ux_parity_execution_plan.md](hybrid_ux_parity_execution_plan.md
 ## Channel Registry (Authoritative)
 
 See [docs/architecture/channel_registry.md](architecture/channel_registry.md) for the authoritative channel registry: channel names, schemas, pub/sub wiring, and policy. All changes to event channels must be reflected there.
+
+## Runtime Split (Go Core vs Python Applet)
+
+See [docs/architecture/runtime_split.md](architecture/runtime_split.md) for the authoritative runtime split and migration plan: Go core vs Python applet, IPC contract, migration phases, and thin-GUI contract. All parity and migration claims must reference this doc.
 
 | GUI Tab / Surface         | TUI Analog / Surface      | Owner (Go/Py) | Status   |
 |--------------------------|---------------------------|---------------|----------|
@@ -57,7 +59,8 @@ See [docs/architecture/channel_registry.md](architecture/channel_registry.md) fo
 14. [Threading Model](#14-threading-model)
 15. [Persistence Layout](#15-persistence-layout)
 16. [Configuration Reference](#16-configuration-reference)
-17. [Retrieval Keywords](#17-retrieval-keywords)
+
+18. [Runtime Split (Go Core vs Python Applet)](architecture/runtime_split.md)
 
 ---
 

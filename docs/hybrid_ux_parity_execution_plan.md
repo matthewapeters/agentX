@@ -32,7 +32,7 @@ Track and execute UX parity work between established UX flows and the hybrid arc
 3. [ ] Implement Go-driven output loop (input/classify/think/tool/respond) for all output tabs.
 4. [ ] Implement Go-driven system panel routing and data providers for all system tabs.
 5. [/] Author channel registry doc: channel name, schema, pub/sub, policy, code link. ✓ See [docs/architecture/channel_registry.md](docs/architecture/channel_registry.md)
-6. [ ] Author runtime split doc: Python applet vs Go routine, migration phases, thin-GUI contract.
+6. [/] Author runtime split doc: Python applet vs Go routine, migration phases, thin-GUI contract. ✓ See [docs/architecture/runtime_split.md](docs/architecture/runtime_split.md)
 7. [ ] Update all tests to cover Go-driven path; mark blockers in UX_LIFECYCLE.
 8. [ ] No parity claim until all blockers resolved and all tests pass.
 
