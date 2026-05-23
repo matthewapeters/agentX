@@ -5,6 +5,42 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.82.0] - 2026-05-22
+
+### Code Changes
+
+#### Added
+
+- Added hybrid UX parity placeholder demo stories to the DemoMode sequence:
+  - `e2e-greet-001` (startup greeting parity baseline)
+  - `e2e-cycle-001` (prompt lifecycle parity baseline)
+  - `e2e-system-001` (system panel parity baseline)
+
+#### Changed
+
+- Updated readiness-path demo harness test to target the new final placeholder story ID.
+- Established W0.1 parity acceptance criteria in UX docs and traceability matrix:
+  - Flow A startup greeting parity
+  - Flow B full lifecycle parity
+  - Flow C system panel parity
+
+### Test Changes
+
+#### Changed
+
+- Updated `demo_harness_test.go` expectations for extended demo sequence ending in `e2e-system-001`.
+
+### Documentation Changes
+
+#### Added
+
+- Marked W0.1 complete with session evidence in `docs/hybrid_ux_parity_execution_plan.md`.
+
+#### Changed
+
+- Added `PD-17-AF-011..013` traceability rows as spec-baseline affordances (`📝`) in `docs/ux/UX_LIFECYCLE.md`.
+- Updated `docs/ux/00_INDEX.md` status snapshot totals for new spec-only parity affordances.
+
 ## [0.81.4.post1] - 2026-05-22
 
 ### Code Changes

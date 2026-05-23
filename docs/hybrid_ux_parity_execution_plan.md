@@ -39,10 +39,14 @@ At the end of every session:
 
 ## Wave 0 - Baseline and Instrumentation
 
-- [ ] W0.1 Define parity acceptance criteria for Flow A/B/C in docs and traceability matrix.
+- [/] W0.1 Define parity acceptance criteria for Flow A/B/C in docs and traceability matrix. ✓ completed 2026-05-22
   - Complete when:
     - Acceptance criteria are documented and mapped to affordance IDs.
     - Demo harness has placeholder stories for each flow.
+  - Evidence:
+    - Acceptance criteria documented in `docs/ux/07_DEMO_MODE.md` under "Hybrid UX Parity Criteria (W0.1 Baseline)".
+    - Traceability matrix rows added: `PD-17-AF-011`, `PD-17-AF-012`, `PD-17-AF-013` in `docs/ux/UX_LIFECYCLE.md`.
+    - Placeholder stories added in `cmd/agentx-core/demo_harness.go`: `e2e-greet-001`, `e2e-cycle-001`, `e2e-system-001`.
 
 - [ ] W0.2 Add observability hooks for lifecycle events (startup greeting, classify, thinking, tool, final response).
   - Complete when:
@@ -142,4 +146,22 @@ Use this lightweight template after each session:
 - Test results:
 - Demo story results:
 - Status updates applied:
+- Commit hash:
+
+### Session 2026-05-22 (W0.1)
+
+- Date: 2026-05-22
+- Agent/session: Copilot (hybrid parity continuation)
+- Step(s) touched: W0.1
+- Commands run:
+  - `cd cmd/agentx-core && gofmt -w demo_harness.go demo_harness_test.go && go test ./...`
+  - `cd /Projects/agentX && make demo-smoke`
+- Test results:
+  - Go test suite: pass
+  - Demo smoke: pass
+- Demo story results:
+  - Placeholder stories added to sequence (`e2e-greet-001`, `e2e-cycle-001`, `e2e-system-001`)
+  - Story execution marked as placeholder-only baseline (full pass criteria deferred to A4/B4/C5)
+- Status updates applied:
+  - W0.1 set to `[/]`
 - Commit hash:

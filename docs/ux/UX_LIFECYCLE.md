@@ -1,6 +1,6 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-22 (v0.81.0)_
+_Last updated: 2026-05-22 (v0.82.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -402,8 +402,11 @@ implements it and the test that validates it.  Status legend:
 | `X` triggers pane/metadata dump artifact bundle | PD-17-AF-006 | `defaultDemoDiagnosticsCollector()` tmux capture + metadata/log persistence | `demo_harness_test.go` | package-level tests | ✅ |
 | Inline `X <feedback>` persisted to artifact bundle (`metadata.json`, `demo_feedback.txt`) | PD-17-AF-007 | `defaultDemoDiagnosticsCollector()` feedback persistence | `demo_harness_test.go` | package-level tests | ✅ |
 | End-of-run readiness and artifact summary output | PD-17-AF-008 | `renderDemoSummary()` readiness and artifact-path line | `demo_harness_test.go` | package-level tests | ✅ |
-| Story-browser displays inline per-test status markers (`[S]`, `[/]`, `[P]`, `[X]`) | PD-17-AF-009 | `renderDemoStoriesBoard()` status board renderer | `demo_harness_test.go` | package-level tests | ✅ |
+| Story-browser displays inline per-test status markers (`[ ]`, `[/]`, `[P]`, `[X]`) | PD-17-AF-009 | `renderDemoStoriesBoard()` status board renderer | `demo_harness_test.go` | package-level tests | ✅ |
 | Split controller pane refreshes/clears between decisions to preserve readability | PD-17-AF-010 | `clearControllerPane()` and split-view `runDemoModeWithOptions()` flow | `demo_harness_test.go` | package-level tests | ✅ |
+| Startup greeting parity criteria and placeholder demo story are defined | PD-17-AF-011 | `defaultDemoSequence()` (`e2e-greet-001`) + `07_DEMO_MODE.md` Flow A contract | `demo_harness_test.go` | package-level tests | 📝 |
+| Prompt lifecycle parity criteria and placeholder demo story are defined | PD-17-AF-012 | `defaultDemoSequence()` (`e2e-cycle-001`) + `07_DEMO_MODE.md` Flow B contract | `demo_harness_test.go` | package-level tests | 📝 |
+| System panel parity criteria and placeholder demo story are defined | PD-17-AF-013 | `defaultDemoSequence()` (`e2e-system-001`) + `07_DEMO_MODE.md` Flow C contract | `demo_harness_test.go` | package-level tests | 📝 |
 
 Planned follow-up for PD-16 default-behavior migration is documented in
 `docs/ux/06_TUI_MIRROR.md` §12 (TUI-first default with `--gui` opt-in).

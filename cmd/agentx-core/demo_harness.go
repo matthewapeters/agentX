@@ -141,6 +141,36 @@ func defaultDemoSequence() []DemoTestCase {
 			When:           "the next test view is rendered",
 			Then:           "the controller pane is refreshed without muddled prior prompts",
 		},
+		{
+			ID:             "e2e-greet-001",
+			Title:          "Startup greeting prompt parity",
+			Prompt:         "verify startup greeting parity placeholder",
+			ApproxDuration: "~15s",
+			Tags:           []string{"e2e", "parity", "startup"},
+			Given:          "the hybrid runtime has just started",
+			When:           "the startup bootstrap path is evaluated",
+			Then:           "the default assistant greeting is visible without a user prompt",
+		},
+		{
+			ID:             "e2e-cycle-001",
+			Title:          "Prompt lifecycle parity",
+			Prompt:         "verify lifecycle phase parity placeholder",
+			ApproxDuration: "~20s",
+			Tags:           []string{"e2e", "parity", "lifecycle"},
+			Given:          "a user submits a representative prompt",
+			When:           "the prompt is processed by the hybrid pipeline",
+			Then:           "classification, thinking, tool activity, and final response are all visible in order",
+		},
+		{
+			ID:             "e2e-system-001",
+			Title:          "System panel tab parity tour",
+			Prompt:         "verify system panel parity placeholder",
+			ApproxDuration: "~25s",
+			Tags:           []string{"e2e", "parity", "system-panel"},
+			Given:          "the hybrid system view is open",
+			When:           "the operator navigates files, configuration, context, context history, and context visualizer tabs",
+			Then:           "all system tabs render expected content and state transitions",
+		},
 	}
 }
 

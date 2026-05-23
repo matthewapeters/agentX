@@ -1,6 +1,6 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-22 (v0.81.2)_
+_Last updated: 2026-05-22 (v0.82.0)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
@@ -157,8 +157,43 @@ At sequence end (or stop on `X`), demo mode must print:
 - `PD-17-AF-006` — `X` triggers full pane-dump diagnostics to log artifacts
 - `PD-17-AF-007` — inline `X <feedback>` is persisted into diagnostics artifacts
 - `PD-17-AF-008` — end-of-run summary and readiness result is displayed
-- `PD-17-AF-009` — story-browser shows inline per-test status markers (`[S]`, `[/]`, `[P]`, `[X]`)
+- `PD-17-AF-009` — story-browser shows inline per-test status markers (`[ ]`, `[/]`, `[P]`, `[X]`)
 - `PD-17-AF-010` — controller pane refreshes/clears between decisions to prevent muddled prompt history
+- `PD-17-AF-011` — startup greeting parity criteria and demo story (`e2e-greet-001`) are defined
+- `PD-17-AF-012` — full prompt lifecycle parity criteria and demo story (`e2e-cycle-001`) are defined
+- `PD-17-AF-013` — system panel parity criteria and demo story (`e2e-system-001`) are defined
+
+## Hybrid UX Parity Criteria (W0.1 Baseline)
+
+The following acceptance criteria define parity targets for the hybrid architecture and are represented by placeholder demo stories.
+
+### Flow A - Startup Greeting Parity (`PD-17-AF-011`)
+
+- At startup, the default assistant greeting is visible without requiring a manual user prompt.
+- Greeting appears once per session start and is persisted in session context.
+- Demo coverage placeholder: `e2e-greet-001`.
+
+### Flow B - Prompt Lifecycle Parity (`PD-17-AF-012`)
+
+- A representative prompt must visibly traverse all lifecycle stages:
+   - submitted
+   - classified
+   - thinking
+   - tool activity (when applicable)
+   - final response
+- Lifecycle ordering must be deterministic for test assertions.
+- Demo coverage placeholder: `e2e-cycle-001`.
+
+### Flow C - System Panel Parity (`PD-17-AF-013`)
+
+- Hybrid runtime must provide functional parity for system tabs:
+   - files
+   - configuration
+   - context
+   - context history
+   - context visualizer
+- Tab navigation and state rendering must be deterministic and testable.
+- Demo coverage placeholder: `e2e-system-001`.
 
 ---
 

@@ -263,7 +263,7 @@ func TestRunDemoMode_AllAcceptedShowsReadyForUAT(t *testing.T) {
 	var output bytes.Buffer
 	input := strings.NewReader("N\n")
 
-	err := runDemoMode(input, &output, "e2e-006", nil)
+	err := runDemoMode(input, &output, "e2e-system-001", nil)
 	if err != nil {
 		t.Fatalf("expected demo mode to succeed, got %v", err)
 	}
@@ -281,7 +281,7 @@ func TestRunDemoMode_AllAcceptedShowsReadyForUAT(t *testing.T) {
 	if !strings.Contains(content, "[AgentX Demo]   - e2e-002: SKIP") {
 		t.Fatalf("expected skipped status for pre-start tests, got:\n%s", content)
 	}
-	if !strings.Contains(content, "[AgentX Demo]   - e2e-006: PASS") {
+	if !strings.Contains(content, "[AgentX Demo]   - e2e-system-001: PASS") {
 		t.Fatalf("expected pass status for accepted final test, got:\n%s", content)
 	}
 }
