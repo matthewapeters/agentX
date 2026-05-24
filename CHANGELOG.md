@@ -1,8 +1,35 @@
-## [0.85.0] - 2026-05-16
+
+## [1.0.0] - 2026-05-24
 
 ### Code Changes
 
 #### Changed
+
+- All output/system panel logic, context visualization, and deterministic formatting are now fully Go core-owned. Python applet is a pure thin renderer.
+- All output/system panels are Go-driven, with deterministic rendering and agentic orchestration.
+- All blockers for Go-driven UX parity are resolved.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/ux/UX_LIFECYCLE.md` to mark all output/system panels as Go-owned and tested, and checklist as complete.
+- Updated `docs/architecture.md` and all architectural diagrams to reflect Go-driven ownership and parity.
+
+### Test Changes
+
+#### Changed
+
+- All tests updated and pass for Go-driven output/system panels. No regressions or coverage gaps remain for migrated surfaces.
+
+### Version
+
+- Bumped project version to 1.0.0 (major milestone: 100% Go-driven output/system panel migration, all blockers resolved, all tests pass, full UX parity achieved).
+
+### Code Changes
+
+#### Changed
+
 - Refactored `applets/template.py` to act as a thin renderer: all output/system panel logic, context visualization, and deterministic formatting removed from Python applet layer.
 - Output/system panel logic, context visualization, and deterministic formatting are now owned by the Go core (see runtime split doc).
 - Python applet now receives rendering instructions/data from Go core via IPC and prints them directly.
@@ -10,16 +37,20 @@
 ### Documentation Changes
 
 #### Changed
+
 - Updated `docs/architecture.md` and `docs/architecture/runtime_split.md` revision stamps and project version to v0.85.0 to reflect the thin-renderer migration.
 - Updated `docs/ux/UX_LIFECYCLE.md` revision stamp to v0.85.0 for traceability.
 
 ### Test Changes
 
 #### Changed
+
 - All tests re-run and pass after migration to thin-renderer model. No test failures or regressions.
 
 ### Version
+
 - Bumped project version to 0.85.0 (minor, non-breaking feature addition: output/system panel logic migrated to Go core, Python applet is now a thin renderer).
+
 ## [0.84.1] - 2026-05-16 (continued)
 
 ### Documentation Changes

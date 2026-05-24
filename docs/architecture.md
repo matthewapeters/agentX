@@ -1,10 +1,11 @@
 
+
 # AgentX — Architecture Reference
 
-_Last updated: 2026-05-16 (v0.85.0)_
-Version: 2026-05-16  
+_Last updated: 2026-05-24 (v1.0.0)_
+Version: 2026-05-24  
 Branch: main  
-Project version: 0.85.0
+Project version: 1.0.0
 
 ---
 
@@ -22,15 +23,16 @@ See [docs/architecture/runtime_split.md](architecture/runtime_split.md) for the 
 
 | GUI Tab / Surface         | TUI Analog / Surface      | Owner (Go/Py) | Status   |
 |--------------------------|---------------------------|---------------|----------|
-| Chat (Output)            | Output Pane (chat)        | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
-| Tool Processing (Output) | Output Pane (tool)        | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
-| File Edit (Output)       | Output Pane (file edit)   | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
-| Context Visualization    | System Pane (context viz) | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
-| Files Navigation         | System Pane (files)       | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
-| Context History/Current  | System Pane (context hist)| Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
-| Configuration            | System Pane (config)      | Py (now), Go (target) | ⚠️ Py-owned, Go TODO |
+| Chat (Output)            | Output Pane (chat)        | Go (now) | ✅ Go-owned, tested |
+| Tool Processing (Output) | Output Pane (tool)        | Go (now) | ✅ Go-owned, tested |
+| File Edit (Output)       | Output Pane (file edit)   | Go (now) | ✅ Go-owned, tested |
+| Context Visualization    | System Pane (context viz) | Go (now) | ✅ Go-owned, tested |
+| Files Navigation         | System Pane (files)       | Go (now) | ✅ Go-owned, tested |
+| Context History/Current  | System Pane (context hist)| Go (now) | ✅ Go-owned, tested |
+| Configuration            | System Pane (config)      | Go (now) | ✅ Go-owned, tested |
 
-**Blockers:** All output/system tabs still Py-owned. No Go-driven agentic orchestration. No TUI analogs for tab navigation. All must migrate to Go for true parity. All unmapped = blocker.
+
+**Blockers:** None. All output/system tabs are now Go-owned, Go-driven, and fully tested. Full UX parity achieved.
 
 **Next Steps:**
 

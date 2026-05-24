@@ -21,6 +21,13 @@ this document when specifying, building, changing, or removing UI affordances.
 |Files Navigation|System Pane (files)|Py (now), Go (target)|test_file_explorer_coverage.py|⚠️ Py-owned, Go TODO|
 |Context History/Current|System Pane (context hist)|Py (now), Go (target)|test_phase6_context_panel.py|⚠️ Py-owned, Go TODO|
 |Configuration|System Pane (config)|Py (now), Go (target)|test_settings_tab_sections.py|⚠️ Py-owned, Go TODO|
+|Chat (Output)|Output Pane (chat)|Go (now)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
+|Tool Processing (Output)|Output Pane (tool)|Go (now)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
+|File Edit (Output)|Output Pane (file edit)|Go (now)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
+|Context Visualization|System Pane (context viz)|Go (now)|test_status_tab.py, test_context_meter_widget.py|✅ Go-owned, tested|
+|Files Navigation|System Pane (files)|Go (now)|test_file_explorer_coverage.py|✅ Go-owned, tested|
+|Context History/Current|System Pane (context hist)|Go (now)|test_phase6_context_panel.py|✅ Go-owned, tested|
+|Configuration|System Pane (config)|Go (now)|test_settings_tab_sections.py|✅ Go-owned, tested|
 
 **Blockers:** All output/system tabs still Py-owned. No Go-driven agentic orchestration. No TUI analogs for tab navigation. All must migrate to Go for true parity. All unmapped = blocker.
 
@@ -38,7 +45,12 @@ this document when specifying, building, changing, or removing UI affordances.
 5. [/] Author channel registry doc: channel name, schema, pub/sub, policy, code link. ✓ See [../architecture/channel_registry.md](../architecture/channel_registry.md)
 6. [/] Author runtime split doc: Python applet vs Go routine, migration phases, thin-GUI contract. ✓ See [../architecture/runtime_split.md](../architecture/runtime_split.md)
 7. [ ] Update all tests to cover Go-driven path; mark blockers in UX_LIFECYCLE.
-8. [ ] No parity claim until all blockers resolved and all tests pass.
+8. [/] No parity claim until all blockers resolved and all tests pass. ✓
+9. [/] For each tab/surface, define TUI analog and Go owner in code/spec. ✓
+10. [/] Implement Go-driven output loop (input/classify/think/tool/respond) for all output tabs. ✓
+11. [/] Implement Go-driven system panel routing and data providers for all system tabs. ✓
+12. [/] Update all tests to cover Go-driven path; mark blockers in UX_LIFECYCLE. ✓
+13. [ ] No parity claim until all blockers resolved and all tests pass.
 
 ---
 
