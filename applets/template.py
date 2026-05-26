@@ -127,6 +127,19 @@ def _load_runtime_config() -> dict:
         return tomllib.load(handle)
 
 
+def _load_bootstrap_prompt() -> str | None:
+    """Load optional startup bootstrap prompt from project-local .agentx path."""
+    prompt_path = os.path.join(PROJECT_DIR, ".agentx", "bootstrap-prompt.md")
+    if not os.path.isfile(prompt_path):
+        return None
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as handle:
+            prompt = handle.read().strip()
+    except OSError:
+        return None
+    return prompt or None
+
+
 def _trim_single_line(value: str, limit: int = 72) -> str:
     """Normalize user-facing values into one stable rendered line."""
     single_line = " ".join(str(value).split())
@@ -264,6 +277,21 @@ def run_input_affordance_loop():
 def run_chat_affordance_loop():
     """Poll context endpoint and display assistant responses as they arrive."""
     print_ui_line("Chat ready.")
+    bootstrap_prompt = _load_bootstrap_prompt()
+    if bootstrap_prompt:
+        bootstrap_response = "Hello! I am AgentX."
+        if CHAT_BACKEND == "ollama":
+            try:
+                bootstrap_response = generate_chat_response(bootstrap_prompt)
+            except (
+                urllib.error.URLError,
+                urllib.error.HTTPError,
+                TimeoutError,
+                ValueError,
+                json.JSONDecodeError,
+            ):
+                bootstrap_response = "Hello! I am AgentX."
+        print_ui_line(f"Agent: {bootstrap_response}")
     last_turn_count = 0
     while not shutdown_requested:
         try:
