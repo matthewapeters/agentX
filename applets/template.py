@@ -279,19 +279,21 @@ def run_chat_affordance_loop():
     print_ui_line("Chat ready.")
     bootstrap_prompt = _load_bootstrap_prompt()
     if bootstrap_prompt:
-        bootstrap_response = "Hello! I am AgentX."
         if CHAT_BACKEND == "ollama":
             try:
-                bootstrap_response = generate_chat_response(bootstrap_prompt)
+                bootstrap_response = _chat_with_ollama(bootstrap_prompt)
+                print_ui_line(f"Agent: {bootstrap_response}")
             except (
                 urllib.error.URLError,
                 urllib.error.HTTPError,
                 TimeoutError,
                 ValueError,
                 json.JSONDecodeError,
-            ):
-                bootstrap_response = "Hello! I am AgentX."
-        print_ui_line(f"Agent: {bootstrap_response}")
+            ) as exc:
+                print_ui_line("Agent startup check failed: Ollama backend did not return a response.")
+                print_ui_line(f"Backend error: {exc}")
+        else:
+            print_ui_line("Agent: Hello! I am AgentX.")
     last_turn_count = 0
     while not shutdown_requested:
         try:
