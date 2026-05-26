@@ -1,6 +1,7 @@
 [agentx]
 ollama_host = "localhost:11434"
 ollama_model = "qwen3.6:latest"
+chat_backend = "ollama"
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
 theme_mode = "Dark Mode"
