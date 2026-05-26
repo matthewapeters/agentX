@@ -14,7 +14,7 @@ import (
 func TestResolveCoreRuntimeConfig_UsesTomlValues(t *testing.T) {
 	projectDir := t.TempDir()
 	configPath := filepath.Join(projectDir, "agentx.toml")
-	content := "[agentx]\nollama_host = \"example.local:11434\"\nollama_model = \"model-from-toml\"\n"
+	content := "[agentx]\nollama_host = \"example.local:11434\"\nollama_model = \"model-from-toml\"\nchat_backend = \"ollama\"\n"
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
@@ -27,8 +27,8 @@ func TestResolveCoreRuntimeConfig_UsesTomlValues(t *testing.T) {
 	if runtimeConfig.OllamaModel != "model-from-toml" {
 		t.Fatalf("expected ollama model from toml, got %q", runtimeConfig.OllamaModel)
 	}
-	if runtimeConfig.ChatBackend != defaultChatBackend {
-		t.Fatalf("expected default chat backend %q, got %q", defaultChatBackend, runtimeConfig.ChatBackend)
+	if runtimeConfig.ChatBackend != "ollama" {
+		t.Fatalf("expected chat backend from toml, got %q", runtimeConfig.ChatBackend)
 	}
 }
 

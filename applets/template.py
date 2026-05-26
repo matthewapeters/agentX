@@ -310,7 +310,10 @@ def run_chat_affordance_loop():
                 print_ui_line("Agent startup check failed: Ollama backend did not return a response.")
                 print_ui_line(f"Backend error: {exc}")
         else:
-            print_ui_line("Agent: Hello! I am AgentX.")
+            print_ui_line(
+                f"Agent startup check skipped: backend='{CHAT_BACKEND}' (expected 'ollama' for LLM bootstrap response)."
+            )
+            print_ui_line('Set chat_backend="ollama" in agentx.toml or export AGENTX_CHAT_BACKEND=ollama.')
     last_turn_count = 0
     while not shutdown_requested:
         try:
