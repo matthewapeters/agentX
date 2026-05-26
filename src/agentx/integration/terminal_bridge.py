@@ -8,16 +8,16 @@ approval for confirm-list commands.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
 import json
-from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import time
-from typing import Callable, Mapping
 import uuid
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Callable, Mapping
 
 _CAPTURE_SENTINEL_PREFIX = "__AGENTX_DONE__"
 _DEFAULT_POLL_INTERVAL = 0.5  # seconds between capture-pane polls
@@ -755,7 +755,7 @@ def get_terminal_tool_implementations() -> dict[str, Callable[..., str]]:
 def get_terminal_tool_schemas() -> list[dict[str, object]]:
     """Return OpenAI-function schemas for terminal tool wrappers."""
 
-    from agentix.tools.schema import extract_tool_schema, SchemaGenerationError
+    from agentix.tools.schema import SchemaGenerationError, extract_tool_schema
 
     schemas: list[dict[str, object]] = []
     for fn in TERMINAL_TOOL_FUNCTIONS.values():

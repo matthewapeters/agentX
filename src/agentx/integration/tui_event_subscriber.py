@@ -140,17 +140,7 @@ class TUIEventSubscriber:
         elif event_type == EventType.AGENT_CONTENT:
             # Check if this is raw TUI output (from _write_tui_output)
             if data.get("is_raw_tui"):
-                raw_text = data.get("text", "")
-                if raw_text.startswith("###AGENT") and "🤖" not in raw_text.splitlines()[0]:
-                    return raw_text.replace("###AGENT", "###AGENT 🤖", 1)
-                if raw_text.startswith("###THINKING") and "💭" not in raw_text.splitlines()[0]:
-                    return raw_text.replace("###THINKING", "###THINKING 💭", 1)
-                if raw_text.startswith("###USER"):
-                    lines = raw_text.splitlines(keepends=True)
-                    if len(lines) >= 2 and not lines[1].startswith("👤"):
-                        lines[1] = f"👤 {lines[1]}"
-                        return "".join(lines)
-                return raw_text
+                return self._normalize_raw_tui_record(data.get("text", ""))
             return data.get("text", "")
 
         elif event_type == EventType.TOOL_CALL:
@@ -190,7 +180,41 @@ class TUIEventSubscriber:
             return f"###ERROR {data.get('message', '')}\n"
 
         elif event_type == EventType.STREAM_END:
-            return "\n###DONE\n"
+            return "###DONE\n"
 
         # Other events: no TUI output
         return ""
+
+    def _normalize_raw_tui_record(self, raw_text: str) -> str:
+        """Normalize raw streamed records to canonical TUI marker format.
+
+        Raw records originate from StreamingController._write_tui_output() and may
+        already include role markers. This helper preserves payload text while
+        enforcing canonical marker shape for HX-103 parity.
+        """
+        if not raw_text:
+            return ""
+
+        # Keep exactly one canonical completion marker shape.
+        if "###DONE" in raw_text:
+            return "###DONE\n"
+
+        if raw_text.startswith("###AGENT"):
+            first_line, *tail = raw_text.splitlines(keepends=True)
+            if "🤖" not in first_line:
+                first_line = first_line.replace("###AGENT", "###AGENT 🤖", 1)
+            return "".join([first_line, *tail])
+
+        if raw_text.startswith("###THINKING"):
+            first_line, *tail = raw_text.splitlines(keepends=True)
+            if "💭" not in first_line:
+                first_line = first_line.replace("###THINKING", "###THINKING 💭", 1)
+            return "".join([first_line, *tail])
+
+        if raw_text.startswith("###USER"):
+            lines = raw_text.splitlines(keepends=True)
+            if len(lines) >= 2 and not lines[1].lstrip().startswith("👤"):
+                lines[1] = f"👤 {lines[1]}"
+            return "".join(lines)
+
+        return raw_text

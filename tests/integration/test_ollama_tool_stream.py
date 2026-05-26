@@ -19,10 +19,10 @@ from agentix.bridge.bridge import AgentixBridge
 from shared.models.context import Context
 from shared.models.response import ChunkType, ResponseChunk
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_bridge() -> AgentixBridge:
     config = AgentixConfig(model="test-model", tools=[], classify_prompts=False)
@@ -46,29 +46,33 @@ def _openai_content_chunk(text: str, finish: str | None = None) -> dict:
 def _openai_tool_call_start(index: int, call_id: str, name: str, args_fragment: str = "") -> dict:
     """First delta for a tool call — includes id and function name."""
     return {
-        "choices": [{
-            "delta": {
-                "tool_calls": [{
-                    "index": index,
-                    "id": call_id,
-                    "type": "function",
-                    "function": {"name": name, "arguments": args_fragment},
-                }]
-            },
-            "finish_reason": None,
-        }]
+        "choices": [
+            {
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": index,
+                            "id": call_id,
+                            "type": "function",
+                            "function": {"name": name, "arguments": args_fragment},
+                        }
+                    ]
+                },
+                "finish_reason": None,
+            }
+        ]
     }
 
 
 def _openai_tool_call_args(index: int, args_fragment: str) -> dict:
     """Subsequent delta with more argument characters."""
     return {
-        "choices": [{
-            "delta": {
-                "tool_calls": [{"index": index, "function": {"arguments": args_fragment}}]
-            },
-            "finish_reason": None,
-        }]
+        "choices": [
+            {
+                "delta": {"tool_calls": [{"index": index, "function": {"arguments": args_fragment}}]},
+                "finish_reason": None,
+            }
+        ]
     }
 
 
@@ -85,6 +89,7 @@ def _openai_finish_stop(text: str = "") -> dict:
 # ---------------------------------------------------------------------------
 # Phase 2 — Tool call detection in streaming
 # ---------------------------------------------------------------------------
+
 
 class TestToolCallDetectionInStream(unittest.TestCase):
 
@@ -172,6 +177,7 @@ class TestToolCallDetectionInStream(unittest.TestCase):
 # Phase 3.1 — execute_tool
 # ---------------------------------------------------------------------------
 
+
 class TestExecuteTool(unittest.TestCase):
 
     def setUp(self):
@@ -179,6 +185,7 @@ class TestExecuteTool(unittest.TestCase):
 
     def test_execute_known_tool_succeeds(self):
         """execute_tool calls a registered implementation and returns success."""
+
         def my_tool(x: int, y: int) -> int:
             return x + y
 
@@ -196,6 +203,7 @@ class TestExecuteTool(unittest.TestCase):
 
     def test_execute_tool_exception_returns_error(self):
         """If the tool implementation raises, the error is caught and returned."""
+
         def exploding_tool(**kwargs):
             raise RuntimeError("boom")
 
@@ -206,6 +214,7 @@ class TestExecuteTool(unittest.TestCase):
 
     def test_execute_tool_bad_args_returns_error(self):
         """Wrong argument names result in a TypeError caught as error response."""
+
         def strict(a: int, b: int) -> int:
             return a + b
 
@@ -215,6 +224,7 @@ class TestExecuteTool(unittest.TestCase):
 
     def test_execute_tool_preserves_tool_id(self):
         """The tool_id is stored in the response request_id for correlation."""
+
         def echo(msg: str) -> str:
             return msg
 
@@ -227,6 +237,7 @@ class TestExecuteTool(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Phase 3.3 — _stream_tool_response routes through _run_tool_loop
 # ---------------------------------------------------------------------------
+
 
 class TestStreamToolResponse(unittest.TestCase):
 
@@ -271,6 +282,7 @@ class TestStreamToolResponse(unittest.TestCase):
         bridge.config.tools = []
 
         call_count = [0]
+
         def fake_streaming(config, payload):
             call_count[0] += 1
             if call_count[0] == 1:

@@ -4,8 +4,9 @@ Tests for ServiceManager - external service (Ollama, Agentix) management.
 
 import subprocess
 import unittest
-from unittest.mock import Mock, patch, MagicMock
-from agentx.service_manager import ServiceManager, ServiceConfig
+from unittest.mock import MagicMock, Mock, patch
+
+from agentx.service_manager import ServiceConfig, ServiceManager
 
 
 class TestServiceConfig(unittest.TestCase):

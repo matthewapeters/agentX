@@ -7,18 +7,18 @@ context.add_tool_result_message pipeline. The old bug passed tool_id as
 tool_name to add_tool_result_message, corrupting context records.
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 project_root = str(Path(__file__).parent.parent)
 sys.path.insert(0, os.path.join(project_root, "src"))
 
-from shared.models.response import ResponseChunk, ChunkType
 from agentx.integration.response_handler import ResponseHandler
+from shared.models.response import ChunkType, ResponseChunk
 
 # ---------------------------------------------------------------------------
 # ResponseHandler tests

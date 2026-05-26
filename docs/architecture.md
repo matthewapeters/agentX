@@ -1,5 +1,4 @@
 
-
 # AgentX — Architecture Reference
 
 _Last updated: 2026-05-24 (v1.0.0)_
@@ -30,7 +29,6 @@ See [docs/architecture/runtime_split.md](architecture/runtime_split.md) for the 
 | Files Navigation         | System Pane (files)       | Go (now) | ✅ Go-owned, tested |
 | Context History/Current  | System Pane (context hist)| Go (now) | ✅ Go-owned, tested |
 | Configuration            | System Pane (config)      | Go (now) | ✅ Go-owned, tested |
-
 
 **Blockers:** None. All output/system tabs are now Go-owned, Go-driven, and fully tested. Full UX parity achieved.
 

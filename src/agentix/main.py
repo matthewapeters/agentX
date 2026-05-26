@@ -7,8 +7,8 @@ from .agent import agentix
 from .agentix_config import AgentixConfig
 from .constants import SESSIONS_METADATA_FILE
 from .context.prompts import get_prompts
-from .models import get_models
 from .logging_config import configure_logging
+from .models import get_models
 
 # Configure logging at module import
 configure_logging()
@@ -41,8 +41,9 @@ def main(args: AgentixConfig) -> None:
                 logger.warning("No sessions found")
             return
         case "classify":
-            from .bridge.classify_prompt import classify_prompt
             from shared.models.context import Context
+
+            from .bridge.classify_prompt import classify_prompt
 
             prompt = " ".join(args.user or [])
             if not prompt:

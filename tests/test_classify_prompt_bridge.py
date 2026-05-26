@@ -1,11 +1,12 @@
-import pytest
 from unittest.mock import patch
 
+import pytest
+
 from agentix.agentix_config import AgentixConfig
-from agentix.bridge.classify_prompt import classify_prompt, _format_working_memory_for_classification
+from agentix.bridge.classify_prompt import _format_working_memory_for_classification, classify_prompt
 from shared.models.context import Context
 from shared.models.message import Message, MessageRole
-from shared.models.working_memory import WorkingMemory, FactOwner
+from shared.models.working_memory import FactOwner, WorkingMemory
 
 DEFAULT_RESULT = {
     "intent": "conversation",
@@ -83,6 +84,7 @@ def test_classify_prompt_uses_context_when_history_not_provided():
 def test_process_prompt_streaming_emits_classification_chunk_first():
     """process_prompt_streaming yields a CLASSIFICATION chunk as the first chunk."""
     from unittest.mock import MagicMock
+
     from agentix.bridge.bridge import AgentixBridge
     from agentix.prompt_classification_response import (
         Intent,
@@ -121,6 +123,7 @@ def test_process_prompt_streaming_emits_classification_chunk_first():
 def test_process_prompt_streaming_classification_chunk_has_all_keys():
     """CLASSIFICATION chunk dict contains all five expected keys."""
     from unittest.mock import MagicMock
+
     from agentix.bridge.bridge import AgentixBridge
     from agentix.prompt_classification_response import (
         Intent,
@@ -153,6 +156,7 @@ def test_process_prompt_streaming_classification_chunk_has_all_keys():
 def test_process_prompt_streaming_no_classification_chunk_when_unclassified():
     """Without a classification, the stream starts directly with content (no CLASSIFICATION chunk)."""
     from unittest.mock import MagicMock, patch
+
     from agentix.bridge.bridge import AgentixBridge
     from shared.models.response import ChunkType, ResponseChunk, content_chunk
 

@@ -7,9 +7,7 @@ from glob import glob
 def module_files(root_path: str, module_prefix: str) -> list:
     """Get all Python files in a module directory."""
     return [
-        f"{root_path}/{f}"
-        for f in glob("**/*.py", root_dir=root_path, recursive=True)
-        if f.startswith(module_prefix)
+        f"{root_path}/{f}" for f in glob("**/*.py", root_dir=root_path, recursive=True) if f.startswith(module_prefix)
     ]
 
 
@@ -56,15 +54,9 @@ def class_implements(ast_node: ast.ClassDef, method_names: list[str]) -> bool:
     return len(checks) == len(method_names)
 
 
-def module_classes_implementing(
-    module: ast.Module, method_names: list[str]
-) -> list[ast.ClassDef]:
+def module_classes_implementing(module: ast.Module, method_names: list[str]) -> list[ast.ClassDef]:
     """Check if a module AST has a class implementing the given methods."""
-    return [
-        node
-        for node in module.body
-        if isinstance(node, ast.ClassDef) and class_implements(node, method_names)
-    ]
+    return [node for node in module.body if isinstance(node, ast.ClassDef) and class_implements(node, method_names)]
 
 
 def extract_function_defs_from_class_node(

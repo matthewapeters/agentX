@@ -4,11 +4,11 @@
 
 import logging
 
-from agentix.context.message import Message
 from agentix.agentix_config import AgentixConfig
+from agentix.context.message import Message
+from agentix.context.prompts import get_system_prompt, get_tools_prompt, get_user_prompt
 from agentix.file_utils import get_attachments
 from agentix.query_payload import QueryPayload
-from agentix.context.prompts import get_system_prompt, get_tools_prompt, get_user_prompt
 
 logger = logging.getLogger(__name__)
 

@@ -74,5 +74,6 @@ extend-ignore = ["E203", "W503"]
 
 [dependency-groups]
 dev = [
+    "apm-cli>=0.14.2",
     "pytest-cov>=7.1.0",
 ]

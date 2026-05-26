@@ -25,19 +25,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentx.gui.context_meter_widget import _BANDS
 from agentx.gui.status_tab import (
-    ContextKeyWidget,
-    PhaseRow,
-    StatusTab,
     _ELAPSED_PLACEHOLDER,
     _ICON_DONE,
     _ICON_FAILED,
     _ICON_PENDING,
     _ICON_RUNNING,
     _PHASE_STEPS,
+    ContextKeyWidget,
+    PhaseRow,
+    StatusTab,
     _format_elapsed,
 )
-from agentx.gui.context_meter_widget import _BANDS
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@
 Shared configuration module for AgentX and Agentix integration.
 """
 
-from .unified_config import UnifiedConfig, AgentXConfig, AgentixConfig
+from .unified_config import AgentixConfig, AgentXConfig, UnifiedConfig
 
 __all__ = [
     "UnifiedConfig",

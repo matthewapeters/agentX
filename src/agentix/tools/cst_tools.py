@@ -8,13 +8,12 @@ from typing import Dict, List, Optional
 try:
     import libcst as cst
     from libcst.metadata import CodeRange, MetadataWrapper, PositionProvider
+
     LIBCST_AVAILABLE = True
 except ImportError:
     LIBCST_AVAILABLE = False
     # Module will not work without libcst - all code below depends on it
-    raise ImportError(
-        "libcst is required for cst_tools. Install with: uv pip install libcst"
-    )
+    raise ImportError("libcst is required for cst_tools. Install with: uv pip install libcst")
 
 # --------------------------------------------------------------------------------------
 # Filesystem helpers (kept compatible with your original behavior)
@@ -89,9 +88,7 @@ def node_positions(wrapper: MetadataWrapper, node: cst.CSTNode) -> Dict[str, int
     }
 
 
-def cst_node_to_dict(
-    wrapper: MetadataWrapper, node: cst.CSTNode, include_source: bool = True
-) -> Dict:
+def cst_node_to_dict(wrapper: MetadataWrapper, node: cst.CSTNode, include_source: bool = True) -> Dict:
     """
     Convert a CST node into a shallow, JSON-friendly dict with:
       - the node type,
@@ -155,9 +152,7 @@ def class_implements(class_node: cst.ClassDef, method_names: List[str]) -> bool:
     return wanted.issubset(found)
 
 
-def module_classes_implementing(
-    module: cst.Module, method_names: List[str]
-) -> List[cst.ClassDef]:
+def module_classes_implementing(module: cst.Module, method_names: List[str]) -> List[cst.ClassDef]:
     """
     Return top-level classes in the module that implement all given methods.
 
@@ -241,9 +236,7 @@ class AddDecorator(cst.CSTTransformer):
         self.decorator_text = decorator_text.lstrip("@")
         self.decorator_expr = cst.parse_expression(self.decorator_text)
 
-    def leave_ClassDef(
-        self, original_node: cst.ClassDef, updated_node: cst.ClassDef
-    ) -> cst.ClassDef:
+    def leave_ClassDef(self, original_node: cst.ClassDef, updated_node: cst.ClassDef) -> cst.ClassDef:
         """Add a decorator to the specified class if it doesn't already exist."""
         if original_node.name.value != self.class_name:
             return updated_node

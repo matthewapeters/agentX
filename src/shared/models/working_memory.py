@@ -63,6 +63,7 @@ class PromotionResult:
 # FactEntry
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FactEntry:
     """A single fact in Working Memory."""
@@ -116,7 +117,7 @@ class FactEntry:
     def value_preview(self, max_len: int = 60) -> str:
         """Short displayable representation of the value."""
         raw = json.dumps(self.value) if not isinstance(self.value, str) else self.value
-        return raw if len(raw) <= max_len else raw[:max_len - 1] + "…"
+        return raw if len(raw) <= max_len else raw[: max_len - 1] + "…"
 
     def to_llm_line(self) -> str:
         """Single line for the LLM context block."""
@@ -127,6 +128,7 @@ class FactEntry:
 # ---------------------------------------------------------------------------
 # WorkingMemory
 # ---------------------------------------------------------------------------
+
 
 class WorkingMemory:
     """
@@ -192,12 +194,8 @@ class WorkingMemory:
 
     def all_facts(self) -> list[FactEntry]:
         """All facts regardless of enabled state, user-owned first."""
-        user_facts = sorted(
-            (f for f in self._facts.values() if f.owner == FactOwner.USER), key=lambda f: f.key
-        )
-        agent_facts = sorted(
-            (f for f in self._facts.values() if f.owner == FactOwner.AGENT), key=lambda f: f.key
-        )
+        user_facts = sorted((f for f in self._facts.values() if f.owner == FactOwner.USER), key=lambda f: f.key)
+        agent_facts = sorted((f for f in self._facts.values() if f.owner == FactOwner.AGENT), key=lambda f: f.key)
         return user_facts + agent_facts
 
     def __len__(self) -> int:

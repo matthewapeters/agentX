@@ -300,6 +300,73 @@ remove the TUI FIFOs alongside the existing cleanup.
 - `launch_vibe.sh` (new TUI window steps)
 - `agentx_tui.lua` (Lua config fragment, generated into project dir)
 
+### 5.1 GUI/TUI Parity Matrix (Authoritative)
+
+This matrix freezes the required semantic parity contract between the Tk GUI and
+the TUI mirror. It is intentionally semantic rather than pixel- or widget-level.
+The TUI may linearize or simplify the presentation, but it may not omit required
+user-visible state.
+
+| GUI surface / affordance | TUI representation | Required parity level | Contract |
+|--------------------------|--------------------|-----------------------|----------|
+| Startup notice / bootstrap guidance | `###SYSTEM Bootstrap` block at top of output | Full semantic | The first non-user-visible guidance emitted during startup must be visible in TUI before the first assistant turn. |
+| User turn submission | `###USER <timestamp>` + body | Full semantic | Every submitted prompt visible in GUI must also appear in TUI in submission order. |
+| Assistant turn start | `###AGENT` header | Full semantic | A new assistant turn must be visually distinct before streamed content begins. |
+| Assistant streamed content | streamed body text under current assistant turn | Full semantic | Content order must match GUI stream order; no duplicate chunk rendering. |
+| Thinking stream | `###THINKING` block when enabled | Full semantic, config-gated | If GUI/session config exposes thinking, TUI must show the same thinking phase in-order; if disabled, both may suppress it. |
+| Tool call visibility | `###TOOL_CALL ...` line | Full semantic | Tool invocation must remain visible even when output is simplified to a single summary line. |
+| Tool result visibility | `###TOOL_RESULT ...` line | Full semantic | Tool completion/result summary must remain visible in-order after the corresponding tool call. |
+| Error state | `###ERROR ...` block | Full semantic | User-visible errors must appear in both surfaces and terminate or annotate the current turn consistently. |
+| End of turn | `###DONE` marker | Full semantic | Every completed or terminal turn must produce one visible completion marker in TUI. |
+| Context / history state | compact summary block or command-driven summary | Simplified but required | TUI does not need widget parity, but must expose current context/history state sufficient for operator awareness. |
+| Attachments state | textual attachment summary in turn or system summary | Simplified but required | TUI must surface enabled/current attachment state even if it cannot render GUI chips or toggles. |
+| Plan / status visibility | linear status/plan summaries | Simplified but required | TUI must expose plan progress / status phases needed to understand execution. |
+| Interrupt affordance | terminal-native interrupt control + visible interruption outcome | Simplified but required | TUI need not use the GUI button model, but users must have a documented interrupt path and see a visible interrupted/terminated outcome. |
+
+### 5.2 Canonical Turn Lifecycle Contract (Authoritative)
+
+The hybrid runtime must present the same turn lifecycle in both GUI and TUI.
+This is the canonical ordered contract for a normal assistant turn.
+
+| Order | Lifecycle phase | Canonical event / trigger | GUI expectation | TUI expectation |
+|-------|-----------------|---------------------------|-----------------|-----------------|
+| 0 | Startup/bootstrap | session bootstrap / startup notice | startup notice displayed before first normal turn | `###SYSTEM Bootstrap` or equivalent system block before first normal turn |
+| 1 | User submit | user message accepted into session | submitted prompt appended to chat | `###USER <timestamp>` block written in the same order |
+| 2 | Turn start | assistant stream begins | assistant response section becomes active | `###AGENT` header emitted once |
+| 3 | Thinking start | thinking phase begins (if enabled) | thinking area/header becomes visible | `###THINKING` emitted once when enabled |
+| 4 | Thinking content | thinking chunks | content appended under thinking state | thinking content appended in-order |
+| 5 | Assistant content | assistant chunks | assistant content appended in-order | assistant content appended in-order under current `###AGENT` block |
+| 6 | Tool call | tool invocation announced | tool call row/line displayed | `###TOOL_CALL ...` line displayed |
+| 7 | Tool result | tool output/result announced | tool result row/line displayed | `###TOOL_RESULT ...` line displayed |
+| 8 | Error or interruption | terminal failure or user break | visible error/interruption state; streaming ends | `###ERROR ...` or equivalent visible interruption terminal state; streaming ends |
+| 9 | Turn complete | stream end | current turn finalized | `###DONE` emitted once |
+
+Lifecycle rules:
+
+- Event ordering is authoritative: TUI may not reorder user, assistant, tool, error, or completion events.
+- Header emission is once-per-turn: `###AGENT`, `###THINKING`, and `###DONE` must not duplicate within one turn.
+- Tool events are bound to the active turn: a tool call/result may be simplified, but it may not move outside its owning assistant turn.
+- Error and interruption paths are terminal for the active turn unless a future contract explicitly introduces resumable semantics.
+- Coexistence mode is semantic mirror mode: when GUI and TUI are both enabled, both surfaces describe the same session turn, not parallel independent sessions.
+
+### 5.3 Session-Mode Coexistence Contract (Authoritative)
+
+This section defines authoritative behavior for GUI/TUI runtime combinations.
+
+| Runtime mode | `enable_gui_chat` | `tui.enable` | Expected behavior |
+|--------------|-------------------|--------------|-------------------|
+| GUI-only | `true` | `false` | GUI is active chat surface; no TUI mirror channels are created. |
+| TUI-only (headless) | `false` | `true` | Session uses `NullGUIManager`; TUI is the active surface; startup is valid. |
+| Dual-surface coexistence | `true` | `true` | GUI and TUI mirror the same session semantics and ordering for each turn. |
+| Disabled-both | `false` | `false` | Invalid configuration; startup must fail with clear `ConfigurationError`. |
+
+Coexistence invariants:
+
+- There is exactly one session authority; GUI and TUI are two views over that session.
+- Prompt submission from either surface enters the same session pipeline.
+- Visible lifecycle output must not be duplicated, reordered, or dropped between surfaces.
+- Headless mode (`TUI-only`) must remain operational without invoking GUI-only setup paths.
+
 ### PD-16-AF-009: Context Bar and Top Contributors Visualization
 
 **What it does**: Renders a horizontal context usage bar in the TUI output, with each segment colored according to its context band (using ANSI color codes). Below the bar, a Top Contributors section shows the four largest contributors, each with a color-matched bar and emoji. This mirrors the GUI context meter but is optimized for terminal display.

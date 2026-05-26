@@ -6,8 +6,9 @@ Targets the handlers at lines 88-89, 101-112, 133-188, 217-224, 249-254,
 """
 
 import json
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -170,8 +171,8 @@ class TestClassifyPromptSync:
         """JSONDecodeError is caught and returns respond_directly fallback."""
         adapter = self._adapter_with_classify(enabled=True)
         adapter.bridge.classify_prompt.side_effect = json.JSONDecodeError("bad", "", 0)
-        from shared.models.context import Context
         from agentix.prompt_classification_response import NextStep
+        from shared.models.context import Context
 
         result = adapter.classify_prompt_sync("hi", Context())
         assert result is not None
@@ -182,8 +183,8 @@ class TestClassifyPromptSync:
         """KeyError is caught and returns respond_directly fallback."""
         adapter = self._adapter_with_classify(enabled=True)
         adapter.bridge.classify_prompt.side_effect = KeyError("conversation")
-        from shared.models.context import Context
         from agentix.prompt_classification_response import NextStep
+        from shared.models.context import Context
 
         result = adapter.classify_prompt_sync("hi", Context())
         assert result is not None
@@ -194,8 +195,8 @@ class TestClassifyPromptSync:
         """Any unexpected Exception is caught and returns fallback."""
         adapter = self._adapter_with_classify(enabled=True)
         adapter.bridge.classify_prompt.side_effect = RuntimeError("network")
-        from shared.models.context import Context
         from agentix.prompt_classification_response import NextStep
+        from shared.models.context import Context
 
         result = adapter.classify_prompt_sync("hi", Context())
         assert result is not None

@@ -7,9 +7,9 @@ for dynamic tool management and registering all available tools with the bridge.
 import json
 from typing import Any, Callable, Optional
 
-from src.agentx.tool_registry import ToolRegistry
-from src.agentx.tool_diagnostics import create_tool_diagnostics
 from src.agentx.integration.vim_bridge import VimBridge
+from src.agentx.tool_diagnostics import create_tool_diagnostics
+from src.agentx.tool_registry import ToolRegistry
 
 
 class ToolRegistryManager:

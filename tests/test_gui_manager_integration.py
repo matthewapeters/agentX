@@ -4,18 +4,18 @@ Tests the GUIManager's core display and state management operations
 to ensure proper separation of concerns and clean interface.
 """
 
+import os
+import sys
 import tkinter as tk
 import unittest
-from unittest.mock import MagicMock, patch
 from datetime import datetime
-import sys
-import os
+from unittest.mock import MagicMock, patch
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from agentx.gui.gui_manager import GUIManager
 from agentx.gui.gui_config import GUIConfig
+from agentx.gui.gui_manager import GUIManager
 
 
 class TestGUIManagerInitialization(unittest.TestCase):

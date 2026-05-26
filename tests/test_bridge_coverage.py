@@ -9,10 +9,10 @@ Targets the 71% → 90% uplift by covering:
   - Various exception-path fallbacks
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 project_root = str(Path(__file__).parent.parent)
 sys.path.insert(0, os.path.join(project_root, "src"))
@@ -349,7 +349,8 @@ class TestStreamPlannedResponseMorePaths:
 
     def test_get_system_prompt_exception_and_save_exceptions(self):
         """Lines 524-525, 530-531, 538-539: get_system_prompt raises; save_plan raises."""
-        from shared.models.task_node import PlanRecord, PlanStep, TaskTree as TaskTreeModel
+        from shared.models.task_node import PlanRecord, PlanStep
+        from shared.models.task_node import TaskTree as TaskTreeModel
 
         bridge = _make_bridge()
         ctx = MagicMock()

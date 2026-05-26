@@ -7,18 +7,18 @@ from datetime import UTC, datetime
 logger = logging.getLogger(__name__)
 
 from agentix.context.message import Message
+from shared.models.context import Context
 
 from ..agentix_config import AgentixConfig
+
+# Re-export from bridge layer — assemble_prompts and trim_context now live in
+# agentix.bridge.prompt_assembly; keep these names here for backward compatibility.
+from ..bridge.prompt_assembly import assemble_prompts, trim_context  # noqa: F401
 from ..constants import (
     CLASSIFICATION_MAX_TOKENS,
     DEFAULT_SESSION_ID,
     PROMPT_CLASSIFICATION,
 )
-from shared.models.context import Context
-
-# Re-export from bridge layer — assemble_prompts and trim_context now live in
-# agentix.bridge.prompt_assembly; keep these names here for backward compatibility.
-from ..bridge.prompt_assembly import assemble_prompts, trim_context  # noqa: F401
 
 
 def _get_user_name() -> str:

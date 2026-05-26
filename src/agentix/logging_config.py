@@ -5,9 +5,9 @@ This module configures Python logging to output structured JSON logs
 for programmatic analysis, particularly for classification decisions.
 """
 
+import json
 import logging
 import logging.config
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 

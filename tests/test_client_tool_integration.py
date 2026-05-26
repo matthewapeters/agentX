@@ -8,11 +8,12 @@ Covers:
 - Client tools are callable from bridge.execute_tool()
 """
 
-import os
 import json
+import os
 import tempfile
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 # ---------------------------------------------------------------------------
 # Standalone wrapper function tests
@@ -138,8 +139,8 @@ class TestClientToolSchemas:
 
 class TestBridgeClientToolRegistration:
     def _make_bridge(self):
-        from agentix.bridge.bridge import AgentixBridge
         from agentix.agentix_config import AgentixConfig
+        from agentix.bridge.bridge import AgentixBridge
 
         config = AgentixConfig(model="llama3.2", tools=[], debug=False)
         return AgentixBridge(config)

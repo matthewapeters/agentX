@@ -4,21 +4,21 @@ Tests the interaction between AgentXSession business logic and
 GUIManager presentation layer to ensure clean separation.
 """
 
+import os
+import shutil
+import sys
+import tempfile
 import tkinter as tk
 import unittest
-from unittest.mock import MagicMock, patch, call
 from datetime import datetime
-import sys
-import os
-import tempfile
-import shutil
+from unittest.mock import MagicMock, call, patch
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from agentx.session import AgentXSession
-from agentx.gui.gui_manager import GUIManager
 from agentx.gui.gui_config import GUIConfig
+from agentx.gui.gui_manager import GUIManager
+from agentx.session import AgentXSession
 from shared.models.response import ChunkType, ResponseChunk
 
 

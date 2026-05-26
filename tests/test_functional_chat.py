@@ -7,14 +7,14 @@ Tests the exact user scenario:
 3. Response is displayed and added to context
 """
 
+import os
+import shutil
+import sys
+import tempfile
 import tkinter as tk
 import unittest
-from unittest.mock import Mock, patch, MagicMock
-import sys
-import os
-import tempfile
-import shutil
 from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
 # Set AGENTIX_HOME before any imports
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -24,7 +24,7 @@ os.environ["AGENTIX_HOME"] = str(PROJECT_ROOT)
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from agentx.session import AgentXSession
-from shared.models.response import ResponseChunk, ChunkType
+from shared.models.response import ChunkType, ResponseChunk
 
 
 class TestChatWorkflow(unittest.TestCase):

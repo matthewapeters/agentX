@@ -6,9 +6,10 @@ THEN the manager correctly delegates to registry and invokes callbacks.
 """
 
 import json
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from src.agentx.integration.tool_registry_manager import ToolRegistryManager
 

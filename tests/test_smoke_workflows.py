@@ -4,24 +4,24 @@ Tests end-to-end workflows to ensure all phases work together
 without regressions.
 """
 
-import tkinter as tk
-import unittest
-from unittest.mock import MagicMock, patch
-from datetime import datetime
-import sys
 import os
-import tempfile
 import shutil
+import sys
+import tempfile
 import threading
 import time
+import tkinter as tk
+import unittest
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from agentx.session import AgentXSession
 from agentx.gui.gui_manager import GUIManager
-from shared.models.message import Message
+from agentx.session import AgentXSession
 from shared.models.context import Context
+from shared.models.message import Message
 
 
 class TestAgentXWorkflow(unittest.TestCase):
@@ -174,7 +174,8 @@ class TestAgentXWorkflow(unittest.TestCase):
 
         # Step 2: Convert to SharedContext (simulate what _stream_via_agentix does)
         from shared.models.context import Context as SharedContext
-        from shared.models.message import Message as SharedMessage, MessageRole
+        from shared.models.message import Message as SharedMessage
+        from shared.models.message import MessageRole
 
         shared_context = SharedContext()
 
@@ -237,7 +238,8 @@ class TestAgentXWorkflow(unittest.TestCase):
 
         # Turn 2: Convert to SharedContext (simulating second query)
         from shared.models.context import Context as SharedContext
-        from shared.models.message import Message as SharedMessage, MessageRole
+        from shared.models.message import Message as SharedMessage
+        from shared.models.message import MessageRole
 
         shared_context = SharedContext()
 
@@ -276,8 +278,9 @@ class TestAgentXWorkflow(unittest.TestCase):
         This addresses the user's concern: "thinking is not displayed, and message
         from LLM not received or added to context."
         """
-        from unittest.mock import Mock, patch, MagicMock
-        from shared.models.response import ResponseChunk, ChunkType
+        from unittest.mock import MagicMock, Mock, patch
+
+        from shared.models.response import ChunkType, ResponseChunk
 
         # Mock the Agentix adapter to return chunks
         with patch.object(self.session.agentix_adapter, "process_prompt_generator") as mock_gen:
@@ -345,8 +348,8 @@ class TestAgentXWorkflow(unittest.TestCase):
         This addresses the error: "'dict' object has no attribute 'role'"
         which suggests somewhere messages are being stored/loaded as dicts.
         """
-        import tempfile
         import json
+        import tempfile
         from datetime import datetime
 
         # Create a temporary session directory
@@ -387,7 +390,8 @@ class TestAgentXWorkflow(unittest.TestCase):
             self.assertEqual(msg.content, "test content")
 
             # Verify conversion to SharedMessage works
-            from shared.models.message import Message as SharedMessage, MessageRole
+            from shared.models.message import Message as SharedMessage
+            from shared.models.message import MessageRole
 
             # This should not raise AttributeError
             shared_msg = SharedMessage(role=MessageRole[msg.role.upper()], content=msg.content, enabled=msg.enabled)

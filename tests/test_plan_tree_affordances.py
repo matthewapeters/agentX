@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from agentx.gui.gui_config import GUIConfig
 from agentx.gui.gui_manager import GUIManager
-from agentx.gui.plan_tree_widget import PlanTreeWidget, _STATUS_ICONS
+from agentx.gui.plan_tree_widget import _STATUS_ICONS, PlanTreeWidget
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

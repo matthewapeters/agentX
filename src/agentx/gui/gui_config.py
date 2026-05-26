@@ -118,33 +118,17 @@ class GUIConfig:
             attachment_fg=agentx.get("attachment_fg", palette["attachment_fg"]),
             input_fg=agentx.get("input_fg", palette["input_fg"]),
             attachment_bg=agentx.get("attachment_bg", palette["attachment_bg"]),
-            history_attachment_bg=agentx.get(
-                "history_attachment_bg", palette["history_attachment_bg"]
-            ),
+            history_attachment_bg=agentx.get("history_attachment_bg", palette["history_attachment_bg"]),
             ui_fg=agentx.get("ui_fg", palette["ui_fg"]),
             muted_fg=agentx.get("muted_fg", palette["muted_fg"]),
             user_prompt_fg=agentx.get("user_prompt_fg", palette["user_prompt_fg"]),
-            agent_response_fg=agentx.get(
-                "agent_response_fg", palette["agent_response_fg"]
-            ),
-            agent_thinking_fg=agentx.get(
-                "agent_thinking_fg", palette["agent_thinking_fg"]
-            ),
-            agent_classification_fg=agentx.get(
-                "agent_classification_fg", palette["agent_classification_fg"]
-            ),
+            agent_response_fg=agentx.get("agent_response_fg", palette["agent_response_fg"]),
+            agent_thinking_fg=agentx.get("agent_thinking_fg", palette["agent_thinking_fg"]),
+            agent_classification_fg=agentx.get("agent_classification_fg", palette["agent_classification_fg"]),
             system_space_fg=agentx.get("system_space_fg", palette["system_space_fg"]),
-            user_prompt_font=tuple(
-                agentx.get("user_prompt_font", ["Terminal", 10, "bold"])
-            ),
-            agent_response_font=tuple(
-                agentx.get("agent_response_font", ["Terminal", 10, "normal"])
-            ),
-            agent_thinking_font=tuple(
-                agentx.get("agent_thinking_font", ["Terminal", 10, "italic"])
-            ),
-            gray_text_font=tuple(
-                agentx.get("gray_text_font", ["Terminal", 10, "italic"])
-            ),
+            user_prompt_font=tuple(agentx.get("user_prompt_font", ["Terminal", 10, "bold"])),
+            agent_response_font=tuple(agentx.get("agent_response_font", ["Terminal", 10, "normal"])),
+            agent_thinking_font=tuple(agentx.get("agent_thinking_font", ["Terminal", 10, "italic"])),
+            gray_text_font=tuple(agentx.get("gray_text_font", ["Terminal", 10, "italic"])),
             markdown_render_enabled=agentx.get("markdown_render_enabled", True),
         )

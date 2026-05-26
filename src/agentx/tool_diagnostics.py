@@ -5,8 +5,8 @@ with the bridge, discoverable by the agent, and executable end-to-end.
 """
 
 import json
-from typing import Optional, Any, Callable
 import logging
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger("agentx.tool_diagnostics")
 

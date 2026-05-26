@@ -12,17 +12,17 @@ Tests cover:
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 import tkinter as tk
 import unittest
 from unittest.mock import MagicMock, call, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from agentx.gui.gui_manager import GUIManager
 from agentx.gui.gui_config import GUIConfig
-from agentx.gui.plan_tree_widget import PlanTreeWidget, _STATUS_ICONS
+from agentx.gui.gui_manager import GUIManager
+from agentx.gui.plan_tree_widget import _STATUS_ICONS, PlanTreeWidget
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -259,7 +259,7 @@ class TestSessionPlanChunkRouting(unittest.TestCase):
     """Verify that plan-related ResponseChunks are routed to the correct GUI methods."""
 
     def _make_chunk(self, **kwargs):
-        from shared.models.response import ResponseChunk, ChunkType
+        from shared.models.response import ChunkType, ResponseChunk
 
         return ResponseChunk(**kwargs)
 

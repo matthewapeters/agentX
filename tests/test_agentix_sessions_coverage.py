@@ -8,8 +8,9 @@ Targets the 19% → 90% uplift goal, covering all major code paths in:
 """
 
 import os
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -102,8 +103,8 @@ class TestEnsureSessionContextDir:
         assert result.endswith("context")
 
     def test_auto_generates_session_id_for_default(self, tmp_path):
-        from agentix.context.sessions import _ensure_session_context_dir
         from agentix.constants import DEFAULT_SESSION_ID
+        from agentix.context.sessions import _ensure_session_context_dir
 
         cfg = _make_config(session=DEFAULT_SESSION_ID)
         with patch.dict(os.environ, {"AGENTX_SESSIONS_DIR": str(tmp_path), "USER": "bob"}):
@@ -323,8 +324,8 @@ class TestAssembleClassificationPrompt:
 
 class TestManageSessions:
     def test_creates_new_session_context(self, tmp_path):
-        from agentix.context.sessions import manage_sessions
         from agentix.constants import DEFAULT_SESSION_ID
+        from agentix.context.sessions import manage_sessions
 
         cfg = _make_config(session=DEFAULT_SESSION_ID)
         with patch.dict(os.environ, {"AGENTX_SESSIONS_DIR": str(tmp_path), "USER": "alice"}):

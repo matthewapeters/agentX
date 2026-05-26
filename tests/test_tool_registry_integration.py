@@ -6,10 +6,11 @@ THEN the bridge is updated and UI reflects the current state.
 """
 
 import json
-import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from src.agentx.integration.tool_registry_manager import ToolRegistryManager
 

@@ -67,9 +67,7 @@ def _create_bridge() -> AgentixBridge:
         try:
             config.classification_max_tokens = int(classify_max_tokens)
         except ValueError:
-            pytest.fail(
-                "AGENTIX_BENCH_CLASSIFY_MAX_TOKENS must be an integer"
-            )
+            pytest.fail("AGENTIX_BENCH_CLASSIFY_MAX_TOKENS must be an integer")
     bridge = AgentixBridge(config)
 
     try:
@@ -89,13 +87,9 @@ def _create_bridge() -> AgentixBridge:
         config.model = models[0].get("name")
 
     if config.classification_model:
-        classification_matching = [
-            m for m in models if m.get("name", "").startswith(config.classification_model)
-        ]
+        classification_matching = [m for m in models if m.get("name", "").startswith(config.classification_model)]
         if not classification_matching:
-            pytest.skip(
-                f"Classification model '{config.classification_model}' not found in Ollama"
-            )
+            pytest.skip(f"Classification model '{config.classification_model}' not found in Ollama")
         config.classification_model = classification_matching[0].get("name")
 
     return bridge
@@ -121,9 +115,7 @@ def test_classification_latency():
     elapsed = time.monotonic() - start
 
     assert classification is not None
-    assert elapsed < max_seconds, (
-        f"Classification took {elapsed:.2f}s, exceeds {max_seconds:.2f}s"
-    )
+    assert elapsed < max_seconds, f"Classification took {elapsed:.2f}s, exceeds {max_seconds:.2f}s"
 
 
 @pytest.mark.live
@@ -136,9 +128,7 @@ def test_streaming_first_chunk_latency():
     bridge.config.classify_prompts = False
 
     context = Context()
-    max_seconds = float(
-        os.getenv("AGENTIX_BENCH_STREAM_FIRST_CHUNK_MAX_SECONDS", "8.0")
-    )
+    max_seconds = float(os.getenv("AGENTIX_BENCH_STREAM_FIRST_CHUNK_MAX_SECONDS", "8.0"))
 
     start = time.monotonic()
     first_chunk_time = None
@@ -151,6 +141,4 @@ def test_streaming_first_chunk_latency():
             break
 
     assert first_chunk_time is not None, "No content chunk received"
-    assert first_chunk_time < max_seconds, (
-        f"First chunk took {first_chunk_time:.2f}s, exceeds {max_seconds:.2f}s"
-    )
+    assert first_chunk_time < max_seconds, f"First chunk took {first_chunk_time:.2f}s, exceeds {max_seconds:.2f}s"

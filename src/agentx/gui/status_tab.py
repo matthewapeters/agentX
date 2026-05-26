@@ -26,7 +26,7 @@ import time
 import tkinter as tk
 from typing import TYPE_CHECKING, Callable, Optional
 
-from .context_meter_widget import ContextMeterWidget, _BANDS, _GHOST_COLOR
+from .context_meter_widget import _BANDS, _GHOST_COLOR, ContextMeterWidget
 
 if TYPE_CHECKING:
     from .gui_manager import GUIManager

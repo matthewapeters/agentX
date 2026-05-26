@@ -2,23 +2,30 @@ import types
 
 from agentx.gui.chat_panel import ChatPanel
 
+
 class DummyText:
     def __init__(self):
         self.tags = set()
         self.selection = None
         self.events = []
+
     def tag_add(self, tag, start, end):
         self.tags.add(tag)
+
     def mark_set(self, mark, position):
         self.selection = position
+
     def tag_names(self):
         return list(self.tags)
+
     def event_generate(self, event):
         self.events.append(event)
+
 
 class DummyWidgets:
     def __init__(self):
         self.output_text = DummyText()
+
 
 class DummyConfig:
     def __init__(self):
@@ -26,6 +33,7 @@ class DummyConfig:
         self.default_font = ("Courier New", 10)
         self.agent_response_fg = "#000000"
         self.markdown_render_enabled = False
+
 
 class DummyGUIManager:
     def __init__(self):

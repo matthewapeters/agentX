@@ -7,8 +7,8 @@ AgentX can display to the user.
 
 from typing import Callable, Optional
 
-from shared.models.response import ResponseChunk, ChunkType
 from shared.models.message import Message, MessageRole
+from shared.models.response import ChunkType, ResponseChunk
 
 
 class ResponseHandler:

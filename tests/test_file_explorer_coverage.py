@@ -11,9 +11,10 @@ Targets the 55% → 90% uplift by covering:
 """
 
 import os
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # ---------------------------------------------------------------------------
 # list_directory
@@ -316,8 +317,9 @@ class TestGUICallbacks:
             root.destroy()
 
     def test_on_home_click_navigates_home(self, tmp_path):
-        from agentx.file_explorer import FileExplorer
         from pathlib import Path
+
+        from agentx.file_explorer import FileExplorer
 
         root = _make_root()
         try:

@@ -14,8 +14,8 @@ Tests cover:
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -25,10 +25,11 @@ from unittest.mock import MagicMock, call, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from agentx.gui.gui_manager import GUIManager
 from agentx.gui.gui_config import GUIConfig
-from agentx.gui.plan_tree_widget import PlanTreeWidget, _STATUS_ICONS
+from agentx.gui.gui_manager import GUIManager
+from agentx.gui.plan_tree_widget import _STATUS_ICONS, PlanTreeWidget
 from agentx.gui.resynthesis_dialog import ResynthesisDialog
+from shared.models.context import Context
 from shared.models.response import ChunkType, ResponseChunk
 from shared.models.task_node import (
     AssertionRecord,
@@ -38,7 +39,6 @@ from shared.models.task_node import (
     TaskNodeRecord,
     TaskTree,
 )
-from shared.models.context import Context
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -399,8 +399,8 @@ class TestBridgeRetriggerSynthesis(unittest.TestCase):
 
     def _make_bridge_with_stub_llm(self, llm_chunks):
         """Return a bridge whose _iter_llm_chunks yields llm_chunks."""
-        from agentix.bridge.bridge import AgentixBridge
         from agentix.agentix_config import AgentixConfig
+        from agentix.bridge.bridge import AgentixBridge
 
         config = AgentixConfig(model="test-model", debug=False)
         bridge = AgentixBridge(config)

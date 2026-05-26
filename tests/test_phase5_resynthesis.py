@@ -7,23 +7,23 @@ Tests covering:
   - AgentXSession.retrigger_synthesis
 """
 
-import sys
 import os
+import sys
 import threading
-import tkinter as tk
 import time
+import tkinter as tk
 import unittest
 from dataclasses import dataclass, field
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch, call
+from unittest.mock import MagicMock, Mock, call, patch
 
 # Add src to path
 project_root = str(Path(__file__).parent.parent)
 sys.path.insert(0, os.path.join(project_root, "src"))
 
 from agentx.gui.resynthesis_dialog import ResynthesisDialog
-from shared.models.response import ResponseChunk, ChunkType
-from shared.models.task_node import TaskNodeRecord, TaskTree, SynthesisAttempt
+from shared.models.response import ChunkType, ResponseChunk
+from shared.models.task_node import SynthesisAttempt, TaskNodeRecord, TaskTree
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -466,6 +466,7 @@ class TestSessionRetriggerSynthesis(unittest.TestCase):
         session._safe_root_after = lambda fn: fn()  # call immediately on same thread
         session.refresh_user_gui = MagicMock()
         from agentx.streaming_controller import StreamingController
+
         session._streaming_controller = StreamingController(session)
         return session
 
@@ -626,6 +627,7 @@ class TestSessionAddWMHintForTask(unittest.TestCase):
         session._safe_root_after = lambda fn: fn()
         session.refresh_user_gui = MagicMock()
         from agentx.streaming_controller import StreamingController
+
         session._streaming_controller = StreamingController(session)
         return session
 

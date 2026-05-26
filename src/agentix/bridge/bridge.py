@@ -16,18 +16,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterator, Optional
 
 from agentix.agentix_config import AgentixConfig
+from agentix.bridge.assertion_checker import extract_assertions, verify_assertion
 from agentix.models import get_models
 from agentix.prompt_classification_response import (
     NextStep,
     PromptClassificationResponse,
 )
-
 from shared.models.context import Context
-from shared.models.task_node import AssertionRecord, PlanRecord, PlanStep, SynthesisAttempt, TaskNodeRecord, TaskTree
-from agentix.bridge.assertion_checker import extract_assertions, verify_assertion
 from shared.models.message import Message
 from shared.models.response import ChunkType, ResponseChunk
+from shared.models.task_node import AssertionRecord, PlanRecord, PlanStep, SynthesisAttempt, TaskNodeRecord, TaskTree
 from shared.models.tools import ToolResponse
+
 from .classify_prompt import classify_prompt as classifier
 from .tool_loop import SUBTASK_TOOL_NAME, ToolLoopRunner
 

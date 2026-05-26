@@ -12,21 +12,22 @@ Skip in CI (no Ollama available):
     # or simply don't pass -m live
 """
 
-import sys
 import json
-import pytest
+import sys
 from pathlib import Path
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
-from agentix.bridge.bridge import AgentixBridge
-from shared.models.response import ChunkType, ResponseChunk
-from shared.models.context import Context
+import pytest
 
+from agentix.bridge.bridge import AgentixBridge
+from shared.models.context import Context
+from shared.models.response import ChunkType, ResponseChunk
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Test fixture helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _chunks_by_type(chunks: list[ResponseChunk], chunk_type: ChunkType) -> list[ResponseChunk]:
     return [c for c in chunks if c.type == chunk_type]
@@ -35,6 +36,7 @@ def _chunks_by_type(chunks: list[ResponseChunk], chunk_type: ChunkType) -> list[
 # ──────────────────────────────────────────────────────────────────────────────
 # Non-live unit tests (always run in CI — no Ollama required)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestRoundIndexPropagation:
     """Verify round_index is set on TOOL_CALL and TOOL_RESULT chunks."""
@@ -144,22 +146,26 @@ class TestBridgeRunToolLoopRoundIndex:
 
     def test_first_round_is_zero(self):
         bridge = self._make_bridge_with_mock(tool_call_rounds=1)
-        chunks = list(bridge._run_tool_loop(
-            prompt="call echo",
-            context=Context(),
-            max_rounds=3,
-        ))
+        chunks = list(
+            bridge._run_tool_loop(
+                prompt="call echo",
+                context=Context(),
+                max_rounds=3,
+            )
+        )
         tool_calls = _chunks_by_type(chunks, ChunkType.TOOL_CALL)
         assert tool_calls, "Expected at least one TOOL_CALL chunk"
         assert tool_calls[0].round_index == 0
 
     def test_tool_result_same_round_as_call(self):
         bridge = self._make_bridge_with_mock(tool_call_rounds=1)
-        chunks = list(bridge._run_tool_loop(
-            prompt="call echo",
-            context=Context(),
-            max_rounds=3,
-        ))
+        chunks = list(
+            bridge._run_tool_loop(
+                prompt="call echo",
+                context=Context(),
+                max_rounds=3,
+            )
+        )
         calls = _chunks_by_type(chunks, ChunkType.TOOL_CALL)
         results = _chunks_by_type(chunks, ChunkType.TOOL_RESULT)
         assert calls and results
@@ -167,11 +173,13 @@ class TestBridgeRunToolLoopRoundIndex:
 
     def test_second_round_index_is_one(self):
         bridge = self._make_bridge_with_mock(tool_call_rounds=2)
-        chunks = list(bridge._run_tool_loop(
-            prompt="call echo twice",
-            context=Context(),
-            max_rounds=5,
-        ))
+        chunks = list(
+            bridge._run_tool_loop(
+                prompt="call echo twice",
+                context=Context(),
+                max_rounds=5,
+            )
+        )
         tool_calls = _chunks_by_type(chunks, ChunkType.TOOL_CALL)
         if len(tool_calls) >= 2:
             assert tool_calls[1].round_index == 1
@@ -180,6 +188,7 @@ class TestBridgeRunToolLoopRoundIndex:
 # ──────────────────────────────────────────────────────────────────────────────
 # Live tests (require Ollama — skipped in CI)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.live
 class TestLiveToolCallEndToEnd:
@@ -199,6 +208,7 @@ class TestLiveToolCallEndToEnd:
     def adapter(self, request):
         try:
             from agentix.integration.agentix_bridge_adapter import AgentixBridgeAdapter
+
             self._AgentixBridgeAdapter = AgentixBridgeAdapter
         except ImportError:
             pytest.skip("AgentixBridgeAdapter not importable — check sys.path")
@@ -217,7 +227,7 @@ class TestLiveToolCallEndToEnd:
         target = tmp_path / "hello.txt"
         target.write_text("Hello from test!")
 
-        chunks = self._collect( f"Read the file at {target} and tell me its contents.")
+        chunks = self._collect(f"Read the file at {target} and tell me its contents.")
 
         tool_calls = _chunks_by_type(chunks, ChunkType.TOOL_CALL)
         tool_results = _chunks_by_type(chunks, ChunkType.TOOL_RESULT)
@@ -234,7 +244,7 @@ class TestLiveToolCallEndToEnd:
         target = tmp_path / "data.txt"
         target.write_text("test data")
 
-        chunks = self._collect( f"Read {target}")
+        chunks = self._collect(f"Read {target}")
         tool_calls = _chunks_by_type(chunks, ChunkType.TOOL_CALL)
 
         assert tool_calls, "Expected TOOL_CALL"
@@ -247,7 +257,7 @@ class TestLiveToolCallEndToEnd:
         target = tmp_path / "data.txt"
         target.write_text("test data")
 
-        chunks = self._collect( f"Read {target}")
+        chunks = self._collect(f"Read {target}")
         tool_results = _chunks_by_type(chunks, ChunkType.TOOL_RESULT)
 
         assert tool_results, "Expected TOOL_RESULT"
@@ -259,21 +269,21 @@ class TestLiveToolCallEndToEnd:
         target = tmp_path / "abc.txt"
         target.write_text("abc")
 
-        chunks = self._collect( f"Read {target}")
+        chunks = self._collect(f"Read {target}")
         call_rounds = {c.round_index for c in _chunks_by_type(chunks, ChunkType.TOOL_CALL)}
         result_rounds = {c.round_index for c in _chunks_by_type(chunks, ChunkType.TOOL_RESULT)}
 
         # Each TOOL_RESULT round should match a TOOL_CALL round
-        assert result_rounds.issubset(call_rounds), (
-            f"TOOL_RESULT round indices {result_rounds} not all present in TOOL_CALL rounds {call_rounds}"
-        )
+        assert result_rounds.issubset(
+            call_rounds
+        ), f"TOOL_RESULT round indices {result_rounds} not all present in TOOL_CALL rounds {call_rounds}"
 
     def test_done_chunk_emitted_after_tool_loop(self, tmp_path):
         """A DONE chunk must always follow the agentic loop."""
         target = tmp_path / "x.txt"
         target.write_text("x")
 
-        chunks = self._collect( f"Read {target}")
+        chunks = self._collect(f"Read {target}")
         assert chunks[-1].type == ChunkType.DONE, "Last chunk must be DONE"
 
     def test_list_directory_tool_call(self, tmp_path):
@@ -281,7 +291,7 @@ class TestLiveToolCallEndToEnd:
         (tmp_path / "a.txt").write_text("a")
         (tmp_path / "b.txt").write_text("b")
 
-        chunks = self._collect( f"List the files in {tmp_path}")
+        chunks = self._collect(f"List the files in {tmp_path}")
         tool_calls = _chunks_by_type(chunks, ChunkType.TOOL_CALL)
         assert tool_calls, "Expected a tool call for listing files"
 

@@ -5,14 +5,14 @@ Messages are the core unit of conversation context. They are stored client-side
 in the AgentX session folder and passed to Agentix server in request payloads.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum
-from typing import Any, Optional
 import json
 import os
 import re
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Optional
 
 from .attachment import Attachment
 

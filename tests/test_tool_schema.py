@@ -106,7 +106,7 @@ class TestExtractToolSchema(unittest.TestCase):
 
     def test_whitespace_only_docstring_raises(self):
         def whitespace_doc(x: int) -> int:
-            """   """
+            """ """
             return x
 
         with self.assertRaises(SchemaGenerationError):

@@ -37,10 +37,12 @@ The **Channel Registry** is the authoritative mapping and policy layer for all e
 - **Wiring**: Subscribers register callbacks for specific EventTypes via EventBroker.subscribe().
 
 ## Code Links
+
 - EventType enum and broker: [src/agentx/event_broker.py](../../src/agentx/event_broker.py)
 - TUI subscriber: [src/agentx/integration/tui_event_subscriber.py](../../src/agentx/integration/tui_event_subscriber.py)
 - StreamingController: [src/agentx/streaming_controller.py](../../src/agentx/streaming_controller.py)
 
 ## Change Policy
+
 - All changes to channel definitions, schemas, or policies must be reflected in this document and in the EventType enum.
 - This doc is the single source of truth for channel registry and must be kept in sync with code and tests.

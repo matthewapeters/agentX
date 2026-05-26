@@ -12,11 +12,11 @@ The configuration is divided into sections:
 - AgentixConfig: Middleware and server-side settings
 """
 
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
-import os
 
 try:
     import tomllib  # Python 3.11+
@@ -29,6 +29,7 @@ except ImportError:
 
 class ScreenSide(str, Enum):
     """Screen position for the AgentX window."""
+
     LEFT = "left"
     RIGHT = "right"
     CENTER = "center"
@@ -38,40 +39,41 @@ class ScreenSide(str, Enum):
 class AgentXConfig:
     """
     Configuration for the AgentX GUI client.
-    
+
     These settings control the client-side behavior including
     Ollama connection, GUI layout, and session management.
     """
-    
+
     # Ollama connection (for local/direct mode)
     ollama_host: str = "localhost:11434"
     ollama_model: str = "llama3.2"
     ollama_timeout_seconds: int = 120
-    
+
     # GUI settings
     screen_side: ScreenSide = ScreenSide.LEFT
     window_width: int = 800
     window_height: int = 600
     font_family: str = "Menlo"
     font_size: int = 12
-    
+
     # Session settings
     sessions_dir: str = "sessions"
     auto_save: bool = True
-    
+
     def __post_init__(self):
         """Ensure enums are properly typed."""
         if isinstance(self.screen_side, str):
             self.screen_side = ScreenSide(self.screen_side)
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "AgentXConfig":
         """Create from dictionary (e.g., from TOML section)."""
         return cls(
             ollama_host=data.get("ollama_host", cls.ollama_host),
             ollama_model=data.get("ollama_model", cls.ollama_model),
-            ollama_timeout_seconds=data.get("ollama_initial_load_timeout_seconds", 
-                                            data.get("ollama_timeout_seconds", cls.ollama_timeout_seconds)),
+            ollama_timeout_seconds=data.get(
+                "ollama_initial_load_timeout_seconds", data.get("ollama_timeout_seconds", cls.ollama_timeout_seconds)
+            ),
             screen_side=data.get("screen_side", cls.screen_side),
             window_width=data.get("window_width", cls.window_width),
             window_height=data.get("window_height", cls.window_height),
@@ -80,7 +82,7 @@ class AgentXConfig:
             sessions_dir=data.get("sessions_dir", cls.sessions_dir),
             auto_save=data.get("auto_save", cls.auto_save),
         )
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
@@ -101,15 +103,15 @@ class AgentXConfig:
 class AgentixConfig:
     """
     Configuration for the Agentix middleware.
-    
+
     These settings control the middleware behavior including
     classification, tool management, and server connection.
     """
-    
+
     # Server connection (when Agentix is remote)
     server_url: Optional[str] = None  # None means local/embedded
     server_timeout_seconds: int = 300
-    
+
     # Classification settings
     classify_prompts: bool = True
     classification_model: Optional[str] = None  # None means use default model
@@ -117,24 +119,24 @@ class AgentixConfig:
     classification_torch_model: Optional[str] = None
     classification_torch_device: Optional[int] = None
     show_classification: bool = True
-    
+
     # Tool settings
     available_tools: list[str] = field(default_factory=lambda: ["cst", "ast"])
     show_tool_calls: bool = True
     tool_timeout_seconds: int = 60
-    
+
     # System prompts
     default_system_prompts: list[str] = field(default_factory=list)
     system_prompts_dir: str = "~/.agentix/system_prompts"
-    
+
     # Debug settings
     debug: bool = False
-    
+
     @property
     def is_remote(self) -> bool:
         """Check if Agentix server is remote."""
         return self.server_url is not None
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "AgentixConfig":
         """Create from dictionary (e.g., from TOML section)."""
@@ -146,9 +148,7 @@ class AgentixConfig:
             server_timeout_seconds=data.get("server_timeout_seconds", cls.server_timeout_seconds),
             classify_prompts=data.get("classify_prompts", cls.classify_prompts),
             classification_model=classification_model,
-            classification_backend=data.get(
-                "classification_backend", cls.classification_backend
-            ),
+            classification_backend=data.get("classification_backend", cls.classification_backend),
             classification_torch_model=data.get("classification_torch_model"),
             classification_torch_device=data.get("classification_torch_device"),
             show_classification=data.get("show_classification", cls.show_classification),
@@ -159,7 +159,7 @@ class AgentixConfig:
             system_prompts_dir=data.get("system_prompts_dir", cls.system_prompts_dir),
             debug=data.get("debug", cls.debug),
         )
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
@@ -184,83 +184,82 @@ class AgentixConfig:
 class UnifiedConfig:
     """
     Complete configuration for the integrated AgentX + Agentix system.
-    
+
     Combines both client and middleware configuration into a single
     object that can be loaded from a TOML file.
-    
+
     Example agentx.toml:
         [agentx]
         ollama_host = "localhost:11434"
         ollama_model = "llama3.2"
         screen_side = "left"
-        
+
         [agentix]
         classify_prompts = true
         available_tools = ["cst", "ast"]
     """
-    
+
     agentx: AgentXConfig = field(default_factory=AgentXConfig)
     agentix: AgentixConfig = field(default_factory=AgentixConfig)
-    
+
     @classmethod
     def from_toml(cls, path: str = "agentx.toml") -> "UnifiedConfig":
         """
         Load configuration from TOML file.
-        
+
         Args:
             path: Path to the TOML configuration file
-            
+
         Returns:
             UnifiedConfig instance
         """
         if tomllib is None:
             raise ImportError(
-                "TOML support requires Python 3.11+ or the 'tomli' package. "
-                "Install with: uv add tomli"
+                "TOML support requires Python 3.11+ or the 'tomli' package. " "Install with: uv add tomli"
             )
-        
+
         config_path = Path(path)
-        
+
         if not config_path.exists():
             # Return defaults if file doesn't exist
             return cls()
-        
+
         with open(config_path, "rb") as f:
             data = tomllib.load(f)
-        
+
         return cls.from_dict(data)
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "UnifiedConfig":
         """
         Create from dictionary.
-        
+
         Args:
             data: Dictionary with 'agentx' and/or 'agentix' sections
-            
+
         Returns:
             UnifiedConfig instance
         """
         agentx_data = data.get("agentx", {})
         agentix_data = data.get("agentix", {})
-        
+
         return cls(
             agentx=AgentXConfig.from_dict(agentx_data),
             agentix=AgentixConfig.from_dict(agentix_data),
         )
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary (for serialization)."""
         return {
             "agentx": self.agentx.to_dict(),
             "agentix": self.agentix.to_dict(),
         }
-    
+
     @classmethod
     def from_env(cls) -> "UnifiedConfig":
         """
         Create configuration from environment variables.
-        
+
         Environment variables override TOML settings:
         - AGENTX_OLLAMA_HOST
         - AGENTX_OLLAMA_MODEL
@@ -269,7 +268,7 @@ class UnifiedConfig:
         etc.
         """
         config = cls()
-        
+
         # AgentX settings
         if host := os.getenv("AGENTX_OLLAMA_HOST"):
             config.agentx.ollama_host = host
@@ -277,37 +276,37 @@ class UnifiedConfig:
             config.agentx.ollama_model = model
         if side := os.getenv("AGENTX_SCREEN_SIDE"):
             config.agentx.screen_side = ScreenSide(side)
-        
+
         # Agentix settings
         if url := os.getenv("AGENTIX_SERVER_URL"):
             config.agentix.server_url = url
         if os.getenv("AGENTIX_DEBUG", "").lower() in ("true", "1", "yes"):
             config.agentix.debug = True
-        
+
         return config
-    
+
     @classmethod
     def load(cls, toml_path: str = "agentx.toml") -> "UnifiedConfig":
         """
         Load configuration with full precedence chain.
-        
+
         Precedence (highest to lowest):
         1. Environment variables
         2. TOML file
         3. Defaults
-        
+
         Args:
             toml_path: Path to TOML configuration file
-            
+
         Returns:
             UnifiedConfig with all settings merged
         """
         # Start with TOML (includes defaults if file missing)
         config = cls.from_toml(toml_path)
-        
+
         # Override with environment variables
         env_config = cls.from_env()
-        
+
         # Merge environment overrides
         if os.getenv("AGENTX_OLLAMA_HOST"):
             config.agentx.ollama_host = env_config.agentx.ollama_host
@@ -319,21 +318,21 @@ class UnifiedConfig:
             config.agentix.server_url = env_config.agentix.server_url
         if os.getenv("AGENTIX_DEBUG"):
             config.agentix.debug = env_config.agentix.debug
-        
+
         return config
-    
+
     # Convenience properties for backward compatibility
-    
+
     @property
     def ollama_host(self) -> str:
         """Get Ollama host (AgentX setting)."""
         return self.agentx.ollama_host
-    
+
     @property
     def ollama_model(self) -> str:
         """Get Ollama model (AgentX setting)."""
         return self.agentx.ollama_model
-    
+
     @property
     @property
     def is_remote_agentix(self) -> bool:
@@ -344,13 +343,13 @@ class UnifiedConfig:
 def load_config(path: str = "agentx.toml") -> dict:
     """
     Load configuration as a dictionary.
-    
+
     This function provides backward compatibility with the existing
     AgentX config loading pattern.
-    
+
     Args:
         path: Path to TOML configuration file
-        
+
     Returns:
         Dictionary with configuration sections
     """

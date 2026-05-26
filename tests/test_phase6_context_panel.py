@@ -15,15 +15,15 @@ import tempfile
 import tkinter as tk
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 project_root = str(Path(__file__).parent.parent)
 sys.path.insert(0, os.path.join(project_root, "src"))
 
-from agentx.gui.gui_manager import GUIManager
 from agentx.gui.gui_config import GUIConfig
+from agentx.gui.gui_manager import GUIManager
 from shared.models.message import Message, MessageRole
-from shared.models.response import ResponseChunk, ChunkType
+from shared.models.response import ChunkType, ResponseChunk
 from shared.models.task_node import PlanRecord, TaskNodeRecord
 
 # ---------------------------------------------------------------------------

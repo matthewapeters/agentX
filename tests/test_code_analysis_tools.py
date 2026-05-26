@@ -2,8 +2,8 @@
 Tests for code analysis tools.
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add src to path
@@ -13,8 +13,8 @@ sys.path.insert(0, os.path.join(project_root, "src"))
 from agentx.integration.code_analysis import (
     CodeAnalyzer,
     execute_analyze_syntax,
-    execute_find_functions,
     execute_find_classes,
+    execute_find_functions,
     execute_find_imports,
     execute_suggest_refactoring,
 )

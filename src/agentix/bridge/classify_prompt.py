@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import Optional
 
 from agentix.agentix_config import AgentixConfig
-from agentix.api_client import query_classification
 from agentix.bridge.prompt_assembly import assemble_prompts
 from agentix.constants import CLASSIFICATION_MAX_TOKENS, PROMPT_CLASSIFICATION
 from agentix.prompt_classification_response import (
@@ -212,6 +211,9 @@ def classify_prompt(
 
     # Query API for classification
     try:
+        # Import lazily to avoid import-time cycle with agentix.api_client.
+        from agentix.api_client import query_classification
+
         result = query_classification(config, classification_payload)
 
         # LOG: Raw LLM result before parsing

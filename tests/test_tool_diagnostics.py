@@ -5,9 +5,11 @@ WHEN running diagnostic phases (registry, bridge, availability, execution)
 THEN diagnostics correctly identify tool status and issues.
 """
 
-import pytest
 import json
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from src.agentx.tool_diagnostics import ToolDiagnostics, create_tool_diagnostics
 
 

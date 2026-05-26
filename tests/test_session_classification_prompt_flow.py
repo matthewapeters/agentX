@@ -66,13 +66,11 @@ class TestSessionClassificationPromptFlow(unittest.TestCase):
                 session_dir=self.temp_dir,
             )
 
-            session.agentix_adapter.process_prompt_generator = (
-                lambda *_args, **_kwargs: iter(
-                    [
-                        ResponseChunk(type=ChunkType.CONTENT, content="ok"),
-                        ResponseChunk(type=ChunkType.DONE, content="", done_reason="stop"),
-                    ]
-                )
+            session.agentix_adapter.process_prompt_generator = lambda *_args, **_kwargs: iter(
+                [
+                    ResponseChunk(type=ChunkType.CONTENT, content="ok"),
+                    ResponseChunk(type=ChunkType.DONE, content="", done_reason="stop"),
+                ]
             )
 
             chunks = list(session.process_prompt("what model are you?"))
@@ -99,13 +97,15 @@ class TestSessionClassificationPromptFlow(unittest.TestCase):
         session.gui.display_classification = lambda meta: display_calls.append(meta)  # type: ignore[assignment]
 
         callback = session._make_classification_callback(session.config)
-        callback({
-            "intent": "simple_action",
-            "next_step": "single_tool",
-            "reasoning_summary": "One tool needed.",
-            "needs_clarification": False,
-            "missing_fields": [],
-        })
+        callback(
+            {
+                "intent": "simple_action",
+                "next_step": "single_tool",
+                "reasoning_summary": "One tool needed.",
+                "needs_clarification": False,
+                "missing_fields": [],
+            }
+        )
 
         self.assertEqual(len(display_calls), 1)
         self.assertEqual(display_calls[0]["intent"], "simple_action")
@@ -130,12 +130,14 @@ class TestSessionClassificationPromptFlow(unittest.TestCase):
         session.gui.display_classification = lambda meta: display_calls.append(meta)  # type: ignore[assignment]
 
         callback = session._make_classification_callback(session.config)
-        callback({
-            "intent": "conversation",
-            "next_step": "respond_directly",
-            "reasoning_summary": "ok",
-            "needs_clarification": False,
-            "missing_fields": [],
-        })
+        callback(
+            {
+                "intent": "conversation",
+                "next_step": "respond_directly",
+                "reasoning_summary": "ok",
+                "needs_clarification": False,
+                "missing_fields": [],
+            }
+        )
 
         self.assertEqual(len(display_calls), 0)

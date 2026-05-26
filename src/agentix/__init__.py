@@ -1,6 +1,13 @@
 """Docstring for agentix."""
 
 # Import constants first (no dependencies)
+# Import modules that depend on context
+from . import agentix_config, api_client, main
+from .agent import agentix
+
+# Import config (depends only on constants)
+from .agentix_config import AgentixConfig
+from .bridge.prompt_assembly import assemble_prompts, trim_context
 from .constants import (
     DEFAULT_SESSION_ID,
     DEFAULT_TEMPERATURE,
@@ -11,29 +18,21 @@ from .constants import (
     SYSTEM_PROMPTS_DIR,
 )
 
-# Import config (depends only on constants)
-from .agentix_config import AgentixConfig
-
 # Import Message (no circular dependencies)
 from .context.message import Message
 
-# Import utilities (minimal dependencies)
-from .file_utils import get_attachments, get_file, load_file
-from .transforms import transform_ollama_tags_to_openai_engines
-from .models import get_model, get_models
-
 # Import context modules (now safe since Message is available)
 from .context.prompts import get_prompts, get_system_prompt, get_user_prompt
-from .bridge.prompt_assembly import assemble_prompts, trim_context
 from .context.sessions import (
     get_session_history,
     manage_sessions,
 )
 
-# Import modules that depend on context
-from . import agentix_config, api_client, main
-from .agent import agentix
+# Import utilities (minimal dependencies)
+from .file_utils import get_attachments, get_file, load_file
 from .main import main as __main__
+from .models import get_model, get_models
+from .transforms import transform_ollama_tags_to_openai_engines
 
 # from .api_client import query_api, summarize_user_prompt
 

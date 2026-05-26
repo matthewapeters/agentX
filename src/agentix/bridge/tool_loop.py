@@ -17,7 +17,6 @@ import logging
 from typing import Iterator, Optional
 
 from agentix.agentix_config import AgentixConfig
-from agentix.api_client import query_api_streaming
 from agentix.models import get_model
 from agentix.tools import extract_cst_tools
 from agentix.tools.describe_tools import to_openai_tools
@@ -196,6 +195,9 @@ class ToolLoopRunner:
         pending_tool_calls: dict[int, dict] = {}
 
         try:
+            # Import lazily to avoid import-time cycle with agentix.api_client.
+            from agentix.api_client import query_api_streaming
+
             for chunk in query_api_streaming(self.config, payload):
                 if chunk.get("error"):
                     yield ResponseChunk(type=ChunkType.ERROR, content=chunk["error"])

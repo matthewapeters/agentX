@@ -6,19 +6,20 @@ tool loop, and the Context helper methods added in Phase 4.1.
 """
 
 import json
+
 import pytest
+
+from shared.models.context import Context
 from shared.models.message import (
     Message,
     MessageRole,
-    tool_call_message,
-    tool_result_message,
-    user_message,
     assistant_message,
     system_message,
     thinking_message,
+    tool_call_message,
+    tool_result_message,
+    user_message,
 )
-from shared.models.context import Context
-
 
 # ---------------------------------------------------------------------------
 # to_llm_dict — standard roles

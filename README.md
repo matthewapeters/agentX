@@ -158,6 +158,9 @@ make build-core
 
 # Build core + prepare Python applets under bin/applets
 make build
+
+# Build Python package via uv wrapper
+make python-build
 ```
 
 #### Run Go tests
@@ -165,6 +168,12 @@ make build
 ```bash
 # Run all Go tests (including all GoDog suites)
 make go-test
+
+# Run Python tests via uv wrapper
+make python-test
+
+# Run both Go and Python test wrappers
+make test-all
 
 # Run split GoDog suites
 make go-test-unit

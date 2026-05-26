@@ -9,9 +9,9 @@ from unittest.mock import patch
 import pytest
 
 from agentx.integration.terminal_bridge import (
+    _CAPTURE_SENTINEL_PREFIX,
     TerminalBridge,
     TerminalResult,
-    _CAPTURE_SENTINEL_PREFIX,
     configure_terminal_bridge,
     terminal_run,
 )

@@ -1,0 +1,23 @@
+---
+description: Task packet and return packet contract for Subutai specialist agents.
+---
+- When delegating to a specialist, send a task packet with these sections:
+  - Goal
+  - Scope
+  - Out of scope
+  - Relevant files or context
+  - Constraints
+  - Decision needed
+  - Expected output format
+- Keep task packets concise, specific, and tied to the decision or work product needed from that specialist.
+- Do not delegate vague requests such as "review everything" unless the task truly requires broad review.
+- Require every specialist return packet to include these sections:
+  - Summary
+  - Assumptions
+  - Findings or decisions
+  - Risks
+  - Open questions
+  - Recommended next step
+  - Confidence
+  - Freshness notes when the output may become stale quickly
+- Use return packets as reusable context for downstream tasks only when they are scoped clearly enough to avoid misapplication.

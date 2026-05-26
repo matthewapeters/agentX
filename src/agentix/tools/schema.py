@@ -71,15 +71,15 @@ def _resolve_json_type(annotation: Any) -> dict:
         return {"type": "string"}
 
     # Fallback for anything else (custom classes, TypeVars, etc.)
-    return {"type": "string", "description": f"(type {getattr(annotation, '__name__', str(annotation))} represented as string)"}
+    return {
+        "type": "string",
+        "description": f"(type {getattr(annotation, '__name__', str(annotation))} represented as string)",
+    }
 
 
 def _is_optional(annotation: Any) -> bool:
     """Return True if the annotation is Optional[T] (i.e. Union[T, None])."""
-    return (
-        typing.get_origin(annotation) is typing.Union
-        and type(None) in typing.get_args(annotation)
-    )
+    return typing.get_origin(annotation) is typing.Union and type(None) in typing.get_args(annotation)
 
 
 def extract_tool_schema(fn: Callable) -> dict:

@@ -17,7 +17,7 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import mock_open, patch, MagicMock
+from unittest.mock import MagicMock, mock_open, patch
 
 from agentx.integration.client_tool_executor import ClientToolExecutor
 

@@ -4,20 +4,20 @@ Phase 6 Tests: Advanced Tools & Server-side Integration
 Tests for server-side tool execution, code analysis tools, and advanced tool registry.
 """
 
-import sys
 import os
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+import sys
 import tkinter as tk
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
 # Add src to path
 project_root = str(Path(__file__).parent.parent)
 sys.path.insert(0, os.path.join(project_root, "src"))
 
 from agentx.integration import (
-    ServerToolExecutor,
     AdvancedToolRegistry,
     CodeAnalysisTool,
+    ServerToolExecutor,
 )
 from agentx.session import AgentXSession
 

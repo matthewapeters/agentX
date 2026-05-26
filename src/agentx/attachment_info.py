@@ -20,9 +20,7 @@ class AttachmentInfo:
     attachment_id: str
 
     @classmethod
-    def from_attachment(
-        cls, attachment, is_from_history: bool = False
-    ) -> "AttachmentInfo":
+    def from_attachment(cls, attachment, is_from_history: bool = False) -> "AttachmentInfo":
         """Create from Attachment object.
 
         Args:

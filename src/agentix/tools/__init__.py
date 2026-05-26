@@ -8,6 +8,7 @@ try:
         extract_tools_from_file,
         to_openai_tools,
     )
+
     TOOLS_AVAILABLE = True
 except ImportError as e:
     # Tools not available (missing libcst or other dependencies)
@@ -21,6 +22,7 @@ def extract_cst_tools():
     if not TOOLS_AVAILABLE or cst_tools is None:
         return []
     return extract_tools_from_file(cst_tools.__file__, return_dicts=False)
+
 
 __all__ = [
     "ast_tools",

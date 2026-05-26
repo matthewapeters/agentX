@@ -147,3 +147,7 @@ bin/
 
 # Generated test reports
 junit/test-results.xml*
+
+
+# APM dependencies
+apm_modules/

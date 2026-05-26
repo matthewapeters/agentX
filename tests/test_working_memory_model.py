@@ -17,10 +17,10 @@ from shared.models.working_memory import (
     WorkingMemory,
 )
 
-
 # ---------------------------------------------------------------------------
 # FactOwner
 # ---------------------------------------------------------------------------
+
 
 class TestFactOwner:
     def test_values(self):
@@ -35,6 +35,7 @@ class TestFactOwner:
 # ---------------------------------------------------------------------------
 # FactEntry
 # ---------------------------------------------------------------------------
+
 
 class TestFactEntry:
     def _entry(self, owner=FactOwner.USER, key="project", value="AgentX"):
@@ -101,6 +102,7 @@ class TestFactEntry:
 # WorkingMemory — CRUD
 # ---------------------------------------------------------------------------
 
+
 class TestWorkingMemoryCRUD:
     def test_add_and_retrieve(self):
         wm = WorkingMemory()
@@ -156,6 +158,7 @@ class TestWorkingMemoryCRUD:
 # WorkingMemory — get_enabled_facts / all_facts ordering
 # ---------------------------------------------------------------------------
 
+
 class TestWorkingMemoryOrdering:
     def test_enabled_facts_user_before_agent(self):
         wm = WorkingMemory()
@@ -183,6 +186,7 @@ class TestWorkingMemoryOrdering:
 # ---------------------------------------------------------------------------
 # WorkingMemory — promote_to_user
 # ---------------------------------------------------------------------------
+
 
 class TestPromoteToUser:
     def test_promote_ok(self):
@@ -264,6 +268,7 @@ class TestPromoteToUser:
 # WorkingMemory — LLM block
 # ---------------------------------------------------------------------------
 
+
 class TestLLMBlock:
     def test_empty_returns_empty_string(self):
         assert WorkingMemory().to_llm_block() == ""
@@ -294,6 +299,7 @@ class TestLLMBlock:
 # ---------------------------------------------------------------------------
 # WorkingMemory — persistence
 # ---------------------------------------------------------------------------
+
 
 class TestPersistence:
     def test_save_and_load_round_trip(self, tmp_path):

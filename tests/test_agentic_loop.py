@@ -6,8 +6,8 @@ or Agentix service is required.  These tests verify the multi-turn
 feedback loop behaviour described in docs/tool_usage_plan.md Phase 4.
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -20,8 +20,8 @@ from shared.models.context import Context
 from shared.models.response import ChunkType, ResponseChunk
 from shared.models.tools import ToolResponse
 
-
 # ─── Helpers ────────────────────────────────────────────────────────────────
+
 
 def _make_bridge(tools: dict[str, callable] | None = None) -> AgentixBridge:
     """Create a bridge with optional tool implementations pre-registered."""
@@ -62,9 +62,7 @@ def _tool_call_chunk(name: str, args: dict, tool_id: str = "call_1") -> Response
     )
 
 
-def _finish_tool_calls_then_content(
-    tool_chunks: list[ResponseChunk], content: str
-) -> list[ResponseChunk]:
+def _finish_tool_calls_then_content(tool_chunks: list[ResponseChunk], content: str) -> list[ResponseChunk]:
     """First yield finishes with tool calls, second yields text content."""
     round1 = tool_chunks + [ResponseChunk(type=ChunkType.DONE, done_reason="tool_calls")]
     round2 = _content_chunks(content)
@@ -76,6 +74,7 @@ def _collect(chunks) -> list[ResponseChunk]:
 
 
 # ─── Tests: No tool calls ────────────────────────────────────────────────────
+
 
 class TestNoToolCalls:
     """Loop exits on first round when LLM answers directly."""
@@ -121,6 +120,7 @@ class TestNoToolCalls:
 
 
 # ─── Tests: Single tool call round ──────────────────────────────────────────
+
 
 class TestSingleToolCall:
     """Loop executes one tool then gets final answer."""
@@ -236,6 +236,7 @@ class TestSingleToolCall:
 
 # ─── Tests: Tool execution errors ────────────────────────────────────────────
 
+
 class TestToolErrors:
     """Error-as-result: tool failure never crashes the loop."""
 
@@ -271,6 +272,7 @@ class TestToolErrors:
 
 
 # ─── Tests: Multi-round loop ─────────────────────────────────────────────────
+
 
 class TestMultiRoundLoop:
     """Loop can chain multiple rounds of tool calls."""
@@ -332,10 +334,12 @@ class TestMultiRoundLoop:
         def side_effect(messages, tools=None):
             if tools:
                 # Still in the loop: return a tool call
-                return iter([
-                    _tool_call_chunk("loop_forever", {}, f"call_{always_tool_calls}"),
-                    ResponseChunk(type=ChunkType.DONE, done_reason="tool_calls"),
-                ])
+                return iter(
+                    [
+                        _tool_call_chunk("loop_forever", {}, f"call_{always_tool_calls}"),
+                        ResponseChunk(type=ChunkType.DONE, done_reason="tool_calls"),
+                    ]
+                )
             else:
                 # Synthesis round (tools=None): return a text answer
                 return iter(_content_chunks("Synthesis answer."))
@@ -352,6 +356,7 @@ class TestMultiRoundLoop:
 
 
 # ─── Tests: round_index propagation ─────────────────────────────────────────
+
 
 class TestRoundIndexPropagation:
     """TOOL_CALL and TOOL_RESULT chunks carry correct round_index."""

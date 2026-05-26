@@ -9,7 +9,6 @@ import numpy as np
 
 from .prompt_classification_response import Intent, NextStep
 
-
 _INTENT_TO_NEXT_STEP = {
     Intent.conversation.name: NextStep.respond_directly.name,
     Intent.simple_action.name: NextStep.single_tool.name,
@@ -69,10 +68,7 @@ def classify_intent_with_torch(
         model = _get_setfit_model(model_id)
         label_embeddings = _get_label_embeddings(model_id)
     except ImportError as exc:
-        raise ImportError(
-            "setfit is required for torch classification. "
-            "Install with: pip install setfit"
-        ) from exc
+        raise ImportError("setfit is required for torch classification. " "Install with: pip install setfit") from exc
 
     prompt_embedding = model.model_body.encode(
         [prompt],

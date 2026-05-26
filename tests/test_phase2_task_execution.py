@@ -17,10 +17,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentix.bridge.bridge import AgentixBridge, run_subtask
 from agentix.agentix_config import AgentixConfig
-from shared.models.response import ChunkType, ResponseChunk
+from agentix.bridge.bridge import AgentixBridge, run_subtask
 from shared.models.context import Context
+from shared.models.response import ChunkType, ResponseChunk
 from shared.models.task_node import PlanRecord, PlanStep, TaskNodeRecord, TaskTree
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

@@ -892,7 +892,7 @@ class TestMarkdownRenderingHeadless(unittest.TestCase):
                 self.assertIsNotNone(entry["html_frame"])
                 self.assertIsNone(entry["detail_text"])
                 self.assertIsInstance(entry["html_frame"], FakeHtmlFrame)
-    
+
                 self.assertTrue(entry["is_finalized"])
                 self.assertIsNotNone(entry["html_frame"])
                 self.assertIsNone(entry["detail_text"])

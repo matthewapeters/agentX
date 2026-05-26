@@ -8,13 +8,13 @@ Tests verify that the active model configuration is properly:
 - Used consistently in all Ollama call sites
 """
 
+import os
+import shutil
+import sys
+import tempfile
 import tkinter as tk
 import unittest
-from unittest.mock import MagicMock, patch, Mock, PropertyMock
-import sys
-import os
-import tempfile
-import shutil
+from unittest.mock import MagicMock, Mock, PropertyMock, patch
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))

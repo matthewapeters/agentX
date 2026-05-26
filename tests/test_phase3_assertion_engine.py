@@ -20,15 +20,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentix.agentix_config import AgentixConfig
 from agentix.bridge.assertion_checker import (
     _parse_json_list,
     extract_assertions,
     verify_assertion,
 )
 from agentix.bridge.bridge import AgentixBridge
-from agentix.agentix_config import AgentixConfig
-from shared.models.response import ChunkType, ResponseChunk
 from shared.models.context import Context
+from shared.models.response import ChunkType, ResponseChunk
 from shared.models.task_node import AssertionRecord, PlanRecord, PlanStep, SynthesisAttempt, TaskTree
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

@@ -11,14 +11,14 @@ Supported tool categories:
 
 import json
 import logging
-from typing import Callable, Optional, Any
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 from .code_analysis import (
     execute_analyze_syntax,
-    execute_find_functions,
     execute_find_classes,
+    execute_find_functions,
     execute_find_imports,
     execute_suggest_refactoring,
 )

@@ -16,15 +16,15 @@ from typing import Callable, Iterator, Optional
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 os.environ["AGENTIX_HOME"] = str(PROJECT_ROOT)
 
-from agentix.bridge import AgentixBridge
 from agentix.agentix_config import AgentixConfig
+from agentix.bridge import AgentixBridge
 from agentix.prompt_classification_response import (
-    PromptClassificationResponse,
     Intent,
     NextStep,
+    PromptClassificationResponse,
 )
 from shared.models.context import Context
-from shared.models.response import ResponseChunk, ChunkType
+from shared.models.response import ChunkType, ResponseChunk
 
 logger = logging.getLogger("agentx.adapter")
 

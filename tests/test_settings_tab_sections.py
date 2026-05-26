@@ -95,8 +95,8 @@ class TestSettingsTabSectionCollapseDefaults(unittest.TestCase):
         self.root.withdraw()
         self.sections: dict[str, object] = {}
 
-        from agentx.gui.settings_tab import SettingsTab as _ST
         from agentx.gui.collapsible_section import CollapsibleSection
+        from agentx.gui.settings_tab import SettingsTab as _ST
 
         _original_make_section = _ST._make_section
 

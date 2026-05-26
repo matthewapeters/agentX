@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from agentx.gui.context_meter_widget import (
-    ContextMeterWidget,
     _BANDS,
     _BORDER_CRITICAL,
     _BORDER_DEFAULT,
@@ -26,6 +25,7 @@ from agentx.gui.context_meter_widget import (
     _CRITICAL_THRESHOLD,
     _GHOST_COLOR,
     _WARNING_THRESHOLD,
+    ContextMeterWidget,
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

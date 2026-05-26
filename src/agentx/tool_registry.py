@@ -11,6 +11,7 @@ Tool schema supports both legacy and extended metadata:
 import json
 from pathlib import Path
 from typing import Any, Optional
+
 import toml
 
 from src.agentx.config import DEFAULT_CONFIG, DEFAULT_TOOL_REGISTRY_SEARCH_PATHS

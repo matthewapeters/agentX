@@ -7,9 +7,10 @@ Handles startup, health checks, and graceful shutdown of required services.
 import logging
 import subprocess
 import time
-import httpx
-from typing import Optional
 from dataclasses import dataclass
+from typing import Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 

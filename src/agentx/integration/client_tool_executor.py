@@ -5,11 +5,11 @@ Implements execution of tools that run on the client machine,
 such as file operations and local code analysis.
 """
 
-import os
 import json
+import os
 import re
 from pathlib import Path
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
 
 # Directories to skip when doing recursive traversal (common noise sources)
 _EXCLUDE_DIRS = frozenset(
@@ -667,7 +667,7 @@ def get_client_tool_schemas() -> list:
     Returns:
         List of dicts in the ``{"type": "function", "function": {...}}`` format.
     """
-    from agentix.tools.schema import extract_tool_schema, SchemaGenerationError
+    from agentix.tools.schema import SchemaGenerationError, extract_tool_schema
 
     schemas = []
     for fn in CLIENT_TOOL_FUNCTIONS.values():

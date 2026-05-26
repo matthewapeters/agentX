@@ -9,9 +9,7 @@ from .tool_extractor import ToolExtractor
 from .tool_spec import ToolSpec
 
 
-def extract_tools_from_code(
-    source: str, debug: bool = False, return_dicts: bool = True
-):
+def extract_tools_from_code(source: str, debug: bool = False, return_dicts: bool = True):
     """
     Parse Python source with LibCST and extract a list of tool specs (dicts or ToolSpec objects) for
     top-level functions and class methods (non-nested).
@@ -57,9 +55,7 @@ def to_openai_tools(tools: List[ToolSpec]) -> List[Dict]:
             {
                 "type": "function",
                 "function": {
-                    "name": t.qualified_name.replace(
-                        ".", "__"
-                    ),  # flatten for API constraints
+                    "name": t.qualified_name.replace(".", "__"),  # flatten for API constraints
                     "description": t.description or (t.docstring or "")[:300],
                     "parameters": t.parameters_schema,
                 },

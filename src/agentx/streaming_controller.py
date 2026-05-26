@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 from shared.models.message import Message, MessageRole
 from shared.models.response import ChunkType, ResponseChunk
+
 from .event_broker import EventType
 from .protocols import IMeterSession
 

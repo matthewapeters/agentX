@@ -4,26 +4,27 @@ Phase 4 Tests: Tool Call/Result Message Handling
 Tests for storing and displaying tool execution messages in AgentX.
 """
 
-import sys
 import os
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+import sys
 import tkinter as tk
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
 # Add src to path
 project_root = str(Path(__file__).parent.parent)
 sys.path.insert(0, os.path.join(project_root, "src"))
 
 from agentx.session import AgentXSession
-from shared.models.message import Message
 from shared.models.context import Context
+from shared.models.message import Message
 
 
 def test_tool_call_message_storage():
     """Test that TOOL_CALL messages are stored in context."""
     # Use shared Context (Agentix format)
     from shared.models.context import Context as SharedContext
-    from shared.models.message import Message as SharedMessage, MessageRole
+    from shared.models.message import Message as SharedMessage
+    from shared.models.message import MessageRole
 
     context = SharedContext()
 
@@ -50,7 +51,8 @@ def test_tool_result_message_storage():
     """Test that TOOL_RESULT messages are stored in context."""
     # Use shared Context (Agentix format)
     from shared.models.context import Context as SharedContext
-    from shared.models.message import Message as SharedMessage, MessageRole
+    from shared.models.message import Message as SharedMessage
+    from shared.models.message import MessageRole
 
     context = SharedContext()
 
@@ -118,7 +120,8 @@ def test_gui_message_roles_updated():
 
 def test_shared_message_has_tool_fields():
     """Test that shared Message model has tool fields."""
-    from shared.models.message import Message as SharedMessage, MessageRole
+    from shared.models.message import Message as SharedMessage
+    from shared.models.message import MessageRole
 
     # Create a tool_call message
     msg = SharedMessage(
@@ -135,7 +138,8 @@ def test_phase4_integration():
     """Integration test for Phase 4 components."""
     # Verify all components work together
     from shared.models.context import Context as SharedContext
-    from shared.models.message import Message as SharedMessage, MessageRole
+    from shared.models.message import Message as SharedMessage
+    from shared.models.message import MessageRole
 
     context = SharedContext()
 

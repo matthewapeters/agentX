@@ -4,27 +4,27 @@ Phase 7 Tests: Streaming & Real-time Features
 Tests for streaming tool execution, progress tracking, and UI components.
 """
 
-import sys
 import os
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+import sys
 import tkinter as tk
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
 # Add src to path
 project_root = str(Path(__file__).parent.parent)
 sys.path.insert(0, os.path.join(project_root, "src"))
 
 from agentx.integration import (
-    StreamingExecutor,
-    ProgressUpdate,
-    ProgressType,
-    ProgressTracker,
-    StreamingToolChain,
-    create_progress_stream,
     ProgressIndicator,
     ProgressPanel,
+    ProgressTracker,
+    ProgressType,
+    ProgressUpdate,
     ResultStreamWidget,
     StreamingExecutionUI,
+    StreamingExecutor,
+    StreamingToolChain,
+    create_progress_stream,
 )
 
 

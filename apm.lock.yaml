@@ -1,0 +1,63 @@
+lockfile_version: '1'
+generated_at: '2026-05-25T22:57:10.454700+00:00'
+apm_version: 0.14.2
+dependencies:
+- repo_url: matthewapeters/subutai
+  host: github.com
+  resolved_commit: 1ddca777b503ad4d715a01343e5dd8a57aef502f
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/api-integration-architect.agent.md
+  - .github/agents/apm-expert.agent.md
+  - .github/agents/application-architect.agent.md
+  - .github/agents/cicd-expert.agent.md
+  - .github/agents/data-database-architect.agent.md
+  - .github/agents/frontend-engineer.agent.md
+  - .github/agents/go-staff-programmer.agent.md
+  - .github/agents/issue-fix-close.agent.md
+  - .github/agents/issue-intake.agent.md
+  - .github/agents/issue-investigate.agent.md
+  - .github/agents/issue-pr-handoff.agent.md
+  - .github/agents/issue-regression-tests.agent.md
+  - .github/agents/issue-reproduce-evidence.agent.md
+  - .github/agents/issue-verify-release.agent.md
+  - .github/agents/linux-automation-expert.agent.md
+  - .github/agents/performance-scalability-engineer.agent.md
+  - .github/agents/python-staff-programmer.agent.md
+  - .github/agents/sdet.agent.md
+  - .github/agents/software-security-architect.agent.md
+  - .github/agents/sre-observability-engineer.agent.md
+  - .github/agents/tpm-expert.agent.md
+  - .github/instructions/expert-contract.instructions.md
+  - .github/instructions/orchestration-artifacts.instructions.md
+  - .github/instructions/orchestrator-conflict-progress.instructions.md
+  - .github/instructions/orchestrator-triage.instructions.md
+  - .github/instructions/subutai-orchestrator.instructions.md
+  deployed_file_hashes:
+    .github/agents/api-integration-architect.agent.md: sha256:bb784c6a4c645f1d450b8f5861fdf93b2957722759c4f1b17c7c1df6cc37a921
+    .github/agents/apm-expert.agent.md: sha256:c51063f028af4a5e3eae9e2fa045a3dd5711e9356ea6d755d637da3a62e887b2
+    .github/agents/application-architect.agent.md: sha256:1077866b9486ac013f9fb5669e70de515f826b467b3f7711be21071f4e42b378
+    .github/agents/cicd-expert.agent.md: sha256:fd79553cb3ba47fb1314e83062f3e6daa97b7239f746a82e4892b6a9a201d0bf
+    .github/agents/data-database-architect.agent.md: sha256:43eabf3c6d4032f7c4587676ff176d4ef1c1e0cb4096a417b0773a061a13862e
+    .github/agents/frontend-engineer.agent.md: sha256:ad9fdf13ddacc02c75a338ed1fa2ff030b09eb0fb30992791f2fc70944ba7deb
+    .github/agents/go-staff-programmer.agent.md: sha256:529428a42b0513064134b2bc7e091260039c6e5b6b2b229947f4541799aa000d
+    .github/agents/issue-fix-close.agent.md: sha256:65f7d8ad87c0c133c139a65b3b02e28716df069232d1dce7e05011aa758f4623
+    .github/agents/issue-intake.agent.md: sha256:8caf04ab30c4aad69e9d0141e635a0941723e75ec77f7dd777f170835f320a3f
+    .github/agents/issue-investigate.agent.md: sha256:8dfa3e359df1092b127daf73d246437641f345ab2e197a2f3615f933cd38473c
+    .github/agents/issue-pr-handoff.agent.md: sha256:11f316404d23a3356f30ff5566caee1a58c222333e67d500a57309195dcd1266
+    .github/agents/issue-regression-tests.agent.md: sha256:5110b5d1b395d659266b3f910bd6519a1da37584bbe3f53df7288e5c00ce7c29
+    .github/agents/issue-reproduce-evidence.agent.md: sha256:5d892126165b5b08d2b5f3144e3cbe8e32a521cc47d23e9b1f65d42685b789b3
+    .github/agents/issue-verify-release.agent.md: sha256:60fd323ccb07832864110a871a68eee3e952df0c33af3a491ccdb7d9c1b97c2c
+    .github/agents/linux-automation-expert.agent.md: sha256:f0c32b5337329ffa3a754202b9a6bfdbbcd10e69a39498358d41a79d51422acd
+    .github/agents/performance-scalability-engineer.agent.md: sha256:8821406aab1b51105ccd2f083be49fcad497f482e13d7a4e5062993efb843c2c
+    .github/agents/python-staff-programmer.agent.md: sha256:270759476391d643306d1d31c0d4632bd0208f997fe8340545e8d565e95eff68
+    .github/agents/sdet.agent.md: sha256:edb31940cb1784d137cde2ed5ba9386602b1ac132d7a013989c0f5e857771d67
+    .github/agents/software-security-architect.agent.md: sha256:a7812e608896a3d98087d427aa2e74c71c94653936745c94cc30f5afa26f74b3
+    .github/agents/sre-observability-engineer.agent.md: sha256:61325a80e411a9ffa6b26e8ca4942c7966502a1b39bda5cd05ccd44fdd03953a
+    .github/agents/tpm-expert.agent.md: sha256:88e2546fa62d23384a91c5b37b9af5642799a7ee60d2c7c9af25a022175b7ed8
+    .github/instructions/expert-contract.instructions.md: sha256:60552581761abe2a9df4fa556a43a15b35d1de54511b08b6d57801d1982a0136
+    .github/instructions/orchestration-artifacts.instructions.md: sha256:3e22ac31f8ac7e5152b0d2a2f511834b72b75d0cf859e153d7da85a891720ee9
+    .github/instructions/orchestrator-conflict-progress.instructions.md: sha256:e4000c48fb1e0dbc49dac73db056b37ceb66ae9f79ea0b9f37f83adf16145703
+    .github/instructions/orchestrator-triage.instructions.md: sha256:baa44c387259b90eca900648bd58d5e3708291d53dced279215a4f281f67cc72
+    .github/instructions/subutai-orchestrator.instructions.md: sha256:3cbefbbc4616750a91fa783f80eb73e6f1edbb6fdf7816eadb4bd86a734e8ea2
+  content_hash: sha256:a9176512bf46db3e25fd430c729c56adaff0862272e631391397de9950a91f64

@@ -1,4 +1,3 @@
-// Package main core orchestrator.
 package main
 
 import (
@@ -20,6 +19,63 @@ import (
 	"sync"
 	"time"
 )
+
+// emitSystemPanelRender builds and emits the system panel string as a JSON line to the context applet (thin renderer).
+func (ac *AgentXCore) emitSystemPanelRender(ctx context.Context) error {
+	ac.mu.RLock()
+	contextApplet, exists := ac.applets["context"]
+	ac.mu.RUnlock()
+	if !exists || contextApplet.BridgeStdin == nil {
+		return fmt.Errorf("context applet not available or not running")
+	}
+
+	// Build system panel string (mirroring previous Python logic)
+	var sb strings.Builder
+	sb.WriteString("[SYSTEM]\n")
+	// == FILES ==
+	entries, _ := ioutil.ReadDir(ac.Config.ProjectDir)
+	sb.WriteString("== FILES ==\n")
+	sb.WriteString(fmt.Sprintf("root: %s | entries: %d\n", trimForPaneSummary(ac.Config.ProjectDir, 48), len(entries)))
+	if len(entries) > 0 {
+		sb.WriteString(fmt.Sprintf("preview: %s\n", trimForPaneSummary(entries[0].Name(), 24)))
+	}
+	// == CONFIGURATION ==
+	sb.WriteString("== CONFIGURATION ==\n")
+	sb.WriteString(fmt.Sprintf("model: %s | backend: %s\n", trimForPaneSummary(ac.runtimeConfig.OllamaModel, 24), trimForPaneSummary(ac.runtimeConfig.ChatBackend, 12)))
+	sb.WriteString(fmt.Sprintf("ollama_host: %s\n", trimForPaneSummary(ac.runtimeConfig.OllamaHost, 40)))
+	// == CONTEXT ==
+	turns := ac.ContextTurnsSnapshot()
+	turnCount := len(turns)
+	sb.WriteString("== CONTEXT ==\n")
+	sb.WriteString(fmt.Sprintf("session_id: %s | turn_count: %d\n", trimForPaneSummary(ac.SessionID, 28), turnCount))
+	if turnCount > 0 {
+		lastTurn := turns[turnCount-1]
+		sb.WriteString(fmt.Sprintf("last_user: %s\n", trimForPaneSummary(lastTurn.Prompt, 56)))
+		sb.WriteString(fmt.Sprintf("last_assistant: %s\n", trimForPaneSummary(lastTurn.Response, 51)))
+	}
+	// == CONTEXT HISTORY ==
+	sb.WriteString("== CONTEXT HISTORY ==\n")
+	sb.WriteString(fmt.Sprintf("history_context_count: %d\n", turnCount))
+	if turnCount > 1 {
+		sb.WriteString(fmt.Sprintf("recent_prompt: %s\n", trimForPaneSummary(turns[turnCount-2].Prompt, 57)))
+	}
+	// == CONTEXT VISUALIZER ==
+	sb.WriteString("== CONTEXT VISUALIZER ==\n")
+	userTokens, assistantTokens := 0, 0
+	for _, t := range turns {
+		userTokens += len(strings.Fields(t.Prompt))
+		assistantTokens += len(strings.Fields(t.Response))
+	}
+	sb.WriteString(fmt.Sprintf("max_tokens: 0 | user: %d | assistant: %d | tool: 0\n", userTokens, assistantTokens))
+	sb.WriteString("working_memory: 0 | system: 0 | attachments: 0 | thinking: 0\n")
+
+	payload := map[string]string{"render": sb.String()}
+	enc := json.NewEncoder(contextApplet.BridgeStdin)
+	if err := enc.Encode(payload); err != nil {
+		return fmt.Errorf("failed to emit system panel render: %w", err)
+	}
+	return nil
+}
 
 type tmuxPaneTarget struct {
 	name   string
@@ -830,10 +886,16 @@ func (ac *AgentXCore) RouteInputPrompt(ctx context.Context, prompt string) (stri
 		return "", err
 	}
 
+
 	if err := ac.renderChatResponse(ctx, response); err != nil {
 		ac.markAppletStatus(chatApplet.Name, AppletStatusCrashed, err)
 		log.Printf("[AgentX Core] Prompt rendering failed: %v", err)
 		return "", err
+	}
+
+	// Emit Go-driven system panel render to context applet (thin renderer)
+	if err := ac.emitSystemPanelRender(ctx); err != nil {
+		log.Printf("[AgentX Core] System panel render failed: %v", err)
 	}
 
 	ac.emitLifecycleEvent(ctx, lifecycleStageTool, lifecycleEventDetails(lifecycleStageTool, trimmedPrompt, response))

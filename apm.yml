@@ -1,0 +1,10 @@
+name: agentX
+version: 1.0.0
+description: APM project for agentX
+author: MatthewAPeters
+dependencies:
+  apm:
+  - matthewapeters/subutai
+  mcp: []
+includes: auto
+scripts: {}
