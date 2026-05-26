@@ -692,7 +692,7 @@ func captureTmuxSessionDiagnostics(artifactDir, prefix, sessionName string) {
 		"-t",
 		sessionName,
 		"-F",
-		"#{session_name}|#{window_index}|#{pane_index}|#{pane_id}|#{pane_title}|#{pane_active}",
+		"#{session_name}|#{window_index}|#{pane_index}|#{pane_id}|#{pane_title}|#{pane_active}|#{pane_width}|#{pane_height}",
 	)
 	if listPanesErr != nil {
 		_ = os.WriteFile(filepath.Join(artifactDir, fmt.Sprintf("%s_tmux_list_panes.error.txt", prefix)), []byte(listPanesErr.Error()+"\n"), 0o644)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import os
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ import pytest
 from agentx.event_broker import EventType
 from agentx.integration.tui_bridge import QUIT_SENTINEL, SUBMIT_SENTINEL, TuiBridge
 from agentx.streaming_controller import StreamingController
+from shared.models.response import ChunkType, ResponseChunk
 
 
 class _Msg:
@@ -121,6 +123,34 @@ def test_tui_bridge_write_output_drops_when_no_reader(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_tui_bridge_write_output_drops_when_broken_pipe_occurs(tmp_path: Path) -> None:
+    """GIVEN a disconnect after open WHEN write_output is called THEN it fails closed and cleans up."""
+    output_fifo = tmp_path / "output.fifo"
+    os.mkfifo(output_fifo)
+
+    bridge = TuiBridge(output_fifo=str(output_fifo), enabled=True, write_timeout_sec=0.05)
+    bridge.start()
+
+    try:
+        with (
+            patch("agentx.integration.tui_bridge.os.open", return_value=11) as mock_open,
+            patch("agentx.integration.tui_bridge.select.select", return_value=([], [11], [])),
+            patch(
+                "agentx.integration.tui_bridge.os.write", side_effect=BrokenPipeError(errno.EPIPE, "broken pipe")
+            ) as mock_write,
+            patch("agentx.integration.tui_bridge.os.close") as mock_close,
+        ):
+            ok = bridge.write_output("hello")
+
+        assert ok is False
+        mock_open.assert_called_once()
+        mock_write.assert_called_once()
+        mock_close.assert_called_once_with(11)
+    finally:
+        bridge.stop()
+
+
+@pytest.mark.unit
 def test_tui_bridge_write_output_returns_false_when_disabled(tmp_path: Path) -> None:
     """GIVEN bridge disabled WHEN write_output is called THEN returns False immediately."""
     output_fifo = tmp_path / "output.fifo"
@@ -188,11 +218,13 @@ def test_tui_bridge_write_output_multipart_payload(tmp_path: Path) -> None:
         assert ok is True
 
         deadline = time.time() + 1.0
-        while not received and time.time() < deadline:
+        combined = b""
+        expected_size = len(large_payload.encode("utf-8"))
+        while len(combined) < expected_size and time.time() < deadline:
             time.sleep(0.01)
+            combined = b"".join(received)
 
-        combined = b"".join(received)
-        assert len(combined) >= len(large_payload)
+        assert len(combined) >= expected_size
         assert large_payload.encode() in combined
     finally:
         bridge.stop()
@@ -324,6 +356,87 @@ def test_streaming_controller_writes_agent_and_tool_records_to_tui() -> None:
     assert any(
         event == EventType.AGENT_CONTENT and record.startswith("###TOOL_RESULT read_file") for event, record in calls
     )
+
+
+def test_streaming_controller_emits_agent_header_once_across_multiple_chunks() -> None:
+    """GIVEN one assistant turn with multiple chunks WHEN rendered THEN AGENT header is emitted exactly once."""
+    session = _build_session(show_thinking=False)
+    controller = StreamingController(session)
+
+    controller._handle_stream_content("chunk one")
+    controller._handle_stream_content("chunk two")
+
+    records = [
+        call.args[1].get("text", "")
+        for call in session.event_broker.publish.call_args_list
+        if len(call.args) >= 2 and call.args[0] == EventType.AGENT_CONTENT
+    ]
+
+    headers = [record for record in records if record.startswith("###AGENT")]
+    assert len(headers) == 1
+    assert "chunk one" in records
+    assert "chunk two" in records
+
+
+def test_streaming_controller_coexistence_keeps_gui_and_tui_headers_single() -> None:
+    """GIVEN one turn in dual-surface flow WHEN multiple chunks render THEN GUI and TUI each receive a single AGENT header."""
+    session = _build_session(show_thinking=False)
+    controller = StreamingController(session)
+
+    controller._handle_stream_content("chunk one")
+    controller._handle_stream_content("chunk two")
+    controller._write_tui_output("###DONE\n")
+
+    tui_records = [
+        call.args[1].get("text", "")
+        for call in session.event_broker.publish.call_args_list
+        if len(call.args) >= 2 and call.args[0] == EventType.AGENT_CONTENT
+    ]
+    tui_headers = [record for record in tui_records if record.startswith("###AGENT")]
+    assert len(tui_headers) == 1
+    assert any(record == "###DONE\n" for record in tui_records)
+
+    gui_records = [call.args[0] for call in session.gui.display_agent_response.call_args_list if call.args]
+    gui_headers = [text for text in gui_records if "🤖" in text]
+    assert len(gui_headers) == 1
+    assert any("chunk one" in text for text in gui_records)
+    assert any("chunk two" in text for text in gui_records)
+
+
+def test_streaming_controller_resets_headers_between_sequential_turns() -> None:
+    """GIVEN sequential turns WHEN streamed via agentix THEN each turn emits exactly one AGENT header and one DONE marker."""
+    session = _build_session(show_thinking=False)
+    session._is_streaming = threading.Event()
+    session.refresh_user_gui = MagicMock()
+    session.refresh_context_gui = MagicMock()
+    session.add_message_to_context = MagicMock()
+    session._build_shared_context = MagicMock(return_value={})
+    session.enabled_history_attachments = []
+    session.message = SimpleNamespace(content="", enabled=False, attachments=[])
+    session.agentix_adapter = MagicMock()
+    session.agentix_adapter.process_prompt_generator.side_effect = (
+        lambda prompt, *_args, **_kwargs: iter([ResponseChunk(type=ChunkType.CONTENT, content=f"resp:{prompt}")])
+    )
+    session.config = {"tui": {"show_thinking": False}, "agentix": {"classify_prompts": False}}
+
+    controller = StreamingController(session)
+
+    session._pending_prompt = "first"
+    controller.stream_via_agentix()
+    session._pending_prompt = "second"
+    controller.stream_via_agentix()
+
+    records = [
+        call.args[1].get("text", "")
+        for call in session.event_broker.publish.call_args_list
+        if len(call.args) >= 2 and call.args[0] == EventType.AGENT_CONTENT
+    ]
+    header_indexes = [idx for idx, record in enumerate(records) if record.startswith("###AGENT")]
+    done_indexes = [idx for idx, record in enumerate(records) if "###DONE" in record]
+
+    assert len(header_indexes) == 2
+    assert len(done_indexes) == 2
+    assert header_indexes[0] < done_indexes[0] < header_indexes[1] < done_indexes[1]
 
 
 def test_streaming_controller_respects_show_thinking_flag_for_tui() -> None:

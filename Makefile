@@ -2,9 +2,12 @@
 
 GO_CORE_DIR := cmd/agentx-core
 GO_CORE_BIN := bin/agentx
+UV ?= uv
+PYTHON_TEST_ARGS ?= -q
+UV_PROJECT_ENV ?= $(CURDIR)/.venv
 
 .PHONY: help \
-	build build-core build-applets clean \
+	build build-core build-applets clean python-build python-test test-all \
 	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e go-test-pane-layout \
 	test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-attached-runtime-headless demo-smoke verify-tmux-layout hybrid-merge-gate \
 	run run-attached run-with-applets
@@ -16,10 +19,13 @@ help:
 	@echo "  build               Build Go core and prepare applets"
 	@echo "  build-core          Build Go core binary only"
 	@echo "  build-applets       Copy Python applets into bin/applets"
+	@echo "  python-build        Build Python package with uv"
 	@echo "  clean               Remove build artifacts"
 	@echo ""
 	@echo "Test:"
 	@echo "  test                Alias for go-test"
+	@echo "  python-test         Run Python tests via uv (override with PYTHON_TEST_ARGS=...)"
+	@echo "  test-all            Run go-test + python-test"
 	@echo "  go-test             Run all Go tests in cmd/agentx-core"
 	@echo "  go-test-unit        Run GoDog @unit suite"
 	@echo "  go-test-integration Run GoDog @integration suite"
@@ -47,6 +53,7 @@ build-core:
 	@mkdir -p bin
 	cd $(GO_CORE_DIR) && go mod tidy
 	cd $(GO_CORE_DIR) && go mod download
+	cd $(GO_CORE_DIR) && go test ./...
 	cd $(GO_CORE_DIR) && go build -o ../../$(GO_CORE_BIN)
 	@chmod +x $(GO_CORE_BIN)
 	@echo "Go core built at $(GO_CORE_BIN)"
@@ -62,6 +69,14 @@ clean:
 	@rm -rf bin/
 	@cd $(GO_CORE_DIR) && go clean
 	@echo "Clean complete"
+
+python-build:
+	VIRTUAL_ENV=$(UV_PROJECT_ENV) UV_PROJECT_ENVIRONMENT=$(UV_PROJECT_ENV) $(UV) build
+
+python-test:
+	VIRTUAL_ENV=$(UV_PROJECT_ENV) UV_PROJECT_ENVIRONMENT=$(UV_PROJECT_ENV) $(UV) run --no-sync pytest $(PYTHON_TEST_ARGS)
+
+test-all: go-test python-test
 
 test: go-test
 
@@ -101,7 +116,7 @@ demo-smoke: build-core
 verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless
 	@echo "tmux layout verification complete"
 
-hybrid-merge-gate: build-core go-test verify-tmux-layout test-tmux-attached-runtime-headless
+hybrid-merge-gate: build-core go-test verify-tmux-layout demo-smoke test-tmux-attached-runtime-headless
 	@echo "hybrid merge-readiness gate complete"
 
 run: build-core

@@ -286,6 +286,24 @@ def run_chat_affordance_loop():
     return 0
 
 
+def run_context_affordance_loop():
+    """Poll context endpoint and render deterministic system-surface sections."""
+    print_ui_line("System panel ready.")
+    last_render = ""
+    while not shutdown_requested:
+        try:
+            payload = _get_json("/context")
+            render = _render_system_surface(payload)
+            if render != last_render:
+                clear_visible_screen()
+                print_ui_line(render)
+                last_render = render
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
+            pass
+        time.sleep(0.5)
+    return 0
+
+
 def run_thin_render_loop():
     """Thin renderer: read rendering instructions/data from stdin (or FIFO) and print directly."""
     print_ui_line("Thin renderer ready. Waiting for rendering instructions...")
@@ -512,7 +530,10 @@ def main():
     if APPLET_NAME == "chat":
         return run_chat_affordance_loop()
     if APPLET_NAME == "context":
-        return run_thin_render_loop()
+        context_mode = os.getenv("AGENTX_CONTEXT_PANE_MODE", "surface").strip().lower()
+        if context_mode in {"thin", "bridge"}:
+            return run_thin_render_loop()
+        return run_context_affordance_loop()
 
     # Logs/other panes retain a passive heartbeat loop.
     try:

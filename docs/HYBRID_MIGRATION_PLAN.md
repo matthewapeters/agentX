@@ -1,6 +1,6 @@
 # Hybrid Go/Python Migration Plan
 
-_Last updated: 2026-05-22 (v0.79.2)_
+_Last updated: 2026-05-25 (v0.79.21)_
 
 ## Overview
 
@@ -8,7 +8,130 @@ This document tracks the migration from pure-Python TUI to hybrid Go-core + Pyth
 
 Authoritative status source: this file is the single source of truth for hybrid migration status and checkpoints.
 
+Authoritative execution source: this file is also the single source of truth for TUI integration completion scope, sprint backlog, issue ownership, and dependency ordering.
+
 **Branch:** `feat/hybrid-go-core-tui-migration`
+
+## Current Sprint Rollup
+
+Current sprint: Sprint 3 — Demo-Harness E2E Proof + UAT Gate.
+
+Current objective: extend demo-harness parity stories and evidence checks to support UAT-ready proof bundles.
+
+Active focus:
+
+- Sprint 3 execution has started from a green Sprint 2 gate baseline.
+- HX-301 is in progress with parity story guardrails anchored in the default demo manifest.
+- HX-302 evidence-capture hardening is complete with deterministic pane/window metadata assertions in smoke and unit diagnostics tests.
+- HX-303 smoke gate now asserts parity evidence markers for startup/lifecycle/system-panel stories and fails on missing markers.
+- HX-304 summary evidence checks are now wired into smoke validation for readiness state, failed test id, and artifact path output markers.
+- HX-305 merge-gate alignment is complete: reconciled parity checks are now enforced by the hybrid readiness gate.
+
+Recently completed:
+
+- `HX-101` Freeze TUI/GUI parity matrix.
+- `HX-102` Canonical event lifecycle contract.
+- `HX-103` Subscriber formatting parity.
+- `HX-104` Session-mode coexistence contract.
+- `HX-105` Parity regression suite for semantic lifecycle.
+- `HX-201` Deterministic TUI startup/shutdown wiring.
+- `HX-202` Bridge failure-mode handling (timeout/retry/disconnect).
+- `HX-203` Integration path: StreamingController -> broker -> TUI subscriber.
+- `HX-204` Integration path: input submit -> session -> response stream.
+
+Current blockers:
+
+- No issues are currently marked `Blocked` in the authoritative backlog.
+
+Immediate exit criteria:
+
+- GUI/TUI parity matrix is agreed and linked from UX docs.
+- One canonical lifecycle contract exists for startup, turn streaming, tool activity, errors, interrupts, and turn completion.
+- TUI subscriber/output formatting matches the canonical contract.
+- Regression tests prove no visible event loss, duplication, or reordering for the semantic lifecycle.
+
+## User-Perceivable Value Anchor (Sprint Planning Standard)
+
+Each sprint must end with at least one demonstrable user-perceivable deliverable that can be shown live in less than five minutes.
+
+Canonical example for Sprint 2 value framing:
+
+- Reliable interaction path from input to response.
+- Enter prompt in TUI input.
+- See a complete streamed response lifecycle in TUI output.
+- Turn completion is explicit and consistent every time.
+
+Standard for upcoming sprints:
+
+- Every sprint plan must include a "What the user can experience/demo" statement.
+- Every acceptance table must map at least one issue to that statement.
+- Every sprint review must include a pass/fail demo script tied to that statement.
+
+Documentation-first workflow standard:
+
+- Planning and user-facing docs are updated before implementation starts for a scoped change.
+- Code changes are not considered complete until related docs are updated and reviewed in the same branch state.
+- Build/test gate updates must be reflected in both developer docs and sprint execution docs before closure.
+
+## Reconciled Plan Scope (Single Source)
+
+This plan now absorbs the TUI integration completion scope previously tracked in `docs/TUI_INTEGRATION_COMPLETION_PLAN.md`.
+
+Completion remains blocked until all of the following are true:
+
+- TUI mirrors GUI semantics for startup, input, response, thinking, tool call/result, error, interrupt, and end-of-turn lifecycle.
+- TUI exposes critical user-facing state currently visible in GUI (context/history summaries, attachment state summary, plan/status visibility).
+- Coverage is demonstrable across hermetic unit tests, integration tests, and tmux/demo-harness E2E paths.
+- Demo harness outputs are sufficient for UAT evidence without requiring source-level debugging.
+
+Delivery model for this reconciled scope is the authoritative sprintized backlog in the next section.
+
+## Sprintized Backlog (Authoritative)
+
+Legend:
+
+- Owner uses role ownership to avoid single-person bottlenecks.
+- Dependencies use issue IDs in this section.
+- Status values: `Ready`, `In Progress`, `Blocked`, `Done`.
+
+### Sprint 1 — Parity Contract + Semantic Closure
+
+| Issue | Title | Owner | Dependencies | Status | Acceptance |
+|------|-------|-------|--------------|--------|------------|
+| HX-101 | Freeze TUI/GUI parity matrix | UX + Product | - | Done | Matrix defines 1:1 vs simplified affordances and is linked from UX docs |
+| HX-102 | Canonical event lifecycle contract | Python Runtime | HX-101 | Done | One lifecycle contract for both GUI and TUI (startup -> done/error) |
+| HX-103 | Subscriber formatting parity | Python Runtime | HX-102 | Done | `tui_event_subscriber` emits canonical headers/markers for all contract events |
+| HX-104 | Session-mode coexistence contract (GUI-only/TUI-only/dual) | Application Architecture | HX-101 | Done | Runtime mode decision logic and user-visible behavior documented and tested |
+| HX-105 | Parity regression suite for semantic lifecycle | QA/Automation | HX-102, HX-103, HX-104 | Done | Tests prove ordering and no event loss/regression across turn lifecycle |
+
+### Sprint 2 — Runtime Determinism + Integration Hardening
+
+| Issue | Title | Owner | Dependencies | Status | Acceptance |
+|------|-------|-------|--------------|--------|------------|
+| HX-201 | Deterministic TUI startup/shutdown wiring | Go Core | HX-104 | Ready | Session startup/stop leaves no orphaned readers, FIFOs, or panes |
+| HX-202 | Bridge failure-mode handling (timeout/retry/disconnect) | Python Runtime | HX-103 | Done | Deterministic behavior for slow/unavailable reader and reconnect paths |
+| HX-203 | Integration path: StreamingController -> broker -> TUI subscriber | QA/Automation | HX-103, HX-202 | Done | Integration tests verify end-to-end event delivery in-process |
+| HX-204 | Integration path: input submit -> session -> response stream | QA/Automation | HX-201, HX-202 | Done | Integration tests prove deterministic prompt round-trip |
+| HX-205 | Mode-switch reliability and no-duplication guarantee | Application Architecture | HX-104, HX-201 | Done | Coexistence runs do not duplicate, drop, or reorder visible output |
+
+### Sprint 3 — Demo-Harness E2E Proof + UAT Gate
+
+| Issue | Title | Owner | Dependencies | Status | Acceptance |
+|------|-------|-------|--------------|--------|------------|
+| HX-301 | Extend demo stories for parity lifecycle cases | Demo Harness | HX-105, HX-204 | Done | Demo sequence includes startup/lifecycle/system-panel parity scenarios |
+| HX-302 | Headless tmux evidence capture hardening | QA/Automation | HX-201, HX-301 | Done | Pane titles/geometry/affordance assertions are deterministic and actionable |
+| HX-303 | Demo smoke gate includes parity evidence checks | CI/CD | HX-301, HX-302 | Done | `make demo-smoke` fails on missing parity evidence markers |
+| HX-304 | UAT-ready report bundle generation | Demo Harness | HX-303 | Done | Demo summary includes readiness, failed cases, and artifact paths |
+| HX-305 | Merge-gate update for reconciled parity scope | CI/CD + Product | HX-303, HX-304 | Done | `make hybrid-merge-gate` enforces parity + demo evidence checks |
+
+### Cross-Sprint Foundational Test Backlog (Always-On)
+
+| Issue | Title | Owner | Dependencies | Status | Acceptance |
+|------|-------|-------|--------------|--------|------------|
+| HX-T01 | Hermetic bridge writer coverage expansion | QA/Automation | HX-102 | Done | Covers normal/timeout/disabled/empty/unicode/large payload cases |
+| HX-T02 | Input reader and sentinel framing coverage | QA/Automation | HX-102 | Ready | Covers submit/whitespace/quit/malformed framing and graceful stop |
+| HX-T03 | Subscriber queue ordering/retry coverage | QA/Automation | HX-103 | Ready | Proves queue ordering and retry semantics under failure and recovery |
+| HX-T04 | Session wiring coverage for runtime modes | QA/Automation | HX-104 | Ready | Proves GUI-only/TUI-only/dual wiring behavior without manual inspection |
 
 ## Status Snapshot (2026-05-21)
 
@@ -90,83 +213,10 @@ Status: COMPLETE (implemented in `cmd/agentx-core/demo_harness.go` with diagnost
 
 Status: COMPLETE (smoke gate implemented via `tests/test_demo_smoke_headless.sh` and `Makefile`).
 
-## Execution Board (Next 2 Sprints)
+## Execution Board (Legacy)
 
-This board converts roadmap phases into immediately actionable work with acceptance criteria and test gates.
-
-### Sprint A (Stabilize Foundation + Observability)
-
-1. **A1: Lock Phase-1 parity in docs**
-   - Scope: Update architecture and migration docs to match current implemented startup/layout behavior.
-   - Done when:
-     - `docs/HYBRID_MIGRATION_PLAN.md` status and checkpoint language reflects current behavior.
-     - `docs/architecture/HYBRID_ARCHITECTURE.md` pane/window descriptions match `cmd/agentx-core/core.go` behavior.
-   - Verification:
-     - Manual review + `git diff -- docs/`.
-
-2. **A2: Complete health endpoint payloads**
-   - Scope: Implement `GET /health`, `GET /panes`, `GET /applets` with real runtime state.
-   - Done when:
-     - Endpoints return deterministic JSON from active core state.
-     - Error path and empty-state behavior are covered.
-   - Verification:
-     - `cd cmd/agentx-core && go test ./...`
-     - Add/expand GoDog integration scenarios for endpoint responses.
-
-3. **A3: Harden applet supervision lifecycle**
-   - Scope: Track applet status transitions (starting/ready/stopped/crashed), expose in health, improve shutdown reliability.
-   - Done when:
-     - Crash and graceful-stop states are observable.
-     - Shutdown leaves no orphaned applet/tmux processes in test harness.
-   - Verification:
-     - `cd cmd/agentx-core && go test ./...`
-     - Add deterministic integration tests for crash/stop transitions.
-
-4. **A4: Expand headless UX assertions**
-   - Scope: Extend tmux headless validation to assert selected window and pane titles/ordering.
-   - Done when:
-     - Failure reproduces if selected window drifts from `tui-chat`.
-     - CI/local `make verify-tmux-layout` enforces these assertions.
-   - Verification:
-     - `make verify-tmux-layout`
-
-### Sprint B (Chat + Input Vertical Slice)
-
-1. **B1: Chat applet request/response MVP**
-   - Scope: Route one user prompt from input path to chat applet and render response in chat pane.
-   - Done when:
-     - Prompt ingress -> chat applet -> pane output works for a deterministic test prompt.
-     - Failure paths emit actionable logs.
-   - Verification:
-     - `cd cmd/agentx-core && go test ./...`
-     - Add GoDog integration scenario covering end-to-end prompt/response pipeline.
-
-2. **B2: Input applet command contract**
-   - Scope: Implement basic input command handling (`:clear`, `:q`) and normal prompt forwarding.
-   - Done when:
-     - Special commands are parsed and handled without breaking normal prompts.
-     - Input history behavior is deterministic in tests.
-   - Verification:
-     - `cd cmd/agentx-core && go test ./...`
-     - Add focused integration tests for command parsing and dispatch.
-
-3. **B3: Context sync MVP for chat turns**
-   - Scope: Persist and expose minimal conversation turn history for chat applet interactions.
-   - Done when:
-     - A completed turn is persisted and queryable via core state/endpoint path.
-     - Restart path preserves previously written history.
-   - Verification:
-     - `cd cmd/agentx-core && go test ./...`
-     - Add test fixture proving persistence across core restart.
-
-4. **B4: Merge readiness gate for default-branch promotion**
-   - Scope: Define and enforce a single checklist before hybrid default switch.
-   - Done when:
-     - Required checks are codified in docs and CI commands.
-     - No open P1/P2 blockers remain for startup, prompt flow, and observability.
-   - Verification:
-     - `make go-test`
-     - `make verify-tmux-layout`
+The legacy execution board content has been superseded by the authoritative sprintized issue backlog above.
+Keep this heading only for historical continuity with prior references.
 
 ## B4 Hybrid Merge-Readiness Checklist (Authoritative)
 

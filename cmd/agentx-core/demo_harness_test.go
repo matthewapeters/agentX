@@ -69,6 +69,41 @@ func TestResolveDemoStartIndex_RejectsInvalidSelector(t *testing.T) {
 	}
 }
 
+func TestDefaultDemoSequence_IncludesSprint3ParityStories(t *testing.T) {
+	// GIVEN the default DemoMode manifest
+	// WHEN Sprint 3 parity stories are inspected
+	// THEN startup/lifecycle/system stories must exist with complete Gherkin fields.
+	sequence := defaultDemoSequence()
+
+	required := map[string]bool{
+		"e2e-greet-001":  false,
+		"e2e-cycle-001":  false,
+		"e2e-system-001": false,
+	}
+
+	for _, testCase := range sequence {
+		if _, ok := required[testCase.ID]; !ok {
+			continue
+		}
+		required[testCase.ID] = true
+		if strings.TrimSpace(testCase.Given) == "" {
+			t.Fatalf("expected Given for %s", testCase.ID)
+		}
+		if strings.TrimSpace(testCase.When) == "" {
+			t.Fatalf("expected When for %s", testCase.ID)
+		}
+		if strings.TrimSpace(testCase.Then) == "" {
+			t.Fatalf("expected Then for %s", testCase.ID)
+		}
+	}
+
+	for id, found := range required {
+		if !found {
+			t.Fatalf("expected default demo sequence to include %s", id)
+		}
+	}
+}
+
 func TestRunDemoMode_StartSelectionAndUserFailStopsSequence(t *testing.T) {
 	// GIVEN DemoMode started from a selected test id
 	// WHEN the user marks the first executed test as failed (X)
@@ -339,12 +374,12 @@ if [[ "$1" == "list-windows" ]]; then
 fi
 if [[ "$1" == "list-panes" ]]; then
 	if [[ "$3" == "demo-session_demo" ]]; then
-		echo 'demo-session_demo|0|0|%3|controller|1'
-		echo 'demo-session_demo|0|1|%4|live-core|0'
+		echo 'demo-session_demo|0|0|%3|controller|1|120|20'
+		echo 'demo-session_demo|0|1|%4|live-core|0|120|40'
 		exit 0
 	fi
-	echo 'demo-session|0|0|%1|chat|0'
-	echo 'demo-session|0|1|%2|context|1'
+	echo 'demo-session|0|0|%1|chat|0|140|30'
+	echo 'demo-session|0|1|%2|context|1|140|18'
   exit 0
 fi
 if [[ "$1" == "display-message" ]]; then
@@ -423,6 +458,33 @@ exit 1
 		if _, statErr := os.Stat(filepath.Join(artifactDir, name)); statErr != nil {
 			t.Fatalf("expected artifact file %s to exist: %v", name, statErr)
 		}
+	}
+
+	coreWindowsBytes, readErr := os.ReadFile(filepath.Join(artifactDir, "core_tmux_list_windows.txt"))
+	if readErr != nil {
+		t.Fatalf("expected core window metadata to be readable: %v", readErr)
+	}
+	coreWindows := string(coreWindowsBytes)
+	if !strings.Contains(coreWindows, "0|tui-chat|1") || !strings.Contains(coreWindows, "1|logs|0") {
+		t.Fatalf("expected deterministic core window metadata, got:\n%s", coreWindows)
+	}
+
+	corePanesBytes, readErr := os.ReadFile(filepath.Join(artifactDir, "core_tmux_list_panes.txt"))
+	if readErr != nil {
+		t.Fatalf("expected core pane metadata to be readable: %v", readErr)
+	}
+	corePanes := string(corePanesBytes)
+	if !strings.Contains(corePanes, "|%1|chat|0|140|30") || !strings.Contains(corePanes, "|%2|context|1|140|18") {
+		t.Fatalf("expected deterministic core pane title/geometry metadata, got:\n%s", corePanes)
+	}
+
+	splitPanesBytes, readErr := os.ReadFile(filepath.Join(artifactDir, "split_tmux_list_panes.txt"))
+	if readErr != nil {
+		t.Fatalf("expected split pane metadata to be readable: %v", readErr)
+	}
+	splitPanes := string(splitPanesBytes)
+	if !strings.Contains(splitPanes, "|%3|controller|1|120|20") || !strings.Contains(splitPanes, "|%4|live-core|0|120|40") {
+		t.Fatalf("expected deterministic split pane title/geometry metadata, got:\n%s", splitPanes)
 	}
 }
 
