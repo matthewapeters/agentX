@@ -55,8 +55,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             return
         length = int(self.headers.get("Content-Length", "0"))
-        if length:
-            self.rfile.read(length)
+        raw_body = self.rfile.read(length) if length else b"{}"
+        try:
+            decoded = json.loads(raw_body.decode("utf-8"))
+        except Exception:
+            self.send_response(400)
+            self.end_headers()
+            return
+
+        messages = decoded.get("messages") if isinstance(decoded, dict) else None
+        if not isinstance(messages, list) or len(messages) < 2:
+            self.send_response(422)
+            self.end_headers()
+            return
+
+        system_msg = messages[0] if isinstance(messages[0], dict) else {}
+        if system_msg.get("role") != "system":
+            self.send_response(422)
+            self.end_headers()
+            return
+        system_content = str(system_msg.get("content", ""))
+        if "agentx-instructions" not in system_content:
+            self.send_response(422)
+            self.end_headers()
+            return
+
         payload = {
             "message": {
                 "content": "Mock bootstrap from Ollama"

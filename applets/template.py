@@ -140,6 +140,31 @@ def _load_bootstrap_prompt() -> str | None:
     return prompt or None
 
 
+def _load_agentx_instructions() -> str | None:
+    """Load optional AgentX identity instructions from project-local .agentx path."""
+    instructions_path = os.path.join(PROJECT_DIR, ".agentx", "agentx-instructions.md")
+    if not os.path.isfile(instructions_path):
+        return None
+    try:
+        with open(instructions_path, "r", encoding="utf-8") as handle:
+            instructions = handle.read().strip()
+    except OSError:
+        return None
+    return instructions or None
+
+
+def _build_ollama_messages(prompt: str) -> list[dict[str, str]]:
+    """Build chat messages with optional AgentX identity context."""
+    messages: list[dict[str, str]] = []
+    instructions = _load_agentx_instructions()
+    if instructions:
+        # Mirror GUI bootstrap behavior: inject AgentX instructions via working-memory system block.
+        working_memory_block = f"<working_memory>\n👤 agentx-instructions: {instructions}\n</working_memory>"
+        messages.append({"role": "system", "content": working_memory_block})
+    messages.append({"role": "user", "content": prompt})
+    return messages
+
+
 def _trim_single_line(value: str, limit: int = 72) -> str:
     """Normalize user-facing values into one stable rendered line."""
     single_line = " ".join(str(value).split())
@@ -394,7 +419,7 @@ def _chat_with_ollama(prompt: str) -> str:
     """Send a non-streaming chat request to Ollama and return model text."""
     payload = {
         "model": OLLAMA_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": _build_ollama_messages(prompt),
         "stream": False,
     }
     data = json.dumps(payload).encode("utf-8")
@@ -425,7 +450,7 @@ def _stream_chat_with_ollama(prompt: str):
     """Stream chat deltas from Ollama and return accumulated response text."""
     payload = {
         "model": OLLAMA_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": _build_ollama_messages(prompt),
         "stream": True,
     }
     data = json.dumps(payload).encode("utf-8")
