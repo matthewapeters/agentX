@@ -9,7 +9,7 @@ UV_PROJECT_ENV ?= $(CURDIR)/.venv
 .PHONY: help \
 	build build-core build-applets clean python-build python-test test-all \
 	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e go-test-pane-layout \
-	test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-attached-runtime-headless demo-smoke verify-tmux-layout hybrid-merge-gate \
+	test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-attached-runtime-headless test-startup-ollama-bootstrap-headless demo-smoke verify-tmux-layout hybrid-merge-gate \
 	run run-attached run-with-applets
 
 help:
@@ -36,6 +36,7 @@ help:
 	@echo "  test-demo-split-layout-headless Run headless DemoMode split-layout validation script"
 	@echo "  test-tmux-pane-affordances-headless Run headless pane-affordance UX contract script"
 	@echo "  test-tmux-attached-runtime-headless Run attached-runtime focus and shutdown E2E script"
+	@echo "  test-startup-ollama-bootstrap-headless Run startup E2E that verifies ollama backend bootstrap response"
 	@echo "  demo-smoke          Run headless DemoMode smoke test"
 	@echo "  verify-tmux-layout  Run pane-layout unit tests + headless tmux layout validation"
 	@echo "  hybrid-merge-gate   Run required B4 checks for hybrid default-branch readiness"
@@ -110,13 +111,16 @@ test-tmux-pane-affordances-headless: build-core
 test-tmux-attached-runtime-headless: build-core
 	./tests/test_tmux_attached_runtime_headless.sh
 
+test-startup-ollama-bootstrap-headless: build-core
+	./tests/test_startup_ollama_bootstrap_headless.sh
+
 demo-smoke: build-core
 	./tests/test_demo_smoke_headless.sh
 
 verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless
 	@echo "tmux layout verification complete"
 
-hybrid-merge-gate: build-core go-test verify-tmux-layout demo-smoke test-tmux-attached-runtime-headless
+hybrid-merge-gate: build-core go-test verify-tmux-layout demo-smoke test-tmux-attached-runtime-headless test-startup-ollama-bootstrap-headless
 	@echo "hybrid merge-readiness gate complete"
 
 run: build-core
