@@ -458,14 +458,30 @@ func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
 		return nil
 	}
 
+	chatBackend := strings.TrimSpace(ac.runtimeConfig.ChatBackend)
+	if chatBackend == "" {
+		chatBackend = defaultChatBackend
+	}
+	ollamaHost := strings.TrimSpace(ac.runtimeConfig.OllamaHost)
+	if ollamaHost == "" {
+		ollamaHost = defaultOllamaHost
+	}
+	ollamaModel := strings.TrimSpace(ac.runtimeConfig.OllamaModel)
+	if ollamaModel == "" {
+		ollamaModel = defaultOllamaModel
+	}
+
 	for _, pane := range DefaultPaneLayout() {
 		launchCmd := fmt.Sprintf(
-			"AGENTX_APPLET_NAME=%s AGENTX_SESSION_ID=%s AGENTX_CORE_HTTP=%s AGENTX_PROJECT_DIR=%s AGENTX_USERNAME=%s %s %s",
+			"AGENTX_APPLET_NAME=%s AGENTX_SESSION_ID=%s AGENTX_CORE_HTTP=%s AGENTX_PROJECT_DIR=%s AGENTX_USERNAME=%s AGENTX_CHAT_BACKEND=%s AGENTX_OLLAMA_HOST=%s AGENTX_OLLAMA_MODEL=%s %s %s",
 			shellSingleQuote(pane.Name),
 			shellSingleQuote(ac.SessionID),
 			shellSingleQuote("http://"+ac.healthAddr),
 			shellSingleQuote(ac.Config.ProjectDir),
 			shellSingleQuote(ac.Config.Username),
+			shellSingleQuote(chatBackend),
+			shellSingleQuote(ollamaHost),
+			shellSingleQuote(ollamaModel),
 			shellSingleQuote(ac.pythonExecutable),
 			shellSingleQuote(ac.chatAppletScript),
 		)

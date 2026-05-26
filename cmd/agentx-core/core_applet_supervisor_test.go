@@ -76,6 +76,10 @@ func TestMarkAppletStatusTracksCrashLifecycle(t *testing.T) {
 // WHEN StartAppletSupervisor is invoked
 // THEN each primary pane receives a launched Python applet command.
 func TestStartAppletSupervisor_LaunchesPaneAppletProcesses(t *testing.T) {
+	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
+	t.Setenv("AGENTX_OLLAMA_HOST", "test-host:11434")
+	t.Setenv("AGENTX_OLLAMA_MODEL", "test-model")
+
 	logPath := setupFakeTmux(t)
 	projectDir := t.TempDir()
 	stageTemplateApplet(t, projectDir)
@@ -104,5 +108,14 @@ func TestStartAppletSupervisor_LaunchesPaneAppletProcesses(t *testing.T) {
 	}
 	if !strings.Contains(commands, "AGENTX_APPLET_NAME='input'") {
 		t.Fatalf("expected input pane applet launch command, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "AGENTX_CHAT_BACKEND='ollama'") {
+		t.Fatalf("expected backend env in pane launch command, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "AGENTX_OLLAMA_HOST='test-host:11434'") {
+		t.Fatalf("expected ollama host env in pane launch command, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "AGENTX_OLLAMA_MODEL='test-model'") {
+		t.Fatalf("expected ollama model env in pane launch command, got:\n%s", commands)
 	}
 }
