@@ -681,6 +681,30 @@ class TestGUIManagerPanelMethods(unittest.TestCase):
         self.assertFalse(self.gui._session_sections["working_memory"].is_expanded())
         self.assertFalse(self.gui._session_sections["context"].is_expanded())
 
+    def test_system_notebook_tab_order_on_startup(self):
+        """System pane tabs should be created in the expected startup order."""
+        notebook = self.gui.widgets.system_notebook
+        self.assertIsNotNone(notebook)
+
+        tab_ids = notebook.tabs()
+        tab_labels = [notebook.tab(tab_id, "text") for tab_id in tab_ids]
+        self.assertEqual(tab_labels, ["⚡ Status", "Session", "Files", "⚙️ Settings"])
+
+    def test_system_notebook_starts_on_status_and_can_navigate_to_second_tab(self):
+        """Startup should default to Status tab, and selecting index 1 should activate Session tab."""
+        notebook = self.gui.widgets.system_notebook
+        self.assertIsNotNone(notebook)
+
+        self.root.update_idletasks()
+        self.assertEqual(notebook.index("current"), 0)
+        self.assertEqual(notebook.tab(notebook.select(), "text"), "⚡ Status")
+
+        notebook.select(1)
+        self.root.update_idletasks()
+
+        self.assertEqual(notebook.index("current"), 1)
+        self.assertEqual(notebook.tab(notebook.select(), "text"), "Session")
+
 
 if __name__ == "__main__":
     unittest.main()
