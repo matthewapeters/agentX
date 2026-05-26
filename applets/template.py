@@ -183,42 +183,59 @@ def _context_visualizer(turns: list[dict]) -> dict[str, int]:
     }
 
 
+def _meter_row(label: str, value: int, max_tokens: int, width: int = 18) -> str:
+    """Render one deterministic text meter row for a token band."""
+    safe_max = max(max_tokens, 1)
+    safe_val = max(value, 0)
+    filled = min(width, int((safe_val / safe_max) * width))
+    bar = "#" * filled + "." * (width - filled)
+    return f"{label:<16} [{bar}] {safe_val}"
+
+
 def _render_system_surface(payload: dict) -> str:
-    """Render the deterministic text contract for the system pane."""
+    """Render a deterministic text analogue of the GUI status context widget."""
     config = _load_runtime_config()
     agentx_cfg = config.get("agentx", {}) if isinstance(config.get("agentx"), dict) else {}
-    agentix_cfg = config.get("agentix", {}) if isinstance(config.get("agentix"), dict) else {}
     turns = payload.get("turns", []) or []
     turn_count = int(payload.get("turn_count", len(turns)))
     last_turn = turns[-1] if turns else {}
-    entries = _safe_listdir(PROJECT_DIR)
     session_dir = os.path.join(PROJECT_DIR, "sessions", USERNAME)
     session_history = _safe_listdir(session_dir)
     recent_history = list(reversed(turns[-2:]))
     visualizer = _context_visualizer(turns)
-
-    preview_entry = "none"
-    if entries:
-        preview_path = os.path.join(PROJECT_DIR, entries[0])
-        preview_entry = f"{_classify_entry(preview_path)} {entries[0]}"
+    max_tokens = int(visualizer.get("max_tokens", 0))
+    safe_max_tokens = max(max_tokens, 1)
+    used_tokens = sum(
+        int(visualizer.get(key, 0))
+        for key in ["working_memory", "system", "user", "attachments", "thinking", "assistant", "tool"]
+    )
+    usage_pct = int((used_tokens / safe_max_tokens) * 100)
+    remaining = max(0, safe_max_tokens - used_tokens)
 
     lines = [
         "[SYSTEM]",
-        "== FILES ==",
-        f"root: {_trim_single_line(PROJECT_DIR, 48)} | entries: {len(entries)} | preview: {_trim_single_line(preview_entry, 24)}",
-        "== CONFIGURATION ==",
-        f"model: {_trim_single_line(agentx_cfg.get('ollama_model', OLLAMA_MODEL), 24)} | theme: {_trim_single_line(agentx_cfg.get('theme_mode', 'none'), 16)} | backend: {_trim_single_line(CHAT_BACKEND, 12)}",
-        f"ollama_host: {_trim_single_line(agentx_cfg.get('ollama_host', OLLAMA_HOST), 40)} | prompts: {_trim_single_line(agentix_cfg.get('system_prompts_dir', 'none'), 18)}",
-        "== CONTEXT ==",
+        "== CONTEXT WINDOW ==",
+        f"model: {_trim_single_line(agentx_cfg.get('ollama_model', OLLAMA_MODEL), 24)} | backend: {_trim_single_line(CHAT_BACKEND, 12)}",
+        f"usage: {used_tokens}/{safe_max_tokens} ({usage_pct}%)",
+        _meter_row("Working Memory", int(visualizer.get("working_memory", 0)), safe_max_tokens),
+        _meter_row("System Prompts", int(visualizer.get("system", 0)), safe_max_tokens),
+        _meter_row("User Prompts", int(visualizer.get("user", 0)), safe_max_tokens),
+        _meter_row("Attachments", int(visualizer.get("attachments", 0)), safe_max_tokens),
+        _meter_row("Thinking", int(visualizer.get("thinking", 0)), safe_max_tokens),
+        _meter_row("Agent Response", int(visualizer.get("assistant", 0)), safe_max_tokens),
+        _meter_row("Tool Calls", int(visualizer.get("tool", 0)), safe_max_tokens),
+        _meter_row("Remaining", remaining, safe_max_tokens),
+        "== PROMPT CYCLE ==",
+        "○ 🤔 Classify --:--:--",
+        "○ 💭 Think    --:--:--",
+        "○ 🔧 Tool     --:--:--",
+        "○ ✍️ Respond  --:--:--",
+        "== SESSION SNAPSHOT ==",
         f"session_id: {_trim_single_line(payload.get('session_id', SESSION_ID), 28)} | turn_count: {turn_count}",
         f"last_user: {_trim_single_line(last_turn.get('prompt', 'none'), 56)}",
         f"last_assistant: {_trim_single_line(last_turn.get('response', 'none'), 51)}",
-        "== CONTEXT HISTORY ==",
         f"history_context_count: {len(session_history)} | latest_history_session: {_trim_single_line(session_history[-1] if session_history else 'none', 20)}",
         f"recent_prompt: {_trim_single_line(recent_history[0].get('prompt', 'none') if recent_history else 'none', 57)}",
-        "== CONTEXT VISUALIZER ==",
-        f"max_tokens: {visualizer['max_tokens']} | user: {visualizer['user']} | assistant: {visualizer['assistant']} | tool: {visualizer['tool']}",
-        f"working_memory: {visualizer['working_memory']} | system: {visualizer['system']} | attachments: {visualizer['attachments']} | thinking: {visualizer['thinking']}",
     ]
     return "\n".join(lines)
 

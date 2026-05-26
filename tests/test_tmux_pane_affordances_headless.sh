@@ -76,7 +76,7 @@ for _ in $(seq 1 80); do
   if tmux capture-pane -t "$CHAT_TARGET" -p | grep -q "Agent: Echo: what is 2+2\?"; then
     CHAT_READY=1
   fi
-  if tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "== CONTEXT ==" && tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "last_user: what is 2+2\?"; then
+  if tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "== SESSION SNAPSHOT ==" && tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "last_user: what is 2+2\?"; then
     CONTEXT_READY=1
   fi
   if [[ "$CHAT_READY" -eq 1 && "$CONTEXT_READY" -eq 1 ]]; then
@@ -87,6 +87,7 @@ done
 
 CHAT_CAPTURE="$(tmux capture-pane -t "$CHAT_TARGET" -p)"
 CONTEXT_CAPTURE="$(tmux capture-pane -t "$CONTEXT_TARGET" -p)"
+CONTEXT_CAPTURE_FULL="$(tmux capture-pane -t "$CONTEXT_TARGET" -p -S -300)"
 CONTEXT_NORMALIZED="$(tr '\n' ' ' <<< "$CONTEXT_CAPTURE")"
 
 if ! grep -q "User: what is 2+2?" <<< "$CHAT_CAPTURE"; then
@@ -99,11 +100,29 @@ if ! grep -q "Agent: Echo: what is 2+2?" <<< "$CHAT_CAPTURE"; then
   exit 1
 fi
 
-for required in "== FILES ==" "== CONFIGURATION ==" "== CONTEXT ==" "== CONTEXT HISTORY ==" "== CONTEXT VISUALIZER =="; do
-  if ! grep -Fq "$required" <<< "$CONTEXT_CAPTURE"; then
+for required in "== CONTEXT WINDOW ==" "== PROMPT CYCLE ==" "== SESSION SNAPSHOT =="; do
+  if ! grep -Fq "$required" <<< "$CONTEXT_CAPTURE_FULL"; then
     echo "FAIL: system pane missing required content: $required"
     echo "--- system capture ---"
-    echo "$CONTEXT_CAPTURE"
+    echo "$CONTEXT_CAPTURE_FULL"
+    exit 1
+  fi
+done
+
+for required in "Working Memory" "System Prompts" "User Prompts" "Attachments" "Thinking" "Agent Response" "Tool Calls" "Remaining"; do
+  if ! grep -Fq "$required" <<< "$CONTEXT_CAPTURE_FULL"; then
+    echo "FAIL: system pane missing context meter row: $required"
+    echo "--- system capture ---"
+    echo "$CONTEXT_CAPTURE_FULL"
+    exit 1
+  fi
+done
+
+for required in "Classify" "Think" "Tool" "Respond"; do
+  if ! grep -Fq "$required" <<< "$CONTEXT_CAPTURE_FULL"; then
+    echo "FAIL: system pane missing prompt cycle row: $required"
+    echo "--- system capture ---"
+    echo "$CONTEXT_CAPTURE_FULL"
     exit 1
   fi
 done
