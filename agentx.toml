@@ -2,6 +2,10 @@
 ollama_host = "localhost:11434"
 ollama_model = "qwen3.6:latest"
 chat_backend = "ollama"
+chat_runtime = "go"
+chat_bridge_response_timeout_seconds = 120
+submit_execution_timeout_seconds = 120
+submit_timeout_seconds = 120
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
 theme_mode = "Dark Mode"

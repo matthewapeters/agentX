@@ -209,3 +209,41 @@ Feature: IPC router integration
     And tmux commands should include "[bridge] event=bridge_response_ok"
     And tmux commands should not include "[bridge] event=bridge_chunk"
     And tmux commands should not include "[assistant-stream]"
+
+  Scenario: Go chat runtime falls back directly when backend is unavailable
+    Given a temporary project directory
+    And I set chat runtime override to "go"
+    And I set chat backend override to "ollama"
+    And I set ollama host override to "127.0.0.1:1"
+    And a core config with username "dev" and session "sess-14"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "go runtime primary fallback"
+    Then prompt routing should complete without error
+    And routed response should equal "Echo: go runtime primary fallback"
+    And tmux commands should include "[bridge] event=go_chat_fallback"
+    And tmux commands should not include "[bridge] event=bridge_route_start"
+    And tmux commands should not include "[bridge] event=go_chat_bridge_fallback"
+
+  Scenario: Go chat backend delayed recovery transitions from direct fallback to direct success
+    Given a temporary project directory
+    And I set chat runtime override to "go"
+    And I set chat backend override to "ollama"
+    And I start a sequenced delayed ollama backend with delay 120 ms and statuses 503 then 200
+    And a core config with username "dev" and session "sess-19"
+    And a fake tmux executable that records commands
+    When I construct the AgentX core
+    And I initialize the tmux session
+    And I start the applet supervisor
+    And I route input prompt "delayed recovery first"
+    Then prompt routing should complete without error
+    And routed response should equal "Echo: delayed recovery first"
+    And tmux commands should include "[bridge] event=go_chat_fallback"
+    And tmux commands should not include "[bridge] event=bridge_route_start"
+    When I route input prompt "delayed recovery second"
+    Then prompt routing should complete without error
+    And routed response should equal "Delayed backend recovery reply"
+    And tmux commands should include "[bridge] event=go_chat_response_ok"
+    And tmux command snippet "[bridge] event=go_chat_fallback" should appear before "[bridge] event=go_chat_response_ok"

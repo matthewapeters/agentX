@@ -1,3 +1,83 @@
+# Changelog
+
+All notable changes to AgentX are documented in this file.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+Versioning follows [Semantic Versioning](https://semver.org/).
+
+## [1.0.2] - 2026-06-01
+
+### Code Changes
+
+#### Added
+
+- Added native Go pane/widget surfaces in `cmd/agentx-core` for chat/output, input, logs, and system/context rendering.
+- Added Go-side system applet host scaffolding and working-memory system applet surface.
+- Added deterministic classify-phase implementation and prompt-cycle state-machine coverage.
+
+#### Changed
+
+- Promoted checked-in chat runtime behavior to the Go-native path with direct deterministic fallback semantics in Go-runtime scenarios.
+- Extended startup topology support with `--startup-mode visible-windows` and safe default-layout fallback behavior.
+- Hardened demo submit retry behavior and surfaced retry observability in runtime/demo summaries and health payloads.
+- Serialized `hybrid-parity-gate` execution to prevent concurrent parity-run interference.
+
+### Test Changes
+
+#### Added
+
+- Added focused Go tests for widgets, classify/routing state machine, startup mode, system renderer host routing, and launch/supervisor contracts.
+- Added/expanded headless parity scripts for demo UX use cases, system panel tab-tour coverage, routing/layout checks, and attached runtime layout checks.
+
+#### Changed
+
+- Updated integration feature scenarios and Godog wiring for direct Go fallback and delayed-backend recovery ordering.
+
+### Documentation Changes
+
+#### Added
+
+- Added active migration ledger and checkpoints in `docs/hybrid_remaining_work.md`.
+- Added system panel tab mapping and startup mode architecture references in `docs/architecture/system_panel_tab_mapping.md` and `docs/architecture/startup_modes.md`.
+- Added archived planning set under `docs/archive/` for superseded integration planning material.
+
+#### Changed
+
+- Updated architecture and UX references to reflect Go-current ownership for chat/output, logs, and system/context pane surfaces.
+- Consolidated active planning references and removed superseded hybrid/integration plan documents from active paths.
+
+## [1.0.1] - 2026-05-28
+
+### Code Changes
+
+#### Added
+
+- Added DemoMode system-panel tab-tour parity story `e2e-system-tour-001` in `cmd/agentx-core/demo_harness.go`.
+- Added dedicated headless coverage script `tests/test_demo_system_panel_tour_headless.sh` to validate full system tab traversal from tour start.
+
+#### Changed
+
+- Updated DemoMode startup greeting validator to align with core-owned startup bootstrap behavior while preserving input-pane command-entry assertions.
+- Hardened system-panel tour assertions against tmux line wrapping by validating compacted latest-snapshot pane captures.
+- Added a shared core activity-state endpoint (`GET /activity`) derived from prompt-cycle state for applet-consistent busy/completed/failed affordances.
+- Updated Go input widget to consume core activity state and render non-blocking visual prompt cues while preserving command semantics.
+
+### Test Changes
+
+#### Changed
+
+- Consolidated Wave 4 regression pack executed across parity layers (unit, Go package, headless parity scripts).
+- Updated demo UX headless scripts and smoke markers to include the new tour story in ordered sequence coverage.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/hybrid_ux_parity_execution_plan.md` to mark H1/H2/H3 completed with evidence.
+- Updated `docs/ux/07_DEMO_MODE.md` with `PD-17-AF-014` and a Wave 4 UAT checklist referencing all parity stories and pass criteria.
+- Updated `docs/ux/UX_LIFECYCLE.md` PD-17 matrix to reflect implemented and validated parity affordances.
+- Updated `docs/architecture/channel_registry.md` and `docs/architecture/runtime_split.md` with the authoritative shared activity-state direction (`/activity`) and multi-applet consumer policy.
+- Updated `docs/ux/06_TUI_MIRROR.md` and `docs/ux/UX_LIFECYCLE.md` with PD-16 activity affordance coverage for the input widget and context-aligned state semantics.
 
 ## [1.0.0] - 2026-05-24
 
@@ -80,13 +160,6 @@
 ### Version
 
 - Bumped project version to 0.84.1 (minor, non-breaking feature addition).
-
-# Changelog
-
-All notable changes to AgentX are documented in this file.
-
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
-Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [0.84.0] - 2026-05-23
 

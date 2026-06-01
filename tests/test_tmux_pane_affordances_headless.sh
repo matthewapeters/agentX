@@ -76,7 +76,7 @@ for _ in $(seq 1 80); do
   if tmux capture-pane -t "$CHAT_TARGET" -p | grep -q "Agent: Echo: what is 2+2\?"; then
     CHAT_READY=1
   fi
-  if tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "== SESSION SNAPSHOT ==" && tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "last_user: what is 2+2\?"; then
+  if tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "== PROMPT CYCLE ==" && tmux capture-pane -t "$CONTEXT_TARGET" -p | grep -q "🤖 Respond"; then
     CONTEXT_READY=1
   fi
   if [[ "$CHAT_READY" -eq 1 && "$CONTEXT_READY" -eq 1 ]]; then
@@ -88,7 +88,7 @@ done
 CHAT_CAPTURE="$(tmux capture-pane -t "$CHAT_TARGET" -p)"
 CONTEXT_CAPTURE="$(tmux capture-pane -t "$CONTEXT_TARGET" -p)"
 CONTEXT_CAPTURE_FULL="$(tmux capture-pane -t "$CONTEXT_TARGET" -p -S -300)"
-CONTEXT_NORMALIZED="$(tr '\n' ' ' <<< "$CONTEXT_CAPTURE")"
+INPUT_CAPTURE="$(tmux capture-pane -t "$INPUT_TARGET" -p)"
 
 if ! grep -q "User: what is 2+2?" <<< "$CHAT_CAPTURE"; then
   echo "FAIL: chat pane missing user message"
@@ -100,7 +100,7 @@ if ! grep -q "Agent: Echo: what is 2+2?" <<< "$CHAT_CAPTURE"; then
   exit 1
 fi
 
-for required in "== CONTEXT WINDOW ==" "== PROMPT CYCLE ==" "== SESSION SNAPSHOT =="; do
+for required in "== CONTEXT WINDOW ==" "== PROMPT CYCLE ==" "consumed:"; do
   if ! grep -Fq "$required" <<< "$CONTEXT_CAPTURE_FULL"; then
     echo "FAIL: system pane missing required content: $required"
     echo "--- system capture ---"
@@ -127,17 +127,26 @@ for required in "Classify" "Think" "Tool" "Respond"; do
   fi
 done
 
-if ! grep -Eq "last_user:\s*what is 2\+2\?" <<< "$CONTEXT_NORMALIZED"; then
-  echo "FAIL: system pane missing normalized last_user"
+for required in "💾 Working Memory" "🧠 System Prompts" "👤 User Prompts" "🤖 Agent Response" "░ Remaining"; do
+  if ! grep -Fq "$required" <<< "$CONTEXT_CAPTURE_FULL"; then
+    echo "FAIL: system pane missing emoji context meter row: $required"
+    echo "--- system capture ---"
+    echo "$CONTEXT_CAPTURE_FULL"
+    exit 1
+  fi
+done
+
+if grep -Fq "== SESSION SNAPSHOT ==" <<< "$CONTEXT_CAPTURE_FULL"; then
+  echo "FAIL: system pane should not render session snapshot block"
   echo "--- system capture ---"
-  echo "$CONTEXT_CAPTURE"
+  echo "$CONTEXT_CAPTURE_FULL"
   exit 1
 fi
 
-if ! grep -Fq "recent_prompt:" <<< "$CONTEXT_NORMALIZED" || ! grep -Eq "2\s*\+\s*2\?" <<< "$CONTEXT_NORMALIZED"; then
-  echo "FAIL: system pane missing normalized recent_prompt"
-  echo "--- system capture ---"
-  echo "$CONTEXT_CAPTURE"
+if grep -Fq "Response:" <<< "$INPUT_CAPTURE"; then
+  echo "FAIL: input pane must not mirror agent response text"
+  echo "--- input capture ---"
+  echo "$INPUT_CAPTURE"
   exit 1
 fi
 

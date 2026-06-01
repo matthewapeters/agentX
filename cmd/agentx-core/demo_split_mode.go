@@ -31,7 +31,7 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	}
 
 	demoSessionName := fmt.Sprintf("%s_demo", core.tmuxSessionName)
-	storiesFilePath, err := prepareDemoStoriesBoardFile(cfg.ProjectDir, core.SessionID, startSelector)
+	storiesFilePath, err := prepareDemoStoriesBoardFile(cfg.ProjectDir, core.SessionID, startSelector, cfg.StartupMode)
 	if err != nil {
 		return err
 	}
@@ -46,8 +46,14 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	)
 	storiesArgs := buildDemoStoriesPaneArgs(storiesFilePath)
 
-	if err := prepareCoreSessionForSplitView(ctx, core.tmuxSessionName); err != nil {
-		return fmt.Errorf("failed to prepare core session for split view: %w", err)
+	if normalizeDemoRuntimeMode(cfg.StartupMode) == visibleWindowsStartupMode {
+		if err := runTmux(ctx, "select-window", "-t", core.tmuxSessionName+":0"); err != nil {
+			return fmt.Errorf("failed to select output window for windowed split demo: %w", err)
+		}
+	} else {
+		if err := prepareCoreSessionForSplitView(ctx, core.tmuxSessionName); err != nil {
+			return fmt.Errorf("failed to prepare core session for split view: %w", err)
+		}
 	}
 
 	storiesPaneID, err := runTmuxCapture(ctx, append([]string{"new-session", "-d", "-P", "-F", "#{pane_id}", "-s", demoSessionName, "-n", "demo-control"}, storiesArgs...)...)
@@ -123,6 +129,7 @@ func buildDemoControllerArgs(executablePath string, cfg *Config, sessionID, star
 		"--project-dir", cfg.ProjectDir,
 		"--user", cfg.Username,
 		"--session-id", sessionID,
+		"--startup-mode", normalizeDemoRuntimeMode(cfg.StartupMode),
 		"--demo-controller",
 		"--demo-split",
 		"--demo-core-session", coreSessionName,
@@ -148,8 +155,11 @@ func buildDemoStoriesPaneArgs(storiesFilePath string) []string {
 	return []string{"bash", "-lc", storiesScript}
 }
 
-func prepareDemoStoriesBoardFile(projectDir, sessionID, startSelector string) (string, error) {
-	sequence := defaultDemoSequence()
+func prepareDemoStoriesBoardFile(projectDir, sessionID, startSelector, startupMode string) (string, error) {
+	sequence := filterDemoSequenceForRuntimeMode(defaultDemoSequence(), startupMode)
+	if len(sequence) == 0 {
+		return "", fmt.Errorf("no demo tests are configured for startup mode %q", normalizeDemoRuntimeMode(startupMode))
+	}
 	startIndex, err := resolveDemoStartIndex(sequence, startSelector)
 	if err != nil {
 		startIndex = 0

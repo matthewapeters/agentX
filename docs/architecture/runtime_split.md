@@ -1,10 +1,10 @@
-# Hybrid Runtime Split: Go Core vs Python Applet
+# Hybrid Runtime Split: Go Core and Go Applets
 
-_Last updated: 2026-05-16 (v0.85.0)_
+_Last updated: 2026-05-28 (v1.0.1)_
 
 ## Purpose
 
-This document defines the authoritative contract and migration plan for the AgentX hybrid runtime: the split between the Go core orchestrator and Python applet layer. It governs the division of responsibilities, IPC boundaries, migration phases, and the thin-GUI contract. All architectural and UX parity claims must reference this document.
+This document defines the authoritative contract and migration plan for the AgentX hybrid runtime: the split between the Go core orchestrator and Go applet layer. It governs the division of responsibilities, IPC boundaries, migration phases, and the thin-GUI contract. All architectural and UX parity claims must reference this document.
 
 ---
 
@@ -14,44 +14,85 @@ AgentX hybrid runtime is decomposed into two principal layers:
 
 - **Go Core (Orchestrator):**
   - Owns tmux session, pane/window orchestration, applet lifecycle, IPC routing, and session state.
-  - Responsible for launching, monitoring, and restarting Python applets.
+  - Responsible for launching, monitoring, and restarting Go applets.
   - Maintains authoritative pane/channel registry and runtime policy.
-  - Will own all output/system panel logic after migration.
+  - Owns prompt-classification-thinking-tool-response orchestration and applet communications.
 
-- **Python Applets:**
-  - Each applet is a single-purpose TUI or GUI process (e.g., chat/output, input, system/logs, context viz, navigation).
-  - Communicate with Go core via IPC (FIFO, socket, or pipe; protocol versioned).
-  - Initially own all output/system panel logic (pre-migration), but will become thin renderers only.
-  - Tkinter GUI applet is a singleton, relaunchable, and independent of TUI applets.
+- **Go Applets (Shared Base Architecture):**
+  - Each applet is a single-purpose Go process (e.g., chat/output, input, logs,
+    and the system/context widget surfaces for files, configuration, context,
+    context history, working memory, and context visualizer views).
+  - All applets use a shared Go base architecture for lifecycle hooks, IPC contract, health signaling, and logging behavior.
+  - Applets communicate with Go core via versioned IPC (FIFO/socket/pipe).
+  - Applets must be validated against UX specs via unit, integration, and functional tests.
+
+- **GUI Surface (Secondary):**
+  - GUI remains secondary and back-burnered until TUI parity completion gates are met.
+  - GUI may consume core state channels but does not set runtime orchestration priority.
+
+### 1.1 Topology Modes and Startup Surfaces
+
+The runtime split also defines two presentation topologies for tmux-based startup.
+These modes do not change orchestration ownership, IPC contracts, or the applet
+runtime model.
+
+The authoritative mode and switch catalog is maintained in
+[startup_modes.md](startup_modes.md).
+
+- **Default frame-based runtime (production / steady state):**
+  - Core owns the named tmux windows and binds panes by semantic title.
+  - `output`, `system`, `input`, and `logs` remain the routing contract.
+  - tmuxp overlays may reshape the layout, but core re-resolves owned surfaces by
+    title after startup.
+
+- **UAT-visible startup mode (opt-in validation surface):**
+  - The proposed startup switch is `--startup-mode visible-windows`, with an
+    environment fallback of `AGENTX_STARTUP_MODE=visible-windows`.
+  - Core starts the initial session as separate top-level applet windows instead
+    of nested frames so UAT can confirm that each applet is present, running,
+    and functionally responsive before frame layout work is enabled.
+  - This mode is presentation-only. It must not alter applet identity, IPC
+    schemas, health signaling, or state ownership.
+  - If the visible-windows mode cannot be established, startup must fall back to
+    the default frame-based runtime rather than blocking the session.
+
+Implementation policy for both modes:
+
+- Each runtime applet still uses the shared Go base architecture and must be
+  validated against its UX specification before parity can be claimed.
+- Applet implementation is not complete until each applet has unit coverage,
+  integration coverage, and a UX traceability row that is reconciled to the
+  as-built state.
+- The visible-windows mode is a temporary UAT affordance, not a new runtime
+  ownership model.
 
 ---
 
 ## 2. Migration Phases
 
-| Phase | Output/System Panel Owner | IPC Contract | Go Core Role | Python Applet Role |
-|-------|--------------------------|--------------|--------------|--------------------|
-| 1     | Python                   | FIFO v1      | Orchestrate, relay | Full logic, rendering |
-| 2     | Python                   | FIFO v2      | Orchestrate, relay, monitor | Full logic, rendering |
-| 3     | Go (target)              | FIFO v2+     | Orchestrate, own logic, relay | Thin renderer only |
-| 4     | Go (final)               | IPC v3 (socket/pipe) | Orchestrate, own logic, own state | Thin renderer only |
+| Phase | Output/System Panel Owner    | IPC Contract         | Go Core Role                                  | Applet Role                            |
+| ----- | ---------------------------- | -------------------- | --------------------------------------------- | -------------------------------------- |
+| 1     | Transitional mixed ownership | FIFO v2              | Orchestrate, relay, monitor                   | Mixed Python/Go implementations        |
+| 2     | Go (current default path)    | FIFO v2+             | Orchestrate, own logic, own state transitions | Go applets on shared base architecture |
+| 3     | Go (final)                   | IPC v3 (socket/pipe) | Orchestrate, own logic, own state             | Go applets, UX-spec parity validated   |
 
-- **Current:** Phase 2 (Python owns all output/system logic; Go orchestrates, relays, and monitors applets)
-- **Target:** Phase 3+ (Go core owns all output/system logic; Python applets are thin renderers)
+- **Current:** Transitional (parity incomplete)
+- **Target:** Go core + Go applets, TUI-first parity complete
 
 ---
 
-## 3. Thin-GUI/Applet Contract
+## 3. Applet and GUI Contract
 
 - **Applet contract:**
-  - Applet receives only minimal rendering instructions and data from Go core.
-  - No business logic, state management, or tool execution in applet.
-  - All event-driven logic, tool orchestration, and state transitions are owned by Go core.
-  - Applet must render exactly as instructed and emit only user input events.
+  - Applet is a Go application leveraging the shared base architecture.
+  - Applet participates in runtime flows defined by Go core orchestration.
+  - Applet must satisfy UX spec behavior for its surface and pass integration + functional tests.
+  - Applet must follow shared IPC/lifecycle/health/logging contracts.
 
 - **GUI contract:**
-  - Tkinter GUI applet is launched, monitored, and (if needed) relaunched by Go core.
-  - GUI applet must not persist state outside of rendering; all state is owned by Go core.
-  - GUI affordances (tabs, panels, context, etc.) are mapped 1:1 to Go core channels.
+  - GUI is secondary while TUI parity is incomplete.
+  - GUI must not displace TUI-first implementation priority.
+  - GUI state and affordances remain mapped to Go-core channels.
 
 ---
 
@@ -66,6 +107,28 @@ AgentX hybrid runtime is decomposed into two principal layers:
   - FIFO v1: unidirectional, no framing, no versioning (legacy)
   - FIFO v2: bidirectional, versioned, JSON-framed (current)
   - IPC v3: socket/pipe, multiplexed, versioned, JSON-framed (target)
+
+### 4.1 Shared Activity-State Direction (Authoritative)
+
+To keep applet UX consistent without duplicating orchestration state, AgentX defines a shared core-owned activity-state contract.
+
+- Source of truth: Go core prompt-cycle state.
+- Session-level endpoint: `GET /activity`.
+- Required semantics:
+  - `state`: `idle` | `working` | `completed` | `failed`
+  - `phase`: `classify` | `thinking` | `tool` | `respond` | `none`
+  - `prompt_cycle`: full deterministic cycle payload.
+
+Consumer policy:
+
+- Input affordance widgets must use this state only for visual guidance; they must not take ownership of orchestration state transitions.
+- Context-visualization surfaces should render the same state source, either directly via `/activity` or via a synchronized mirror in `/context`.
+- Multiple applets may consume the same session-level activity contract concurrently.
+
+Transport policy:
+
+- Keep traffic session-scoped and lightweight.
+- Favor one shared channel/feed over per-applet status channels.
 
 ---
 
@@ -93,3 +156,9 @@ AgentX hybrid runtime is decomposed into two principal layers:
 - This document is the single source of truth for runtime split and migration status.
 - All changes must be reflected in the architecture index and referenced in the UX_LIFECYCLE and plan docs.
 - No code or test may claim Go-driven parity until this doc, the channel registry, and all tests are updated.
+
+## 8. Current Decision Snapshot
+
+- The shared activity-state contract is now a required architectural direction for hybrid applet UX.
+- Input widget and context visualizer are first-class consumers of the same core activity source.
+- Future applets should compose onto this contract rather than introducing independent working-state protocols.

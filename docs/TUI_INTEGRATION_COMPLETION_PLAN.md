@@ -1,17 +1,17 @@
 # AgentX TUI Integration Completion Plan
 
-_Last updated: 2026-05-24_
+Last updated: 2026-05-24
 
 > Status: Supporting brief only.
 >
-> The authoritative execution plan, sprint backlog, owners, and dependency graph now live in `docs/HYBRID_MIGRATION_PLAN.md`.
-> If any content here conflicts with that file, `docs/HYBRID_MIGRATION_PLAN.md` wins.
+> The authoritative remaining-work synthesis now lives in `docs/hybrid_remaining_work.md`.
+> If any content here conflicts with that file, `docs/hybrid_remaining_work.md` wins.
 
 ## Purpose
 
 This plan closes the remaining gap between the hybrid Go-core runtime and the user-facing TUI experience. The current codebase already has a real bridge/subscriber path, tmux-based demo harnesses, and a split between GUI and TUI responsibilities, but the TUI still needs feature parity with the GUI and stronger evidence from hermetic tests, integration tests, and demo-driven E2E coverage.
 
-Operational note: this document is intentionally non-authoritative and should be treated as context for implementation details. All status and planning updates must be made in `docs/HYBRID_MIGRATION_PLAN.md`.
+Operational note: this document is intentionally non-authoritative and should be treated as context for implementation details. All status and planning updates must be made in `docs/hybrid_remaining_work.md`.
 
 ## What Already Exists
 

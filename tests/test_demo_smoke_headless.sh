@@ -94,7 +94,7 @@ if [[ ! -d "$ARTIFACT_DIR" ]]; then
   exit 1
 fi
 
-for marker in '[AgentX Demo] Ordered test sequence (Gherkin):' 'e2e-greet-001' 'e2e-cycle-001' 'e2e-system-001'; do
+for marker in '[AgentX Demo] Ordered test sequence (Gherkin):' 'e2e-greet-001' 'e2e-cycle-001' 'e2e-system-001' 'e2e-system-tour-001'; do
   if ! grep -Fq "$marker" "$DEMO_OUTPUT_FILE"; then
     echo "FAIL: expected parity evidence marker in demo output: $marker"
     exit 1

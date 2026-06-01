@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestStartAppletSupervisorTracksDefaultPanes validates that supervisor initialization
@@ -31,6 +32,15 @@ func TestStartAppletSupervisorTracksDefaultPanes(t *testing.T) {
 	for _, applet := range snapshot.Applets {
 		if applet.Status != string(AppletStatusReady) {
 			t.Fatalf("expected applet %s to be ready, got %s", applet.Name, applet.Status)
+		}
+		if applet.Name == "input" && applet.Runtime != string(appletRuntimeGo) {
+			t.Fatalf("expected input applet runtime %q, got %q", appletRuntimeGo, applet.Runtime)
+		}
+		if applet.Name == "context" && applet.Runtime != string(appletRuntimeGo) {
+			t.Fatalf("expected context applet runtime %q, got %q", appletRuntimeGo, applet.Runtime)
+		}
+		if applet.Name == "logs" && applet.Runtime != string(appletRuntimeGo) {
+			t.Fatalf("expected logs applet runtime %q, got %q", appletRuntimeGo, applet.Runtime)
 		}
 	}
 }
@@ -106,8 +116,20 @@ func TestStartAppletSupervisor_LaunchesPaneAppletProcesses(t *testing.T) {
 	if !strings.Contains(commands, "AGENTX_APPLET_NAME='context'") {
 		t.Fatalf("expected context pane applet launch command, got:\n%s", commands)
 	}
+	if !strings.Contains(commands, "--context-widget --core-http") {
+		t.Fatalf("expected native go context widget launch args for context pane, got:\n%s", commands)
+	}
 	if !strings.Contains(commands, "AGENTX_APPLET_NAME='input'") {
 		t.Fatalf("expected input pane applet launch command, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "--input-widget --core-http") {
+		t.Fatalf("expected native go input widget launch args for input pane, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "AGENTX_APPLET_NAME='logs'") {
+		t.Fatalf("expected logs pane applet launch command, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "--logs-widget --core-http") {
+		t.Fatalf("expected native go logs widget launch args for logs pane, got:\n%s", commands)
 	}
 	if !strings.Contains(commands, "AGENTX_CHAT_BACKEND='ollama'") {
 		t.Fatalf("expected backend env in pane launch command, got:\n%s", commands)
@@ -117,5 +139,192 @@ func TestStartAppletSupervisor_LaunchesPaneAppletProcesses(t *testing.T) {
 	}
 	if !strings.Contains(commands, "AGENTX_OLLAMA_MODEL='test-model'") {
 		t.Fatalf("expected ollama model env in pane launch command, got:\n%s", commands)
+	}
+}
+
+// TestBuildPaneAppletLaunchCommand_InputPaneUsesNativeWidget verifies the shared
+// applet base launch builder routes input pane through native Go widget mode.
+func TestBuildPaneAppletLaunchCommand_InputPaneUsesNativeWidget(t *testing.T) {
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-input-launch"}
+	core := NewAgentXCore(cfg)
+	core.healthAddr = "127.0.0.1:33333"
+	core.runtimeConfig.SubmitTimeout = 10 * time.Second
+
+	base := core.buildAppletBaseRuntimeConfig()
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "input", PaneName: "input", Runtime: appletRuntimeGo}, base)
+
+	if !strings.Contains(cmd, "--input-widget --core-http") {
+		t.Fatalf("expected native input widget launch args, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='input'") {
+		t.Fatalf("expected input applet env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='go'") {
+		t.Fatalf("expected go applet runtime env var, got:\n%s", cmd)
+	}
+	if strings.Contains(cmd, "template.py") {
+		t.Fatalf("expected input pane not to launch python template applet, got:\n%s", cmd)
+	}
+}
+
+func TestBuildPaneAppletLaunchCommand_ContextPaneUsesNativeWidget(t *testing.T) {
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-context-launch"}
+	core := NewAgentXCore(cfg)
+	core.healthAddr = "127.0.0.1:33333"
+	core.runtimeConfig.SubmitTimeout = 10 * time.Second
+
+	base := core.buildAppletBaseRuntimeConfig()
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "context", PaneName: "context", Runtime: appletRuntimeGo}, base)
+
+	if !strings.Contains(cmd, "--context-widget --core-http") {
+		t.Fatalf("expected native context widget launch args, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='context'") {
+		t.Fatalf("expected context applet env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='go'") {
+		t.Fatalf("expected go applet runtime env var, got:\n%s", cmd)
+	}
+	if strings.Contains(cmd, "template.py") {
+		t.Fatalf("expected context pane not to launch python template applet, got:\n%s", cmd)
+	}
+}
+
+func TestBuildPaneAppletLaunchCommand_LogsPaneUsesNativeWidget(t *testing.T) {
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-logs-launch"}
+	core := NewAgentXCore(cfg)
+	core.healthAddr = "127.0.0.1:33333"
+	core.runtimeConfig.SubmitTimeout = 10 * time.Second
+
+	base := core.buildAppletBaseRuntimeConfig()
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "logs", PaneName: "logs", Runtime: appletRuntimeGo}, base)
+
+	if !strings.Contains(cmd, "--logs-widget --core-http") {
+		t.Fatalf("expected native logs widget launch args, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='logs'") {
+		t.Fatalf("expected logs applet env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='go'") {
+		t.Fatalf("expected go applet runtime env var, got:\n%s", cmd)
+	}
+	if strings.Contains(cmd, "template.py") {
+		t.Fatalf("expected logs pane not to launch python template applet, got:\n%s", cmd)
+	}
+}
+
+// TestBuildPaneAppletLaunchCommand_ChatPaneUsesPythonTemplate verifies the
+// shared applet base launch builder routes chat pane through python applet mode.
+func TestBuildPaneAppletLaunchCommand_ChatPaneUsesPythonTemplate(t *testing.T) {
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-chat-launch"}
+	core := NewAgentXCore(cfg)
+	core.healthAddr = "127.0.0.1:33333"
+	core.runtimeConfig.SubmitTimeout = 10 * time.Second
+	core.chatAppletScript = "/tmp/template.py"
+
+	base := core.buildAppletBaseRuntimeConfig()
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "chat", PaneName: "chat", Runtime: appletRuntimePython}, base)
+
+	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='chat'") {
+		t.Fatalf("expected chat applet env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='python'") {
+		t.Fatalf("expected python applet runtime env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_CORE_OWNS_STARTUP_BOOTSTRAP='1'") {
+		t.Fatalf("expected startup bootstrap ownership env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "/tmp/template.py") {
+		t.Fatalf("expected python template applet launch path, got:\n%s", cmd)
+	}
+	if strings.Contains(cmd, "--input-widget") {
+		t.Fatalf("expected chat pane not to use native input widget args, got:\n%s", cmd)
+	}
+}
+
+func TestBuildPaneAppletLaunchCommand_ChatPaneUsesNativeOutputWidget(t *testing.T) {
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-chat-launch-go"}
+	core := NewAgentXCore(cfg)
+	core.healthAddr = "127.0.0.1:33333"
+	core.runtimeConfig.SubmitTimeout = 10 * time.Second
+
+	base := core.buildAppletBaseRuntimeConfig()
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "chat", PaneName: "chat", Runtime: appletRuntimeGo}, base)
+
+	if !strings.Contains(cmd, "--output-widget --core-http") {
+		t.Fatalf("expected native output widget launch args, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='chat'") {
+		t.Fatalf("expected chat applet env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='go'") {
+		t.Fatalf("expected go applet runtime env var, got:\n%s", cmd)
+	}
+	if strings.Contains(cmd, "template.py") {
+		t.Fatalf("expected chat pane not to launch python template applet when runtime is go, got:\n%s", cmd)
+	}
+	if strings.Contains(cmd, "AGENTX_CORE_OWNS_STARTUP_BOOTSTRAP='1'") {
+		t.Fatalf("expected native go output widget launch to omit python bootstrap env, got:\n%s", cmd)
+	}
+}
+
+func TestStartAppletSupervisor_ChatRuntimeGoFromEnv(t *testing.T) {
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
+
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-chat-runtime-go"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor returned error: %v", err)
+	}
+
+	snapshot := core.healthSnapshot()
+	for _, applet := range snapshot.Applets {
+		if applet.Name == "chat" && applet.Runtime != string(appletRuntimeGo) {
+			t.Fatalf("expected chat applet runtime %q, got %q", appletRuntimeGo, applet.Runtime)
+		}
+	}
+}
+
+func TestStartAppletSupervisor_LaunchesPaneAppletProcesses_GoChatUsesNativeOutputWidget(t *testing.T) {
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
+	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
+	t.Setenv("AGENTX_OLLAMA_HOST", "test-host:11434")
+	t.Setenv("AGENTX_OLLAMA_MODEL", "test-model")
+
+	logPath := setupFakeTmux(t)
+	projectDir := t.TempDir()
+	stageTemplateApplet(t, projectDir)
+
+	cfg := &Config{ProjectDir: projectDir, Username: "dev", SessionID: "s-launch-pane-applets-go-chat"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor returned error: %v", err)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+
+	if !strings.Contains(commands, "AGENTX_APPLET_NAME='chat'") {
+		t.Fatalf("expected chat pane applet launch command even when runtime is go, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "AGENTX_APPLET_RUNTIME='go'") {
+		t.Fatalf("expected chat pane launch to preserve go runtime marker, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "--output-widget --core-http") {
+		t.Fatalf("expected native output widget launch args for go chat pane, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "respawn-pane -k -t "+core.tmuxSessionName+":0.0 AGENTX_APPLET_NAME='chat' AGENTX_APPLET_RUNTIME='go'") {
+		t.Fatalf("expected chat pane respawn command to use native go runtime, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "AGENTX_APPLET_NAME='input'") {
+		t.Fatalf("expected input pane applet launch command, got:\n%s", commands)
 	}
 }

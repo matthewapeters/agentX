@@ -1,5 +1,5 @@
 ---
-title: AgentX Hybrid TUI-First Architecture (Go Core + Python Applets)
+title: AgentX Hybrid TUI-First Architecture (Go Core + Mixed Runtime Applets)
 ---
 
 ```mermaid
@@ -7,37 +7,37 @@ title: AgentX Hybrid TUI-First Architecture (Go Core + Python Applets)
 flowchart TD
     subgraph TMUX [tmux Session TUI-First Layout]
         direction TB
-        P1["Pane: Chat/Output\n(Python applet, e.g. rich/textual, color+emoji)"]
-        P2["Pane: System/Logs\n(Python applet, e.g. tail, status, color+emoji)"]
-        P3["Pane: Input\n(Python applet, prompt_toolkit, color+emoji)"]
-        P4["Pane: Context Visualizer\n(Python applet, text-based, color+emoji)"]
-        P5["Pane: Tabs/Navigation\n(Python applet, text-based, color+emoji)"]
+        P1["Pane: Chat/Output\n(Runtime: Go native widget default)"]
+        P2["Pane: Logs\n(Runtime: Go native widget)"]
+        P3["Pane: Input\n(Runtime: Go native widget)"]
+        P4["Pane: System\n(Runtime: Go context widget)\n(files/config/context/history/visualizer)"]
+        P5["Pane: Tabs/Navigation\n(Runtime: Go state-file tab routing)"]
     end
     subgraph GoCore [Go Core AgentX Orchestrator]
         G1["tmux Layout Manager\n(pane/window orchestration)"]
-        G2["Applet Supervisor\n(spawn, monitor, restart Python applets)"]
+        G2["Applet Supervisor\n(spawn/monitor runtime-managed pane handlers)"]
         G3["IPC Router\n(FIFO, socket, or pipe for each applet)"]
         G4["Session State Manager\n(context, config, plugin registry)"]
     end
-    subgraph PythonApplets [Python Applets]
-        A1["TUI Chat/Output Applet\n(rich/textual, LLM, color+emoji)"]
-        A2["TUI Input Applet\n(prompt_toolkit, color+emoji)"]
-        A3["TUI System/Logs Applet\n(tail, status, color+emoji)"]
-        A4["TUI Context Visualizer\n(text-based, color+emoji)"]
-        A5["TUI Tabs/Navigation Applet\n(text-based, color+emoji)"]
+    subgraph RuntimeApplets [Runtime Applets]
+        A1["TUI Chat/Output\n(Go native widget, direct Go fallback)"]
+        A2["TUI Input\n(Go native widget)"]
+        A3["TUI Logs\n(Go native widget)"]
+        A4["TUI System Tabs\n(Go context widget render pipeline)"]
+        A5["TUI Tabs/Navigation\n(system-panel-tab Go state routing)"]
         A6["GUI Applet (Tkinter)\n(mouse, color, emoji, singleton, relaunchable)"]
     end
     G1 --"tmux control"--> TMUX
-    G2 --"spawn/manage"--> PythonApplets
-    G3 --"IPC"--> PythonApplets
-    G4 --"session state"--> PythonApplets
-    TMUX --"user input/output"--> PythonApplets
+    G2 --"spawn/manage"--> RuntimeApplets
+    G3 --"IPC"--> RuntimeApplets
+    G4 --"session state"--> RuntimeApplets
+    TMUX --"user input/output"--> RuntimeApplets
     A6 -. "GUI launch/close" .-> G2
     G2 -. "GUI relaunch" .-> A6
     A6 -. "context sync" .-> G4
     style TMUX fill:#f9f,stroke:#333,stroke-width:2px
     style GoCore fill:#bbf,stroke:#333,stroke-width:2px
-    style PythonApplets fill:#bfb,stroke:#333,stroke-width:2px
+    style RuntimeApplets fill:#bfb,stroke:#333,stroke-width:2px
     %% Emoji/color/UX notes
     classDef emoji fill:#fffbe7,stroke:#333,stroke-width:1px
     class P1,P2,P3,P4,P5,A1,A2,A3,A4,A5 emoji

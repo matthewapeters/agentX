@@ -1,5 +1,5 @@
 // Package main provides the AgentX Go core orchestrator.
-// It manages tmux session/pane lifecycle, supervises Python applets, routes IPC, and exposes a health endpoint.
+// It manages tmux session/pane lifecycle, supervises pane applets, routes IPC, and exposes a health endpoint.
 package main
 
 import (
@@ -20,8 +20,18 @@ func main() {
 		projectDir      = flag.String("project-dir", ".", "Project directory for sessions and config")
 		username        = flag.String("user", os.Getenv("USER"), "Username for session isolation")
 		sessionID       = flag.String("session-id", "", "Session ID; auto-generated if empty")
+		inputWidget     = flag.Bool("input-widget", false, "Run native Go input widget mode over stdin/stdout")
+		outputWidget    = flag.Bool("output-widget", false, "Run native Go output widget mode over stdout")
+		logsWidget      = flag.Bool("logs-widget", false, "Run native Go logs widget mode over stdout")
+		contextWidget   = flag.Bool("context-widget", false, "Run native Go context widget mode over stdout")
+		coreHTTP        = flag.String("core-http", strings.TrimSpace(os.Getenv("AGENTX_CORE_HTTP")), "Core HTTP base URL for widget/bridge modes")
+		layoutFile      = flag.String("layout-file", "", "Optional tmuxp layout file to overlay after core windows are created")
+		layoutTemplate  = flag.String("layout-template", "", "Write a starter tmuxp layout template to this file and exit")
+		startupMode     = flag.String("startup-mode", resolveStartupModeDefault(), "Startup topology mode: default|visible-windows")
 		attach          = flag.Bool("attach", true, "Attach to tmux session after startup (use -attach=false for headless mode)")
 		demo            = flag.Bool("demo", false, "Run DemoMode with a split tmux controller and live core session")
+		demoDefault     = flag.Bool("default", false, "Run DemoMode using the default frame-based startup topology")
+		demoWindowed    = flag.Bool("windowed", false, "Run DemoMode using the windowed startup topology")
 		demoHeadless    = flag.Bool("demo-headless", false, "Run DemoMode without the split-pane controller (internal)")
 		demoController  = flag.Bool("demo-controller", false, "Run the split-pane DemoMode controller pane (internal)")
 		demoSplit       = flag.Bool("demo-split", false, "Enable split-view controller behavior (internal)")
@@ -35,12 +45,63 @@ func main() {
 	if *projectDir == "" {
 		*projectDir = "."
 	}
+	resolvedStartupMode, ok := normalizeStartupMode(*startupMode)
+	if !ok {
+		log.Fatalf("invalid --startup-mode value %q (expected default or visible-windows)", strings.TrimSpace(*startupMode))
+	}
+	demoStartupMode, err := resolveDemoStartupMode(*demoDefault, *demoWindowed, resolvedStartupMode)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
 	if *username == "" {
 		*username = "agentx"
 	}
 
 	if *demoStart != "" && !(*demo || *demoHeadless || *demoController) {
 		log.Fatalf("--demo-start requires a demo mode flag")
+	}
+	if (*demoDefault || *demoWindowed) && !(*demo || *demoHeadless || *demoController) {
+		log.Fatalf("--default and --windowed require a demo mode flag")
+	}
+
+	if *inputWidget {
+		exitCode := runInputWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdin, os.Stdout)
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
+	}
+
+	if *outputWidget {
+		exitCode := runOutputWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdout)
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
+	}
+
+	if *logsWidget {
+		exitCode := runLogsWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdout)
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
+	}
+
+	if *contextWidget {
+		exitCode := runContextWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdout)
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
+	}
+
+	if strings.TrimSpace(*layoutTemplate) != "" {
+		if err := writeTmuxpLayoutTemplate(strings.TrimSpace(*layoutTemplate)); err != nil {
+			log.Fatalf("Failed to write layout template: %v", err)
+		}
+		fmt.Printf("[AgentX Core] Wrote tmuxp layout template: %s\n", strings.TrimSpace(*layoutTemplate))
+		return
 	}
 
 	if *demoHeadless {
@@ -59,6 +120,8 @@ func main() {
 			ProjectDir: *projectDir,
 			Username:   *username,
 			SessionID:  *sessionID,
+			LayoutFile: strings.TrimSpace(*layoutFile),
+			StartupMode: demoStartupMode,
 		}
 
 		core := NewAgentXCore(cfg)
@@ -79,24 +142,17 @@ func main() {
 			log.Fatalf("Failed to start demo health endpoint: %v", err)
 		}
 
-		demoRunner := func(testCase DemoTestCase) (string, error) {
-			inputLine := demoPromptForTestCase(testCase)
-			response, _, err := core.HandleInputLine(ctx, inputLine)
-			if err != nil {
-				return "", err
-			}
-			if response == "" {
-				return "ok", nil
-			}
-			return response, nil
-		}
-
 		demoConfig := DemoRuntimeConfig{
 			ProjectDir:      *projectDir,
 			Username:        *username,
 			SessionID:       core.SessionID,
 			TmuxSessionName: core.tmuxSessionName,
 			HealthAddr:      core.healthAddr,
+			StartupMode:     demoStartupMode,
+		}
+
+		demoRunner := func(testCase DemoTestCase) (string, error) {
+			return runDemoUXUseCase(ctx, demoConfig, testCase)
 		}
 		demoErr := runDemoModeWithConfig(os.Stdin, os.Stdout, *demoStart, demoRunner, demoConfig)
 
@@ -133,6 +189,7 @@ func main() {
 			SessionID:       *sessionID,
 			TmuxSessionName: *demoCoreSession,
 			HealthAddr:      strings.TrimSpace(*healthAddr),
+			StartupMode:     demoStartupMode,
 			SplitView:       *demoSplit,
 			StoriesFilePath: strings.TrimSpace(*demoStoriesFile),
 		}
@@ -141,7 +198,7 @@ func main() {
 		}
 
 		demoRunner := func(testCase DemoTestCase) (string, error) {
-			response, err := submitDemoPrompt(ctx, runtimeConfig.HealthURL(), demoPromptForTestCase(testCase))
+			response, err := runDemoUXUseCase(ctx, runtimeConfig, testCase)
 			if err != nil {
 				return "", err
 			}
@@ -193,6 +250,8 @@ func main() {
 			ProjectDir: *projectDir,
 			Username:   *username,
 			SessionID:  *sessionID,
+			LayoutFile: strings.TrimSpace(*layoutFile),
+			StartupMode: demoStartupMode,
 		}
 
 		core, err := startAgentXCore(ctx, cancel, cfg, false)
@@ -227,6 +286,8 @@ func main() {
 		ProjectDir: *projectDir,
 		Username:   *username,
 		SessionID:  *sessionID,
+		LayoutFile: strings.TrimSpace(*layoutFile),
+		StartupMode: resolvedStartupMode,
 	}
 
 	core, err := startAgentXCore(ctx, cancel, cfg, *attach)
@@ -241,6 +302,22 @@ func main() {
 		log.Printf("Shutdown error: %v", err)
 	}
 	fmt.Println("[AgentX Core] ✓ Shutdown complete")
+}
+
+func resolveDemoStartupMode(demoDefault, demoWindowed bool, fallback string) (string, error) {
+	if demoDefault && demoWindowed {
+		return "", fmt.Errorf("--default and --windowed cannot be used together")
+	}
+	if demoWindowed {
+		return visibleWindowsStartupMode, nil
+	}
+	if demoDefault {
+		return defaultStartupMode, nil
+	}
+	if mode, ok := normalizeStartupMode(fallback); ok {
+		return mode, nil
+	}
+	return defaultStartupMode, nil
 }
 
 func startAgentXCore(ctx context.Context, cancel context.CancelFunc, cfg *Config, attach bool) (*AgentXCore, error) {
@@ -260,6 +337,10 @@ func startAgentXCore(ctx context.Context, cancel context.CancelFunc, cfg *Config
 		return nil, err
 	}
 	fmt.Println("[AgentX Core] ✓ Applet supervisor started")
+
+	if err := core.RunStartupBootstrap(ctx); err != nil {
+		log.Printf("[AgentX Core] Startup bootstrap warning: %v", err)
+	}
 
 	if err := core.FocusInputPane(ctx); err != nil {
 		return nil, err

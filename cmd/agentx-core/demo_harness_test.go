@@ -3,10 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveDemoStartIndex_DefaultsToFirst(t *testing.T) {
@@ -76,9 +80,12 @@ func TestDefaultDemoSequence_IncludesSprint3ParityStories(t *testing.T) {
 	sequence := defaultDemoSequence()
 
 	required := map[string]bool{
-		"e2e-greet-001":  false,
-		"e2e-cycle-001":  false,
-		"e2e-system-001": false,
+		"e2e-greet-001":       false,
+		"e2e-cycle-001":       false,
+		"e2e-input-001":       false,
+		"e2e-logs-001":        false,
+		"e2e-system-001":      false,
+		"e2e-system-tour-001": false,
 	}
 
 	for _, testCase := range sequence {
@@ -101,6 +108,70 @@ func TestDefaultDemoSequence_IncludesSprint3ParityStories(t *testing.T) {
 		if !found {
 			t.Fatalf("expected default demo sequence to include %s", id)
 		}
+	}
+}
+
+func TestFilterDemoSequenceForRuntimeMode_WindowedExcludesDefaultOnlyHarnessTests(t *testing.T) {
+	// GIVEN the full demo sequence
+	// WHEN startup mode is visible-windows
+	// THEN default-only controller harness tests are excluded while parity tests remain.
+	sequence := defaultDemoSequence()
+	filtered := filterDemoSequenceForRuntimeMode(sequence, visibleWindowsStartupMode)
+
+	ids := map[string]bool{}
+	for _, testCase := range filtered {
+		ids[testCase.ID] = true
+	}
+
+	if ids["e2e-001"] {
+		t.Fatalf("expected default-only harness test e2e-001 to be excluded in windowed mode")
+	}
+	if ids["e2e-006"] {
+		t.Fatalf("expected default-only harness test e2e-006 to be excluded in windowed mode")
+	}
+	for _, required := range []string{"e2e-greet-001", "e2e-cycle-001", "e2e-input-001", "e2e-logs-001", "e2e-system-001", "e2e-system-tour-001"} {
+		if !ids[required] {
+			t.Fatalf("expected parity test %s to remain in windowed mode", required)
+		}
+	}
+}
+
+func TestRunDemoMode_WindowedStartupUsesFilteredSequence(t *testing.T) {
+	// GIVEN demo mode running with windowed startup mode
+	// WHEN tests execute to completion
+	// THEN only windowed-relevant tests are run and reported.
+	var output bytes.Buffer
+	input := strings.NewReader("N\nN\nN\nN\nN\nN\n")
+	runOrder := make([]string, 0)
+
+	runner := func(testCase DemoTestCase) (string, error) {
+		runOrder = append(runOrder, testCase.ID)
+		return "ok", nil
+	}
+
+	err := runDemoModeWithOptions(
+		input,
+		&output,
+		"",
+		runner,
+		demoModeOptions{runtimeConfig: DemoRuntimeConfig{StartupMode: visibleWindowsStartupMode}},
+	)
+	if err != nil {
+		t.Fatalf("expected demo mode to succeed, got %v", err)
+	}
+
+	if len(runOrder) != 6 {
+		t.Fatalf("expected 6 windowed-mode tests, got %d (%v)", len(runOrder), runOrder)
+	}
+	for _, id := range runOrder {
+		if strings.HasPrefix(id, "e2e-00") && len(id) == len("e2e-001") {
+			t.Fatalf("did not expect default-only harness test %s in windowed mode run", id)
+		}
+	}
+
+	content := output.String()
+	if strings.Contains(content, "e2e-001") {
+		t.Fatalf("expected sequence output to exclude default-only tests in windowed mode, got:\n%s", content)
 	}
 }
 
@@ -551,5 +622,98 @@ func TestRenderDemoStoriesBoard_ShowsStatusMarkers(t *testing.T) {
 	}
 	if !strings.Contains(board, "Status markers: [ ]=pending/skip") {
 		t.Fatalf("expected pending marker legend in stories board, board:\n%s", board)
+	}
+}
+
+func TestIsTransientDemoSubmitError(t *testing.T) {
+	// GIVEN representative demo submit errors
+	// WHEN transient classification is evaluated
+	// THEN timeout-like failures are treated as transient and generic failures are not.
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{name: "nil error", err: nil, expected: false},
+		{name: "submit timeout marker", err: fmt.Errorf("demo submit returned 504 Gateway Timeout: submit timed out"), expected: true},
+		{name: "gateway timeout marker", err: fmt.Errorf("demo submit returned 504 Gateway Timeout"), expected: true},
+		{name: "context deadline marker", err: fmt.Errorf("context deadline exceeded"), expected: true},
+		{name: "non transient http error", err: fmt.Errorf("demo submit returned 400 Bad Request"), expected: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if actual := isTransientDemoSubmitError(tc.err); actual != tc.expected {
+				t.Fatalf("expected transient=%v, got %v for error %v", tc.expected, actual, tc.err)
+			}
+		})
+	}
+}
+
+func TestSubmitDemoPromptWithRetry_RetriesTransientFailureThenSucceeds(t *testing.T) {
+	// GIVEN a submit endpoint that fails once with 504 then succeeds
+	// WHEN submitDemoPromptWithRetry is used
+	// THEN it retries and returns the successful response payload.
+	attempts := 0
+	resetDemoSubmitRetryCounter()
+	t.Cleanup(resetDemoSubmitRetryCounter)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/submit" {
+			http.NotFound(writer, request)
+			return
+		}
+		attempts++
+		if attempts == 1 {
+			writer.WriteHeader(http.StatusGatewayTimeout)
+			_, _ = writer.Write([]byte(`{"error":"submit timed out"}`))
+			return
+		}
+		writer.WriteHeader(http.StatusOK)
+		_, _ = writer.Write([]byte(`{"response":"cleared"}`))
+	}))
+	defer server.Close()
+
+	response, err := submitDemoPromptWithRetry(context.Background(), server.URL, ":clear", 3, time.Millisecond)
+	if err != nil {
+		t.Fatalf("expected retry to recover, got error: %v", err)
+	}
+	if response != "cleared" {
+		t.Fatalf("expected successful response payload, got %q", response)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected exactly two attempts (one retry), got %d", attempts)
+	}
+	if retries := loadDemoSubmitRetryCounter(); retries != 1 {
+		t.Fatalf("expected retry counter 1 after transient retry, got %d", retries)
+	}
+}
+
+func TestSubmitDemoPromptWithRetry_DoesNotRetryNonTransientFailure(t *testing.T) {
+	// GIVEN a submit endpoint that fails with non-transient 400
+	// WHEN submitDemoPromptWithRetry is used
+	// THEN it fails fast without retrying.
+	attempts := 0
+	resetDemoSubmitRetryCounter()
+	t.Cleanup(resetDemoSubmitRetryCounter)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/submit" {
+			http.NotFound(writer, request)
+			return
+		}
+		attempts++
+		writer.WriteHeader(http.StatusBadRequest)
+		_, _ = writer.Write([]byte(`{"error":"bad request"}`))
+	}))
+	defer server.Close()
+
+	_, err := submitDemoPromptWithRetry(context.Background(), server.URL, ":clear", 3, time.Millisecond)
+	if err == nil {
+		t.Fatal("expected non-transient submit failure")
+	}
+	if attempts != 1 {
+		t.Fatalf("expected single attempt for non-transient failure, got %d", attempts)
+	}
+	if retries := loadDemoSubmitRetryCounter(); retries != 0 {
+		t.Fatalf("expected retry counter 0 for non-transient failure, got %d", retries)
 	}
 }

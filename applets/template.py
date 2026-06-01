@@ -42,6 +42,33 @@ USERNAME = os.getenv("AGENTX_USERNAME", os.getenv("USER", "agentx")).strip() or 
 # Global shutdown flag
 shutdown_requested = False
 
+_ANSI_RESET = "\033[0m"
+
+_CONTEXT_BANDS = (
+    {"key": "working_memory", "label": "Working Memory", "emoji": "💾", "ansi": "96"},
+    {"key": "system", "label": "System", "emoji": "🧠", "ansi": "36"},
+    {"key": "user", "label": "User", "emoji": "👤", "ansi": "34"},
+    {"key": "attachments", "label": "Attachments", "emoji": "📎", "ansi": "93"},
+    {"key": "thinking", "label": "Thinking", "emoji": "🤔", "ansi": "35"},
+    {"key": "assistant", "label": "Agent", "emoji": "🤖", "ansi": "32"},
+    {"key": "tool", "label": "Tools", "emoji": "🔧", "ansi": "33"},
+)
+
+_SYSTEM_TAB_ALIASES = {
+    "full": "full",
+    "all": "full",
+    "files": "files",
+    "configuration": "configuration",
+    "config": "configuration",
+    "context": "context",
+    "context-history": "context-history",
+    "context_history": "context-history",
+    "history": "context-history",
+    "context-visualizer": "context-visualizer",
+    "context_visualizer": "context-visualizer",
+    "visualizer": "context-visualizer",
+}
+
 
 def signal_handler(signum, frame):
     """Handle SIGTERM and SIGINT for graceful shutdown."""
@@ -98,7 +125,7 @@ def _submit_prompt(prompt: str) -> str:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=OLLAMA_TIMEOUT_SEC) as response:
+    with urllib.request.urlopen(request, timeout=_resolve_submit_timeout_sec()) as response:
         body = response.read().decode("utf-8")
     decoded = json.loads(body)
     routed = str(decoded.get("response", "")).strip()
@@ -125,6 +152,27 @@ def _load_runtime_config() -> dict:
         return {}
     with open(config_path, "rb") as handle:
         return tomllib.load(handle)
+
+
+def _resolve_submit_timeout_sec() -> float:
+    """Resolve submit timeout from config first, then env override."""
+    timeout_sec = 120.0
+    config = _load_runtime_config()
+    agentx_cfg = config.get("agentx", {}) if isinstance(config.get("agentx"), dict) else {}
+    configured = agentx_cfg.get("submit_timeout_seconds")
+    if isinstance(configured, (int, float)) and configured > 0:
+        timeout_sec = float(configured)
+
+    env_value = os.getenv("AGENTX_SUBMIT_TIMEOUT_SEC", "").strip()
+    if env_value:
+        try:
+            parsed = float(env_value)
+            if parsed > 0:
+                timeout_sec = parsed
+        except ValueError:
+            pass
+
+    return timeout_sec
 
 
 def _load_bootstrap_prompt() -> str | None:
@@ -208,67 +256,347 @@ def _context_visualizer(turns: list[dict]) -> dict[str, int]:
     }
 
 
+def _normalize_system_tab(raw_value: str | None) -> str:
+    """Normalize user/system tab selector into known tab key."""
+    normalized = str(raw_value or "").strip().lower()
+    return _SYSTEM_TAB_ALIASES.get(normalized, "")
+
+
+def _resolve_system_tab_state_path() -> str:
+    """Resolve state file path used for system tab synchronization."""
+    configured = os.getenv("AGENTX_SYSTEM_PANEL_TAB_STATE_FILE", "").strip()
+    if configured:
+        return configured
+    return os.path.join(PROJECT_DIR, ".agentx", "system-panel-tab.txt")
+
+
+def _resolve_selected_system_tab() -> str:
+    """Resolve active system tab from state file with env/default fallback."""
+    state_file = _resolve_system_tab_state_path()
+    try:
+        with open(state_file, "r", encoding="utf-8") as handle:
+            tab = _normalize_system_tab(handle.read())
+            if tab:
+                return tab
+    except OSError:
+        pass
+
+    env_tab = _normalize_system_tab(os.getenv("AGENTX_SYSTEM_PANEL_TAB", ""))
+    if env_tab:
+        return env_tab
+
+    return "full"
+
+
 def _meter_row(label: str, value: int, max_tokens: int, width: int = 18) -> str:
     """Render one deterministic text meter row for a token band."""
     safe_max = max(max_tokens, 1)
     safe_val = max(value, 0)
     filled = min(width, int((safe_val / safe_max) * width))
     bar = "#" * filled + "." * (width - filled)
-    return f"{label:<16} [{bar}] {safe_val}"
+    pct = int(round((safe_val / safe_max) * 100))
+    return f"{label:<20} [{bar}] {safe_val} ({pct}%)"
 
 
-def _render_system_surface(payload: dict) -> str:
+def _resolve_context_window_tokens(agentx_cfg: dict, model_name: str, used_tokens: int) -> int:
+    """Resolve context window size for percentage computations."""
+    for key in ("context_window_tokens", "max_context_tokens", "context_tokens"):
+        value = agentx_cfg.get(key)
+        if isinstance(value, int) and value > 0:
+            return max(value, used_tokens, 1)
+
+    known_model_windows = {
+        "qwen3.6:latest": 32768,
+        "qwen2.5:latest": 32768,
+        "phi4-mini:3.8b": 16384,
+        "gpt-oss:latest": 32768,
+        "llama3.2": 8192,
+    }
+    if model_name in known_model_windows:
+        return max(known_model_windows[model_name], used_tokens, 1)
+
+    return max(8192, used_tokens, 1)
+
+
+def _render_context_usage_bar(breakdown: dict[str, int], max_tokens: int, width: int = 36) -> list[str]:
+    """Render ANSI-color usage bar plus compact percent summary."""
+    safe_max = max(max_tokens, 1)
+    band_values = {band["key"]: max(0, int(breakdown.get(band["key"], 0))) for band in _CONTEXT_BANDS}
+    used_tokens = sum(band_values.values())
+    usage_pct = int(round((used_tokens / safe_max) * 100))
+
+    used_slots = min(width, int(round((used_tokens / safe_max) * width)))
+    segments: list[str] = []
+    consumed_slots = 0
+    if used_tokens > 0 and used_slots > 0:
+        for index, band in enumerate(_CONTEXT_BANDS):
+            value = band_values[band["key"]]
+            if value <= 0:
+                continue
+            if index == len(_CONTEXT_BANDS) - 1:
+                slots = max(0, used_slots - consumed_slots)
+            else:
+                slots = int(round((value / used_tokens) * used_slots))
+            if slots <= 0:
+                continue
+            consumed_slots += slots
+            segments.append(f"\033[{band['ansi']}m{'█' * slots}{_ANSI_RESET}")
+
+    remaining_slots = max(0, width - consumed_slots)
+    if remaining_slots:
+        segments.append(f"\033[90m{'░' * remaining_slots}{_ANSI_RESET}")
+
+    summary_parts = []
+    for band in _CONTEXT_BANDS:
+        value = band_values[band["key"]]
+        if value <= 0:
+            continue
+        pct = int(round((value / safe_max) * 100))
+        summary_parts.append(f"{band['emoji']} {pct}% {band['label']}")
+
+    summary = " | ".join(summary_parts) if summary_parts else "No context contributors yet."
+    return [f"consumed: {usage_pct}% ({used_tokens}/{safe_max})", "".join(segments), summary]
+
+
+def _render_top_contributors(breakdown: dict[str, int], max_tokens: int, width: int = 16) -> list[str]:
+    """Render top context contributors with emoji and bar lengths."""
+    safe_max = max(max_tokens, 1)
+    ranked = sorted(
+        ((band, max(0, int(breakdown.get(band["key"], 0)))) for band in _CONTEXT_BANDS),
+        key=lambda pair: pair[1],
+        reverse=True,
+    )
+    top = [(band, tokens) for band, tokens in ranked if tokens > 0][:4]
+    if not top:
+        return ["Top Contributors:", "  none"]
+
+    lines = ["Top Contributors:"]
+    for idx, (band, tokens) in enumerate(top, start=1):
+        pct = int(round((tokens / safe_max) * 100))
+        slots = max(1, int(round((tokens / safe_max) * width)))
+        bar = f"\033[{band['ansi']}m{'█' * slots}{_ANSI_RESET}"
+        lines.append(f"  {idx}. {band['emoji']} {band['label']:<16} {bar} {pct}%")
+    return lines
+
+
+def _format_elapsed_ms(elapsed_ms: int) -> str:
+    """Format milliseconds as HH:MM:SS.mmm."""
+    safe_ms = max(0, int(elapsed_ms))
+    total_seconds = safe_ms // 1000
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    millis = safe_ms % 1000
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis:03d}"
+
+
+def _prompt_cycle_row(label: str, icon: str, phase_payload: dict | None) -> str:
+    """Render one prompt-cycle status row from payload data."""
+    phase = phase_payload if isinstance(phase_payload, dict) else {}
+    state = str(phase.get("state", "pending")).strip().lower() or "pending"
+    elapsed_ms = int(phase.get("elapsed_ms", 0) or 0)
+
+    if state == "done":
+        marker = "✓"
+    elif state == "running":
+        marker = "↻"
+    elif state == "failed":
+        marker = "✗"
+    else:
+        marker = "○"
+
+    elapsed = _format_elapsed_ms(elapsed_ms) if state in {"done", "running", "failed"} else "--:--:--.---"
+    return f"{marker} {icon} {label:<8} {elapsed}"
+
+
+def _cycle_summary_line(label: str, phase_payload: dict | None) -> str:
+    """Render one concise chat-pane summary line for prompt cycle phase."""
+    phase = phase_payload if isinstance(phase_payload, dict) else {}
+    state = str(phase.get("state", "pending")).strip().lower() or "pending"
+    elapsed_ms = int(phase.get("elapsed_ms", 0) or 0)
+    elapsed = _format_elapsed_ms(elapsed_ms)
+    return f"{state} ({elapsed})"
+
+
+def _classify_prompt_intent(prompt: str) -> str:
+    """Provide a lightweight UX-facing intent summary for chat pane classification rows."""
+    text = str(prompt).strip().lower()
+    if not text:
+        return "respond_directly -> assistant_response"
+    if text.startswith(":"):
+        return "control_command -> runtime_control"
+
+    planner_terms = (
+        "plan",
+        "roadmap",
+        "migrate",
+        "architecture",
+        "refactor",
+        "multi-step",
+    )
+    if any(term in text for term in planner_terms):
+        return "complex_action -> invoke_planner"
+
+    tool_terms = (
+        "read file",
+        "search",
+        "grep",
+        "run test",
+        "build",
+        "compile",
+        "debug",
+    )
+    if any(term in text for term in tool_terms):
+        return "tool_assisted -> invoke_tool"
+
+    return "respond_directly -> assistant_response"
+
+
+def _derive_activity_state(prompt_cycle: dict | None) -> tuple[str, str]:
+    """Derive activity state/phase from prompt cycle data when direct activity is unavailable."""
+    cycle = prompt_cycle if isinstance(prompt_cycle, dict) else {}
+
+    def _phase_state(name: str) -> str:
+        phase = cycle.get(name)
+        if isinstance(phase, dict):
+            return str(phase.get("state", "pending")).strip().lower() or "pending"
+        return "pending"
+
+    states = {
+        "classify": _phase_state("classify"),
+        "thinking": _phase_state("thinking"),
+        "tool": _phase_state("tool"),
+        "respond": _phase_state("respond"),
+    }
+
+    for phase_name in ("respond", "tool", "thinking", "classify"):
+        if states[phase_name] == "failed":
+            return "failed", phase_name
+    for phase_name in ("respond", "tool", "thinking", "classify"):
+        if states[phase_name] == "running":
+            return "working", phase_name
+    for phase_name in ("respond", "tool", "thinking", "classify"):
+        if states[phase_name] == "done":
+            return "completed", phase_name
+    return "idle", "none"
+
+
+def _resolve_activity_state(activity_payload: dict | None, prompt_cycle: dict | None) -> tuple[str, str]:
+    """Resolve activity state from /activity payload with prompt-cycle fallback."""
+    activity = activity_payload if isinstance(activity_payload, dict) else {}
+    state = str(activity.get("state", "")).strip().lower()
+    phase = str(activity.get("phase", "")).strip().lower()
+    if state:
+        return state, phase or "none"
+    return _derive_activity_state(prompt_cycle)
+
+
+def _render_system_surface(payload: dict, selected_tab: str = "full", activity_payload: dict | None = None) -> str:
     """Render a deterministic text analogue of the GUI status context widget."""
     config = _load_runtime_config()
     agentx_cfg = config.get("agentx", {}) if isinstance(config.get("agentx"), dict) else {}
     turns = payload.get("turns", []) or []
     turn_count = int(payload.get("turn_count", len(turns)))
-    last_turn = turns[-1] if turns else {}
-    session_dir = os.path.join(PROJECT_DIR, "sessions", USERNAME)
-    session_history = _safe_listdir(session_dir)
-    recent_history = list(reversed(turns[-2:]))
+    session_id = _trim_single_line(payload.get("session_id", SESSION_ID), 36)
     visualizer = _context_visualizer(turns)
-    max_tokens = int(visualizer.get("max_tokens", 0))
-    safe_max_tokens = max(max_tokens, 1)
+    activity = activity_payload if isinstance(activity_payload, dict) else {}
+    prompt_cycle = activity.get("prompt_cycle") if isinstance(activity.get("prompt_cycle"), dict) else {}
+    if not prompt_cycle:
+        prompt_cycle = payload.get("prompt_cycle") if isinstance(payload.get("prompt_cycle"), dict) else {}
+    activity_state, activity_phase = _resolve_activity_state(activity, prompt_cycle)
+    model_name = _trim_single_line(agentx_cfg.get("ollama_model", OLLAMA_MODEL), 24)
     used_tokens = sum(
         int(visualizer.get(key, 0))
         for key in ["working_memory", "system", "user", "attachments", "thinking", "assistant", "tool"]
     )
-    usage_pct = int((used_tokens / safe_max_tokens) * 100)
+    safe_max_tokens = _resolve_context_window_tokens(agentx_cfg, model_name, used_tokens)
     remaining = max(0, safe_max_tokens - used_tokens)
+    usage_lines = _render_context_usage_bar(visualizer, safe_max_tokens)
+    top_lines = _render_top_contributors(visualizer, safe_max_tokens)
 
-    lines = [
-        "[SYSTEM]",
-        "== CONTEXT WINDOW ==",
-        f"model: {_trim_single_line(agentx_cfg.get('ollama_model', OLLAMA_MODEL), 24)} | backend: {_trim_single_line(CHAT_BACKEND, 12)}",
-        f"usage: {used_tokens}/{safe_max_tokens} ({usage_pct}%)",
-        _meter_row("Working Memory", int(visualizer.get("working_memory", 0)), safe_max_tokens),
-        _meter_row("System Prompts", int(visualizer.get("system", 0)), safe_max_tokens),
-        _meter_row("User Prompts", int(visualizer.get("user", 0)), safe_max_tokens),
-        _meter_row("Attachments", int(visualizer.get("attachments", 0)), safe_max_tokens),
-        _meter_row("Thinking", int(visualizer.get("thinking", 0)), safe_max_tokens),
-        _meter_row("Agent Response", int(visualizer.get("assistant", 0)), safe_max_tokens),
-        _meter_row("Tool Calls", int(visualizer.get("tool", 0)), safe_max_tokens),
-        _meter_row("Remaining", remaining, safe_max_tokens),
-        "== PROMPT CYCLE ==",
-        "○ 🤔 Classify --:--:--",
-        "○ 💭 Think    --:--:--",
-        "○ 🔧 Tool     --:--:--",
-        "○ ✍️ Respond  --:--:--",
-        "== SESSION SNAPSHOT ==",
-        f"session_id: {_trim_single_line(payload.get('session_id', SESSION_ID), 28)} | turn_count: {turn_count}",
-        f"last_user: {_trim_single_line(last_turn.get('prompt', 'none'), 56)}",
-        f"last_assistant: {_trim_single_line(last_turn.get('response', 'none'), 51)}",
-        f"history_context_count: {len(session_history)} | latest_history_session: {_trim_single_line(session_history[-1] if session_history else 'none', 20)}",
-        f"recent_prompt: {_trim_single_line(recent_history[0].get('prompt', 'none') if recent_history else 'none', 57)}",
-    ]
+    filesystem_entries = _safe_listdir(PROJECT_DIR)
+    preview_items = []
+    for entry in filesystem_entries[:3]:
+        full_path = os.path.join(PROJECT_DIR, entry)
+        preview_items.append(f"- {_classify_entry(full_path)}: {_trim_single_line(entry, 36)}")
+    if not preview_items:
+        preview_items = ["- none"]
+
+    last_prompt = _trim_single_line(turns[-1].get("prompt", ""), 56) if turns else "none"
+    last_response = _trim_single_line(turns[-1].get("response", ""), 56) if turns else "none"
+    recent_prompt = _trim_single_line(turns[-2].get("prompt", ""), 56) if len(turns) > 1 else "none"
+
+    sections = {
+        "files": [
+            "== FILES ==",
+            f"project_dir: {_trim_single_line(PROJECT_DIR, 64)}",
+            f"entry_count: {len(filesystem_entries)}",
+            "preview:",
+            *preview_items,
+        ],
+        "configuration": [
+            "== CONFIGURATION ==",
+            f"model: {model_name}",
+            f"backend: {_trim_single_line(CHAT_BACKEND, 24)}",
+            f"ollama_host: {_trim_single_line(OLLAMA_HOST, 40)}",
+        ],
+        "context": [
+            "== CONTEXT ==",
+            f"session_id: {session_id}",
+            f"turn_count: {turn_count}",
+            f"last_user: {last_prompt}",
+            f"last_agent: {last_response}",
+        ],
+        "context-history": [
+            "== CONTEXT HISTORY ==",
+            f"history_context_count: {turn_count}",
+            f"recent_prompt: {recent_prompt}",
+        ],
+        "context-visualizer": [
+            "== CONTEXT WINDOW ==",
+            f"model: {model_name} | backend: {_trim_single_line(CHAT_BACKEND, 12)}",
+            usage_lines[0],
+            usage_lines[1],
+            usage_lines[2],
+            *top_lines,
+            "== ACTIVITY ==",
+            f"state: {activity_state}",
+            f"phase: {activity_phase}",
+            "== CONTEXT VISUALIZER ==",
+            _meter_row("💾 Working Memory", int(visualizer.get("working_memory", 0)), safe_max_tokens),
+            _meter_row("🧠 System Prompts", int(visualizer.get("system", 0)), safe_max_tokens),
+            _meter_row("👤 User Prompts", int(visualizer.get("user", 0)), safe_max_tokens),
+            _meter_row("📎 Attachments", int(visualizer.get("attachments", 0)), safe_max_tokens),
+            _meter_row("🤔 Thinking", int(visualizer.get("thinking", 0)), safe_max_tokens),
+            _meter_row("🤖 Agent Response", int(visualizer.get("assistant", 0)), safe_max_tokens),
+            _meter_row("🔧 Tool Calls", int(visualizer.get("tool", 0)), safe_max_tokens),
+            _meter_row("░ Remaining", remaining, safe_max_tokens),
+            "== PROMPT CYCLE ==",
+            _prompt_cycle_row("Classify", "🤔", prompt_cycle.get("classify")),
+            _prompt_cycle_row("Think", "💭", prompt_cycle.get("thinking")),
+            _prompt_cycle_row("Tool", "🔧", prompt_cycle.get("tool")),
+            _prompt_cycle_row("Respond", "🤖", prompt_cycle.get("respond")),
+        ],
+    }
+
+    active_tab = _normalize_system_tab(selected_tab) or "full"
+    lines = ["[SYSTEM]", f"[SYSTEM TAB] active={active_tab}"]
+
+    if active_tab == "full":
+        ordered_tabs = ["files", "configuration", "context", "context-history", "context-visualizer"]
+        for tab_name in ordered_tabs:
+            lines.extend(sections[tab_name])
+    else:
+        lines.extend(sections.get(active_tab, sections["context-visualizer"]))
+
+    lines.append(f"turn_count: {turn_count}")
     return "\n".join(lines)
 
 
 def run_input_affordance_loop():
     """Run line-based input affordance for interactive tmux input pane."""
     print_ui_line("Input ready. Enter prompt and press Enter.")
-    print_ui_line("Commands: :q shuts down the session, :clear clears chat output.")
+    print_ui_line("Commands: :q shuts down the session, :clear clears input panel only.")
     while not shutdown_requested:
         try:
             prompt = input("agentx> ")
@@ -307,9 +635,8 @@ def run_input_affordance_loop():
             return 0
 
         try:
-            routed_response = _submit_prompt(prompt)
+            _submit_prompt(prompt)
             print_ui_line(f"Submitted: {prompt}")
-            print_ui_line(f"Response: {routed_response}")
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
             print_ui_line(f"Submit failed: {exc}")
 
@@ -319,7 +646,13 @@ def run_input_affordance_loop():
 def run_chat_affordance_loop():
     """Poll context endpoint and display assistant responses as they arrive."""
     print_ui_line("Chat ready.")
-    bootstrap_prompt = _load_bootstrap_prompt()
+    core_owns_bootstrap = os.getenv("AGENTX_CORE_OWNS_STARTUP_BOOTSTRAP", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    bootstrap_prompt = None if core_owns_bootstrap else _load_bootstrap_prompt()
     if bootstrap_prompt:
         if CHAT_BACKEND == "ollama":
             try:
@@ -346,12 +679,15 @@ def run_chat_affordance_loop():
             turns = payload.get("turns", [])
             turn_count = int(payload.get("turn_count", len(turns)))
             if turn_count > last_turn_count:
+                prompt_cycle = payload.get("prompt_cycle") if isinstance(payload.get("prompt_cycle"), dict) else {}
                 new_turns = turns[last_turn_count:turn_count]
                 for turn in new_turns:
                     prompt = str(turn.get("prompt", "")).strip()
                     response = str(turn.get("response", "")).strip()
                     if prompt:
                         print_ui_line(f"User: {prompt}")
+                        print_ui_line(f"⚙️ Classification: {_classify_prompt_intent(prompt)}")
+                    print_ui_line("💭 [thinking block - " + _cycle_summary_line("Think", prompt_cycle.get("thinking")) + "]")
                     if response:
                         print_ui_line(f"Agent: {response}")
                 last_turn_count = turn_count
@@ -368,7 +704,14 @@ def run_context_affordance_loop():
     while not shutdown_requested:
         try:
             payload = _get_json("/context")
-            render = _render_system_surface(payload)
+            activity_payload = None
+            try:
+                activity_payload = _get_json("/activity")
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
+                mirrored = payload.get("activity")
+                if isinstance(mirrored, dict):
+                    activity_payload = mirrored
+            render = _render_system_surface(payload, _resolve_selected_system_tab(), activity_payload)
             if render != last_render:
                 clear_visible_screen()
                 print_ui_line(render)

@@ -394,6 +394,65 @@ func TestRouteInputPrompt_PythonBridgeProcessReusedAcrossPrompts(t *testing.T) {
 	}
 }
 
+// GIVEN Python bridge routing with mocked backend behavior
+// WHEN a prompt is routed through RouteInputPrompt
+// THEN submitted/classified/thinking/tool/final_response lifecycle stages appear in order.
+func TestRouteInputPrompt_PythonBridgeLifecycleStagesInOrder(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available in test environment")
+	}
+
+	t.Setenv("AGENTX_CHAT_BACKEND", "mock")
+
+	projectDir := t.TempDir()
+	stageTemplateApplet(t, projectDir)
+
+	logPath := setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-lifecycle-order"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	if _, err := core.RouteInputPrompt(context.Background(), "list the files here"); err != nil {
+		t.Fatalf("RouteInputPrompt failed: %v", err)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+
+	orderedStages := []string{
+		"stage=submitted",
+		"stage=classified",
+		"stage=thinking",
+		"stage=tool",
+		"stage=final_response",
+	}
+
+	lastIndex := -1
+	for _, marker := range orderedStages {
+		idx := strings.Index(commands, marker)
+		if idx == -1 {
+			t.Fatalf("expected lifecycle marker %q in commands:\n%s", marker, commands)
+		}
+		if idx <= lastIndex {
+			t.Fatalf("expected marker %q after previous lifecycle marker; commands:\n%s", marker, commands)
+		}
+		lastIndex = idx
+	}
+
+	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
+		t.Fatalf("expected bridge_response_ok in command log, got:\n%s", commands)
+	}
+}
+
 // GIVEN chat backend is configured for Ollama with an unreachable host
 // WHEN a prompt is routed through the persistent Python bridge
 // THEN the applet falls back to deterministic echo response without failing routing.
@@ -859,6 +918,161 @@ func TestRouteInputPrompt_EmptyChunkIgnoredWithPersistence(t *testing.T) {
 	}
 	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
 		t.Fatalf("expected bridge_response_ok event, got:\n%s", commands)
+	}
+
+	if err := core.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+}
+
+// GIVEN go chat runtime with unreachable ollama backend
+// WHEN a prompt is routed
+// THEN go-runtime fallback telemetry is emitted and deterministic echo fallback is returned directly.
+func TestRouteInputPrompt_GoChatRuntimeOllamaFailureFallsBackDirectlyToEcho(t *testing.T) {
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
+	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
+	t.Setenv("AGENTX_OLLAMA_HOST", "127.0.0.1:1")
+
+	projectDir := t.TempDir()
+
+	logPath := setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-go-chat-fallback-direct"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	response, err := core.RouteInputPrompt(context.Background(), "go chat fallback prompt")
+	if err != nil {
+		t.Fatalf("RouteInputPrompt failed: %v", err)
+	}
+	if response != "Echo: go chat fallback prompt" {
+		t.Fatalf("expected python bridge recovered echo response, got %q", response)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "[bridge] event=go_chat_fallback") {
+		t.Fatalf("expected go_chat_fallback telemetry, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=bridge_route_start") {
+		t.Fatalf("did not expect python bridge route telemetry after direct go fallback, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=go_chat_bridge_fallback") {
+		t.Fatalf("did not expect secondary go_chat_bridge_fallback when no Python bridge path is used, got:\n%s", commands)
+	}
+
+	if err := core.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+}
+
+// GIVEN go chat runtime with unreachable ollama backend and no template staged
+// WHEN a prompt is routed
+// THEN deterministic echo fallback remains available without any Python bridge telemetry.
+func TestRouteInputPrompt_GoChatRuntimeFallbackDoesNotDependOnTemplateScript(t *testing.T) {
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
+	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
+	t.Setenv("AGENTX_OLLAMA_HOST", "127.0.0.1:1")
+
+	projectDir := t.TempDir()
+	logPath := setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-go-chat-fallback-echo"}
+	core := NewAgentXCore(cfg)
+	core.chatAppletScript = filepath.Join(projectDir, "applets", "missing_template.py")
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	response, err := core.RouteInputPrompt(context.Background(), "go chat double fallback prompt")
+	if err != nil {
+		t.Fatalf("RouteInputPrompt failed: %v", err)
+	}
+	if response != "Echo: go chat double fallback prompt" {
+		t.Fatalf("expected deterministic echo fallback response, got %q", response)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "[bridge] event=go_chat_fallback") {
+		t.Fatalf("expected go_chat_fallback telemetry, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=go_chat_bridge_fallback") {
+		t.Fatalf("did not expect go_chat_bridge_fallback telemetry, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=bridge_start_error") {
+		t.Fatalf("did not expect bridge_start_error telemetry when Python bridge is not consulted, got:\n%s", commands)
+	}
+
+	if err := core.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+}
+
+// GIVEN go chat runtime with a reachable backend
+// WHEN a prompt is routed directly through the Go backend path
+// THEN normalized route-start and success telemetry are emitted without fallback.
+func TestRouteInputPrompt_GoChatRuntimeDirectSuccessEmitsTelemetry(t *testing.T) {
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
+	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/chat" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		fmt.Fprint(w, `{"message":{"content":"Direct go reply"}}`)
+	}))
+	defer server.Close()
+	t.Setenv("AGENTX_OLLAMA_HOST", strings.TrimPrefix(server.URL, "http://"))
+
+	projectDir := t.TempDir()
+	stageTemplateApplet(t, projectDir)
+	logPath := setupFakeTmux(t)
+	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-go-chat-direct-success"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	response, err := core.RouteInputPrompt(context.Background(), "go chat direct success")
+	if err != nil {
+		t.Fatalf("RouteInputPrompt failed: %v", err)
+	}
+	if response != "Direct go reply" {
+		t.Fatalf("expected direct go reply, got %q", response)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "[bridge] event=go_chat_route_start") {
+		t.Fatalf("expected go_chat_route_start telemetry, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[bridge] event=go_chat_response_ok") {
+		t.Fatalf("expected go_chat_response_ok telemetry, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=go_chat_fallback") {
+		t.Fatalf("did not expect go_chat_fallback on direct success, got:\n%s", commands)
 	}
 
 	if err := core.Shutdown(context.Background()); err != nil {

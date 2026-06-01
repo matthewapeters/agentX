@@ -1,31 +1,32 @@
-# AgentX Hybrid Architecture: Go Core + Python Applets
+# AgentX Hybrid Architecture: Go Core + Runtime Applets
 
 _Last updated: 2026-05-22 (v0.79.2)_
 
 ## Overview
 
-AgentX is migrating from a pure-Python TUI to a **hybrid Go-core + Python-applets** architecture. This document outlines the design, IPC protocol, and migration strategy.
+AgentX is migrating from a pure-Python TUI to a **Go-core + runtime-applets** architecture. This document outlines the design, IPC protocol, and migration strategy.
 
 ### Architecture Layers
 
 1. **Go Core** (`cmd/agentx-core/main.go`)
    - Single binary, static executable
    - Manages tmux session/pane lifecycle
-   - Supervises Python applet processes
+   - Supervises runtime applet processes
    - Routes IPC (FIFOs, environment variables)
    - Exposes HTTP health/status endpoint
    - Owns session state and context persistence
 
-2. **Python Applets** (`applets/`)
+2. **Runtime Applets** (`cmd/agentx-core` widget modes and legacy applet paths)
    - Pluggable, independent processes
-   - Run in dedicated tmux panes
-   - Full access to Python LLM ecosystem (ollama, transformers, etc.)
-   - Communicate with Go core via standard IPC
+   - Run in dedicated tmux panes/windows
+   - Go-native widgets currently own chat/output, input, logs, and system/context surfaces
+   - Legacy Python applet paths remain available for non-Go runtime scenarios during migration
+   - Communicate with Go core via standard IPC and core HTTP endpoints
    - Can be restarted independently without affecting core
 
 3. **tmux Session**
    - TUI-first layout: chat, logs, input, context visualizer, system
-   - Each pane runs a Python applet or built-in command
+   - Each pane runs a runtime applet or built-in command
    - User navigates panes with tmux keybindings (Ctrl-b + arrow keys)
    - Pane layout defined in Go core startup
 
@@ -91,7 +92,7 @@ User-facing launch behavior now defaults to attaching the current terminal to th
 
 DemoMode now uses a split tmux controller for the user-facing `--demo` path: the left pane owns the sequence/N-X review loop, and the right pane mirrors the live core pane set (chat/context/input) while the controller submits prompts over the core `/submit` endpoint. The smoke gate retains a hidden headless path for deterministic artifact validation.
 
-After tmux initialization, supervisor startup now launches live Python applet processes in the primary panes (`chat`, `context`, `input`) using the project-local template applet entrypoint.
+After tmux initialization, supervisor startup now launches runtime-managed pane handlers with explicit runtime kinds: `input` and `context` are Go-native, while `chat` is Python by default and can be switched to Go behind `AGENTX_CHAT_RUNTIME=go`.
 
 Interactive pane affordances are now role-specific: `input` submits prompts via core `/submit`, `chat` polls `/context` for agent output display, and `context` polls `/context` for turn metadata updates.
 
@@ -133,7 +134,7 @@ When user quits or core receives SIGTERM:
 
 ### Current Runtime Behavior (Hybrid Migration Branch)
 
-The Go-core runtime now spawns real Python applet processes in `chat`, `context`, and `input` panes and routes prompt submission through `/submit`.
+The Go-core runtime now routes prompt submission through `/submit` with mixed applet runtimes: `input/context` are Go-native and `chat` is feature-flagged (`python` default, optional `go`).
 
 Headless UX validation now runs in two layers:
 
@@ -151,7 +152,7 @@ The D4 smoke gate is documented in `docs/ux/07_DEMO_MODE.md` and exercised via `
 
 ### Go Core Features
 
- ✅ Python chat applet bridge path exists for prompt/response handoff (`template.py --bridge-chat-server`)
+ ✅ Go-native chat/output widget path is the checked-in default, with direct deterministic Go fallback when the Go backend is unavailable
 
 ```bash
 # Build Go core
@@ -218,7 +219,7 @@ sessions/
 
 ### Context Manager
 
-Go core owns `sessions/<username>/<session_id>/context/`. Python applets query/update context via IPC or HTTP endpoint.
+Go core owns `sessions/<username>/<session_id>/context/`. Runtime applets query/update context via IPC or HTTP endpoint, with context pane rendering now driven by Go core.
 
 Context structure (JSON):
 

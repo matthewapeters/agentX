@@ -1,6 +1,8 @@
 # AgentX — UX Lifecycle Reference
 
-_Last updated: 2026-05-16 (v0.85.0)_
+<!-- markdownlint-disable MD036 MD040 MD047 MD051 MD060 -->
+
+_Last updated: 2026-06-01 (v0.85.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
@@ -10,47 +12,33 @@ this document when specifying, building, changing, or removing UI affordances.
 
 ## Tab/Surface Parity Matrix (Source of Truth)
 
-## Tab/Surface Parity Matrix (Source of Truth)
+The rows below are the current active parity rows and reflect the reconciled
+runtime state.
 
 |GUI Tab / Surface|TUI Analog / Surface|Owner (Go/Py)|Test / Contract|Status|
 |---|---|---|---|---|
-|Chat (Output)|Output Pane (chat)|Py (now), Go (target)|test_chat_panel_turn_rendering.py|⚠️ Py-owned, Go TODO|
-|Tool Processing (Output)|Output Pane (tool)|Py (now), Go (target)|test_chat_panel_turn_rendering.py|⚠️ Py-owned, Go TODO|
-|File Edit (Output)|Output Pane (file edit)|Py (now), Go (target)|test_chat_panel_turn_rendering.py|⚠️ Py-owned, Go TODO|
-|Context Visualization|System Pane (context viz)|Py (now), Go (target)|test_status_tab.py, test_context_meter_widget.py|⚠️ Py-owned, Go TODO|
-|Files Navigation|System Pane (files)|Py (now), Go (target)|test_file_explorer_coverage.py|⚠️ Py-owned, Go TODO|
-|Context History/Current|System Pane (context hist)|Py (now), Go (target)|test_phase6_context_panel.py|⚠️ Py-owned, Go TODO|
-|Configuration|System Pane (config)|Py (now), Go (target)|test_settings_tab_sections.py|⚠️ Py-owned, Go TODO|
-|Chat (Output)|Output Pane (chat)|Go (now)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
-|Tool Processing (Output)|Output Pane (tool)|Go (now)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
-|File Edit (Output)|Output Pane (file edit)|Go (now)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
-|Context Visualization|System Pane (context viz)|Go (now)|test_status_tab.py, test_context_meter_widget.py|✅ Go-owned, tested|
-|Files Navigation|System Pane (files)|Go (now)|test_file_explorer_coverage.py|✅ Go-owned, tested|
-|Context History/Current|System Pane (context hist)|Go (now)|test_phase6_context_panel.py|✅ Go-owned, tested|
-|Configuration|System Pane (config)|Go (now)|test_settings_tab_sections.py|✅ Go-owned, tested|
+|Chat (Output)|Output Pane (chat)|Go (current)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
+|Tool Processing (Output)|Output Pane (tool)|Go (current)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
+|File Edit (Output)|Output Pane (file edit)|Go (current)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
+|Context Visualization|System Pane (context viz)|Go (current)|test_status_tab.py, test_context_meter_widget.py|✅ Go-owned, tested|
+|Files Navigation|System Pane (files)|Go (current)|test_file_explorer_coverage.py|✅ Go-owned, tested|
+|Context History/Current|System Pane (context hist)|Go (current)|test_phase6_context_panel.py|✅ Go-owned, tested|
+|Configuration|System Pane (config)|Go (current)|test_settings_tab_sections.py|✅ Go-owned, tested|
 
-**Blockers:** All output/system tabs still Py-owned. No Go-driven agentic orchestration. No TUI analogs for tab navigation. All must migrate to Go for true parity. All unmapped = blocker.
+**Blockers:** Parity remains incomplete; Go-core orchestration is primary and TUI completion gates take priority over GUI feature advancement.
 
 **Links:**
 
-- [docs/hybrid_ux_parity_execution_plan.md](../hybrid_ux_parity_execution_plan.md) — plan, next steps
+- [docs/hybrid_remaining_work.md](../hybrid_remaining_work.md) — remaining-work synthesis, next steps
 - [docs/architecture.md](../architecture.md) — module map, runtime split, channel registry (to add)
+- [docs/architecture/system_panel_tab_mapping.md](../architecture/system_panel_tab_mapping.md) — Wave 3 system-tab provider/render mapping
 
-## Next Steps Checklist (until 100% parity)
+## Current Parity Notes
 
-1. [/] Ratify and commit this matrix in plan and UX_LIFECYCLE. ✓
-2. [ ] For each tab/surface, define TUI analog and Go owner in code/spec.
-3. [ ] Implement Go-driven output loop (input/classify/think/tool/respond) for all output tabs.
-4. [ ] Implement Go-driven system panel routing and data providers for all system tabs.
-5. [/] Author channel registry doc: channel name, schema, pub/sub, policy, code link. ✓ See [../architecture/channel_registry.md](../architecture/channel_registry.md)
-6. [/] Author runtime split doc: Python applet vs Go routine, migration phases, thin-GUI contract. ✓ See [../architecture/runtime_split.md](../architecture/runtime_split.md)
-7. [ ] Update all tests to cover Go-driven path; mark blockers in UX_LIFECYCLE.
-8. [/] No parity claim until all blockers resolved and all tests pass. ✓
-9. [/] For each tab/surface, define TUI analog and Go owner in code/spec. ✓
-10. [/] Implement Go-driven output loop (input/classify/think/tool/respond) for all output tabs. ✓
-11. [/] Implement Go-driven system panel routing and data providers for all system tabs. ✓
-12. [/] Update all tests to cover Go-driven path; mark blockers in UX_LIFECYCLE. ✓
-13. [ ] No parity claim until all blockers resolved and all tests pass.
+- Go-core is the main runtime orchestrator and is the required execution path.
+- GUI is secondary and back-burnered until TUI parity completion.
+- Active remaining work is tracked in [docs/hybrid_remaining_work.md](../hybrid_remaining_work.md).
+- Any newly discovered drift should be logged via the audit command in §8.
 
 ---
 
@@ -64,7 +52,7 @@ this document when specifying, building, changing, or removing UI affordances.
 4. [Traceability Matrix (As-Built)](#4-traceability-matrix-as-built)
 5. [Change Workflow Checklists](#5-change-workflow-checklists)
 6. [Headless Tkinter Testing Primer](#6-headless-tkinter-testing-primer)
-7. [Known Coverage Gaps](#7-known-coverage-gaps)
+7. [Current Coverage Gaps](#7-current-coverage-gaps)
 8. [Keeping This Document Current](#8-keeping-this-document-current)
 
 ---
@@ -179,6 +167,27 @@ Update this document to reflect what was built and tested.
 - If the code differs from the spec in any way, update the spec to match the code and
   note the change in `CHANGELOG.md`.
 - Commit `docs/ux/UX_LIFECYCLE.md` alongside the code and test changes.
+
+### Applet Review Gate
+
+The hybrid runtime's system applets are treated as first-class UX surfaces even
+when they are implemented as runtime applets rather than GUI widgets.
+
+Before a parity claim is made for any system applet or startup topology change,
+the following must be true:
+
+- The applet or surface has a dedicated spec row in [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md).
+- The same affordance ID appears in the traceability matrix below.
+- The implementation has unit coverage for the default state and every user-
+  visible state transition.
+- The implementation has integration or functional coverage for launch,
+  reattach, and session ownership behavior.
+- The UX review has been completed against the authoritative spec, and the row
+  status has been reconciled from `📝 Spec Only` to `✅ Tested`.
+
+This gate applies to the system applet suite, to the visible-windows startup
+mode, and to any future frame/container topology changes that affect what UAT can
+see and validate.
 
 ---
 
@@ -436,7 +445,8 @@ implements it and the test that validates it.  Status legend:
 | `enable_gui_chat=false` mode uses headless `NullGUIManager` and enforces config constraint | PD-16-AF-006 | `config.validate_config()` + `AgentXSession` GUI-disabled path | `test_config_tui_phase1.py`, `test_session_gui_disabled.py` | module-level tests | ✅ |
 | `tui.enable` controls `TuiBridge` lifecycle and guarded call-sites | PD-16-AF-007 | `AgentXSession.__init__()` + `close()` + streaming guards | `test_tui_bridge_output.py`, `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
 | `<leader>q` writes quit sentinel and triggers graceful application shutdown from TUI | PD-16-AF-008 | generated `agentx_tui.lua` quit keymap + `TuiBridge._input_reader_loop()` + `AgentXSession._on_tui_quit()` | `test_tui_bridge_output.py`, `test_session_gui_disabled.py`, `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
-| TUI context visualization renders color-band meter and top-contributor bars with ASCII fallback | PD-16-AF-009 | `TuiBridge.render_context_visualization()` + `AgentXSession.schedule_meter_redraw()` | `test_tui_bridge_output.py`, `test_active_model_meter_wiring.py` | module-level tests | ✅ |
+| TUI context visualization renders color-band meter and top-contributor bars with ASCII fallback | PD-16-AF-009 | `TuiBridge.render_context_visualization()` + `AgentXSession.schedule_meter_redraw()` | `test_tui_bridge_output.py`, `test_active_model_meter_wiring.py`, `test_tmux_ux_flow_what_is_2_plus_2_headless.sh` | module-level tests + headless e2e | ✅ |
+| Go input widget consumes core activity state (`/activity`) and renders non-blocking busy/done/fail cues | PD-16-AF-010 | `input_widget.go` activity polling + prompt adornment (`fetchActivitySnapshot()` / `activityPromptLabel()`) + core `/activity` handler | `input_widget_test.go`, `core_health_endpoint_test.go` | package-level tests | ✅ |
 
 ### PD-17 — DemoMode
 
@@ -452,9 +462,26 @@ implements it and the test that validates it.  Status legend:
 | End-of-run readiness and artifact summary output | PD-17-AF-008 | `renderDemoSummary()` readiness and artifact-path line | `demo_harness_test.go` | package-level tests | ✅ |
 | Story-browser displays inline per-test status markers (`[ ]`, `[/]`, `[P]`, `[X]`) | PD-17-AF-009 | `renderDemoStoriesBoard()` status board renderer | `demo_harness_test.go` | package-level tests | ✅ |
 | Split controller pane refreshes/clears between decisions to preserve readability | PD-17-AF-010 | `clearControllerPane()` and split-view `runDemoModeWithOptions()` flow | `demo_harness_test.go` | package-level tests | ✅ |
-| Startup greeting parity criteria and placeholder demo story are defined | PD-17-AF-011 | `defaultDemoSequence()` (`e2e-greet-001`) + `07_DEMO_MODE.md` Flow A contract | `demo_harness_test.go` | package-level tests | 📝 |
-| Prompt lifecycle parity criteria and placeholder demo story are defined | PD-17-AF-012 | `defaultDemoSequence()` (`e2e-cycle-001`) + `07_DEMO_MODE.md` Flow B contract | `demo_harness_test.go` | package-level tests | 📝 |
-| System panel parity criteria and placeholder demo story are defined | PD-17-AF-013 | `defaultDemoSequence()` (`e2e-system-001`) + `07_DEMO_MODE.md` Flow C contract | `demo_harness_test.go` | package-level tests | 📝 |
+| Startup greeting parity criteria and demo story are defined and validated | PD-17-AF-011 | `defaultDemoSequence()` (`e2e-greet-001`) + `validateDemoStartupGreeting()` + `07_DEMO_MODE.md` Flow A contract | `demo_harness_test.go`, `tests/test_demo_ux_use_cases_headless.sh`, `tests/test_demo_ux_use_cases_layout_headless.sh` | package-level tests + headless e2e | ✅ |
+| Prompt lifecycle parity criteria and demo story are defined and validated | PD-17-AF-012 | `defaultDemoSequence()` (`e2e-cycle-001`) + `validateDemoPromptLifecycle()` + `07_DEMO_MODE.md` Flow B contract | `demo_harness_test.go`, `tests/test_demo_ux_use_cases_headless.sh`, `tests/test_demo_ux_use_cases_layout_headless.sh` | package-level tests + headless e2e | ✅ |
+| System panel parity criteria and demo story are defined and validated | PD-17-AF-013 | `defaultDemoSequence()` (`e2e-system-001`) + `validateDemoSystemPane()` + `07_DEMO_MODE.md` Flow C contract | `demo_harness_test.go`, `tests/test_demo_ux_use_cases_headless.sh`, `tests/test_demo_ux_use_cases_layout_headless.sh` | package-level tests + headless e2e | ✅ |
+| System panel tab-tour parity criteria and demo story are defined and validated | PD-17-AF-014 | `defaultDemoSequence()` (`e2e-system-tour-001`) + `validateDemoSystemTour()` + `07_DEMO_MODE.md` Flow C.1 contract | `demo_harness_test.go`, `tests/test_demo_system_panel_tour_headless.sh` | package-level tests + headless e2e | ✅ |
+
+### PD-18 — SystemAppletSuite
+
+| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
+|---|---|---|---|---|---|
+| System frame binds by semantic title, not pane index | PD-18-AF-001 | `SystemAppletHost` / `newSystemAppletHost()` + `Resolve(tab)` | `system_applet_host_test.go`, `core_system_renderer_test.go` | package-level tests | ✅ |
+| Context history applet renders recent turn history | PD-18-AF-002 | `contextHistorySystemApplet.RenderWidget()` via `SystemAppletHost.Resolve("context-history")` | `system_applet_host_test.go`, `context_widget_test.go` | package-level tests | ✅ |
+| Configuration applet renders runtime config | PD-18-AF-003 | `renderContextWidget()` `configuration` case with `model:`, `backend:`, `ollama_host:` | `context_widget_test.go` (`TestRenderContextWidget_ConfigurationTabContract`) | package-level tests | ✅ |
+| File-selection applet renders project file navigation | PD-18-AF-004 | `renderContextWidget()` `files` case with `project_dir:` + `entry_count:` from env/fs | `context_widget_test.go` (`TestRenderContextWidget_FilesTabContract`) | package-level tests | ✅ |
+| Working-memory applet renders session facts | PD-18-AF-005 | `workingMemorySystemApplet.RenderCore()` via `SystemAppletHost.Resolve("working-memory")` | `system_applet_host_test.go`, `core_system_renderer_test.go` | package-level tests | ✅ |
+| Context visualizer applet renders capacity and prompt-cycle status | PD-18-AF-006 | `renderContextWidget()` default case + `e2e-system-tour-001` live demo validator | `context_widget_test.go`, `tests/test_demo_system_panel_tour_headless.sh` | package-level tests + headless e2e | ✅ |
+| Visible startup mode exposes one window per applet for UAT | PD-18-AF-007 | `main.go` `--startup-mode` flag + `config.go` `normalizeStartupMode()` | `config_startup_mode_test.go` | package-level tests | ✅ |
+
+Active execution packet for first implementation slice:
+
+- `docs/architecture/system_applet_suite_slice1.md`
 
 Planned follow-up for PD-16 default-behavior migration is documented in
 `docs/ux/06_TUI_MIRROR.md` §12 (TUI-first default with `--gui` opt-in).
@@ -757,32 +784,21 @@ python -m pytest -m "not live" -v
 
 ---
 
-## 7. Known Coverage Gaps
+## 7. Current Coverage Gaps
 
-The following affordance groups are **spec'd but untested** (📝) or **not yet spec'd**
-(❌).  They represent the highest risk for silent drift.  Prioritise these when adding
-tests.
+Parity is still incomplete. The following high-priority gaps remain active until
+Go applet flows match UX specifications and TUI completion gates are met.
+The visible-windows startup topology is already implemented and documented, so
+it is no longer tracked as an active gap here.
 
-### High Priority (visible to users, behaviour is non-trivial)
-
-| Gap ID | Surface | Gap | Evidence | Newly Discovered In This Pass | Required Closure |
-|--------|---------|-----|----------|-------------------------------|------------------|
-| HX-001 | `output` pane / `PD-17-AF-011` | Startup greeting is not yet bootstrapped into the live hybrid runtime output pane at session start. | `docs/hybrid_ux_parity_execution_plan.md` still has A1-A4 open; user launch on 2026-05-23 did not show the default greeting. | No | Implement A1-A4 and add an attached-runtime E2E that proves one-shot greeting render + persistence. |
-| HX-002 | `output` pane / `PD-17-AF-012` | Lifecycle stages are logged to `logs`, but not yet rendered in the user-facing `output` pane in GUI-equivalent order. | W0.2 added lifecycle observability hooks only; B1-B4 remain open in `docs/hybrid_ux_parity_execution_plan.md`. | No | Implement B1-B4 and assert `submitted -> classified -> thinking -> tool -> final response` in the `output` pane. |
-| HX-003 | `system` pane / `PD-17-AF-013` | The `system` title now implies GUI System-pane parity, but the current pane only exposes a minimal context summary rather than files, configuration, context, context history, and context visualizer affordances. | `docs/ux/07_DEMO_MODE.md` Flow C contract requires all five tabs; current headless pane-affordance contract checks only turn count / latest prompt. | Yes | Complete C1-C5 and replace the current summary-only contract with per-tab data-provider assertions. |
-| HX-004 | `input` pane exit semantics | `:q` does not terminate the full attached hybrid runtime; it exits the input loop while the remaining panes stay alive. | User-observed on 2026-05-23; this behavior is consistent with the current attached runtime path and is not covered by an attached-session E2E. | Yes | Fix runtime shutdown propagation and add a real attached-runtime test that proves `:q` tears down the full session cleanly. |
-| HX-005 | Attached startup focus | No attached-runtime E2E currently proves the cursor lands in the `input` pane after real tmux attach; pre-attach/headless checks are insufficient. | User-observed focus landing in `system`; current tests validate layout and pre-attach selection only. | Yes | Add an attached-session focus contract test that checks the active pane after real attach startup. |
-| HX-006 | Demo and smoke scope | Existing demo/headless checks prove structure, artifacts, and pane contracts, but they do not prove full attached-runtime parity for startup greeting, quit semantics, or system-pane parity. | Regressions reported from live startup were not caught by `demo-smoke` or current headless layout checks. | Yes | Split gates explicitly into layout-contract, attached-runtime, and demo-parity suites, and require all three before parity claims. |
-
-### Medium Priority (settings / configuration)
-
-_All medium-priority items have been addressed._
-
-### Low Priority (modal dialogs, less frequent use)
-
-| Affordance ID | Description |
-|---------------|-------------|
-| PD-05-AF-004–006 | PlanTreeWidget Re-synth, Export, node status icons |
+| Gap ID | Surface | Current issue | Required closure |
+|--------|---------|---------------|------------------|
+| HX-001 | `output` pane / `PD-17-AF-011` | Startup greeting bootstrap behavior is not yet fully closed as a Go-owned parity guarantee across runtime paths. | Add deterministic Go-owned startup coverage for attached/runtime paths and retain one-shot persistence guarantees. |
+| HX-002 | `output` pane / `PD-17-AF-012` | Prompt lifecycle rendering remains incomplete against full UX parity criteria. | Complete and verify end-to-end prompt-classification-thinking-tool-response flow in TUI output under Go orchestration. |
+| HX-003 | `system` pane / `PD-17-AF-013` | System surface parity remains incomplete versus UX tab specifications. | Complete Go-owned applet/system flow implementation and validate files/configuration/context/history/visualizer parity. |
+| HX-004 | Applet flow completeness | Applets are not yet created/owned in Go to match UX flow contracts end to end. | Implement and validate each applet in its own slice, with unit + integration/functional coverage and UX review sign-off. |
+| HX-005 | TUI-first completion gate | GUI work can still appear as if equal priority to TUI completion. | Enforce TUI-first completion policy and defer GUI enhancements until TUI parity gate passes. |
+| HX-006 | Applet UX review coverage | System applet surfaces do not yet have individual UX review rows and reconciliation status in the panel details matrix. | Add one PD-18 row per applet surface, review each against UX specs, and reconcile to `✅ Tested` only after tests pass. |
 
 ---
 
@@ -797,6 +813,16 @@ When the AI agent makes any code change to `src/agentx/gui/`:
 3. Add new rows for any new affordances introduced.
 4. Remove rows for any affordances deleted.
 5. Commit `docs/ux/UX_LIFECYCLE.md` as part of the same commit.
+
+When the AI agent makes any change to the system applet suite or the UAT-visible
+startup mode:
+
+1. Update the matching PD-18 row in [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md).
+2. Add or update the traceability row in section §4.
+3. Add at least one unit test and one integration/functional test for the
+  affected applet or startup topology.
+4. Reconcile the row status from `📝 Spec Only` to `✅ Tested` only after the
+  implementation and tests pass.
 
 ### Developer responsibility
 

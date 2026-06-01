@@ -25,10 +25,11 @@ _Last updated: 2026-05-23 (v0.83.1)_
 | Vibe coding (neovim + tmux integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
 | TUI mirror / hybrid pane contract (spec + plan) | [06_TUI_MIRROR.md](06_TUI_MIRROR.md) |
 | Demo mode contract and harness plan | [07_DEMO_MODE.md](07_DEMO_MODE.md) |
+| Startup modes and launch switches (authoritative) | [../architecture/startup_modes.md](../architecture/startup_modes.md) |
 | TUI-default migration plan and docs impact list | [06_TUI_MIRROR.md §12](06_TUI_MIRROR.md#12-tui-first-migration-plan-planned) |
 | Tool/tooling backlog (non-UX) | [../tools/tools_issues.md](../tools/tools_issues.md) |
 | Run the UX review+enforce cycle (agent slash-command) | `/ux-review` in Copilot Chat |
-| See test coverage gaps and pane-alignment re-evaluation | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-known-coverage-gaps) |
+| See historical coverage notes and remaining-work synthesis | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-historical-coverage-gaps-resolved) |
 | Detect spec/code/test drift | [UX_LIFECYCLE.md §5.4](UX_LIFECYCLE.md#54-detecting-drift-without-a-planned-change) |
 | Add a new panel/affordance (checklist) | [UX_LIFECYCLE.md §5.1](UX_LIFECYCLE.md#51-adding-a-new-affordance) |
 | Modify an existing affordance (checklist) | [UX_LIFECYCLE.md §5.2](UX_LIFECYCLE.md#52-modifying-an-existing-affordance) |

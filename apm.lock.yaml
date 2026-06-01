@@ -1,10 +1,10 @@
 lockfile_version: '1'
-generated_at: '2026-05-25T22:57:10.454700+00:00'
+generated_at: '2026-05-30T17:28:58.684907+00:00'
 apm_version: 0.14.2
 dependencies:
 - repo_url: matthewapeters/subutai
   host: github.com
-  resolved_commit: 1ddca777b503ad4d715a01343e5dd8a57aef502f
+  resolved_commit: bc4013af03efa1df7b558832f6597d5f3ca6d2e2
   package_type: apm_package
   deployed_files:
   - .github/agents/api-integration-architect.agent.md
@@ -27,6 +27,7 @@ dependencies:
   - .github/agents/sdet.agent.md
   - .github/agents/software-security-architect.agent.md
   - .github/agents/sre-observability-engineer.agent.md
+  - .github/agents/subutai.agent.md
   - .github/agents/tpm-expert.agent.md
   - .github/instructions/expert-contract.instructions.md
   - .github/instructions/orchestration-artifacts.instructions.md
@@ -54,10 +55,11 @@ dependencies:
     .github/agents/sdet.agent.md: sha256:edb31940cb1784d137cde2ed5ba9386602b1ac132d7a013989c0f5e857771d67
     .github/agents/software-security-architect.agent.md: sha256:a7812e608896a3d98087d427aa2e74c71c94653936745c94cc30f5afa26f74b3
     .github/agents/sre-observability-engineer.agent.md: sha256:61325a80e411a9ffa6b26e8ca4942c7966502a1b39bda5cd05ccd44fdd03953a
+    .github/agents/subutai.agent.md: sha256:0f842f131267f34075b8b70c44b22b2764287bc169e3a700d3abc6294dac6190
     .github/agents/tpm-expert.agent.md: sha256:88e2546fa62d23384a91c5b37b9af5642799a7ee60d2c7c9af25a022175b7ed8
     .github/instructions/expert-contract.instructions.md: sha256:60552581761abe2a9df4fa556a43a15b35d1de54511b08b6d57801d1982a0136
     .github/instructions/orchestration-artifacts.instructions.md: sha256:3e22ac31f8ac7e5152b0d2a2f511834b72b75d0cf859e153d7da85a891720ee9
     .github/instructions/orchestrator-conflict-progress.instructions.md: sha256:e4000c48fb1e0dbc49dac73db056b37ceb66ae9f79ea0b9f37f83adf16145703
     .github/instructions/orchestrator-triage.instructions.md: sha256:baa44c387259b90eca900648bd58d5e3708291d53dced279215a4f281f67cc72
     .github/instructions/subutai-orchestrator.instructions.md: sha256:3cbefbbc4616750a91fa783f80eb73e6f1edbb6fdf7816eadb4bd86a734e8ea2
-  content_hash: sha256:a9176512bf46db3e25fd430c729c56adaff0862272e631391397de9950a91f64
+  content_hash: sha256:c243f7440bd2001ebed7f3a7070aff916a22c0d5b145e21e38c0f68285f69420

@@ -1,10 +1,11 @@
 # AgentX — Panel Details
 
-_Last updated: 2026-05-22 (v0.79.2)_
+_Last updated: 2026-06-01 (v0.79.2)_
 
-Detailed affordance specifications for each GUI panel/widget.  Each section
-documents the widget's purpose, all user-visible controls, and the callback
-wiring to session logic.
+Detailed affordance specifications for each GUI panel/widget and the hybrid
+runtime surfaces that need UX traceability.  Each section documents the
+widget's purpose, all user-visible controls, and the callback wiring to session
+logic.
 
 Each section should follow the component cut-sheet standard in
 [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md).
@@ -1295,6 +1296,49 @@ keys that require restart.
 └── ▶ 🏛️ Working Memory          (collapsed)
 ```
 
+## PD-18: SystemAppletSuite
+
+**Panel/Surface**: Hybrid runtime system frame and UAT-visible applet startup mode
+**Type**: Runtime surface contract for the system applets and visible startup mode
+**Primary source**: `cmd/agentx-core/` runtime orchestration, `docs/architecture/runtime_split.md`, `docs/ux/06_TUI_MIRROR.md`
+
+This section defines the user-visible contract for the system applets that will
+compose the system frame and for the optional visible-windows startup mode used
+to validate applets before frame layout is enabled.
+
+### Affordance Inventory
+
+| Affordance | ID | Expected Behavior | Status |
+|-----------|----|-------------------|--------|
+| System frame binds by semantic title, not pane index | PD-18-AF-001 | Core resolves owned system surfaces by stable titles/roles after tmuxp overlays and reattach flows | ✅ Tested |
+| Context history applet renders recent turn history | PD-18-AF-002 | The context-history surface shows ordered turns, latest prompt/response context, and deterministic truncation rules | ✅ Tested |
+| Configuration applet renders runtime config | PD-18-AF-003 | The config surface shows the current runtime config and effective environment-driven overrides | ✅ Tested |
+| File-selection applet renders project file navigation | PD-18-AF-004 | The files surface shows the project tree/selection summary that UAT can inspect without switching modes | ✅ Tested |
+| Working-memory applet renders session facts | PD-18-AF-005 | The working-memory surface shows current facts as a read-only summary sourced from the active session directory | ✅ Tested |
+| Context visualizer applet renders capacity and prompt-cycle status | PD-18-AF-006 | The context surface shows capacity metrics, prompt-cycle status, and meter rows that match core state | ✅ Tested |
+| Visible startup mode exposes one window per applet for UAT | PD-18-AF-007 | Optional startup mode launches each applet in its own visible window before frame layout is introduced | ✅ Tested |
+
+### Applet Review Contract
+
+Each applet above must have:
+
+1. A UX specification row in this section.
+2. A traceability row in [UX_LIFECYCLE.md](UX_LIFECYCLE.md) with a matching
+  affordance ID.
+3. Unit tests for the applet's default state and each user-visible state change.
+4. Integration or functional tests for startup, reattach, and session ownership
+  behavior.
+5. A reconciliation step that updates the lifecycle matrix from `📝` to `✅`
+  only after implementation and testing are complete.
+
+### Implementation Notes
+
+- The system applet suite is a runtime surface, not a new GUI panel.
+- The visible startup mode is a review-only topology to make applet presence and
+  basic function observable before the final frame layout lands.
+- This section intentionally mirrors the runtime split and UX lifecycle docs so
+  implementation work can be reviewed against one authoritative spec chain.
+
 ---
 
 ## PD-08: ContextRenderer
@@ -1539,7 +1583,7 @@ Baseline requirements from the original design:
 | TOK-03 | Ollama `/api/tokenize` endpoint | Exact | Follow-on (no extra dep) |
 | TOK-04 | `tiktoken` | Exact for OpenAI models only | Rejected (wrong for Ollama) |
 
-Upgrade path: TOK-02 → TOK-03 via an `ITokenizer` interface. See `docs/integration/04_IMPROVEMENT_SUGGESTIONS.md §1.3`.
+Upgrade path: TOK-02 → TOK-03 via an `ITokenizer` interface. See `docs/archive/agentx-agentix-integration/04_IMPROVEMENT_SUGGESTIONS.md §1.3`.
 
 ### Enrichment Backlog (Unimplemented)
 
@@ -1908,8 +1952,10 @@ The icon is a `tk.Label` updated by `PhaseRow.set_state(state)`.
 
 #### Elapsed Timer
 
-- Format: `HH:MM:SS` while running; `--:--:--` while pending; frozen at final
-  elapsed when `DONE` or `FAILED`.
+- GUI StatusTab format: `HH:MM:SS` while running; `--:--:--` while pending;
+  frozen at final elapsed when `DONE` or `FAILED`.
+- Hybrid/TUI prompt-cycle format: `HH:MM:SS.mmm` while running; `--:--:--.---`
+  while pending; frozen at final elapsed when `DONE` or `FAILED`.
 - Implementation: `PhaseRow` records `start_time: float = time.monotonic()` when
   state transitions to `RUNNING`.  `StatusTab` drives a single `after(1000, …)`
   tick loop that calls `PhaseRow.tick()` on all `RUNNING` rows.  The tick loop

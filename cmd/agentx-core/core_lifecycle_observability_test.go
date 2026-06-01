@@ -53,7 +53,7 @@ func TestRouteInputPrompt_EmitsLifecycleStagesInOrder(t *testing.T) {
 	if err := core.StartAppletSupervisor(context.Background()); err != nil {
 		t.Fatalf("StartAppletSupervisor failed: %v", err)
 	}
-	if _, err := core.RouteInputPrompt(context.Background(), "lifecycle prompt"); err != nil {
+	if _, err := core.RouteInputPrompt(context.Background(), "list the files here"); err != nil {
 		t.Fatalf("RouteInputPrompt failed: %v", err)
 	}
 

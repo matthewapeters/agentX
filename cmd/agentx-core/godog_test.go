@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +41,10 @@ type bddState struct {
 	contextTurns []ChatTurn
 	chatPID      int
 	bridgeScript string
+	originalChatRuntime string
+	originalChatBackend string
+	originalOllamaHost string
+	backendStubServer *httptest.Server
 }
 
 func (s *bddState) reset() {
@@ -63,6 +71,128 @@ func (s *bddState) reset() {
 	s.contextTurns = nil
 	s.chatPID = 0
 	s.bridgeScript = ""
+	s.originalChatRuntime = ""
+	s.originalChatBackend = ""
+	s.originalOllamaHost = ""
+	s.backendStubServer = nil
+}
+
+func (s *bddState) iStartDelayedOllamaBackendWithStatus(delayMs, statusCode int) error {
+	if delayMs < 0 {
+		return fmt.Errorf("delay must be non-negative")
+	}
+	if statusCode < 100 || statusCode > 599 {
+		return fmt.Errorf("invalid status code: %d", statusCode)
+	}
+
+	if s.backendStubServer != nil {
+		s.backendStubServer.Close()
+		s.backendStubServer = nil
+	}
+
+	delay := time.Duration(delayMs) * time.Millisecond
+	s.backendStubServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/chat" {
+			http.NotFound(w, r)
+			return
+		}
+
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
+		time.Sleep(delay)
+
+		w.Header().Set("Content-Type", "application/json")
+		if statusCode >= 200 && statusCode < 300 {
+			w.WriteHeader(statusCode)
+			_, _ = w.Write([]byte(`{"message":{"content":"Delayed backend reply"}}`))
+			return
+		}
+
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(`{"error":"delayed backend failure"}`))
+	}))
+
+	if err := s.setOllamaHostOverride(s.backendStubServer.URL); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *bddState) iStartSequencedDelayedOllamaBackend(delayMs, firstStatusCode, secondStatusCode int) error {
+	if delayMs < 0 {
+		return fmt.Errorf("delay must be non-negative")
+	}
+	for _, code := range []int{firstStatusCode, secondStatusCode} {
+		if code < 100 || code > 599 {
+			return fmt.Errorf("invalid status code: %d", code)
+		}
+	}
+
+	if s.backendStubServer != nil {
+		s.backendStubServer.Close()
+		s.backendStubServer = nil
+	}
+
+	delay := time.Duration(delayMs) * time.Millisecond
+	var mu sync.Mutex
+	requestCount := 0
+
+	s.backendStubServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/chat" {
+			http.NotFound(w, r)
+			return
+		}
+
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
+		time.Sleep(delay)
+
+		mu.Lock()
+		requestCount++
+		activeStatus := secondStatusCode
+		// First prompt now issues a single Go backend call before direct deterministic fallback.
+		// Recover on the next prompt after the first failed backend attempt.
+		if requestCount <= 1 {
+			activeStatus = firstStatusCode
+		}
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		if activeStatus >= 200 && activeStatus < 300 {
+			w.WriteHeader(activeStatus)
+			_, _ = w.Write([]byte(`{"message":{"content":"Delayed backend recovery reply"}}`))
+			return
+		}
+
+		w.WriteHeader(activeStatus)
+		_, _ = w.Write([]byte(`{"error":"sequenced delayed backend failure"}`))
+	}))
+
+	if err := s.setOllamaHostOverride(s.backendStubServer.URL); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *bddState) setChatRuntimeOverride(runtime string) error {
+	if s.originalChatRuntime == "" {
+		s.originalChatRuntime = os.Getenv("AGENTX_CHAT_RUNTIME")
+	}
+	return os.Setenv("AGENTX_CHAT_RUNTIME", strings.TrimSpace(runtime))
+}
+
+func (s *bddState) setChatBackendOverride(backend string) error {
+	if s.originalChatBackend == "" {
+		s.originalChatBackend = os.Getenv("AGENTX_CHAT_BACKEND")
+	}
+	return os.Setenv("AGENTX_CHAT_BACKEND", strings.TrimSpace(backend))
+}
+
+func (s *bddState) setOllamaHostOverride(host string) error {
+	if s.originalOllamaHost == "" {
+		s.originalOllamaHost = os.Getenv("AGENTX_OLLAMA_HOST")
+	}
+	return os.Setenv("AGENTX_OLLAMA_HOST", strings.TrimSpace(host))
 }
 
 func stageFlakyBridgeApplet(projectDir string) (string, error) {
@@ -249,6 +379,55 @@ for raw_line in sys.stdin:
 	return scriptPath, nil
 }
 
+func stageStartupLatencyBridgeAppletBDD(projectDir string) (string, error) {
+	appletsDir := filepath.Join(projectDir, "applets")
+	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create applets dir: %w", err)
+	}
+
+	scriptPath := filepath.Join(appletsDir, "startup_latency_bridge.py")
+	markerPath := filepath.Join(appletsDir, ".startup_latency_once_marker")
+	script := fmt.Sprintf(`#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+import time
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--bridge-chat-server", action="store_true")
+args = parser.parse_args()
+
+marker_path = %q
+
+# Simulate intermittent process startup latency for the first bridge process only.
+if not os.path.exists(marker_path):
+	with open(marker_path, "w", encoding="utf-8") as marker_file:
+		marker_file.write("slow-start-consumed\n")
+	time.sleep(0.45)
+
+print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
+sys.stdout.flush()
+
+for raw_line in sys.stdin:
+	if not raw_line.strip():
+		continue
+	req = json.loads(raw_line)
+	if req.get("type") != "prompt":
+		continue
+
+	prompt = req.get("prompt", "")
+	print(json.dumps({"type": "response", "response": f"Startup latency recovered: {prompt}"}))
+	sys.stdout.flush()
+`, markerPath)
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		return "", fmt.Errorf("failed to write startup-latency bridge applet: %w", err)
+	}
+
+	return scriptPath, nil
+}
+
 func (s *bddState) theProjectContainsTemplateChatApplet() error {
 	if s.tmpDir == "" {
 		return errors.New("temporary project directory not initialized")
@@ -329,6 +508,20 @@ func (s *bddState) theProjectContainsEmptyChunkChatBridgeApplet() error {
 	}
 
 	scriptPath, err := stageEmptyChunkBridgeAppletBDD(s.tmpDir)
+	if err != nil {
+		return err
+	}
+
+	s.bridgeScript = scriptPath
+	return nil
+}
+
+func (s *bddState) theProjectContainsStartupLatencyChatBridgeApplet() error {
+	if s.tmpDir == "" {
+		return errors.New("temporary project directory not initialized")
+	}
+
+	scriptPath, err := stageStartupLatencyBridgeAppletBDD(s.tmpDir)
 	if err != nil {
 		return err
 	}
@@ -903,6 +1096,13 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		if state.oldTmuxLog != "" {
 			_ = os.Setenv("TMUX_LOG", state.oldTmuxLog)
 		}
+		_ = os.Setenv("AGENTX_CHAT_RUNTIME", state.originalChatRuntime)
+		_ = os.Setenv("AGENTX_CHAT_BACKEND", state.originalChatBackend)
+		_ = os.Setenv("AGENTX_OLLAMA_HOST", state.originalOllamaHost)
+		if state.backendStubServer != nil {
+			state.backendStubServer.Close()
+			state.backendStubServer = nil
+		}
 		_ = os.Setenv("AGENTX_PANE_RENDER_MODE", state.oldPaneMode)
 		if state.tmpDir != "" {
 			_ = os.RemoveAll(state.tmpDir)
@@ -916,6 +1116,12 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^the project contains malformed chat bridge applet$`, state.theProjectContainsMalformedChatBridgeApplet)
 	ctx.Step(`^the project contains error-frame chat bridge applet$`, state.theProjectContainsErrorFrameChatBridgeApplet)
 	ctx.Step(`^the project contains empty-chunk chat bridge applet$`, state.theProjectContainsEmptyChunkChatBridgeApplet)
+	ctx.Step(`^the project contains startup-latency chat bridge applet$`, state.theProjectContainsStartupLatencyChatBridgeApplet)
+	ctx.Step(`^I set chat runtime override to "([^"]*)"$`, state.setChatRuntimeOverride)
+	ctx.Step(`^I set chat backend override to "([^"]*)"$`, state.setChatBackendOverride)
+	ctx.Step(`^I set ollama host override to "([^"]*)"$`, state.setOllamaHostOverride)
+	ctx.Step(`^I start a delayed ollama backend with delay (\d+) ms and status (\d+)$`, state.iStartDelayedOllamaBackendWithStatus)
+	ctx.Step(`^I start a sequenced delayed ollama backend with delay (\d+) ms and statuses (\d+) then (\d+)$`, state.iStartSequencedDelayedOllamaBackend)
 	ctx.Step(`^a config with username "([^"]*)"$`, state.aConfigWithUsername)
 	ctx.Step(`^I ensure session directories for session "([^"]*)"$`, state.iEnsureSessionDirectoriesForSession)
 	ctx.Step(`^the session directory structure should exist$`, state.theSessionDirectoryStructureShouldExist)

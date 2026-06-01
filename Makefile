@@ -9,7 +9,8 @@ UV_PROJECT_ENV ?= $(CURDIR)/.venv
 .PHONY: help \
 	build build-core build-applets clean python-build python-test test-all \
 	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e go-test-pane-layout \
-	test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-attached-runtime-headless test-startup-ollama-bootstrap-headless demo-smoke verify-tmux-layout hybrid-merge-gate \
+	test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-ux-flow-what-is-2-plus-2-headless test-tmux-attached-runtime-headless test-tmux-attached-runtime-layout-headless test-startup-ollama-bootstrap-headless demo-smoke test-demo-ux-use-cases-headless test-demo-ux-use-cases-layout-headless test-demo-system-panel-tour-headless test-layout-file-fallback-headless layout-path-tests verify-tmux-layout hybrid-merge-gate hybrid-parity-gate \
+	hybrid-parity-gate-inner \
 	run run-attached run-with-applets
 
 help:
@@ -35,11 +36,19 @@ help:
 	@echo "  test-tmux-layout-headless Run headless tmux UX layout validation script"
 	@echo "  test-demo-split-layout-headless Run headless DemoMode split-layout validation script"
 	@echo "  test-tmux-pane-affordances-headless Run headless pane-affordance UX contract script"
+	@echo "  test-tmux-ux-flow-what-is-2-plus-2-headless Run headless e2e UX flow script for prompt 'what is 2+2?'"
 	@echo "  test-tmux-attached-runtime-headless Run attached-runtime focus and shutdown E2E script"
+	@echo "  test-tmux-attached-runtime-layout-headless Run attached-runtime focus/shutdown via --layout-file path"
 	@echo "  test-startup-ollama-bootstrap-headless Run startup E2E that verifies ollama backend bootstrap response"
 	@echo "  demo-smoke          Run headless DemoMode smoke test"
+	@echo "  test-demo-ux-use-cases-headless Run five basic DemoMode UX use-cases (greet/cycle/input/logs/system)"
+	@echo "  test-demo-ux-use-cases-layout-headless Run UX use-cases through --layout-file overlay path"
+	@echo "  test-demo-system-panel-tour-headless Run DemoMode system-panel tab-tour parity check"
+	@echo "  test-layout-file-fallback-headless Run malformed --layout-file fallback resiliency check"
+	@echo "  layout-path-tests   Run all layout-file path tests (fallback + attached + demo)"
 	@echo "  verify-tmux-layout  Run pane-layout unit tests + headless tmux layout validation"
 	@echo "  hybrid-merge-gate   Run required B4 checks for hybrid default-branch readiness"
+	@echo "  hybrid-parity-gate  Run required TUI parity blocker gate bundle"
 	@echo ""
 	@echo "Run:"
 	@echo "  run                 Build and run Go core"
@@ -108,8 +117,14 @@ test-demo-split-layout-headless:
 test-tmux-pane-affordances-headless: build-core
 	./tests/test_tmux_pane_affordances_headless.sh
 
+test-tmux-ux-flow-what-is-2-plus-2-headless: build-core
+	./tests/test_tmux_ux_flow_what_is_2_plus_2_headless.sh
+
 test-tmux-attached-runtime-headless: build-core
 	./tests/test_tmux_attached_runtime_headless.sh
+
+test-tmux-attached-runtime-layout-headless: build-core
+	./tests/test_tmux_attached_runtime_layout_headless.sh
 
 test-startup-ollama-bootstrap-headless: build-core
 	./tests/test_startup_ollama_bootstrap_headless.sh
@@ -117,11 +132,39 @@ test-startup-ollama-bootstrap-headless: build-core
 demo-smoke: build-core
 	./tests/test_demo_smoke_headless.sh
 
-verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless
+test-demo-ux-use-cases-headless: build-core
+	./tests/test_demo_ux_use_cases_headless.sh
+
+test-demo-ux-use-cases-layout-headless: build-core
+	./tests/test_demo_ux_use_cases_layout_headless.sh
+
+test-demo-system-panel-tour-headless: build-core
+	./tests/test_demo_system_panel_tour_headless.sh
+
+test-layout-file-fallback-headless: build-core
+	./tests/test_layout_file_fallback_headless.sh
+
+layout-path-tests: test-layout-file-fallback-headless test-tmux-attached-runtime-layout-headless test-demo-ux-use-cases-layout-headless
+	@echo "layout path test bundle complete"
+
+verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-ux-flow-what-is-2-plus-2-headless
 	@echo "tmux layout verification complete"
 
 hybrid-merge-gate: build-core go-test verify-tmux-layout demo-smoke test-tmux-attached-runtime-headless test-startup-ollama-bootstrap-headless
 	@echo "hybrid merge-readiness gate complete"
+
+hybrid-parity-gate:
+	@lock_dir="/tmp/agentx_hybrid_parity_gate.lock"; \
+	if mkdir "$$lock_dir" 2>/dev/null; then \
+		trap 'rmdir "$$lock_dir"' EXIT INT TERM; \
+		$(MAKE) --no-print-directory hybrid-parity-gate-inner; \
+	else \
+		echo "hybrid-parity-gate already running (lock: $$lock_dir)"; \
+		exit 1; \
+	fi
+
+hybrid-parity-gate-inner: go-test-functional go-test-integration go-test-e2e demo-smoke test-demo-ux-use-cases-headless test-demo-system-panel-tour-headless
+	@echo "hybrid parity blocker gate complete"
 
 run: build-core
 	@echo "Running Go core..."

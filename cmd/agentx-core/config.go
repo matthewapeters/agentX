@@ -12,15 +12,27 @@ import (
 
 const (
 	defaultChatBackend = "echo"
+	defaultChatRuntime = "python"
+	chatRuntimeDefaultEnvKey = "AGENTX_CHAT_RUNTIME_DEFAULT"
+	startupModeEnvKey = "AGENTX_STARTUP_MODE"
+	defaultStartupMode = "default"
+	visibleWindowsStartupMode = "visible-windows"
 	defaultOllamaHost  = "localhost:11434"
 	defaultOllamaModel = "llama3.2"
+	defaultChatBridgeResponseTimeoutSeconds = 120
+	defaultSubmitExecutionTimeoutSeconds    = 120
+	defaultSubmitTimeoutSeconds             = 120
 )
 
 // CoreRuntimeConfig captures runtime chat backend settings used by the Go core.
 type CoreRuntimeConfig struct {
-	ChatBackend string
-	OllamaHost  string
-	OllamaModel string
+	ChatBackend               string
+	ChatRuntime               string
+	OllamaHost                string
+	OllamaModel               string
+	ChatBridgeResponseTimeout time.Duration
+	SubmitExecutionTimeout    time.Duration
+	SubmitTimeout             time.Duration
 }
 
 // Config holds runtime configuration for AgentX Core.
@@ -28,6 +40,28 @@ type Config struct {
 	ProjectDir string // Root project directory
 	Username   string // Username for session isolation
 	SessionID  string // Session ID; auto-generated if empty
+	LayoutFile string // Optional tmuxp layout overlay file
+	StartupMode string // Startup topology mode scaffold
+}
+
+func normalizeStartupMode(raw string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if normalized == "" {
+		return defaultStartupMode, true
+	}
+	switch normalized {
+	case defaultStartupMode, visibleWindowsStartupMode:
+		return normalized, true
+	default:
+		return "", false
+	}
+}
+
+func resolveStartupModeDefault() string {
+	if mode, ok := normalizeStartupMode(os.Getenv(startupModeEnvKey)); ok {
+		return mode
+	}
+	return defaultStartupMode
 }
 
 // PaneConfig defines a tmux pane in the layout.
@@ -45,14 +79,19 @@ func (c *Config) SessionDir() string {
 	return filepath.Join(c.ProjectDir, "sessions", c.Username)
 }
 
+// SessionDataDir returns the session root directory path.
+func (c *Config) SessionDataDir(sessionID string) string {
+	return filepath.Join(c.SessionDir(), sessionID)
+}
+
 // SessionLogDir returns the session log directory.
 func (c *Config) SessionLogDir(sessionID string) string {
-	return filepath.Join(c.SessionDir(), sessionID, "logs")
+	return filepath.Join(c.SessionDataDir(sessionID), "logs")
 }
 
 // SessionContextDir returns the session context directory.
 func (c *Config) SessionContextDir(sessionID string) string {
-	return filepath.Join(c.SessionDir(), sessionID, "context")
+	return filepath.Join(c.SessionDataDir(sessionID), "context")
 }
 
 // EnsureSessionDirs creates necessary session directories.
@@ -82,10 +121,19 @@ type AppletConfig struct {
 }
 
 func defaultCoreRuntimeConfig() CoreRuntimeConfig {
+	chatRuntime := defaultChatRuntime
+	if promoted := strings.ToLower(strings.TrimSpace(os.Getenv(chatRuntimeDefaultEnvKey))); promoted == "go" {
+		chatRuntime = "go"
+	}
+
 	return CoreRuntimeConfig{
-		ChatBackend: defaultChatBackend,
-		OllamaHost:  defaultOllamaHost,
-		OllamaModel: defaultOllamaModel,
+		ChatBackend:               defaultChatBackend,
+		ChatRuntime:               chatRuntime,
+		OllamaHost:                defaultOllamaHost,
+		OllamaModel:               defaultOllamaModel,
+		ChatBridgeResponseTimeout: time.Duration(defaultChatBridgeResponseTimeoutSeconds) * time.Second,
+		SubmitExecutionTimeout:    time.Duration(defaultSubmitExecutionTimeoutSeconds) * time.Second,
+		SubmitTimeout:             time.Duration(defaultSubmitTimeoutSeconds) * time.Second,
 	}
 }
 
@@ -104,11 +152,23 @@ func applyRuntimeEnvOverrides(runtimeConfig *CoreRuntimeConfig) {
 	if value := strings.TrimSpace(os.Getenv("AGENTX_CHAT_BACKEND")); value != "" {
 		runtimeConfig.ChatBackend = value
 	}
+	if value := strings.TrimSpace(os.Getenv("AGENTX_CHAT_RUNTIME")); value != "" {
+		runtimeConfig.ChatRuntime = value
+	}
 	if value := strings.TrimSpace(os.Getenv("AGENTX_OLLAMA_HOST")); value != "" {
 		runtimeConfig.OllamaHost = value
 	}
 	if value := strings.TrimSpace(os.Getenv("AGENTX_OLLAMA_MODEL")); value != "" {
 		runtimeConfig.OllamaModel = value
+	}
+	if seconds := parsePositiveSeconds(strings.TrimSpace(os.Getenv("AGENTX_CHAT_BRIDGE_RESPONSE_TIMEOUT_SEC"))); seconds > 0 {
+		runtimeConfig.ChatBridgeResponseTimeout = time.Duration(seconds) * time.Second
+	}
+	if seconds := parsePositiveSeconds(strings.TrimSpace(os.Getenv("AGENTX_SUBMIT_EXEC_TIMEOUT_SEC"))); seconds > 0 {
+		runtimeConfig.SubmitExecutionTimeout = time.Duration(seconds) * time.Second
+	}
+	if seconds := parsePositiveSeconds(strings.TrimSpace(os.Getenv("AGENTX_SUBMIT_TIMEOUT_SEC"))); seconds > 0 {
+		runtimeConfig.SubmitTimeout = time.Duration(seconds) * time.Second
 	}
 }
 
@@ -151,13 +211,41 @@ func applyAgentXTomlRuntimeConfig(projectDir string, runtimeConfig *CoreRuntimeC
 				runtimeConfig.OllamaModel = value
 			case "chat_backend":
 				runtimeConfig.ChatBackend = value
+			case "chat_runtime":
+				runtimeConfig.ChatRuntime = value
+			case "chat_bridge_response_timeout_seconds":
+				if seconds := parsePositiveSeconds(value); seconds > 0 {
+					runtimeConfig.ChatBridgeResponseTimeout = time.Duration(seconds) * time.Second
+				}
+			case "submit_execution_timeout_seconds":
+				if seconds := parsePositiveSeconds(value); seconds > 0 {
+					runtimeConfig.SubmitExecutionTimeout = time.Duration(seconds) * time.Second
+				}
+			case "submit_timeout_seconds":
+				if seconds := parsePositiveSeconds(value); seconds > 0 {
+					runtimeConfig.SubmitTimeout = time.Duration(seconds) * time.Second
+				}
 			}
 		case "agentix":
 			if key == "chat_backend" {
 				runtimeConfig.ChatBackend = value
 			}
+			if key == "chat_runtime" {
+				runtimeConfig.ChatRuntime = value
+			}
 		}
 	}
+}
+
+func parsePositiveSeconds(raw string) int64 {
+	if strings.TrimSpace(raw) == "" {
+		return 0
+	}
+	parsed, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+	return parsed
 }
 
 func parseTomlKeyValue(line string) (string, string, bool) {

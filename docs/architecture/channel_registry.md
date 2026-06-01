@@ -1,6 +1,6 @@
 # Channel Registry Architecture
 
-_Last updated: 2026-05-16 (v0.39.4)_
+_Last updated: 2026-05-28 (v1.0.1)_
 
 ## Purpose
 
@@ -23,12 +23,33 @@ The **Channel Registry** is the authoritative mapping and policy layer for all e
 | user_message        | USER_MESSAGE          | text, timestamp            | Session                     | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
 | error               | ERROR                 | message                    | Any                         | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
 | log_message         | LOG_MESSAGE           | message, level, ...        | Any                         | Logging                      | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
+| activity_state      | ACTIVITY_STATE        | session_id, state, phase, prompt_cycle | Go Core (`/activity`) | Input widget, context visualizer, future applets | Session-scoped, read-mostly, low-frequency updates | [core.go](../../cmd/agentx-core/core.go) |
 
 ## Channel Schema and Policy
 
 - **Schema**: Each channel (EventType) has a defined payload schema (see table above). All publishers must conform to this schema.
 - **Policy**: All channels are delivered to all registered subscribers, in order, with atomic delivery. Slow or blocked subscribers do not affect others (per-subscriber queues).
 - **Extensibility**: New channels must be registered here, with schema, publisher, subscriber, and policy documented before implementation.
+
+### Hybrid Activity State Contract (Authoritative)
+
+The hybrid runtime must expose a shared activity-state contract so all applets can render consistent "agent is working" affordances without owning independent orchestration logic.
+
+- Primary transport (current): HTTP `GET /activity` on core health endpoint.
+- Secondary mirror: `/context.prompt_cycle` must remain semantically consistent with `/activity.prompt_cycle`.
+
+Activity schema requirements:
+
+- `session_id`: active runtime session id.
+- `state`: one of `idle`, `working`, `completed`, `failed`.
+- `phase`: one of `classify`, `thinking`, `tool`, `respond`, `none`.
+- `prompt_cycle`: full phase object for deterministic consumers.
+
+Traffic policy requirements:
+
+- Avoid per-applet bespoke streams for basic activity indication.
+- Prefer one session-level feed/snapshot consumed by multiple applets/widgets.
+- Keep update frequency low and payload compact to minimize terminal/UI overhead.
 
 ## Pub/Sub Wiring
 
@@ -39,6 +60,7 @@ The **Channel Registry** is the authoritative mapping and policy layer for all e
 ## Code Links
 
 - EventType enum and broker: [src/agentx/event_broker.py](../../src/agentx/event_broker.py)
+- Hybrid core activity/status endpoint: [cmd/agentx-core/core.go](../../cmd/agentx-core/core.go)
 - TUI subscriber: [src/agentx/integration/tui_event_subscriber.py](../../src/agentx/integration/tui_event_subscriber.py)
 - StreamingController: [src/agentx/streaming_controller.py](../../src/agentx/streaming_controller.py)
 

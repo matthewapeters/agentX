@@ -1,9 +1,15 @@
 # AgentX — Demo Mode UX Contract
 
-_Last updated: 2026-05-23 (v0.83.1)_
+_Last updated: 2026-05-28 (v0.84.0)_
 
 Demo mode is a pre-UAT validation surface for terminal UX and E2E behavior.
 It is explicitly user-visible and interactive by design.
+
+For applet-presence validation before the final frame layout lands, use the
+optional startup mode documented in [06_TUI_MIRROR.md](06_TUI_MIRROR.md) and
+[docs/architecture/runtime_split.md](../architecture/runtime_split.md). DemoMode
+continues to govern the interactive test-review loop; it does not redefine the
+startup topology contract.
 
 ---
 
@@ -174,6 +180,7 @@ At sequence end (or stop on `X`), demo mode must print:
 - `PD-17-AF-011` — startup greeting parity criteria and demo story (`e2e-greet-001`) are defined
 - `PD-17-AF-012` — full prompt lifecycle parity criteria and demo story (`e2e-cycle-001`) are defined
 - `PD-17-AF-013` — system panel parity criteria and demo story (`e2e-system-001`) are defined
+- `PD-17-AF-014` — system panel tab-tour parity criteria and demo story (`e2e-system-tour-001`) are defined
 
 ## Hybrid UX Parity Criteria (W0.1 Baseline)
 
@@ -205,7 +212,32 @@ The following acceptance criteria define parity targets for the hybrid architect
   - context history
   - context visualizer
 - Tab navigation and state rendering must be deterministic and testable.
-- Demo coverage placeholder: `e2e-system-001`.
+- Demo coverage placeholders: `e2e-system-001`, `e2e-system-tour-001`.
+
+### Flow C.1 - System Panel Tab Tour Parity (`PD-17-AF-014`)
+
+- A single demo run starting at `e2e-system-tour-001` must validate all system tabs in order:
+  - files
+  - configuration
+  - context
+  - context history
+  - context visualizer
+- Each tab must render expected section content and must not leak unrelated sections in the active snapshot.
+- Demo coverage placeholder: `e2e-system-tour-001`.
+
+## Wave 4 UAT Checklist
+
+- Story set and pass criteria:
+  - `e2e-system-tour-001`: all five system tabs validated in a single run.
+  - `e2e-greet-001`: startup greeting contract passes and input remains command-entry only.
+  - `e2e-cycle-001`: prompt lifecycle rows and user/agent turn contract passes.
+  - `e2e-system-001`: system-pane context visualization contract passes.
+- Required validation commands:
+  - `tests/test_demo_system_panel_tour_headless.sh`
+  - `tests/test_demo_ux_use_cases_headless.sh`
+  - `tests/test_demo_ux_use_cases_layout_headless.sh`
+- Readiness gate:
+  - `Ready for UAT` is valid only when selected stories pass and no failure artifact path is produced.
 
 ---
 

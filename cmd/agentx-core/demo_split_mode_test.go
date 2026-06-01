@@ -18,7 +18,7 @@ func TestBuildDemoControllerArgs_IncludesControllerFlags(t *testing.T) {
 	// THEN the binary should receive the live core session and demo flags.
 	args := buildDemoControllerArgs(
 		"/tmp/agentx",
-		&Config{ProjectDir: "/proj", Username: "tester", SessionID: "sess-1"},
+		&Config{ProjectDir: "/proj", Username: "tester", SessionID: "sess-1", StartupMode: visibleWindowsStartupMode},
 		"sess-1",
 		"e2e-002",
 		"agentx_tester_sess-1",
@@ -35,6 +35,9 @@ func TestBuildDemoControllerArgs_IncludesControllerFlags(t *testing.T) {
 	}
 	if !strings.Contains(joined, "--demo-split") {
 		t.Fatalf("expected demo split flag in args, got %q", joined)
+	}
+	if !strings.Contains(joined, "--startup-mode visible-windows") {
+		t.Fatalf("expected startup mode propagation in args, got %q", joined)
 	}
 	if !strings.Contains(joined, "--demo-core-session agentx_tester_sess-1") {
 		t.Fatalf("expected core session flag in args, got %q", joined)

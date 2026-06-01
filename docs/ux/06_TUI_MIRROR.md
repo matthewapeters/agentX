@@ -1,12 +1,12 @@
 # AgentX — TUI Mirror: Neovim Chat Pane
 
-_Last updated: 2026-05-23 (v0.83.1)_
+_Last updated: 2026-05-28 (v1.0.1)_
 
 > **Companion document to [`05_VIBE_CODING.md`](05_VIBE_CODING.md).**
 > Specifies the optional TUI mirror that surfaces the AgentX chat interface as a
 > horizontally-split neovim window inside the tmux environment.  The TUI mirror is
-> **additive** — the Tkinter GUI remains the default and fully functional primary
-> interface.  Both surfaces can run simultaneously.
+> the primary delivery focus until parity completion; GUI remains secondary/back-
+> burnered during this phase.  Both surfaces may run simultaneously when needed.
 
 ---
 
@@ -73,6 +73,38 @@ The hybrid core pane-title contract is authoritative and must remain synchronize
 | Logs pane | `logs` |
 
 No additional pane titles may be introduced in the core runtime without first updating this document and its corresponding tests.
+
+### Authoritative tmux Naming Contract (Hybrid Core)
+
+The hybrid runtime owns tmux naming and is the source of truth for session and window identifiers.
+
+| Entity | Required contract |
+|------|-------------------|
+| Session name | `agentx_<username>_<session_id>` with sanitized components (`[a-z0-9_-]`, invalid characters collapsed to `-`) |
+| Primary window (`:0`) | `tui-chat` |
+| Logs window (`:1`) | `logs` |
+| Pane titles inside primary window | `output`, `system`, `input` |
+
+Rules:
+
+- AgentX must create required windows before any optional external layout tooling overlays pane topology.
+- External layout tooling may split/rearrange panes but must not rename or duplicate AgentX-owned windows.
+- Optional overlay entry point is CLI flag `--layout-file <tmuxp-yaml>`. Missing file, missing `tmuxp`, or load failure must degrade gracefully to default AgentX layout.
+- Starter template generator entry point is CLI flag `--layout-template <file>`, which writes a `${SESSION}`-based tmuxp YAML scaffold.
+
+### Hybrid Core Pane Content Contract
+
+- `output` pane is the only pane that renders user/agent conversational turns.
+- `input` pane is command-entry only (`agentx>` prompt, command guidance, and submit acknowledgement). It must not mirror agent response text.
+- The `input` pane runtime is a native Go widget (`agentx-core --input-widget`) that submits prompts to core `/submit`, preserving the same command contract as before (`:clear`, `:q`).
+- Input visual activity cues are advisory-only and must be driven by the core shared activity-state contract (`/activity`).
+- `system` pane renders context visualization and prompt-cycle status only.
+- Context visualization and input activity cues must remain semantically aligned to the same core prompt-cycle source.
+- Startup bootstrap execution is core-owned and routes through the same submit pipeline as normal prompts.
+- Startup lifecycle narration is emitted to the `logs` pane. If a custom tmuxp layout makes `logs` effectively headless or unavailable, startup must continue and fallback narration is written to core process logs.
+- Default runtime behavior creates a `logs` window at `:1` and keeps it available for inspection; tmuxp overlays may change how or whether that surface is directly visible.
+- Prompt-cycle response phase uses the robot emoji (`🤖`) to match TUI agent semantics.
+- Session/history debug dumps are out of scope for the `system` pane UX surface.
 
 ### 2.1 IPC Channels
 
@@ -245,6 +277,37 @@ surface.
 
 ## 4. Launch Architecture Additions
 
+### 4.1 UAT-Visible Startup Mode (Optional)
+
+AgentX supports an opt-in startup mode for UAT and implementation review that
+exposes the initial session as separate top-level applet windows before frame
+layout is enabled.
+
+Proposed switch contract:
+
+```bash
+agentx --startup-mode visible-windows
+```
+
+Environment override:
+
+```bash
+AGENTX_STARTUP_MODE=visible-windows
+```
+
+Behavioral contract:
+
+- Core starts the session with one visible window per applet instead of nesting
+  applets inside the final frame layout.
+- Window and pane identities remain semantic and stable; the mode changes only
+  presentation, not applet ownership or IPC contracts.
+- UAT can use this mode to verify that each applet is present, alive, and
+  functionally responsive before the frame-based layout is introduced.
+- If the mode cannot be created or tmuxp overlaying is unavailable, core must
+  fall back to the default runtime layout rather than failing startup.
+- This mode is a validation surface only; it does not replace the canonical
+  frame-based runtime described in [docs/architecture/runtime_split.md](../architecture/runtime_split.md).
+
 When `tui.enable = true`, `launch_vibe.sh` performs these additional steps
 (inserted between step 8 and step 9 of the existing launch sequence — see
 [`05_VIBE_CODING.md §3`](05_VIBE_CODING.md#3-launch-architecture)):
@@ -411,6 +474,22 @@ Top Contributors:
 - If fewer than four bands are present, only those are shown in Top Contributors.
 - If terminal width < 40, bar and contributor bars shrink proportionally.
 - If color is not supported, all bars use ASCII fallback and no ANSI codes.
+
+**Status:** ✅ Implemented and tested
+
+---
+
+### PD-16-AF-010: Input Activity-State Affordance
+
+**What it does**: The Go input widget renders a non-blocking visual clue while core prompt processing is active and after completion/failure transitions.
+
+**Source of truth**: Core shared activity-state endpoint (`GET /activity`) and synchronized prompt-cycle state.
+
+**Behavior contract:**
+
+- The affordance is advisory and does not own orchestration state transitions.
+- Input command semantics are unchanged (`:clear`, `:q`, submit).
+- The affordance must not clear output pane content.
 
 **Status:** ✅ Implemented and tested
 

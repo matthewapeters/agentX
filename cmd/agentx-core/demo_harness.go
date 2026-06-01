@@ -12,10 +12,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
+
+var demoSubmitRetryCounter uint64
+
+func loadDemoSubmitRetryCounter() uint64 {
+	return atomic.LoadUint64(&demoSubmitRetryCounter)
+}
+
+func resetDemoSubmitRetryCounter() {
+	atomic.StoreUint64(&demoSubmitRetryCounter, 0)
+}
 
 // DemoTestCase defines one demo scenario entry shown to users.
 type DemoTestCase struct {
@@ -24,6 +36,7 @@ type DemoTestCase struct {
 	Prompt         string
 	ApproxDuration string
 	Tags           []string
+	RuntimeModes   []string
 	Given          string
 	When           string
 	Then           string
@@ -39,6 +52,7 @@ type DemoRuntimeConfig struct {
 	SessionID       string
 	TmuxSessionName string
 	HealthAddr      string
+	StartupMode     string
 	SplitView       bool
 	StoriesFilePath string
 }
@@ -76,7 +90,41 @@ const (
 	demoStatusPass = "PASS"
 	demoStatusFail = "FAIL"
 	demoStatusSkip = "SKIP"
+	demoRuntimeModeDefault = defaultStartupMode
+	demoRuntimeModeWindowed = visibleWindowsStartupMode
 )
+
+func normalizeDemoRuntimeMode(raw string) string {
+	if mode, ok := normalizeStartupMode(raw); ok {
+		return mode
+	}
+	return demoRuntimeModeDefault
+}
+
+func demoTestCaseMatchesRuntimeMode(testCase DemoTestCase, startupMode string) bool {
+	normalizedMode := normalizeDemoRuntimeMode(startupMode)
+	if len(testCase.RuntimeModes) == 0 {
+		return true
+	}
+
+	for _, candidate := range testCase.RuntimeModes {
+		if normalizeDemoRuntimeMode(candidate) == normalizedMode {
+			return true
+		}
+	}
+
+	return false
+}
+
+func filterDemoSequenceForRuntimeMode(sequence []DemoTestCase, startupMode string) []DemoTestCase {
+	filtered := make([]DemoTestCase, 0, len(sequence))
+	for _, testCase := range sequence {
+		if demoTestCaseMatchesRuntimeMode(testCase, startupMode) {
+			filtered = append(filtered, testCase)
+		}
+	}
+	return filtered
+}
 
 // defaultDemoSequence returns the stable, ordered demo manifest for D1.
 func defaultDemoSequence() []DemoTestCase {
@@ -87,6 +135,7 @@ func defaultDemoSequence() []DemoTestCase {
 			Prompt:         "hello from input",
 			ApproxDuration: "~15s",
 			Tags:           []string{"e2e", "routing", "context"},
+			RuntimeModes:   []string{demoRuntimeModeDefault},
 			Given:          "core session and applets are running",
 			When:           "a normal input prompt is submitted",
 			Then:           "live-core Chat and Context panes both show the same new turn",
@@ -97,9 +146,10 @@ func defaultDemoSequence() []DemoTestCase {
 			Prompt:         ":clear",
 			ApproxDuration: "~10s",
 			Tags:           []string{"e2e", "input"},
+			RuntimeModes:   []string{demoRuntimeModeDefault},
 			Given:          "chat contains visible prior output",
 			When:           "the :clear input command is submitted",
-			Then:           "live-core Chat clears and live-core Input prompt remains active",
+			Then:           "live-core Input clears while live-core Chat output remains visible",
 		},
 		{
 			ID:             "e2e-003",
@@ -107,6 +157,7 @@ func defaultDemoSequence() []DemoTestCase {
 			Prompt:         ":q",
 			ApproxDuration: "~10s",
 			Tags:           []string{"e2e", "shutdown"},
+			RuntimeModes:   []string{demoRuntimeModeDefault},
 			Given:          "controller has reached the final E2E test",
 			When:           "the :q command is submitted",
 			Then:           "live right pane exits and shows completion guidance",
@@ -117,6 +168,7 @@ func defaultDemoSequence() []DemoTestCase {
 			Prompt:         "demo harness jump sanity check",
 			ApproxDuration: "~10s",
 			Tags:           []string{"e2e", "harness", "jump"},
+			RuntimeModes:   []string{demoRuntimeModeDefault},
 			Given:          "a split demo controller is active",
 			When:           "the operator jumps to a later test",
 			Then:           "intervening tests remain SKIP in the status board",
@@ -127,6 +179,7 @@ func defaultDemoSequence() []DemoTestCase {
 			Prompt:         "demo diagnostics artifact marker",
 			ApproxDuration: "~10s",
 			Tags:           []string{"e2e", "harness", "diagnostics"},
+			RuntimeModes:   []string{demoRuntimeModeDefault},
 			Given:          "a running demo test case",
 			When:           "the operator fails the test with X <feedback>",
 			Then:           "artifact paths and feedback are recorded in the summary",
@@ -137,39 +190,76 @@ func defaultDemoSequence() []DemoTestCase {
 			Prompt:         "demo controller refresh check",
 			ApproxDuration: "~10s",
 			Tags:           []string{"e2e", "harness", "ux"},
+			RuntimeModes:   []string{demoRuntimeModeDefault},
 			Given:          "multiple controller decisions have occurred",
 			When:           "the next test view is rendered",
 			Then:           "the controller pane is refreshed without muddled prior prompts",
 		},
 		{
+			ID:             "e2e-system-tour-001",
+			Title:          "System pane tab tour parity",
+			Prompt:         "system panel tour",
+			ApproxDuration: "~35s",
+			Tags:           []string{"e2e", "parity", "system-panel", "tour"},
+			RuntimeModes:   []string{demoRuntimeModeDefault, demoRuntimeModeWindowed},
+			Given:          "the system pane can switch tabs against a live prompt turn",
+			When:           "the operator steps through every system tab",
+			Then:           "system pane shows files, configuration, context, context history, and context visualizer views with expected output",
+		},
+		{
 			ID:             "e2e-greet-001",
-			Title:          "Startup greeting prompt parity",
-			Prompt:         "verify startup greeting parity placeholder",
+			Title:          "Startup greeting appears without user prompt",
+			Prompt:         "",
 			ApproxDuration: "~15s",
 			Tags:           []string{"e2e", "parity", "startup"},
-			Given:          "the hybrid runtime has just started",
-			When:           "the startup bootstrap path is evaluated",
-			Then:           "the default assistant greeting is visible without a user prompt",
+			RuntimeModes:   []string{demoRuntimeModeDefault, demoRuntimeModeWindowed},
+			Given:          "the hybrid runtime has just started and panes are visible",
+			When:           "no user prompt has been submitted yet",
+			Then:           "output pane shows startup greeting and input pane remains command-entry only",
 		},
 		{
 			ID:             "e2e-cycle-001",
-			Title:          "Prompt lifecycle parity",
-			Prompt:         "verify lifecycle phase parity placeholder",
+			Title:          "Prompt lifecycle parity for what is 2+2?",
+			Prompt:         "what is 2+2?",
 			ApproxDuration: "~20s",
 			Tags:           []string{"e2e", "parity", "lifecycle"},
-			Given:          "a user submits a representative prompt",
+			RuntimeModes:   []string{demoRuntimeModeDefault, demoRuntimeModeWindowed},
+			Given:          "the runtime accepts a user prompt via submit path",
 			When:           "the prompt is processed by the hybrid pipeline",
-			Then:           "classification, thinking, tool activity, and final response are all visible in order",
+			Then:           "output pane shows lifecycle rows and user/agent turn while input pane does not mirror response text",
+		},
+		{
+			ID:             "e2e-input-001",
+			Title:          "Input clear command parity preserves output pane",
+			Prompt:         ":clear",
+			ApproxDuration: "~15s",
+			Tags:           []string{"e2e", "parity", "input"},
+			RuntimeModes:   []string{demoRuntimeModeDefault, demoRuntimeModeWindowed},
+			Given:          "the runtime already has visible output from a prior prompt",
+			When:           "the clear command is submitted through the input contract",
+			Then:           "input clears while output pane keeps prior assistant response",
+		},
+		{
+			ID:             "e2e-logs-001",
+			Title:          "Logs pane startup and bridge lifecycle parity",
+			Prompt:         "",
+			ApproxDuration: "~15s",
+			Tags:           []string{"e2e", "parity", "logs"},
+			RuntimeModes:   []string{demoRuntimeModeDefault, demoRuntimeModeWindowed},
+			Given:          "startup bootstrap and prompt routing are active",
+			When:           "a prompt round completes",
+			Then:           "logs pane shows startup bootstrap markers and bridge lifecycle events",
 		},
 		{
 			ID:             "e2e-system-001",
-			Title:          "System panel tab parity tour",
-			Prompt:         "verify system panel parity placeholder",
+			Title:          "System pane context visualization parity",
+			Prompt:         "what is 2+2?",
 			ApproxDuration: "~25s",
 			Tags:           []string{"e2e", "parity", "system-panel"},
-			Given:          "the hybrid system view is open",
-			When:           "the operator navigates files, configuration, context, context history, and context visualizer tabs",
-			Then:           "all system tabs render expected content and state transitions",
+			RuntimeModes:   []string{demoRuntimeModeDefault, demoRuntimeModeWindowed},
+			Given:          "the system pane is rendering context and prompt-cycle telemetry",
+			When:           "a prompt round completes",
+			Then:           "system pane shows consumed %, top contributors, emoji meter rows, and no session snapshot dump",
 		},
 	}
 }
@@ -294,10 +384,15 @@ func runDemoModeWithOptions(
 	}
 
 	sequence := defaultDemoSequence()
+	sequence = filterDemoSequenceForRuntimeMode(sequence, options.runtimeConfig.StartupMode)
+	if len(sequence) == 0 {
+		return fmt.Errorf("no demo tests are configured for startup mode %q", normalizeDemoRuntimeMode(options.runtimeConfig.StartupMode))
+	}
 	startIndex, err := resolveDemoStartIndex(sequence, startSelector)
 	if err != nil {
 		return err
 	}
+	resetDemoSubmitRetryCounter()
 
 	if !options.suppressSequence {
 		renderDemoSequence(writer, sequence, startIndex)
@@ -412,7 +507,7 @@ func runDemoModeWithOptions(
 	}
 	refreshDemoStoriesPane(options.runtimeConfig)
 
-	renderDemoSummary(writer, sequence, selectedCount, runCount, acceptedCount, failedTestID, failureFeedback, artifactPaths, statusByTestID)
+	renderDemoSummary(writer, sequence, selectedCount, runCount, acceptedCount, failedTestID, failureFeedback, artifactPaths, statusByTestID, loadDemoSubmitRetryCounter())
 	return nil
 }
 
@@ -586,6 +681,7 @@ func renderDemoSummary(
 	failureFeedback string,
 	artifactPaths []string,
 	statusByTestID map[string]string,
+	retryCount uint64,
 ) {
 	fmt.Fprintln(writer, "[AgentX Demo] Run summary:")
 	fmt.Fprintf(writer, "[AgentX Demo] Selected tests: %d\n", selectedCount)
@@ -604,6 +700,7 @@ func renderDemoSummary(
 	} else {
 		fmt.Fprintf(writer, "[AgentX Demo] Artifact paths: %s\n", strings.Join(artifactPaths, ", "))
 	}
+	fmt.Fprintf(writer, "[AgentX Demo] Submit retries observed: %d\n", retryCount)
 	if failedTestID != "" {
 		fmt.Fprintf(writer, "[AgentX Demo] Failed test: %s\n", failedTestID)
 		if strings.TrimSpace(failureFeedback) != "" {
@@ -623,6 +720,509 @@ func renderDemoSummary(
 
 func defaultDemoTestRunner(testCase DemoTestCase) (string, error) {
 	return "scaffold execution placeholder", nil
+}
+
+func runDemoUXUseCase(ctx context.Context, runtimeConfig DemoRuntimeConfig, testCase DemoTestCase) (string, error) {
+	trimmedPrompt := strings.TrimSpace(demoPromptForTestCase(testCase))
+
+	switch strings.TrimSpace(testCase.ID) {
+	case "e2e-greet-001":
+		return validateDemoStartupGreeting(runtimeConfig)
+	case "e2e-cycle-001":
+		if trimmedPrompt != "" {
+			if _, err := submitDemoPrompt(ctx, runtimeConfig.HealthURL(), trimmedPrompt); err != nil {
+				return "", err
+			}
+		}
+		return validateDemoPromptLifecycle(runtimeConfig, trimmedPrompt)
+	case "e2e-input-001":
+		return validateDemoInputClear(runtimeConfig)
+	case "e2e-system-001":
+		if trimmedPrompt != "" {
+			if _, err := submitDemoPrompt(ctx, runtimeConfig.HealthURL(), trimmedPrompt); err != nil {
+				return "", err
+			}
+		}
+		return validateDemoSystemPane(runtimeConfig)
+	case "e2e-logs-001":
+		return validateDemoLogsPane(runtimeConfig)
+	case "e2e-system-tour-001":
+		return validateDemoSystemTour(ctx, runtimeConfig, trimmedPrompt)
+	default:
+		if trimmedPrompt == "" {
+			return "ok", nil
+		}
+		return submitDemoPrompt(ctx, runtimeConfig.HealthURL(), trimmedPrompt)
+	}
+}
+
+func captureDemoPaneByTitle(sessionName, paneTitle string) (string, error) {
+	if strings.TrimSpace(sessionName) == "" {
+		return "", fmt.Errorf("demo runtime missing tmux session name")
+	}
+
+	listOutput, err := runTmuxCommand(
+		"",
+		"list-panes",
+		"-t",
+		sessionName,
+		"-F",
+		"#{pane_id}|#{pane_title}",
+	)
+	if err != nil {
+		return "", err
+	}
+
+	targetPaneID := ""
+	for _, rawLine := range strings.Split(strings.TrimSpace(listOutput), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if strings.TrimSpace(parts[1]) == paneTitle {
+			targetPaneID = strings.TrimSpace(parts[0])
+			break
+		}
+	}
+
+	if targetPaneID == "" {
+		allPanesOutput, allErr := runTmuxCommand(
+			"",
+			"list-panes",
+			"-a",
+			"-F",
+			"#{session_name}|#{pane_id}|#{pane_title}",
+		)
+		if allErr == nil {
+			for _, rawLine := range strings.Split(strings.TrimSpace(allPanesOutput), "\n") {
+				line := strings.TrimSpace(rawLine)
+				if line == "" {
+					continue
+				}
+				parts := strings.SplitN(line, "|", 3)
+				if len(parts) != 3 {
+					continue
+				}
+				if strings.TrimSpace(parts[0]) != sessionName {
+					continue
+				}
+				if strings.TrimSpace(parts[2]) == paneTitle {
+					targetPaneID = strings.TrimSpace(parts[1])
+					break
+				}
+			}
+		}
+	}
+
+	if targetPaneID == "" {
+		return "", fmt.Errorf("pane with title %q not found in %s", paneTitle, sessionName)
+	}
+
+	captureOutput, err := runTmuxCommand("", "capture-pane", "-p", "-S", "-250", "-t", targetPaneID)
+	if err != nil {
+		return "", err
+	}
+	return captureOutput, nil
+}
+
+func pollDemoPaneUntil(sessionName, paneTitle string, attempts int, interval time.Duration, matcher func(string) bool) (string, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	if interval <= 0 {
+		interval = 200 * time.Millisecond
+	}
+
+	lastCapture := ""
+	for idx := 0; idx < attempts; idx++ {
+		capture, err := captureDemoPaneByTitle(sessionName, paneTitle)
+		if err != nil {
+			return "", err
+		}
+		lastCapture = capture
+		if matcher(capture) {
+			return capture, nil
+		}
+		if idx < attempts-1 {
+			time.Sleep(interval)
+		}
+	}
+
+	return lastCapture, fmt.Errorf("pane %q did not satisfy expected condition within %d attempts", paneTitle, attempts)
+}
+
+func validateDemoStartupGreeting(runtimeConfig DemoRuntimeConfig) (string, error) {
+	outputCapture, err := pollDemoPaneUntil(runtimeConfig.TmuxSessionName, "output", 80, 250*time.Millisecond, func(capture string) bool {
+		return strings.Contains(capture, "Chat ready.")
+	})
+	if err != nil {
+		return "", fmt.Errorf("startup greeting parity failed: %w\noutput:\n%s", err, strings.TrimSpace(outputCapture))
+	}
+
+	inputCapture, err := captureDemoPaneByTitle(runtimeConfig.TmuxSessionName, "input")
+	if err != nil {
+		return "", fmt.Errorf("startup greeting parity could not capture input pane: %w", err)
+	}
+	if strings.Contains(inputCapture, "Response:") {
+		return "", fmt.Errorf("startup greeting parity failed: input pane mirrors response text")
+	}
+
+	return "startup greeting visible and input pane remains command-entry only", nil
+}
+
+func validateDemoInputClear(runtimeConfig DemoRuntimeConfig) (string, error) {
+	const seedPrompt = "input clear parity seed"
+	if _, err := submitDemoPromptWithRetry(context.Background(), runtimeConfig.HealthURL(), seedPrompt, 3, 500*time.Millisecond); err != nil {
+		return "", fmt.Errorf("input clear parity failed to seed output: %w", err)
+	}
+
+	outputBeforeClear, err := pollDemoPaneUntil(runtimeConfig.TmuxSessionName, "output", 80, 250*time.Millisecond, func(capture string) bool {
+		return strings.Contains(capture, "User: "+seedPrompt)
+	})
+	if err != nil {
+		return "", fmt.Errorf("input clear parity failed to capture seeded output: %w\noutput:\n%s", err, strings.TrimSpace(outputBeforeClear))
+	}
+
+	clearResponse, err := submitDemoPromptWithRetry(context.Background(), runtimeConfig.HealthURL(), ":clear", 3, 500*time.Millisecond)
+	if err != nil {
+		return "", fmt.Errorf("input clear parity failed to submit clear command: %w", err)
+	}
+	if strings.TrimSpace(clearResponse) != "cleared" {
+		return "", fmt.Errorf("input clear parity failed: expected clear response 'cleared', got %q", clearResponse)
+	}
+
+	inputCapture, err := captureDemoPaneByTitle(runtimeConfig.TmuxSessionName, "input")
+	if err != nil {
+		return "", fmt.Errorf("input clear parity could not capture input pane: %w", err)
+	}
+	if strings.Contains(inputCapture, "Response:") {
+		return "", fmt.Errorf("input clear parity failed: input pane mirrors response text")
+	}
+
+	outputAfterClear, err := captureDemoPaneByTitle(runtimeConfig.TmuxSessionName, "output")
+	if err != nil {
+		return "", fmt.Errorf("input clear parity could not capture output pane: %w", err)
+	}
+	if !strings.Contains(outputAfterClear, "User: "+seedPrompt) {
+		return "", fmt.Errorf("input clear parity failed: output pane lost seeded prompt turn")
+	}
+
+	return "input clear command preserves output pane while input remains command-entry only", nil
+}
+
+func submitDemoPromptWithRetry(ctx context.Context, healthURL, prompt string, attempts int, delay time.Duration) (string, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	if delay <= 0 {
+		delay = 250 * time.Millisecond
+	}
+
+	var lastErr error
+	for idx := 0; idx < attempts; idx++ {
+		response, err := submitDemoPrompt(ctx, healthURL, prompt)
+		if err == nil {
+			return response, nil
+		}
+		lastErr = err
+		if idx == attempts-1 || !isTransientDemoSubmitError(err) {
+			break
+		}
+		atomic.AddUint64(&demoSubmitRetryCounter, 1)
+		time.Sleep(delay)
+	}
+
+	return "", lastErr
+}
+
+func isTransientDemoSubmitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "504") ||
+		strings.Contains(message, "gateway timeout") ||
+		strings.Contains(message, "submit timed out") ||
+		strings.Contains(message, "context deadline exceeded")
+}
+
+func validateDemoPromptLifecycle(runtimeConfig DemoRuntimeConfig, prompt string) (string, error) {
+	if strings.TrimSpace(prompt) == "" {
+		prompt = "what is 2+2?"
+	}
+	if err := writeDemoSystemPanelTabState(runtimeConfig.ProjectDir, "context-visualizer"); err != nil {
+		return "", fmt.Errorf("prompt lifecycle parity failed to set system tab state: %w", err)
+	}
+
+	outputCapture, err := pollDemoPaneUntil(runtimeConfig.TmuxSessionName, "output", 120, 250*time.Millisecond, func(capture string) bool {
+		required := []string{
+			"⚙️ Classification:",
+			"💭 [thinking block",
+			"User: " + prompt,
+			"Agent:",
+		}
+		for _, fragment := range required {
+			if !strings.Contains(capture, fragment) {
+				return false
+			}
+		}
+		return true
+	})
+	if err != nil {
+		return "", fmt.Errorf("prompt lifecycle parity failed in output pane: %w\noutput:\n%s", err, strings.TrimSpace(outputCapture))
+	}
+
+	inputCapture, err := captureDemoPaneByTitle(runtimeConfig.TmuxSessionName, "input")
+	if err != nil {
+		return "", fmt.Errorf("prompt lifecycle parity could not capture input pane: %w", err)
+	}
+	if strings.Contains(inputCapture, "Response:") {
+		return "", fmt.Errorf("prompt lifecycle parity failed: input pane mirrors response text")
+	}
+
+	systemCapture, err := captureDemoPaneByTitle(runtimeConfig.TmuxSessionName, "system")
+	if err != nil {
+		return "", fmt.Errorf("prompt lifecycle parity could not capture system pane: %w", err)
+	}
+	if !strings.Contains(systemCapture, "== PROMPT CYCLE ==") || !strings.Contains(systemCapture, "🤖 Respond") {
+		return "", fmt.Errorf("prompt lifecycle parity failed: system pane missing prompt-cycle row contract")
+	}
+	if strings.Contains(systemCapture, "== SESSION SNAPSHOT ==") {
+		return "", fmt.Errorf("prompt lifecycle parity failed: system pane contains disallowed session snapshot block")
+	}
+
+	return "output/input/system panes satisfy lifecycle contract for prompt", nil
+}
+
+func validateDemoSystemPane(runtimeConfig DemoRuntimeConfig) (string, error) {
+	if err := writeDemoSystemPanelTabState(runtimeConfig.ProjectDir, "context-visualizer"); err != nil {
+		return "", fmt.Errorf("system pane parity failed to set system tab state: %w", err)
+	}
+
+	systemCapture, err := pollDemoPaneUntil(runtimeConfig.TmuxSessionName, "system", 80, 250*time.Millisecond, func(capture string) bool {
+		required := []string{
+			"== CONTEXT WINDOW ==",
+			"consumed:",
+			"Top Contributors:",
+			"== PROMPT CYCLE ==",
+			"💾 Working Memory",
+			"🧠 System Prompts",
+			"👤 User Prompts",
+			"📎 Attachments",
+			"🤔 Thinking",
+			"🤖 Agent Response",
+			"🔧 Tool Calls",
+			"░ Remaining",
+		}
+		for _, fragment := range required {
+			if !strings.Contains(capture, fragment) {
+				return false
+			}
+		}
+		return true
+	})
+	if err != nil {
+		return "", fmt.Errorf("system pane parity failed: %w\nsystem:\n%s", err, strings.TrimSpace(systemCapture))
+	}
+
+	if strings.Contains(systemCapture, "== SESSION SNAPSHOT ==") {
+		return "", fmt.Errorf("system pane parity failed: found disallowed session snapshot block")
+	}
+
+	invalidDenominatorPattern := regexp.MustCompile(`(?m)(usage:|consumed:).*/1\)?`)
+	if invalidDenominatorPattern.MatchString(systemCapture) {
+		return "", fmt.Errorf("system pane parity failed: invalid context denominator /1 detected")
+	}
+
+	return "system pane renders context usage and prompt-cycle parity contract", nil
+}
+
+func captureDemoLogsWindow(sessionName string) (string, error) {
+	if strings.TrimSpace(sessionName) == "" {
+		return "", fmt.Errorf("demo runtime missing tmux session name")
+	}
+	captureOutput, err := runTmuxCommand("", "capture-pane", "-p", "-S", "-250", "-t", sessionName+":1.0")
+	if err != nil {
+		return "", err
+	}
+	return captureOutput, nil
+}
+
+func pollDemoLogsWindowUntil(sessionName string, attempts int, interval time.Duration, matcher func(string) bool) (string, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	if interval <= 0 {
+		interval = 200 * time.Millisecond
+	}
+
+	lastCapture := ""
+	for idx := 0; idx < attempts; idx++ {
+		capture, err := captureDemoLogsWindow(sessionName)
+		if err != nil {
+			return "", err
+		}
+		lastCapture = capture
+		if matcher(capture) {
+			return capture, nil
+		}
+		if idx < attempts-1 {
+			time.Sleep(interval)
+		}
+	}
+
+	return lastCapture, fmt.Errorf("logs window did not satisfy expected condition within %d attempts", attempts)
+}
+
+func validateDemoLogsPane(runtimeConfig DemoRuntimeConfig) (string, error) {
+	logsCapture, err := pollDemoLogsWindowUntil(runtimeConfig.TmuxSessionName, 80, 250*time.Millisecond, func(capture string) bool {
+		compact := strings.TrimSpace(capture)
+		if compact == "" {
+			return false
+		}
+		hasStartup := strings.Contains(compact, "[startup] bootstrap starting") || strings.Contains(compact, "[startup] bootstrap complete") || strings.Contains(compact, "stage=startup_greeting")
+		hasRoute := strings.Contains(compact, "[bridge] event=bridge_route_start") || strings.Contains(compact, "[bridge] event=go_chat_route_start") || strings.Contains(compact, "[bridge] event=go_chat_fallback") || strings.Contains(compact, "[bridge] event=bridge_start")
+		hasSuccess := strings.Contains(compact, "[bridge] event=bridge_response_ok") || strings.Contains(compact, "[bridge] event=go_chat_response_ok") || strings.Contains(compact, "[bridge] event=go_chat_bridge_fallback")
+		return hasStartup && hasRoute && hasSuccess
+	})
+	if err != nil {
+		return "", fmt.Errorf("logs pane parity failed: %w\nlogs:\n%s", err, strings.TrimSpace(logsCapture))
+	}
+
+	if strings.Contains(logsCapture, "[bridge] event=bridge_route_error") {
+		return "", fmt.Errorf("logs pane parity failed: unexpected bridge_route_error detected")
+	}
+
+	return "logs pane shows startup bootstrap markers and bridge lifecycle events", nil
+}
+
+func writeDemoSystemPanelTabState(projectDir, tab string) error {
+	projectDir = strings.TrimSpace(projectDir)
+	if projectDir == "" {
+		return fmt.Errorf("demo system panel tour missing project dir")
+	}
+
+	stateDir := filepath.Join(projectDir, ".agentx")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create system panel state directory: %w", err)
+	}
+
+	statePath := filepath.Join(stateDir, "system-panel-tab.txt")
+	if err := os.WriteFile(statePath, []byte(strings.TrimSpace(tab)+"\n"), 0o644); err != nil {
+		return fmt.Errorf("failed to write system panel tab state: %w", err)
+	}
+	return nil
+}
+
+func validateDemoSystemTour(ctx context.Context, runtimeConfig DemoRuntimeConfig, prompt string) (string, error) {
+	if strings.TrimSpace(prompt) == "" {
+		prompt = "system panel tour"
+	}
+	if _, err := submitDemoPrompt(ctx, runtimeConfig.HealthURL(), prompt); err != nil {
+		return "", fmt.Errorf("system panel tour prompt submission failed: %w", err)
+	}
+
+	projectDir := strings.TrimSpace(runtimeConfig.ProjectDir)
+	tabChecks := []struct {
+		tab      string
+		label    string
+		required []string
+		banned   []string
+	}{
+		{
+			tab:   "files",
+			label: "files",
+			required: []string{
+				"== FILES ==",
+				"project_dir:",
+				"entry_count:",
+			},
+			banned: []string{"== CONFIGURATION ==", "== CONTEXT ==", "== CONTEXT HISTORY ==", "== CONTEXT VISUALIZER =="},
+		},
+		{
+			tab:   "configuration",
+			label: "configuration",
+			required: []string{
+				"== CONFIGURATION ==",
+				"model:",
+				"backend:",
+				"ollama_host:",
+			},
+			banned: []string{"== FILES ==", "== CONTEXT ==", "== CONTEXT HISTORY ==", "== CONTEXT VISUALIZER =="},
+		},
+		{
+			tab:   "context",
+			label: "context",
+			required: []string{
+				"== CONTEXT ==",
+				"session_id:",
+				"last_user: " + strings.TrimSpace(prompt),
+			},
+			banned: []string{"== FILES ==", "== CONFIGURATION ==", "== CONTEXT HISTORY ==", "== CONTEXT VISUALIZER =="},
+		},
+		{
+			tab:   "context-history",
+			label: "context-history",
+			required: []string{
+				"== CONTEXT HISTORY ==",
+				"history_context_count:",
+				"recent_prompt:",
+			},
+			banned: []string{"== FILES ==", "== CONFIGURATION ==", "== CONTEXT ==", "== CONTEXT VISUALIZER =="},
+		},
+		{
+			tab:   "context-visualizer",
+			label: "context-visualizer",
+			required: []string{
+				"== CONTEXT WINDOW ==",
+				"== CONTEXT VISUALIZER ==",
+				"== PROMPT CYCLE ==",
+				"consumed:",
+				"Top Contributors:",
+				"🤖 Respond",
+			},
+			banned: []string{"== FILES ==", "== CONFIGURATION ==", "== CONTEXT ==", "== CONTEXT HISTORY =="},
+		},
+	}
+
+	for _, check := range tabChecks {
+		if err := writeDemoSystemPanelTabState(projectDir, check.tab); err != nil {
+			return "", fmt.Errorf("system panel tour failed to set %s tab: %w", check.label, err)
+		}
+
+		capture, err := pollDemoPaneUntil(runtimeConfig.TmuxSessionName, "system", 80, 250*time.Millisecond, func(text string) bool {
+			latest := text
+			if idx := strings.LastIndex(text, "[SYSTEM]\n"); idx >= 0 {
+				latest = text[idx:]
+			}
+			compact := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(latest), "\n", ""), " ", "")
+			if !strings.Contains(compact, "[SYSTEMTAB]active="+check.tab) {
+				return false
+			}
+			for _, fragment := range check.required {
+				compactFragment := strings.ReplaceAll(strings.ReplaceAll(fragment, "\n", ""), " ", "")
+				if !strings.Contains(compact, compactFragment) {
+					return false
+				}
+			}
+			for _, fragment := range check.banned {
+				compactFragment := strings.ReplaceAll(strings.ReplaceAll(fragment, "\n", ""), " ", "")
+				if strings.Contains(compact, compactFragment) {
+					return false
+				}
+			}
+			return true
+		})
+		if err != nil {
+			return "", fmt.Errorf("system panel tour failed on %s tab: %w\nsystem:\n%s", check.label, err, strings.TrimSpace(capture))
+		}
+	}
+
+	return "system panel tab tour covers files, configuration, context, context history, and context visualizer tabs", nil
 }
 
 func defaultDemoDiagnosticsCollector(runtimeConfig DemoRuntimeConfig, testCase DemoTestCase, feedback string) ([]string, error) {

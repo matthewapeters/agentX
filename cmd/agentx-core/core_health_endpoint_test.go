@@ -22,6 +22,7 @@ func TestContextManagerHealthHandler_ReportsRuntimeState(t *testing.T) {
 			Status:        "ok",
 			SessionID:     "sess-health",
 			UptimeSeconds: 10,
+			SubmitRetries: 2,
 			Panes: []PaneStatus{
 				{Name: "chat", Applet: "chat", Status: "ready"},
 				{Name: "logs", Applet: "logs", Status: "ready"},
@@ -58,6 +59,9 @@ func TestContextManagerHealthHandler_ReportsRuntimeState(t *testing.T) {
 	}
 	if got := int(health["applet_count"].(float64)); got != 1 {
 		t.Fatalf("expected /health applet_count 1, got %d", got)
+	}
+	if got := int(health["submit_retries"].(float64)); got != 2 {
+		t.Fatalf("expected /health submit_retries 2, got %d", got)
 	}
 
 	panesResp, err := http.Get(server.URL + "/panes")
@@ -145,6 +149,30 @@ func TestContextManagerHealthHandler_ReportsRuntimeState(t *testing.T) {
 	if contextPayload.Turns[0].Prompt != "hello" {
 		t.Fatalf("expected first turn prompt hello, got %q", contextPayload.Turns[0].Prompt)
 	}
+
+	activityResp, err := http.Get(server.URL + "/activity")
+	if err != nil {
+		t.Fatalf("failed to query /activity: %v", err)
+	}
+	defer activityResp.Body.Close()
+
+	if activityResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected /activity status 200, got %d", activityResp.StatusCode)
+	}
+
+	var activityPayload ActivitySnapshot
+	if err := json.NewDecoder(activityResp.Body).Decode(&activityPayload); err != nil {
+		t.Fatalf("failed to decode /activity payload: %v", err)
+	}
+	if activityPayload.SessionID != "sess-health" {
+		t.Fatalf("expected /activity session_id sess-health, got %q", activityPayload.SessionID)
+	}
+	if activityPayload.State == "" {
+		t.Fatalf("expected /activity state to be populated")
+	}
+	if activityPayload.Phase == "" {
+		t.Fatalf("expected /activity phase to be populated")
+	}
 }
 
 // GIVEN endpoint method constraints for runtime health handlers
@@ -183,6 +211,21 @@ func TestContextManagerHealthHandler_RejectsNonGetMethods(t *testing.T) {
 
 	if contextResp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("expected /context status 405 for POST, got %d", contextResp.StatusCode)
+	}
+
+	activityReq, err := http.NewRequest(http.MethodPost, server.URL+"/activity", nil)
+	if err != nil {
+		t.Fatalf("failed to build POST /activity request: %v", err)
+	}
+
+	activityResp, err := http.DefaultClient.Do(activityReq)
+	if err != nil {
+		t.Fatalf("failed to execute POST /activity request: %v", err)
+	}
+	defer activityResp.Body.Close()
+
+	if activityResp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected /activity status 405 for POST, got %d", activityResp.StatusCode)
 	}
 
 	submitReq, err := http.NewRequest(http.MethodGet, server.URL+"/submit", nil)

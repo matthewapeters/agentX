@@ -10,35 +10,38 @@ Project version: 1.0.0
 
 ## Tab/Surface Parity Matrix (Architecture Anchor)
 
-See [docs/hybrid_ux_parity_execution_plan.md](hybrid_ux_parity_execution_plan.md) and [docs/ux/UX_LIFECYCLE.md](ux/UX_LIFECYCLE.md) for full matrix and next steps.
+See [docs/hybrid_remaining_work.md](hybrid_remaining_work.md) and [docs/ux/UX_LIFECYCLE.md](ux/UX_LIFECYCLE.md) for the remaining-work synthesis and traceability matrix.
 
 ## Channel Registry (Authoritative)
 
 See [docs/architecture/channel_registry.md](architecture/channel_registry.md) for the authoritative channel registry: channel names, schemas, pub/sub wiring, and policy. All changes to event channels must be reflected there.
 
-## Runtime Split (Go Core vs Python Applet)
+## Runtime Split (Go Core and Go Applets)
 
-See [docs/architecture/runtime_split.md](architecture/runtime_split.md) for the authoritative runtime split and migration plan: Go core vs Python applet, IPC contract, migration phases, and thin-GUI contract. All parity and migration claims must reference this doc.
+See [docs/architecture/runtime_split.md](architecture/runtime_split.md) for the authoritative runtime split and migration plan: Go core and Go applets, IPC contract, migration phases, and thin-GUI contract. All parity and migration claims must reference this doc.
 
-| GUI Tab / Surface         | TUI Analog / Surface      | Owner (Go/Py) | Status   |
-|--------------------------|---------------------------|---------------|----------|
-| Chat (Output)            | Output Pane (chat)        | Go (now) | ✅ Go-owned, tested |
-| Tool Processing (Output) | Output Pane (tool)        | Go (now) | ✅ Go-owned, tested |
-| File Edit (Output)       | Output Pane (file edit)   | Go (now) | ✅ Go-owned, tested |
-| Context Visualization    | System Pane (context viz) | Go (now) | ✅ Go-owned, tested |
-| Files Navigation         | System Pane (files)       | Go (now) | ✅ Go-owned, tested |
-| Context History/Current  | System Pane (context hist)| Go (now) | ✅ Go-owned, tested |
-| Configuration            | System Pane (config)      | Go (now) | ✅ Go-owned, tested |
+## Startup Modes (Authoritative)
 
-**Blockers:** None. All output/system tabs are now Go-owned, Go-driven, and fully tested. Full UX parity achieved.
+See [docs/architecture/startup_modes.md](architecture/startup_modes.md) for the authoritative startup-mode catalog, startup switches, and launch patterns.
+
+| GUI Tab / Surface | TUI Analog / Surface | Owner (Go/Py) | Status |
+| --- | --- | --- | --- |
+| Chat (Output) | Output Pane (chat) | Go (current) | ✅ Implemented |
+| Tool Processing (Output) | Output Pane (tool) | Go (current) | ✅ Implemented |
+| File Edit (Output) | Output Pane (file edit) | Go (current) | ✅ Implemented |
+| Logs Lifecycle | Logs Pane | Go (current) | ✅ Implemented |
+| Context Visualization | System Pane (context viz) | Go (current) | ✅ Implemented |
+| Files Navigation | System Pane (files) | Go (current) | ✅ Implemented |
+| Context History/Current | System Pane (context hist) | Go (current) | ✅ Implemented |
+| Configuration | System Pane (config) | Go (current) | ✅ Implemented |
+
+**Blockers:** Parity is still governed by blocker gates. Current risk is now concentrated on end-to-end traceability/sign-off discipline and continued gate stability, not Python-owned pane runtime gaps.
 
 **Next Steps:**
 
-- Ratify matrix in plan/UX_LIFECYCLE
-- Define TUI analogs, Go owner in code/spec
-- Implement Go-driven output/system panel logic
-- Author channel registry, runtime split docs
-- Update all tests for Go path
+- Complete Go-owned runtime/apply flow implementations for TUI parity
+- Keep GUI on secondary track until TUI parity completion gates are met
+- Align UX lifecycle and architecture claims with implementation reality
 
 ---
 
@@ -61,7 +64,8 @@ See [docs/architecture/runtime_split.md](architecture/runtime_split.md) for the 
 15. [Persistence Layout](#15-persistence-layout)
 16. [Configuration Reference](#16-configuration-reference)
 
-17. [Runtime Split (Go Core vs Python Applet)](architecture/runtime_split.md)
+17. [Runtime Split (Go Core and Go Applets)](architecture/runtime_split.md)
+18. [Startup Modes (Authoritative)](architecture/startup_modes.md)
 
 ---
 

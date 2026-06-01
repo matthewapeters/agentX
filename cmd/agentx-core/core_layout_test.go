@@ -11,21 +11,21 @@ func TestBuildNewSessionCommand_NamesPrimaryWindowTUIChat(t *testing.T) {
 
 	found := false
 	for i := 0; i < len(got)-1; i++ {
-		if got[i] == "-n" && got[i+1] == "tui-chat" {
+		if got[i] == "-n" && got[i+1] == tmuxPrimaryWindow {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		t.Fatalf("expected new session command to include primary window name '-n tui-chat', got %v", got)
+		t.Fatalf("expected new session command to include primary window name '-n %s', got %v", tmuxPrimaryWindow, got)
 	}
 }
 
 func TestBuildNewSessionCommand(t *testing.T) {
 	session := "agentx_test"
 	got := buildNewSessionCommand(session)
-	want := []string{"new-session", "-d", "-s", session, "-n", "tui-chat", "-x", "120", "-y", "40"}
+	want := []string{"new-session", "-d", "-s", session, "-n", tmuxPrimaryWindow, "-x", "120", "-y", "40"}
 
 	if len(got) != len(want) {
 		t.Fatalf("new session command length mismatch: got %d want %d", len(got), len(want))
@@ -34,6 +34,22 @@ func TestBuildNewSessionCommand(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("new session command arg %d mismatch: got %q want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestBuildTmuxSessionName_SanitizesComponents(t *testing.T) {
+	got := buildTmuxSessionName("User Name/Team", "Session 42@Dev")
+	want := "agentx_user-name-team_session-42-dev"
+	if got != want {
+		t.Fatalf("tmux session name mismatch: got %q want %q", got, want)
+	}
+}
+
+func TestBuildTmuxSessionName_UsesFallbacksForEmptyComponents(t *testing.T) {
+	got := buildTmuxSessionName("   ", "$$$")
+	want := "agentx_user_session"
+	if got != want {
+		t.Fatalf("tmux session fallback mismatch: got %q want %q", got, want)
 	}
 }
 
