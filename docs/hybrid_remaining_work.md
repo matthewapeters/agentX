@@ -131,6 +131,9 @@ Go applet architecture policy:
 - Validation requires unit tests plus integration and functional tests.
 - Each applet must have a dedicated UX spec row and traceability row before it
   can be marked complete.
+- Requirement-complete rule: no applet may be marked complete until all
+  authoritative UX and UX-flow requirements for that applet are met in runtime
+  behavior and backed by executable evidence.
 - The optional UAT-visible startup mode is implemented as a validation surface,
   not a separate ad hoc demo path.
 
@@ -144,6 +147,30 @@ Go applet architecture policy:
 | TUI-first completion       | Finish TUI behavior and parity gates before advancing GUI feature work         | GUI is explicitly secondary until TUI completion                              | In progress          |
 | Traceability correction    | Remove stale "complete" claims where implementation remains partial            | Keeps engineering state honest and executable                                 | In progress          |
 | Code reality audit         | Verify still-stubbed logic in `cmd/agentx-core`, `applets/template.py`, and `src/agentx` | Confirms actual implementation coverage against UX contracts                   | Completed            |
+| Files overflow parity requirements | Implement `PD-11-AF-011..014` in TUI filesystem applet (viewport/paging/overflow status + evidence) | Professional-grade file navigation requires deterministic behavior beyond visible viewport | In progress |
+| Output affordance parity scope closure | Reconcile `PD-01` interactive affordances with TUI output implementation and close approved parity scope | Prevents implicit de-scoping and contradictory sign-off language | In progress |
+| Input affordance parity closure | Close remaining `PD-02` parity deltas for command behavior/discoverability and acceptance evidence | Keeps prompt-entry UX consistent and auditable across runtimes | In progress |
+| Context ownership ambiguity closure | Resolve context vs split applet ownership boundaries and normalize naming across architecture/UX docs | Eliminates ambiguity that causes contradictory completion reporting | In progress |
+| System settings parity closure | Finalize system-settings dedicated-runtime acceptance criteria and evidence mapping to `PD-07`/`PD-18-AF-003` | Required for professional-grade applet sign-off | In progress |
+
+## Applet Readiness Review (2026-06-02)
+
+This review answered four questions per applet: professional implementation
+level, UX clarity, requirements coverage, and unresolved ambiguity.
+
+| Applet | Professional level | UX clarity | Requirements met | Ambiguity present | Queue action |
+| --- | --- | --- | --- | --- | --- |
+| `chat/output` | Partial | Good | Partial | Yes | Add output affordance parity scope closure row and block complete sign-off until resolved. |
+| `input` | Partial | Good | Partial | Yes | Add input affordance parity closure row and block complete sign-off until resolved. |
+| `logs` | Yes (current scope) | Good | Mostly | No | Maintain diagnostics readability and lifecycle evidence; no new blocker row. |
+| `context` | Partial | Mixed | Partial | Yes | Add context ownership ambiguity closure row and keep PD-18 re-opened. |
+| `filesystem` | No (not yet) | Partial | No | Yes | Add files overflow parity requirements row for `PD-11-AF-011..014`. |
+| `system-settings` | Partial | Good | Partial | Yes | Add system-settings parity closure row tied to `PD-07` and `PD-18-AF-003`. |
+
+Review counts:
+
+- Applets requiring additional work: 5
+- Applets with ambiguities that must be resolved: 5
 
 ## Applet Build/Test Plan (Open)
 

@@ -1696,6 +1696,21 @@ Files tab
 | Right-click (or Ctrl+click) | Directory row | Shows folder context menu |
 | `Escape` | Any | Dismisses open context menu |
 
+### TUI Parity Requirements (Authoritative)
+
+The Files user experience is implementation-agnostic and applies to GUI, TUI,
+or hybrid delivery. A runtime applet implementation must satisfy these
+requirements before parity can be marked complete.
+
+| Requirement ID | Requirement |
+|----------------|-------------|
+| `PD-11-AF-011` | Large directory lists must remain navigable within the visible terminal viewport; selected row must stay visible while moving up/down. |
+| `PD-11-AF-012` | Files surface must support accelerated navigation for long lists (`PageUp`, `PageDown`, `Home`, `End`) or equivalent commands with clear discoverability in-widget. |
+| `PD-11-AF-013` | Files surface must provide deterministic overflow status (for example `showing X-Y of Z`) so users can orient themselves when content exceeds viewport height. |
+| `PD-11-AF-014` | Parity sign-off for Files requires executable evidence for both small-list and overflow-list behavior, not only summary rendering assertions. |
+
+These requirements are additive to `PD-11-AF-008..010` and `UF-11` / `UF-12`.
+
 > **Platform behavior note**: Right-click is bound on `<Button-3>` and posted with a
 > short timer delay to avoid immediate button-release dismissal races. Under Wayland
 > sessions, FileExplorer uses a custom in-app `tk.Toplevel(overrideredirect=True)`

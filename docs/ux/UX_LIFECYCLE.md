@@ -387,6 +387,10 @@ implements it and the test that validates it.  Status legend:
 | Right-click on file shows file context menu | PD-11-AF-008 | `FileExplorer._on_right_click()` | `test_file_explorer_context_menu.py` | `TestFileContextMenu` | ✅ |
 | Right-click on directory shows folder context menu | PD-11-AF-009 | `FileExplorer._on_right_click()` | `test_file_explorer_context_menu.py` | `TestFolderContextMenu` | ✅ |
 | Escape dismisses context menu | PD-11-AF-010 | `FileExplorer._dismiss_popup_menu()` | `test_file_explorer_context_menu.py` | `TestDismissContextMenu` | ✅ |
+| Overflow navigation keeps selected row visible in terminal viewport | PD-11-AF-011 | TUI filesystem applet viewport behavior (implementation pending) | `filesystem_widget_test.go` (target) | package-level tests (target) | 📝 |
+| Overflow navigation supports PageUp/PageDown/Home/End (or equivalent) | PD-11-AF-012 | TUI filesystem applet command model (implementation pending) | `filesystem_widget_test.go` (target) | package-level tests (target) | 📝 |
+| Overflow status exposes visible range orientation (`showing X-Y of Z`) | PD-11-AF-013 | TUI filesystem applet render contract (implementation pending) | `filesystem_widget_test.go` (target) | package-level tests (target) | 📝 |
+| Files parity sign-off requires overflow-list executable evidence | PD-11-AF-014 | Hybrid parity and applet sign-off gate (implementation pending) | parity gate evidence (target) | gate-level evidence (target) | 📝 |
 
 ### PD-12 — StatusTab
 

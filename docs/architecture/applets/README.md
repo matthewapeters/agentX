@@ -1,6 +1,6 @@
 # Applet Contracts (Authoritative)
 
-Last updated: 2026-06-01
+Last updated: 2026-06-02
 
 ## Purpose
 
@@ -24,6 +24,7 @@ Primary runtime sources:
 - `cmd/agentx-core/core.go`
 - `cmd/agentx-core/config.go`
 - `cmd/agentx-core/context_widget.go`
+- `cmd/agentx-core/filesystem_widget.go`
 - `cmd/agentx-core/input_widget.go`
 - `cmd/agentx-core/logs_widget.go`
 - `cmd/agentx-core/output_widget.go`
@@ -132,3 +133,26 @@ Primary open implementation gaps captured in applet docs:
 - `PD-18` rows are documented as UX-tested at the spec layer, but active runtime
   inventory/ownership reconciliation remains open in
   `docs/hybrid_remaining_work.md`.
+
+## Applet Readiness Review (2026-06-02)
+
+This review answers four required questions for each runtime applet:
+
+1. Is this at a professional level of implementation?
+2. Is the user experience as clear and uncluttered as it can be?
+3. Are all UX and UX flow requirements met?
+4. Are there ambiguities between requirements and implementation that must be resolved?
+
+| Applet | Professional level | UX clarity | UX requirements met | Ambiguities requiring resolution | Required follow-up |
+| --- | --- | --- | --- | --- | --- |
+| `chat/output` | Partial | Good | Partial | Yes | Resolve parity scope for `PD-01` interactive affordances in TUI (collapse controls/context actions) and either implement or explicitly de-scope with approved UX update. |
+| `input` | Partial | Good | Partial | Yes | Close `PD-02` parity deltas for command discoverability and non-submit interaction parity under TUI-first runtime. |
+| `logs` | Yes (for current role) | Good | Mostly | No material ambiguity | Keep as read-only diagnostics surface; maintain lifecycle signal coverage and formatting readability. |
+| `context` | Partial | Mixed (surface multiplexing increases cognitive load) | Partial | Yes | Resolve ownership boundary between context-owned surfaces and first-class split applets, then reconcile naming/inventory docs. |
+| `filesystem` | No (not yet) | Partial (long-list usability gap) | No | Yes | Implement overflow viewport/paging requirements (`PD-11-AF-011..014`) and close `UF-11`/`UF-12` parity evidence in TUI runtime. |
+| `system-settings` | Partial | Good | Partial | Yes | Finalize dedicated runtime ownership and acceptance criteria parity against `PD-07` and `PD-18-AF-003`. |
+
+Review summary counts:
+
+- Applets requiring additional work: 5 of 6
+- Applets with ambiguities requiring resolution: 5 of 6

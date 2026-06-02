@@ -1,8 +1,8 @@
 # File System Applet Contract
 
-Last updated: 2026-06-01
+Last updated: 2026-06-02
 Applet ID: `filesystem`
-Runtime entry (target): `agentx-core --filesystem-widget` (planned)
+Runtime entry: `agentx-core --filesystem-widget` (implemented)
 
 ## Purpose
 
@@ -37,10 +37,14 @@ logic while preserving UX behavior defined in panel and flow specs.
 
 ## Command/Input Model
 
-- Current transitional mode: no first-class command parser in a dedicated
-  filesystem process; behavior is rendered through context-owned system tabs.
-- Target first-class mode: file navigation/select actions exposed as runtime
-  applet interactions compatible with `PD-11` and `UF-11`/`UF-12` contracts.
+- Current mode: first-class command parser exists in dedicated filesystem
+  process.
+- Supported navigation/action keys:
+  - `k`/`up`, `j`/`down`
+  - `u` (parent), `b` (back), `f` (forward), `h` (home), `r` (refresh)
+  - `enter`/`l` (open dir or attach file), `a` (attach), `e` (edit), `q` (quit)
+- Remaining parity requirement: long-list viewport/paging behavior required by
+  `PD-11-AF-011..014`.
 
 ## Owned Data/State
 
@@ -105,8 +109,9 @@ order to be fixed in startup composition spec).
 
 ## Current State
 
-- Transitional implementation is currently rendered via `context` applet tabs.
-- First-class runtime split is planned/required by active remaining-work plan.
+- First-class runtime entrypoint is implemented in Go.
+- System composition and UX parity closure remain in progress; context-owned
+  tab rendering still exists for transitional compatibility paths.
 
 ## Gap Note
 
