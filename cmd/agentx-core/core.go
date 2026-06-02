@@ -347,6 +347,8 @@ const (
 	lifecycleStageFinalResponse   = "final_response"
 
 	startupBootstrapPromptRelativePath = ".agentx/bootstrap-prompt.md"
+	agentIdentityPromptRelativePath    = ".agentx/agentx-instructions.md"
+	defaultAgentIdentityPrompt         = "You are AgentX, a private local assistant focused on helping the user complete tasks accurately and safely. Identify yourself as AgentX when asked."
 )
 
 // AgentXCore orchestrates the tmux session, applets, and IPC.
@@ -1456,11 +1458,16 @@ func (ac *AgentXCore) routePromptViaGoChatBackend(ctx context.Context, prompt st
 		return response, nil
 	}
 
+	identityPrompt := ac.loadAgentIdentityPrompt()
+	messages := make([]map[string]string, 0, 2)
+	if identityPrompt != "" {
+		messages = append(messages, map[string]string{"role": "system", "content": identityPrompt})
+	}
+	messages = append(messages, map[string]string{"role": "user", "content": trimmedPrompt})
+
 	payload := map[string]interface{}{
 		"model": ac.runtimeConfig.OllamaModel,
-		"messages": []map[string]string{
-			{"role": "user", "content": trimmedPrompt},
-		},
+		"messages": messages,
 		"stream": false,
 	}
 	payloadJSON, err := json.Marshal(payload)
@@ -1509,6 +1516,24 @@ func (ac *AgentXCore) routePromptViaGoChatBackend(ctx context.Context, prompt st
 	}
 
 	return "", fmt.Errorf("ollama response missing content")
+}
+
+func (ac *AgentXCore) loadAgentIdentityPrompt() string {
+	promptPath := filepath.Join(ac.Config.ProjectDir, agentIdentityPromptRelativePath)
+	data, err := os.ReadFile(promptPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("[AgentX Core] Agent identity prompt read failed: %v", err)
+		}
+		return defaultAgentIdentityPrompt
+	}
+
+	prompt := strings.TrimSpace(string(data))
+	if prompt == "" {
+		return defaultAgentIdentityPrompt
+	}
+
+	return prompt
 }
 
 func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt string) (string, error) {

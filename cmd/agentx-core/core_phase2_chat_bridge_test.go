@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -1030,10 +1031,23 @@ func TestRouteInputPrompt_GoChatRuntimeDirectSuccessEmitsTelemetry(t *testing.T)
 	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
 	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
 
+	type requestPayload struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	requestPayloadChan := make(chan requestPayload, 1)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/chat" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
+		var payload requestPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("failed decoding request payload: %v", err)
+		}
+		requestPayloadChan <- payload
 		fmt.Fprint(w, `{"message":{"content":"Direct go reply"}}`)
 	}))
 	defer server.Close()
@@ -1058,6 +1072,25 @@ func TestRouteInputPrompt_GoChatRuntimeDirectSuccessEmitsTelemetry(t *testing.T)
 	}
 	if response != "Direct go reply" {
 		t.Fatalf("expected direct go reply, got %q", response)
+	}
+
+	var payload requestPayload
+	select {
+	case payload = <-requestPayloadChan:
+	default:
+		t.Fatal("expected ollama request payload capture")
+	}
+	if len(payload.Messages) < 2 {
+		t.Fatalf("expected system+user messages in ollama payload, got %+v", payload.Messages)
+	}
+	if payload.Messages[0].Role != "system" {
+		t.Fatalf("expected first message role system, got %q", payload.Messages[0].Role)
+	}
+	if !strings.Contains(strings.ToLower(payload.Messages[0].Content), "agentx") {
+		t.Fatalf("expected system prompt to include AgentX identity, got %q", payload.Messages[0].Content)
+	}
+	if payload.Messages[1].Role != "user" || payload.Messages[1].Content != "go chat direct success" {
+		t.Fatalf("expected second message to be user prompt, got role=%q content=%q", payload.Messages[1].Role, payload.Messages[1].Content)
 	}
 
 	commandsRaw, err := os.ReadFile(logPath)
