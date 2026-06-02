@@ -40,11 +40,11 @@ logic while preserving UX behavior defined in panel and flow specs.
 - Current mode: first-class command parser exists in dedicated filesystem
   process.
 - Supported navigation/action keys:
-  - `k`/`up`, `j`/`down`
+  - `k`/`up`, `j`/`down`, arrow keys (`Up`/`Down` minimum parity target)
   - `u` (parent), `b` (back), `f` (forward), `h` (home), `r` (refresh)
   - `enter`/`l` (open dir or attach file), `a` (attach), `e` (edit), `q` (quit)
 - Remaining parity requirement: long-list viewport/paging behavior required by
-  `PD-11-AF-011..014`.
+  `PD-11-AF-011..018`.
 
 ## Owned Data/State
 
@@ -125,3 +125,6 @@ order to be fixed in startup composition spec).
 2. tmuxp composition wiring places the surface in system UX layout.
 3. Unit + integration + functional parity evidence passes.
 4. Traceability rows are reconciled as tested in UX lifecycle docs.
+5. Interactive TUI affordances meet `PD-11-AF-011..018`; if any affordance has
+  no obvious implementation path, user-approved case-by-case decision is
+  documented before closure.

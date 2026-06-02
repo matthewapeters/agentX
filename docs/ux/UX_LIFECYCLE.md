@@ -391,6 +391,10 @@ implements it and the test that validates it.  Status legend:
 | Overflow navigation supports PageUp/PageDown/Home/End (or equivalent) | PD-11-AF-012 | TUI filesystem applet command model (implementation pending) | `filesystem_widget_test.go` (target) | package-level tests (target) | 📝 |
 | Overflow status exposes visible range orientation (`showing X-Y of Z`) | PD-11-AF-013 | TUI filesystem applet render contract (implementation pending) | `filesystem_widget_test.go` (target) | package-level tests (target) | 📝 |
 | Files parity sign-off requires overflow-list executable evidence | PD-11-AF-014 | Hybrid parity and applet sign-off gate (implementation pending) | parity gate evidence (target) | gate-level evidence (target) | 📝 |
+| TUI files applet supports arrow-key row navigation | PD-11-AF-015 | TUI filesystem applet keyboard interaction contract (implementation pending) | `filesystem_widget_test.go` (target) | package-level tests (target) | 📝 |
+| TUI files applet supports `Space` soft-select semantics with visible state | PD-11-AF-016 | TUI filesystem applet selection-state contract (implementation pending) | `filesystem_widget_test.go` (target) | package-level tests (target) | 📝 |
+| TUI files applet supports `Return` hard-select primary action semantics | PD-11-AF-017 | TUI filesystem applet activation contract (implementation pending) | `filesystem_widget_test.go` (target) | package-level tests (target) | 📝 |
+| No-obvious-path affordances require explicit user case-by-case decision before closure | PD-11-AF-018 | Applet governance escalation rule (implementation/process pending) | review evidence (target) | governance evidence (target) | 📝 |
 
 ### PD-12 — StatusTab
 

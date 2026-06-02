@@ -134,6 +134,9 @@ Go applet architecture policy:
 - Requirement-complete rule: no applet may be marked complete until all
   authoritative UX and UX-flow requirements for that applet are met in runtime
   behavior and backed by executable evidence.
+- All interactive affordances must be implemented in TUI; if an affordance has
+  no obvious implementation path, it must be escalated for user case-by-case
+  decision before closure.
 - The optional UAT-visible startup mode is implemented as a validation surface,
   not a separate ad hoc demo path.
 
@@ -148,6 +151,8 @@ Go applet architecture policy:
 | Traceability correction    | Remove stale "complete" claims where implementation remains partial            | Keeps engineering state honest and executable                                 | In progress          |
 | Code reality audit         | Verify still-stubbed logic in `cmd/agentx-core`, `applets/template.py`, and `src/agentx` | Confirms actual implementation coverage against UX contracts                   | Completed            |
 | Files overflow parity requirements | Implement `PD-11-AF-011..014` in TUI filesystem applet (viewport/paging/overflow status + evidence) | Professional-grade file navigation requires deterministic behavior beyond visible viewport | In progress |
+| Files keyboard affordance parity | Implement `PD-11-AF-015..017` (arrow navigation, `Space` soft-select, `Return` hard-select) with visible selection-state feedback | User-expected TUI file navigation affordances must match UX contract | In progress |
+| No-obvious-path escalation protocol | Enforce `PD-11-AF-018`: case-by-case user decision required when an affordance lacks clear TUI implementation path | Prevents silent de-scoping and protects UX-authoritative delivery | In progress |
 | Output affordance parity scope closure | Reconcile `PD-01` interactive affordances with TUI output implementation and close approved parity scope | Prevents implicit de-scoping and contradictory sign-off language | In progress |
 | Input affordance parity closure | Close remaining `PD-02` parity deltas for command behavior/discoverability and acceptance evidence | Keeps prompt-entry UX consistent and auditable across runtimes | In progress |
 | Context ownership ambiguity closure | Resolve context vs split applet ownership boundaries and normalize naming across architecture/UX docs | Eliminates ambiguity that causes contradictory completion reporting | In progress |
@@ -171,6 +176,15 @@ Review counts:
 
 - Applets requiring additional work: 5
 - Applets with ambiguities that must be resolved: 5
+
+Concrete ambiguity example to resolve:
+
+- `PD-01` expects interactive output affordances (for example per-entry
+  collapse/expand/context actions), while current TUI output applet is
+  primarily render-only.
+- Resolution is required before closure: implement equivalent TUI interactions,
+  or record user-approved case-by-case contract adjustment for this specific
+  affordance.
 
 ## Applet Build/Test Plan (Open)
 

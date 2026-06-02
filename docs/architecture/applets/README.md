@@ -106,6 +106,16 @@ A parity-closed claim for any applet requires:
 3. UX flows are mapped to executable tests.
 4. Launch contract (`order` + `session:window`) is documented and validated.
 
+Additional governance directives (2026-06-02):
+
+- All interactive UX affordances must be implemented in the TUI runtime path.
+- TUIs must meet UX features, affordances, and functionality defined by
+  authoritative UX docs.
+- If no obvious implementation path exists for an affordance, escalate to user
+  decision as a case-by-case contract review; do not silently de-scope.
+- Definition of Done for each applet is UX-criteria complete with executable
+  evidence, not implementation convenience.
+
 ## Contract Completeness Standard
 
 Each applet contract in this folder must include the following implementation
@@ -145,12 +155,21 @@ This review answers four required questions for each runtime applet:
 
 | Applet | Professional level | UX clarity | UX requirements met | Ambiguities requiring resolution | Required follow-up |
 | --- | --- | --- | --- | --- | --- |
-| `chat/output` | Partial | Good | Partial | Yes | Resolve parity scope for `PD-01` interactive affordances in TUI (collapse controls/context actions) and either implement or explicitly de-scope with approved UX update. |
+| `chat/output` | Partial | Good | Partial | Yes | Implement `PD-01` interactive affordances in TUI; if any affordance lacks an obvious implementation path, escalate to user case-by-case decision before closure. |
 | `input` | Partial | Good | Partial | Yes | Close `PD-02` parity deltas for command discoverability and non-submit interaction parity under TUI-first runtime. |
 | `logs` | Yes (for current role) | Good | Mostly | No material ambiguity | Keep as read-only diagnostics surface; maintain lifecycle signal coverage and formatting readability. |
 | `context` | Partial | Mixed (surface multiplexing increases cognitive load) | Partial | Yes | Resolve ownership boundary between context-owned surfaces and first-class split applets, then reconcile naming/inventory docs. |
-| `filesystem` | No (not yet) | Partial (long-list usability gap) | No | Yes | Implement overflow viewport/paging requirements (`PD-11-AF-011..014`) and close `UF-11`/`UF-12` parity evidence in TUI runtime. |
+| `filesystem` | No (not yet) | Partial (long-list usability gap) | No | Yes | Implement overflow viewport/paging requirements (`PD-11-AF-011..014`), plus keyboard affordances (`arrow`, `space` soft-select, `return` hard-select), and close `UF-11`/`UF-12` parity evidence in TUI runtime. |
 | `system-settings` | Partial | Good | Partial | Yes | Finalize dedicated runtime ownership and acceptance criteria parity against `PD-07` and `PD-18-AF-003`. |
+
+Concrete ambiguity example (must be resolved explicitly):
+
+- Requirement-side expectation: `PD-01` includes interactive per-entry controls
+  (collapse/expand and context actions).
+- Implementation-side behavior: current TUI output surface is primarily a render
+  sink without equivalent per-entry interactive controls.
+- Required resolution: either implement equivalent TUI controls or obtain a
+  user-approved, explicit requirement update for this specific affordance.
 
 Review summary counts:
 

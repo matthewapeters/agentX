@@ -1708,8 +1708,18 @@ requirements before parity can be marked complete.
 | `PD-11-AF-012` | Files surface must support accelerated navigation for long lists (`PageUp`, `PageDown`, `Home`, `End`) or equivalent commands with clear discoverability in-widget. |
 | `PD-11-AF-013` | Files surface must provide deterministic overflow status (for example `showing X-Y of Z`) so users can orient themselves when content exceeds viewport height. |
 | `PD-11-AF-014` | Parity sign-off for Files requires executable evidence for both small-list and overflow-list behavior, not only summary rendering assertions. |
+| `PD-11-AF-015` | TUI files applet must support arrow-key navigation (`Up`/`Down` minimum) with behavior equivalent to row navigation controls. |
+| `PD-11-AF-016` | TUI files applet must support `Space` as soft-select toggle semantics (alias to check/uncheck or context-select behavior) with clear on-screen state indication. |
+| `PD-11-AF-017` | TUI files applet must support `Return` as hard-select activation semantics (alias to primary action/left-click behavior). |
+| `PD-11-AF-018` | If any required affordance has no obvious TUI implementation path, resolution must be escalated to user for case-by-case contract decision before sign-off. |
 
 These requirements are additive to `PD-11-AF-008..010` and `UF-11` / `UF-12`.
+
+Implementation guidance note:
+
+- TUI file navigation should follow established operator patterns seen in
+  mature terminal file managers (for example dual-mode select/activate
+  behavior), while preserving this UX contract as authoritative.
 
 > **Platform behavior note**: Right-click is bound on `<Button-3>` and posted with a
 > short timer delay to avoid immediate button-release dismissal races. Under Wayland
