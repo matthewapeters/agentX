@@ -456,6 +456,27 @@ func (state *outputWidgetViewState) applyCommand(raw string, snapshot outputWidg
 		}
 		sub := strings.ToLower(strings.TrimSpace(args[1]))
 		switch sub {
+		case "focused", "focus":
+			targetTurn := state.focusedTurn
+			if targetTurn <= 0 {
+				targetTurn = turnCount
+			}
+			if targetTurn < 1 || targetTurn > turnCount {
+				state.setStatus("No turns to copy from.")
+				return
+			}
+			entry := normalizeOutputEntry(state.focusedEntry)
+			if entry == "" {
+				entry = "response"
+			}
+			value, ok := renderOutputWidgetClipboard(snapshot, targetTurn, entry)
+			if !ok {
+				state.setStatus(fmt.Sprintf("Unable to copy focused %s for turn %d.", entry, targetTurn))
+				return
+			}
+			state.setClipboard(fmt.Sprintf("turn %d %s", targetTurn, entry), value)
+			state.setStatus(fmt.Sprintf("Copied focused %s for turn %d (%d chars) to output clipboard.", entry, targetTurn, len(value)))
+			return
 		case "show":
 			state.showClipboard = true
 			state.setStatus(fmt.Sprintf("Clipboard preview enabled: %s.", state.clipboardSummary()))

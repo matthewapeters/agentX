@@ -127,7 +127,7 @@ func runInputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 
 	fmt.Fprintln(out, "Input ready. Enter prompt and press Enter.")
 	fmt.Fprintln(out, "Commands: :q, :clear, :context-add <file-path> (alias :ctx-add), :multiline (alias :ml), :help")
-	fmt.Fprintln(out, "Multiline mode: :multiline then enter lines, :submit to send, :cancel to discard")
+	fmt.Fprintln(out, "Multiline mode: :multiline then enter lines, :submit/:send/:done to send, :cancel/:discard to discard")
 
 	scanner := bufio.NewScanner(in)
 	multilineMode := false
@@ -181,11 +181,11 @@ func runInputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 			switch strings.ToLower(trimmedLine) {
 			case ":help", ":commands":
 				fmt.Fprintln(out, "Multiline controls:")
-				fmt.Fprintln(out, "  :submit                Send the multiline prompt")
-				fmt.Fprintln(out, "  :cancel                Discard multiline input")
+				fmt.Fprintln(out, "  :submit | :send | :done       Send the multiline prompt")
+				fmt.Fprintln(out, "  :cancel | :discard            Discard multiline input")
 				fmt.Fprintln(out, "  :help                  Show multiline controls")
 				continue
-			case ":submit":
+			case ":submit", ":send", ":done":
 				prompt := strings.Join(multilineLines, "\n")
 				if strings.TrimSpace(prompt) == "" {
 					fmt.Fprintln(out, "Multiline buffer is empty; add text or use :cancel.")
@@ -202,7 +202,7 @@ func runInputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 					return exitCode
 				}
 				continue
-			case ":cancel":
+			case ":cancel", ":discard":
 				multilineMode = false
 				multilineLines = multilineLines[:0]
 				fmt.Fprintln(out, "Multiline input cancelled.")
@@ -227,7 +227,7 @@ func runInputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 			fmt.Fprintln(out, "  :ctx-add <path>        Alias for :context-add")
 			fmt.Fprintln(out, "  :multiline             Enter multiline compose mode")
 			fmt.Fprintln(out, "  :ml                    Alias for :multiline")
-			fmt.Fprintln(out, "Multiline controls once active: :submit, :cancel")
+			fmt.Fprintln(out, "Multiline controls once active: :submit/:send/:done, :cancel/:discard")
 			continue
 		case ":multiline", ":ml":
 			multilineMode = true

@@ -390,6 +390,70 @@ func TestFilesystemWidgetHandleCommand_EditLaunchesEditorWindow(t *testing.T) {
 	}
 }
 
+func TestFilesystemWidgetHandleCommand_EditUsesSoftSelectedSetInViewOrder(t *testing.T) {
+	logPath := setupFakeTmux(t)
+	t.Setenv("AGENTX_TMUX_SESSION", "sess-files")
+	t.Setenv("EDITOR", "nvim")
+
+	root := t.TempDir()
+	fileA := filepath.Join(root, "a one.txt")
+	fileB := filepath.Join(root, "b two.txt")
+
+	state := &filesystemWidgetState{
+		entries: []filesystemWidgetEntry{
+			{Name: filepath.Base(fileA), Path: fileA, IsDir: false, Exists: true},
+			{Name: filepath.Base(fileB), Path: fileB, IsDir: false, Exists: true},
+		},
+		selected: 0,
+		softSelected: map[string]bool{
+			fileA: true,
+			fileB: true,
+		},
+	}
+
+	if err := state.handleCommand(context.Background(), "e"); err != nil {
+		t.Fatalf("handleCommand returned error: %v", err)
+	}
+	if state.status != "Opened 2 selected files in editor windows" {
+		t.Fatalf("expected multi-edit status update, got %q", state.status)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "'nvim' '"+fileA+"'") {
+		t.Fatalf("expected first soft-selected file launch command, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "'nvim' '"+fileB+"'") {
+		t.Fatalf("expected second soft-selected file launch command, got:\n%s", commands)
+	}
+	firstIdx := strings.Index(commands, "'nvim' '"+fileA+"'")
+	secondIdx := strings.Index(commands, "'nvim' '"+fileB+"'")
+	if firstIdx == -1 || secondIdx == -1 || firstIdx >= secondIdx {
+		t.Fatalf("expected deterministic view-order editor launches, got:\n%s", commands)
+	}
+}
+
+func TestFilesystemWidgetHandleCommand_EditSoftSelectedDirectoriesOnlyReturnsError(t *testing.T) {
+	state := &filesystemWidgetState{
+		entries: []filesystemWidgetEntry{{Name: "docs", Path: "/tmp/docs", IsDir: true, Exists: true}},
+		selected: 0,
+		softSelected: map[string]bool{
+			"/tmp/docs": true,
+		},
+	}
+
+	err := state.handleCommand(context.Background(), "e")
+	if err == nil {
+		t.Fatal("expected error for directory-only soft-selected edit set")
+	}
+	if !strings.Contains(err.Error(), "soft-selected entries are directories") {
+		t.Fatalf("expected directory-set compatibility error, got %v", err)
+	}
+}
+
 func TestResolveEditorFallsBackToVim(t *testing.T) {
 	if got := resolveEditor("   "); got != "vim" {
 		t.Fatalf("expected vim fallback, got %q", got)

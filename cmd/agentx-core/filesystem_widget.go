@@ -242,10 +242,15 @@ func (s *filesystemWidgetState) handleCommand(ctx context.Context, command strin
 		}
 		return nil
 	case "e":
-		if err := s.editSelected(); err != nil {
+		editedCount, err := s.editSelected()
+		if err != nil {
 			return err
 		}
-		s.status = "Opened selected file in editor window"
+		if editedCount == 1 {
+			s.status = "Opened selected file in editor window"
+		} else {
+			s.status = fmt.Sprintf("Opened %d selected files in editor windows", editedCount)
+		}
 		return nil
 	default:
 		return fmt.Errorf("unsupported command: %s", command)
@@ -664,15 +669,42 @@ func (s *filesystemWidgetState) softSelectedEntriesInViewOrder() []filesystemWid
 	return entries
 }
 
-func (s *filesystemWidgetState) editSelected() error {
-	entry, err := s.selectedEntry()
+func (s *filesystemWidgetState) editSelected() (int, error) {
+	entries, err := s.entriesForEditAction()
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if entry.IsDir {
-		return errors.New("selection is a directory; choose a file")
+	for _, entry := range entries {
+		if launchErr := launchEditorTmuxWindow(entry.Path); launchErr != nil {
+			return 0, launchErr
+		}
 	}
-	return launchEditorTmuxWindow(entry.Path)
+	return len(entries), nil
+}
+
+func (s *filesystemWidgetState) entriesForEditAction() ([]filesystemWidgetEntry, error) {
+	softEntries := s.softSelectedEntriesInViewOrder()
+	if len(softEntries) == 0 {
+		entry, err := s.selectedEntry()
+		if err != nil {
+			return nil, err
+		}
+		if entry.IsDir {
+			return nil, errors.New("selection is a directory; choose a file")
+		}
+		return []filesystemWidgetEntry{entry}, nil
+	}
+
+	fileEntries := make([]filesystemWidgetEntry, 0, len(softEntries))
+	for _, entry := range softEntries {
+		if !entry.IsDir {
+			fileEntries = append(fileEntries, entry)
+		}
+	}
+	if len(fileEntries) == 0 {
+		return nil, errors.New("soft-selected entries are directories; choose a file")
+	}
+	return fileEntries, nil
 }
 
 func launchEditorTmuxWindow(filePath string) error {

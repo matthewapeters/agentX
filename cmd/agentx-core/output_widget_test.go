@@ -168,6 +168,22 @@ func TestOutputWidgetViewState_CopyCommands_AreDeterministic(t *testing.T) {
 	}
 }
 
+func TestOutputWidgetViewState_CopyFocusedUsesFocusedEntryAndTurn(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := testOutputWidgetSnapshot()
+
+	view.applyCommand(":focus 1 classification", snapshot)
+	view.applyCommand(":copy focused", snapshot)
+
+	expected := classifyPrompt(snapshot.Turns[0].Prompt)
+	if view.clipboard != string(expected.Intent)+" -> "+string(expected.NextStep) {
+		t.Fatalf("expected focused classification clipboard payload, got %q", view.clipboard)
+	}
+	if view.clipboardSource != "turn 1 classification" {
+		t.Fatalf("expected focused clipboard source, got %q", view.clipboardSource)
+	}
+}
+
 func TestRenderOutputWidgetWithViewState_HelpIncludesCopyAndEntryCommands(t *testing.T) {
 	view := newOutputWidgetViewState()
 	snapshot := testOutputWidgetSnapshot()

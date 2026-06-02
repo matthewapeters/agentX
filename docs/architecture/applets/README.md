@@ -196,12 +196,12 @@ This review answers four required questions for each runtime applet:
 
 | Applet | Professional level | UX clarity | UX requirements met | Ambiguities requiring resolution | Required follow-up |
 | --- | --- | --- | --- | --- | --- |
-| `chat/output` | Partial | Good | Partial | No | Continue Path A execution to close remaining deep PD-01 parity evidence. |
-| `input` | Partial | Good | Partial | No | Continue Path A execution for multiline parity closure evidence. |
+| `chat/output` | Yes (current scope) | Good | Mostly | No | Maintain regression coverage and lifecycle parity evidence. |
+| `input` | Yes (current scope) | Good | Mostly | No | Maintain multiline/command discoverability regression coverage. |
 | `logs` | Yes (for current role) | Good | Mostly | No material ambiguity | Keep as read-only diagnostics surface; maintain lifecycle signal coverage and formatting readability. |
-| `context` | Partial | Mixed (surface multiplexing increases cognitive load) | Partial | Yes | Resolve ownership boundary between context-owned surfaces and first-class split applets, then reconcile naming/inventory docs. |
-| `filesystem` | Partial | Partial (improved) | Partial | No | Complete residual PD-11 evidence closure and finalize remaining multi-select action semantics. |
-| `system-settings` | Partial | Good | Partial | Yes | Finalize dedicated runtime ownership and acceptance criteria parity against `PD-07` and `PD-18-AF-003`. |
+| `context` | Partial | Mixed (surface multiplexing increases cognitive load) | Partial | No | Resolve ownership boundary between context-owned surfaces and first-class split applets, then reconcile naming/inventory docs. |
+| `filesystem` | Yes (current scope) | Good | Mostly | No | Maintain viewport/select/action compatibility regression coverage. |
+| `system-settings` | Partial | Good | Partial | No | Finalize dedicated runtime ownership and acceptance criteria parity against `PD-07` and `PD-18-AF-003`. |
 
 Resolved direction example:
 
@@ -212,7 +212,7 @@ Resolved direction example:
 
 Review summary counts:
 
-- Applets requiring additional work: 5 of 6
+- Applets requiring additional work: 2 of 6
 - Ambiguities pending direction decision: 0
 
 ## Decision Log (2026-06-02)
