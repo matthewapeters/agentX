@@ -92,3 +92,66 @@ func TestApplyOptionalLayoutOverlay_UsesTmuxpAndReassertsOwnedWindows(t *testing
 		t.Fatalf("expected logs window rename assertion, got:\n%s", commands)
 	}
 }
+
+func TestApplyOptionalLayoutOverlay_DefaultLayoutFailureIsFatal(t *testing.T) {
+	tmpDir := t.TempDir()
+	layoutFile := defaultLayoutFilePath(tmpDir)
+	if err := os.MkdirAll(filepath.Dir(layoutFile), 0o755); err != nil {
+		t.Fatalf("failed to create default layout dir: %v", err)
+	}
+	if err := os.WriteFile(layoutFile, []byte("session_name: ${SESSION}\n"), 0o644); err != nil {
+		t.Fatalf("failed to write default layout file: %v", err)
+	}
+
+	fakeTmuxp := filepath.Join(tmpDir, "tmuxp")
+	fakeTmux := filepath.Join(tmpDir, "tmux")
+	if err := os.WriteFile(fakeTmux, []byte("#!/usr/bin/env bash\nset -euo pipefail\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("failed to write fake tmux: %v", err)
+	}
+	if err := os.WriteFile(fakeTmuxp, []byte("#!/usr/bin/env bash\nset -euo pipefail\necho fail >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("failed to write fake tmuxp: %v", err)
+	}
+
+	oldPath := os.Getenv("PATH")
+	if err := os.Setenv("PATH", tmpDir+":"+oldPath); err != nil {
+		t.Fatalf("failed to set PATH: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("PATH", oldPath)
+	})
+
+	core := NewAgentXCore(&Config{ProjectDir: tmpDir, Username: "tester", SessionID: "sess-default-fail", LayoutFile: layoutFile})
+	if err := core.applyOptionalLayoutOverlay(context.Background()); err == nil {
+		t.Fatalf("expected default layout overlay failure to be fatal")
+	}
+}
+
+func TestApplyOptionalLayoutOverlay_CustomLayoutFailureIsNonFatal(t *testing.T) {
+	tmpDir := t.TempDir()
+	layoutFile := filepath.Join(tmpDir, "custom-layout.yaml")
+	if err := os.WriteFile(layoutFile, []byte("session_name: ${SESSION}\n"), 0o644); err != nil {
+		t.Fatalf("failed to write custom layout file: %v", err)
+	}
+
+	fakeTmuxp := filepath.Join(tmpDir, "tmuxp")
+	fakeTmux := filepath.Join(tmpDir, "tmux")
+	if err := os.WriteFile(fakeTmux, []byte("#!/usr/bin/env bash\nset -euo pipefail\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("failed to write fake tmux: %v", err)
+	}
+	if err := os.WriteFile(fakeTmuxp, []byte("#!/usr/bin/env bash\nset -euo pipefail\necho fail >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("failed to write fake tmuxp: %v", err)
+	}
+
+	oldPath := os.Getenv("PATH")
+	if err := os.Setenv("PATH", tmpDir+":"+oldPath); err != nil {
+		t.Fatalf("failed to set PATH: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("PATH", oldPath)
+	})
+
+	core := NewAgentXCore(&Config{ProjectDir: tmpDir, Username: "tester", SessionID: "sess-custom-fail", LayoutFile: layoutFile})
+	if err := core.applyOptionalLayoutOverlay(context.Background()); err != nil {
+		t.Fatalf("expected custom layout overlay failure to be non-fatal, got %v", err)
+	}
+}

@@ -89,7 +89,9 @@ Rules:
 
 - AgentX must create required windows before any optional external layout tooling overlays pane topology.
 - External layout tooling may split/rearrange panes but must not rename or duplicate AgentX-owned windows.
-- Optional overlay entry point is CLI flag `--layout-file <tmuxp-yaml>`. Missing file, missing `tmuxp`, or load failure must degrade gracefully to default AgentX layout.
+- Overlay entry point is CLI flag `--layout <tmuxp-yaml>` (`--layout-file` remains supported for compatibility). Missing file or load failure for explicit custom layouts degrades gracefully to default AgentX layout; missing `tmuxp` or failed tmux/tmuxp startup probe is a startup prerequisite failure.
+- When no layout flag is provided, AgentX materializes and uses the implicit default composition file at `.agentx/layouts/default-layout.yaml`.
+- Default composition export entry point is CLI flag `--dump-default-layout <file|->`.
 - Starter template generator entry point is CLI flag `--layout-template <file>`, which writes a `${SESSION}`-based tmuxp YAML scaffold.
 
 ### Hybrid Core Pane Content Contract
@@ -303,8 +305,9 @@ Behavioral contract:
   presentation, not applet ownership or IPC contracts.
 - UAT can use this mode to verify that each applet is present, alive, and
   functionally responsive before the frame-based layout is introduced.
-- If the mode cannot be created or tmuxp overlaying is unavailable, core must
-  fall back to the default runtime layout rather than failing startup.
+- If the mode cannot be created, core must fall back to the default runtime
+  layout rather than failing startup. (Missing `tmuxp` is a startup
+  prerequisite failure.)
 - This mode is a validation surface only; it does not replace the canonical
   frame-based runtime described in [docs/architecture/runtime_split.md](../architecture/runtime_split.md).
 

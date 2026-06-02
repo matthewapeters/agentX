@@ -6,6 +6,16 @@ _Last updated: 2026-05-28 (v1.0.1)_
 
 This document defines the authoritative contract and migration plan for the AgentX hybrid runtime: the split between the Go core orchestrator and Go applet layer. It governs the division of responsibilities, IPC boundaries, migration phases, and the thin-GUI contract. All architectural and UX parity claims must reference this document.
 
+Per-applet authoritative contracts (including UX mapping, widget inventory,
+flow coverage, launch order, and tmux `session:window.pane` ownership) are
+maintained in:
+
+- `docs/architecture/applets/README.md`
+- `docs/architecture/applets/output_applet.md`
+- `docs/architecture/applets/input_applet.md`
+- `docs/architecture/applets/logs_applet.md`
+- `docs/architecture/applets/context_applet.md`
+
 ---
 
 ## 1. Runtime Split Overview

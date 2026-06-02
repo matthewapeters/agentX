@@ -100,24 +100,6 @@ func (ac *AgentXCore) renderSystemSurface(activeTab string) string {
 	backend := trimSingleLine(ac.runtimeConfig.ChatBackend, 12)
 	ollamaHost := trimSingleLine(ac.runtimeConfig.OllamaHost, 40)
 
-	entries := safeListDir(ac.Config.ProjectDir)
-	preview := []string{"- none"}
-	if len(entries) > 0 {
-		preview = []string{}
-		for _, name := range entries[:minInt(3, len(entries))] {
-			entryPath := filepath.Join(ac.Config.ProjectDir, name)
-			entryType := "other"
-			if info, err := os.Stat(entryPath); err == nil {
-				if info.IsDir() {
-					entryType = "dir"
-				} else {
-					entryType = "file"
-				}
-			}
-			preview = append(preview, fmt.Sprintf("- %s: %s", entryType, trimSingleLine(name, 36)))
-		}
-	}
-
 	lastPrompt := "none"
 	lastResponse := "none"
 	recentPrompt := "none"
@@ -149,18 +131,6 @@ func (ac *AgentXCore) renderSystemSurface(activeTab string) string {
 	}
 
 	sections := map[string][]string{
-		"files": {
-			"== FILES ==",
-			fmt.Sprintf("project_dir: %s", trimSingleLine(ac.Config.ProjectDir, 64)),
-			fmt.Sprintf("entry_count: %d", len(entries)),
-			"preview:",
-		},
-		"configuration": {
-			"== CONFIGURATION ==",
-			fmt.Sprintf("model: %s", modelName),
-			fmt.Sprintf("backend: %s", backend),
-			fmt.Sprintf("ollama_host: %s", ollamaHost),
-		},
 		"context": {
 			"== CONTEXT ==",
 			fmt.Sprintf("session_id: %s", trimSingleLine(ac.SessionID, 36)),
@@ -190,12 +160,33 @@ func (ac *AgentXCore) renderSystemSurface(activeTab string) string {
 			"== PROMPT CYCLE ==",
 		},
 	}
+	if applet, ok := ac.systemAppletHost.Resolve("files"); ok {
+		sections["files"] = applet.RenderCore(SystemAppletCoreContext{
+			SessionDir: ac.Config.SessionDataDir(ac.SessionID),
+			SessionID:  ac.SessionID,
+			ProjectDir: ac.Config.ProjectDir,
+			TurnCount:  turnCount,
+			Turns:      turns,
+		})
+	} else {
+		sections["files"] = []string{
+			"== FILES ==",
+			fmt.Sprintf("project_dir: %s", trimSingleLine(ac.Config.ProjectDir, 64)),
+			fmt.Sprintf("entry_count: %d", len(safeListDir(ac.Config.ProjectDir))),
+			"preview:",
+			"- none",
+		}
+	}
 	if applet, ok := ac.systemAppletHost.Resolve("context-history"); ok {
 		sections["context-history"] = applet.RenderCore(SystemAppletCoreContext{
 			SessionDir: ac.Config.SessionDataDir(ac.SessionID),
-			SessionID: ac.SessionID,
-			TurnCount: turnCount,
-			Turns:     turns,
+			SessionID:  ac.SessionID,
+			ProjectDir: ac.Config.ProjectDir,
+			Model:      ac.runtimeConfig.OllamaModel,
+			Backend:    ac.runtimeConfig.ChatBackend,
+			OllamaHost: ac.runtimeConfig.OllamaHost,
+			TurnCount:  turnCount,
+			Turns:      turns,
 		})
 	} else {
 		sections["context-history"] = []string{
@@ -209,6 +200,10 @@ func (ac *AgentXCore) renderSystemSurface(activeTab string) string {
 		sections["working-memory"] = applet.RenderCore(SystemAppletCoreContext{
 			SessionDir: ac.Config.SessionDataDir(ac.SessionID),
 			SessionID:  ac.SessionID,
+			ProjectDir: ac.Config.ProjectDir,
+			Model:      ac.runtimeConfig.OllamaModel,
+			Backend:    ac.runtimeConfig.ChatBackend,
+			OllamaHost: ac.runtimeConfig.OllamaHost,
 		})
 	} else {
 		sections["working-memory"] = []string{
@@ -216,7 +211,25 @@ func (ac *AgentXCore) renderSystemSurface(activeTab string) string {
 			"No facts stored yet.",
 		}
 	}
-	sections["files"] = append(sections["files"], preview...)
+	if applet, ok := ac.systemAppletHost.Resolve("configuration"); ok {
+		sections["configuration"] = applet.RenderCore(SystemAppletCoreContext{
+			SessionDir: ac.Config.SessionDataDir(ac.SessionID),
+			SessionID:  ac.SessionID,
+			ProjectDir: ac.Config.ProjectDir,
+			Model:      ac.runtimeConfig.OllamaModel,
+			Backend:    ac.runtimeConfig.ChatBackend,
+			OllamaHost: ac.runtimeConfig.OllamaHost,
+			TurnCount:  turnCount,
+			Turns:      turns,
+		})
+	} else {
+		sections["configuration"] = []string{
+			"== CONFIGURATION ==",
+			fmt.Sprintf("model: %s", modelName),
+			fmt.Sprintf("backend: %s", backend),
+			fmt.Sprintf("ollama_host: %s", ollamaHost),
+		}
+	}
 	sections["context-visualizer"] = append(sections["context-visualizer"], cycleRows...)
 
 	lines := []string{"[SYSTEM]", fmt.Sprintf("[SYSTEM TAB] active=%s", selectedTab)}
@@ -835,21 +848,27 @@ func (ac *AgentXCore) applyOptionalLayoutOverlay(ctx context.Context) error {
 	if layoutFile == "" {
 		return nil
 	}
+	isDefaultLayout := ac.isImplicitDefaultLayout(layoutFile)
 
 	if _, err := os.Stat(layoutFile); err != nil {
+		if isDefaultLayout {
+			return fmt.Errorf("default layout file missing (%s)", layoutFile)
+		}
 		log.Printf("[AgentX Core] Layout overlay skipped: file not found (%s)", layoutFile)
 		return nil
 	}
 
 	tmuxpPath, err := exec.LookPath("tmuxp")
 	if err != nil {
-		log.Printf("[AgentX Core] Layout overlay skipped: tmuxp not found in PATH")
-		return nil
+		return fmt.Errorf("tmuxp not found in PATH")
 	}
 
 	cmd := exec.CommandContext(ctx, tmuxpPath, "load", "-y", "-d", layoutFile)
 	cmd.Env = append(os.Environ(), "SESSION="+ac.tmuxSessionName)
 	if output, runErr := cmd.CombinedOutput(); runErr != nil {
+		if isDefaultLayout {
+			return fmt.Errorf("default layout overlay failed: %v | output: %s", runErr, strings.TrimSpace(string(output)))
+		}
 		log.Printf("[AgentX Core] Layout overlay failed, continuing with default layout: %v | output: %s", runErr, strings.TrimSpace(string(output)))
 		return nil
 	}
@@ -857,8 +876,80 @@ func (ac *AgentXCore) applyOptionalLayoutOverlay(ctx context.Context) error {
 	if err := ac.ensureOwnedWindowNames(ctx); err != nil {
 		log.Printf("[AgentX Core] Layout overlay applied but could not re-assert owned window names: %v", err)
 	}
+	if err := ac.ensureRequiredPaneTitles(ctx); err != nil {
+		log.Printf("[AgentX Core] Layout overlay applied but could not re-assert required pane titles: %v", err)
+	}
 
 	log.Printf("[AgentX Core] Layout overlay applied from %s", layoutFile)
+	return nil
+}
+
+func (ac *AgentXCore) isImplicitDefaultLayout(layoutFile string) bool {
+	if ac == nil || ac.Config == nil {
+		return false
+	}
+	defaultPath := defaultLayoutFilePath(ac.Config.ProjectDir)
+	absDefault, errDefault := filepath.Abs(strings.TrimSpace(defaultPath))
+	absLayout, errLayout := filepath.Abs(strings.TrimSpace(layoutFile))
+	if errDefault != nil || errLayout != nil {
+		return filepath.Clean(defaultPath) == filepath.Clean(layoutFile)
+	}
+	return filepath.Clean(absDefault) == filepath.Clean(absLayout)
+}
+
+func (ac *AgentXCore) ensureRequiredPaneTitles(ctx context.Context) error {
+	output, err := ac.runTmuxCapture(ctx, "list-panes", "-t", ac.tmuxSessionName+":0", "-F", "#{pane_id}|#{pane_title}")
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	requiredByTitle := map[string]string{}
+	orderedPaneIDs := make([]string, 0, len(lines))
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		paneID := strings.TrimSpace(parts[0])
+		title := strings.TrimSpace(parts[1])
+		if paneID == "" {
+			continue
+		}
+		orderedPaneIDs = append(orderedPaneIDs, paneID)
+		if title != "" {
+			requiredByTitle[title] = paneID
+		}
+	}
+
+	if requiredByTitle[PaneTitleOutput] != "" && requiredByTitle[PaneTitleSystem] != "" && requiredByTitle[PaneTitleInput] != "" {
+		return nil
+	}
+
+	if len(orderedPaneIDs) < 3 {
+		return fmt.Errorf("expected at least 3 panes in %s:0, found %d", ac.tmuxSessionName, len(orderedPaneIDs))
+	}
+
+	if requiredByTitle[PaneTitleOutput] == "" {
+		if err := ac.setPaneTitle(ctx, orderedPaneIDs[0], PaneTitleOutput); err != nil {
+			return err
+		}
+	}
+	if requiredByTitle[PaneTitleSystem] == "" {
+		if err := ac.setPaneTitle(ctx, orderedPaneIDs[1], PaneTitleSystem); err != nil {
+			return err
+		}
+	}
+	if requiredByTitle[PaneTitleInput] == "" {
+		if err := ac.setPaneTitle(ctx, orderedPaneIDs[2], PaneTitleInput); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

@@ -149,7 +149,6 @@ func renderContextWidget(snapshot contextWidgetSnapshot, tab string, model strin
 	}
 
 	projectDir := strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR"))
-	entryCount := len(safeListDir(projectDir))
 
 	turnCount := snapshot.TurnCount
 	if turnCount == 0 {
@@ -182,22 +181,43 @@ func renderContextWidget(snapshot contextWidgetSnapshot, tab string, model strin
 
 	switch tab {
 	case "files":
-		lines = append(lines,
-			"== FILES ==",
-			fmt.Sprintf("project_dir: %s", trimSingleLine(projectDir, 40)),
-			fmt.Sprintf("entry_count: %d", entryCount),
-		)
+		if applet, ok := newSystemAppletHost().Resolve(tab); ok {
+			lines = append(lines, applet.RenderWidget(SystemAppletWidgetContext{
+				SessionID:  snapshot.SessionID,
+				ProjectDir: projectDir,
+				TurnCount:  turnCount,
+				Turns:      snapshot.Turns,
+			})...)
+		} else {
+			lines = append(lines,
+				"== FILES ==",
+				fmt.Sprintf("project_dir: %s", trimSingleLine(projectDir, 40)),
+				fmt.Sprintf("entry_count: %d", len(safeListDir(projectDir))),
+			)
+		}
 	case "configuration":
 		ollamaHost := strings.TrimSpace(os.Getenv("AGENTX_OLLAMA_HOST"))
 		if ollamaHost == "" {
 			ollamaHost = defaultOllamaHost
 		}
-		lines = append(lines,
-			"== CONFIGURATION ==",
-			fmt.Sprintf("model: %s", trimSingleLine(model, 32)),
-			fmt.Sprintf("backend: %s", trimSingleLine(backend, 20)),
-			fmt.Sprintf("ollama_host: %s", trimSingleLine(ollamaHost, 32)),
-		)
+		if applet, ok := newSystemAppletHost().Resolve(tab); ok {
+			lines = append(lines, applet.RenderWidget(SystemAppletWidgetContext{
+				SessionID:  snapshot.SessionID,
+				ProjectDir: projectDir,
+				Model:      model,
+				Backend:    backend,
+				OllamaHost: ollamaHost,
+				TurnCount:  turnCount,
+				Turns:      snapshot.Turns,
+			})...)
+		} else {
+			lines = append(lines,
+				"== CONFIGURATION ==",
+				fmt.Sprintf("model: %s", trimSingleLine(model, 32)),
+				fmt.Sprintf("backend: %s", trimSingleLine(backend, 20)),
+				fmt.Sprintf("ollama_host: %s", trimSingleLine(ollamaHost, 32)),
+			)
+		}
 	case "context":
 		lines = append(lines,
 			"== CONTEXT ==",
@@ -209,9 +229,10 @@ func renderContextWidget(snapshot contextWidgetSnapshot, tab string, model strin
 	case "context-history":
 		if applet, ok := newSystemAppletHost().Resolve(tab); ok {
 			lines = append(lines, applet.RenderWidget(SystemAppletWidgetContext{
-				SessionID: snapshot.SessionID,
-				TurnCount: turnCount,
-				Turns:     snapshot.Turns,
+				SessionID:  snapshot.SessionID,
+				ProjectDir: projectDir,
+				TurnCount:  turnCount,
+				Turns:      snapshot.Turns,
 			})...)
 		} else {
 			lines = append(lines,

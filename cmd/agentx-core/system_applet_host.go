@@ -14,16 +14,24 @@ type SystemAppletHost interface {
 
 type SystemAppletCoreContext struct {
 	SessionDir string
-	SessionID string
-	TurnCount int
-	Turns     []ChatTurn
+	SessionID  string
+	ProjectDir string
+	Model      string
+	Backend    string
+	OllamaHost string
+	TurnCount  int
+	Turns      []ChatTurn
 }
 
 type SystemAppletWidgetContext struct {
 	SessionDir string
-	SessionID string
-	TurnCount int
-	Turns     []ChatTurn
+	SessionID  string
+	ProjectDir string
+	Model      string
+	Backend    string
+	OllamaHost string
+	TurnCount  int
+	Turns      []ChatTurn
 }
 
 type systemAppletRegistry struct {
@@ -32,6 +40,8 @@ type systemAppletRegistry struct {
 
 func newSystemAppletHost() SystemAppletHost {
 	registry := &systemAppletRegistry{applets: make(map[string]SystemApplet)}
+	registry.register(filesSystemApplet{})
+	registry.register(configurationSystemApplet{})
 	registry.register(contextHistorySystemApplet{})
 	registry.register(workingMemorySystemApplet{})
 	return registry

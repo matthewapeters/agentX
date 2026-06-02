@@ -27,6 +27,8 @@ A local-first AI agent desktop application with a **Tkinter GUI**, streaming LLM
 | Python | 3.12.x | Enforced by `pyproject.toml`; 3.13 not yet supported |
 | [uv](https://docs.astral.sh/uv/) | latest | Package and venv manager |
 | [Ollama](https://ollama.com) | latest | Must be running locally before launching AgentX |
+| [tmux](https://github.com/tmux/tmux/wiki) | latest | Required for Go core / hybrid runtime session orchestration |
+| [tmuxp](https://tmuxp.git-pull.com/) | latest | Required for tmux composition loading in Go core / hybrid runtime |
 | Agentix | optional | Provides prompt classification and server-side tools |
 | TK | Required | Provides Python GUI |
 
@@ -210,6 +212,22 @@ To launch manually with attach enabled:
 ```bash
 ./bin/agentx --project-dir . --user "$USER" --attach
 ```
+
+Layout options:
+
+```bash
+# Use an explicit tmuxp layout composition
+./bin/agentx --project-dir . --layout ./my-layout.yaml --attach
+
+# Dump built-in default composition to a file for customization
+./bin/agentx --dump-default-layout ./my-layout.yaml
+
+# Print built-in default composition to stdout
+./bin/agentx --dump-default-layout -
+```
+
+When no layout flag is provided, AgentX automatically materializes and uses
+`.agentx/layouts/default-layout.yaml`.
 
 Attached startup opens tmux on the primary `tui-chat` window (window `0`), while logs remain in a separate background window.
 

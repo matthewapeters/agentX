@@ -29,6 +29,11 @@ cat > "$TMP_DIR/tmux" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${1:-}" == "-V" ]]; then
+  echo 'tmux 3.4'
+  exit 0
+fi
+
 if [[ "$1" == "list-panes" ]]; then
   if [[ "$3" == *"_demo" ]]; then
     echo 'demo_smoke_session_demo|0|0|%8|testControler|1|120|20'
@@ -83,6 +88,7 @@ PATH="$TMP_DIR:$PATH" \
   --project-dir "$ROOT_DIR" \
   --user "$USERNAME" \
   --session-id "$SESSION_ID" \
+  --layout "$TMP_DIR/nonexistent-layout.yaml" \
   --demo-headless \
   --demo-start e2e-001 \
   <<'EOF_INPUT' | tee "$DEMO_OUTPUT_FILE"

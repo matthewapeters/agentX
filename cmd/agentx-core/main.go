@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -25,13 +26,15 @@ func main() {
 		logsWidget      = flag.Bool("logs-widget", false, "Run native Go logs widget mode over stdout")
 		contextWidget   = flag.Bool("context-widget", false, "Run native Go context widget mode over stdout")
 		coreHTTP        = flag.String("core-http", strings.TrimSpace(os.Getenv("AGENTX_CORE_HTTP")), "Core HTTP base URL for widget/bridge modes")
-		layoutFile      = flag.String("layout-file", "", "Optional tmuxp layout file to overlay after core windows are created")
+		layout          = flag.String("layout", "", "tmuxp layout file to apply after core windows are created (defaults to .agentx/layouts/default-layout.yaml)")
+		layoutFile      = flag.String("layout-file", "", "Legacy alias for --layout")
 		layoutTemplate  = flag.String("layout-template", "", "Write a starter tmuxp layout template to this file and exit")
+		dumpDefaultLayoutPath = flag.String("dump-default-layout", "", "Write the built-in default tmuxp layout to a file path, or '-' for stdout")
 		startupMode     = flag.String("startup-mode", resolveStartupModeDefault(), "Startup topology mode: default|visible-windows")
 		attach          = flag.Bool("attach", true, "Attach to tmux session after startup (use -attach=false for headless mode)")
 		demo            = flag.Bool("demo", false, "Run DemoMode with a split tmux controller and live core session")
-		demoDefault     = flag.Bool("default", false, "Run DemoMode using the default frame-based startup topology")
-		demoWindowed    = flag.Bool("windowed", false, "Run DemoMode using the windowed startup topology")
+		demoDefault     = flag.Bool("default", false, "Use default frame-based startup topology (works for normal and demo startup)")
+		demoWindowed    = flag.Bool("windowed", false, "Use windowed startup topology (works for normal and demo startup)")
 		demoHeadless    = flag.Bool("demo-headless", false, "Run DemoMode without the split-pane controller (internal)")
 		demoController  = flag.Bool("demo-controller", false, "Run the split-pane DemoMode controller pane (internal)")
 		demoSplit       = flag.Bool("demo-split", false, "Enable split-view controller behavior (internal)")
@@ -49,6 +52,11 @@ func main() {
 	if !ok {
 		log.Fatalf("invalid --startup-mode value %q (expected default or visible-windows)", strings.TrimSpace(*startupMode))
 	}
+	resolvedStartupMode, err := resolveStartupModeSelection(*demoDefault, *demoWindowed, resolvedStartupMode)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	demoStartupMode, err := resolveDemoStartupMode(*demoDefault, *demoWindowed, resolvedStartupMode)
 	if err != nil {
 		log.Fatalf("%v", err)
@@ -59,9 +67,6 @@ func main() {
 
 	if *demoStart != "" && !(*demo || *demoHeadless || *demoController) {
 		log.Fatalf("--demo-start requires a demo mode flag")
-	}
-	if (*demoDefault || *demoWindowed) && !(*demo || *demoHeadless || *demoController) {
-		log.Fatalf("--default and --windowed require a demo mode flag")
 	}
 
 	if *inputWidget {
@@ -96,12 +101,41 @@ func main() {
 		return
 	}
 
+	if strings.TrimSpace(*layoutTemplate) != "" && strings.TrimSpace(*dumpDefaultLayoutPath) != "" {
+		log.Fatalf("--layout-template and --dump-default-layout cannot be used together")
+	}
+
+	if strings.TrimSpace(*dumpDefaultLayoutPath) != "" {
+		if err := dumpDefaultLayout(strings.TrimSpace(*dumpDefaultLayoutPath), os.Stdout); err != nil {
+			log.Fatalf("Failed to dump default layout: %v", err)
+		}
+		if strings.TrimSpace(*dumpDefaultLayoutPath) != "-" {
+			fmt.Printf("[AgentX Core] Wrote default tmuxp layout: %s\n", strings.TrimSpace(*dumpDefaultLayoutPath))
+		}
+		return
+	}
+
 	if strings.TrimSpace(*layoutTemplate) != "" {
 		if err := writeTmuxpLayoutTemplate(strings.TrimSpace(*layoutTemplate)); err != nil {
 			log.Fatalf("Failed to write layout template: %v", err)
 		}
 		fmt.Printf("[AgentX Core] Wrote tmuxp layout template: %s\n", strings.TrimSpace(*layoutTemplate))
 		return
+	}
+
+	resolvedLayoutFile, err := resolveLayoutFileSelection(strings.TrimSpace(*layout), strings.TrimSpace(*layoutFile))
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	if resolvedLayoutFile == "" {
+		resolvedLayoutFile, err = ensureDefaultLayoutFile(*projectDir)
+		if err != nil {
+			log.Fatalf("Failed to materialize default layout file: %v", err)
+		}
+	}
+
+	if err := validateRuntimePrerequisites(); err != nil {
+		log.Fatalf("Missing runtime prerequisite: %v", err)
 	}
 
 	if *demoHeadless {
@@ -120,7 +154,7 @@ func main() {
 			ProjectDir: *projectDir,
 			Username:   *username,
 			SessionID:  *sessionID,
-			LayoutFile: strings.TrimSpace(*layoutFile),
+			LayoutFile: resolvedLayoutFile,
 			StartupMode: demoStartupMode,
 		}
 
@@ -250,7 +284,7 @@ func main() {
 			ProjectDir: *projectDir,
 			Username:   *username,
 			SessionID:  *sessionID,
-			LayoutFile: strings.TrimSpace(*layoutFile),
+			LayoutFile: resolvedLayoutFile,
 			StartupMode: demoStartupMode,
 		}
 
@@ -286,7 +320,7 @@ func main() {
 		ProjectDir: *projectDir,
 		Username:   *username,
 		SessionID:  *sessionID,
-		LayoutFile: strings.TrimSpace(*layoutFile),
+		LayoutFile: resolvedLayoutFile,
 		StartupMode: resolvedStartupMode,
 	}
 
@@ -304,14 +338,48 @@ func main() {
 	fmt.Println("[AgentX Core] ✓ Shutdown complete")
 }
 
+func validateRuntimePrerequisites() error {
+	for _, binary := range []string{"tmux", "tmuxp"} {
+		if _, err := exec.LookPath(binary); err != nil {
+			return fmt.Errorf("%s not found in PATH", binary)
+		}
+	}
+
+	if output, err := exec.Command("tmux", "-V").CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux probe failed: %v (%s)", err, strings.TrimSpace(string(output)))
+	}
+	if output, err := exec.Command("tmuxp", "--version").CombinedOutput(); err != nil {
+		return fmt.Errorf("tmuxp probe failed: %v (%s)", err, strings.TrimSpace(string(output)))
+	}
+
+	return nil
+}
+
+func resolveLayoutFileSelection(layout string, legacyLayoutFile string) (string, error) {
+	if layout == "" && legacyLayoutFile == "" {
+		return "", nil
+	}
+	if layout != "" && legacyLayoutFile != "" && layout != legacyLayoutFile {
+		return "", fmt.Errorf("--layout and --layout-file conflict; provide only one")
+	}
+	if layout != "" {
+		return layout, nil
+	}
+	return legacyLayoutFile, nil
+}
+
 func resolveDemoStartupMode(demoDefault, demoWindowed bool, fallback string) (string, error) {
-	if demoDefault && demoWindowed {
+	return resolveStartupModeSelection(demoDefault, demoWindowed, fallback)
+}
+
+func resolveStartupModeSelection(defaultFlag, windowedFlag bool, fallback string) (string, error) {
+	if defaultFlag && windowedFlag {
 		return "", fmt.Errorf("--default and --windowed cannot be used together")
 	}
-	if demoWindowed {
+	if windowedFlag {
 		return visibleWindowsStartupMode, nil
 	}
-	if demoDefault {
+	if defaultFlag {
 		return defaultStartupMode, nil
 	}
 	if mode, ok := normalizeStartupMode(fallback); ok {

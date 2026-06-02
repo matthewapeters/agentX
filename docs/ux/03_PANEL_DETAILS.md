@@ -126,7 +126,7 @@ THEN it appears as informational/system content (not as an agent response)
 **Source**: `ChatPanel._show_output_context_menu()` + `ChatPanel._bind_output_text_shortcuts()`  
 (`src/agentx/gui/chat_panel.py`)  
 **Test**: `tests/test_chat_panel_copy_context_menu.py` · `TestOutputPanelRightClickCopy`  
-**Status**: 📝 (spec only — not yet implemented)
+**Status**: ✅ Implemented and tested
 
 The output panel is read-only; the only clipboard action available is **Copy**.
 The right-click popup uses the same Wayland-aware `tk.Toplevel(overrideredirect=True)`
@@ -401,11 +401,11 @@ THEN  the input widget contains "hello world"
 | PD-02-AF-006 | `test_input_panel_attachment_chips.py` | `test_check_after_uncheck_calls_toggle_true` |
 | PD-02-AF-007 | `test_input_panel_attachment_chips.py` | `test_empty_update_clears_all_chips` |
 | PD-02-AF-007 | `test_input_panel_attachment_chips.py` | `test_rebuild_replaces_existing_chips` |
-| PD-02-AF-008 | `test_input_panel_context_menu.py` | `TestInputPanelRightClickPopup` — _not yet implemented_ |
-| PD-02-AF-009 | `test_input_panel_context_menu.py` | `TestInputCopyMenuVisibility` — _not yet implemented_ |
-| PD-02-AF-010 | `test_input_panel_context_menu.py` | `TestInputPasteMenuVisibility` — _not yet implemented_ |
-| PD-02-AF-011 | `test_input_panel_context_menu.py` | `TestInputCopyAction` — _not yet implemented_ |
-| PD-02-AF-012 | `test_input_panel_context_menu.py` | `TestInputPasteAction` — _not yet implemented_ |
+| PD-02-AF-008 | `test_input_panel_context_menu.py` | `TestInputPanelRightClickPopup` |
+| PD-02-AF-009 | `test_input_panel_context_menu.py` | `TestInputCopyMenuVisibility` |
+| PD-02-AF-010 | `test_input_panel_context_menu.py` | `TestInputPasteMenuVisibility` |
+| PD-02-AF-011 | `test_input_panel_context_menu.py` | `TestInputCopyAction` |
+| PD-02-AF-012 | `test_input_panel_context_menu.py` | `TestInputPasteAction` |
 
 ### Code / Configuration References
 

@@ -180,6 +180,9 @@ func TestRenderContextWidget_FilesTabContract(t *testing.T) {
 			t.Fatalf("expected render to contain %q, got:\n%s", fragment, render)
 		}
 	}
+	if strings.Contains(render, "preview:") {
+		t.Fatalf("files widget tab should remain compact (no preview block), got:\n%s", render)
+	}
 }
 
 func TestRenderContextWidget_ConfigurationTabContract(t *testing.T) {
@@ -200,5 +203,8 @@ func TestRenderContextWidget_ConfigurationTabContract(t *testing.T) {
 		if !strings.Contains(render, fragment) {
 			t.Fatalf("expected render to contain %q, got:\n%s", fragment, render)
 		}
+	}
+	if strings.Contains(render, "preview:") {
+		t.Fatalf("configuration widget tab should not include file preview rows, got:\n%s", render)
 	}
 }

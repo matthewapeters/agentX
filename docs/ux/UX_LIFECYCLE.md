@@ -222,7 +222,7 @@ Examples:
 | PD-14 | VimBridge GUI | `src/agentx/integration/vim_bridge.py` |
 | PD-15 | TerminalPane GUI | `src/agentx/integration/terminal_bridge.py` + `src/agentx/gui/` |
 | PD-16 | TuiMirror | `src/agentx/integration/tui_bridge.py`, `launch_vibe.sh` |
-| PD-17 | DemoMode | `cmd/agentx-core/main.go`, demo harness package (planned) |
+| PD-17 | DemoMode | `cmd/agentx-core/main.go`, demo harness package |
 
 When a new panel or top-level widget is added, assign the next available PD number,
 add a row to this table, and create a section in `03_PANEL_DETAILS.md`.
@@ -479,11 +479,28 @@ implements it and the test that validates it.  Status legend:
 | Context visualizer applet renders capacity and prompt-cycle status | PD-18-AF-006 | `renderContextWidget()` default case + `e2e-system-tour-001` live demo validator | `context_widget_test.go`, `tests/test_demo_system_panel_tour_headless.sh` | package-level tests + headless e2e | ✅ |
 | Visible startup mode exposes one window per applet for UAT | PD-18-AF-007 | `main.go` `--startup-mode` flag + `config.go` `normalizeStartupMode()` | `config_startup_mode_test.go` | package-level tests | ✅ |
 
+### Runtime Applet Sign-off Closure (2026-06-01)
+
+The applet-by-applet UX traceability sign-off closure is complete for active
+Go-runtime surfaces. Each runtime applet/surface below has:
+
+- a dedicated PD affordance specification row,
+- a matching traceability row in this matrix, and
+- passing unit plus integration/functional evidence.
+
+| Runtime applet/surface | UX spec anchor | Traceability anchor | Evidence | Sign-off |
+|---|---|---|---|---|
+| Chat/Output widget | `PD-17-AF-011`, `PD-17-AF-012` | `PD-17` | `demo_harness_test.go`, `tests/test_demo_ux_use_cases_headless.sh` | ✅ Closed |
+| Input widget | `PD-16-AF-010`, `PD-17-AF-005` | `PD-16`, `PD-17` | `input_widget_test.go`, `demo_harness_test.go`, `tests/test_demo_ux_use_cases_headless.sh` | ✅ Closed |
+| Logs widget | `PD-17` (`e2e-logs-001`) | `PD-17` | `demo_harness_test.go`, `tests/test_demo_ux_use_cases_headless.sh` | ✅ Closed |
+| System applet suite (files/config/context-history/working-memory/context-visualizer) | `PD-18-AF-001..007` | `PD-18` | `system_applet_host_test.go`, `context_widget_test.go`, `core_system_renderer_test.go`, `tests/test_demo_system_panel_tour_headless.sh` | ⚠ Re-opened |
+| UAT-visible startup topology | `PD-18-AF-007` | `PD-18` | `config_startup_mode_test.go`, `core_tmux_startup_integration_test.go` | ✅ Closed |
+
 Active execution packet for first implementation slice:
 
 - `docs/architecture/system_applet_suite_slice1.md`
 
-Planned follow-up for PD-16 default-behavior migration is documented in
+Follow-up for PD-16 default-behavior migration is documented in
 `docs/ux/06_TUI_MIRROR.md` §12 (TUI-first default with `--gui` opt-in).
 
 ---
@@ -786,19 +803,17 @@ python -m pytest -m "not live" -v
 
 ## 7. Current Coverage Gaps
 
-Parity is still incomplete. The following high-priority gaps remain active until
-Go applet flows match UX specifications and TUI completion gates are met.
-The visible-windows startup topology is already implemented and documented, so
-it is no longer tracked as an active gap here.
+Runtime applet UX traceability remains open for system-applet scope alignment.
 
-| Gap ID | Surface | Current issue | Required closure |
-|--------|---------|---------------|------------------|
-| HX-001 | `output` pane / `PD-17-AF-011` | Startup greeting bootstrap behavior is not yet fully closed as a Go-owned parity guarantee across runtime paths. | Add deterministic Go-owned startup coverage for attached/runtime paths and retain one-shot persistence guarantees. |
-| HX-002 | `output` pane / `PD-17-AF-012` | Prompt lifecycle rendering remains incomplete against full UX parity criteria. | Complete and verify end-to-end prompt-classification-thinking-tool-response flow in TUI output under Go orchestration. |
-| HX-003 | `system` pane / `PD-17-AF-013` | System surface parity remains incomplete versus UX tab specifications. | Complete Go-owned applet/system flow implementation and validate files/configuration/context/history/visualizer parity. |
-| HX-004 | Applet flow completeness | Applets are not yet created/owned in Go to match UX flow contracts end to end. | Implement and validate each applet in its own slice, with unit + integration/functional coverage and UX review sign-off. |
-| HX-005 | TUI-first completion gate | GUI work can still appear as if equal priority to TUI completion. | Enforce TUI-first completion policy and defer GUI enhancements until TUI parity gate passes. |
-| HX-006 | Applet UX review coverage | System applet surfaces do not yet have individual UX review rows and reconciliation status in the panel details matrix. | Add one PD-18 row per applet surface, review each against UX specs, and reconcile to `✅ Tested` only after tests pass. |
+Open applet-by-applet traceability gaps remain for UX-required first-class
+system applet inventory (File System, System Settings, and Context-family
+surfaces) until runtime inventory and UX contracts are re-aligned.
+
+Residual execution focus (outside sign-off closure):
+
+| Focus ID | Surface | Current focus | Completion signal |
+|---|---|---|---|
+| HX-005 | TUI-first completion gate | Keep TUI parity gates green while incremental runtime slices land. | `make -C /Projects/agentX hybrid-parity-gate` remains green after each slice. |
 
 ---
 

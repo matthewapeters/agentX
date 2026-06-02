@@ -69,7 +69,7 @@ func TestRenderSystemSurface_TabContracts(t *testing.T) {
 	}{
 		{
 			tab: "files",
-			required: []string{"== FILES ==", "project_dir:", "entry_count:"},
+			required: []string{"== FILES ==", "project_dir:", "entry_count:", "preview:"},
 			banned:   []string{"== CONFIGURATION ==", "== CONTEXT ==", "== CONTEXT HISTORY ==", "== CONTEXT VISUALIZER =="},
 		},
 		{
@@ -175,7 +175,7 @@ func TestRenderSystemSurface_TabSwitchStableAcrossTurns(t *testing.T) {
 	}{
 		{
 			tab:      "files",
-			required: []string{"[SYSTEM TAB] active=files", "== FILES ==", "project_dir:", "entry_count:"},
+			required: []string{"[SYSTEM TAB] active=files", "== FILES ==", "project_dir:", "entry_count:", "preview:"},
 			banned:   []string{"== CONFIGURATION ==", "== CONTEXT ==", "== CONTEXT HISTORY ==", "== CONTEXT VISUALIZER =="},
 		},
 		{

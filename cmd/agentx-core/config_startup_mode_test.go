@@ -85,3 +85,38 @@ func TestResolveDemoStartupMode(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveStartupModeSelection(t *testing.T) {
+	cases := []struct {
+		name         string
+		defaultFlag  bool
+		windowedFlag bool
+		fallback     string
+		expected     string
+		wantErr      bool
+	}{
+		{name: "fallback default", fallback: defaultStartupMode, expected: defaultStartupMode},
+		{name: "fallback windowed", fallback: visibleWindowsStartupMode, expected: visibleWindowsStartupMode},
+		{name: "explicit default", defaultFlag: true, fallback: visibleWindowsStartupMode, expected: defaultStartupMode},
+		{name: "explicit windowed", windowedFlag: true, fallback: defaultStartupMode, expected: visibleWindowsStartupMode},
+		{name: "conflicting selectors", defaultFlag: true, windowedFlag: true, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveStartupModeSelection(tc.defaultFlag, tc.windowedFlag, tc.fallback)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.expected {
+				t.Fatalf("resolveStartupModeSelection() = %q, want %q", got, tc.expected)
+			}
+		})
+	}
+}

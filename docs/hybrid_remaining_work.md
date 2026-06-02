@@ -46,19 +46,49 @@ logs with parity-first validation), cumulative progress is:
   direct-go-fallback + native-logs behavior.
 - Full blocker gate is currently green after the latest rerun
   (`hybrid parity blocker gate complete`).
+- Migration slice is now captured in `CHANGELOG.md` (`1.0.2`) and consolidated
+  in commit `dc90265` on `feat/hybrid-go-core-tui-migration`.
+- Applet traceability was previously marked closed for the system-applet suite,
+  but runtime inventory still tracks only `chat`, `input`, `logs`, and
+  `context` pane applets. This mismatch is now treated as active remaining
+  work.
 
 Very brief remaining focus:
 
-- Complete applet-by-applet UX traceability closure for parity sign-off.
-- Retire stale migration claims in downstream docs/tests that still imply
-  Python ownership for chat/logs/system-pane tab surfaces.
+- Keep downstream docs/tests aligned with current Go-owned runtime claims and
+  prevent stale migration wording from re-entering active paths.
 - Keep blocker gate green after each incremental migration slice.
+
+## Windowed Demo Validation Readiness
+
+`agentx --demo --windowed` is now a valid UAT validation path for applet
+surfaces.
+
+Readiness signal:
+
+- Run when `make -C /Projects/agentX hybrid-parity-gate` is green for the
+  candidate commit.
+
+Validation command:
+
+- `agentx --demo --windowed --project-dir /Projects/agentX`
+
+Applet-level UAT checklist for this run:
+
+- Output/chat applet renders startup greeting + prompt lifecycle rows.
+- Input applet accepts prompt and preserves output on `:clear`.
+- Logs applet shows startup bootstrap and lifecycle telemetry markers.
+- System applet coverage must explicitly include first-class File System,
+  System Settings, and Context-family (current context + context history +
+  working memory) surfaces per UX, not only tab-level rendering inside the
+  context pane.
 
 ## Remaining Work
 
-Parity is incomplete overall, but the PD-18 system applet suite slices are now
-implemented and validated. Remaining work now shifts to the broader runtime and
-UX parity gaps outside the completed applet-suite slice.
+Parity is incomplete overall. The prior PD-18 "closed" claim is superseded:
+runtime-level applet inventory and UX-required surfaces are not yet aligned.
+Remaining work includes closing this applet-scope gap in addition to broader
+runtime and UX parity gaps.
 
 Remaining work is implementation-first, not documentation-first.
 
@@ -78,11 +108,46 @@ Go applet architecture policy:
 | ------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- | -------------------- |
 | Core orchestration completion | Complete Go-owned prompt-classification-thinking-tool-response runtime orchestration | This is the primary product behavior and must be deterministic in TUI         | In progress          |
 | Applet parity implementation | Implement Go-created/runtime-managed applet flows to match UX specifications, one applet at a time, with individual tests and UX review sign-off | Current flows are incomplete and parity claims are premature                  | In progress          |
-| Applet UX review and traceability | Add PD-18 panel details, individual affordance IDs, and UX lifecycle rows for each applet before marking parity complete | The team needs a reviewable spec/test chain for each applet                   | In progress          |
+| Missing UX-specified system applets | Deliver first-class File System and System Settings runtime applets and use tmuxp composition logic for assembled system layout | Aligns runtime architecture with planned first-class applet model while preserving UX-composed experience | In progress |
+| Applet UX review and traceability | Re-open PD-18 traceability to align runtime applet inventory with UX-required applet surfaces before re-closing sign-off | Maintains an auditable spec/test/sign-off chain per applet and prevents false-complete claims | In progress |
 | UAT-visible startup mode | Optional startup switch now launches one visible window per applet before frame layout (`--startup-mode visible-windows`) | UAT can verify applet presence/function before frame layout work               | Completed            |
 | TUI-first completion       | Finish TUI behavior and parity gates before advancing GUI feature work         | GUI is explicitly secondary until TUI completion                              | In progress          |
 | Traceability correction    | Remove stale "complete" claims where implementation remains partial            | Keeps engineering state honest and executable                                 | In progress          |
 | Code reality audit         | Verify still-stubbed logic in `cmd/agentx-core`, `applets/template.py`, and `src/agentx` | Confirms actual implementation coverage against UX contracts                   | Completed            |
+
+## Applet Build/Test Plan (Open)
+
+This section tracks applet surfaces with open ownership/evidence closure tasks.
+
+Decision baseline (finalized):
+
+- File System and System Settings are first-class runtime applets.
+- tmuxp composition logic assembles first-class applets into the composed
+  system UX layout.
+- Working Memory remains composed under Session-tab context ownership unless UX
+  is explicitly revised.
+
+| Target applet surface | UX anchor(s) | Current state | Required build work | Required test work | Planned runtime target |
+| --- | --- | --- | --- | --- | --- |
+| File System applet (first-class, finalized) | `PD-18-AF-004`, Files panel references in `PD-11` | First-class host-owned files applet runtime is now implemented in Go (`SystemAppletHost` + dedicated files applet render path); tmuxp composition binding remains pending | Complete tmuxp composition binding and runtime inventory traceability alignment for files applet ownership | Unit: file listing/state behavior. Integration: startup/reattach + applet health. Functional: demo/system-tour parity | Dedicated first-class applet target; composed into system UX via tmuxp |
+| System Settings applet (first-class, finalized) | `PD-18-AF-003`, `PD-07` settings behavior references | First-class host-owned configuration applet runtime is now implemented in Go (`SystemAppletHost` + dedicated configuration applet render path); tmuxp composition binding remains pending | Complete tmuxp composition binding and runtime inventory traceability alignment for settings applet ownership | Unit: config render/override behavior. Integration: state refresh/startup + applet health. Functional: system-tab tour assertions | Dedicated first-class applet target; composed into system UX via tmuxp |
+| Context-history applet (first-class process) | `PD-18-AF-002` | Implemented through system applet host/tab rendering; first-class process decomposition not finalized | Decide if decomposition is required beyond current host-based surface; if yes, add first-class applet runtime process | Unit: history ordering/truncation. Integration: ownership/reattach. Functional: demo tour path | Same as above; depends on decomposition decision |
+| Working-memory surface reconciliation | `PD-03`, `PD-08`, `PD-18-AF-005` | Surface implemented; traceability remains re-opened due inventory alignment drift | Keep under context applet ownership unless UX explicitly changes; or split to first-class applet by approved spec change | Unit: WM row/callback contracts. Integration: session ownership. Functional: explicit WM acceptance path in tour | Context applet-owned surface by default; split target only if UX contract changes |
+| Context-current applet/surface reconciliation | `PD-18` `context` system tab + `PD-03` context section | Surface implemented in context widget; inventory naming and ownership still mixed in docs | Reconcile naming so one authoritative ownership model is used across runtime docs/UX lifecycle/plan | Regression sweep for context summary + prompt-cycle exposure consistency | Context applet-owned surface |
+
+Execution order for open applet work:
+
+1. File System tmuxp composition wiring + traceability closure.
+2. System Settings tmuxp composition wiring + traceability closure.
+3. Context-history decomposition decision and execution.
+4. Working-memory ownership reconciliation closure.
+5. Context-current naming/ownership reconciliation closure.
+
+Completion criteria for this section:
+
+1. File System and System Settings split-vs-compose decisions are finalized and documented as first-class applets composed via tmuxp.
+2. Every accepted row has unit + integration + functional evidence.
+3. `docs/ux/UX_LIFECYCLE.md` and this plan agree on final applet inventory status.
 
 ## Pruned Objectives
 
@@ -517,6 +582,74 @@ Latest validation snapshot (HYB-06 / Slice V: visible-windows startup mode):
 - `cd /Projects/agentX/cmd/agentx-core && go test -run 'TestInitializeTmuxSession_PrimaryWindowSelectionRegression|TestInitializeTmuxSession_VisibleWindowsStartupMode|TestNormalizeStartupMode|TestResolveStartupModeDefault' ./...`: passing.
 - `cd /Projects/agentX/cmd/agentx-core && go test ./...`: passing.
 - `make -C /Projects/agentX hybrid-parity-gate`: passing (exit code 0).
+
+Latest validation snapshot (post-1.0.2 consolidation commit):
+
+- `make -C /Projects/agentX hybrid-parity-gate`: passing (exit code 0,
+  `hybrid parity blocker gate complete`).
+- Release traceability updated in `CHANGELOG.md` (`1.0.2`) and committed as
+  `dc90265`.
+
+Latest validation snapshot (post-files-applet first-class host slice):
+
+- `cd /Projects/agentX/cmd/agentx-core && go test ./... -run 'FilesSystemApplet|SystemAppletHost_ResolvesFiles|RenderContextWidget_FilesTabContract|RenderSystemSurface_TabContracts|RenderSystemSurface_TabSwitchStableAcrossTurns'`: passing.
+- `cd /Projects/agentX/cmd/agentx-core && go test ./...`: passing.
+- Blocker sub-gates passing:
+  - `make -C /Projects/agentX go-test-functional`
+  - `make -C /Projects/agentX go-test-integration`
+  - `make -C /Projects/agentX go-test-e2e`
+  - `make -C /Projects/agentX demo-smoke`
+  - `make -C /Projects/agentX test-demo-ux-use-cases-headless`
+  - `make -C /Projects/agentX test-demo-system-panel-tour-headless`
+
+Latest validation snapshot (post-settings-applet first-class host slice):
+
+- `cd /Projects/agentX/cmd/agentx-core && go test ./... -run 'ConfigurationSystemApplet|SystemAppletHost_ResolvesConfiguration|RenderContextWidget_ConfigurationTabContract|RenderSystemSurface_TabContracts|RenderSystemSurface_TabSwitchStableAcrossTurns'`: passing.
+- `cd /Projects/agentX/cmd/agentx-core && go test ./...`: passing.
+- Blocker sub-gates passing:
+  - `make -C /Projects/agentX go-test-functional`
+  - `make -C /Projects/agentX go-test-integration`
+  - `make -C /Projects/agentX go-test-e2e`
+  - `make -C /Projects/agentX demo-smoke`
+  - `make -C /Projects/agentX test-demo-ux-use-cases-headless`
+  - `make -C /Projects/agentX test-demo-system-panel-tour-headless`
+
+Latest validation snapshot (post-layout-flag alignment + default-layout workflow):
+
+- CLI/help alignment delivered:
+  - `--layout` is now the primary composition flag (`--layout-file` retained as compatibility alias)
+  - `--dump-default-layout <file|->` now exports the built-in default composition
+  - implicit default composition path documented and exercised: `.agentx/layouts/default-layout.yaml`
+- Blocker sub-gates passing:
+  - `make -C /Projects/agentX go-test-functional`
+  - `make -C /Projects/agentX go-test-integration`
+  - `make -C /Projects/agentX go-test-e2e`
+  - `make -C /Projects/agentX demo-smoke`
+  - `make -C /Projects/agentX test-demo-ux-use-cases-headless`
+  - `make -C /Projects/agentX test-demo-system-panel-tour-headless`
+
+Latest validation snapshot (post-strict tmux/tmuxp probe hardening):
+
+- Runtime prerequisite checks now include executable probes:
+  - `tmux -V`
+  - `tmuxp --version`
+- Implicit default layout composition load (`.agentx/layouts/default-layout.yaml`)
+  now fails fast on overlay load failure; explicit custom layout load failures
+  remain non-fatal fallback paths.
+- Focused + module tests:
+  - `cd /Projects/agentX/cmd/agentx-core && go test ./... -run 'ValidateRuntimePrerequisites|ApplyOptionalLayoutOverlay'`
+  - `cd /Projects/agentX/cmd/agentx-core && go test ./...`
+- Blocker sub-gates passing:
+  - `make -C /Projects/agentX go-test-functional`
+  - `make -C /Projects/agentX go-test-integration`
+  - `make -C /Projects/agentX go-test-e2e`
+  - `make -C /Projects/agentX demo-smoke`
+  - `make -C /Projects/agentX test-demo-ux-use-cases-headless`
+  - `make -C /Projects/agentX test-demo-system-panel-tour-headless`
+- Demo smoke harness compatibility note:
+  - `tests/test_demo_smoke_headless.sh` now adds fake-tmux `-V` support and
+    invokes `--layout <missing-custom-layout>` to exercise non-fatal custom
+    overlay fallback while preserving artifact assertions.
 
 Effective immediately, active execution priority shifts from promotion governance
 to baseline applet functionality and POC validation.
