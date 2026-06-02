@@ -216,3 +216,24 @@ Review summary counts:
 
 - Applets requiring additional work: 5 of 6
 - Applets with ambiguities requiring resolution: 5 of 6
+
+## Decision Log (2026-06-02)
+
+User-selected direction: `A` for previously listed conflict options.
+
+Applied contract decisions:
+
+1. Output panel parity (`PD-01`): implement full per-entry interactive controls
+  in TUI (not command-only parity).
+2. Output copy parity (`PD-01-AF-010`): implement explicit app-level TUI copy
+  actions with deterministic behavior.
+3. Input multiline parity (`PD-02`): prioritize richer multiline key handling
+  for TUI input behavior.
+4. Filesystem soft-select semantics (`PD-11-AF-016`): adopt persistent
+  multi-select semantics with visible selection state.
+
+Implication:
+
+- These are implementation work items, not open ambiguity items.
+- Any residual no-obvious-path affordance still follows case-by-case user
+  escalation before closure.

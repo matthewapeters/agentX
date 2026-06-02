@@ -1,6 +1,6 @@
 # Context Applet Contract
 
-Last updated: 2026-06-01
+Last updated: 2026-06-02
 Applet ID: `context`
 Runtime entry: `agentx-core --context-widget`
 
@@ -29,8 +29,8 @@ The context applet owns the system/session context surfaces as one applet contra
 
 Transitional render-host surfaces (not authoritative ownership):
 
-5. Files surface (transitional host for first-class `filesystem` applet)
-6. Configuration surface (transitional host for first-class `system-settings` applet)
+1. Files surface (transitional host for first-class `filesystem` applet)
+2. Configuration surface (transitional host for first-class `system-settings` applet)
 
 ## Affordance List
 

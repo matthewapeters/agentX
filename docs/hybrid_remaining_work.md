@@ -154,9 +154,13 @@ Go applet architecture policy:
 | Files keyboard affordance parity | Implement `PD-11-AF-015..017` (arrow navigation, `Space` soft-select, `Return` hard-select) with visible selection-state feedback | User-expected TUI file navigation affordances must match UX contract | In progress |
 | No-obvious-path escalation protocol | Enforce `PD-11-AF-018`: case-by-case user decision required when an affordance lacks clear TUI implementation path | Prevents silent de-scoping and protects UX-authoritative delivery | In progress |
 | Output affordance parity scope closure | Reconcile `PD-01` interactive affordances with TUI output implementation and close approved parity scope | Prevents implicit de-scoping and contradictory sign-off language | In progress |
+| Output per-entry interactive parity (Path A) | Implement full per-entry interactive controls in TUI output surface (`PD-01`) | User-selected direction requires feature-equivalent TUI interaction fidelity | In progress |
+| Output explicit copy actions (Path A) | Implement deterministic app-level TUI copy actions for output (`PD-01-AF-010`) | Avoids terminal-dependent behavior drift and closes copy affordance parity | In progress |
 | Input affordance parity closure | Close remaining `PD-02` parity deltas for command behavior/discoverability and acceptance evidence | Keeps prompt-entry UX consistent and auditable across runtimes | In progress |
+| Input multiline parity (Path A) | Implement richer multiline key handling for TUI input (`PD-02`) | User-selected direction prioritizes multiline interaction fidelity over simplified single-line flow | In progress |
 | Context ownership ambiguity closure | Resolve context vs split applet ownership boundaries and normalize naming across architecture/UX docs | Eliminates ambiguity that causes contradictory completion reporting | In progress |
 | System settings parity closure | Finalize system-settings dedicated-runtime acceptance criteria and evidence mapping to `PD-07`/`PD-18-AF-003` | Required for professional-grade applet sign-off | In progress |
+| Files persistent multi-select semantics (Path A) | Implement persistent `Space` soft-select set behavior with explicit visible state and action compatibility (`PD-11-AF-016`) | User-selected direction aligns with professional TUI file-manager patterns | In progress |
 
 ## Applet Readiness Review (2026-06-02)
 
@@ -172,19 +176,15 @@ level, UX clarity, requirements coverage, and unresolved ambiguity.
 | `filesystem` | No (not yet) | Partial | No | Yes | Add files overflow parity requirements row for `PD-11-AF-011..014`. |
 | `system-settings` | Partial | Good | Partial | Yes | Add system-settings parity closure row tied to `PD-07` and `PD-18-AF-003`. |
 
-Review counts:
+Review counts (after Path A direction selection):
 
 - Applets requiring additional work: 5
-- Applets with ambiguities that must be resolved: 5
+- Ambiguities pending direction decision: 0
 
-Concrete ambiguity example to resolve:
+Resolved direction example:
 
-- `PD-01` expects interactive output affordances (for example per-entry
-  collapse/expand/context actions), while current TUI output applet is
-  primarily render-only.
-- Resolution is required before closure: implement equivalent TUI interactions,
-  or record user-approved case-by-case contract adjustment for this specific
-  affordance.
+- `PD-01` per-entry interactive output affordances are now directed as Path A
+  implementation work (full TUI interaction), not deferred ambiguity.
 
 ## Applet Build/Test Plan (Open)
 
