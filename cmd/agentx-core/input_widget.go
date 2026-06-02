@@ -126,7 +126,7 @@ func runInputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 	submitTimeout := resolveWidgetSubmitTimeout()
 
 	fmt.Fprintln(out, "Input ready. Enter prompt and press Enter.")
-	fmt.Fprintln(out, "Commands: :q shuts down the session, :clear clears input panel only.")
+	fmt.Fprintln(out, "Commands: :q, :clear, :context-add <file-path> (alias :ctx-add), :help")
 
 	scanner := bufio.NewScanner(in)
 	for {
@@ -146,6 +146,16 @@ func runInputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 
 		// Remove the just-submitted input line so acceptance feedback appears immediately.
 		fmt.Fprint(out, "\033[1A\033[2K\r")
+
+		switch strings.ToLower(prompt) {
+		case ":help", ":commands":
+			fmt.Fprintln(out, "Available commands:")
+			fmt.Fprintln(out, "  :q                     Shut down the current session")
+			fmt.Fprintln(out, "  :clear                 Clear input panel only")
+			fmt.Fprintln(out, "  :context-add <path>    Register a context file")
+			fmt.Fprintln(out, "  :ctx-add <path>        Alias for :context-add")
+			continue
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), submitTimeout)
 		response, err := submitPromptToCore(ctx, baseURL, prompt)

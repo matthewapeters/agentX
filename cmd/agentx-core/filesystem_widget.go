@@ -32,8 +32,13 @@ type filesystemWidgetState struct {
 	historyIndex int
 	entries      []filesystemWidgetEntry
 	selected     int
+	viewOffset   int
+	viewportRows int
+	softSelected map[string]bool
 	status       string
 }
+
+const defaultFilesystemViewportRows = 12
 
 func runFilesystemWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 	baseURL := strings.TrimSpace(coreHTTP)
@@ -67,6 +72,9 @@ func runFilesystemWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) in
 		historyIndex: 0,
 		currentDir:   projectDir,
 		selected:     0,
+		viewOffset:   0,
+		viewportRows: resolveFilesystemViewportRows(),
+		softSelected: map[string]bool{},
 		status:       "Ready",
 	}
 	if err := state.refresh(); err != nil {
@@ -102,7 +110,7 @@ func runFilesystemWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, s
 			return nil
 		}
 		if command == "?" || command == "help" {
-			state.status = "Keys: Enter/l open dir or attach file; k/up; j/down; u up; b back; f forward; h home; r refresh; a attach; e edit; q quit"
+			state.status = "Keys: Enter/l hard-select; space/s soft-select; k/up; j/down; pgup/pgdn; top/end; u up; b back; f forward; h home-dir; r refresh; a attach; e edit; q quit"
 			continue
 		}
 
@@ -114,10 +122,13 @@ func runFilesystemWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, s
 }
 
 func normalizeFilesystemWidgetCommand(raw string) string {
-	trimmed := strings.ToLower(strings.TrimSpace(raw))
-	if trimmed == "" {
+	if strings.TrimSpace(raw) == "" {
+		if len(raw) > 0 {
+			return "space"
+		}
 		return "enter"
 	}
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
 	switch trimmed {
 	case "left":
 		return "b"
@@ -131,6 +142,14 @@ func normalizeFilesystemWidgetCommand(raw string) string {
 		return "r"
 	case "home":
 		return "h"
+	case "pageup", "pgup", "pu":
+		return "pgup"
+	case "pagedown", "pgdown", "pgdn", "pd":
+		return "pgdn"
+	case "top", "begin", "first":
+		return "top"
+	case "end", "last", "bottom":
+		return "end"
 	case "back":
 		return "b"
 	case "forward":
@@ -156,6 +175,28 @@ func (s *filesystemWidgetState) handleCommand(ctx context.Context, command strin
 	case "j":
 		s.moveSelection(1)
 		s.status = "Selection moved"
+		return nil
+	case "pgup":
+		s.moveSelectionPage(-1)
+		s.status = "Selection moved"
+		return nil
+	case "pgdn":
+		s.moveSelectionPage(1)
+		s.status = "Selection moved"
+		return nil
+	case "top":
+		s.moveSelectionTo(0)
+		s.status = "Selection moved"
+		return nil
+	case "end":
+		s.moveSelectionTo(len(s.entries) - 1)
+		s.status = "Selection moved"
+		return nil
+	case "space", "s", "toggle":
+		if err := s.toggleSoftSelection(); err != nil {
+			return err
+		}
+		s.status = "Selection toggled"
 		return nil
 	case "u":
 		if err := s.navigateParent(); err != nil {
@@ -207,24 +248,40 @@ func (s *filesystemWidgetState) handleCommand(ctx context.Context, command strin
 }
 
 func (s *filesystemWidgetState) render() string {
+	s.ensureSelectionVisible()
+	start, end := s.visibleRange()
+	total := len(s.entries)
+	showFrom := 0
+	showTo := 0
+	if total > 0 {
+		showFrom = start + 1
+		showTo = end
+	}
+
 	lines := []string{
 		"[FILES]",
 		fmt.Sprintf("project: %s", s.projectDir),
 		fmt.Sprintf("current: %s", s.currentDir),
-		"keys: Enter/l open or attach, k/up, j/down, u up, b back, f forward, h home, r refresh, a attach, e edit, q quit",
+		"keys: Enter/l open (hard), space/s toggle (soft), k/up, j/down, pgup/pgdn, top/end, u up, b back, f forward, h home-dir, r refresh, a attach, e edit, q quit",
+		fmt.Sprintf("showing %d-%d of %d", showFrom, showTo, total),
 		fmt.Sprintf("status: %s", strings.TrimSpace(s.status)),
 		"",
 	}
 
-	if len(s.entries) == 0 {
+	if total == 0 {
 		lines = append(lines, "(empty directory)")
 		return strings.Join(lines, "\n")
 	}
 
-	for idx, entry := range s.entries {
+	for idx := start; idx < end; idx++ {
+		entry := s.entries[idx]
 		marker := " "
 		if idx == s.selected {
 			marker = ">"
+		}
+		soft := "[ ]"
+		if s.isSoftSelected(entry) {
+			soft = "[x]"
 		}
 
 		kind := "F"
@@ -236,7 +293,7 @@ func (s *filesystemWidgetState) render() string {
 		if !entry.Exists {
 			kind = "?"
 		}
-		lines = append(lines, fmt.Sprintf("%s [%s] %-36s %8s", marker, kind, trimSingleLine(entry.Name, 36), size))
+		lines = append(lines, fmt.Sprintf("%s%s [%s] %-36s %8s", marker, soft, kind, trimSingleLine(entry.Name, 36), size))
 	}
 
 	return strings.Join(lines, "\n")
@@ -245,6 +302,7 @@ func (s *filesystemWidgetState) render() string {
 func (s *filesystemWidgetState) moveSelection(delta int) {
 	if len(s.entries) == 0 {
 		s.selected = 0
+		s.viewOffset = 0
 		return
 	}
 	next := s.selected + delta
@@ -255,6 +313,123 @@ func (s *filesystemWidgetState) moveSelection(delta int) {
 		next = len(s.entries) - 1
 	}
 	s.selected = next
+	s.ensureSelectionVisible()
+}
+
+func (s *filesystemWidgetState) moveSelectionPage(direction int) {
+	if len(s.entries) == 0 {
+		s.selected = 0
+		s.viewOffset = 0
+		return
+	}
+	step := s.viewportRows - 1
+	if step < 1 {
+		step = 1
+	}
+	s.moveSelection(direction * step)
+}
+
+func (s *filesystemWidgetState) moveSelectionTo(index int) {
+	if len(s.entries) == 0 {
+		s.selected = 0
+		s.viewOffset = 0
+		return
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(s.entries) {
+		index = len(s.entries) - 1
+	}
+	s.selected = index
+	s.ensureSelectionVisible()
+}
+
+func (s *filesystemWidgetState) visibleRange() (int, int) {
+	total := len(s.entries)
+	if total == 0 {
+		return 0, 0
+	}
+	if s.viewportRows <= 0 || s.viewportRows >= total {
+		return 0, total
+	}
+	start := s.viewOffset
+	if start < 0 {
+		start = 0
+	}
+	maxStart := total - s.viewportRows
+	if start > maxStart {
+		start = maxStart
+	}
+	end := start + s.viewportRows
+	if end > total {
+		end = total
+	}
+	return start, end
+}
+
+func (s *filesystemWidgetState) ensureSelectionVisible() {
+	total := len(s.entries)
+	if total == 0 {
+		s.selected = 0
+		s.viewOffset = 0
+		return
+	}
+	if s.selected < 0 {
+		s.selected = 0
+	}
+	if s.selected >= total {
+		s.selected = total - 1
+	}
+	if s.viewportRows <= 0 || s.viewportRows >= total {
+		s.viewOffset = 0
+		return
+	}
+	if s.viewOffset < 0 {
+		s.viewOffset = 0
+	}
+	if s.selected < s.viewOffset {
+		s.viewOffset = s.selected
+	}
+	lastVisible := s.viewOffset + s.viewportRows - 1
+	if s.selected > lastVisible {
+		s.viewOffset = s.selected - s.viewportRows + 1
+	}
+	maxOffset := total - s.viewportRows
+	if s.viewOffset > maxOffset {
+		s.viewOffset = maxOffset
+	}
+}
+
+func (s *filesystemWidgetState) selectionKey(entry filesystemWidgetEntry) string {
+	if strings.TrimSpace(entry.Path) != "" {
+		return entry.Path
+	}
+	return entry.Name
+}
+
+func (s *filesystemWidgetState) isSoftSelected(entry filesystemWidgetEntry) bool {
+	if len(s.softSelected) == 0 {
+		return false
+	}
+	return s.softSelected[s.selectionKey(entry)]
+}
+
+func (s *filesystemWidgetState) toggleSoftSelection() error {
+	entry, err := s.selectedEntry()
+	if err != nil {
+		return err
+	}
+	if s.softSelected == nil {
+		s.softSelected = map[string]bool{}
+	}
+	key := s.selectionKey(entry)
+	if s.softSelected[key] {
+		delete(s.softSelected, key)
+		return nil
+	}
+	s.softSelected[key] = true
+	return nil
 }
 
 func (s *filesystemWidgetState) refresh() error {
@@ -290,8 +465,20 @@ func (s *filesystemWidgetState) refresh() error {
 	})
 
 	s.entries = results
+	if len(s.softSelected) > 0 {
+		active := make(map[string]struct{}, len(results))
+		for _, entry := range results {
+			active[s.selectionKey(entry)] = struct{}{}
+		}
+		for key := range s.softSelected {
+			if _, ok := active[key]; !ok {
+				delete(s.softSelected, key)
+			}
+		}
+	}
 	if len(s.entries) == 0 {
 		s.selected = 0
+		s.viewOffset = 0
 		return nil
 	}
 	if s.selected >= len(s.entries) {
@@ -300,7 +487,20 @@ func (s *filesystemWidgetState) refresh() error {
 	if s.selected < 0 {
 		s.selected = 0
 	}
+	s.ensureSelectionVisible()
 	return nil
+}
+
+func resolveFilesystemViewportRows() int {
+	raw := strings.TrimSpace(os.Getenv("AGENTX_FILES_VIEWPORT_ROWS"))
+	if raw == "" {
+		return defaultFilesystemViewportRows
+	}
+	rows, err := strconv.Atoi(raw)
+	if err != nil || rows <= 0 {
+		return defaultFilesystemViewportRows
+	}
+	return rows
 }
 
 func (s *filesystemWidgetState) navigateTo(path string, addToHistory bool) error {

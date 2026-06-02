@@ -41,8 +41,11 @@ composition logic while preserving UX behavior contracts.
 
 ## Owned Data/State
 
-- Current transitional ownership: configuration surface presentation state in
-  context-tab system rendering.
+- Authoritative ownership (current and target): configuration surface UX
+  closure, acceptance evidence, and sign-off state belong to this
+  `system-settings` applet contract.
+- Transitional runtime hosting: configuration surface may be rendered via
+  context-tab system rendering while migration is in progress.
 - Target ownership after split: system-settings applet owns settings presentation
   state for runtime config and effective overrides.
 

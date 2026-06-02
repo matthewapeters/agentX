@@ -79,7 +79,7 @@ func main() {
 	}
 
 	if *outputWidget {
-		exitCode := runOutputWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdout)
+		exitCode := runOutputWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdin, os.Stdout)
 		if exitCode != 0 {
 			os.Exit(exitCode)
 		}

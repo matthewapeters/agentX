@@ -22,12 +22,15 @@ System-pane runtime tab parity anchors:
 
 The context applet owns the system/session context surfaces as one applet contract.
 
-1. Files surface (File System summary/navigation surface)
-2. Configuration surface (System Settings summary surface)
-3. Context surface (current session/context window summary)
-4. Context-history surface
-5. Working-memory surface
-6. Context-visualizer surface
+1. Context surface (current session/context window summary)
+2. Context-history surface
+3. Working-memory surface
+4. Context-visualizer surface
+
+Transitional render-host surfaces (not authoritative ownership):
+
+5. Files surface (transitional host for first-class `filesystem` applet)
+6. Configuration surface (transitional host for first-class `system-settings` applet)
 
 ## Affordance List
 
@@ -52,13 +55,15 @@ The context applet owns the system/session context surfaces as one applet contra
   - context history/current context summary,
   - working-memory summary rows,
   - context visualizer meter/status rows,
-  - transitional files/configuration tab surfaces.
+  - transitional files/configuration render-host routing only.
 - Does not own persistence for working memory or context message storage.
 
 Notes:
 
 - Working Memory belongs to the Session-tab context composition, not a separate top-level runtime applet.
-- Files and Configuration are represented as context-app applet surfaces/tabs in current Go runtime.
+- Files and Configuration may be rendered in context-app tabs in the current Go
+  runtime, but authoritative ownership remains with first-class
+  `filesystem`/`system-settings` applet contracts.
 - File System and System Settings split-vs-compose decision is finalized as
   first-class runtime applets; current context-tab ownership is transitional
   until split runtimes land and tmuxp composition wiring is complete.
@@ -102,9 +107,9 @@ Applet process launch index: `2`.
 - `input` applet: context-file registration and prompt activity signals affect
   context summary and prompt-cycle visibility.
 - `filesystem` applet (target split): files-tab responsibilities are transitional
-  here until first-class split and tmuxp composition are complete.
+  here as render-host behavior until first-class split and tmuxp composition are complete.
 - `system-settings` applet (target split): configuration-tab responsibilities are
-  transitional here until first-class split and tmuxp composition are complete.
+  transitional here as render-host behavior until first-class split and tmuxp composition are complete.
 - `output`/`logs` applets: context lifecycle state must remain consistent with
   rendered prompt lifecycle and diagnostics.
 

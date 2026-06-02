@@ -38,6 +38,33 @@ Primary runtime sources:
 5. `filesystem` applet (first-class target, tmuxp-composed): `filesystem_applet.md`
 6. `system-settings` applet (first-class target, tmuxp-composed): `system_settings_applet.md`
 
+## Ownership Model (Normative)
+
+To remove cross-doc ambiguity, ownership is defined using two distinct terms:
+
+- Authoritative owner: the applet contract responsible for UX requirement
+  closure, acceptance evidence, and sign-off state for a surface.
+- Transitional render host: a temporary runtime host that may render the
+  surface while migration is in progress.
+
+Single authoritative ownership per system surface:
+
+- Files surface (`PD-18-AF-004`) -> `filesystem` applet (authoritative owner)
+- Configuration surface (`PD-18-AF-003`) -> `system-settings` applet
+  (authoritative owner)
+- Context-history surface (`PD-18-AF-002`) -> `context` applet
+  (authoritative owner)
+- Working-memory surface (`PD-18-AF-005`) -> `context` applet
+  (authoritative owner, unless UX spec changes)
+- Context-visualizer surface (`PD-18-AF-006`) -> `context` applet
+  (authoritative owner)
+
+Transitional hosting note:
+
+- `context` may temporarily host Files/Configuration rendering during migration,
+  but this does not transfer authoritative ownership from
+  `filesystem` / `system-settings`.
+
 ## UX Affordance Ownership Matrix
 
 This is the compact ownership map from UX affordance IDs to runtime applets.
@@ -66,6 +93,20 @@ This is the compact ownership map from UX affordance IDs to runtime applets.
 - Current open migration work is primarily about runtime inventory/traceability
   alignment and split-runtime completion for these applets, while preserving UX
   behavior parity during transition.
+
+## Sign-off Signal Policy
+
+To remove contradictory "closed vs reopened" language:
+
+- "Closed" is valid only when the authoritative owner for a surface has
+  current unit + integration/functional evidence and traceability rows are
+  reconciled in UX lifecycle artifacts.
+- If migration or inventory drift is discovered later, that surface status must
+  be explicitly marked "Re-opened" with the reason, and all prior global
+  closure language must be treated as historical context rather than current
+  state.
+- A transitional render host cannot be used to claim closure for a surface it
+  does not authoritatively own.
 
 ## Launch Order (Applet Processes)
 

@@ -178,3 +178,44 @@ func TestRunInputWidgetCommand_ClearDoesNotPrintClearedLine(t *testing.T) {
 		t.Fatalf("expected input clear escape sequence for submitted commands, got output:\n%s", widgetOutput)
 	}
 }
+
+func TestRunInputWidgetCommand_HelpIsHandledLocally(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/submit" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		requests++
+
+		var req submitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode submit request: %v", err)
+		}
+
+		response := "ok"
+		if req.Prompt == ":q" {
+			response = "quit"
+		}
+		_ = json.NewEncoder(w).Encode(submitResponse{Response: response})
+	}))
+	defer server.Close()
+
+	input := bytes.NewBufferString(":help\n:q\n")
+	output := &bytes.Buffer{}
+
+	exitCode := runInputWidgetCommand(server.URL, input, output)
+	if exitCode != 0 {
+		t.Fatalf("expected zero exit code, got %d", exitCode)
+	}
+	if requests != 1 {
+		t.Fatalf("expected exactly one submit request (:q only), got %d", requests)
+	}
+
+	widgetOutput := output.String()
+	if !strings.Contains(widgetOutput, "Available commands:") {
+		t.Fatalf("expected local help text in output, got:\n%s", widgetOutput)
+	}
+	if !strings.Contains(widgetOutput, ":context-add <path>") {
+		t.Fatalf("expected context-add command discoverability in help text, got:\n%s", widgetOutput)
+	}
+}

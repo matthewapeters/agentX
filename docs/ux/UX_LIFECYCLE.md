@@ -494,10 +494,12 @@ implements it and the test that validates it.  Status legend:
 | Context visualizer applet renders capacity and prompt-cycle status | PD-18-AF-006 | `renderContextWidget()` default case + `e2e-system-tour-001` live demo validator | `context_widget_test.go`, `tests/test_demo_system_panel_tour_headless.sh` | package-level tests + headless e2e | ✅ |
 | Visible startup mode exposes one window per applet for UAT | PD-18-AF-007 | `main.go` `--startup-mode` flag + `config.go` `normalizeStartupMode()` | `config_startup_mode_test.go` | package-level tests | ✅ |
 
-### Runtime Applet Sign-off Closure (2026-06-01)
+### Runtime Applet Sign-off Status (2026-06-01 baseline; later reopen applied)
 
-The applet-by-applet UX traceability sign-off closure is complete for active
-Go-runtime surfaces. Each runtime applet/surface below has:
+This table records a 2026-06-01 sign-off baseline and the current reopened
+state where applicable. It is not a blanket "all applets closed" statement.
+Each runtime applet/surface row reflects current status as shown in `Sign-off`.
+Evidence expectations remain:
 
 - a dedicated PD affordance specification row,
 - a matching traceability row in this matrix, and

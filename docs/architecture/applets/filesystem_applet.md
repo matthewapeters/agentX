@@ -48,8 +48,11 @@ logic while preserving UX behavior defined in panel and flow specs.
 
 ## Owned Data/State
 
-- Current transitional ownership: files surface presentation state in context-tab
-  system rendering.
+- Authoritative ownership (current and target): files surface UX closure,
+  acceptance evidence, and sign-off state belong to this `filesystem` applet
+  contract.
+- Transitional runtime hosting: files surface may be rendered via context-tab
+  system rendering while migration is in progress.
 - Target ownership after split: filesystem applet owns file listing/selection
   presentation state and navigation summary state for its dedicated runtime.
 

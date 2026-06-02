@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -14,13 +15,18 @@ import (
 func TestNormalizeFilesystemWidgetCommand(t *testing.T) {
 	cases := map[string]string{
 		"":        "enter",
-		"   ":     "enter",
+		" ":       "space",
+		"   ":     "space",
 		"left":    "b",
 		"RIGHT":   "f",
 		"up":      "k",
 		"down":    "j",
 		"refresh": "r",
 		"home":    "h",
+		"pageup":  "pgup",
+		"pgdn":    "pgdn",
+		"top":     "top",
+		"end":     "end",
 		"parent":  "u",
 		"open":    "enter",
 		"attach":  "a",
@@ -66,14 +72,147 @@ func TestFilesystemWidgetActivateSelection_DirectoryNavigates(t *testing.T) {
 
 func TestFilesystemWidgetRender_IncludesAttachAndEditActions(t *testing.T) {
 	state := &filesystemWidgetState{
-		projectDir: "/tmp/project",
-		currentDir: "/tmp/project",
-		status:     "Ready",
+		projectDir:   "/tmp/project",
+		currentDir:   "/tmp/project",
+		viewportRows: 12,
+		status:       "Ready",
 	}
 
 	rendered := state.render()
 	if !strings.Contains(rendered, "a attach, e edit") {
 		t.Fatalf("expected render key legend to include attach/edit actions, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "space/s toggle (soft)") {
+		t.Fatalf("expected render key legend to include soft select action, got:\n%s", rendered)
+	}
+}
+
+func TestFilesystemWidgetRender_OverflowOrientationAndSelectionVisibility(t *testing.T) {
+	entries := make([]filesystemWidgetEntry, 0, 8)
+	for i := 0; i < 8; i++ {
+		entries = append(entries, filesystemWidgetEntry{
+			Name:   "item-" + strconv.Itoa(i),
+			Path:   filepath.Join("/tmp", "item-"+strconv.Itoa(i)),
+			Exists: true,
+		})
+	}
+
+	state := &filesystemWidgetState{
+		projectDir:   "/tmp/project",
+		currentDir:   "/tmp/project",
+		entries:      entries,
+		selected:     0,
+		viewOffset:   0,
+		viewportRows: 3,
+		status:       "Ready",
+	}
+
+	state.moveSelectionTo(6)
+	rendered := state.render()
+
+	if !strings.Contains(rendered, "showing 5-7 of 8") {
+		t.Fatalf("expected deterministic overflow orientation, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, ">[ ] [F] item-6") {
+		t.Fatalf("expected selected row to remain visible in rendered viewport, got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "item-0") {
+		t.Fatalf("expected rows outside viewport to be hidden in overflow render, got:\n%s", rendered)
+	}
+}
+
+func TestFilesystemWidgetHandleCommand_PageNavigation(t *testing.T) {
+	entries := make([]filesystemWidgetEntry, 0, 20)
+	for i := 0; i < 20; i++ {
+		entries = append(entries, filesystemWidgetEntry{Name: "f" + strconv.Itoa(i), Path: "/tmp/f" + strconv.Itoa(i), Exists: true})
+	}
+
+	state := &filesystemWidgetState{entries: entries, viewportRows: 5}
+
+	if err := state.handleCommand(context.Background(), "pgdn"); err != nil {
+		t.Fatalf("pgdn returned error: %v", err)
+	}
+	if state.selected != 4 {
+		t.Fatalf("expected pgdn to move selection by page, got %d", state.selected)
+	}
+
+	if err := state.handleCommand(context.Background(), "end"); err != nil {
+		t.Fatalf("end returned error: %v", err)
+	}
+	if state.selected != 19 {
+		t.Fatalf("expected end to move to last row, got %d", state.selected)
+	}
+
+	if err := state.handleCommand(context.Background(), "top"); err != nil {
+		t.Fatalf("top returned error: %v", err)
+	}
+	if state.selected != 0 {
+		t.Fatalf("expected top to move to first row, got %d", state.selected)
+	}
+}
+
+func TestFilesystemWidgetHandleCommand_SoftSelectToggleVisibleInRender(t *testing.T) {
+	state := &filesystemWidgetState{
+		projectDir:   "/tmp/project",
+		currentDir:   "/tmp/project",
+		entries:      []filesystemWidgetEntry{{Name: "file.txt", Path: "/tmp/file.txt", Exists: true}},
+		selected:     0,
+		viewportRows: 5,
+		softSelected: map[string]bool{},
+	}
+
+	if err := state.handleCommand(context.Background(), "space"); err != nil {
+		t.Fatalf("space returned error: %v", err)
+	}
+	rendered := state.render()
+	if !strings.Contains(rendered, ">[x] [F] file.txt") {
+		t.Fatalf("expected soft-selected state marker in render, got:\n%s", rendered)
+	}
+
+	if err := state.handleCommand(context.Background(), "space"); err != nil {
+		t.Fatalf("second space returned error: %v", err)
+	}
+	rendered = state.render()
+	if !strings.Contains(rendered, ">[ ] [F] file.txt") {
+		t.Fatalf("expected soft-selected marker to clear after second toggle, got:\n%s", rendered)
+	}
+}
+
+func TestFilesystemWidgetHandleCommand_ReturnHardSelectActivates(t *testing.T) {
+	projectDir := t.TempDir()
+	filePath := filepath.Join(projectDir, "note.txt")
+	if err := os.WriteFile(filePath, []byte("hello"), 0o644); err != nil {
+		t.Fatalf("failed creating file: %v", err)
+	}
+
+	var recordedPrompt string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/submit" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var req submitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed decoding submit request: %v", err)
+		}
+		recordedPrompt = req.Prompt
+		_ = json.NewEncoder(w).Encode(submitResponse{Response: "ok"})
+	}))
+	defer server.Close()
+
+	state := &filesystemWidgetState{
+		baseURL:      strings.TrimRight(server.URL, "/"),
+		projectDir:   projectDir,
+		currentDir:   projectDir,
+		entries:      []filesystemWidgetEntry{{Name: "note.txt", Path: filePath, Exists: true}},
+		selected:     0,
+		viewportRows: 5,
+	}
+
+	if err := state.handleCommand(context.Background(), "enter"); err != nil {
+		t.Fatalf("enter returned error: %v", err)
+	}
+	if got, want := recordedPrompt, ":context-add "+filePath; got != want {
+		t.Fatalf("expected hard-select enter to trigger primary action prompt %q, got %q", want, got)
 	}
 }
 
@@ -117,7 +256,7 @@ func TestFilesystemWidgetHandleCommand_EditLaunchesEditorWindow(t *testing.T) {
 
 	filePath := filepath.Join(t.TempDir(), "notes file.txt")
 	state := &filesystemWidgetState{
-		entries: []filesystemWidgetEntry{{Name: filepath.Base(filePath), Path: filePath, IsDir: false, Exists: true}},
+		entries:  []filesystemWidgetEntry{{Name: filepath.Base(filePath), Path: filePath, IsDir: false, Exists: true}},
 		selected: 0,
 	}
 
@@ -176,5 +315,22 @@ func TestHumanFileSize(t *testing.T) {
 	}
 	if got := humanFileSize(1024); !strings.Contains(got, "KB") {
 		t.Fatalf("expected KB representation, got %q", got)
+	}
+}
+
+func TestResolveFilesystemViewportRows_DefaultAndInvalidFallback(t *testing.T) {
+	t.Setenv("AGENTX_FILES_VIEWPORT_ROWS", "")
+	if got := resolveFilesystemViewportRows(); got != defaultFilesystemViewportRows {
+		t.Fatalf("expected default rows %d, got %d", defaultFilesystemViewportRows, got)
+	}
+
+	t.Setenv("AGENTX_FILES_VIEWPORT_ROWS", "abc")
+	if got := resolveFilesystemViewportRows(); got != defaultFilesystemViewportRows {
+		t.Fatalf("expected invalid value fallback to default rows %d, got %d", defaultFilesystemViewportRows, got)
+	}
+
+	t.Setenv("AGENTX_FILES_VIEWPORT_ROWS", "7")
+	if got := resolveFilesystemViewportRows(); got != 7 {
+		t.Fatalf("expected explicit rows 7, got %d", got)
 	}
 }

@@ -65,6 +65,45 @@ func TestRenderOutputWidget_UsesPaneLifecycleContract(t *testing.T) {
 	}
 }
 
+func TestRenderOutputWidgetWithViewState_CollapsesThinkingBlock(t *testing.T) {
+	view := newOutputWidgetViewState()
+	view.applyCommand(":collapse 1", 1)
+
+	render := renderOutputWidgetWithViewState(outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns: []ChatTurn{{Prompt: "status?", Response: "all green"}},
+		PromptCycle: PromptCycleStatus{
+			Thinking: PromptCyclePhase{State: "done", ElapsedMs: 11},
+		},
+	}, 80, 200, view)
+
+	if !strings.Contains(render, "💭 [thinking block - collapsed]") {
+		t.Fatalf("expected collapsed thinking block marker, got:\n%s", render)
+	}
+	if strings.Contains(render, "💭 [thinking block - done (00:00:00.011)]") {
+		t.Fatalf("did not expect expanded thinking marker after collapse, got:\n%s", render)
+	}
+}
+
+func TestOutputWidgetViewState_HelpAndFocusCommands(t *testing.T) {
+	view := newOutputWidgetViewState()
+	view.applyCommand(":help", 2)
+	if !view.showHelp {
+		t.Fatal("expected help panel to be visible after :help")
+	}
+
+	view.applyCommand(":focus 1", 2)
+	if view.focusedTurn != 1 {
+		t.Fatalf("expected focused turn 1, got %d", view.focusedTurn)
+	}
+
+	view.applyCommand(":next", 2)
+	if view.focusedTurn != 2 {
+		t.Fatalf("expected focused turn 2 after :next, got %d", view.focusedTurn)
+	}
+}
+
 func TestRunOutputWidgetLoop_SkipsDuplicateFrames(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/context" {
