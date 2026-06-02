@@ -180,11 +180,11 @@ level, UX clarity, requirements coverage, and unresolved ambiguity.
 
 | Applet | Professional level | UX clarity | Requirements met | Ambiguity present | Queue action |
 | --- | --- | --- | --- | --- | --- |
-| `chat/output` | Partial | Good | Partial | No (direction selected) | Execute Path A backlog and close with PD-01 evidence. |
-| `input` | Partial | Good | Partial | No (direction selected) | Execute Path A backlog and close with PD-02 evidence. |
+| `chat/output` | Partial | Good | Partial | No | Execute Path A backlog and close with PD-01 evidence. |
+| `input` | Partial | Good | Partial | No | Execute Path A backlog and close with PD-02 evidence. |
 | `logs` | Yes (current scope) | Good | Mostly | No | Maintain diagnostics readability and lifecycle evidence; no new blocker row. |
 | `context` | Partial | Mixed | Partial | Yes | Complete ownership closure execution and keep PD-18 re-opened until evidence is complete. |
-| `filesystem` | Partial | Partial | Partial | No (direction selected) | Complete remaining PD-11 evidence closure and finalize multi-select action semantics. |
+| `filesystem` | Partial | Partial | Partial | No | Complete remaining PD-11 evidence closure and finalize multi-select action semantics. |
 | `system-settings` | Partial | Good | Partial | Yes | Execute system-settings parity closure tied to `PD-07` and `PD-18-AF-003`. |
 
 Review counts (after Path A direction selection):
