@@ -18,30 +18,31 @@ import (
 
 func main() {
 	var (
-		projectDir      = flag.String("project-dir", ".", "Project directory for sessions and config")
-		username        = flag.String("user", os.Getenv("USER"), "Username for session isolation")
-		sessionID       = flag.String("session-id", "", "Session ID; auto-generated if empty")
-		inputWidget     = flag.Bool("input-widget", false, "Run native Go input widget mode over stdin/stdout")
-		outputWidget    = flag.Bool("output-widget", false, "Run native Go output widget mode over stdout")
-		logsWidget      = flag.Bool("logs-widget", false, "Run native Go logs widget mode over stdout")
-		contextWidget   = flag.Bool("context-widget", false, "Run native Go context widget mode over stdout")
-		coreHTTP        = flag.String("core-http", strings.TrimSpace(os.Getenv("AGENTX_CORE_HTTP")), "Core HTTP base URL for widget/bridge modes")
-		layout          = flag.String("layout", "", "tmuxp layout file to apply after core windows are created (defaults to .agentx/layouts/default-layout.yaml)")
-		layoutFile      = flag.String("layout-file", "", "Legacy alias for --layout")
-		layoutTemplate  = flag.String("layout-template", "", "Write a starter tmuxp layout template to this file and exit")
+		projectDir            = flag.String("project-dir", ".", "Project directory for sessions and config")
+		username              = flag.String("user", os.Getenv("USER"), "Username for session isolation")
+		sessionID             = flag.String("session-id", "", "Session ID; auto-generated if empty")
+		inputWidget           = flag.Bool("input-widget", false, "Run native Go input widget mode over stdin/stdout")
+		outputWidget          = flag.Bool("output-widget", false, "Run native Go output widget mode over stdout")
+		logsWidget            = flag.Bool("logs-widget", false, "Run native Go logs widget mode over stdout")
+		contextWidget         = flag.Bool("context-widget", false, "Run native Go context widget mode over stdout")
+		filesystemWidget      = flag.Bool("filesystem-widget", false, "Run native Go filesystem widget mode over stdin/stdout")
+		coreHTTP              = flag.String("core-http", strings.TrimSpace(os.Getenv("AGENTX_CORE_HTTP")), "Core HTTP base URL for widget/bridge modes")
+		layout                = flag.String("layout", "", "tmuxp layout file to apply after core windows are created (defaults to .agentx/layouts/default-layout.yaml)")
+		layoutFile            = flag.String("layout-file", "", "Legacy alias for --layout")
+		layoutTemplate        = flag.String("layout-template", "", "Write a starter tmuxp layout template to this file and exit")
 		dumpDefaultLayoutPath = flag.String("dump-default-layout", "", "Write the built-in default tmuxp layout to a file path, or '-' for stdout")
-		startupMode     = flag.String("startup-mode", resolveStartupModeDefault(), "Startup topology mode: default|visible-windows")
-		attach          = flag.Bool("attach", true, "Attach to tmux session after startup (use -attach=false for headless mode)")
-		demo            = flag.Bool("demo", false, "Run DemoMode with a split tmux controller and live core session")
-		demoDefault     = flag.Bool("default", false, "Use default frame-based startup topology (works for normal and demo startup)")
-		demoWindowed    = flag.Bool("windowed", false, "Use windowed startup topology (works for normal and demo startup)")
-		demoHeadless    = flag.Bool("demo-headless", false, "Run DemoMode without the split-pane controller (internal)")
-		demoController  = flag.Bool("demo-controller", false, "Run the split-pane DemoMode controller pane (internal)")
-		demoSplit       = flag.Bool("demo-split", false, "Enable split-view controller behavior (internal)")
-		demoStoriesFile = flag.String("demo-stories-file", "", "Stories board file path for split-view demo mode (internal)")
-		demoStart       = flag.String("demo-start", "", "Demo start selector (test id or 1-based index). Requires a demo mode flag")
-		demoCoreSession = flag.String("demo-core-session", "", "Live core tmux session used by the DemoMode controller (internal)")
-		healthAddr      = flag.String("health-addr", "", "Health endpoint address override for internal controller/runtime wiring")
+		startupMode           = flag.String("startup-mode", resolveStartupModeDefault(), "Startup topology mode: default|visible-windows")
+		attach                = flag.Bool("attach", true, "Attach to tmux session after startup (use -attach=false for headless mode)")
+		demo                  = flag.Bool("demo", false, "Run DemoMode with a split tmux controller and live core session")
+		demoDefault           = flag.Bool("default", false, "Use default frame-based startup topology (works for normal and demo startup)")
+		demoWindowed          = flag.Bool("windowed", false, "Use windowed startup topology (works for normal and demo startup)")
+		demoHeadless          = flag.Bool("demo-headless", false, "Run DemoMode without the split-pane controller (internal)")
+		demoController        = flag.Bool("demo-controller", false, "Run the split-pane DemoMode controller pane (internal)")
+		demoSplit             = flag.Bool("demo-split", false, "Enable split-view controller behavior (internal)")
+		demoStoriesFile       = flag.String("demo-stories-file", "", "Stories board file path for split-view demo mode (internal)")
+		demoStart             = flag.String("demo-start", "", "Demo start selector (test id or 1-based index). Requires a demo mode flag")
+		demoCoreSession       = flag.String("demo-core-session", "", "Live core tmux session used by the DemoMode controller (internal)")
+		healthAddr            = flag.String("health-addr", "", "Health endpoint address override for internal controller/runtime wiring")
 	)
 	flag.Parse()
 
@@ -101,6 +102,14 @@ func main() {
 		return
 	}
 
+	if *filesystemWidget {
+		exitCode := runFilesystemWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdin, os.Stdout)
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
+	}
+
 	if strings.TrimSpace(*layoutTemplate) != "" && strings.TrimSpace(*dumpDefaultLayoutPath) != "" {
 		log.Fatalf("--layout-template and --dump-default-layout cannot be used together")
 	}
@@ -151,10 +160,10 @@ func main() {
 		}()
 
 		cfg := &Config{
-			ProjectDir: *projectDir,
-			Username:   *username,
-			SessionID:  *sessionID,
-			LayoutFile: resolvedLayoutFile,
+			ProjectDir:  *projectDir,
+			Username:    *username,
+			SessionID:   *sessionID,
+			LayoutFile:  resolvedLayoutFile,
 			StartupMode: demoStartupMode,
 		}
 
@@ -281,10 +290,10 @@ func main() {
 		}()
 
 		cfg := &Config{
-			ProjectDir: *projectDir,
-			Username:   *username,
-			SessionID:  *sessionID,
-			LayoutFile: resolvedLayoutFile,
+			ProjectDir:  *projectDir,
+			Username:    *username,
+			SessionID:   *sessionID,
+			LayoutFile:  resolvedLayoutFile,
 			StartupMode: demoStartupMode,
 		}
 
@@ -317,10 +326,10 @@ func main() {
 	}()
 
 	cfg := &Config{
-		ProjectDir: *projectDir,
-		Username:   *username,
-		SessionID:  *sessionID,
-		LayoutFile: resolvedLayoutFile,
+		ProjectDir:  *projectDir,
+		Username:    *username,
+		SessionID:   *sessionID,
+		LayoutFile:  resolvedLayoutFile,
 		StartupMode: resolvedStartupMode,
 	}
 

@@ -7,6 +7,13 @@ runtime surfaces that need UX traceability.  Each section documents the
 widget's purpose, all user-visible controls, and the callback wiring to session
 logic.
 
+Authoritative contract rule:
+
+- This document defines required user-facing affordances independent of delivery
+  technology.
+- Implementations may be GUI, TUI, or hybrid, but must satisfy these UX
+  behaviors without weakening the contract.
+
 Each section should follow the component cut-sheet standard in
 [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md).
 

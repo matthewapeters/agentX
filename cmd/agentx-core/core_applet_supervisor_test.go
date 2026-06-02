@@ -24,7 +24,7 @@ func TestStartAppletSupervisorTracksDefaultPanes(t *testing.T) {
 	}
 
 	snapshot := core.healthSnapshot()
-	expected := len(DefaultPaneLayout())
+	expected := len(core.defaultAppletRuntimeSpecs())
 	if len(snapshot.Applets) != expected {
 		t.Fatalf("expected %d applets, got %d", expected, len(snapshot.Applets))
 	}
@@ -41,6 +41,9 @@ func TestStartAppletSupervisorTracksDefaultPanes(t *testing.T) {
 		}
 		if applet.Name == "logs" && applet.Runtime != string(appletRuntimeGo) {
 			t.Fatalf("expected logs applet runtime %q, got %q", appletRuntimeGo, applet.Runtime)
+		}
+		if isDedicatedSystemAppletTab(applet.Name) && applet.Runtime != string(appletRuntimeGo) {
+			t.Fatalf("expected dedicated applet %s runtime %q, got %q", applet.Name, appletRuntimeGo, applet.Runtime)
 		}
 	}
 }
@@ -131,6 +134,20 @@ func TestStartAppletSupervisor_LaunchesPaneAppletProcesses(t *testing.T) {
 	if !strings.Contains(commands, "--logs-widget --core-http") {
 		t.Fatalf("expected native go logs widget launch args for logs pane, got:\n%s", commands)
 	}
+	for _, tab := range dedicatedSystemAppletTabs {
+		if !strings.Contains(commands, "AGENTX_APPLET_NAME='"+tab+"'") {
+			t.Fatalf("expected dedicated applet launch for %s, got:\n%s", tab, commands)
+		}
+		if tab == "files" {
+			if !strings.Contains(commands, "--filesystem-widget --core-http") {
+				t.Fatalf("expected files applet launch args for filesystem widget, got:\n%s", commands)
+			}
+			continue
+		}
+		if !strings.Contains(commands, "AGENTX_CONTEXT_WIDGET_TAB='"+tab+"'") {
+			t.Fatalf("expected dedicated applet context widget tab env for %s, got:\n%s", tab, commands)
+		}
+	}
 	if !strings.Contains(commands, "AGENTX_CHAT_BACKEND='ollama'") {
 		t.Fatalf("expected backend env in pane launch command, got:\n%s", commands)
 	}
@@ -210,6 +227,50 @@ func TestBuildPaneAppletLaunchCommand_LogsPaneUsesNativeWidget(t *testing.T) {
 	}
 	if strings.Contains(cmd, "template.py") {
 		t.Fatalf("expected logs pane not to launch python template applet, got:\n%s", cmd)
+	}
+}
+
+func TestBuildPaneAppletLaunchCommand_FilesAppletUsesFilesystemWidget(t *testing.T) {
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-dedicated-launch"}
+	core := NewAgentXCore(cfg)
+	core.healthAddr = "127.0.0.1:33333"
+	core.runtimeConfig.SubmitTimeout = 10 * time.Second
+
+	base := core.buildAppletBaseRuntimeConfig()
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "files", PaneName: "files", Runtime: appletRuntimeGo}, base)
+
+	if !strings.Contains(cmd, "--filesystem-widget --core-http") {
+		t.Fatalf("expected filesystem widget launch args for files applet, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='files'") {
+		t.Fatalf("expected dedicated applet name env var, got:\n%s", cmd)
+	}
+	if strings.Contains(cmd, "AGENTX_CONTEXT_WIDGET_TAB='files'") {
+		t.Fatalf("expected files applet not to use context widget tab env var, got:\n%s", cmd)
+	}
+}
+
+func TestDefaultAppletRuntimeSpecs_DedicatedSystemTabsUseGoRuntime(t *testing.T) {
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-dedicated-runtime-specs"}
+	core := NewAgentXCore(cfg)
+
+	specs := core.defaultAppletRuntimeSpecs()
+	byName := make(map[string]appletRuntimeSpec, len(specs))
+	for _, spec := range specs {
+		byName[spec.Name] = spec
+	}
+
+	for _, tab := range dedicatedSystemAppletTabs {
+		spec, ok := byName[tab]
+		if !ok {
+			t.Fatalf("expected dedicated runtime spec for tab %q", tab)
+		}
+		if spec.Runtime != appletRuntimeGo {
+			t.Fatalf("expected dedicated tab %q runtime %q, got %q", tab, appletRuntimeGo, spec.Runtime)
+		}
+		if spec.PaneName != tab {
+			t.Fatalf("expected dedicated tab %q pane name %q, got %q", tab, tab, spec.PaneName)
+		}
 	}
 }
 

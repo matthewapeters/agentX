@@ -351,6 +351,17 @@ const (
 	defaultAgentIdentityPrompt         = "You are AgentX, a private local assistant focused on helping the user complete tasks accurately and safely. Identify yourself as AgentX when asked."
 )
 
+var dedicatedSystemAppletTabs = []string{"files", "configuration", "context-history", "working-memory"}
+
+func isDedicatedSystemAppletTab(name string) bool {
+	for _, tab := range dedicatedSystemAppletTabs {
+		if tab == name {
+			return true
+		}
+	}
+	return false
+}
+
 // AgentXCore orchestrates the tmux session, applets, and IPC.
 type AgentXCore struct {
 	Config                    *Config
@@ -442,10 +453,11 @@ type PromptCycleStatus struct {
 
 // ActivitySnapshot reports session-level activity state for lightweight UI affordances.
 type ActivitySnapshot struct {
-	SessionID   string            `json:"session_id"`
-	State       string            `json:"state"`
-	Phase       string            `json:"phase"`
-	PromptCycle PromptCycleStatus `json:"prompt_cycle"`
+	SessionID    string            `json:"session_id"`
+	State        string            `json:"state"`
+	Phase        string            `json:"phase"`
+	PromptCycle  PromptCycleStatus `json:"prompt_cycle"`
+	ContextFiles []string          `json:"context_files,omitempty"`
 }
 
 func deriveActivityState(promptCycle PromptCycleStatus) (state string, phase string) {
@@ -518,7 +530,7 @@ func resolveChatRuntimeKind(raw string) appletRuntimeKind {
 }
 
 func (ac *AgentXCore) defaultAppletRuntimeSpecs() []appletRuntimeSpec {
-	specs := make([]appletRuntimeSpec, 0, len(DefaultPaneLayout()))
+	specs := make([]appletRuntimeSpec, 0, len(DefaultPaneLayout())+len(dedicatedSystemAppletTabs))
 	chatRuntime := resolveChatRuntimeKind(ac.runtimeConfig.ChatRuntime)
 	for _, pane := range DefaultPaneLayout() {
 		runtime := appletRuntimePython
@@ -532,6 +544,13 @@ func (ac *AgentXCore) defaultAppletRuntimeSpecs() []appletRuntimeSpec {
 			Name:     pane.Name,
 			PaneName: pane.Name,
 			Runtime:  runtime,
+		})
+	}
+	for _, tab := range dedicatedSystemAppletTabs {
+		specs = append(specs, appletRuntimeSpec{
+			Name:     tab,
+			PaneName: tab,
+			Runtime:  appletRuntimeGo,
 		})
 	}
 	return specs
@@ -715,6 +734,10 @@ func (ac *AgentXCore) initializeVisibleWindowsTmuxLayout(ctx context.Context) er
 	ac.paneTargetByName[PaneTitleSystem] = ac.tmuxSessionName + ":3.0"
 	ac.paneTargetByName["context"] = ac.tmuxSessionName + ":3.0"
 
+	if err := ac.ensureDedicatedSystemAppletWindows(ctx, 4); err != nil {
+		return fmt.Errorf("failed to create dedicated system applet windows in visible-windows mode: %w", err)
+	}
+
 	if strings.TrimSpace(ac.Config.LayoutFile) != "" {
 		log.Printf("[AgentX Core] startup mode '%s': layout overlay is ignored", visibleWindowsStartupMode)
 	}
@@ -756,6 +779,10 @@ func (ac *AgentXCore) initializeDefaultTmuxLayout(ctx context.Context) error {
 	ac.paneTargetByName["context"] = contextPaneTarget
 	ac.paneTargetByName[PaneTitleLogs] = ac.tmuxSessionName + ":1.0"
 	ac.paneTargetByName["logs"] = ac.tmuxSessionName + ":1.0"
+
+	if err := ac.ensureDedicatedSystemAppletWindows(ctx, 2); err != nil {
+		return fmt.Errorf("failed to create dedicated system applet windows: %w", err)
+	}
 
 	if err := ac.applyOptionalLayoutOverlay(ctx); err != nil {
 		return fmt.Errorf("failed to apply optional layout overlay: %w", err)
@@ -843,6 +870,19 @@ func buildInputSplitCommand(chatPaneTarget string) []string {
 
 func buildContextSplitCommand(chatPaneTarget string) []string {
 	return []string{"split-window", "-P", "-F", "#{pane_id}", "-t", chatPaneTarget, "-h", "-p", "20"}
+}
+
+func (ac *AgentXCore) ensureDedicatedSystemAppletWindows(ctx context.Context, startIndex int) error {
+	for offset, tab := range dedicatedSystemAppletTabs {
+		windowIndex := startIndex + offset
+		windowTarget := fmt.Sprintf("%s:%d", ac.tmuxSessionName, windowIndex)
+		if err := ac.runTmux(ctx, "new-window", "-t", windowTarget, "-n", tab); err != nil {
+			return err
+		}
+		paneTarget := windowTarget + ".0"
+		ac.paneTargetByName[tab] = paneTarget
+	}
+	return nil
 }
 
 func (ac *AgentXCore) applyOptionalLayoutOverlay(ctx context.Context) error {
@@ -1252,7 +1292,7 @@ func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
 	base := ac.buildAppletBaseRuntimeConfig()
 
 	for _, spec := range ac.defaultAppletRuntimeSpecs() {
-		if spec.Runtime == appletRuntimeGo && spec.Name != "input" && spec.Name != "context" && spec.Name != "chat" && spec.Name != "logs" {
+		if spec.Runtime == appletRuntimeGo && spec.Name != "input" && spec.Name != "context" && spec.Name != "chat" && spec.Name != "logs" && !isDedicatedSystemAppletTab(spec.Name) {
 			continue
 		}
 		if spec.Runtime == appletRuntimePython {
@@ -1317,16 +1357,16 @@ func shellEnvPrefix(env map[string]string) string {
 
 func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base appletBaseRuntimeConfig) string {
 	baseEnv := map[string]string{
-		"AGENTX_APPLET_NAME":         spec.Name,
-		"AGENTX_SESSION_ID":          base.SessionID,
-		"AGENTX_CORE_HTTP":           base.CoreHTTP,
-		"AGENTX_PROJECT_DIR":         base.ProjectDir,
-		"AGENTX_USERNAME":            base.Username,
-		"AGENTX_APPLET_RUNTIME":      string(spec.Runtime),
-		"AGENTX_SUBMIT_TIMEOUT_SEC":  base.SubmitTimeoutSeconds,
-		"AGENTX_CHAT_BACKEND":        base.ChatBackend,
-		"AGENTX_OLLAMA_HOST":         base.OllamaHost,
-		"AGENTX_OLLAMA_MODEL":        base.OllamaModel,
+		"AGENTX_APPLET_NAME":                 spec.Name,
+		"AGENTX_SESSION_ID":                  base.SessionID,
+		"AGENTX_CORE_HTTP":                   base.CoreHTTP,
+		"AGENTX_PROJECT_DIR":                 base.ProjectDir,
+		"AGENTX_USERNAME":                    base.Username,
+		"AGENTX_APPLET_RUNTIME":              string(spec.Runtime),
+		"AGENTX_SUBMIT_TIMEOUT_SEC":          base.SubmitTimeoutSeconds,
+		"AGENTX_CHAT_BACKEND":                base.ChatBackend,
+		"AGENTX_OLLAMA_HOST":                 base.OllamaHost,
+		"AGENTX_OLLAMA_MODEL":                base.OllamaModel,
 		"AGENTX_CORE_OWNS_STARTUP_BOOTSTRAP": "1",
 	}
 
@@ -1349,6 +1389,23 @@ func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base 
 			)
 		}
 		if spec.Name == "context" {
+			return fmt.Sprintf(
+				"%s %s --context-widget --core-http %s",
+				shellEnvPrefix(baseEnv),
+				shellSingleQuote(ac.coreExecutablePath),
+				shellSingleQuote(base.CoreHTTP),
+			)
+		}
+		if spec.Name == "files" {
+			return fmt.Sprintf(
+				"%s %s --filesystem-widget --core-http %s",
+				shellEnvPrefix(baseEnv),
+				shellSingleQuote(ac.coreExecutablePath),
+				shellSingleQuote(base.CoreHTTP),
+			)
+		}
+		if isDedicatedSystemAppletTab(spec.Name) {
+			baseEnv["AGENTX_CONTEXT_WIDGET_TAB"] = spec.Name
 			return fmt.Sprintf(
 				"%s %s --context-widget --core-http %s",
 				shellEnvPrefix(baseEnv),
@@ -1466,9 +1523,9 @@ func (ac *AgentXCore) routePromptViaGoChatBackend(ctx context.Context, prompt st
 	messages = append(messages, map[string]string{"role": "user", "content": trimmedPrompt})
 
 	payload := map[string]interface{}{
-		"model": ac.runtimeConfig.OllamaModel,
+		"model":    ac.runtimeConfig.OllamaModel,
 		"messages": messages,
-		"stream": false,
+		"stream":   false,
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -2166,6 +2223,18 @@ func (ac *AgentXCore) HandleInputLine(ctx context.Context, line string) (respons
 	ac.appendInputHistory(trimmedLine)
 
 	if strings.HasPrefix(trimmedLine, ":") {
+		if strings.HasPrefix(trimmedLine, ":context-add ") || strings.HasPrefix(trimmedLine, ":ctx-add ") {
+			parts := strings.SplitN(trimmedLine, " ", 2)
+			if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+				return "", false, fmt.Errorf("usage: :context-add <file-path>")
+			}
+			filePath := strings.TrimSpace(parts[1])
+			if err := ac.contextManager.AddContextFile(filePath); err != nil {
+				return "", false, fmt.Errorf("failed adding context file: %w", err)
+			}
+			return "context-added", false, nil
+		}
+
 		switch trimmedLine {
 		case ":clear":
 			inputPaneTarget := ac.paneTargetForName(PaneTitleInput)
@@ -2362,30 +2431,36 @@ func (ac *AgentXCore) Shutdown(ctx context.Context) error {
 
 // ContextManager handles session context (state, messages, tools).
 type ContextManager struct {
-	contextDir       string
-	sessionID        string
-	startedAt        time.Time
-	snapshotProvider func() HealthSnapshot
-	submitProvider   func(context.Context, string) (string, error)
-	submitTimeout    time.Duration
-	shutdownProvider func(context.Context) error
-	turns            []ChatTurn
-	turnsLoaded      bool
-	mu               sync.RWMutex
+	contextDir         string
+	sessionID          string
+	startedAt          time.Time
+	snapshotProvider   func() HealthSnapshot
+	submitProvider     func(context.Context, string) (string, error)
+	submitTimeout      time.Duration
+	shutdownProvider   func(context.Context) error
+	turns              []ChatTurn
+	turnsLoaded        bool
+	contextFiles       []string
+	contextFilesLoaded bool
+	mu                 sync.RWMutex
 }
 
 // NewContextManager creates a new context manager.
 func NewContextManager(contextDir string) *ContextManager {
 	return &ContextManager{
-		contextDir: contextDir,
-		startedAt:  time.Now(),
+		contextDir:    contextDir,
+		startedAt:     time.Now(),
 		submitTimeout: 120 * time.Second,
-		turns:      make([]ChatTurn, 0),
+		turns:         make([]ChatTurn, 0),
 	}
 }
 
 func (cm *ContextManager) turnsFilePath() string {
 	return filepath.Join(cm.contextDir, "turns.jsonl")
+}
+
+func (cm *ContextManager) contextFilesPath() string {
+	return filepath.Join(cm.contextDir, "context_files.json")
 }
 
 func (cm *ContextManager) loadTurnsLocked() error {
@@ -2424,6 +2499,92 @@ func (cm *ContextManager) loadTurnsLocked() error {
 
 	cm.turnsLoaded = true
 	return nil
+}
+
+func (cm *ContextManager) loadContextFilesLocked() error {
+	if cm.contextFilesLoaded {
+		return nil
+	}
+
+	cm.contextFiles = make([]string, 0)
+	data, err := os.ReadFile(cm.contextFilesPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			cm.contextFilesLoaded = true
+			return nil
+		}
+		return err
+	}
+
+	trimmedData := strings.TrimSpace(string(data))
+	if trimmedData == "" {
+		cm.contextFilesLoaded = true
+		return nil
+	}
+
+	var files []string
+	if err := json.Unmarshal([]byte(trimmedData), &files); err != nil {
+		return err
+	}
+
+	for _, candidate := range files {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed != "" {
+			cm.contextFiles = append(cm.contextFiles, filepath.Clean(trimmed))
+		}
+	}
+	cm.contextFilesLoaded = true
+	return nil
+}
+
+func (cm *ContextManager) AddContextFile(filePath string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if err := cm.loadContextFilesLocked(); err != nil {
+		return err
+	}
+
+	trimmed := strings.TrimSpace(filePath)
+	if trimmed == "" {
+		return fmt.Errorf("file path cannot be empty")
+	}
+	cleaned := filepath.Clean(trimmed)
+	for _, existing := range cm.contextFiles {
+		if existing == cleaned {
+			return nil
+		}
+	}
+
+	if err := os.MkdirAll(cm.contextDir, 0o755); err != nil {
+		return err
+	}
+
+	cm.contextFiles = append(cm.contextFiles, cleaned)
+	encoded, err := json.Marshal(cm.contextFiles)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(cm.contextFilesPath(), encoded, 0o644); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (cm *ContextManager) ContextFilesSnapshot() []string {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if err := cm.loadContextFilesLocked(); err != nil {
+		log.Printf("[AgentX Core] Failed to load context files snapshot: %v", err)
+		return []string{}
+	}
+
+	files := make([]string, len(cm.contextFiles))
+	copy(files, cm.contextFiles)
+	return files
 }
 
 // RecordTurn appends a completed chat turn to in-memory and persisted context.
@@ -2629,11 +2790,13 @@ func (cm *ContextManager) HealthHandler() http.Handler {
 		snapshot := cm.snapshot()
 		promptCycle := snapshot.PromptCycle
 		activityState, activityPhase := deriveActivityState(promptCycle)
+		contextFiles := cm.ContextFilesSnapshot()
 		writeJSON(w, http.StatusOK, ActivitySnapshot{
-			SessionID:   snapshot.SessionID,
-			State:       activityState,
-			Phase:       activityPhase,
-			PromptCycle: promptCycle,
+			SessionID:    snapshot.SessionID,
+			State:        activityState,
+			Phase:        activityPhase,
+			PromptCycle:  promptCycle,
+			ContextFiles: contextFiles,
 		})
 	})
 

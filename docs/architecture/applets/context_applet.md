@@ -29,6 +29,32 @@ The context applet owns the system/session context surfaces as one applet contra
 5. Working-memory surface
 6. Context-visualizer surface
 
+## Affordance List
+
+- `PD-18-AF-001`: system frame binding by semantic title/role.
+- `PD-18-AF-002`: context-history rendering contract.
+- `PD-18-AF-005`: working-memory summary rendering contract.
+- `PD-18-AF-006`: context visualizer capacity/prompt-cycle rendering contract.
+- `PD-18-AF-007`: participates in visible-windows startup topology.
+- `PD-03` / `PD-08` alignment: session context and working-memory composition
+  behavior remains authoritative for this applet contract.
+
+## Command/Input Model
+
+- Terminal widget role: primarily read-only context/session render surface.
+- Direct user command parser: none in current contract.
+- Input source: core context snapshots, active-session state, and system applet
+  host routing.
+
+## Owned Data/State
+
+- Owns context/session presentation state for:
+  - context history/current context summary,
+  - working-memory summary rows,
+  - context visualizer meter/status rows,
+  - transitional files/configuration tab surfaces.
+- Does not own persistence for working memory or context message storage.
+
 Notes:
 
 - Working Memory belongs to the Session-tab context composition, not a separate top-level runtime applet.
@@ -71,9 +97,37 @@ Applet process launch index: `2`.
 - Tab resolution uses system applet host routing for specialized surfaces.
 - Context applet remains the single runtime applet host for these surfaces in current topology.
 
+## Integration Touchpoints
+
+- `input` applet: context-file registration and prompt activity signals affect
+  context summary and prompt-cycle visibility.
+- `filesystem` applet (target split): files-tab responsibilities are transitional
+  here until first-class split and tmuxp composition are complete.
+- `system-settings` applet (target split): configuration-tab responsibilities are
+  transitional here until first-class split and tmuxp composition are complete.
+- `output`/`logs` applets: context lifecycle state must remain consistent with
+  rendered prompt lifecycle and diagnostics.
+
+## Test Evidence Targets
+
+- Unit anchors:
+  - `cmd/agentx-core/context_widget_test.go`
+  - `cmd/agentx-core/core_system_renderer_test.go`
+  - `cmd/agentx-core/system_applet_working_memory.go` coverage via core tests
+- Integration/functional anchors:
+  - `cmd/agentx-core/demo_harness.go` (`e2e-system-001`, `e2e-system-tour-001`)
+  - `cmd/agentx-core/demo_harness_test.go`
+  - `tests/test_demo_system_panel_tour_headless.sh`
+
 ## Open Parity Notes
 
 - `PD-18` traceability remains re-opened while system-surface scope alignment is being reconciled in active migration work.
 - First-class split delivery for File System and System Settings must preserve
   this UX ownership map at the composed view level and be orchestrated through
   tmuxp layout composition.
+
+## Gap Note
+
+- This contract is sufficient for current implementation ownership, but it is
+  intentionally transitional for files/configuration surfaces while first-class
+  `filesystem` and `system-settings` runtime split work remains open.

@@ -8,12 +8,19 @@ UI feature — from first written description through code implementation, herme
 testing, and as-built reconciliation.  Both the developer and the AI agent refer to
 this document when specifying, building, changing, or removing UI affordances.
 
+Authoritative contract rule:
+
+- UX requirements in this document are implementation-agnostic.
+- Delivery technology (GUI, TUI, hybrid) is an implementation concern and must
+  conform to UX requirements, not redefine them.
+
 ---
 
 ## Tab/Surface Parity Matrix (Source of Truth)
 
-The rows below are the current active parity rows and reflect the reconciled
-runtime state.
+The rows below define required parity outcomes for user-visible surfaces.
+Runtime ownership and implementation evidence are informative as-built metadata,
+not permission to weaken UX behavior.
 
 |GUI Tab / Surface|TUI Analog / Surface|Owner (Go/Py)|Test / Contract|Status|
 |---|---|---|---|---|

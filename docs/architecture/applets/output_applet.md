@@ -17,6 +17,27 @@ Runtime entry: `agentx-core --output-widget`
 - Startup greeting render surface
 - Prompt lifecycle rows rendered during a prompt cycle
 
+## Affordance List
+
+- `PD-17-AF-011`: startup greeting appears in output at session start.
+- `PD-17-AF-012`: prompt lifecycle rows stream in deterministic order.
+- `PD-01` alignment target: output rendering must stay behavior-compatible with
+  chat/output lifecycle expectations documented for ChatPanel.
+
+## Command/Input Model
+
+- Terminal widget role: render sink only.
+- Direct user command entry: none.
+- Input source: core-owned prompt lifecycle events generated after input applet
+  submission and orchestration decisions.
+
+## Owned Data/State
+
+- Owns presentation state only: visible output rows for startup and prompt
+  lifecycle rendering.
+- Does not own prompt orchestration state, tool execution state, or context
+  lifecycle transitions.
+
 ## UX Flow Coverage
 
 - Flow A startup greeting parity
@@ -45,6 +66,30 @@ Applet process launch index: `1` (first applet process launched by core).
 - Output applet is a render consumer of core-owned prompt lifecycle and turn state.
 - No ownership of orchestration state transitions.
 
+## Integration Touchpoints
+
+- `input` applet: receives render updates for prompt submissions initiated by
+  input command handling.
+- `context` applet: prompt-cycle visibility and context-sensitive output rows
+  must remain consistent with current context snapshot signals.
+- `logs` applet: diagnostics for output lifecycle should be correlated via core
+  runtime telemetry rather than duplicated output-side state.
+
+## Test Evidence Targets
+
+- Unit/integration anchors:
+  - `cmd/agentx-core/demo_harness_test.go`
+- Functional/UAT anchors:
+  - `cmd/agentx-core/demo_harness.go` (`e2e-greet-001`, `e2e-cycle-001`)
+  - `tests/test_demo_ux_use_cases_headless.sh`
+
 ## Open Parity Notes
 
 - Keep aligned with `PD-01` output interaction affordances and any context-menu parity updates.
+
+## Gap Note
+
+- UX contract coverage is strong for startup/lifecycle rows, but terminal output
+  parity does not yet claim full one-to-one coverage for all GUI-only `PD-01`
+  interactive affordances (for example, per-entry collapse controls and output
+  context-menu interactions).

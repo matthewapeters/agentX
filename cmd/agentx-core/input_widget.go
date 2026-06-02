@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ type widgetActivitySnapshot struct {
 	State       string            `json:"state"`
 	Phase       string            `json:"phase"`
 	PromptCycle PromptCycleStatus `json:"prompt_cycle"`
+	ContextFiles []string         `json:"context_files,omitempty"`
 }
 
 type widgetActivityState struct {
@@ -29,6 +31,7 @@ type widgetActivityState struct {
 	doneUntil  time.Time
 	failUntil  time.Time
 	sessionID  string
+	contextFile string
 }
 
 func newWidgetActivityState() *widgetActivityState {
@@ -48,25 +51,33 @@ func (ws *widgetActivityState) update(snapshot widgetActivitySnapshot) {
 	if ws.state == "failed" {
 		ws.failUntil = now.Add(2000 * time.Millisecond)
 	}
+	ws.contextFile = ""
+	if n := len(snapshot.ContextFiles); n > 0 {
+		ws.contextFile = filepath.Base(strings.TrimSpace(snapshot.ContextFiles[n-1]))
+	}
 }
 
 func (ws *widgetActivityState) promptLabel() string {
 	ws.mu.RLock()
 	defer ws.mu.RUnlock()
 	now := time.Now()
+	contextSuffix := ""
+	if ws.contextFile != "" {
+		contextSuffix = fmt.Sprintf("[ctx:%s]", ws.contextFile)
+	}
 	if ws.state == "working" {
 		if ws.phase != "" && ws.phase != "none" {
-			return fmt.Sprintf("agentx[%s]", ws.phase)
+			return fmt.Sprintf("agentx[%s]%s", ws.phase, contextSuffix)
 		}
-		return "agentx[working]"
+		return "agentx[working]" + contextSuffix
 	}
 	if now.Before(ws.failUntil) {
-		return "agentx[failed]"
+		return "agentx[failed]" + contextSuffix
 	}
 	if now.Before(ws.doneUntil) {
-		return "agentx[done]"
+		return "agentx[done]" + contextSuffix
 	}
-	return "agentx"
+	return "agentx" + contextSuffix
 }
 
 func startWidgetActivityPoller(baseURL string, target *widgetActivityState) func() {

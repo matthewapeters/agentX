@@ -2,7 +2,33 @@
 
 <!-- markdownlint-disable MD036 MD060 MD047 -->
 
-Last updated: 2026-06-01 (execution-enabled)
+Last updated: 2026-06-02 (execution-enabled)
+
+## Latest Runtime Delta (2026-06-02)
+
+- Dedicated system applet windows are now created at startup so users can cycle
+  through them with tmux window navigation (`C-b n`):
+  - `files`
+  - `configuration`
+  - `context-history`
+  - `working-memory`
+- Core render loop now continuously updates those dedicated applet windows in
+  addition to the composed system pane view.
+- Input applet interaction contract now includes context-file registration via:
+  - `:context-add <file-path>` (alias: `:ctx-add <file-path>`)
+- Input applet prompt label now visualizes the most recent context file from
+  `/activity` snapshot metadata (cross-applet UX signal).
+
+Validation evidence:
+
+- Focused tests:
+  - `TestInitializeTmuxSession_PrimaryWindowSelectionRegression`
+  - `TestInitializeTmuxSession_VisibleWindowsStartupMode`
+  - `TestHandleInputLine_ContextAddCommand`
+  - `TestWidgetActivityState_PromptLabelIncludesContextFile`
+  - `TestFetchWidgetActivitySnapshot_Success`
+- Full core module regression:
+  - `cd /Projects/agentX/cmd/agentx-core && go test ./...`
 
 ## Purpose
 
@@ -11,6 +37,9 @@ It is now the single planning reference for unfinished runtime and UX parity wor
 
 Authoritative direction:
 
+- UX documentation is authoritative for requirements and affordances. It is
+  implementation-agnostic (GUI/TUI/hybrid) and must not be regressed to fit the
+  current runtime.
 - Go core is the main runtime application and must orchestrate the full
   prompt-classification-thinking-tool-response cycle.
 - Go core manages communications between applets and owns runtime state transitions.
@@ -90,7 +119,8 @@ runtime-level applet inventory and UX-required surfaces are not yet aligned.
 Remaining work includes closing this applet-scope gap in addition to broader
 runtime and UX parity gaps.
 
-Remaining work is implementation-first, not documentation-first.
+Remaining work is implementation-first and must converge to the UX contract;
+requirements do not change to accommodate implementation shortcuts.
 
 Go applet architecture policy:
 

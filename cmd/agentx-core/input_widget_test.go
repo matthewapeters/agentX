@@ -82,7 +82,7 @@ func TestFetchWidgetActivitySnapshot_Success(t *testing.T) {
 		if r.Method != http.MethodGet || r.URL.Path != "/activity" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(widgetActivitySnapshot{SessionID: "sess-1", State: "working", Phase: "thinking"})
+		_ = json.NewEncoder(w).Encode(widgetActivitySnapshot{SessionID: "sess-1", State: "working", Phase: "thinking", ContextFiles: []string{"src/agentx/session.py"}})
 	}))
 	defer server.Close()
 
@@ -98,6 +98,9 @@ func TestFetchWidgetActivitySnapshot_Success(t *testing.T) {
 	}
 	if snapshot.Phase != "thinking" {
 		t.Fatalf("expected phase thinking, got %q", snapshot.Phase)
+	}
+	if len(snapshot.ContextFiles) != 1 || snapshot.ContextFiles[0] != "src/agentx/session.py" {
+		t.Fatalf("expected context files in snapshot, got %#v", snapshot.ContextFiles)
 	}
 }
 
@@ -121,6 +124,19 @@ func TestWidgetActivityState_PromptLabelTransitions(t *testing.T) {
 	time.Sleep(1300 * time.Millisecond)
 	if got := state.promptLabel(); got != "agentx" {
 		t.Fatalf("expected prompt label to return to agentx, got %q", got)
+	}
+}
+
+func TestWidgetActivityState_PromptLabelIncludesContextFile(t *testing.T) {
+	state := newWidgetActivityState()
+	state.update(widgetActivitySnapshot{State: "idle", Phase: "none", ContextFiles: []string{"src/agentx/session.py"}})
+	if got := state.promptLabel(); got != "agentx[ctx:session.py]" {
+		t.Fatalf("expected context label suffix, got %q", got)
+	}
+
+	state.update(widgetActivitySnapshot{State: "working", Phase: "thinking", ContextFiles: []string{"docs/ux/06_TUI_MIRROR.md"}})
+	if got := state.promptLabel(); got != "agentx[thinking][ctx:06_TUI_MIRROR.md]" {
+		t.Fatalf("expected working label with context suffix, got %q", got)
 	}
 }
 

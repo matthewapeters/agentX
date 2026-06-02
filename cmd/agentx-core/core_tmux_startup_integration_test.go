@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -55,6 +56,12 @@ func TestInitializeTmuxSession_PrimaryWindowSelectionRegression(t *testing.T) {
 	}
 	if !strings.Contains(commands, "new-window -t "+core.tmuxSessionName+":1 -n "+tmuxLogsWindow) {
 		t.Fatalf("expected startup to create logs window with deterministic name, commands:\n%s", commands)
+	}
+	for idx, tab := range []string{"files", "configuration", "context-history", "working-memory"} {
+		expected := "new-window -t " + core.tmuxSessionName + ":" + strconv.Itoa(2+idx) + " -n " + tab
+		if !strings.Contains(commands, expected) {
+			t.Fatalf("expected dedicated applet window %q, commands:\n%s", expected, commands)
+		}
 	}
 	if !strings.Contains(commands, "select-window -t "+core.tmuxSessionName+":0") {
 		t.Fatalf("expected startup to re-select window 0 after logs creation, commands:\n%s", commands)
@@ -117,6 +124,12 @@ func TestInitializeTmuxSession_VisibleWindowsStartupMode(t *testing.T) {
 	}
 	if !strings.Contains(commands, "new-window -t "+core.tmuxSessionName+":3 -n "+PaneTitleSystem) {
 		t.Fatalf("expected system window in visible-windows mode, commands:\n%s", commands)
+	}
+	for idx, tab := range []string{"files", "configuration", "context-history", "working-memory"} {
+		expected := "new-window -t " + core.tmuxSessionName + ":" + strconv.Itoa(4+idx) + " -n " + tab
+		if !strings.Contains(commands, expected) {
+			t.Fatalf("expected dedicated applet window %q in visible-windows mode, commands:\n%s", expected, commands)
+		}
 	}
 	if !strings.Contains(commands, "select-window -t "+core.tmuxSessionName+":2") {
 		t.Fatalf("expected input window selection in visible-windows mode, commands:\n%s", commands)

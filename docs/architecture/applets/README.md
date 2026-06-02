@@ -104,3 +104,31 @@ A parity-closed claim for any applet requires:
 2. Widget/surface inventory is complete for that applet.
 3. UX flows are mapped to executable tests.
 4. Launch contract (`order` + `session:window`) is documented and validated.
+
+## Contract Completeness Standard
+
+Each applet contract in this folder must include the following implementation
+handoff sections so parallel experts can execute without ambiguity:
+
+1. Affordance list (mapped to UX IDs, especially PD-11 and PD-18 where relevant).
+2. Command/input model (for terminal widgets: accepted commands, key inputs, or
+   explicit read-only behavior).
+3. Owned data/state (what state the applet owns vs consumes from core).
+4. Launch/runtime contract (entrypoint, launch order, tmux target).
+5. Integration touchpoints with other applets (especially input/context coupling).
+6. Explicit test evidence targets (unit + integration/functional anchors).
+7. Gap note when UX contract expectations exceed current runtime implementation.
+
+## Sufficiency Decision (2026-06-02)
+
+Decision: applet docs are now sufficient for parallel implementation handoff,
+with explicit gap notes preserved where runtime split and parity closure are
+still in progress.
+
+Primary open implementation gaps captured in applet docs:
+
+- First-class split runtime for `filesystem` and `system-settings` remains
+  transitional through `context` tab ownership.
+- `PD-18` rows are documented as UX-tested at the spec layer, but active runtime
+  inventory/ownership reconciliation remains open in
+  `docs/hybrid_remaining_work.md`.

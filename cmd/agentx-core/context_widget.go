@@ -110,6 +110,11 @@ func fetchContextWidgetSnapshot(ctx context.Context, baseURL string) (contextWid
 }
 
 func resolveContextWidgetTab() string {
+	override := normalizeSystemTab(strings.TrimSpace(os.Getenv("AGENTX_CONTEXT_WIDGET_TAB")))
+	if override != "" && override != "full" {
+		return override
+	}
+
 	projectDir := strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR"))
 	if projectDir == "" {
 		return "context-visualizer"

@@ -208,3 +208,31 @@ func TestRenderContextWidget_ConfigurationTabContract(t *testing.T) {
 		t.Fatalf("configuration widget tab should not include file preview rows, got:\n%s", render)
 	}
 }
+
+func TestResolveContextWidgetTab_UsesEnvironmentOverride(t *testing.T) {
+	oldTab, hadTab := os.LookupEnv("AGENTX_CONTEXT_WIDGET_TAB")
+	oldProjectDir, hadProjectDir := os.LookupEnv("AGENTX_PROJECT_DIR")
+	defer func() {
+		if hadTab {
+			_ = os.Setenv("AGENTX_CONTEXT_WIDGET_TAB", oldTab)
+		} else {
+			_ = os.Unsetenv("AGENTX_CONTEXT_WIDGET_TAB")
+		}
+		if hadProjectDir {
+			_ = os.Setenv("AGENTX_PROJECT_DIR", oldProjectDir)
+		} else {
+			_ = os.Unsetenv("AGENTX_PROJECT_DIR")
+		}
+	}()
+
+	if err := os.Setenv("AGENTX_PROJECT_DIR", t.TempDir()); err != nil {
+		t.Fatalf("Setenv AGENTX_PROJECT_DIR failed: %v", err)
+	}
+	if err := os.Setenv("AGENTX_CONTEXT_WIDGET_TAB", "files"); err != nil {
+		t.Fatalf("Setenv AGENTX_CONTEXT_WIDGET_TAB failed: %v", err)
+	}
+
+	if got := resolveContextWidgetTab(); got != "files" {
+		t.Fatalf("expected files tab from environment override, got %q", got)
+	}
+}

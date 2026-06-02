@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -180,5 +181,59 @@ func TestHandleInputLine_ForwardingErrorPropagates(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "chat applet is not registered") {
 		t.Fatalf("expected chat applet registration error, got %v", err)
+	}
+}
+
+// TestHandleInputLine_ContextAddCommand validates applet-interaction state updates.
+//
+// GIVEN an initialized core runtime
+// WHEN the input command :context-add <file> is submitted
+// THEN the context manager tracks that file for cross-applet visualization.
+func TestHandleInputLine_ContextAddCommand(t *testing.T) {
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "tester", SessionID: "s-context-add"}
+	core := NewAgentXCore(cfg)
+
+	resp, shouldExit, err := core.HandleInputLine(context.Background(), ":context-add src/agentx/session.py")
+	if err != nil {
+		t.Fatalf("HandleInputLine returned error: %v", err)
+	}
+	if shouldExit {
+		t.Fatal("expected shouldExit false for :context-add")
+	}
+	if resp != "context-added" {
+		t.Fatalf("expected context-added response, got %q", resp)
+	}
+
+	files := core.contextManager.ContextFilesSnapshot()
+	if len(files) != 1 {
+		t.Fatalf("expected one context file, got %d (%v)", len(files), files)
+	}
+	if files[0] != filepath.Clean("src/agentx/session.py") {
+		t.Fatalf("expected normalized context file path, got %q", files[0])
+	}
+}
+
+// TestHandleInputLine_ContextAddCommand_UpdatesInputPromptContextLabel validates
+// cross-applet visibility from files/context actions into input prompt state.
+//
+// GIVEN a context-add command updates core context files
+// WHEN input widget activity state is refreshed from context files snapshot
+// THEN prompt label includes the attached file basename.
+func TestHandleInputLine_ContextAddCommand_UpdatesInputPromptContextLabel(t *testing.T) {
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "tester", SessionID: "s-context-label"}
+	core := NewAgentXCore(cfg)
+
+	_, shouldExit, err := core.HandleInputLine(context.Background(), ":context-add docs/ux/02_USER_FLOWS.md")
+	if err != nil {
+		t.Fatalf("HandleInputLine returned error: %v", err)
+	}
+	if shouldExit {
+		t.Fatal("expected shouldExit false for :context-add")
+	}
+
+	state := newWidgetActivityState()
+	state.update(widgetActivitySnapshot{State: "idle", Phase: "none", ContextFiles: core.contextManager.ContextFilesSnapshot()})
+	if got := state.promptLabel(); got != "agentx[ctx:02_USER_FLOWS.md]" {
+		t.Fatalf("expected context-aware input prompt label, got %q", got)
 	}
 }
