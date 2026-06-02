@@ -19,6 +19,17 @@ Last updated: 2026-06-02 (execution-enabled)
 - Input applet prompt label now visualizes the most recent context file from
   `/activity` snapshot metadata (cross-applet UX signal).
 
+Parallel Track Delta (A/B/C) on 2026-06-02:
+
+- Track A (`output`): per-entry interactive commands were expanded with
+  entry-focused collapse/expand/toggle behavior and deterministic app-level
+  copy actions.
+- Track B (`input`): multiline compose mode was implemented with explicit
+  `:multiline`/`:submit`/`:cancel` flow and discoverability updates.
+- Track C (`filesystem`): persistent soft-select set behavior was integrated
+  with deterministic multi-file attach compatibility while preserving
+  Enter/Return hard-select semantics.
+
 Validation evidence:
 
 - Focused tests:
@@ -151,16 +162,16 @@ Go applet architecture policy:
 | Traceability correction    | Remove stale "complete" claims where implementation remains partial            | Keeps engineering state honest and executable                                 | In progress          |
 | Code reality audit         | Verify still-stubbed logic in `cmd/agentx-core`, `applets/template.py`, and `src/agentx` | Confirms actual implementation coverage against UX contracts                   | Completed            |
 | Files overflow parity requirements | Implement `PD-11-AF-011..014` in TUI filesystem applet (viewport/paging/overflow status + evidence) | Professional-grade file navigation requires deterministic behavior beyond visible viewport | In progress |
-| Files keyboard affordance parity | Implement `PD-11-AF-015..017` (arrow navigation, `Space` soft-select, `Return` hard-select) with visible selection-state feedback | User-expected TUI file navigation affordances must match UX contract | In progress |
+| Files keyboard affordance parity | Implement `PD-11-AF-015..017` (arrow navigation, `Space` soft-select, `Return` hard-select) with visible selection-state feedback | User-expected TUI file navigation affordances must match UX contract | In progress (core implementation landed; parity evidence closure pending) |
 | No-obvious-path escalation protocol | Enforce `PD-11-AF-018`: case-by-case user decision required when an affordance lacks clear TUI implementation path | Prevents silent de-scoping and protects UX-authoritative delivery | In progress |
 | Output affordance parity scope closure | Reconcile `PD-01` interactive affordances with TUI output implementation and close approved parity scope | Prevents implicit de-scoping and contradictory sign-off language | In progress |
-| Output per-entry interactive parity (Path A) | Implement full per-entry interactive controls in TUI output surface (`PD-01`) | User-selected direction requires feature-equivalent TUI interaction fidelity | In progress |
-| Output explicit copy actions (Path A) | Implement deterministic app-level TUI copy actions for output (`PD-01-AF-010`) | Avoids terminal-dependent behavior drift and closes copy affordance parity | In progress |
+| Output per-entry interactive parity (Path A) | Implement full per-entry interactive controls in TUI output surface (`PD-01`) | User-selected direction requires feature-equivalent TUI interaction fidelity | In progress (initial per-entry controls landed; deep parity closure pending) |
+| Output explicit copy actions (Path A) | Implement deterministic app-level TUI copy actions for output (`PD-01-AF-010`) | Avoids terminal-dependent behavior drift and closes copy affordance parity | In progress (deterministic in-app copy landed; final parity evidence pending) |
 | Input affordance parity closure | Close remaining `PD-02` parity deltas for command behavior/discoverability and acceptance evidence | Keeps prompt-entry UX consistent and auditable across runtimes | In progress |
-| Input multiline parity (Path A) | Implement richer multiline key handling for TUI input (`PD-02`) | User-selected direction prioritizes multiline interaction fidelity over simplified single-line flow | In progress |
+| Input multiline parity (Path A) | Implement richer multiline key handling for TUI input (`PD-02`) | User-selected direction prioritizes multiline interaction fidelity over simplified single-line flow | In progress (compose-mode multiline landed; keybinding parity confirmation pending) |
 | Context ownership ambiguity closure | Resolve context vs split applet ownership boundaries and normalize naming across architecture/UX docs | Eliminates ambiguity that causes contradictory completion reporting | In progress |
 | System settings parity closure | Finalize system-settings dedicated-runtime acceptance criteria and evidence mapping to `PD-07`/`PD-18-AF-003` | Required for professional-grade applet sign-off | In progress |
-| Files persistent multi-select semantics (Path A) | Implement persistent `Space` soft-select set behavior with explicit visible state and action compatibility (`PD-11-AF-016`) | User-selected direction aligns with professional TUI file-manager patterns | In progress |
+| Files persistent multi-select semantics (Path A) | Implement persistent `Space` soft-select set behavior with explicit visible state and action compatibility (`PD-11-AF-016`) | User-selected direction aligns with professional TUI file-manager patterns | In progress (persistent set + attach compatibility landed; remaining action semantics to finalize) |
 
 ## Applet Readiness Review (2026-06-02)
 
@@ -169,12 +180,12 @@ level, UX clarity, requirements coverage, and unresolved ambiguity.
 
 | Applet | Professional level | UX clarity | Requirements met | Ambiguity present | Queue action |
 | --- | --- | --- | --- | --- | --- |
-| `chat/output` | Partial | Good | Partial | Yes | Add output affordance parity scope closure row and block complete sign-off until resolved. |
-| `input` | Partial | Good | Partial | Yes | Add input affordance parity closure row and block complete sign-off until resolved. |
+| `chat/output` | Partial | Good | Partial | No (direction selected) | Execute Path A backlog and close with PD-01 evidence. |
+| `input` | Partial | Good | Partial | No (direction selected) | Execute Path A backlog and close with PD-02 evidence. |
 | `logs` | Yes (current scope) | Good | Mostly | No | Maintain diagnostics readability and lifecycle evidence; no new blocker row. |
-| `context` | Partial | Mixed | Partial | Yes | Add context ownership ambiguity closure row and keep PD-18 re-opened. |
-| `filesystem` | No (not yet) | Partial | No | Yes | Add files overflow parity requirements row for `PD-11-AF-011..014`. |
-| `system-settings` | Partial | Good | Partial | Yes | Add system-settings parity closure row tied to `PD-07` and `PD-18-AF-003`. |
+| `context` | Partial | Mixed | Partial | Yes | Complete ownership closure execution and keep PD-18 re-opened until evidence is complete. |
+| `filesystem` | Partial | Partial | Partial | No (direction selected) | Complete remaining PD-11 evidence closure and finalize multi-select action semantics. |
+| `system-settings` | Partial | Good | Partial | Yes | Execute system-settings parity closure tied to `PD-07` and `PD-18-AF-003`. |
 
 Review counts (after Path A direction selection):
 

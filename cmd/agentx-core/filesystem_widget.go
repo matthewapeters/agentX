@@ -231,10 +231,15 @@ func (s *filesystemWidgetState) handleCommand(ctx context.Context, command strin
 	case "enter", "l":
 		return s.activateSelection(ctx)
 	case "a":
-		if err := s.addSelectedToContext(ctx); err != nil {
+		addedCount, err := s.addSelectedToContext(ctx)
+		if err != nil {
 			return err
 		}
-		s.status = "Added selected file to context"
+		if addedCount == 1 {
+			s.status = "Added selected file to context"
+		} else {
+			s.status = fmt.Sprintf("Added %d selected files to context", addedCount)
+		}
 		return nil
 	case "e":
 		if err := s.editSelected(); err != nil {
@@ -580,18 +585,56 @@ func (s *filesystemWidgetState) activateSelection(ctx context.Context) error {
 		s.status = "Entered directory"
 		return nil
 	}
-	if err := s.addSelectedToContext(ctx); err != nil {
+	if err := s.addEntryToContext(ctx, entry); err != nil {
 		return err
 	}
 	s.status = "Added selected file to context"
 	return nil
 }
 
-func (s *filesystemWidgetState) addSelectedToContext(ctx context.Context) error {
-	entry, err := s.selectedEntry()
+func (s *filesystemWidgetState) addSelectedToContext(ctx context.Context) (int, error) {
+	entries, err := s.entriesForContextAction()
 	if err != nil {
-		return err
+		return 0, err
 	}
+	if strings.TrimSpace(s.baseURL) == "" {
+		return 0, errors.New("missing core HTTP base URL")
+	}
+
+	for _, entry := range entries {
+		if err := s.addEntryToContext(ctx, entry); err != nil {
+			return 0, err
+		}
+	}
+	return len(entries), nil
+}
+
+func (s *filesystemWidgetState) entriesForContextAction() ([]filesystemWidgetEntry, error) {
+	softEntries := s.softSelectedEntriesInViewOrder()
+	if len(softEntries) == 0 {
+		entry, err := s.selectedEntry()
+		if err != nil {
+			return nil, err
+		}
+		if entry.IsDir {
+			return nil, errors.New("selection is a directory; choose a file")
+		}
+		return []filesystemWidgetEntry{entry}, nil
+	}
+
+	fileEntries := make([]filesystemWidgetEntry, 0, len(softEntries))
+	for _, entry := range softEntries {
+		if !entry.IsDir {
+			fileEntries = append(fileEntries, entry)
+		}
+	}
+	if len(fileEntries) == 0 {
+		return nil, errors.New("soft-selected entries are directories; choose a file")
+	}
+	return fileEntries, nil
+}
+
+func (s *filesystemWidgetState) addEntryToContext(ctx context.Context, entry filesystemWidgetEntry) error {
 	if entry.IsDir {
 		return errors.New("selection is a directory; choose a file")
 	}
@@ -606,6 +649,19 @@ func (s *filesystemWidgetState) addSelectedToContext(ctx context.Context) error 
 		return submitErr
 	}
 	return nil
+}
+
+func (s *filesystemWidgetState) softSelectedEntriesInViewOrder() []filesystemWidgetEntry {
+	if len(s.entries) == 0 || len(s.softSelected) == 0 {
+		return nil
+	}
+	entries := make([]filesystemWidgetEntry, 0, len(s.softSelected))
+	for _, entry := range s.entries {
+		if s.isSoftSelected(entry) {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 func (s *filesystemWidgetState) editSelected() error {

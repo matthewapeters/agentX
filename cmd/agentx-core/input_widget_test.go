@@ -218,4 +218,131 @@ func TestRunInputWidgetCommand_HelpIsHandledLocally(t *testing.T) {
 	if !strings.Contains(widgetOutput, ":context-add <path>") {
 		t.Fatalf("expected context-add command discoverability in help text, got:\n%s", widgetOutput)
 	}
+	if !strings.Contains(widgetOutput, ":multiline") {
+		t.Fatalf("expected multiline command discoverability in help text, got:\n%s", widgetOutput)
+	}
+}
+
+func TestRunInputWidgetCommand_MultilineSubmit(t *testing.T) {
+	var prompts []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/submit" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		var req submitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode submit request: %v", err)
+		}
+		prompts = append(prompts, req.Prompt)
+
+		response := "ok"
+		if req.Prompt == ":q" {
+			response = "quit"
+		}
+		_ = json.NewEncoder(w).Encode(submitResponse{Response: response})
+	}))
+	defer server.Close()
+
+	input := bytes.NewBufferString(":multiline\nhello\nworld\n:submit\n:q\n")
+	output := &bytes.Buffer{}
+
+	exitCode := runInputWidgetCommand(server.URL, input, output)
+	if exitCode != 0 {
+		t.Fatalf("expected zero exit code, got %d", exitCode)
+	}
+	if len(prompts) != 2 {
+		t.Fatalf("expected two submit requests, got %d (%#v)", len(prompts), prompts)
+	}
+	if prompts[0] != "hello\nworld" {
+		t.Fatalf("expected multiline prompt payload, got %q", prompts[0])
+	}
+	if prompts[1] != ":q" {
+		t.Fatalf("expected :q as second prompt, got %q", prompts[1])
+	}
+
+	widgetOutput := output.String()
+	if !strings.Contains(widgetOutput, "Multiline mode enabled.") {
+		t.Fatalf("expected multiline mode enable notice, got:\n%s", widgetOutput)
+	}
+}
+
+func TestRunInputWidgetCommand_MultilineCancelSkipsSubmit(t *testing.T) {
+	var prompts []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/submit" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		var req submitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode submit request: %v", err)
+		}
+		prompts = append(prompts, req.Prompt)
+
+		response := "ok"
+		if req.Prompt == ":q" {
+			response = "quit"
+		}
+		_ = json.NewEncoder(w).Encode(submitResponse{Response: response})
+	}))
+	defer server.Close()
+
+	input := bytes.NewBufferString(":ml\nline to discard\n:cancel\n:q\n")
+	output := &bytes.Buffer{}
+
+	exitCode := runInputWidgetCommand(server.URL, input, output)
+	if exitCode != 0 {
+		t.Fatalf("expected zero exit code, got %d", exitCode)
+	}
+	if len(prompts) != 1 {
+		t.Fatalf("expected only one submit request (:q), got %d (%#v)", len(prompts), prompts)
+	}
+	if prompts[0] != ":q" {
+		t.Fatalf("expected :q as only submitted prompt, got %q", prompts[0])
+	}
+
+	widgetOutput := output.String()
+	if !strings.Contains(widgetOutput, "Multiline input cancelled.") {
+		t.Fatalf("expected multiline cancel notice, got:\n%s", widgetOutput)
+	}
+}
+
+func TestRunInputWidgetCommand_ContextAddAliasStillSubmits(t *testing.T) {
+	var prompts []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/submit" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		var req submitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode submit request: %v", err)
+		}
+		prompts = append(prompts, req.Prompt)
+
+		response := "ok"
+		if req.Prompt == ":q" {
+			response = "quit"
+		}
+		_ = json.NewEncoder(w).Encode(submitResponse{Response: response})
+	}))
+	defer server.Close()
+
+	input := bytes.NewBufferString(":ctx-add docs/ux/03_PANEL_DETAILS.md\n:q\n")
+	output := &bytes.Buffer{}
+
+	exitCode := runInputWidgetCommand(server.URL, input, output)
+	if exitCode != 0 {
+		t.Fatalf("expected zero exit code, got %d", exitCode)
+	}
+	if len(prompts) != 2 {
+		t.Fatalf("expected two submit requests, got %d (%#v)", len(prompts), prompts)
+	}
+	if prompts[0] != ":ctx-add docs/ux/03_PANEL_DETAILS.md" {
+		t.Fatalf("expected alias command to pass through unchanged, got %q", prompts[0])
+	}
+	if prompts[1] != ":q" {
+		t.Fatalf("expected :q as second prompt, got %q", prompts[1])
+	}
 }

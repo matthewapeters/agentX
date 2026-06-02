@@ -196,26 +196,24 @@ This review answers four required questions for each runtime applet:
 
 | Applet | Professional level | UX clarity | UX requirements met | Ambiguities requiring resolution | Required follow-up |
 | --- | --- | --- | --- | --- | --- |
-| `chat/output` | Partial | Good | Partial | Yes | Implement `PD-01` interactive affordances in TUI; if any affordance lacks an obvious implementation path, escalate to user case-by-case decision before closure. |
-| `input` | Partial | Good | Partial | Yes | Close `PD-02` parity deltas for command discoverability and non-submit interaction parity under TUI-first runtime. |
+| `chat/output` | Partial | Good | Partial | No (direction selected) | Continue Path A execution to close remaining deep PD-01 parity evidence. |
+| `input` | Partial | Good | Partial | No (direction selected) | Continue Path A execution for multiline parity closure evidence. |
 | `logs` | Yes (for current role) | Good | Mostly | No material ambiguity | Keep as read-only diagnostics surface; maintain lifecycle signal coverage and formatting readability. |
 | `context` | Partial | Mixed (surface multiplexing increases cognitive load) | Partial | Yes | Resolve ownership boundary between context-owned surfaces and first-class split applets, then reconcile naming/inventory docs. |
-| `filesystem` | No (not yet) | Partial (long-list usability gap) | No | Yes | Implement overflow viewport/paging requirements (`PD-11-AF-011..014`), plus keyboard affordances (`arrow`, `space` soft-select, `return` hard-select), and close `UF-11`/`UF-12` parity evidence in TUI runtime. |
+| `filesystem` | Partial | Partial (improved) | Partial | No (direction selected) | Complete residual PD-11 evidence closure and finalize remaining multi-select action semantics. |
 | `system-settings` | Partial | Good | Partial | Yes | Finalize dedicated runtime ownership and acceptance criteria parity against `PD-07` and `PD-18-AF-003`. |
 
-Concrete ambiguity example (must be resolved explicitly):
+Resolved direction example:
 
 - Requirement-side expectation: `PD-01` includes interactive per-entry controls
   (collapse/expand and context actions).
-- Implementation-side behavior: current TUI output surface is primarily a render
-  sink without equivalent per-entry interactive controls.
-- Required resolution: either implement equivalent TUI controls or obtain a
-  user-approved, explicit requirement update for this specific affordance.
+- Direction selected: implement full Path A per-entry TUI controls; this is now
+  tracked as implementation work, not open direction ambiguity.
 
 Review summary counts:
 
 - Applets requiring additional work: 5 of 6
-- Applets with ambiguities requiring resolution: 5 of 6
+- Ambiguities pending direction decision: 0
 
 ## Decision Log (2026-06-02)
 

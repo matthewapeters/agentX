@@ -11,6 +11,20 @@ import (
 	"time"
 )
 
+func testOutputWidgetSnapshot() outputWidgetSnapshot {
+	return outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 2,
+		Turns: []ChatTurn{
+			{Prompt: "status update", Response: "all green"},
+			{Prompt: "what is 2+2?", Response: "4"},
+		},
+		PromptCycle: PromptCycleStatus{
+			Thinking: PromptCyclePhase{State: "done", ElapsedMs: 11},
+		},
+	}
+}
+
 func TestFetchOutputWidgetSnapshot_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/context" {
@@ -67,7 +81,7 @@ func TestRenderOutputWidget_UsesPaneLifecycleContract(t *testing.T) {
 
 func TestRenderOutputWidgetWithViewState_CollapsesThinkingBlock(t *testing.T) {
 	view := newOutputWidgetViewState()
-	view.applyCommand(":collapse 1", 1)
+	view.applyCommand(":collapse 1", outputWidgetSnapshot{Turns: []ChatTurn{{Prompt: "status?", Response: "all green"}}})
 
 	render := renderOutputWidgetWithViewState(outputWidgetSnapshot{
 		SessionID: "sess-output",
@@ -88,19 +102,86 @@ func TestRenderOutputWidgetWithViewState_CollapsesThinkingBlock(t *testing.T) {
 
 func TestOutputWidgetViewState_HelpAndFocusCommands(t *testing.T) {
 	view := newOutputWidgetViewState()
-	view.applyCommand(":help", 2)
+	snapshot := testOutputWidgetSnapshot()
+	view.applyCommand(":help", snapshot)
 	if !view.showHelp {
 		t.Fatal("expected help panel to be visible after :help")
 	}
 
-	view.applyCommand(":focus 1", 2)
+	view.applyCommand(":focus 1", snapshot)
 	if view.focusedTurn != 1 {
 		t.Fatalf("expected focused turn 1, got %d", view.focusedTurn)
 	}
 
-	view.applyCommand(":next", 2)
+	view.applyCommand(":next", snapshot)
 	if view.focusedTurn != 2 {
 		t.Fatalf("expected focused turn 2 after :next, got %d", view.focusedTurn)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_CollapsesClassificationAndResponseEntries(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := testOutputWidgetSnapshot()
+
+	view.applyCommand(":collapse classification 1", snapshot)
+	view.applyCommand(":collapse response 1", snapshot)
+	view.applyCommand(":focus 1 response", snapshot)
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	if !strings.Contains(render, "⚙️ [classification entry - collapsed]") {
+		t.Fatalf("expected collapsed classification marker, got:\n%s", render)
+	}
+	if !strings.Contains(render, "🤖 [response entry - collapsed]") {
+		t.Fatalf("expected collapsed response marker, got:\n%s", render)
+	}
+	if strings.Contains(render, "Response: all green") {
+		t.Fatalf("did not expect response line after collapsing response entry, got:\n%s", render)
+	}
+}
+
+func TestOutputWidgetViewState_CopyCommands_AreDeterministic(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := testOutputWidgetSnapshot()
+
+	view.applyCommand(":focus 2", snapshot)
+	view.applyCommand(":copy response focused", snapshot)
+
+	if view.clipboard != "4" {
+		t.Fatalf("expected copied response '4', got %q", view.clipboard)
+	}
+	if view.clipboardSource != "turn 2 response" {
+		t.Fatalf("expected clipboard source turn 2 response, got %q", view.clipboardSource)
+	}
+
+	view.applyCommand(":copy turn 1", snapshot)
+	if !strings.Contains(view.clipboard, "User: status update") {
+		t.Fatalf("expected copied turn payload, got %q", view.clipboard)
+	}
+	if !strings.Contains(view.clipboard, "Response: all green") {
+		t.Fatalf("expected copied turn response in payload, got %q", view.clipboard)
+	}
+
+	view.applyCommand(":copy clear", snapshot)
+	if view.clipboard != "" {
+		t.Fatalf("expected cleared clipboard, got %q", view.clipboard)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_HelpIncludesCopyAndEntryCommands(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := testOutputWidgetSnapshot()
+	view.applyCommand(":help", snapshot)
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	for _, fragment := range []string{
+		":entry <entry>",
+		":collapse [entry] <n|all>",
+		":copy <entry|turn>",
+	} {
+		if !strings.Contains(render, fragment) {
+			t.Fatalf("expected help render to contain %q, got:\n%s", fragment, render)
+		}
 	}
 }
 

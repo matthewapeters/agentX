@@ -206,6 +206,7 @@ func TestFilesystemWidgetHandleCommand_ReturnHardSelectActivates(t *testing.T) {
 		entries:      []filesystemWidgetEntry{{Name: "note.txt", Path: filePath, Exists: true}},
 		selected:     0,
 		viewportRows: 5,
+		softSelected: map[string]bool{filepath.Join(projectDir, "other.txt"): true},
 	}
 
 	if err := state.handleCommand(context.Background(), "enter"); err != nil {
@@ -239,13 +240,122 @@ func TestFilesystemWidgetAddSelectedToContext_UsesSubmitEndpoint(t *testing.T) {
 		entries: []filesystemWidgetEntry{{Name: "session.py", Path: filePath, IsDir: false, Exists: true}},
 	}
 
-	if err := state.addSelectedToContext(context.Background()); err != nil {
+	count, err := state.addSelectedToContext(context.Background())
+	if err != nil {
 		t.Fatalf("addSelectedToContext returned error: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one file to be added, got %d", count)
 	}
 
 	expected := ":context-add " + filePath
 	if recordedPrompt != expected {
 		t.Fatalf("expected prompt %q, got %q", expected, recordedPrompt)
+	}
+}
+
+func TestFilesystemWidgetAddSelectedToContext_UsesSoftSelectedSetInViewOrder(t *testing.T) {
+	var prompts []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/submit" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		var req submitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed decoding submit request: %v", err)
+		}
+		prompts = append(prompts, req.Prompt)
+		_ = json.NewEncoder(w).Encode(submitResponse{Response: "context-added"})
+	}))
+	defer server.Close()
+
+	entryA := filesystemWidgetEntry{Name: "a.txt", Path: "/tmp/a.txt", Exists: true}
+	entryB := filesystemWidgetEntry{Name: "b.txt", Path: "/tmp/b.txt", Exists: true}
+	entryC := filesystemWidgetEntry{Name: "c.txt", Path: "/tmp/c.txt", Exists: true}
+
+	state := &filesystemWidgetState{
+		baseURL: strings.TrimRight(server.URL, "/"),
+		entries: []filesystemWidgetEntry{entryA, entryB, entryC},
+		selected: 1,
+		softSelected: map[string]bool{
+			entryA.Path: true,
+			entryC.Path: true,
+		},
+	}
+
+	count, err := state.addSelectedToContext(context.Background())
+	if err != nil {
+		t.Fatalf("addSelectedToContext returned error: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected two files to be added, got %d", count)
+	}
+
+	joined := strings.Join(prompts, "|")
+	if got, want := joined, ":context-add /tmp/a.txt|:context-add /tmp/c.txt"; got != want {
+		t.Fatalf("expected deterministic soft-selected prompt order %q, got %q", want, got)
+	}
+}
+
+func TestFilesystemWidgetAddSelectedToContext_SoftSelectedDirectoriesOnlyReturnsError(t *testing.T) {
+	state := &filesystemWidgetState{
+		baseURL: "http://127.0.0.1:65535",
+		entries: []filesystemWidgetEntry{{Name: "docs", Path: "/tmp/docs", IsDir: true, Exists: true}},
+		selected: 0,
+		softSelected: map[string]bool{
+			"/tmp/docs": true,
+		},
+	}
+
+	_, err := state.addSelectedToContext(context.Background())
+	if err == nil {
+		t.Fatal("expected error for directory-only soft-selected set")
+	}
+	if !strings.Contains(err.Error(), "soft-selected entries are directories") {
+		t.Fatalf("expected directory-set compatibility error, got %v", err)
+	}
+}
+
+func TestFilesystemWidgetHandleCommand_AttachUsesSoftSelectedSetStatus(t *testing.T) {
+	var prompts []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/submit" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+
+		var req submitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed decoding submit request: %v", err)
+		}
+		prompts = append(prompts, req.Prompt)
+		_ = json.NewEncoder(w).Encode(submitResponse{Response: "ok"})
+	}))
+	defer server.Close()
+
+	state := &filesystemWidgetState{
+		baseURL: strings.TrimRight(server.URL, "/"),
+		entries: []filesystemWidgetEntry{
+			{Name: "a.txt", Path: "/tmp/a.txt", Exists: true},
+			{Name: "b.txt", Path: "/tmp/b.txt", Exists: true},
+		},
+		selected: 0,
+		softSelected: map[string]bool{
+			"/tmp/a.txt": true,
+			"/tmp/b.txt": true,
+		},
+	}
+
+	if err := state.handleCommand(context.Background(), "a"); err != nil {
+		t.Fatalf("attach command returned error: %v", err)
+	}
+	if state.status != "Added 2 selected files to context" {
+		t.Fatalf("expected multi-select attach status, got %q", state.status)
+	}
+	if got, want := strings.Join(prompts, "|"), ":context-add /tmp/a.txt|:context-add /tmp/b.txt"; got != want {
+		t.Fatalf("expected attach command to use soft-selected set in view order, got %q", got)
 	}
 }
 

@@ -126,11 +126,46 @@ func runInputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 	submitTimeout := resolveWidgetSubmitTimeout()
 
 	fmt.Fprintln(out, "Input ready. Enter prompt and press Enter.")
-	fmt.Fprintln(out, "Commands: :q, :clear, :context-add <file-path> (alias :ctx-add), :help")
+	fmt.Fprintln(out, "Commands: :q, :clear, :context-add <file-path> (alias :ctx-add), :multiline (alias :ml), :help")
+	fmt.Fprintln(out, "Multiline mode: :multiline then enter lines, :submit to send, :cancel to discard")
 
 	scanner := bufio.NewScanner(in)
+	multilineMode := false
+	multilineLines := make([]string, 0, 16)
+
+	submitPrompt := func(prompt string) (int, bool) {
+		ctx, cancel := context.WithTimeout(context.Background(), submitTimeout)
+		response, err := submitPromptToCore(ctx, baseURL, prompt)
+		cancel()
+		if err != nil {
+			fmt.Fprintf(out, "Submit failed: %v\n", err)
+			if prompt == ":q" {
+				return 1, true
+			}
+			return 0, false
+		}
+
+		switch prompt {
+		case ":q":
+			fmt.Fprintln(out, "Session shutdown requested.")
+			_ = response
+			return 0, true
+		case ":clear":
+			_ = response
+		default:
+			_ = response
+		}
+
+		return 0, false
+	}
+
 	for {
-		fmt.Fprintf(out, "%s> ", activityState.promptLabel())
+		promptLabel := activityState.promptLabel()
+		if multilineMode {
+			fmt.Fprintf(out, "%s[multi]> ", promptLabel)
+		} else {
+			fmt.Fprintf(out, "%s> ", promptLabel)
+		}
 		if !scanner.Scan() {
 			if err := scanner.Err(); err != nil {
 				fmt.Fprintf(out, "Input widget failed: %v\n", err)
@@ -139,13 +174,49 @@ func runInputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 			return 0
 		}
 
-		prompt := strings.TrimSpace(scanner.Text())
+		line := scanner.Text()
+		trimmedLine := strings.TrimSpace(line)
+
+		if multilineMode {
+			switch strings.ToLower(trimmedLine) {
+			case ":help", ":commands":
+				fmt.Fprintln(out, "Multiline controls:")
+				fmt.Fprintln(out, "  :submit                Send the multiline prompt")
+				fmt.Fprintln(out, "  :cancel                Discard multiline input")
+				fmt.Fprintln(out, "  :help                  Show multiline controls")
+				continue
+			case ":submit":
+				prompt := strings.Join(multilineLines, "\n")
+				if strings.TrimSpace(prompt) == "" {
+					fmt.Fprintln(out, "Multiline buffer is empty; add text or use :cancel.")
+					continue
+				}
+
+				multilineMode = false
+				multilineLines = multilineLines[:0]
+				// Remove the just-submitted input line so acceptance feedback appears immediately.
+				fmt.Fprint(out, "\033[1A\033[2K\r")
+
+				exitCode, shouldExit := submitPrompt(prompt)
+				if shouldExit {
+					return exitCode
+				}
+				continue
+			case ":cancel":
+				multilineMode = false
+				multilineLines = multilineLines[:0]
+				fmt.Fprintln(out, "Multiline input cancelled.")
+				continue
+			default:
+				multilineLines = append(multilineLines, line)
+				continue
+			}
+		}
+
+		prompt := trimmedLine
 		if prompt == "" {
 			continue
 		}
-
-		// Remove the just-submitted input line so acceptance feedback appears immediately.
-		fmt.Fprint(out, "\033[1A\033[2K\r")
 
 		switch strings.ToLower(prompt) {
 		case ":help", ":commands":
@@ -154,29 +225,23 @@ func runInputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 			fmt.Fprintln(out, "  :clear                 Clear input panel only")
 			fmt.Fprintln(out, "  :context-add <path>    Register a context file")
 			fmt.Fprintln(out, "  :ctx-add <path>        Alias for :context-add")
+			fmt.Fprintln(out, "  :multiline             Enter multiline compose mode")
+			fmt.Fprintln(out, "  :ml                    Alias for :multiline")
+			fmt.Fprintln(out, "Multiline controls once active: :submit, :cancel")
+			continue
+		case ":multiline", ":ml":
+			multilineMode = true
+			multilineLines = multilineLines[:0]
+			fmt.Fprintln(out, "Multiline mode enabled. Enter message lines.")
+			fmt.Fprintln(out, "Use :submit to send or :cancel to discard.")
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), submitTimeout)
-		response, err := submitPromptToCore(ctx, baseURL, prompt)
-		cancel()
-		if err != nil {
-			fmt.Fprintf(out, "Submit failed: %v\n", err)
-			if prompt == ":q" {
-				return 1
-			}
-			continue
-		}
-
-		switch prompt {
-		case ":q":
-			fmt.Fprintln(out, "Session shutdown requested.")
-			_ = response
-			return 0
-		case ":clear":
-			_ = response
-		default:
-			_ = response
+		// Remove the just-submitted input line so acceptance feedback appears immediately.
+		fmt.Fprint(out, "\033[1A\033[2K\r")
+		exitCode, shouldExit := submitPrompt(prompt)
+		if shouldExit {
+			return exitCode
 		}
 	}
 }
