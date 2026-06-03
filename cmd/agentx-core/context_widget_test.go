@@ -236,3 +236,126 @@ func TestResolveContextWidgetTab_UsesEnvironmentOverride(t *testing.T) {
 		t.Fatalf("expected files tab from environment override, got %q", got)
 	}
 }
+
+func TestContextWidgetCommandAliases_HotkeyCollapseWithoutColon(t *testing.T) {
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{
+		SessionID: "sess-hotkeys",
+		Turns: []ChatTurn{
+			{Prompt: "p1", Response: "r1"},
+		},
+	}
+
+	applyContextWidgetCommand(state, "c 1 p", "http://127.0.0.1:0", snapshot)
+
+	if !state.collapsedEntries[contextEntryKey("current", 1, "prompt")] {
+		t.Fatalf("expected prompt entry to be collapsed via hotkey alias")
+	}
+}
+
+func TestContextWidgetCommandAliases_HelpToggleWithoutColon(t *testing.T) {
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{SessionID: "sess-hotkeys"}
+
+	applyContextWidgetCommand(state, "?", "http://127.0.0.1:0", snapshot)
+	if !state.showHelp {
+		t.Fatalf("expected help to be shown via '?' alias")
+	}
+
+	applyContextWidgetCommand(state, "hide-help", "http://127.0.0.1:0", snapshot)
+	if state.showHelp {
+		t.Fatalf("expected help to be hidden via hide-help command")
+	}
+}
+
+func TestContextWidgetCommandAliases_WorkingMemoryToggleWithoutColon(t *testing.T) {
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{SessionID: "sess-hotkeys"}
+
+	applyContextWidgetCommand(state, "m", "http://127.0.0.1:0", snapshot)
+	if !state.collapsedWorkingMemory {
+		t.Fatalf("expected working memory to toggle collapsed with 'm'")
+	}
+
+	applyContextWidgetCommand(state, "m show", "http://127.0.0.1:0", snapshot)
+	if !state.showWorkingMemory || state.collapsedWorkingMemory {
+		t.Fatalf("expected working memory section visible and expanded after 'm show'")
+	}
+}
+
+func TestContextWidgetKeyboard_SpaceSelectAndEnterCollapse(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.updateOrderedRows([]string{"current:1:prompt"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "p1", Response: "r1"}}}
+
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	if !state.selectedEntries["current:1:prompt"] {
+		t.Fatalf("expected row to be selected by space key")
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if !state.collapsedEntries["current:1:prompt"] {
+		t.Fatalf("expected row to be collapsed by enter key")
+	}
+}
+
+func TestContextWidgetKeyboard_TabAndScrollTextBox(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.updateOrderedRows([]string{"current:1:prompt"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "one two three four five six seven eight nine ten", Response: "ok"}}}
+
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if !state.focusTextBox {
+		t.Fatalf("expected tab to enter textbox focus mode")
+	}
+
+	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot)
+	if state.textScroll["current:1:prompt"] == 0 {
+		t.Fatalf("expected pgdn to scroll focused textbox")
+	}
+
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if state.focusTextBox {
+		t.Fatalf("expected second tab to exit textbox focus mode")
+	}
+}
+
+func TestContextWidgetKeyboard_LeftRightCurrentTurnSibling(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.updateOrderedRows([]string{"current:1:prompt", "current:1:response"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "p1", Response: "r1"}}}
+
+	if state.activeRowKey() != "current:1:prompt" {
+		t.Fatalf("expected initial active row to be prompt")
+	}
+
+	applyContextWidgetCommand(state, "right", "http://127.0.0.1:0", snapshot)
+	if state.activeRowKey() != "current:1:response" {
+		t.Fatalf("expected right to move to response sibling, got %q", state.activeRowKey())
+	}
+
+	applyContextWidgetCommand(state, "left", "http://127.0.0.1:0", snapshot)
+	if state.activeRowKey() != "current:1:prompt" {
+		t.Fatalf("expected left to move back to prompt sibling, got %q", state.activeRowKey())
+	}
+}
+
+func TestContextWidgetKeyboard_LeftRightHistorySessionAndTurn(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.updateOrderedRows([]string{"session:s-prev", "history:s-prev:1"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	if state.activeRowKey() != "session:s-prev" {
+		t.Fatalf("expected initial active row to be session row")
+	}
+
+	applyContextWidgetCommand(state, "right", "http://127.0.0.1:0", snapshot)
+	if state.activeRowKey() != "history:s-prev:1" {
+		t.Fatalf("expected right to enter first session turn, got %q", state.activeRowKey())
+	}
+
+	applyContextWidgetCommand(state, "left", "http://127.0.0.1:0", snapshot)
+	if state.activeRowKey() != "session:s-prev" {
+		t.Fatalf("expected left to return to session row, got %q", state.activeRowKey())
+	}
+}

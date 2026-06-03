@@ -26,6 +26,7 @@ func main() {
 		logsWidget            = flag.Bool("logs-widget", false, "Run native Go logs widget mode over stdout")
 		contextWidget         = flag.Bool("context-widget", false, "Run native Go context widget mode over stdout")
 		filesystemWidget      = flag.Bool("filesystem-widget", false, "Run native Go filesystem widget mode over stdin/stdout")
+		settingsWidget        = flag.Bool("settings-widget", false, "Run native Go system settings widget mode over stdin/stdout")
 		coreHTTP              = flag.String("core-http", strings.TrimSpace(os.Getenv("AGENTX_CORE_HTTP")), "Core HTTP base URL for widget/bridge modes")
 		layout                = flag.String("layout", "", "tmuxp layout file to apply after core windows are created (defaults to .agentx/layouts/default-layout.yaml)")
 		layoutFile            = flag.String("layout-file", "", "Legacy alias for --layout")
@@ -95,7 +96,7 @@ func main() {
 	}
 
 	if *contextWidget {
-		exitCode := runContextWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdout)
+		exitCode := runContextWidgetCommandWithInput(strings.TrimSpace(*coreHTTP), os.Stdin, os.Stdout)
 		if exitCode != 0 {
 			os.Exit(exitCode)
 		}
@@ -104,6 +105,14 @@ func main() {
 
 	if *filesystemWidget {
 		exitCode := runFilesystemWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdin, os.Stdout)
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
+	}
+
+	if *settingsWidget {
+		exitCode := runSettingsWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdin, os.Stdout)
 		if exitCode != 0 {
 			os.Exit(exitCode)
 		}

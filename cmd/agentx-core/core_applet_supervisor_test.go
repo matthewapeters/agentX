@@ -144,6 +144,12 @@ func TestStartAppletSupervisor_LaunchesPaneAppletProcesses(t *testing.T) {
 			}
 			continue
 		}
+		if tab == "configuration" {
+			if !strings.Contains(commands, "--settings-widget --core-http") {
+				t.Fatalf("expected configuration applet launch args for settings widget, got:\n%s", commands)
+			}
+			continue
+		}
 		if !strings.Contains(commands, "AGENTX_CONTEXT_WIDGET_TAB='"+tab+"'") {
 			t.Fatalf("expected dedicated applet context widget tab env for %s, got:\n%s", tab, commands)
 		}
@@ -247,6 +253,23 @@ func TestBuildPaneAppletLaunchCommand_FilesAppletUsesFilesystemWidget(t *testing
 	}
 	if strings.Contains(cmd, "AGENTX_CONTEXT_WIDGET_TAB='files'") {
 		t.Fatalf("expected files applet not to use context widget tab env var, got:\n%s", cmd)
+	}
+}
+
+func TestBuildPaneAppletLaunchCommand_ConfigurationAppletUsesSettingsWidget(t *testing.T) {
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-settings-launch"}
+	core := NewAgentXCore(cfg)
+	core.healthAddr = "127.0.0.1:33333"
+	core.runtimeConfig.SubmitTimeout = 10 * time.Second
+
+	base := core.buildAppletBaseRuntimeConfig()
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "configuration", PaneName: "configuration", Runtime: appletRuntimeGo}, base)
+
+	if !strings.Contains(cmd, "--settings-widget --core-http") {
+		t.Fatalf("expected settings widget launch args for configuration applet, got:\n%s", cmd)
+	}
+	if strings.Contains(cmd, "AGENTX_CONTEXT_WIDGET_TAB='configuration'") {
+		t.Fatalf("expected configuration applet not to use context widget tab env var, got:\n%s", cmd)
 	}
 }
 

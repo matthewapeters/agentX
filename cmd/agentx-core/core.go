@@ -1404,6 +1404,14 @@ func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base 
 				shellSingleQuote(base.CoreHTTP),
 			)
 		}
+		if spec.Name == "configuration" {
+			return fmt.Sprintf(
+				"%s %s --settings-widget --core-http %s",
+				shellEnvPrefix(baseEnv),
+				shellSingleQuote(ac.coreExecutablePath),
+				shellSingleQuote(base.CoreHTTP),
+			)
+		}
 		if isDedicatedSystemAppletTab(spec.Name) {
 			baseEnv["AGENTX_CONTEXT_WIDGET_TAB"] = spec.Name
 			return fmt.Sprintf(

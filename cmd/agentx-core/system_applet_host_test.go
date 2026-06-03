@@ -145,24 +145,43 @@ func TestFilesSystemApplet_RenderWidgetContractCompact(t *testing.T) {
 }
 
 func TestConfigurationSystemApplet_RenderContracts(t *testing.T) {
+	projectDir := t.TempDir()
+	configText := strings.Join([]string{
+		"[agentx]",
+		"ollama_host = \"localhost:11434\"",
+		"ollama_model = \"qwen3.6:latest\"",
+		"chat_backend = \"ollama\"",
+		"chat_runtime = \"go\"",
+		"theme_mode = \"Dark Mode\"",
+		"",
+		"[tui]",
+		"enable = true",
+		"show_thinking = true",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(projectDir, "agentx.toml"), []byte(configText), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
 	applet := configurationSystemApplet{}
 	coreRender := strings.Join(applet.RenderCore(SystemAppletCoreContext{
+		ProjectDir: projectDir,
 		Model:      "qwen3.6:latest",
 		Backend:    "ollama",
 		OllamaHost: "localhost:11434",
 	}), "\n")
-	for _, fragment := range []string{"== CONFIGURATION ==", "model: qwen3.6:latest", "backend: ollama", "ollama_host: localhost:11434"} {
+	for _, fragment := range []string{"== CONFIGURATION ==", "config_file:", "effective_model: qwen3.6:latest", "effective_backend: ollama", "effective_ollama_host: localhost:11434", "[agentx]", "ollama_model: qwen3.6:latest", "chat_runtime: go", "theme_mode: Dark Mode", "[tui]", "enable: true", "show_thinking: true"} {
 		if !strings.Contains(coreRender, fragment) {
 			t.Fatalf("expected core render to contain %q, got:\n%s", fragment, coreRender)
 		}
 	}
 
 	widgetRender := strings.Join(applet.RenderWidget(SystemAppletWidgetContext{
+		ProjectDir: projectDir,
 		Model:      "qwen3.6:latest",
 		Backend:    "ollama",
 		OllamaHost: "localhost:11434",
 	}), "\n")
-	for _, fragment := range []string{"== CONFIGURATION ==", "model: qwen3.6:latest", "backend: ollama", "ollama_host: localhost:11434"} {
+	for _, fragment := range []string{"== CONFIGURATION ==", "config_file:", "effective_model: qwen3.6:latest", "[agentx]", "ollama_model: qwen3.6:latest", "[tui]", "enable: true"} {
 		if !strings.Contains(widgetRender, fragment) {
 			t.Fatalf("expected widget render to contain %q, got:\n%s", fragment, widgetRender)
 		}
