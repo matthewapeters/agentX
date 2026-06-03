@@ -17,12 +17,32 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - entry kind markers now use emoji (`⤴`, `📁`, `📄`, `❓`) instead of `[F|D]`,
   - file-type color classes were added for hidden files, config files, and code families (Go, Python, JS/TS, C/C++, other common code files).
 - Updated filesystem row layout handling to preserve alignment with ANSI-styled content via visible-width padding.
+- Upgraded the Go context applet in `cmd/agentx-core/context_widget.go` from a passive renderer into an interactive context-feedback surface with keyboard-first navigation semantics.
+- Aligned context applet input loop with the same terminal input/runtime model used by filesystem and system-settings applets (shared raw-key command reader + frame-diff rendering path).
+- Added keyboard interaction affordances for context feedback rows:
+  - `Space` select/deselect active row,
+  - `Enter` expand/collapse active row,
+  - arrow navigation (`Up`/`Down` vertical row movement; `Left`/`Right` sibling movement),
+  - `Tab` enter/exit textbox-focus mode,
+  - textbox scrolling via `Up`/`Down` and `PageUp`/`PageDown` while focused.
+- Added expanded textbox rendering contract for context entries with wrapped content and a visible window of up to 5 lines.
+- Added semantic IBM-style boxed rendering and section emphasis for context feedback surfaces:
+  - reverse-video section title bands,
+  - box-drawn expanded regions,
+  - semantic color tokens and emoji markers for user/agent/context action affordances.
+- Extended shared key parsing in `cmd/agentx-core/filesystem_widget.go` to emit `tab`, `left`, and `right` commands for applets using the common reader contract.
 
 ### Test Changes
 
 #### Added
 
 - Added style-contract coverage in `cmd/agentx-core/filesystem_widget_test.go` (`TestFilesystemWidgetRender_StylesFolderHiddenConfigAndCodeFiles`) validating folder reverse-style, parent-row highlight, emoji markers, and file-type color mappings.
+- Added keyboard-contract coverage for context feedback interactions in `cmd/agentx-core/context_widget_test.go` validating:
+  - Space selection,
+  - Enter expand/collapse,
+  - Tab text-box focus toggle,
+  - textbox scrolling behavior,
+  - Left/Right sibling navigation for current-session and prior-session rows.
 
 #### Changed
 
@@ -37,6 +57,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - captures the implemented visual style and classification decisions,
   - points evidence anchors to `filesystem_widget.go` / `filesystem_widget_test.go`,
   - removes stale transitional framing for the core filesystem widget behavior.
+- Updated `docs/architecture/applets/context_applet.md` to authoritative interactive contract language:
+  - records keyboard-first navigation and selection semantics,
+  - records textbox-focus and 5-line wrapped expanded text window behavior,
+  - records semantic boxed/styled rendering decisions and row-state markers,
+  - clarifies shared input-reader contract alignment with filesystem/system-settings applets.
+- Updated applet contract references in `docs/architecture/applets/README.md`, `docs/architecture/applets/filesystem_applet.md`, and `docs/architecture/applets/system_settings_applet.md` to reflect common input-model and navigation-policy decisions.
 
 ## [1.0.2] - 2026-06-01
 

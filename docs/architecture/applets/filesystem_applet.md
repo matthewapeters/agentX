@@ -74,10 +74,17 @@ Implementation anchors:
 
 - Current mode: first-class command parser exists in dedicated filesystem
   process.
+- Input-reader contract is shared with `context` and `system-settings` applets;
+  key normalization behavior in this module is authoritative for common
+  navigation keys in raw-terminal mode.
 - Supported navigation/action keys:
   - Focused key-monitor mode: single-keystroke actions (no command + Enter)
   - Synthetic `..` parent entry appears at top of non-root directories; selecting it and pressing `Enter` navigates up one level
   - `Up`/`Down` as primary row navigation keys (`k`/`j` retained for compatibility)
+  - `Left`/`Right` escape-key normalization is provided by the shared reader
+    contract for sibling navigation semantics in applets that choose to use it.
+  - `Tab` key normalization is provided by the shared reader contract for
+    focus-mode switching semantics in applets that choose to use it.
   - `PageUp`/`PageDown` move viewport by one full page; `Home`/`End` jump to top/bottom
   - Arrow navigation applies line-buffer viewport scrolling when selection crosses viewport edge
   - Viewport adapts to active terminal pane dimensions (rows and width) on focused render cycles

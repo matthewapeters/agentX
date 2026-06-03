@@ -1,8 +1,8 @@
 # System Settings Applet Contract
 
-Last updated: 2026-06-01
+Last updated: 2026-06-03
 Applet ID: `system-settings`
-Runtime entry (target): `agentx-core --settings-widget` (planned)
+Runtime entry: `agentx-core --settings-widget` (implemented)
 
 ## Purpose
 
@@ -34,10 +34,17 @@ composition logic while preserving UX behavior contracts.
 
 ## Command/Input Model
 
-- Current transitional mode: no first-class command parser in a dedicated
-  system-settings process; behavior is rendered through context-owned system tabs.
-- Target first-class mode: read-only settings presentation with deterministic
-  section framing required by system-tour parity assertions.
+- First-class command parser exists in dedicated system-settings process.
+- Uses the shared applet command-reader/input normalization contract (same
+  family as filesystem and context applets).
+- Supported interactions:
+  - `Up` / `Down` navigation,
+  - `PageUp` / `PageDown` page moves,
+  - `Home` / `End` jump,
+  - `Left` / `Right` (and Enter/Space) for value changes,
+  - `?` help toggle,
+  - `r` reload,
+  - `q` quit.
 
 ## Owned Data/State
 
@@ -103,8 +110,9 @@ in startup composition spec).
 
 ## Current State
 
-- Transitional implementation is currently rendered via `context` applet tabs.
-- First-class runtime split is planned/required by active remaining-work plan.
+- First-class runtime entrypoint is implemented and active in Go runtime.
+- Transitional rendering through context tabs may still exist for composed
+  parity views, but does not supersede first-class ownership.
 
 ## Gap Note
 

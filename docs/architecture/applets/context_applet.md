@@ -1,6 +1,6 @@
 # Context Applet Contract
 
-Last updated: 2026-06-02
+Last updated: 2026-06-03
 Applet ID: `context`
 Runtime entry: `agentx-core --context-widget`
 
@@ -44,10 +44,36 @@ Transitional render-host surfaces (not authoritative ownership):
 
 ## Command/Input Model
 
-- Terminal widget role: primarily read-only context/session render surface.
-- Direct user command parser: none in current contract.
-- Input source: core context snapshots, active-session state, and system applet
-  host routing.
+- Terminal widget role: interactive context-feedback surface with keyboard-first
+  navigation and selection behavior.
+- Direct user command parser: implemented. Supports raw-key mode (TTY) and
+  line/prompt mode using the shared applet input-reader contract.
+- Keyboard contract (authoritative):
+  - `Up` / `Down`: move active row.
+  - `Left` / `Right`: horizontal sibling movement (current prompt/response and
+    prior-session group/item transitions).
+  - `Space`: select/deselect active row.
+  - `Enter`: expand/collapse active row where applicable.
+  - `Tab`: enter/exit textbox-focus mode.
+  - Textbox-focus mode: `Up`/`Down` and `PageUp`/`PageDown` scroll expanded
+    textbox content.
+- Expanded textbox contract:
+  - context prompt/response text is wrapped,
+  - expanded viewport shows up to 5 lines,
+  - scrolling indicator is rendered for overflow content.
+- Input source remains core context snapshots, active-session state, and system
+  applet host routing.
+
+## Visual Design Decisions (Authoritative)
+
+- Context-feedback sections use IBM box-drawing style for expanded/structured
+  blocks.
+- Section titles use reverse-video treatment to improve scanability.
+- Semantic color + emoji markers differentiate entry types and state:
+  - user vs agent rows,
+  - selected vs active row markers,
+  - collapsed/disabled status and action affordances.
+- ANSI-aware width handling is required so styled rows remain aligned.
 
 ## Owned Data/State
 
@@ -55,6 +81,9 @@ Transitional render-host surfaces (not authoritative ownership):
   - context history/current context summary,
   - working-memory summary rows,
   - context visualizer meter/status rows,
+  - interactive row state (active row, selection set, collapsed set,
+    disabled set),
+  - textbox focus and per-row scroll offsets,
   - transitional files/configuration render-host routing only.
 - Does not own persistence for working memory or context message storage.
 
@@ -78,6 +107,7 @@ Evidence anchors:
 
 - `cmd/agentx-core/context_widget.go`
 - `cmd/agentx-core/context_widget_test.go`
+- `cmd/agentx-core/filesystem_widget.go` (shared command reader contract)
 - `cmd/agentx-core/core_system_renderer_test.go`
 - `cmd/agentx-core/system_applet_host.go`
 - `cmd/agentx-core/system_applet_working_memory.go`

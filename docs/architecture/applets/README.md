@@ -1,6 +1,6 @@
 # Applet Contracts (Authoritative)
 
-Last updated: 2026-06-02
+Last updated: 2026-06-03
 
 ## Purpose
 
@@ -93,6 +93,19 @@ This is the compact ownership map from UX affordance IDs to runtime applets.
 - Current open migration work is primarily about runtime inventory/traceability
   alignment and split-runtime completion for these applets, while preserving UX
   behavior parity during transition.
+
+## Shared Input-Model Decision (2026-06-03)
+
+Decision: Go runtime applets that use terminal-interactive widgets should share
+the same command-reader/key-normalization family to keep keyboard ergonomics
+consistent across applets.
+
+Current authoritative behavior:
+
+- Filesystem and System Settings use the shared reader directly.
+- Context applet uses the same reader contract and now supports keyboard-first
+  navigation semantics (Space select, Enter expand/collapse, arrow navigation,
+  Tab focus mode, PgUp/PgDn textbox scrolling).
 
 ## Sign-off Signal Policy
 
