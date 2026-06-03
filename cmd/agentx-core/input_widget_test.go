@@ -11,6 +11,29 @@ import (
 	"time"
 )
 
+func TestFormatInputPromptLabel_ClipsForNarrowPane(t *testing.T) {
+	t.Setenv("COLUMNS", "22")
+	label := formatInputPromptLabel("agentx[thinking][ctx:very-long-context-file-name.md]", nil, false)
+	if len([]rune(label)) > 20 {
+		t.Fatalf("expected clipped prompt label for narrow pane, got %q", label)
+	}
+}
+
+func TestPrintInputWidgetLines_WrapsToPaneWidth(t *testing.T) {
+	t.Setenv("COLUMNS", "30")
+	buf := &bytes.Buffer{}
+	printInputWidgetLines(buf, "Multiline controls once active: :submit/:send/:done, :cancel/:discard")
+	out := strings.TrimSpace(buf.String())
+	if out == "" {
+		t.Fatal("expected wrapped output lines")
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if len([]rune(line)) > 29 {
+			t.Fatalf("expected wrapped lines <= 29 chars, got %d for %q", len([]rune(line)), line)
+		}
+	}
+}
+
 func TestSubmitPromptToCore_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/submit" {
@@ -388,5 +411,113 @@ func TestRunInputWidgetCommand_ContextAddAliasStillSubmits(t *testing.T) {
 	}
 	if prompts[1] != ":q" {
 		t.Fatalf("expected :q as second prompt, got %q", prompts[1])
+	}
+}
+
+func TestInputWidgetComposeState_EscTogglesFocusAndSeedsControlPrompt(t *testing.T) {
+	state := newInputWidgetComposeState()
+	if state.focus != inputWidgetFocusInput {
+		t.Fatalf("expected default focus on input, got %v", state.focus)
+	}
+
+	_ = state.handleKey(inputWidgetKey{kind: "esc"})
+	if state.focus != inputWidgetFocusControl {
+		t.Fatalf("expected focus to move to control after esc, got %v", state.focus)
+	}
+	if got := string(state.control); got != ":" {
+		t.Fatalf("expected control prompt to seed with colon, got %q", got)
+	}
+
+	_ = state.handleKey(inputWidgetKey{kind: "esc"})
+	if state.focus != inputWidgetFocusInput {
+		t.Fatalf("expected focus to move back to input after esc, got %v", state.focus)
+	}
+}
+
+func TestInputWidgetComposeState_ArrowMovesCursorShiftArrowMovesViewport(t *testing.T) {
+	state := newInputWidgetComposeState()
+	state.viewportRows = 2
+	state.viewportCols = 4
+	state.inputLines = [][]rune{[]rune("0123456789")}
+	state.cursorRow = 0
+	state.cursorCol = 8
+	state.ensureCursorVisible()
+
+	priorViewCol := state.viewCol
+	_ = state.handleKey(inputWidgetKey{kind: "left"})
+	if state.cursorCol != 7 {
+		t.Fatalf("expected left arrow to move cursor, got cursor col %d", state.cursorCol)
+	}
+	if state.viewCol != priorViewCol {
+		t.Fatalf("expected left arrow to keep viewport offset, got viewCol=%d want=%d", state.viewCol, priorViewCol)
+	}
+
+	_ = state.handleKey(inputWidgetKey{kind: "shift_left"})
+	if state.cursorCol != 7 {
+		t.Fatalf("expected shift-left to keep cursor col unchanged, got %d", state.cursorCol)
+	}
+	if state.viewCol != priorViewCol-1 {
+		t.Fatalf("expected shift-left to pan viewport left, got %d want %d", state.viewCol, priorViewCol-1)
+	}
+}
+
+func TestInputWidgetComposeState_ControlEnterCommands(t *testing.T) {
+	state := newInputWidgetComposeState()
+	_ = state.handleKey(inputWidgetKey{kind: "esc"})
+
+	state.control = []rune(":?")
+	state.controlCursor = len(state.control)
+	action := state.handleKey(inputWidgetKey{kind: "enter"})
+	if action.submitPrompt != "" {
+		t.Fatalf("expected :? to be local-only command, got submit prompt %q", action.submitPrompt)
+	}
+	if !state.showHelp {
+		t.Fatalf("expected :? to toggle help on")
+	}
+
+	_ = state.handleKey(inputWidgetKey{kind: "esc"})
+	state.control = []rune(":q")
+	state.controlCursor = len(state.control)
+	action = state.handleKey(inputWidgetKey{kind: "enter"})
+	if action.submitPrompt != ":q" {
+		t.Fatalf("expected :q to submit quit command, got %q", action.submitPrompt)
+	}
+	if !action.quitOnSubmit {
+		t.Fatalf("expected :q action to request quit on submit")
+	}
+}
+
+func TestNormalizeInputWidgetEscapeSequence(t *testing.T) {
+	tests := []struct {
+		name     string
+		raw      string
+		wantKind string
+		wantOK   bool
+	}{
+		{name: "up", raw: "\x1b[A", wantKind: "up", wantOK: true},
+		{name: "down", raw: "\x1b[B", wantKind: "down", wantOK: true},
+		{name: "right", raw: "\x1b[C", wantKind: "right", wantOK: true},
+		{name: "left", raw: "\x1b[D", wantKind: "left", wantOK: true},
+		{name: "shift up csi", raw: "\x1b[1;2A", wantKind: "shift_up", wantOK: true},
+		{name: "shift down csi", raw: "\x1b[1;2B", wantKind: "shift_down", wantOK: true},
+		{name: "shift right csi", raw: "\x1b[1;2C", wantKind: "shift_right", wantOK: true},
+		{name: "shift left csi", raw: "\x1b[1;2D", wantKind: "shift_left", wantOK: true},
+		{name: "shift up lowercase", raw: "\x1b[a", wantKind: "shift_up", wantOK: true},
+		{name: "shift down lowercase", raw: "\x1b[b", wantKind: "shift_down", wantOK: true},
+		{name: "shift right lowercase", raw: "\x1b[c", wantKind: "shift_right", wantOK: true},
+		{name: "shift left lowercase", raw: "\x1b[d", wantKind: "shift_left", wantOK: true},
+		{name: "unknown", raw: "\x1b[9~", wantKind: "", wantOK: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotKind, gotOK := normalizeInputWidgetEscapeSequence(tc.raw)
+			if gotOK != tc.wantOK {
+				t.Fatalf("expected ok=%v, got %v", tc.wantOK, gotOK)
+			}
+			if gotKind != tc.wantKind {
+				t.Fatalf("expected kind %q, got %q", tc.wantKind, gotKind)
+			}
+		})
 	}
 }

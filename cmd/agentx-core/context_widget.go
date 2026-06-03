@@ -20,10 +20,10 @@ type contextWidgetActivity struct {
 }
 
 type contextWidgetSnapshot struct {
-	SessionID   string               `json:"session_id"`
-	TurnCount   int                  `json:"turn_count"`
-	Turns       []ChatTurn           `json:"turns"`
-	PromptCycle PromptCycleStatus    `json:"prompt_cycle"`
+	SessionID   string                `json:"session_id"`
+	TurnCount   int                   `json:"turn_count"`
+	Turns       []ChatTurn            `json:"turns"`
+	PromptCycle PromptCycleStatus     `json:"prompt_cycle"`
 	Activity    contextWidgetActivity `json:"activity"`
 }
 
@@ -34,19 +34,20 @@ type contextHistorySession struct {
 }
 
 type contextFeedbackViewState struct {
-	showHelp               bool
-	collapsedPriorSessions map[string]bool
-	collapsedEntries       map[string]bool
-	disabledEntries        map[string]bool
-	selectedEntries        map[string]bool
-	orderedRowKeys         []string
-	activeRow              int
-	focusTextBox           bool
-	textScroll             map[string]int
-	showWorkingMemory      bool
-	collapsedWorkingMemory bool
-	statusLine             string
-	statusUntil            time.Time
+	showHelp                bool
+	collapsedContextHistory bool
+	collapsedPriorSessions  map[string]bool
+	collapsedEntries        map[string]bool
+	disabledEntries         map[string]bool
+	selectedEntries         map[string]bool
+	orderedRowKeys          []string
+	activeRow               int
+	focusTextBox            bool
+	textScroll              map[string]int
+	showWorkingMemory       bool
+	collapsedWorkingMemory  bool
+	statusLine              string
+	statusUntil             time.Time
 }
 
 const (
@@ -62,13 +63,15 @@ const (
 
 func newContextFeedbackViewState() *contextFeedbackViewState {
 	return &contextFeedbackViewState{
-		collapsedPriorSessions: make(map[string]bool),
-		collapsedEntries:       make(map[string]bool),
-		disabledEntries:        make(map[string]bool),
-		selectedEntries:        make(map[string]bool),
-		orderedRowKeys:         []string{},
-		textScroll:             make(map[string]int),
-		showWorkingMemory:      true,
+		collapsedPriorSessions:  make(map[string]bool),
+		collapsedEntries:        make(map[string]bool),
+		disabledEntries:         make(map[string]bool),
+		selectedEntries:         make(map[string]bool),
+		orderedRowKeys:          []string{},
+		textScroll:              make(map[string]int),
+		showWorkingMemory:       true,
+		collapsedContextHistory: true,
+		collapsedWorkingMemory:  true,
 	}
 }
 
@@ -299,12 +302,23 @@ func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Re
 				if !ok {
 					return nil
 				}
-				normalized := strings.ToLower(strings.TrimSpace(cmd))
-				if normalized == "q" || normalized == "quit" {
+				normalized := normalizeContextWidgetControlCommand(cmd)
+				action := handleWidgetLoopControlCommand(normalized, widgetLoopControlHandlers{
+					QuitTokens:    []string{"q", "quit"},
+					HelpTokens:    []string{"help"},
+					RefreshTokens: []string{"r", "refresh"},
+					OnHelp: func() {
+						viewState.showHelp = true
+						viewState.setStatus("Context feedback controls visible.")
+					},
+					OnRefresh: func() {
+						viewState.setStatus("Refreshed.")
+					},
+				})
+				if action == widgetLoopControlQuit {
 					return nil
 				}
-				if normalized == "r" || normalized == "refresh" {
-					viewState.setStatus("Refreshed.")
+				if action == widgetLoopControlHandled {
 					renderChanged = true
 					continue
 				}
@@ -319,7 +333,7 @@ func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Re
 		snapshot, err := fetchContextWidgetSnapshot(ctx, baseURL)
 		if err == nil {
 			currentSnapshot = snapshot
-			height, width := resolveWidgetPaneSize()
+			height, width := resolveWidgetPaneSizeForWriter(out)
 			tab := resolveContextWidgetTab()
 			model := strings.TrimSpace(os.Getenv("AGENTX_OLLAMA_MODEL"))
 			if model == "" {
@@ -352,6 +366,10 @@ func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Re
 		case <-ticker.C:
 		}
 	}
+}
+
+func normalizeContextWidgetControlCommand(raw string) string {
+	return normalizeWidgetControlCommand(raw, defaultWidgetControlAliases())
 }
 
 func discoverContextHistorySessions(currentSessionID string) []contextHistorySession {
@@ -477,22 +495,6 @@ func resolveContextWidgetTab() string {
 		return "context-visualizer"
 	}
 	return tab
-}
-
-func resolveWidgetPaneSize() (height int, width int) {
-	height = 40
-	width = 100
-	if raw := strings.TrimSpace(os.Getenv("LINES")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 4 {
-			height = parsed
-		}
-	}
-	if raw := strings.TrimSpace(os.Getenv("COLUMNS")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 20 {
-			width = parsed
-		}
-	}
-	return height, width
 }
 
 func renderContextWidget(snapshot contextWidgetSnapshot, tab string, model string, backend string, paneHeight int, paneWidth int) string {
@@ -626,42 +628,76 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 		"",
 		reverseTitle("CONTEXT FEEDBACK"),
 	}
+
+	// Section order follows the UX contract:
+	// 1) Context history (title only when collapsed)
+	// 2) Working memory (title only when collapsed)
+	// 3) Current context (expanded, element tiles collapsed by default)
+	lines = append(lines, "", reverseTitle("CONTEXT HISTORY"))
+	historyCollapsed := true
 	if viewState != nil {
-		lines = append(lines, "Controls: type help (or ?) for context feedback commands.")
-		lines = append(lines, "Nav: ↑/↓ move, Space select, Enter expand, Tab textbox mode, PgUp/PgDn scroll textbox")
-		if status := viewState.activeStatus(); status != "" {
-			lines = append(lines, fmt.Sprintf("Status: %s", status))
-		}
-		if viewState.showHelp {
-			lines = append(lines,
-				"Context commands (no colon required):",
-				"  help | ? | hide-help",
-				"  toggle session <session_id>      | x <session_id>",
-				"  collapse current <turn> <entry>  | c <turn> <p|r|b>",
-				"  expand current <turn> <entry>    | e <turn> <p|r|b>",
-				"  disable current <turn> <entry> [on|off|toggle] | d <turn> <p|r|b> [on|off|t]",
-				"  include <session|current> <turn> <entry>       | i <session|current> <turn> <p|r|b>",
-				"  wm show|hide|toggle               | m show|hide|toggle",
-				"  wm set <key> <value>              | mk <key> <value>",
-				"  wm del <key>                      | md <key>",
-				"  wm toggle <key>                   | mt <key>",
-			)
+		historyCollapsed = viewState.collapsedContextHistory
+	}
+	if !historyCollapsed {
+		if len(history) == 0 {
+			lines = append(lines, "No prior sessions found on disk.")
+		} else {
+			for _, session := range history {
+				sessionKey := "session:" + session.SessionID
+				rowKeys = append(rowKeys, sessionKey)
+				collapsed := viewState != nil && viewState.collapsedPriorSessions[session.SessionID]
+				updatedAt := "unknown"
+				if !session.LastUpdated.IsZero() {
+					updatedAt = session.LastUpdated.Format(time.RFC3339)
+				}
+				sessionLines := []string{
+					fmt.Sprintf("%s session: %s", rowMarker(viewState, sessionKey), trimSingleLine(session.SessionID, 48)),
+					fmt.Sprintf("turns: %d | updated: %s", len(session.Turns), updatedAt),
+					fmt.Sprintf("state: %s | Enter collapse/expand", mapCollapsedState(collapsed)),
+				}
+				if collapsed {
+					lines = append(lines, boxSection("SESSION", sessionLines, ansiMagenta)...)
+					continue
+				}
+				for idx, turn := range session.Turns {
+					turnNumber := idx + 1
+					turnKey := fmt.Sprintf("history:%s:%d", session.SessionID, turnNumber)
+					rowKeys = append(rowKeys, turnKey)
+					sessionLines = append(sessionLines,
+						fmt.Sprintf("%s %s %d user: %s", rowMarker(viewState, turnKey), styleToken("👤", ansiBlue), turnNumber, trimSingleLine(turn.Prompt, 68)),
+						fmt.Sprintf("%s %d agent: %s", styleToken("🤖", ansiGreen), turnNumber, trimSingleLine(turn.Response, 68)),
+						fmt.Sprintf("%s include: i %s %d b | Space select", styleToken("➕", ansiCyan), session.SessionID, turnNumber),
+					)
+				}
+				lines = append(lines, boxSection("SESSION", sessionLines, ansiMagenta)...)
+			}
 		}
 	}
 
-	lines = append(lines,
-		reverseTitle("CURRENT SESSION"),
-		fmt.Sprintf("session_id: %s", trimSingleLine(snapshot.SessionID, 48)),
-		fmt.Sprintf("element_count: %d", len(snapshot.Turns)),
-	)
+	if viewState == nil || viewState.showWorkingMemory {
+		lines = append(lines, "")
+		lines = append(lines, renderWorkingMemoryFeedbackSection(viewState, &rowKeys)...)
+	}
+
+	lines = append(lines, "", reverseTitle("CURRENT CONTEXT"))
 	if len(snapshot.Turns) == 0 {
-		lines = append(lines, "No current session elements.")
+		lines = append(lines, "No current context elements.")
 	} else {
 		for idx, turn := range snapshot.Turns {
 			turnNumber := idx + 1
 			promptKey := contextEntryKey("current", turnNumber, "prompt")
 			responseKey := contextEntryKey("current", turnNumber, "response")
 			rowKeys = append(rowKeys, promptKey, responseKey)
+
+			if viewState != nil {
+				if _, exists := viewState.collapsedEntries[promptKey]; !exists {
+					viewState.collapsedEntries[promptKey] = true
+				}
+				if _, exists := viewState.collapsedEntries[responseKey]; !exists {
+					viewState.collapsedEntries[responseKey] = true
+				}
+			}
+
 			promptCollapsed := viewState != nil && viewState.collapsedEntries[promptKey]
 			responseCollapsed := viewState != nil && viewState.collapsedEntries[responseKey]
 			promptDisabled := viewState != nil && viewState.disabledEntries[promptKey]
@@ -680,53 +716,8 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 				turnLines = append(turnLines, fmt.Sprintf("%s %s response [%s]", rowMarker(viewState, responseKey), styleToken("🤖", ansiGreen), mapContextEntryState(responseDisabled)))
 				turnLines = append(turnLines, renderWrappedTextBox(viewState, responseKey, turn.Response, ansiGreen)...)
 			}
-			turnLines = append(turnLines, fmt.Sprintf("%s Space select | Enter collapse/expand | i current %d b", styleToken("⚙", ansiCyan), turnNumber))
 			lines = append(lines, boxSection(fmt.Sprintf("TURN %d", turnNumber), turnLines, ansiCyan)...)
 		}
-	}
-
-	lines = append(lines,
-		"",
-		reverseTitle("PRIOR SESSIONS"),
-		fmt.Sprintf("session_count: %d", len(history)),
-	)
-	if len(history) == 0 {
-		lines = append(lines, "No prior sessions found on disk.")
-	} else {
-		for _, session := range history {
-			sessionKey := "session:" + session.SessionID
-			rowKeys = append(rowKeys, sessionKey)
-			collapsed := viewState != nil && viewState.collapsedPriorSessions[session.SessionID]
-			updatedAt := "unknown"
-			if !session.LastUpdated.IsZero() {
-				updatedAt = session.LastUpdated.Format(time.RFC3339)
-			}
-			sessionLines := []string{
-				fmt.Sprintf("%s session: %s", rowMarker(viewState, sessionKey), trimSingleLine(session.SessionID, 48)),
-				fmt.Sprintf("turns: %d | updated: %s", len(session.Turns), updatedAt),
-				fmt.Sprintf("state: %s | Enter collapse/expand", mapCollapsedState(collapsed)),
-			}
-			if collapsed {
-				lines = append(lines, boxSection("SESSION", sessionLines, ansiMagenta)...)
-				continue
-			}
-			for idx, turn := range session.Turns {
-				turnNumber := idx + 1
-				turnKey := fmt.Sprintf("history:%s:%d", session.SessionID, turnNumber)
-				rowKeys = append(rowKeys, turnKey)
-				sessionLines = append(sessionLines,
-					fmt.Sprintf("%s %s %d user: %s", rowMarker(viewState, turnKey), styleToken("👤", ansiBlue), turnNumber, trimSingleLine(turn.Prompt, 68)),
-					fmt.Sprintf("%s %d agent: %s", styleToken("🤖", ansiGreen), turnNumber, trimSingleLine(turn.Response, 68)),
-					fmt.Sprintf("%s include: i %s %d b | Space select", styleToken("➕", ansiCyan), session.SessionID, turnNumber),
-				)
-			}
-			lines = append(lines, boxSection("SESSION", sessionLines, ansiMagenta)...)
-		}
-	}
-
-	if viewState == nil || viewState.showWorkingMemory {
-		lines = append(lines, "")
-		lines = append(lines, renderWorkingMemoryFeedbackSection(viewState, &rowKeys)...)
 	}
 	if viewState != nil {
 		viewState.updateOrderedRows(rowKeys)
@@ -736,7 +727,10 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 }
 
 func renderWorkingMemoryFeedbackSection(viewState *contextFeedbackViewState, rowKeys *[]string) []string {
-	lines := []string{reverseTitle("WORKING MEMORY FEEDBACK")}
+	lines := []string{reverseTitle("WORKING MEMORY")}
+	if viewState != nil && viewState.collapsedWorkingMemory {
+		return lines
+	}
 	sessionDir := resolveCurrentSessionDirFromEnv()
 	sessionID := strings.TrimSpace(os.Getenv("AGENTX_SESSION_ID"))
 	if sessionID != "" {
@@ -748,13 +742,6 @@ func renderWorkingMemoryFeedbackSection(viewState *contextFeedbackViewState, row
 
 	facts := loadWorkingMemoryFacts(sessionDir)
 	lines = append(lines, fmt.Sprintf("fact_count: %d", len(facts)))
-	if viewState != nil {
-		lines = append(lines, fmt.Sprintf("details: %s", mapCollapsedState(viewState.collapsedWorkingMemory)))
-	}
-	if viewState != nil && viewState.collapsedWorkingMemory {
-		lines = append(lines, "  action: m")
-		return lines
-	}
 	if len(facts) == 0 {
 		lines = append(lines, "No facts stored yet.")
 	} else {
@@ -983,12 +970,17 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 			state.setStatus(fmt.Sprintf("Session %s is now %s.", sessionID, mapCollapsedState(state.collapsedPriorSessions[sessionID])))
 			return
 		}
+		if len(args) >= 2 && strings.EqualFold(args[1], "history") {
+			state.collapsedContextHistory = !state.collapsedContextHistory
+			state.setStatus(fmt.Sprintf("Context history is now %s.", mapCollapsedState(state.collapsedContextHistory)))
+			return
+		}
 		if len(args) >= 2 && strings.EqualFold(args[1], "wm") {
 			state.collapsedWorkingMemory = !state.collapsedWorkingMemory
 			state.setStatus(fmt.Sprintf("Working memory is now %s.", mapCollapsedState(state.collapsedWorkingMemory)))
 			return
 		}
-		state.setStatus("Usage: :toggle session <session_id> | :toggle wm")
+		state.setStatus("Usage: :toggle history | :toggle session <session_id> | :toggle wm")
 		return
 	case "collapse", "expand":
 		if len(args) < 4 || !strings.EqualFold(args[1], "current") {

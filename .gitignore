@@ -151,3 +151,7 @@ junit/test-results.xml*
 
 # APM dependencies
 apm_modules/
+
+# Local runtime and agent artifacts
+.agentx/
+.subutai/

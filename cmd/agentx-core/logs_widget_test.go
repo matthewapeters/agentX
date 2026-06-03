@@ -8,6 +8,21 @@ import (
 	"time"
 )
 
+func TestRenderLogsWidget_AdaptsToPaneWidth(t *testing.T) {
+	t.Setenv("LINES", "20")
+	t.Setenv("COLUMNS", "120")
+	renderWide := renderLogsWidget(nil)
+	if !strings.Contains(renderWide, "mode: expanded") {
+		t.Fatalf("expected expanded mode on wide pane, got:\n%s", renderWide)
+	}
+
+	t.Setenv("COLUMNS", "60")
+	renderNarrow := renderLogsWidget(nil)
+	if !strings.Contains(renderNarrow, "mode: compact") {
+		t.Fatalf("expected compact mode on narrow pane, got:\n%s", renderNarrow)
+	}
+}
+
 func TestRunLogsWidgetLoop_PrintsReadyBanner(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()

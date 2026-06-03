@@ -4,14 +4,68 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestRenderContextFeedbackSections_DefaultCollapsedOrderAndMinimalHeader(t *testing.T) {
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{
+		SessionID: "sess-order",
+		Turns:     []ChatTurn{{Prompt: "p1", Response: "r1"}},
+	}
+	history := []contextHistorySession{{SessionID: "s-prev", Turns: []ChatTurn{{Prompt: "old", Response: "resp"}}}}
+
+	rendered := strings.Join(renderContextFeedbackSections(snapshot, history, state), "\n")
+
+	historyIdx := strings.Index(rendered, "CONTEXT HISTORY")
+	wmIdx := strings.Index(rendered, "WORKING MEMORY")
+	currentIdx := strings.Index(rendered, "CURRENT CONTEXT")
+	if historyIdx == -1 || wmIdx == -1 || currentIdx == -1 {
+		t.Fatalf("expected all context-feedback section titles, got:\n%s", rendered)
+	}
+	if !(historyIdx < wmIdx && wmIdx < currentIdx) {
+		t.Fatalf("expected section order history -> working memory -> current context, got:\n%s", rendered)
+	}
+
+	if strings.Contains(rendered, "Controls: type help") || strings.Contains(rendered, "Status:") {
+		t.Fatalf("expected clutter header lines removed, got:\n%s", rendered)
+	}
+
+	wmBlock := rendered[wmIdx:currentIdx]
+	if strings.Contains(wmBlock, "fact_count:") || strings.Contains(wmBlock, "session_id:") {
+		t.Fatalf("expected collapsed working memory to render title only by default, got:\n%s", wmBlock)
+	}
+
+	if !strings.Contains(rendered, "prompt: \x1b[33m[collapsed]\x1b[0m") || !strings.Contains(rendered, "response: \x1b[33m[collapsed]\x1b[0m") {
+		t.Fatalf("expected current-context prompt/response tiles collapsed by default, got:\n%s", rendered)
+	}
+}
+
+func TestNormalizeContextWidgetControlCommand(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "colon help", raw: ":help", want: "help"},
+		{name: "question alias", raw: ":?", want: "help"},
+		{name: "colon quit", raw: ":q", want: "q"},
+		{name: "exit alias", raw: ":exit", want: "quit"},
+		{name: "refresh alias", raw: ":refresh", want: "r"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeContextWidgetControlCommand(tc.raw); got != tc.want {
+				t.Fatalf("normalizeContextWidgetControlCommand(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestRenderContextWidget_ClipsToViewport(t *testing.T) {
 	snapshot := contextWidgetSnapshot{
@@ -53,7 +107,7 @@ func TestRunContextWidgetLoop_SkipsDuplicateFrames(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(contextWidgetSnapshot{
 			SessionID: "sess-1",
 			TurnCount: 1,
-			Turns: []ChatTurn{{Prompt: "hello", Response: "world"}},
+			Turns:     []ChatTurn{{Prompt: "hello", Response: "world"}},
 			PromptCycle: PromptCycleStatus{
 				Classify: PromptCyclePhase{State: "done", ElapsedMs: 2},
 				Thinking: PromptCyclePhase{State: "done", ElapsedMs: 5},
@@ -78,6 +132,12 @@ func TestRunContextWidgetLoop_SkipsDuplicateFrames(t *testing.T) {
 	}
 }
 
+func TestRunContextWidgetLoopWithInput_QuitTokenStopsLoop(t *testing.T) {
+	runHeadlessWidgetLoopScript(t, "q\n", func(ctx context.Context, in io.Reader, out io.Writer) error {
+		return runContextWidgetLoopWithInput(ctx, "http://127.0.0.1:0", in, out, 100*time.Millisecond)
+	})
+}
+
 func TestFetchContextWidgetSnapshot_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/context" {
@@ -86,7 +146,7 @@ func TestFetchContextWidgetSnapshot_Success(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(contextWidgetSnapshot{
 			SessionID: "sess-2",
 			TurnCount: 1,
-			Turns: []ChatTurn{{Prompt: "p", Response: "r"}},
+			Turns:     []ChatTurn{{Prompt: "p", Response: "r"}},
 		})
 	}))
 	defer server.Close()
@@ -155,24 +215,10 @@ func TestRenderContextWidget_ContextHistoryUsesSystemAppletHost(t *testing.T) {
 }
 
 func TestRenderContextWidget_FilesTabContract(t *testing.T) {
-	projectDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(projectDir, "alpha.txt"), []byte("a"), 0o644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-	if err := os.Mkdir(filepath.Join(projectDir, "beta"), 0o755); err != nil {
-		t.Fatalf("Mkdir failed: %v", err)
-	}
-	oldProjectDir, hadProjectDir := os.LookupEnv("AGENTX_PROJECT_DIR")
-	defer func() {
-		if hadProjectDir {
-			_ = os.Setenv("AGENTX_PROJECT_DIR", oldProjectDir)
-		} else {
-			_ = os.Unsetenv("AGENTX_PROJECT_DIR")
-		}
-	}()
-	if err := os.Setenv("AGENTX_PROJECT_DIR", projectDir); err != nil {
-		t.Fatalf("Setenv failed: %v", err)
-	}
+	projectDir := createWidgetTestProjectDir(t, []string{"alpha.txt"}, []string{"beta"})
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+	})
 
 	render := renderContextWidget(contextWidgetSnapshot{}, "files", "qwen3.6:latest", "ollama", 80, 200)
 	for _, fragment := range []string{"== FILES ==", "project_dir:", "entry_count: 2"} {
@@ -186,17 +232,9 @@ func TestRenderContextWidget_FilesTabContract(t *testing.T) {
 }
 
 func TestRenderContextWidget_ConfigurationTabContract(t *testing.T) {
-	oldHost, hadHost := os.LookupEnv("AGENTX_OLLAMA_HOST")
-	defer func() {
-		if hadHost {
-			_ = os.Setenv("AGENTX_OLLAMA_HOST", oldHost)
-		} else {
-			_ = os.Unsetenv("AGENTX_OLLAMA_HOST")
-		}
-	}()
-	if err := os.Setenv("AGENTX_OLLAMA_HOST", "localhost:11434"); err != nil {
-		t.Fatalf("Setenv failed: %v", err)
-	}
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_OLLAMA_HOST": "localhost:11434",
+	})
 
 	render := renderContextWidget(contextWidgetSnapshot{}, "configuration", "qwen3.6:latest", "ollama", 80, 200)
 	for _, fragment := range []string{"== CONFIGURATION ==", "model:", "backend:", "ollama_host:"} {
@@ -210,27 +248,10 @@ func TestRenderContextWidget_ConfigurationTabContract(t *testing.T) {
 }
 
 func TestResolveContextWidgetTab_UsesEnvironmentOverride(t *testing.T) {
-	oldTab, hadTab := os.LookupEnv("AGENTX_CONTEXT_WIDGET_TAB")
-	oldProjectDir, hadProjectDir := os.LookupEnv("AGENTX_PROJECT_DIR")
-	defer func() {
-		if hadTab {
-			_ = os.Setenv("AGENTX_CONTEXT_WIDGET_TAB", oldTab)
-		} else {
-			_ = os.Unsetenv("AGENTX_CONTEXT_WIDGET_TAB")
-		}
-		if hadProjectDir {
-			_ = os.Setenv("AGENTX_PROJECT_DIR", oldProjectDir)
-		} else {
-			_ = os.Unsetenv("AGENTX_PROJECT_DIR")
-		}
-	}()
-
-	if err := os.Setenv("AGENTX_PROJECT_DIR", t.TempDir()); err != nil {
-		t.Fatalf("Setenv AGENTX_PROJECT_DIR failed: %v", err)
-	}
-	if err := os.Setenv("AGENTX_CONTEXT_WIDGET_TAB", "files"); err != nil {
-		t.Fatalf("Setenv AGENTX_CONTEXT_WIDGET_TAB failed: %v", err)
-	}
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR":        t.TempDir(),
+		"AGENTX_CONTEXT_WIDGET_TAB": "files",
+	})
 
 	if got := resolveContextWidgetTab(); got != "files" {
 		t.Fatalf("expected files tab from environment override, got %q", got)

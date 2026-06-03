@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -12,9 +11,9 @@ import (
 )
 
 type outputWidgetSnapshot struct {
-	SessionID   string           `json:"session_id"`
-	TurnCount   int              `json:"turn_count"`
-	Turns       []ChatTurn       `json:"turns"`
+	SessionID   string            `json:"session_id"`
+	TurnCount   int               `json:"turn_count"`
+	Turns       []ChatTurn        `json:"turns"`
 	PromptCycle PromptCycleStatus `json:"prompt_cycle"`
 }
 
@@ -243,7 +242,7 @@ func (state *outputWidgetViewState) applyCommand(raw string, snapshot outputWidg
 	}
 	turnCount := len(snapshot.Turns)
 	state.normalize(turnCount)
-	line := strings.TrimSpace(raw)
+	line := normalizeOutputWidgetControlCommand(raw)
 	if line == "" {
 		return
 	}
@@ -540,26 +539,116 @@ func (state *outputWidgetViewState) applyCommand(raw string, snapshot outputWidg
 	}
 }
 
+func normalizeOutputWidgetControlCommand(raw string) string {
+	line := strings.TrimSpace(raw)
+	if line == "" {
+		return ""
+	}
+	if strings.HasPrefix(line, ":") {
+		return strings.ToLower(line)
+	}
+
+	command := strings.ToLower(line)
+	switch command {
+	case "?", "help":
+		return ":help"
+	case "q", "quit", "ctrl_c":
+		return ":q"
+	case "k", "up", "left", "pgup":
+		return ":prev"
+	case "j", "down", "right", "pgdn":
+		return ":next"
+	case "top":
+		return ":focus 1"
+	case "end":
+		return ":focus all"
+	default:
+		return command
+	}
+}
+
 func startOutputWidgetCommandReader(ctx context.Context, in io.Reader) <-chan string {
 	commands := make(chan string, 16)
 	if in == nil {
 		close(commands)
 		return commands
 	}
+	commandReader, promptMode, cleanup := newWidgetCommandReader(in, normalizeOutputWidgetCommandToken)
 
 	go func() {
+		defer cleanup()
 		defer close(commands)
-		scanner := bufio.NewScanner(in)
-		for scanner.Scan() {
+		current := make([]rune, 0, 64)
+		emit := func(command string) bool {
+			trimmed := strings.TrimSpace(command)
+			if trimmed == "" {
+				return true
+			}
 			select {
 			case <-ctx.Done():
+				return false
+			case commands <- trimmed:
+				return true
+			}
+		}
+
+		for {
+			cmd, err := commandReader()
+			if err != nil {
 				return
-			case commands <- scanner.Text():
+			}
+
+			if promptMode {
+				if !emit(cmd) {
+					return
+				}
+				continue
+			}
+
+			switch cmd {
+			case "enter":
+				if len(current) == 0 {
+					continue
+				}
+				if !emit(string(current)) {
+					return
+				}
+				current = current[:0]
+			case "backspace":
+				if len(current) > 0 {
+					current = current[:len(current)-1]
+				}
+			case "ctrl_c":
+				if !emit("q") {
+					return
+				}
+			case "tab":
+				current = append(current, '\t')
+			case "space":
+				current = append(current, ' ')
+			default:
+				current = append(current, []rune(cmd)...)
 			}
 		}
 	}()
 
 	return commands
+}
+
+func normalizeOutputWidgetCommandToken(raw string) string {
+	if raw == "ctrl_c" {
+		return "ctrl_c"
+	}
+	if raw == "backspace" {
+		return "backspace"
+	}
+	if command, ok := normalizeWidgetEscapeSequence(raw); ok {
+		return command
+	}
+	if len(raw) == 1 {
+		return strings.ToLower(raw)
+	}
+	return strings.ToLower(strings.TrimSpace(raw))
 }
 
 func runOutputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
@@ -603,7 +692,22 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 					commands = nil
 					break
 				}
-				viewState.applyCommand(cmd, snapshot)
+				normalized := normalizeOutputWidgetControlCommand(cmd)
+				action := handleWidgetLoopControlCommand(normalized, widgetLoopControlHandlers{
+					QuitTokens: []string{":q", ":quit"},
+					HelpTokens: []string{":help"},
+					OnHelp: func() {
+						viewState.showHelp = true
+						viewState.setStatus("Output controls visible.")
+					},
+				})
+				if action == widgetLoopControlQuit {
+					return nil
+				}
+				if action == widgetLoopControlHandled {
+					continue
+				}
+				viewState.applyCommand(normalized, snapshot)
 			default:
 				goto commandsDrained
 			}
@@ -614,7 +718,7 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 		if err == nil {
 			snapshot = updatedSnapshot
 			viewState.normalize(len(snapshot.Turns))
-			height, width := resolveWidgetPaneSize()
+			height, width := resolveWidgetPaneSizeForWriter(out)
 			render := renderOutputWidgetWithViewState(snapshot, height, width, viewState)
 			if render != lastRender {
 				if _, writeErr := fmt.Fprintf(out, "\033[H\033[2J%s\n", render); writeErr != nil {

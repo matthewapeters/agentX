@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -13,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/term"
 )
 
 type filesystemWidgetEntry struct {
@@ -132,12 +129,19 @@ func runFilesystemWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, s
 			}
 			return readErr
 		}
+		command = normalizeFilesystemWidgetControlCommand(command)
 
-		if command == "q" || command == "quit" {
+		action := handleWidgetLoopControlCommand(command, widgetLoopControlHandlers{
+			QuitTokens: []string{"q", "quit"},
+			HelpTokens: []string{"help"},
+			OnHelp: func() {
+				state.toggleHelp()
+			},
+		})
+		if action == widgetLoopControlQuit {
 			return nil
 		}
-		if command == "?" || command == "help" {
-			state.toggleHelp()
+		if action == widgetLoopControlHandled {
 			continue
 		}
 
@@ -155,19 +159,9 @@ func runFilesystemWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, s
 }
 
 func (s *filesystemWidgetState) adaptViewportToTerminal(out io.Writer, promptMode bool) {
-	file, ok := out.(*os.File)
-	if !ok {
-		return
-	}
-	fd := int(file.Fd())
-	if !term.IsTerminal(fd) {
-		return
-	}
-	width, height, err := term.GetSize(fd)
-	if err != nil {
-		return
-	}
-	s.applyViewportDimensions(height, width, promptMode)
+	rows, cols := resolveWidgetViewport(out, s.headerLineCount(), filesystemWidgetBorderLines, promptMode, defaultFilesystemViewportCols, 1)
+	s.viewportRows = rows
+	s.viewportCols = cols
 }
 
 func (s *filesystemWidgetState) applyViewportDimensions(height int, width int, promptMode bool) {
@@ -278,190 +272,19 @@ func normalizeFilesystemWidgetLine(line string) string {
 }
 
 func newFilesystemWidgetCommandReader(in io.Reader) (func() (string, error), bool, func()) {
-	file, ok := in.(*os.File)
-	if !ok {
-		scanner := bufio.NewScanner(in)
-		return func() (string, error) {
-			if !scanner.Scan() {
-				if scanErr := scanner.Err(); scanErr != nil {
-					return "", scanErr
-				}
-				return "", io.EOF
-			}
-			return normalizeFilesystemWidgetCommand(scanner.Text()), nil
-		}, true, func() {}
-	}
-
-	fd := int(file.Fd())
-	if !term.IsTerminal(fd) {
-		scanner := bufio.NewScanner(file)
-		return func() (string, error) {
-			if !scanner.Scan() {
-				if scanErr := scanner.Err(); scanErr != nil {
-					return "", scanErr
-				}
-				return "", io.EOF
-			}
-			return normalizeFilesystemWidgetCommand(scanner.Text()), nil
-		}, true, func() {}
-	}
-
-	originalState, err := term.MakeRaw(fd)
-	if err != nil {
-		scanner := bufio.NewScanner(file)
-		return func() (string, error) {
-			if !scanner.Scan() {
-				if scanErr := scanner.Err(); scanErr != nil {
-					return "", scanErr
-				}
-				return "", io.EOF
-			}
-			return normalizeFilesystemWidgetCommand(scanner.Text()), nil
-		}, true, func() {}
-	}
-
-	reader := bufio.NewReader(file)
-	readCommand := func() (string, error) {
-		for {
-			b, readErr := reader.ReadByte()
-			if readErr != nil {
-				return "", readErr
-			}
-			switch b {
-			case 3:
-				return "q", nil
-			case 13, 10:
-				return "enter", nil
-			case 9:
-				return "tab", nil
-			case ' ':
-				return "space", nil
-			case 27:
-				cmd, ok, err := readFilesystemWidgetEscapeCommand(reader)
-				if err != nil {
-					return "", err
-				}
-				if ok {
-					return cmd, nil
-				}
-			case 127:
-				return "b", nil
-			default:
-				if b < 32 {
-					continue
-				}
-				return normalizeFilesystemWidgetCommand(string([]byte{b})), nil
-			}
-		}
-	}
-
-	cleanup := func() {
-		_ = term.Restore(fd, originalState)
-	}
-
-	return readCommand, false, cleanup
+	return newWidgetCommandReader(in, normalizeFilesystemWidgetCommand)
 }
 
-func readFilesystemWidgetEscapeCommand(reader *bufio.Reader) (string, bool, error) {
-	next, err := reader.ReadByte()
-	if err != nil {
-		return "", false, err
-	}
-	if next != '[' {
-		return "", false, nil
-	}
-
-	seq := make([]byte, 0, 8)
-	for {
-		b, readErr := reader.ReadByte()
-		if readErr != nil {
-			return "", false, readErr
-		}
-		seq = append(seq, b)
-		if (b >= 'A' && b <= 'Z') || b == '~' {
-			break
-		}
-		if len(seq) > 8 {
-			return "", false, nil
-		}
-	}
-
-	command, ok := normalizeFilesystemWidgetEscapeSequence("\x1b[" + string(seq))
-	if !ok {
-		return "", false, nil
-	}
-	return command, true, nil
+func normalizeFilesystemWidgetControlCommand(raw string) string {
+	return normalizeWidgetControlCommand(raw, defaultWidgetControlAliases())
 }
 
 func normalizeFilesystemWidgetCommand(raw string) string {
-	if command, ok := normalizeFilesystemWidgetEscapeSequence(raw); ok {
-		return command
-	}
-	if strings.TrimSpace(raw) == "" {
-		if len(raw) > 0 {
-			return "space"
-		}
-		return "enter"
-	}
-	trimmed := strings.ToLower(strings.TrimSpace(raw))
-	switch trimmed {
-	case "left":
-		return "b"
-	case "right":
-		return "f"
-	case "up":
-		return "k"
-	case "down":
-		return "j"
-	case "refresh":
-		return "r"
-	case "home":
-		return "h"
-	case "pageup", "pgup", "pu":
-		return "pgup"
-	case "pagedown", "pgdown", "pgdn", "pd":
-		return "pgdn"
-	case "top", "begin", "first":
-		return "top"
-	case "end", "last", "bottom":
-		return "end"
-	case "back":
-		return "b"
-	case "forward":
-		return "f"
-	case "parent", "..":
-		return "u"
-	case "open":
-		return "enter"
-	case "attach", "add":
-		return "a"
-	case "edit":
-		return "e"
-	}
-	return trimmed
+	return normalizeWidgetCommand(raw)
 }
 
 func normalizeFilesystemWidgetEscapeSequence(raw string) (string, bool) {
-	switch raw {
-	case "\x1b[A":
-		return "k", true
-	case "\x1b[B":
-		return "j", true
-	case "\x1b[C":
-		return "right", true
-	case "\x1b[D":
-		return "left", true
-	case "\x1b[5~":
-		return "pgup", true
-	case "\x1b[6~":
-		return "pgdn", true
-	case "\x1b[H", "\x1b[1~", "\x1b[7~":
-		return "top", true
-	case "\x1b[F", "\x1b[4~", "\x1b[8~":
-		return "end", true
-	default:
-		return "", false
-	}
+	return normalizeWidgetEscapeSequence(raw)
 }
 
 func (s *filesystemWidgetState) handleCommand(ctx context.Context, command string) error {

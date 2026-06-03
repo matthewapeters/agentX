@@ -9,60 +9,109 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Code Changes
 
+#### Added
+
+- Added `cmd/agentx-core/widget_input.go` — shared widget input infrastructure:
+  - `newWidgetCommandReader` — unified TTY/headless reader with raw-mode, fallback scanner, and optional normalizer.
+  - `normalizeWidgetCommand` / `normalizeWidgetEscapeSequence` / `normalizeWidgetControlCommand` — tiered normalization helpers consumed by all applets.
+  - `defaultWidgetControlAliases` — central alias policy (`:q`→`q`, `exit`→`quit`, `?`→`help`, `:up`→`k`, etc.).
+  - `isWidgetKeyDebugEnabled` / `widgetKeyDebug` — `AGENTX_WIDGET_KEY_DEBUG` toggle for raw↔normalized mapping diagnostics.
+  - `handleWidgetLoopControlCommand` / `widgetLoopControlHandlers` / `widgetLoopControlAction` — shared per-loop pre-handler for baseline quit/help/refresh intents, replacing per-applet ad-hoc checks.
+- Added `cmd/agentx-core/settings_widget.go` — system settings applet (launched via `agentx-core --settings-widget`):
+  - Approved field list for `chat_backend`, `ollama_model`, `ollama_host`, `chat_runtime`, timeouts, theme, TUI, and terminal exec mode.
+  - Constrained cyclic value editing; writes directly to `agentx.toml`.
+  - Reload (`r`) and help (`?`) commands wired to shared loop pre-handler.
+
 #### Changed
 
+- Input widget (`cmd/agentx-core/input_widget.go`) — full UX facelift:
+  - New state machine (`inputWidgetComposeState`) replacing legacy single-buffer approach.
+  - Dual-pane layout: scrollable multiline compose frame + vim-style control-entry lane toggled by `ESC`.
+  - Border color indicates focus owner (accent vs. muted).
+  - Scrollbars (vertical + horizontal) computed from viewport/content size with scrollbar-thumb sizing.
+  - `Enter` inserts newlines; empty control command (`:` only) submits the current buffer.
+  - `:multiline` / `:ml` and `:cancel` / `:discard` multi-line compose aliases.
+  - Help gate toggled by `:?` from control-entry; hidden by default.
+  - Context-file label hint rendered in prompt from `/activity` snapshot.
+  - Debug toggle integrated via shared `widgetKeyDebug`.
+- Filesystem widget (`cmd/agentx-core/filesystem_widget.go`):
+  - Reader and normalizer delegated to shared `newWidgetCommandReader` / `normalizeFilesystemWidgetCommand`.
+  - `normalizeFilesystemWidgetControlCommand` added as a wrapper over `normalizeWidgetControlCommand` + central alias policy.
+  - Loop quit/help pre-handling replaced by `handleWidgetLoopControlCommand`.
+- Output widget (`cmd/agentx-core/output_widget.go`):
+  - `startOutputWidgetCommandReader` migrated to shared `newWidgetCommandReader`.
+  - Loop quit (`:q`/`:quit`) and help (`:help`) pre-handling replaced by `handleWidgetLoopControlCommand`.
+- Settings widget (`cmd/agentx-core/settings_widget.go`):
+  - Loop quit/help/refresh pre-handling via `handleWidgetLoopControlCommand`.
+- Context widget (`cmd/agentx-core/context_widget.go`):
+  - Loop quit/help/refresh pre-handling via `handleWidgetLoopControlCommand`.
 - Upgraded the Go filesystem applet row rendering in `cmd/agentx-core/filesystem_widget.go` with semantic visual styling:
   - directories now use reverse-video styling,
   - parent directory (`..`) row now uses a dedicated background highlight,
   - entry kind markers now use emoji (`⤴`, `📁`, `📄`, `❓`) instead of `[F|D]`,
   - file-type color classes were added for hidden files, config files, and code families (Go, Python, JS/TS, C/C++, other common code files).
 - Updated filesystem row layout handling to preserve alignment with ANSI-styled content via visible-width padding.
-- Upgraded the Go context applet in `cmd/agentx-core/context_widget.go` from a passive renderer into an interactive context-feedback surface with keyboard-first navigation semantics.
-- Aligned context applet input loop with the same terminal input/runtime model used by filesystem and system-settings applets (shared raw-key command reader + frame-diff rendering path).
-- Added keyboard interaction affordances for context feedback rows:
-  - `Space` select/deselect active row,
-  - `Enter` expand/collapse active row,
-  - arrow navigation (`Up`/`Down` vertical row movement; `Left`/`Right` sibling movement),
-  - `Tab` enter/exit textbox-focus mode,
-  - textbox scrolling via `Up`/`Down` and `PageUp`/`PageDown` while focused.
-- Added expanded textbox rendering contract for context entries with wrapped content and a visible window of up to 5 lines.
-- Added semantic IBM-style boxed rendering and section emphasis for context feedback surfaces:
-  - reverse-video section title bands,
-  - box-drawn expanded regions,
-  - semantic color tokens and emoji markers for user/agent/context action affordances.
-- Extended shared key parsing in `cmd/agentx-core/filesystem_widget.go` to emit `tab`, `left`, and `right` commands for applets using the common reader contract.
 
 ### Test Changes
 
 #### Added
 
-- Added style-contract coverage in `cmd/agentx-core/filesystem_widget_test.go` (`TestFilesystemWidgetRender_StylesFolderHiddenConfigAndCodeFiles`) validating folder reverse-style, parent-row highlight, emoji markers, and file-type color mappings.
-- Added keyboard-contract coverage for context feedback interactions in `cmd/agentx-core/context_widget_test.go` validating:
-  - Space selection,
-  - Enter expand/collapse,
-  - Tab text-box focus toggle,
-  - textbox scrolling behavior,
-  - Left/Right sibling navigation for current-session and prior-session rows.
+- Added `cmd/agentx-core/widget_harness_test.go` — shared test harness with five reusable helpers:
+  - `setWidgetTestEnv` — scoped environment variable setup via `t.Setenv`; replaces manual LookupEnv/restore blocks.
+  - `createWidgetTestProjectDir` — provisions a temp project directory tree with named files and subdirectories.
+  - `createWidgetTestConfigProject` — creates a temp project dir plus a pre-seeded `agentx.toml`.
+  - `runHeadlessCommandScript` — feeds a command-reader factory a scripted input stream and collects normalized tokens.
+  - `runHeadlessWidgetLoopScript` — runs a full applet loop against scripted headless input and captures output.
+  - `runHeadlessWidgetCommandScript` — runs a command-entrypoint function (`runXxxWidgetCommand`) with scripted input and captures exit code plus output.
+- Added `cmd/agentx-core/widget_input_test.go`:
+  - `TestHandleWidgetLoopControlCommand` — covers quit/help/refresh/unmatched actions and callback invocation.
+  - `TestDefaultWidgetControlAliases` — validates canonical alias policy.
+  - Reader normalization and escape-sequence coverage.
+- Added `cmd/agentx-core/settings_widget_test.go`:
+  - Constrained-option cycle, TOML scalar replacement, missing-section append, state reload defaults.
+  - `TestNormalizeSettingsWidgetControlCommand` — alias coverage for settings loop.
+  - `TestRunSettingsWidgetCommand_QuitTokenStopsLoop` — quit-loop coverage via shared command harness.
+- Extended `cmd/agentx-core/filesystem_widget_test.go`:
+  - `TestNormalizeFilesystemWidgetControlCommand` — alias coverage for filesystem control wrapper.
+  - `TestRunFilesystemWidgetCommand_QuitTokenStopsLoop` — quit-loop coverage via shared command harness.
+- Extended `cmd/agentx-core/output_widget_test.go`:
+  - `TestRunOutputWidgetLoopWithInput_QuitTokenStopsLoop` — migrated to shared loop harness.
+- Extended `cmd/agentx-core/context_widget_test.go`:
+  - `TestRunContextWidgetLoopWithInput_QuitTokenStopsLoop` — quit-loop coverage via shared loop harness.
+- Added comprehensive coverage to `cmd/agentx-core/input_widget_test.go`:
+  - State machine tests: compose state transitions, help gate toggle, multiline submit/cancel, multiline discard, context-add command.
+- Added style-contract coverage in `cmd/agentx-core/filesystem_widget_test.go` (`TestFilesystemWidgetRender_StylesFolderHiddenConfigAndCodeFiles`).
 
 #### Changed
 
+- Migrated settings config-fixture setup in `TestUpdateAgentXTomlScalar_*` tests to `createWidgetTestConfigProject` helper.
+- Migrated project-tree fixture setup in context files-tab and filesystem hard-select tests to `createWidgetTestProjectDir` helper.
+- Migrated environment setup blocks in context/filesystem/settings tests to `setWidgetTestEnv` helper.
 - Updated filesystem rendering assertions in `cmd/agentx-core/filesystem_widget_test.go` to validate emoji-based row rendering semantics instead of legacy `[F|D]` markers.
+- Refactored `TestStartOutputWidgetCommandReader_HeadlessLines` to use `runHeadlessCommandScript` harness.
 
 ### Documentation Changes
 
+#### Added
+
+- Added `docs/architecture/applets/widget_input_model.md` — unified widget input architecture contract covering:
+  - Logical command schema and cross-applet baseline token set.
+  - TTY and headless adapter contracts.
+  - Debug toggle and usage guidelines.
+  - Headless E2E strategy and migration plan.
+  - Current adoption snapshot per applet.
+
 #### Changed
 
+- Updated `docs/architecture/applets/input_applet.md` to reflect interactive state machine semantics:
+  - Dual-pane layout and focus model.
+  - Scrollbar behavior, control-entry submit semantics, and help gate.
+  - Terminal portability notes for `Shift+Enter` and `Shift+Arrow` variants.
 - Updated `docs/architecture/applets/filesystem_applet.md` to authoritative current-state contract language:
   - refreshes ownership/runtime state descriptions,
   - captures the implemented visual style and classification decisions,
   - points evidence anchors to `filesystem_widget.go` / `filesystem_widget_test.go`,
   - removes stale transitional framing for the core filesystem widget behavior.
-- Updated `docs/architecture/applets/context_applet.md` to authoritative interactive contract language:
-  - records keyboard-first navigation and selection semantics,
-  - records textbox-focus and 5-line wrapped expanded text window behavior,
-  - records semantic boxed/styled rendering decisions and row-state markers,
-  - clarifies shared input-reader contract alignment with filesystem/system-settings applets.
-- Updated applet contract references in `docs/architecture/applets/README.md`, `docs/architecture/applets/filesystem_applet.md`, and `docs/architecture/applets/system_settings_applet.md` to reflect common input-model and navigation-policy decisions.
 
 ## [1.0.2] - 2026-06-01
 

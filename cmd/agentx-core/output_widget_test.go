@@ -4,12 +4,72 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestNormalizeOutputWidgetCommandToken(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "ctrl c passthrough", raw: "ctrl_c", want: "ctrl_c"},
+		{name: "backspace passthrough", raw: "backspace", want: "backspace"},
+		{name: "escape up normalized", raw: "\x1b[A", want: "k"},
+		{name: "single char lower", raw: "Q", want: "q"},
+		{name: "line command trimmed", raw: "  :Help  ", want: ":help"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeOutputWidgetCommandToken(tc.raw); got != tc.want {
+				t.Fatalf("normalizeOutputWidgetCommandToken(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStartOutputWidgetCommandReader_HeadlessLines(t *testing.T) {
+	got := runHeadlessCommandScript(t, ":Help\n:focus 2\n", startOutputWidgetCommandReader)
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 commands, got %d (%#v)", len(got), got)
+	}
+	if got[0] != ":help" {
+		t.Fatalf("expected first command :help, got %q", got[0])
+	}
+	if got[1] != ":focus 2" {
+		t.Fatalf("expected second command :focus 2, got %q", got[1])
+	}
+}
+
+func TestNormalizeOutputWidgetControlCommand(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "colon command unchanged", raw: ":FoCuS 2", want: ":focus 2"},
+		{name: "help token", raw: "?", want: ":help"},
+		{name: "quit token", raw: "q", want: ":q"},
+		{name: "prev token", raw: "k", want: ":prev"},
+		{name: "next token", raw: "j", want: ":next"},
+		{name: "top token", raw: "top", want: ":focus 1"},
+		{name: "end token", raw: "end", want: ":focus all"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeOutputWidgetControlCommand(tc.raw); got != tc.want {
+				t.Fatalf("normalizeOutputWidgetControlCommand(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
 
 func testOutputWidgetSnapshot() outputWidgetSnapshot {
 	return outputWidgetSnapshot{
@@ -33,7 +93,7 @@ func TestFetchOutputWidgetSnapshot_Success(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(contextWidgetSnapshot{
 			SessionID: "sess-output",
 			TurnCount: 1,
-			Turns: []ChatTurn{{Prompt: "hello", Response: "world"}},
+			Turns:     []ChatTurn{{Prompt: "hello", Response: "world"}},
 			PromptCycle: PromptCycleStatus{
 				Thinking: PromptCyclePhase{State: "done", ElapsedMs: 5},
 			},
@@ -57,7 +117,7 @@ func TestRenderOutputWidget_UsesPaneLifecycleContract(t *testing.T) {
 	render := renderOutputWidget(outputWidgetSnapshot{
 		SessionID: "sess-output",
 		TurnCount: 1,
-		Turns: []ChatTurn{{Prompt: "what is 2+2?", Response: "Echo: what is 2+2?"}},
+		Turns:     []ChatTurn{{Prompt: "what is 2+2?", Response: "Echo: what is 2+2?"}},
 		PromptCycle: PromptCycleStatus{
 			Thinking: PromptCyclePhase{State: "done", ElapsedMs: 11},
 		},
@@ -86,7 +146,7 @@ func TestRenderOutputWidgetWithViewState_CollapsesThinkingBlock(t *testing.T) {
 	render := renderOutputWidgetWithViewState(outputWidgetSnapshot{
 		SessionID: "sess-output",
 		TurnCount: 1,
-		Turns: []ChatTurn{{Prompt: "status?", Response: "all green"}},
+		Turns:     []ChatTurn{{Prompt: "status?", Response: "all green"}},
 		PromptCycle: PromptCycleStatus{
 			Thinking: PromptCyclePhase{State: "done", ElapsedMs: 11},
 		},
@@ -209,7 +269,7 @@ func TestRunOutputWidgetLoop_SkipsDuplicateFrames(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(contextWidgetSnapshot{
 			SessionID: "sess-output-loop",
 			TurnCount: 1,
-			Turns: []ChatTurn{{Prompt: "hello", Response: "Echo: hello"}},
+			Turns:     []ChatTurn{{Prompt: "hello", Response: "Echo: hello"}},
 			PromptCycle: PromptCycleStatus{
 				Thinking: PromptCyclePhase{State: "done", ElapsedMs: 5},
 			},
@@ -232,4 +292,10 @@ func TestRunOutputWidgetLoop_SkipsDuplicateFrames(t *testing.T) {
 	if !strings.Contains(widgetOutput, "Agent: Echo: hello") {
 		t.Fatalf("expected rendered agent response in output widget, got:\n%s", widgetOutput)
 	}
+}
+
+func TestRunOutputWidgetLoopWithInput_QuitTokenStopsLoop(t *testing.T) {
+	runHeadlessWidgetLoopScript(t, "q\n", func(ctx context.Context, in io.Reader, out io.Writer) error {
+		return runOutputWidgetLoopWithInput(ctx, "http://127.0.0.1:0", in, out, 100*time.Millisecond)
+	})
 }

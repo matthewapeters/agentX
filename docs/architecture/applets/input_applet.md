@@ -1,6 +1,6 @@
 # Input Applet Contract
 
-Last updated: 2026-06-01
+Last updated: 2026-06-03
 Applet ID: `input`
 Runtime entry: `agentx-core --input-widget`
 
@@ -12,8 +12,9 @@ Runtime entry: `agentx-core --input-widget`
 
 ## Owned Widget/Surface Inventory
 
-- Prompt entry line
-- Input command handling (`:clear`, `:q`)
+- Scrollable multiline input frame (IBM-style bordered viewport)
+- Control-entry frame (vim-style command lane activated via `ESC`)
+- Input command handling (`:clear`, `:q`, context commands)
 - Activity hint rendering sourced from core activity state
 
 ## Affordance List
@@ -25,13 +26,40 @@ Runtime entry: `agentx-core --input-widget`
 
 ## Command/Input Model
 
-- Primary input: single-line prompt submission to core `/submit` contract.
-- Supported commands:
-  - `:clear`
-  - `:q`
-  - `:context-add <file-path>` (alias: `:ctx-add <file-path>`)
+- Primary input mode is multiline compose with a visible cursor.
+- Default focus is the input frame; `ESC` toggles focus between input and
+  control-entry frames.
+- Border color indicates focus owner:
+  - focused frame: accent border
+  - unfocused frame: muted border
+- `Enter` in input focus inserts line breaks (does not submit).
+- `Tab` in input focus inserts a literal tab character.
+- Cursor vs viewport movement split:
+  - Arrow keys move the text cursor
+  - `Shift` + Arrow keys pan the input viewport
+- Overflow behavior:
+  - Right-side vertical scrollbar appears when input height exceeds viewport
+  - Bottom horizontal scrollbar appears when line width exceeds viewport
+  - Scrollbar thumb position/size reflects relative viewport position/coverage
+- Key help is hidden by default and is toggled by entering `:?` in the
+  control-entry frame.
+- Control-entry submit behavior (`Enter` while control-entry has focus):
+  - `:q` submits quit command and closes widget after successful submit
+  - `:?` toggles help locally
+  - Other commands (e.g., `:clear`, `:context-add ...`, `:ctx-add ...`) are
+    submitted to core `/submit`
+  - Empty command (`:` only) submits current multiline input buffer
 - Prompt label includes most recent context-file signal when available from
   `/activity` snapshot metadata.
+
+### Terminal portability note
+
+- Many terminals do not emit a distinct `Shift+Enter` keycode from `Enter`.
+  The widget treats `Enter` as newline insertion in input focus; there is no
+  separate `Shift+Enter` submit path.
+- Shift+arrow escape encodings vary by terminal; widget decoding accepts both
+  CSI-style (`\x1b[1;2A` etc.) and lowercase xterm-style (`\x1b[a` etc.)
+  variants for viewport panning.
 
 ## Owned Data/State
 
@@ -80,7 +108,9 @@ Applet process launch index: `3`.
 ## Test Evidence Targets
 
 - Unit anchors:
-  - `cmd/agentx-core/input_widget_test.go`
+  - `cmd/agentx-core/input_widget_test.go` — state machine, compose transitions, help gate, multiline submit/cancel/discard, context-add command, scrollbar, activity label
+  - `cmd/agentx-core/widget_input_test.go` — shared alias policy, debug toggle
+  - `cmd/agentx-core/widget_harness_test.go` — shared test helpers (env, project dir, script runners) available to input tests
 - Integration/functional anchors:
   - `cmd/agentx-core/demo_harness.go` (`e2e-input-001`)
   - `cmd/agentx-core/demo_harness_test.go`
@@ -91,6 +121,7 @@ Applet process launch index: `3`.
 ## Open Parity Notes
 
 - Keep command semantics and clear behavior aligned with `PD-02` and `PD-16`.
+- Preserve `:clear`/`:q` command compatibility through control-entry submit.
 
 ## Gap Note
 

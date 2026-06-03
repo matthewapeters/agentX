@@ -63,8 +63,9 @@ composition logic while preserving UX behavior contracts.
 
 Primary evidence targets:
 
-- `cmd/agentx-core/context_widget.go` (transitional source until split runtime lands)
-- `cmd/agentx-core/context_widget_test.go`
+- `cmd/agentx-core/settings_widget.go` (first-class settings applet runtime)
+- `cmd/agentx-core/settings_widget_test.go`
+- `cmd/agentx-core/context_widget.go` (configuration tab rendering in system panel)
 - `cmd/agentx-core/core_system_renderer_test.go`
 - `cmd/agentx-core/demo_harness.go` (`e2e-system-001`, `e2e-system-tour-001`)
 - `tests/test_demo_system_panel_tour_headless.sh`
@@ -100,7 +101,11 @@ in startup composition spec).
 
 ## Test Evidence Targets
 
-- Unit anchors (current transitional implementation):
+- Unit anchors (first-class implementation):
+  - `cmd/agentx-core/settings_widget.go` — `runSettingsWidgetCommand`, `runSettingsWidgetLoop`, `normalizeSettingsWidgetControlCommand`
+  - `cmd/agentx-core/settings_widget_test.go` — constrained-option cycle, TOML scalar edit, reload, alias policy, `TestRunSettingsWidgetCommand_QuitTokenStopsLoop`
+  - `cmd/agentx-core/widget_harness_test.go` — `createWidgetTestConfigProject`, `runHeadlessWidgetCommandScript` used by settings tests
+- System panel / transitional anchors:
   - `cmd/agentx-core/context_widget_test.go`
   - `cmd/agentx-core/core_system_renderer_test.go`
 - Integration/functional anchors:
@@ -110,9 +115,12 @@ in startup composition spec).
 
 ## Current State
 
-- First-class runtime entrypoint is implemented and active in Go runtime.
-- Transitional rendering through context tabs may still exist for composed
-  parity views, but does not supersede first-class ownership.
+- First-class runtime entrypoint is implemented and active in Go runtime (`cmd/agentx-core/settings_widget.go`).
+- Shared loop pre-handler (`handleWidgetLoopControlCommand`) is wired for quit/help/refresh.
+- Shared alias policy (`defaultWidgetControlAliases`) is applied via `normalizeSettingsWidgetControlCommand`.
+- TOML scalar/option editing for the approved field list is implemented and tested.
+- Configuration tab in system panel context widget still exists as a separate rendered view; it is not superseded by this applet.
+- tmuxp composition wiring to a dedicated first-class pane is pending (launch order to be fixed in startup composition spec).
 
 ## Gap Note
 
@@ -122,7 +130,8 @@ in startup composition spec).
 
 ## Done Criteria
 
-1. Dedicated runtime entrypoint and lifecycle registration exist.
-2. tmuxp composition wiring places the settings surface in system UX layout.
-3. Unit + integration + functional parity evidence passes.
-4. Traceability rows are reconciled as tested in UX lifecycle docs.
+1. ✅ Dedicated runtime entrypoint and lifecycle registration exist (`settings_widget.go`).
+2. ✅ Unit test coverage for edit, reload, alias policy, and quit-loop behavior.
+3. tmuxp composition wiring places the settings surface in system UX layout.
+4. Integration + functional parity evidence passes against system-tour flows.
+5. Traceability rows are reconciled as tested in UX lifecycle docs.

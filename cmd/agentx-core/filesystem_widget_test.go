@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -83,6 +84,41 @@ func TestNormalizeFilesystemWidgetCommand(t *testing.T) {
 		if got := normalizeFilesystemWidgetCommand(input); got != expected {
 			t.Fatalf("normalize command mismatch for %q: got %q want %q", input, got, expected)
 		}
+	}
+}
+
+func TestNormalizeFilesystemWidgetControlCommand(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+	}{
+		{raw: "?", want: "help"},
+		{raw: ":q", want: "q"},
+		{raw: " exit ", want: "quit"},
+	}
+
+	for _, tt := range tests {
+		if got := normalizeFilesystemWidgetControlCommand(tt.raw); got != tt.want {
+			t.Fatalf("normalizeFilesystemWidgetControlCommand(%q) = %q, want %q", tt.raw, got, tt.want)
+		}
+	}
+}
+
+func TestRunFilesystemWidgetCommand_QuitTokenStopsLoop(t *testing.T) {
+	projectDir := t.TempDir()
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_CORE_HTTP":   "http://127.0.0.1:0",
+	})
+
+	exitCode, output := runHeadlessWidgetCommandScript(t, "q\n", func(in io.Reader, out io.Writer) int {
+		return runFilesystemWidgetCommand("", in, out)
+	})
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d output=%q", exitCode, output)
+	}
+	if !strings.Contains(output, "FILES") {
+		t.Fatalf("expected filesystem frame output, got %q", output)
 	}
 }
 
@@ -448,11 +484,8 @@ func TestFilesystemWidgetHandleCommand_NavigationKeepsStatusStableOnSuccess(t *t
 }
 
 func TestFilesystemWidgetHandleCommand_ReturnHardSelectActivates(t *testing.T) {
-	projectDir := t.TempDir()
+	projectDir := createWidgetTestProjectDir(t, []string{"note.txt"}, nil)
 	filePath := filepath.Join(projectDir, "note.txt")
-	if err := os.WriteFile(filePath, []byte("hello"), 0o644); err != nil {
-		t.Fatalf("failed creating file: %v", err)
-	}
 
 	var recordedPrompt string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
