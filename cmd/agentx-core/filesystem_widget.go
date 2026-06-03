@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 type filesystemWidgetEntry struct {
@@ -34,11 +36,28 @@ type filesystemWidgetState struct {
 	selected     int
 	viewOffset   int
 	viewportRows int
+	viewportCols int
+	showHelp     bool
 	softSelected map[string]bool
 	status       string
+	bellPending  bool
 }
 
 const defaultFilesystemViewportRows = 12
+const defaultFilesystemViewportCols = 58
+const filesystemWidgetBorderLines = 2
+
+const (
+	filesystemParentRowStyle  = "\033[48;5;238m\033[97m"
+	filesystemHiddenFileStyle = ansiMagenta
+	filesystemConfigFileStyle = ansiYellow
+	filesystemGoFileStyle     = ansiCyan
+	filesystemPythonFileStyle = ansiBlue
+	filesystemJSFileStyle     = ansiYellow
+	filesystemCFileStyle      = ansiGreen
+	filesystemOtherCodeStyle  = ansiGreen
+	filesystemMissingStyle    = ansiRed
+)
 
 func runFilesystemWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 	baseURL := strings.TrimSpace(coreHTTP)
@@ -89,39 +108,295 @@ func runFilesystemWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) in
 }
 
 func runFilesystemWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, state *filesystemWidgetState) error {
-	scanner := bufio.NewScanner(in)
+	commandReader, promptMode, cleanup := newFilesystemWidgetCommandReader(in)
+	defer cleanup()
+	var previousLines []string
+
 	for {
-		if _, err := fmt.Fprintf(out, "\033[H\033[2J%s\n", state.render()); err != nil {
+		state.adaptViewportToTerminal(out, promptMode)
+		currentLines := filesystemWidgetFrameLines(state.render())
+		if err := writeFilesystemWidgetFrameDiff(out, previousLines, currentLines); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprint(out, "files> "); err != nil {
-			return err
-		}
-
-		if !scanner.Scan() {
-			if scanErr := scanner.Err(); scanErr != nil {
-				return scanErr
+		previousLines = currentLines
+		if promptMode {
+			if _, err := fmt.Fprint(out, "files> "); err != nil {
+				return err
 			}
-			return nil
 		}
 
-		command := normalizeFilesystemWidgetCommand(scanner.Text())
+		command, readErr := commandReader()
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				return nil
+			}
+			return readErr
+		}
+
 		if command == "q" || command == "quit" {
 			return nil
 		}
 		if command == "?" || command == "help" {
-			state.status = "Keys: Enter/l hard-select; space/s soft-select; k/up; j/down; pgup/pgdn; top/end; u up; b back; f forward; h home-dir; r refresh; a attach; e edit; q quit"
+			state.toggleHelp()
 			continue
 		}
 
 		actionErr := state.handleCommand(ctx, command)
 		if actionErr != nil {
 			state.status = fmt.Sprintf("Error: %v", actionErr)
+			continue
+		}
+		if state.consumeBell() {
+			if _, err := fmt.Fprint(out, "\a"); err != nil {
+				return err
+			}
 		}
 	}
 }
 
+func (s *filesystemWidgetState) adaptViewportToTerminal(out io.Writer, promptMode bool) {
+	file, ok := out.(*os.File)
+	if !ok {
+		return
+	}
+	fd := int(file.Fd())
+	if !term.IsTerminal(fd) {
+		return
+	}
+	width, height, err := term.GetSize(fd)
+	if err != nil {
+		return
+	}
+	s.applyViewportDimensions(height, width, promptMode)
+}
+
+func (s *filesystemWidgetState) applyViewportDimensions(height int, width int, promptMode bool) {
+	rows := height - s.headerLineCount() - filesystemWidgetBorderLines
+	if promptMode {
+		rows--
+	}
+	if rows < 1 {
+		rows = 1
+	}
+	contentCols := defaultFilesystemViewportCols
+	if width > 4 {
+		contentCols = width - 4
+	} else {
+		contentCols = 1
+	}
+	s.viewportRows = rows
+	s.viewportCols = contentCols
+}
+
+func (s *filesystemWidgetState) headerLineCount() int {
+	count := 7
+	if s.showHelp {
+		count += 2
+	}
+	return count
+}
+
+func (s *filesystemWidgetState) toggleHelp() {
+	s.showHelp = !s.showHelp
+	if s.showHelp {
+		s.status = "Help shown"
+		return
+	}
+	s.status = "Help hidden"
+}
+
+func (s *filesystemWidgetState) viewportContentWidth() int {
+	if s.viewportCols > 0 {
+		return s.viewportCols
+	}
+	return defaultFilesystemViewportCols
+}
+
+func (s *filesystemWidgetState) clipToViewport(line string) string {
+	if s.viewportCols <= 0 {
+		return line
+	}
+	return trimSingleLine(line, s.viewportContentWidth()+4)
+}
+
+func writeFilesystemWidgetFrame(out io.Writer, body string) error {
+	return writeFilesystemWidgetFrameDiff(out, nil, filesystemWidgetFrameLines(body))
+}
+
+func filesystemWidgetFrameLines(body string) []string {
+	normalized := strings.ReplaceAll(body, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	return strings.Split(normalized, "\n")
+}
+
+func writeFilesystemWidgetFrameDiff(out io.Writer, previous []string, current []string) error {
+	if len(previous) == 0 {
+		return writeFilesystemWidgetFullFrame(out, current)
+	}
+
+	maxLines := len(current)
+	if len(previous) > maxLines {
+		maxLines = len(previous)
+	}
+	for idx := 0; idx < maxLines; idx++ {
+		prevLine := ""
+		if idx < len(previous) {
+			prevLine = previous[idx]
+		}
+		currLine := ""
+		if idx < len(current) {
+			currLine = current[idx]
+		}
+		if prevLine == currLine {
+			continue
+		}
+		if _, err := fmt.Fprintf(out, "\033[%d;1H\033[2K%s", idx+1, normalizeFilesystemWidgetLine(currLine)); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(out, "\033[%d;1H", len(current)+1)
+	return err
+}
+
+func writeFilesystemWidgetFullFrame(out io.Writer, lines []string) error {
+	if _, err := fmt.Fprint(out, "\033[H\033[2J"); err != nil {
+		return err
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprintf(out, "%s\r\n", normalizeFilesystemWidgetLine(line)); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(out, "\033[%d;1H", len(lines)+1)
+	return err
+}
+
+func normalizeFilesystemWidgetLine(line string) string {
+	normalized := strings.ReplaceAll(line, "\r", " ")
+	normalized = strings.ReplaceAll(normalized, "\n", " ")
+	return normalized
+}
+
+func newFilesystemWidgetCommandReader(in io.Reader) (func() (string, error), bool, func()) {
+	file, ok := in.(*os.File)
+	if !ok {
+		scanner := bufio.NewScanner(in)
+		return func() (string, error) {
+			if !scanner.Scan() {
+				if scanErr := scanner.Err(); scanErr != nil {
+					return "", scanErr
+				}
+				return "", io.EOF
+			}
+			return normalizeFilesystemWidgetCommand(scanner.Text()), nil
+		}, true, func() {}
+	}
+
+	fd := int(file.Fd())
+	if !term.IsTerminal(fd) {
+		scanner := bufio.NewScanner(file)
+		return func() (string, error) {
+			if !scanner.Scan() {
+				if scanErr := scanner.Err(); scanErr != nil {
+					return "", scanErr
+				}
+				return "", io.EOF
+			}
+			return normalizeFilesystemWidgetCommand(scanner.Text()), nil
+		}, true, func() {}
+	}
+
+	originalState, err := term.MakeRaw(fd)
+	if err != nil {
+		scanner := bufio.NewScanner(file)
+		return func() (string, error) {
+			if !scanner.Scan() {
+				if scanErr := scanner.Err(); scanErr != nil {
+					return "", scanErr
+				}
+				return "", io.EOF
+			}
+			return normalizeFilesystemWidgetCommand(scanner.Text()), nil
+		}, true, func() {}
+	}
+
+	reader := bufio.NewReader(file)
+	readCommand := func() (string, error) {
+		for {
+			b, readErr := reader.ReadByte()
+			if readErr != nil {
+				return "", readErr
+			}
+			switch b {
+			case 3:
+				return "q", nil
+			case 13, 10:
+				return "enter", nil
+			case 9:
+				return "tab", nil
+			case ' ':
+				return "space", nil
+			case 27:
+				cmd, ok, err := readFilesystemWidgetEscapeCommand(reader)
+				if err != nil {
+					return "", err
+				}
+				if ok {
+					return cmd, nil
+				}
+			case 127:
+				return "b", nil
+			default:
+				if b < 32 {
+					continue
+				}
+				return normalizeFilesystemWidgetCommand(string([]byte{b})), nil
+			}
+		}
+	}
+
+	cleanup := func() {
+		_ = term.Restore(fd, originalState)
+	}
+
+	return readCommand, false, cleanup
+}
+
+func readFilesystemWidgetEscapeCommand(reader *bufio.Reader) (string, bool, error) {
+	next, err := reader.ReadByte()
+	if err != nil {
+		return "", false, err
+	}
+	if next != '[' {
+		return "", false, nil
+	}
+
+	seq := make([]byte, 0, 8)
+	for {
+		b, readErr := reader.ReadByte()
+		if readErr != nil {
+			return "", false, readErr
+		}
+		seq = append(seq, b)
+		if (b >= 'A' && b <= 'Z') || b == '~' {
+			break
+		}
+		if len(seq) > 8 {
+			return "", false, nil
+		}
+	}
+
+	command, ok := normalizeFilesystemWidgetEscapeSequence("\x1b[" + string(seq))
+	if !ok {
+		return "", false, nil
+	}
+	return command, true, nil
+}
+
 func normalizeFilesystemWidgetCommand(raw string) string {
+	if command, ok := normalizeFilesystemWidgetEscapeSequence(raw); ok {
+		return command
+	}
 	if strings.TrimSpace(raw) == "" {
 		if len(raw) > 0 {
 			return "space"
@@ -166,31 +441,66 @@ func normalizeFilesystemWidgetCommand(raw string) string {
 	return trimmed
 }
 
+func normalizeFilesystemWidgetEscapeSequence(raw string) (string, bool) {
+	switch raw {
+	case "\x1b[A":
+		return "k", true
+	case "\x1b[B":
+		return "j", true
+	case "\x1b[C":
+		return "right", true
+	case "\x1b[D":
+		return "left", true
+	case "\x1b[5~":
+		return "pgup", true
+	case "\x1b[6~":
+		return "pgdn", true
+	case "\x1b[H", "\x1b[1~", "\x1b[7~":
+		return "top", true
+	case "\x1b[F", "\x1b[4~", "\x1b[8~":
+		return "end", true
+	default:
+		return "", false
+	}
+}
+
 func (s *filesystemWidgetState) handleCommand(ctx context.Context, command string) error {
 	switch command {
 	case "k":
-		s.moveSelection(-1)
-		s.status = "Selection moved"
+		if !s.moveSelection(-1) {
+			s.status = "Top of list"
+			s.requestBell()
+		}
 		return nil
 	case "j":
-		s.moveSelection(1)
-		s.status = "Selection moved"
+		if !s.moveSelection(1) {
+			s.status = "Bottom of list"
+			s.requestBell()
+		}
 		return nil
 	case "pgup":
-		s.moveSelectionPage(-1)
-		s.status = "Selection moved"
+		if !s.moveSelectionPage(-1) {
+			s.status = "Top of list"
+			s.requestBell()
+		}
 		return nil
 	case "pgdn":
-		s.moveSelectionPage(1)
-		s.status = "Selection moved"
+		if !s.moveSelectionPage(1) {
+			s.status = "Bottom of list"
+			s.requestBell()
+		}
 		return nil
 	case "top":
-		s.moveSelectionTo(0)
-		s.status = "Selection moved"
+		if !s.moveSelectionTo(0) {
+			s.status = "Top of list"
+			s.requestBell()
+		}
 		return nil
 	case "end":
-		s.moveSelectionTo(len(s.entries) - 1)
-		s.status = "Selection moved"
+		if !s.moveSelectionTo(len(s.entries) - 1) {
+			s.status = "Bottom of list"
+			s.requestBell()
+		}
 		return nil
 	case "space", "s", "toggle":
 		if err := s.toggleSoftSelection(); err != nil {
@@ -261,6 +571,8 @@ func (s *filesystemWidgetState) render() string {
 	s.ensureSelectionVisible()
 	start, end := s.visibleRange()
 	total := len(s.entries)
+	contentWidth := s.viewportContentWidth()
+	horizontalBorder := strings.Repeat("─", contentWidth+2)
 	showFrom := 0
 	showTo := 0
 	if total > 0 {
@@ -270,51 +582,169 @@ func (s *filesystemWidgetState) render() string {
 
 	lines := []string{
 		"[FILES]",
-		fmt.Sprintf("project: %s", s.projectDir),
-		fmt.Sprintf("current: %s", s.currentDir),
-		"keys: Enter/l open (hard), space/s toggle (soft), k/up, j/down, pgup/pgdn, top/end, u up, b back, f forward, h home-dir, r refresh, a attach, e edit, q quit",
-		fmt.Sprintf("showing %d-%d of %d", showFrom, showTo, total),
-		fmt.Sprintf("status: %s", strings.TrimSpace(s.status)),
+		s.clipToViewport(fmt.Sprintf("project: %s", s.projectDir)),
+		s.clipToViewport(fmt.Sprintf("current: %s", s.currentDir)),
+		s.clipToViewport("help: ? toggle"),
+		s.clipToViewport(fmt.Sprintf("showing %d-%d of %d", showFrom, showTo, total)),
+		s.clipToViewport(fmt.Sprintf("status: %s", strings.TrimSpace(s.status))),
 		"",
+	}
+	if s.showHelp {
+		lines = append(lines,
+			s.clipToViewport("keys: Enter open, Space toggle, Up/Down move, PageUp/PageDown page, Home/End jump"),
+			s.clipToViewport("nav: .. or u parent, b back, f forward, h home-dir, r refresh, a attach, e edit, q quit"),
+		)
 	}
 
 	if total == 0 {
-		lines = append(lines, "(empty directory)")
+		lines = append(lines, "┌"+horizontalBorder+"┐")
+		lines = append(lines, fmt.Sprintf("│ %-*s │", contentWidth, trimSingleLine("(empty directory)", contentWidth)))
+		lines = append(lines, "└"+horizontalBorder+"┘")
 		return strings.Join(lines, "\n")
 	}
 
+	lines = append(lines, "┌"+horizontalBorder+"┐")
+
 	for idx := start; idx < end; idx++ {
 		entry := s.entries[idx]
-		marker := " "
-		if idx == s.selected {
-			marker = ">"
-		}
-		soft := "[ ]"
-		if s.isSoftSelected(entry) {
-			soft = "[x]"
-		}
-
-		kind := "F"
-		size := humanFileSize(entry.Size)
-		if entry.IsDir {
-			kind = "D"
-			size = "-"
-		}
-		if !entry.Exists {
-			kind = "?"
-		}
-		lines = append(lines, fmt.Sprintf("%s%s [%s] %-36s %8s", marker, soft, kind, trimSingleLine(entry.Name, 36), size))
+		row := s.formatEntryRow(entry, idx == s.selected)
+		lines = append(lines, fmt.Sprintf("│ %s │", padVisibleWidth(row, contentWidth)))
 	}
+	lines = append(lines, "└"+horizontalBorder+"┘")
 
 	return strings.Join(lines, "\n")
 }
 
-func (s *filesystemWidgetState) moveSelection(delta int) {
+func (s *filesystemWidgetState) formatEntryRow(entry filesystemWidgetEntry, selected bool) string {
+	marker := " "
+	if selected {
+		marker = ">"
+	}
+	soft := "[ ]"
+	if s.isSoftSelected(entry) {
+		soft = "[x]"
+	}
+
+	size := humanFileSize(entry.Size)
+	if entry.IsDir {
+		size = "-"
+	}
+
+	prefix := fmt.Sprintf("%s %s ", marker, soft)
+	const minNameWidth = 6
+	sizeWidth := 8
+	contentWidth := s.viewportContentWidth()
+	icon := filesystemEntryIcon(entry)
+	iconWidth := len([]rune(icon)) + 1
+	nameWidth := contentWidth - len([]rune(prefix)) - iconWidth - 1 - sizeWidth
+	if nameWidth < minNameWidth {
+		nameWidth = minNameWidth
+		sizeWidth = contentWidth - len([]rune(prefix)) - iconWidth - 1 - nameWidth
+		if sizeWidth < 1 {
+			sizeWidth = 1
+		}
+	}
+
+	name := trimSingleLine(entry.Name, nameWidth)
+	name = fmt.Sprintf("%-*s", nameWidth, name)
+	size = trimSingleLine(size, sizeWidth)
+
+	iconAndName := fmt.Sprintf("%s %s", icon, name)
+	styledIconAndName := styleToken(iconAndName, filesystemEntryStyle(entry))
+	if entry.Name == ".." {
+		styledIconAndName = filesystemParentRowStyle + iconAndName + ansiReset
+	}
+
+	return fmt.Sprintf("%s%s %*s", prefix, styledIconAndName, sizeWidth, size)
+}
+
+func filesystemEntryIcon(entry filesystemWidgetEntry) string {
+	if entry.Name == ".." {
+		return "⤴"
+	}
+	if entry.IsDir {
+		return "📁"
+	}
+	if !entry.Exists {
+		return "❓"
+	}
+	return "📄"
+}
+
+func filesystemEntryStyle(entry filesystemWidgetEntry) string {
+	if !entry.Exists {
+		return filesystemMissingStyle
+	}
+	if entry.IsDir {
+		return ansiReverse
+	}
+	if strings.HasPrefix(entry.Name, ".") {
+		return filesystemHiddenFileStyle
+	}
+	if isFilesystemConfigFile(entry.Name) {
+		return filesystemConfigFileStyle
+	}
+	if style, ok := filesystemCodeFileStyle(entry.Name); ok {
+		return style
+	}
+	return ansiReset
+}
+
+func isFilesystemConfigFile(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	switch ext {
+	case ".ini", ".toml", ".yaml", ".yml", ".json", ".xml", ".conf", ".cfg":
+		return true
+	default:
+		return false
+	}
+}
+
+func filesystemCodeFileStyle(name string) (string, bool) {
+	ext := strings.ToLower(filepath.Ext(name))
+	switch ext {
+	case ".go":
+		return filesystemGoFileStyle, true
+	case ".py":
+		return filesystemPythonFileStyle, true
+	case ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx":
+		return filesystemJSFileStyle, true
+	case ".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx":
+		return filesystemCFileStyle, true
+	case ".java", ".kt", ".rs", ".rb", ".php", ".cs", ".swift", ".sh", ".bash", ".zsh":
+		return filesystemOtherCodeStyle, true
+	default:
+		return "", false
+	}
+}
+
+func trimSingleLinePreserveSpacing(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	singleLine := strings.ReplaceAll(value, "\r", " ")
+	singleLine = strings.ReplaceAll(singleLine, "\n", " ")
+	singleLine = strings.ReplaceAll(singleLine, "\t", " ")
+	if singleLine == "" {
+		return ""
+	}
+	if len(singleLine) <= limit {
+		return singleLine
+	}
+	if limit < 4 {
+		return singleLine[:limit]
+	}
+	return strings.TrimRight(singleLine[:limit-3], " ") + "..."
+}
+
+func (s *filesystemWidgetState) moveSelection(delta int) bool {
 	if len(s.entries) == 0 {
 		s.selected = 0
 		s.viewOffset = 0
-		return
+		return false
 	}
+	oldSelected := s.selected
+	oldOffset := s.viewOffset
 	next := s.selected + delta
 	if next < 0 {
 		next = 0
@@ -324,27 +754,55 @@ func (s *filesystemWidgetState) moveSelection(delta int) {
 	}
 	s.selected = next
 	s.ensureSelectionVisible()
+	return oldSelected != s.selected || oldOffset != s.viewOffset
 }
 
-func (s *filesystemWidgetState) moveSelectionPage(direction int) {
+func (s *filesystemWidgetState) moveSelectionPage(direction int) bool {
 	if len(s.entries) == 0 {
 		s.selected = 0
 		s.viewOffset = 0
-		return
+		return false
 	}
-	step := s.viewportRows - 1
-	if step < 1 {
-		step = 1
+	page := s.viewportRows
+	if page < 1 {
+		page = 1
 	}
-	s.moveSelection(direction * step)
+
+	oldSelected := s.selected
+	oldOffset := s.viewOffset
+
+	total := len(s.entries)
+	maxOffset := total - page
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	targetOffset := s.viewOffset + (direction * page)
+	if targetOffset < 0 {
+		targetOffset = 0
+	}
+	if targetOffset > maxOffset {
+		targetOffset = maxOffset
+	}
+
+	deltaOffset := targetOffset - s.viewOffset
+	s.viewOffset = targetOffset
+	if deltaOffset != 0 {
+		s.selected += deltaOffset
+	} else {
+		s.selected += direction * page
+	}
+	s.ensureSelectionVisible()
+	return oldSelected != s.selected || oldOffset != s.viewOffset
 }
 
-func (s *filesystemWidgetState) moveSelectionTo(index int) {
+func (s *filesystemWidgetState) moveSelectionTo(index int) bool {
 	if len(s.entries) == 0 {
 		s.selected = 0
 		s.viewOffset = 0
-		return
+		return false
 	}
+	oldSelected := s.selected
+	oldOffset := s.viewOffset
 	if index < 0 {
 		index = 0
 	}
@@ -353,6 +811,19 @@ func (s *filesystemWidgetState) moveSelectionTo(index int) {
 	}
 	s.selected = index
 	s.ensureSelectionVisible()
+	return oldSelected != s.selected || oldOffset != s.viewOffset
+}
+
+func (s *filesystemWidgetState) requestBell() {
+	s.bellPending = true
+}
+
+func (s *filesystemWidgetState) consumeBell() bool {
+	if !s.bellPending {
+		return false
+	}
+	s.bellPending = false
+	return true
 }
 
 func (s *filesystemWidgetState) visibleRange() (int, int) {
@@ -474,10 +945,20 @@ func (s *filesystemWidgetState) refresh() error {
 		return strings.ToLower(results[i].Name) < strings.ToLower(results[j].Name)
 	})
 
+	parent := filepath.Dir(s.currentDir)
+	if parent != s.currentDir {
+		results = append([]filesystemWidgetEntry{{
+			Name:   "..",
+			Path:   parent,
+			IsDir:  true,
+			Size:   0,
+			Exists: true,
+		}}, results...)
+	}
 	s.entries = results
 	if len(s.softSelected) > 0 {
-		active := make(map[string]struct{}, len(results))
-		for _, entry := range results {
+		active := make(map[string]struct{}, len(s.entries))
+		for _, entry := range s.entries {
 			active[s.selectionKey(entry)] = struct{}{}
 		}
 		for key := range s.softSelected {

@@ -1,14 +1,15 @@
 # File System Applet Contract
 
-Last updated: 2026-06-02
+Last updated: 2026-06-03
 Applet ID: `filesystem`
 Runtime entry: `agentx-core --filesystem-widget` (implemented)
 
 ## Purpose
 
-Define the first-class File System runtime applet contract and its UX traceability.
-This applet is composed into the system experience through tmuxp composition
-logic while preserving UX behavior defined in panel and flow specs.
+Define the first-class File System runtime applet contract and its UX
+traceability. This document is authoritative for filesystem applet behavior,
+state ownership, and render semantics implemented in
+`cmd/agentx-core/filesystem_widget.go`.
 
 ## UX Anchors
 
@@ -20,9 +21,11 @@ logic while preserving UX behavior defined in panel and flow specs.
 
 ## Owned Widget/Surface Inventory
 
-- File-system listing/summary surface used by system tab-tour parity
-- Deterministic project-root metadata block (`project_dir`, `entry_count` parity contract)
-- Navigation/selection summary rows required by system-flow validation
+- Dedicated filesystem TUI widget process with adaptive viewport rendering.
+- Directory listing surface with persistent selection state and deterministic
+  visible-range status (`showing X-Y of Z`).
+- File actions integrated with core submit path (`:context-add`) and editor
+  launch path (tmux `new-window`).
 
 ## Affordance List
 
@@ -35,26 +38,65 @@ logic while preserving UX behavior defined in panel and flow specs.
 - `UF-11`: file explorer navigation and attach/edit/folder-memory flows.
 - `UF-12`: context popup rendering visibility and palette-first invariants.
 
+## Visual Style Contract (Authoritative)
+
+The filesystem applet render style is intentionally semantic and file-type aware.
+
+- Kind markers use emoji, not `[F|D]` markers:
+  - parent directory: `⤴`
+  - directory: `📁`
+  - file: `📄`
+  - missing/unresolvable entry: `❓`
+- Directory names use reverse-video ANSI styling (`\033[7m`) for fast visual
+  differentiation from files.
+- Parent directory row (`..`) uses dedicated background + foreground styling
+  (`\033[48;5;238m\033[97m`) for strong navigation affordance.
+- File color classes:
+  - hidden files (`.` prefix): magenta
+  - config files (`.ini`, `.toml`, `.yaml`, `.yml`, `.json`, `.xml`, `.conf`,
+    `.cfg`): yellow
+  - Go files: cyan
+  - Python files: blue
+  - JavaScript/TypeScript family (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`): yellow
+  - C/C++ family (`.c`, `.h`, `.cc`, `.cpp`, `.cxx`, `.hpp`, `.hh`, `.hxx`): green
+  - other common code files (`.java`, `.kt`, `.rs`, `.rb`, `.php`, `.cs`,
+    `.swift`, shell scripts): green
+
+Implementation anchors:
+
+- `filesystemWidgetState.formatEntryRow()`
+- `filesystemEntryIcon()`
+- `filesystemEntryStyle()`
+- `isFilesystemConfigFile()`
+- `filesystemCodeFileStyle()`
+
 ## Command/Input Model
 
 - Current mode: first-class command parser exists in dedicated filesystem
   process.
 - Supported navigation/action keys:
-  - `k`/`up`, `j`/`down`, arrow keys (`Up`/`Down` minimum parity target)
+  - Focused key-monitor mode: single-keystroke actions (no command + Enter)
+  - Synthetic `..` parent entry appears at top of non-root directories; selecting it and pressing `Enter` navigates up one level
+  - `Up`/`Down` as primary row navigation keys (`k`/`j` retained for compatibility)
+  - `PageUp`/`PageDown` move viewport by one full page; `Home`/`End` jump to top/bottom
+  - Arrow navigation applies line-buffer viewport scrolling when selection crosses viewport edge
+  - Viewport adapts to active terminal pane dimensions (rows and width) on focused render cycles
   - `u` (parent), `b` (back), `f` (forward), `h` (home), `r` (refresh)
   - `enter`/`l` (open dir or attach file), `a` (attach), `e` (edit), `q` (quit)
-- Remaining parity requirement: long-list viewport/paging behavior required by
-  `PD-11-AF-011..018`.
+  - Boundary attempt feedback: terminal bell (`\a`) when navigation hits top/bottom limits
+- Long-list viewport/paging behavior for `PD-11-AF-011..018` is implemented and
+  covered by executable tests.
 
 ## Owned Data/State
 
-- Authoritative ownership (current and target): files surface UX closure,
-  acceptance evidence, and sign-off state belong to this `filesystem` applet
-  contract.
-- Transitional runtime hosting: files surface may be rendered via context-tab
-  system rendering while migration is in progress.
-- Target ownership after split: filesystem applet owns file listing/selection
-  presentation state and navigation summary state for its dedicated runtime.
+- Authoritative ownership: files surface UX closure, acceptance evidence, and
+  sign-off state belong to this `filesystem` applet contract.
+- Runtime-owned state in `filesystemWidgetState`:
+  - current path and history (`currentDir`, `history`, `historyIndex`)
+  - loaded entries (`entries`) and hard selection (`selected`)
+  - viewport state (`viewOffset`, `viewportRows`, `viewportCols`)
+  - persistent soft-select set (`softSelected`)
+  - status/help/bell state (`status`, `showHelp`, `bellPending`)
 
 ## UX Flow Coverage
 
@@ -63,9 +105,9 @@ logic while preserving UX behavior defined in panel and flow specs.
 
 Primary evidence targets:
 
-- `cmd/agentx-core/context_widget.go` (transitional source until split runtime lands)
-- `cmd/agentx-core/context_widget_test.go`
-- `cmd/agentx-core/core_system_renderer_test.go`
+- `cmd/agentx-core/filesystem_widget.go`
+- `cmd/agentx-core/filesystem_widget_test.go`
+- `cmd/agentx-core/core_applet_supervisor_test.go`
 - `cmd/agentx-core/demo_harness.go` (`e2e-system-001`, `e2e-system-tour-001`)
 - `tests/test_demo_system_panel_tour_headless.sh`
 
@@ -73,9 +115,11 @@ Primary evidence targets:
 
 ### Launch order
 
-Target launch order after first-class split lands: after `context` applet host
-bootstrap and before `logs` applet in tmuxp-composed system assembly (final
-order to be fixed in startup composition spec).
+Current launch order (runtime): managed by core applet host startup sequencing.
+Filesystem applet is a first-class process entry (`--filesystem-widget`).
+
+Target composition order in tmuxp remains an integration concern and must not
+change this applet's authoritative ownership or widget contract.
 
 ### Dedicated tmux target
 
@@ -91,8 +135,8 @@ order to be fixed in startup composition spec).
 
 ## Integration Touchpoints
 
-- `context` applet: transitional host for files surface until split runtime is
-  complete.
+- `context` applet: integration peer for system-tab flow parity and lifecycle
+  orchestration; no ownership transfer of files-surface contract.
 - `input` applet: file attach flows must integrate with input-side context and
   attachment intent (`UF-11`).
 - `system-settings` applet: both participate in deterministic system tab-tour
@@ -102,25 +146,30 @@ order to be fixed in startup composition spec).
 
 ## Test Evidence Targets
 
-- Unit anchors (current transitional implementation):
-  - `cmd/agentx-core/context_widget_test.go`
-  - `cmd/agentx-core/core_system_renderer_test.go`
+- Unit anchors (authoritative filesystem runtime):
+  - `cmd/agentx-core/filesystem_widget_test.go`
+  - `cmd/agentx-core/core_applet_supervisor_test.go`
 - Integration/functional anchors:
   - `cmd/agentx-core/demo_harness.go` (`e2e-system-001`, `e2e-system-tour-001`)
   - `tests/test_demo_system_panel_tour_headless.sh`
-  - `tests/test_file_explorer_context_menu.py` (UX reference for `PD-11`)
+  - `tests/test_file_explorer_context_menu.py` (GUI UX reference for `PD-11-AF-008..010`)
 
 ## Current State
 
-- First-class runtime entrypoint is implemented in Go.
-- System composition and UX parity closure remain in progress; context-owned
-  tab rendering still exists for transitional compatibility paths.
+- First-class runtime entrypoint is implemented in Go and actively used as the
+  authoritative filesystem applet implementation.
+- Keyboard affordances and overflow behavior required by `PD-11-AF-011..018`
+  are implemented with executable evidence.
+- Styling decisions (emoji markers, reverse-video folders, parent-row
+  highlighting, file-type color classes) are implemented in the filesystem
+  widget render path.
 
 ## Gap Note
 
-- UX contract expectations from `PD-11`, `PD-18-AF-004`, `UF-11`, and `UF-12`
-  currently exceed the dedicated-runtime implementation state because files
-  behavior remains transitional under context-tab ownership.
+- Remaining gaps, if any, are composition/runtime-inventory alignment items
+  outside this applet's core widget contract (for example tmuxp assembly and
+  cross-doc traceability synchronization). The filesystem widget behavior itself
+  is implemented and test-covered.
 
 ## Done Criteria
 

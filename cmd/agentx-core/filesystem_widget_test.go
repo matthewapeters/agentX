@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -11,6 +12,48 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestWriteFilesystemWidgetFrame_UsesCRLF(t *testing.T) {
+	var out bytes.Buffer
+	if err := writeFilesystemWidgetFrame(&out, "line1\nline2"); err != nil {
+		t.Fatalf("writeFilesystemWidgetFrame returned error: %v", err)
+	}
+
+	written := out.String()
+	if !strings.Contains(written, "\033[H\033[2J") {
+		t.Fatalf("expected clear+home escape sequence, got %q", written)
+	}
+	if strings.Contains(written, "line1\nline2") {
+		t.Fatalf("expected normalized CRLF line endings, got %q", written)
+	}
+	if !strings.Contains(written, "line1\r\nline2\r\n") {
+		t.Fatalf("expected CRLF-delimited frame body, got %q", written)
+	}
+}
+
+func TestWriteFilesystemWidgetFrameDiff_UpdatesChangedLinesOnly(t *testing.T) {
+	var out bytes.Buffer
+	previous := []string{"line1", "line2", "line3"}
+	current := []string{"line1", "line-two", "line3"}
+
+	if err := writeFilesystemWidgetFrameDiff(&out, previous, current); err != nil {
+		t.Fatalf("writeFilesystemWidgetFrameDiff returned error: %v", err)
+	}
+
+	written := out.String()
+	if strings.Contains(written, "\033[H\033[2J") {
+		t.Fatalf("expected incremental repaint to avoid full-screen clear, got %q", written)
+	}
+	if !strings.Contains(written, "\033[2;1H\033[2Kline-two") {
+		t.Fatalf("expected only changed second line to be rewritten, got %q", written)
+	}
+	if strings.Contains(written, "\033[1;1H\033[2Kline1") || strings.Contains(written, "\033[3;1H\033[2Kline3") {
+		t.Fatalf("expected unchanged lines to be skipped, got %q", written)
+	}
+	if !strings.Contains(written, "\033[4;1H") {
+		t.Fatalf("expected cursor to move below the frame after incremental update, got %q", written)
+	}
+}
 
 func TestNormalizeFilesystemWidgetCommand(t *testing.T) {
 	cases := map[string]string{
@@ -31,6 +74,10 @@ func TestNormalizeFilesystemWidgetCommand(t *testing.T) {
 		"open":    "enter",
 		"attach":  "a",
 		"edit":    "e",
+		"\x1b[A":  "k",
+		"\x1b[B":  "j",
+		"\x1b[5~": "pgup",
+		"\x1b[6~": "pgdn",
 	}
 	for input, expected := range cases {
 		if got := normalizeFilesystemWidgetCommand(input); got != expected {
@@ -70,7 +117,80 @@ func TestFilesystemWidgetActivateSelection_DirectoryNavigates(t *testing.T) {
 	}
 }
 
-func TestFilesystemWidgetRender_IncludesAttachAndEditActions(t *testing.T) {
+func TestFilesystemWidgetRefresh_IncludesParentEntry(t *testing.T) {
+	rootDir := t.TempDir()
+	childDir := filepath.Join(rootDir, "child")
+	if err := os.MkdirAll(childDir, 0o755); err != nil {
+		t.Fatalf("failed creating child dir: %v", err)
+	}
+
+	state := &filesystemWidgetState{currentDir: childDir, softSelected: map[string]bool{}}
+	if err := state.refresh(); err != nil {
+		t.Fatalf("refresh returned error: %v", err)
+	}
+	if len(state.entries) == 0 {
+		t.Fatal("expected at least parent entry in non-root directory")
+	}
+	if state.entries[0].Name != ".." {
+		t.Fatalf("expected first entry to be parent '..', got %q", state.entries[0].Name)
+	}
+	if state.entries[0].Path != rootDir {
+		t.Fatalf("expected parent path %q, got %q", rootDir, state.entries[0].Path)
+	}
+}
+
+func TestFilesystemWidgetActivateSelection_ParentEntryNavigatesUp(t *testing.T) {
+	rootDir := t.TempDir()
+	childDir := filepath.Join(rootDir, "child")
+	if err := os.MkdirAll(childDir, 0o755); err != nil {
+		t.Fatalf("failed creating child dir: %v", err)
+	}
+
+	state := &filesystemWidgetState{
+		baseURL:      "http://127.0.0.1:65535",
+		projectDir:   rootDir,
+		homeDir:      rootDir,
+		currentDir:   childDir,
+		history:      []string{childDir},
+		historyIndex: 0,
+		entries:      []filesystemWidgetEntry{{Name: "..", Path: rootDir, IsDir: true, Exists: true}},
+		selected:     0,
+		softSelected: map[string]bool{},
+	}
+
+	if err := state.activateSelection(context.Background()); err != nil {
+		t.Fatalf("activateSelection returned error: %v", err)
+	}
+	if state.currentDir != rootDir {
+		t.Fatalf("expected parent navigation to %q, got %q", rootDir, state.currentDir)
+	}
+	if got := state.history[len(state.history)-1]; got != rootDir {
+		t.Fatalf("expected history to append parent %q, got %q", rootDir, got)
+	}
+}
+
+func TestFilesystemWidgetApplyViewportDimensions_AdaptsToTerminalSize(t *testing.T) {
+	state := &filesystemWidgetState{viewportRows: defaultFilesystemViewportRows}
+	state.applyViewportDimensions(24, 80, false)
+
+	if state.viewportRows != 15 {
+		t.Fatalf("expected adaptive viewport rows 15, got %d", state.viewportRows)
+	}
+	if state.viewportCols != 76 {
+		t.Fatalf("expected adaptive viewport columns 76, got %d", state.viewportCols)
+	}
+}
+
+func TestFilesystemWidgetApplyViewportDimensions_PromptAwareRows(t *testing.T) {
+	state := &filesystemWidgetState{viewportRows: defaultFilesystemViewportRows}
+	state.applyViewportDimensions(24, 80, true)
+
+	if state.viewportRows != 14 {
+		t.Fatalf("expected prompt-aware adaptive viewport rows 14, got %d", state.viewportRows)
+	}
+}
+
+func TestFilesystemWidgetRender_HidesLegendByDefault(t *testing.T) {
 	state := &filesystemWidgetState{
 		projectDir:   "/tmp/project",
 		currentDir:   "/tmp/project",
@@ -79,11 +199,41 @@ func TestFilesystemWidgetRender_IncludesAttachAndEditActions(t *testing.T) {
 	}
 
 	rendered := state.render()
-	if !strings.Contains(rendered, "a attach, e edit") {
-		t.Fatalf("expected render key legend to include attach/edit actions, got:\n%s", rendered)
+	if !strings.Contains(rendered, "help: ? toggle") {
+		t.Fatalf("expected render to include compact help hint, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "space/s toggle (soft)") {
-		t.Fatalf("expected render key legend to include soft select action, got:\n%s", rendered)
+	if strings.Contains(rendered, "a attach") {
+		t.Fatalf("expected render to hide expanded legend by default, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "┌") || !strings.Contains(rendered, "└") {
+		t.Fatalf("expected render to include box-drawing viewport borders, got:\n%s", rendered)
+	}
+}
+
+func TestFilesystemWidgetToggleHelp_ShowsAndHidesLegend(t *testing.T) {
+	state := &filesystemWidgetState{
+		projectDir:   "/tmp/project",
+		currentDir:   "/tmp/project",
+		viewportRows: 12,
+		status:       "Ready",
+	}
+
+	state.toggleHelp()
+	rendered := state.render()
+	if !strings.Contains(rendered, "keys: Enter open") {
+		t.Fatalf("expected help toggle to show expanded legend, got:\n%s", rendered)
+	}
+	if state.status != "Help shown" {
+		t.Fatalf("expected help toggle to set shown status, got %q", state.status)
+	}
+
+	state.toggleHelp()
+	rendered = state.render()
+	if strings.Contains(rendered, "keys: Enter open") {
+		t.Fatalf("expected second help toggle to hide expanded legend, got:\n%s", rendered)
+	}
+	if state.status != "Help hidden" {
+		t.Fatalf("expected help toggle to set hidden status, got %q", state.status)
 	}
 }
 
@@ -113,11 +263,45 @@ func TestFilesystemWidgetRender_OverflowOrientationAndSelectionVisibility(t *tes
 	if !strings.Contains(rendered, "showing 5-7 of 8") {
 		t.Fatalf("expected deterministic overflow orientation, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, ">[ ] [F] item-6") {
+	if !strings.Contains(rendered, "> [ ]") || !strings.Contains(rendered, "📄") || !strings.Contains(rendered, "item-6") {
 		t.Fatalf("expected selected row to remain visible in rendered viewport, got:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "item-0") {
 		t.Fatalf("expected rows outside viewport to be hidden in overflow render, got:\n%s", rendered)
+	}
+}
+
+func TestFilesystemWidgetRender_StrictColumnsKeepFilenameAligned(t *testing.T) {
+	state := &filesystemWidgetState{
+		projectDir:   "/tmp/project",
+		currentDir:   "/tmp/project",
+		viewportRows: 3,
+		viewportCols: 60,
+		entries: []filesystemWidgetEntry{
+			{Name: "alpha.txt", Path: "/tmp/alpha.txt", Exists: true},
+			{Name: "beta.txt", Path: "/tmp/beta.txt", Exists: true},
+		},
+		selected: 1,
+		status:   "Ready",
+	}
+
+	rendered := state.render()
+	lines := strings.Split(rendered, "\n")
+	var alphaLine string
+	var betaLine string
+	for _, line := range lines {
+		if strings.Contains(line, "alpha.txt") {
+			alphaLine = line
+		}
+		if strings.Contains(line, "beta.txt") {
+			betaLine = line
+		}
+	}
+	if alphaLine == "" || betaLine == "" {
+		t.Fatalf("expected rendered lines for both entries, got:\n%s", rendered)
+	}
+	if strings.Index(alphaLine, "alpha.txt") != strings.Index(betaLine, "beta.txt") {
+		t.Fatalf("expected filename column to remain aligned across selection changes, got:\n%s", rendered)
 	}
 }
 
@@ -132,8 +316,21 @@ func TestFilesystemWidgetHandleCommand_PageNavigation(t *testing.T) {
 	if err := state.handleCommand(context.Background(), "pgdn"); err != nil {
 		t.Fatalf("pgdn returned error: %v", err)
 	}
-	if state.selected != 4 {
-		t.Fatalf("expected pgdn to move selection by page, got %d", state.selected)
+	if state.selected != 5 {
+		t.Fatalf("expected pgdn to move selection by full page, got %d", state.selected)
+	}
+	if state.viewOffset != 5 {
+		t.Fatalf("expected pgdn to move viewport by full page, got offset %d", state.viewOffset)
+	}
+
+	if err := state.handleCommand(context.Background(), "pgup"); err != nil {
+		t.Fatalf("pgup returned error: %v", err)
+	}
+	if state.selected != 0 {
+		t.Fatalf("expected pgup to return selection to first row, got %d", state.selected)
+	}
+	if state.viewOffset != 0 {
+		t.Fatalf("expected pgup to return viewport offset to zero, got %d", state.viewOffset)
 	}
 
 	if err := state.handleCommand(context.Background(), "end"); err != nil {
@@ -165,7 +362,7 @@ func TestFilesystemWidgetHandleCommand_SoftSelectToggleVisibleInRender(t *testin
 		t.Fatalf("space returned error: %v", err)
 	}
 	rendered := state.render()
-	if !strings.Contains(rendered, ">[x] [F] file.txt") {
+	if !strings.Contains(rendered, "> [x]") || !strings.Contains(rendered, "📄") || !strings.Contains(rendered, "file.txt") {
 		t.Fatalf("expected soft-selected state marker in render, got:\n%s", rendered)
 	}
 
@@ -173,8 +370,80 @@ func TestFilesystemWidgetHandleCommand_SoftSelectToggleVisibleInRender(t *testin
 		t.Fatalf("second space returned error: %v", err)
 	}
 	rendered = state.render()
-	if !strings.Contains(rendered, ">[ ] [F] file.txt") {
+	if !strings.Contains(rendered, "> [ ]") || !strings.Contains(rendered, "📄") || !strings.Contains(rendered, "file.txt") {
 		t.Fatalf("expected soft-selected marker to clear after second toggle, got:\n%s", rendered)
+	}
+}
+
+func TestFilesystemWidgetRender_StylesFolderHiddenConfigAndCodeFiles(t *testing.T) {
+	state := &filesystemWidgetState{
+		projectDir:   "/tmp/project",
+		currentDir:   "/tmp/project",
+		viewportRows: 10,
+		viewportCols: 80,
+		entries: []filesystemWidgetEntry{
+			{Name: "..", Path: "/tmp", IsDir: true, Exists: true},
+			{Name: "docs", Path: "/tmp/project/docs", IsDir: true, Exists: true},
+			{Name: ".env", Path: "/tmp/project/.env", Exists: true},
+			{Name: "agentx.toml", Path: "/tmp/project/agentx.toml", Exists: true},
+			{Name: "main.go", Path: "/tmp/project/main.go", Exists: true},
+			{Name: "main.py", Path: "/tmp/project/main.py", Exists: true},
+			{Name: "app.js", Path: "/tmp/project/app.js", Exists: true},
+			{Name: "engine.cpp", Path: "/tmp/project/engine.cpp", Exists: true},
+		},
+		softSelected: map[string]bool{},
+		status:       "Ready",
+	}
+
+	rendered := state.render()
+
+	if !strings.Contains(rendered, filesystemParentRowStyle+"⤴ ..") {
+		t.Fatalf("expected parent entry to use dedicated background style, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, ansiReverse+"📁 docs") {
+		t.Fatalf("expected folder entry to use reverse style, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, filesystemHiddenFileStyle+"📄 .env") {
+		t.Fatalf("expected hidden file style marker, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, filesystemConfigFileStyle+"📄 agentx.toml") {
+		t.Fatalf("expected config file style marker, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, filesystemGoFileStyle+"📄 main.go") {
+		t.Fatalf("expected Go file style marker, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, filesystemPythonFileStyle+"📄 main.py") {
+		t.Fatalf("expected Python file style marker, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, filesystemJSFileStyle+"📄 app.js") {
+		t.Fatalf("expected JavaScript file style marker, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, filesystemCFileStyle+"📄 engine.cpp") {
+		t.Fatalf("expected C/C++ file style marker, got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "[F]") || strings.Contains(rendered, "[D]") {
+		t.Fatalf("expected emoji-based kind marker, got:\n%s", rendered)
+	}
+}
+
+func TestFilesystemWidgetHandleCommand_NavigationKeepsStatusStableOnSuccess(t *testing.T) {
+	entries := []filesystemWidgetEntry{
+		{Name: "a.txt", Path: "/tmp/a.txt", Exists: true},
+		{Name: "b.txt", Path: "/tmp/b.txt", Exists: true},
+	}
+
+	state := &filesystemWidgetState{
+		entries:      entries,
+		viewportRows: 3,
+		selected:     0,
+		status:       "Ready",
+	}
+
+	if err := state.handleCommand(context.Background(), "j"); err != nil {
+		t.Fatalf("down returned error: %v", err)
+	}
+	if state.status != "Ready" {
+		t.Fatalf("expected successful navigation to keep existing status, got %q", state.status)
 	}
 }
 
@@ -276,8 +545,8 @@ func TestFilesystemWidgetAddSelectedToContext_UsesSoftSelectedSetInViewOrder(t *
 	entryC := filesystemWidgetEntry{Name: "c.txt", Path: "/tmp/c.txt", Exists: true}
 
 	state := &filesystemWidgetState{
-		baseURL: strings.TrimRight(server.URL, "/"),
-		entries: []filesystemWidgetEntry{entryA, entryB, entryC},
+		baseURL:  strings.TrimRight(server.URL, "/"),
+		entries:  []filesystemWidgetEntry{entryA, entryB, entryC},
 		selected: 1,
 		softSelected: map[string]bool{
 			entryA.Path: true,
@@ -301,8 +570,8 @@ func TestFilesystemWidgetAddSelectedToContext_UsesSoftSelectedSetInViewOrder(t *
 
 func TestFilesystemWidgetAddSelectedToContext_SoftSelectedDirectoriesOnlyReturnsError(t *testing.T) {
 	state := &filesystemWidgetState{
-		baseURL: "http://127.0.0.1:65535",
-		entries: []filesystemWidgetEntry{{Name: "docs", Path: "/tmp/docs", IsDir: true, Exists: true}},
+		baseURL:  "http://127.0.0.1:65535",
+		entries:  []filesystemWidgetEntry{{Name: "docs", Path: "/tmp/docs", IsDir: true, Exists: true}},
 		selected: 0,
 		softSelected: map[string]bool{
 			"/tmp/docs": true,
@@ -438,7 +707,7 @@ func TestFilesystemWidgetHandleCommand_EditUsesSoftSelectedSetInViewOrder(t *tes
 
 func TestFilesystemWidgetHandleCommand_EditSoftSelectedDirectoriesOnlyReturnsError(t *testing.T) {
 	state := &filesystemWidgetState{
-		entries: []filesystemWidgetEntry{{Name: "docs", Path: "/tmp/docs", IsDir: true, Exists: true}},
+		entries:  []filesystemWidgetEntry{{Name: "docs", Path: "/tmp/docs", IsDir: true, Exists: true}},
 		selected: 0,
 		softSelected: map[string]bool{
 			"/tmp/docs": true,
@@ -506,5 +775,50 @@ func TestResolveFilesystemViewportRows_DefaultAndInvalidFallback(t *testing.T) {
 	t.Setenv("AGENTX_FILES_VIEWPORT_ROWS", "7")
 	if got := resolveFilesystemViewportRows(); got != 7 {
 		t.Fatalf("expected explicit rows 7, got %d", got)
+	}
+}
+
+func TestFilesystemWidgetHandleCommand_ArrowScrollsViewportLineByLineAtEdges(t *testing.T) {
+	entries := make([]filesystemWidgetEntry, 0, 8)
+	for i := 0; i < 8; i++ {
+		entries = append(entries, filesystemWidgetEntry{Name: "f" + strconv.Itoa(i), Path: "/tmp/f" + strconv.Itoa(i), Exists: true})
+	}
+
+	state := &filesystemWidgetState{entries: entries, viewportRows: 3, selected: 2, viewOffset: 0}
+
+	if err := state.handleCommand(context.Background(), "j"); err != nil {
+		t.Fatalf("down returned error: %v", err)
+	}
+	if state.selected != 3 {
+		t.Fatalf("expected selection to move to 3, got %d", state.selected)
+	}
+	if state.viewOffset != 1 {
+		t.Fatalf("expected viewport to scroll down one line, got %d", state.viewOffset)
+	}
+
+	if err := state.handleCommand(context.Background(), "k"); err != nil {
+		t.Fatalf("up returned error: %v", err)
+	}
+	if state.selected != 2 {
+		t.Fatalf("expected selection to move back to 2, got %d", state.selected)
+	}
+}
+
+func TestFilesystemWidgetHandleCommand_BoundarySetsBellFeedback(t *testing.T) {
+	state := &filesystemWidgetState{
+		entries:      []filesystemWidgetEntry{{Name: "a.txt", Path: "/tmp/a.txt", Exists: true}},
+		viewportRows: 3,
+		selected:     0,
+		viewOffset:   0,
+	}
+
+	if err := state.handleCommand(context.Background(), "k"); err != nil {
+		t.Fatalf("up at boundary returned error: %v", err)
+	}
+	if !state.consumeBell() {
+		t.Fatal("expected boundary movement to request bell feedback")
+	}
+	if state.consumeBell() {
+		t.Fatal("expected bell feedback to clear after consumption")
 	}
 }

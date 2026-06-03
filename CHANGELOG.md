@@ -5,6 +5,39 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Code Changes
+
+#### Changed
+
+- Upgraded the Go filesystem applet row rendering in `cmd/agentx-core/filesystem_widget.go` with semantic visual styling:
+  - directories now use reverse-video styling,
+  - parent directory (`..`) row now uses a dedicated background highlight,
+  - entry kind markers now use emoji (`⤴`, `📁`, `📄`, `❓`) instead of `[F|D]`,
+  - file-type color classes were added for hidden files, config files, and code families (Go, Python, JS/TS, C/C++, other common code files).
+- Updated filesystem row layout handling to preserve alignment with ANSI-styled content via visible-width padding.
+
+### Test Changes
+
+#### Added
+
+- Added style-contract coverage in `cmd/agentx-core/filesystem_widget_test.go` (`TestFilesystemWidgetRender_StylesFolderHiddenConfigAndCodeFiles`) validating folder reverse-style, parent-row highlight, emoji markers, and file-type color mappings.
+
+#### Changed
+
+- Updated filesystem rendering assertions in `cmd/agentx-core/filesystem_widget_test.go` to validate emoji-based row rendering semantics instead of legacy `[F|D]` markers.
+
+### Documentation Changes
+
+#### Changed
+
+- Updated `docs/architecture/applets/filesystem_applet.md` to authoritative current-state contract language:
+  - refreshes ownership/runtime state descriptions,
+  - captures the implemented visual style and classification decisions,
+  - points evidence anchors to `filesystem_widget.go` / `filesystem_widget_test.go`,
+  - removes stale transitional framing for the core filesystem widget behavior.
+
 ## [1.0.2] - 2026-06-01
 
 ### Code Changes
