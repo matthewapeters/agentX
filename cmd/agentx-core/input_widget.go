@@ -366,10 +366,59 @@ func newInputWidgetKeyReader(file *os.File) (func() (inputWidgetKey, error), fun
 		return nil, nil, err
 	}
 
-	reader := bufio.NewReader(file)
+	type byteResult struct {
+		b   byte
+		err error
+	}
+	byteChan := make(chan byteResult, 256)
+	stop := make(chan struct{})
+
+	go func() {
+		buf := make([]byte, 1)
+		for {
+			n, readErr := file.Read(buf)
+			if n > 0 {
+				select {
+				case byteChan <- byteResult{buf[0], nil}:
+				case <-stop:
+					return
+				}
+			}
+			if readErr != nil {
+				select {
+				case byteChan <- byteResult{0, readErr}:
+				case <-stop:
+				}
+				return
+			}
+		}
+	}()
+
+	readByteTimeout := func(timeout time.Duration) (byte, bool, error) {
+		if timeout <= 0 {
+			select {
+			case r := <-byteChan:
+				return r.b, true, r.err
+			case <-stop:
+				return 0, false, io.EOF
+			}
+		}
+		select {
+		case r := <-byteChan:
+			return r.b, true, r.err
+		case <-time.After(timeout):
+			return 0, false, nil
+		case <-stop:
+			return 0, false, io.EOF
+		}
+	}
+
 	readCommand := func() (inputWidgetKey, error) {
 		for {
-			b, readErr := reader.ReadByte()
+			b, ok, readErr := readByteTimeout(0)
+			if !ok {
+				return inputWidgetKey{}, io.EOF
+			}
 			if readErr != nil {
 				return inputWidgetKey{}, readErr
 			}
@@ -387,11 +436,11 @@ func newInputWidgetKeyReader(file *os.File) (func() (inputWidgetKey, error), fun
 				widgetKeyDebug("\\x7f", "backspace")
 				return inputWidgetKey{kind: "backspace"}, nil
 			case 27:
-				key, ok, escErr := readInputWidgetEscapeKey(file, reader)
+				key, ok2, escErr := readInputWidgetEscapeKey(readByteTimeout)
 				if escErr != nil {
 					return inputWidgetKey{}, escErr
 				}
-				if ok {
+				if ok2 {
 					return key, nil
 				}
 				widgetKeyDebug("\\x1b", "esc")
@@ -408,40 +457,30 @@ func newInputWidgetKeyReader(file *os.File) (func() (inputWidgetKey, error), fun
 	}
 
 	cleanup := func() {
+		close(stop)
 		_ = term.Restore(fd, originalState)
 	}
 
 	return readCommand, cleanup, nil
 }
 
-func readInputWidgetEscapeKey(file *os.File, reader *bufio.Reader) (inputWidgetKey, bool, error) {
-	if err := file.SetReadDeadline(time.Now().Add(20 * time.Millisecond)); err != nil {
-		return inputWidgetKey{}, false, nil
-	}
-	next, err := reader.ReadByte()
-	_ = file.SetReadDeadline(time.Time{})
+func readInputWidgetEscapeKey(readByte func(time.Duration) (byte, bool, error)) (inputWidgetKey, bool, error) {
+	next, ok, err := readByte(50 * time.Millisecond)
 	if err != nil {
-		if isDeadlineError(err) {
-			return inputWidgetKey{}, false, nil
-		}
 		return inputWidgetKey{}, false, err
 	}
-	if next != '[' {
+	if !ok || next != '[' {
 		return inputWidgetKey{}, false, nil
 	}
 
 	seq := make([]byte, 0, 8)
 	for {
-		if err := file.SetReadDeadline(time.Now().Add(20 * time.Millisecond)); err != nil {
-			return inputWidgetKey{}, false, nil
-		}
-		b, readErr := reader.ReadByte()
-		_ = file.SetReadDeadline(time.Time{})
+		b, ok2, readErr := readByte(50 * time.Millisecond)
 		if readErr != nil {
-			if isDeadlineError(readErr) {
-				return inputWidgetKey{}, false, nil
-			}
 			return inputWidgetKey{}, false, readErr
+		}
+		if !ok2 {
+			return inputWidgetKey{}, false, nil
 		}
 		seq = append(seq, b)
 		if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == '~' {
@@ -453,8 +492,8 @@ func readInputWidgetEscapeKey(file *os.File, reader *bufio.Reader) (inputWidgetK
 	}
 
 	raw := "\x1b[" + string(seq)
-	kind, ok := normalizeInputWidgetEscapeSequence(raw)
-	if !ok {
+	kind, ok3 := normalizeInputWidgetEscapeSequence(raw)
+	if !ok3 {
 		widgetKeyDebug(raw, "(none)")
 		return inputWidgetKey{}, false, nil
 	}
@@ -483,16 +522,6 @@ func normalizeInputWidgetEscapeSequence(raw string) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-func isDeadlineError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if os.IsTimeout(err) {
-		return true
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "timeout")
 }
 
 func (s *inputWidgetComposeState) handleKey(key inputWidgetKey) inputWidgetAction {
@@ -842,7 +871,7 @@ func (s *inputWidgetComposeState) adaptViewportToTerminal(out io.Writer) {
 	if width < 44 {
 		width = 44
 	}
-	header := 6
+	header := 4
 	if s.showHelp {
 		header += 2
 	}
@@ -879,8 +908,6 @@ func (s *inputWidgetComposeState) render(activityLabel string) string {
 	lines := []string{
 		"[INPUT]",
 		trimSingleLine(fmt.Sprintf("activity: %s", activityLabel), 96),
-		trimSingleLine(fmt.Sprintf("status: %s", s.status), 96),
-		trimSingleLine(fmt.Sprintf("focus: %s (ESC toggles)", s.focusLabel()), 96),
 	}
 	if s.showHelp {
 		lines = append(lines,
