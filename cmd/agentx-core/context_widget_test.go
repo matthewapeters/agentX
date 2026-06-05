@@ -292,10 +292,11 @@ func TestContextWidgetCommandAliases_HelpToggleWithoutColon(t *testing.T) {
 func TestContextWidgetCommandAliases_WorkingMemoryToggleWithoutColon(t *testing.T) {
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "sess-hotkeys"}
+	initialCollapsed := state.collapsedWorkingMemory
 
 	applyContextWidgetCommand(state, "m", "http://127.0.0.1:0", snapshot)
-	if !state.collapsedWorkingMemory {
-		t.Fatalf("expected working memory to toggle collapsed with 'm'")
+	if state.collapsedWorkingMemory == initialCollapsed {
+		t.Fatalf("expected working memory collapse state to toggle with 'm'")
 	}
 
 	applyContextWidgetCommand(state, "m show", "http://127.0.0.1:0", snapshot)
@@ -306,12 +307,15 @@ func TestContextWidgetCommandAliases_WorkingMemoryToggleWithoutColon(t *testing.
 
 func TestContextWidgetKeyboard_SpaceSelectAndEnterCollapse(t *testing.T) {
 	state := newContextFeedbackViewState()
+	// Must be inside a section for SPACE to select rows (outside SPACE collapses the section).
+	state.insideSection = true
+	state.activeSection = "current-context"
 	state.updateOrderedRows([]string{"current:1:prompt"})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "p1", Response: "r1"}}}
 
 	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
 	if !state.selectedEntries["current:1:prompt"] {
-		t.Fatalf("expected row to be selected by space key")
+		t.Fatalf("expected row to be selected by space key when inside section")
 	}
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
@@ -320,24 +324,98 @@ func TestContextWidgetKeyboard_SpaceSelectAndEnterCollapse(t *testing.T) {
 	}
 }
 
-func TestContextWidgetKeyboard_TabAndScrollTextBox(t *testing.T) {
+// TestContextWidgetKeyboard_TabSectionToggle verifies that TAB enters and exits
+// a section, cycling through: outside → inside → outside.
+func TestContextWidgetKeyboard_TabSectionToggle(t *testing.T) {
 	state := newContextFeedbackViewState()
-	state.updateOrderedRows([]string{"current:1:prompt"})
-	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "one two three four five six seven eight nine ten", Response: "ok"}}}
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
-	if !state.focusTextBox {
-		t.Fatalf("expected tab to enter textbox focus mode")
+	if state.insideSection {
+		t.Fatalf("expected insideSection to be false initially")
 	}
+	if state.activeSection != "current-context" {
+		t.Fatalf("expected default activeSection to be current-context, got %q", state.activeSection)
+	}
+
+	// First TAB enters the active section.
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if !state.insideSection {
+		t.Fatalf("expected first tab to enter section (insideSection=true)")
+	}
+
+	// Second TAB exits the section.
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if state.insideSection {
+		t.Fatalf("expected second tab to exit section (insideSection=false)")
+	}
+}
+
+// TestContextWidgetKeyboard_SpaceCollapsesSection verifies that SPACE when
+// outside a section toggles the section's collapsed state.
+func TestContextWidgetKeyboard_SpaceCollapsesSection(t *testing.T) {
+	state := newContextFeedbackViewState()
+	// History starts collapsed; SPACE should expand it.
+	state.activeSection = "context-history"
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	initiallyCollapsed := state.collapsedContextHistory
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	if state.collapsedContextHistory == initiallyCollapsed {
+		t.Fatalf("expected SPACE to toggle context-history collapsed state")
+	}
+
+	// Second SPACE collapses it again.
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	if state.collapsedContextHistory != initiallyCollapsed {
+		t.Fatalf("expected second SPACE to restore original collapsed state")
+	}
+}
+
+// TestContextWidgetKeyboard_ArrowMovesSectionHeader verifies that Up/Down when
+// outside a section move the activeSection cursor through the section list.
+func TestContextWidgetKeyboard_ArrowMovesSectionHeader(t *testing.T) {
+	state := newContextFeedbackViewState()
+	// Start at current-context (bottom of ordered list).
+	state.activeSection = "current-context"
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if state.activeSection != "working-memory" {
+		t.Fatalf("expected up to move to working-memory, got %q", state.activeSection)
+	}
+
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if state.activeSection != "context-history" {
+		t.Fatalf("expected second up to move to context-history, got %q", state.activeSection)
+	}
+
+	// Up at the top should stay at context-history (clamp at start).
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if state.activeSection != "context-history" {
+		t.Fatalf("expected up at top to stay at context-history, got %q", state.activeSection)
+	}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	if state.activeSection != "working-memory" {
+		t.Fatalf("expected down to move to working-memory, got %q", state.activeSection)
+	}
+}
+
+// TestContextWidgetKeyboard_PgDnScrollsExpandedRow verifies that PgDn when
+// inside a section and the active row is an expanded current-context entry
+// scrolls the text content instead of moving rows.
+func TestContextWidgetKeyboard_PgDnScrollsExpandedRow(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.insideSection = true
+	state.activeSection = "current-context"
+	state.updateOrderedRows([]string{"current:1:prompt"})
+	// Mark the row as explicitly expanded (not collapsed).
+	state.collapsedEntries["current:1:prompt"] = false
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "one two three four five six seven eight nine ten eleven twelve", Response: "ok"}}}
 
 	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot)
 	if state.textScroll["current:1:prompt"] == 0 {
-		t.Fatalf("expected pgdn to scroll focused textbox")
-	}
-
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
-	if state.focusTextBox {
-		t.Fatalf("expected second tab to exit textbox focus mode")
+		t.Fatalf("expected pgdn to scroll expanded text row when inside section")
 	}
 }
 

@@ -46,8 +46,14 @@ type contextFeedbackViewState struct {
 	textScroll              map[string]int
 	showWorkingMemory       bool
 	collapsedWorkingMemory  bool
+	collapsedCurrentContext bool
 	statusLine              string
 	statusUntil             time.Time
+	// Section-level navigation state.
+	// activeSection is the section header the cursor rests on when insideSection=false.
+	// insideSection=true means the cursor is navigating rows within the active section.
+	activeSection string
+	insideSection bool
 }
 
 const (
@@ -59,6 +65,7 @@ const (
 	ansiYellow  = "\033[33m"
 	ansiRed     = "\033[31m"
 	ansiMagenta = "\033[35m"
+	ansiDim     = "\033[2m"
 )
 
 func newContextFeedbackViewState() *contextFeedbackViewState {
@@ -72,7 +79,33 @@ func newContextFeedbackViewState() *contextFeedbackViewState {
 		showWorkingMemory:       true,
 		collapsedContextHistory: true,
 		collapsedWorkingMemory:  true,
+		activeSection:           "current-context",
+		insideSection:           false,
 	}
+}
+
+// moveSectionHeader advances the section-header cursor by delta within the ordered
+// section list [context-history, working-memory, current-context].
+func (state *contextFeedbackViewState) moveSectionHeader(delta int) {
+	if state == nil {
+		return
+	}
+	order := []string{"context-history", "working-memory", "current-context"}
+	idx := 0
+	for i, s := range order {
+		if s == state.activeSection {
+			idx = i
+			break
+		}
+	}
+	next := idx + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= len(order) {
+		next = len(order) - 1
+	}
+	state.activeSection = order[next]
 }
 
 func (state *contextFeedbackViewState) updateOrderedRows(keys []string) {
@@ -263,6 +296,11 @@ func runContextWidgetLoop(ctx context.Context, baseURL string, out io.Writer, re
 }
 
 func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Reader, out io.Writer, refreshInterval time.Duration) error {
+	// Hide the terminal cursor for the duration of the widget loop to prevent
+	// cursor flicker at the end of rendered content.
+	fmt.Fprint(out, "\033[?25l")
+	defer fmt.Fprint(out, "\033[?25h")
+
 	if refreshInterval <= 0 {
 		refreshInterval = 300 * time.Millisecond
 	}
@@ -346,7 +384,7 @@ func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Re
 			history := discoverContextHistorySessions(snapshot.SessionID)
 
 			render := renderContextWidgetWithState(snapshot, tab, model, backend, height, width, history, viewState)
-			currentLines := filesystemWidgetFrameLines(render)
+			currentLines := filterContextWidgetTUILines(filesystemWidgetFrameLines(render))
 			if renderChanged || len(previousLines) == 0 || strings.Join(previousLines, "\n") != strings.Join(currentLines, "\n") {
 				if err := writeFilesystemWidgetFrameDiff(out, previousLines, currentLines); err != nil {
 					return err
@@ -633,11 +671,12 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 	// 1) Context history (title only when collapsed)
 	// 2) Working memory (title only when collapsed)
 	// 3) Current context (expanded, element tiles collapsed by default)
-	lines = append(lines, "", reverseTitle("CONTEXT HISTORY"))
+	lines = append(lines, "", renderSectionHeader("CONTEXT HISTORY", "context-history", viewState))
 	historyCollapsed := true
 	if viewState != nil {
 		historyCollapsed = viewState.collapsedContextHistory
 	}
+	historyBorder := sectionBorderColor("context-history", viewState)
 	if !historyCollapsed {
 		if len(history) == 0 {
 			lines = append(lines, "No prior sessions found on disk.")
@@ -656,7 +695,7 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 					fmt.Sprintf("state: %s | Enter collapse/expand", mapCollapsedState(collapsed)),
 				}
 				if collapsed {
-					lines = append(lines, boxSection("SESSION", sessionLines, ansiMagenta)...)
+					lines = append(lines, boxSection("SESSION", sessionLines, historyBorder)...)
 					continue
 				}
 				for idx, turn := range session.Turns {
@@ -669,7 +708,7 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 						fmt.Sprintf("%s include: i %s %d b | Space select", styleToken("➕", ansiCyan), session.SessionID, turnNumber),
 					)
 				}
-				lines = append(lines, boxSection("SESSION", sessionLines, ansiMagenta)...)
+				lines = append(lines, boxSection("SESSION", sessionLines, historyBorder)...)
 			}
 		}
 	}
@@ -679,8 +718,12 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 		lines = append(lines, renderWorkingMemoryFeedbackSection(viewState, &rowKeys)...)
 	}
 
-	lines = append(lines, "", reverseTitle("CURRENT CONTEXT"))
-	if len(snapshot.Turns) == 0 {
+	lines = append(lines, "", renderSectionHeader("CURRENT CONTEXT", "current-context", viewState))
+	currentBorder := sectionBorderColor("current-context", viewState)
+	currentCollapsed := viewState != nil && viewState.collapsedCurrentContext
+	if currentCollapsed {
+		// Section is collapsed: no row content rendered.
+	} else if len(snapshot.Turns) == 0 {
 		lines = append(lines, "No current context elements.")
 	} else {
 		for idx, turn := range snapshot.Turns {
@@ -716,7 +759,7 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 				turnLines = append(turnLines, fmt.Sprintf("%s %s response [%s]", rowMarker(viewState, responseKey), styleToken("🤖", ansiGreen), mapContextEntryState(responseDisabled)))
 				turnLines = append(turnLines, renderWrappedTextBox(viewState, responseKey, turn.Response, ansiGreen)...)
 			}
-			lines = append(lines, boxSection(fmt.Sprintf("TURN %d", turnNumber), turnLines, ansiCyan)...)
+			lines = append(lines, boxSection(fmt.Sprintf("TURN %d", turnNumber), turnLines, currentBorder)...)
 		}
 	}
 	if viewState != nil {
@@ -727,7 +770,8 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 }
 
 func renderWorkingMemoryFeedbackSection(viewState *contextFeedbackViewState, rowKeys *[]string) []string {
-	lines := []string{reverseTitle("WORKING MEMORY")}
+	lines := []string{renderSectionHeader("WORKING MEMORY", "working-memory", viewState)}
+	wmBorder := sectionBorderColor("working-memory", viewState)
 	if viewState != nil && viewState.collapsedWorkingMemory {
 		return lines
 	}
@@ -767,7 +811,7 @@ func renderWorkingMemoryFeedbackSection(viewState *contextFeedbackViewState, row
 			}
 			factLines = append(factLines, fmt.Sprintf("%s %d) %s %s:%s [%s] = %s", rowMarker(viewState, factKey), idx+1, ownerIcon, fact.owner, trimSingleLine(fact.key, 32), statusLabel, trimSingleLine(formatWorkingMemoryValue(fact.value), 72)))
 		}
-		lines = append(lines, boxSection("FACTS", factLines, ansiGreen)...)
+		lines = append(lines, boxSection("FACTS", factLines, wmBorder)...)
 	}
 	lines = append(lines,
 		"actions: mk <key> <value> | md <key> | mt <key>",
@@ -781,6 +825,52 @@ func reverseTitle(title string) string {
 		return ""
 	}
 	return ansiReverse + " " + label + " " + ansiReset
+}
+
+// renderSectionHeader renders a section title. When the cursor is on this
+// section in outside-section mode, a ▶ indicator is prepended.
+func renderSectionHeader(title string, sectionID string, viewState *contextFeedbackViewState) string {
+	label := strings.TrimSpace(title)
+	if viewState != nil && !viewState.insideSection && viewState.activeSection == sectionID {
+		return ansiCyan + "▶ " + ansiReverse + " " + label + " " + ansiReset
+	}
+	return reverseTitle(label)
+}
+
+// sectionBorderColor returns a bright border color when the cursor is inside
+// the given section, and a dim color otherwise.
+func sectionBorderColor(sectionID string, viewState *contextFeedbackViewState) string {
+	if viewState != nil && viewState.insideSection && viewState.activeSection == sectionID {
+		switch sectionID {
+		case "current-context":
+			return ansiCyan
+		case "working-memory":
+			return ansiGreen
+		case "context-history":
+			return ansiMagenta
+		}
+	}
+	return ansiDim
+}
+
+// filterContextWidgetTUILines strips machine-readable protocol lines that are
+// embedded in the render output for test/HTTP consumers but should not be
+// visible in the TUI terminal display.
+func filterContextWidgetTUILines(lines []string) []string {
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		stripped := strings.TrimSpace(stripAnsi(line))
+		if strings.HasPrefix(stripped, "[SYSTEM") ||
+			stripped == "== CONTEXT HISTORY ==" ||
+			strings.HasPrefix(stripped, "history_context_count:") ||
+			strings.HasPrefix(stripped, "recent_prompt:") ||
+			strings.HasPrefix(stripped, "recent_response:") ||
+			strings.HasPrefix(stripped, "turn_count:") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return filtered
 }
 
 func styleToken(text string, color string) string {
@@ -861,7 +951,8 @@ func mapContextEntryState(disabled bool) string {
 }
 
 func rowMarker(state *contextFeedbackViewState, rowKey string) string {
-	if state == nil {
+	// Suppress row-level cursor when navigating between section headers.
+	if state == nil || !state.insideSection {
 		return "  "
 	}
 	active := state.activeRowKey() == rowKey
@@ -926,7 +1017,7 @@ func renderWrappedTextBox(state *contextFeedbackViewState, rowKey string, text s
 		visible[i] = styleToken(visible[i], color)
 	}
 	if len(wrapped) > 5 {
-		visible = append(visible, fmt.Sprintf("%s scroll %d/%d (Tab to exit)", styleToken("↕", ansiYellow), offset+1, len(wrapped)-4))
+		visible = append(visible, fmt.Sprintf("%s scroll %d/%d (PgUp/PgDn to scroll)", styleToken("↕", ansiYellow), offset+1, len(wrapped)-4))
 	}
 	return visible
 }
@@ -1130,6 +1221,11 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus("Scrolled text box down.")
 			return true
 		}
+		if !state.insideSection {
+			state.moveSectionHeader(1)
+			state.setStatus(fmt.Sprintf("Section: %s", state.activeSection))
+			return true
+		}
 		if !state.moveRow(1) {
 			state.setStatus("Bottom of list")
 		} else {
@@ -1143,6 +1239,11 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus("Scrolled text box up.")
 			return true
 		}
+		if !state.insideSection {
+			state.moveSectionHeader(-1)
+			state.setStatus(fmt.Sprintf("Section: %s", state.activeSection))
+			return true
+		}
 		if !state.moveRow(-1) {
 			state.setStatus("Top of list")
 		} else {
@@ -1150,10 +1251,6 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		return true
 	case "right", "l":
-		if state.focusTextBox {
-			state.setStatus("Press Tab to leave text-box scroll mode.")
-			return true
-		}
 		if state.moveHorizontal("right") {
 			state.setStatus("Moved right.")
 		} else {
@@ -1161,10 +1258,6 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		return true
 	case "left", "h":
-		if state.focusTextBox {
-			state.setStatus("Press Tab to leave text-box scroll mode.")
-			return true
-		}
 		if state.moveHorizontal("left") {
 			state.setStatus("Moved left.")
 		} else {
@@ -1172,8 +1265,18 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		return true
 	case "pgdn":
+		if !state.insideSection {
+			return true
+		}
 		if state.focusTextBox {
 			rowKey := state.activeRowKey()
+			state.textScroll[rowKey] = state.textScroll[rowKey] + 5
+			state.setStatus("Paged text box down.")
+			return true
+		}
+		// Scroll textbox content when on an expanded text row; otherwise page rows.
+		rowKey := state.activeRowKey()
+		if rowKey != "" && strings.HasPrefix(rowKey, "current:") && !state.collapsedEntries[rowKey] {
 			state.textScroll[rowKey] = state.textScroll[rowKey] + 5
 			state.setStatus("Paged text box down.")
 			return true
@@ -1182,8 +1285,17 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		state.setStatus("Moved selection")
 		return true
 	case "pgup":
+		if !state.insideSection {
+			return true
+		}
 		if state.focusTextBox {
 			rowKey := state.activeRowKey()
+			state.textScroll[rowKey] = maxInt(0, state.textScroll[rowKey]-5)
+			state.setStatus("Paged text box up.")
+			return true
+		}
+		rowKey := state.activeRowKey()
+		if rowKey != "" && strings.HasPrefix(rowKey, "current:") && !state.collapsedEntries[rowKey] {
 			state.textScroll[rowKey] = maxInt(0, state.textScroll[rowKey]-5)
 			state.setStatus("Paged text box up.")
 			return true
@@ -1192,14 +1304,41 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		state.setStatus("Moved selection")
 		return true
 	case "tab":
-		state.focusTextBox = !state.focusTextBox
+		// TAB toggles between outside-section (header navigation) and inside-section (row navigation).
+		// When inside and in textbox-scroll mode, TAB exits textbox mode first.
 		if state.focusTextBox {
-			state.setStatus("Text-box focus enabled.")
+			state.focusTextBox = false
+			state.setStatus("Left text-box scroll.")
+		} else if state.insideSection {
+			state.insideSection = false
+			state.setStatus("Left section.")
 		} else {
-			state.setStatus("Text-box focus disabled.")
+			if state.activeSection == "" {
+				state.activeSection = "current-context"
+			}
+			state.insideSection = true
+			state.setStatus(fmt.Sprintf("Entered %s.", state.activeSection))
 		}
 		return true
 	case "space":
+		// Outside a section: SPACE expands/collapses the active section.
+		// Inside a section: SPACE selects/deselects the active row.
+		if !state.insideSection {
+			switch state.activeSection {
+			case "context-history":
+				state.collapsedContextHistory = !state.collapsedContextHistory
+				state.setStatus(fmt.Sprintf("Context history is now %s.", mapCollapsedState(state.collapsedContextHistory)))
+			case "working-memory":
+				state.collapsedWorkingMemory = !state.collapsedWorkingMemory
+				state.setStatus(fmt.Sprintf("Working memory is now %s.", mapCollapsedState(state.collapsedWorkingMemory)))
+			case "current-context":
+				state.collapsedCurrentContext = !state.collapsedCurrentContext
+				state.setStatus(fmt.Sprintf("Current context is now %s.", mapCollapsedState(state.collapsedCurrentContext)))
+			default:
+				state.setStatus("No section selected.")
+			}
+			return true
+		}
 		rowKey := state.activeRowKey()
 		if rowKey == "" {
 			state.setStatus("No selectable row.")
@@ -1214,6 +1353,15 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		return true
 	case "enter":
+		// Outside a section: ENTER enters the section (same as TAB).
+		if !state.insideSection {
+			if state.activeSection == "" {
+				state.activeSection = "current-context"
+			}
+			state.insideSection = true
+			state.setStatus(fmt.Sprintf("Entered %s.", state.activeSection))
+			return true
+		}
 		rowKey := state.activeRowKey()
 		if rowKey == "" {
 			state.setStatus("No expandable row.")

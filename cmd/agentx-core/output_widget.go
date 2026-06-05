@@ -683,7 +683,7 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 	viewState := newOutputWidgetViewState()
 	snapshot := outputWidgetSnapshot{}
 
-	lastRender := ""
+	previousLines := []string(nil)
 	for {
 		for {
 			select {
@@ -720,11 +720,12 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 			viewState.normalize(len(snapshot.Turns))
 			height, width := resolveWidgetPaneSizeForWriter(out)
 			render := renderOutputWidgetWithViewState(snapshot, height, width, viewState)
-			if render != lastRender {
-				if _, writeErr := fmt.Fprintf(out, "\033[H\033[2J%s\n", render); writeErr != nil {
-					return writeErr
+			currentLines := filesystemWidgetFrameLines(render)
+			if len(previousLines) == 0 || strings.Join(previousLines, "\n") != strings.Join(currentLines, "\n") {
+				if err := writeFilesystemWidgetFrameDiff(out, previousLines, currentLines); err != nil {
+					return err
 				}
-				lastRender = render
+				previousLines = currentLines
 			}
 		}
 
@@ -820,9 +821,6 @@ func renderOutputWidgetWithViewState(snapshot outputWidgetSnapshot, paneHeight i
 		} else {
 			lines = append(lines, fmt.Sprintf("%s ⚙️ Classification: %s -> %s", entryPrefix(i+1, "classification"), classify.Intent, classify.NextStep))
 		}
-		lines = append(lines,
-			fmt.Sprintf("%s Thinking: %s", entryPrefix(i+1, "thinking"), formatOutputWidgetPhase(snapshot.PromptCycle.Thinking)),
-		)
 		if isThinkingCollapsed {
 			lines = append(lines, fmt.Sprintf("%s 💭 [thinking block - collapsed]", entryPrefix(i+1, "thinking")))
 		} else {
@@ -833,7 +831,6 @@ func renderOutputWidgetWithViewState(snapshot outputWidgetSnapshot, paneHeight i
 		} else {
 			lines = append(lines,
 				fmt.Sprintf("%s Response: %s", entryPrefix(i+1, "response"), trimSingleLine(response, 96)),
-				fmt.Sprintf("%s Agent: %s", entryPrefix(i+1, "response"), trimSingleLine(response, 96)),
 			)
 		}
 	}

@@ -128,10 +128,8 @@ func TestRenderOutputWidget_UsesPaneLifecycleContract(t *testing.T) {
 		"Chat ready.",
 		"User: what is 2+2?",
 		"⚙️ Classification:",
-		"Thinking:",
 		"💭 [thinking block - done (00:00:00.011)]",
 		"Response: Echo: what is 2+2?",
-		"Agent: Echo: what is 2+2?",
 	} {
 		if !strings.Contains(render, fragment) {
 			t.Fatalf("expected render to contain %q, got:\n%s", fragment, render)
@@ -289,7 +287,7 @@ func TestRunOutputWidgetLoop_SkipsDuplicateFrames(t *testing.T) {
 	if got := strings.Count(widgetOutput, "\x1b[H\x1b[2J"); got != 1 {
 		t.Fatalf("expected one redraw for unchanged payload, got %d\noutput:\n%s", got, widgetOutput)
 	}
-	if !strings.Contains(widgetOutput, "Agent: Echo: hello") {
+	if !strings.Contains(widgetOutput, "Response: Echo: hello") {
 		t.Fatalf("expected rendered agent response in output widget, got:\n%s", widgetOutput)
 	}
 }

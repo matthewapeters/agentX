@@ -1,6 +1,6 @@
 # Context Applet Contract
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 Applet ID: `context`
 Runtime entry: `agentx-core --context-widget`
 
@@ -48,32 +48,105 @@ Transitional render-host surfaces (not authoritative ownership):
   navigation and selection behavior.
 - Direct user command parser: implemented. Supports raw-key mode (TTY) and
   line/prompt mode using the shared applet input-reader contract.
-- Keyboard contract (authoritative):
-  - `Up` / `Down`: move active row.
-  - `Left` / `Right`: horizontal sibling movement (current prompt/response and
-    prior-session group/item transitions).
-  - `Space`: select/deselect active row.
-  - `Enter`: expand/collapse active row where applicable.
-  - `Tab`: enter/exit textbox-focus mode.
-  - Textbox-focus mode: `Up`/`Down` and `PageUp`/`PageDown` scroll expanded
-    textbox content.
-- Expanded textbox contract:
-  - context prompt/response text is wrapped,
-  - expanded viewport shows up to 5 lines,
-  - scrolling indicator is rendered for overflow content.
-- Input source remains core context snapshots, active-session state, and system
-  applet host routing.
+
+### Two-mode Navigation (authoritative)
+
+The widget operates in two exclusive modes that govern what all navigation keys
+do. The current mode is indicated visually by section-border brightness.
+
+| Mode | How to enter | How to exit | Border color |
+|------|-------------|------------|-------------|
+| **Outside section** | Initial state; `Tab` while inside; `Tab` while in textbox scroll | `Tab` or `Enter` | Dim (all sections) |
+| **Inside section** | `Tab` or `Enter` while outside | `Tab` | Bright (active section only) |
+
+### Keyboard contract (authoritative)
+
+**Outside-section mode (header navigation):**
+
+- `Up` / `Down` (`k` / `j`): move the section-header cursor through the ordered
+  section list: `context-history` → `working-memory` → `current-context`.
+  Cursor clamps at both ends.
+- `Space`: expand or collapse the currently focused section.
+- `Enter` / `Tab`: enter the focused section (switch to inside-section mode).
+
+**Inside-section mode (row navigation):**
+
+- `Up` / `Down` (`k` / `j`): move the active row within the section.
+- `Left` / `Right` (`h` / `l`): horizontal sibling movement (current
+  prompt/response and prior-session group/item transitions).
+- `Space`: select or deselect the active row.
+- `Enter`: expand or collapse the active row where applicable.
+- `PageDown` / `PageUp`: scroll text content when the active row is an expanded
+  `current-context` entry; otherwise page the row cursor by 5.
+- `Tab`: exit the section (return to outside-section mode).
+  If textbox-scroll mode is active, first press exits textbox mode; second
+  press exits the section.
+
+**Textbox-scroll mode (inside section, expanded text row):**
+
+- `Up` / `Down`: scroll one line.
+- `PageUp` / `PageDown`: scroll five lines.
+- `Tab`: exit textbox mode (stay inside section).
+
+### Section list (authoritative order)
+
+1. `context-history` — prior sessions, collapsed by default
+2. `working-memory` — working memory facts, collapsed by default
+3. `current-context` — active session turns, expanded by default
+
+All three sections are rendered even when collapsed (title bar visible, no
+row content).
+
+### Expanded textbox contract
+
+- Context prompt/response text is wrapped.
+- Expanded viewport shows up to 5 lines.
+- Scrolling indicator `↕ scroll N/M (PgUp/PgDn to scroll)` is rendered for
+  overflow content.
 
 ## Visual Design Decisions (Authoritative)
 
 - Context-feedback sections use IBM box-drawing style for expanded/structured
   blocks.
 - Section titles use reverse-video treatment to improve scanability.
+  - When the section-header cursor rests on a section (outside-section mode),
+    the header gains a `▶` prefix and cyan highlight.
+- Section borders encode navigation state:
+  - **Dim** (`\033[2m`) — the default; section is not currently active for
+    inside-section row navigation.
+  - **Bright** (section-specific accent color) — the section the user is
+    currently navigating inside:
+    - `current-context` → cyan
+    - `working-memory` → green
+    - `context-history` → magenta
 - Semantic color + emoji markers differentiate entry types and state:
   - user vs agent rows,
-  - selected vs active row markers,
+  - selected vs active row markers (suppressed when in outside-section mode),
   - collapsed/disabled status and action affordances.
 - ANSI-aware width handling is required so styled rows remain aligned.
+- Terminal cursor is hidden (`\033[?25l`) for the duration of the widget
+  lifetime and restored on exit (`\033[?25h`) to prevent cursor flicker.
+
+### TUI protocol-line filter (authoritative)
+
+The underlying render pipeline embeds machine-readable protocol lines used by
+httptest consumers and system-surface integration tests:
+
+```
+[SYSTEM]
+[SYSTEM TAB] active=<tab>
+== CONTEXT HISTORY ==
+history_context_count: N
+recent_prompt: ...
+recent_response: ...
+turn_count: N
+```
+
+These lines are **filtered from TUI terminal output** by
+`filterContextWidgetTUILines()` applied in the render loop. They are **not**
+removed from the `renderContextWidgetWithState()` return value so that
+`core_system_renderer_test.go` and HTTP-path consumers continue to work
+unchanged.
 
 ## Owned Data/State
 
@@ -83,7 +156,11 @@ Transitional render-host surfaces (not authoritative ownership):
   - context visualizer meter/status rows,
   - interactive row state (active row, selection set, collapsed set,
     disabled set),
-  - textbox focus and per-row scroll offsets,
+  - per-row scroll offsets,
+  - section-navigation state: `activeSection` (focused section header),
+    `insideSection` (mode flag), `focusTextBox` (textbox-scroll sub-mode),
+  - per-section collapsed state: `collapsedContextHistory`,
+    `collapsedWorkingMemory`, `collapsedCurrentContext`,
   - transitional files/configuration render-host routing only.
 - Does not own persistence for working memory or context message storage.
 
