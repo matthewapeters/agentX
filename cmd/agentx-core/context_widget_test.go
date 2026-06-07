@@ -42,10 +42,10 @@ func TestRenderContextFeedbackSections_DefaultCollapsedOrderAndMinimalHeader(t *
 	if strings.Contains(wmBlock, "fact_count:") || strings.Contains(wmBlock, "session_id:") {
 		t.Fatalf("expected collapsed working memory to render title only by default, got:\n%s", wmBlock)
 	}
-	if !strings.Contains(rendered, "users:") || !strings.Contains(rendered, "sessions:") {
+	if !strings.Contains(rendered, "users ") || !strings.Contains(rendered, "sessions ") {
 		t.Fatalf("expected collapsed context-history summary metadata, got:\n%s", rendered)
 	}
-	if !strings.Contains(wmBlock, "facts:") {
+	if !strings.Contains(wmBlock, "facts ") {
 		t.Fatalf("expected collapsed working-memory summary metadata, got:\n%s", wmBlock)
 	}
 
@@ -350,17 +350,26 @@ func TestContextWidgetKeyboard_TabSectionToggle(t *testing.T) {
 	if !state.insideSection {
 		t.Fatalf("expected first tab to enter section (insideSection=true)")
 	}
+	if got := state.statusLine; got != "Entered section: current-context." {
+		t.Fatalf("expected normalized tab enter status, got %q", got)
+	}
 
 	// Second TAB remains inside the section (drill-in semantics).
 	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
 	if !state.insideSection {
 		t.Fatalf("expected second tab to keep section focus (insideSection=true)")
 	}
+	if got := state.statusLine; got != "Entered section: current-context." {
+		t.Fatalf("expected normalized repeated tab status, got %q", got)
+	}
 
 	// Shift-Tab exits the section.
 	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
 	if state.insideSection {
 		t.Fatalf("expected shift-tab to exit section (insideSection=false)")
+	}
+	if got := state.statusLine; got != "Exited section: current-context." {
+		t.Fatalf("expected normalized shift-tab status, got %q", got)
 	}
 }
 
@@ -487,10 +496,16 @@ func TestContextWidgetKeyboard_EnterHistoryUsesFocusPath(t *testing.T) {
 	if !state.insideSection {
 		t.Fatalf("expected collapse to keep section navigation active")
 	}
+	if got := state.statusLine; got != "History node collapsed." {
+		t.Fatalf("expected normalized collapse status, got %q", got)
+	}
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
 		t.Fatalf("expected second enter on user row to expand user node without re-entry step, got %#v", got)
+	}
+	if got := state.statusLine; got != "History node expanded." {
+		t.Fatalf("expected normalized expand status, got %q", got)
 	}
 
 	if !state.moveRowInActiveSection(1) {
@@ -500,15 +515,24 @@ func TestContextWidgetKeyboard_EnterHistoryUsesFocusPath(t *testing.T) {
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
 		t.Fatalf("expected enter on focused session row to collapse to parent user, got %#v", got)
 	}
+	if got := state.statusLine; got != "History node collapsed." {
+		t.Fatalf("expected normalized collapse status from session row, got %q", got)
+	}
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-prev" {
 		t.Fatalf("expected second enter on session row to focus session node, got %#v", got)
 	}
+	if got := state.statusLine; got != "History node expanded." {
+		t.Fatalf("expected normalized expand status for session row, got %q", got)
+	}
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
 		t.Fatalf("expected second enter on focused session to collapse to parent user, got %#v", got)
+	}
+	if got := state.statusLine; got != "History node collapsed." {
+		t.Fatalf("expected normalized collapse status for focused session, got %q", got)
 	}
 }
 
@@ -671,6 +695,9 @@ func TestContextWidgetKeyboard_ShiftTabPopsDeepHistoryPath(t *testing.T) {
 	}
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-1" {
 		t.Fatalf("expected shift-tab to pop focus path to parent session node, got %#v", got)
+	}
+	if got := state.statusLine; got != "Exited section: context-history." {
+		t.Fatalf("expected normalized shift-tab status in deep history path, got %q", got)
 	}
 }
 

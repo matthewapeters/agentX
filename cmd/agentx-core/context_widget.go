@@ -1193,7 +1193,7 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 		for _, user := range historyUsers {
 			sessionCount += len(user.Sessions)
 		}
-		lines = append(lines, fmt.Sprintf("  %s users: %d | sessions: %d | TAB enter | SPACE peek", styleToken("...", ansiYellow), userCount, sessionCount))
+		lines = append(lines, fmt.Sprintf("  %s users %d, sessions %d | TAB open | SPACE toggle", styleToken("...", ansiYellow), userCount, sessionCount))
 		lines = append(lines, renderCollapsedBoxStub(historyBorder, 42)...)
 	} else {
 		historyItems := make([]string, 0)
@@ -1313,7 +1313,7 @@ func renderWorkingMemoryFeedbackSection(viewState *contextFeedbackViewState, row
 	wmBorder := sectionBorderColor("working-memory", viewState)
 	if viewState != nil && viewState.collapsedWorkingMemory {
 		facts := appendDefaultWorkingMemoryFacts(loadWorkingMemoryFacts(resolveCurrentSessionDirFromEnv()))
-		lines = append(lines, fmt.Sprintf("  %s facts: %d | TAB enter | SPACE peek", styleToken("...", ansiYellow), len(facts)))
+		lines = append(lines, fmt.Sprintf("  %s facts %d | TAB open | SPACE toggle", styleToken("...", ansiYellow), len(facts)))
 		lines = append(lines, renderCollapsedBoxStub(wmBorder, 54)...)
 		return lines
 	}
@@ -2106,7 +2106,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: state.activeSection}})
 		}
 		state.insideSection = true
-		state.setStatus(fmt.Sprintf("Entered %s.", state.activeSection))
+		state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
 		return true
 	case "shift-tab", "shift+tab", "s-tab", "backtab":
 		if state.focusTextBox {
@@ -2123,7 +2123,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 				state.collapsedCurrentContext = true
 			}
 			state.insideSection = false
-			state.setStatus("Exited section.")
+			state.setStatus(fmt.Sprintf("Exited section: %s.", state.activeSection))
 		}
 		return true
 	case "space":
@@ -2165,7 +2165,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 				state.activeSection = "current-context"
 			}
 			state.insideSection = true
-			state.setStatus(fmt.Sprintf("Entered %s.", state.activeSection))
+			state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
 			return true
 		}
 		rowKey := state.activeRowKey()
@@ -2186,11 +2186,11 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 					if state.focusPath.Tail().Kind == nodeKindSection {
 						state.insideSection = true
 					}
-					state.setStatus("Collapsed node.")
+					state.setStatus("History node collapsed.")
 					return true
 				}
 				state.branchTransition(targetPath)
-				state.setStatus("Expanded node.")
+				state.setStatus("History node expanded.")
 				return true
 			}
 		}
