@@ -424,6 +424,83 @@ func TestContextWidgetKeyboard_ArrowMovesSectionHeader(t *testing.T) {
 	}
 }
 
+func TestContextWidgetKeyboard_SelectionAndBoundsStatusVocabulary(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.insideSection = true
+	state.activeSection = "current-context"
+	state.updateOrderedRows([]string{"current:1:prompt", "current:1:response"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "p1", Response: "r1"}}}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Selection moved." {
+		t.Fatalf("expected normalized selection-moved status, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Selection at last row." {
+		t.Fatalf("expected normalized lower-bound status, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Selection moved." {
+		t.Fatalf("expected normalized selection-moved status after up, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Selection at first row." {
+		t.Fatalf("expected normalized upper-bound status, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_ViewportStatusVocabulary(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.insideSection = true
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	state.activeSection = "context-history"
+	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Viewport moved down: context history." {
+		t.Fatalf("expected normalized context-history pgdn viewport status, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "pgup", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Viewport moved up: context history." {
+		t.Fatalf("expected normalized context-history pgup viewport status, got %q", got)
+	}
+
+	state.activeSection = "working-memory"
+	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Viewport moved down: working memory." {
+		t.Fatalf("expected normalized working-memory pgdn viewport status, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "pgup", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Viewport moved up: working memory." {
+		t.Fatalf("expected normalized working-memory pgup viewport status, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_EnterTabShiftTabTransitionVocabulary(t *testing.T) {
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Entered section: current-context." {
+		t.Fatalf("expected enter transition status, got %q", got)
+	}
+
+	state.insideSection = false
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Entered section: current-context." {
+		t.Fatalf("expected tab transition status to match enter, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	if got := state.statusLine; got != "Exited section: current-context." {
+		t.Fatalf("expected shift-tab transition status, got %q", got)
+	}
+}
+
 // TestContextWidgetKeyboard_PgDnScrollsExpandedRow verifies that PgDn when
 // inside a section and the active row is an expanded current-context entry
 // scrolls the text content instead of moving rows.

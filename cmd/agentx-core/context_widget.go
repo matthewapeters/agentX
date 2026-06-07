@@ -1983,9 +1983,9 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			return true
 		}
 		if !state.moveRowInActiveSection(1) {
-			state.setStatus("Bottom of list")
+			state.setStatus("Selection at last row.")
 		} else {
-			state.setStatus("Moved selection")
+			state.setStatus("Selection moved.")
 		}
 		return true
 	case "k", "up":
@@ -2001,9 +2001,9 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			return true
 		}
 		if !state.moveRowInActiveSection(-1) {
-			state.setStatus("Top of list")
+			state.setStatus("Selection at first row.")
 		} else {
-			state.setStatus("Moved selection")
+			state.setStatus("Selection moved.")
 		}
 		return true
 	case "right", "l":
@@ -2026,12 +2026,12 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		if state.activeSection == "context-history" {
 			state.textScroll["section:context-history"] = state.textScroll["section:context-history"] + 1
-			state.setStatus("Scrolled context history viewport.")
+			state.setStatus("Viewport moved down: context history.")
 			return true
 		}
 		if state.activeSection == "working-memory" {
 			state.textScroll["section:working-memory"] = state.textScroll["section:working-memory"] + 1
-			state.setStatus("Scrolled working memory viewport.")
+			state.setStatus("Viewport moved down: working memory.")
 			return true
 		}
 		if state.focusTextBox {
@@ -2048,7 +2048,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			return true
 		}
 		state.moveRowInActiveSection(5)
-		state.setStatus("Moved selection")
+		state.setStatus("Selection moved.")
 		return true
 	case "pgup":
 		if !state.insideSection {
@@ -2056,12 +2056,12 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		if state.activeSection == "context-history" {
 			state.textScroll["section:context-history"] = maxInt(0, state.textScroll["section:context-history"]-1)
-			state.setStatus("Scrolled context history viewport.")
+			state.setStatus("Viewport moved up: context history.")
 			return true
 		}
 		if state.activeSection == "working-memory" {
 			state.textScroll["section:working-memory"] = maxInt(0, state.textScroll["section:working-memory"]-1)
-			state.setStatus("Scrolled working memory viewport.")
+			state.setStatus("Viewport moved up: working memory.")
 			return true
 		}
 		if state.focusTextBox {
@@ -2077,7 +2077,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			return true
 		}
 		state.moveRowInActiveSection(-5)
-		state.setStatus("Moved selection")
+		state.setStatus("Selection moved.")
 		return true
 	case "tab":
 		// TAB drills into the active section and keeps focus there.
