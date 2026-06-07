@@ -5,6 +5,7 @@ import tkinter as tk
 from datetime import datetime
 from typing import Optional
 
+from .config import normalize_context_history_session_sort
 from shared.models.context import Context
 from shared.models.task_node import TaskTree
 
@@ -16,7 +17,7 @@ class History:
     Docstring for History
     """
 
-    def __init__(self, user_history_path: str, exclude_session: str = None):
+    def __init__(self, user_history_path: str, exclude_session: str = None, sort_order: str = "Ascending"):
         """
         Docstring for __init__
 
@@ -25,8 +26,11 @@ class History:
         :type user_session_path: str
         :param exclude_session: Path to the current session folder to exclude from history
         :type exclude_session: str
+        :param sort_order: Presentation-only session ordering, Ascending or Descending.
+        :type sort_order: str
         """
         self.sessions: list[Context] = []
+        self.sort_order = normalize_context_history_session_sort(sort_order)
 
         # Load the list of contexts from the user session path
         # each folder under the user session path represent a context
@@ -46,8 +50,8 @@ class History:
             logger.error("Could not access user history path: %s. Error: %s", user_history_path, e)
             return
 
-        # Sort alphabetically
-        context_folders.sort()
+        # Sort alphabetically; presentation order may be reversed by config.
+        context_folders.sort(reverse=self.sort_order == "Descending")
         # print("Found context folders:", context_folders)
 
         # Load each context

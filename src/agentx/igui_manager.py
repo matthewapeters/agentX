@@ -187,11 +187,18 @@ class IGUIManager(Protocol):
         """
         ...
 
-    def update_history_panel(self, history_widget: tk.Widget) -> None:
+    def update_history_panel(
+        self,
+        history_widget: tk.Widget,
+        context_count: int | None = None,
+        sort_order: str | None = None,
+    ) -> None:
         """Replace history panel content with new widget.
 
         Args:
             history_widget: Fully rendered history widget from History.to_gui()
+            context_count: Optional count shown in the section title.
+            sort_order: Optional display order shown in the section title.
 
         Behavior:
             - Destroys existing system_status_history widget

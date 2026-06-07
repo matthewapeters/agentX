@@ -161,6 +161,16 @@ class SettingsTab:
             hot_reload=False,
         )
 
+        self._add_enum_dropdown(
+            g,
+            1,
+            ["agentx", "context_history_session_sort"],
+            "History order",
+            cfg.get("context_history_session_sort", "Ascending"),
+            ["Ascending", "Descending"],
+            hot_reload=True,
+        )
+
         # Render Markdown toggle — disabled with an explanatory label when tkinterweb
         # is not installed so users understand why the option is greyed out.
         md_initial = cfg.get("markdown_render_enabled", True)
@@ -182,7 +192,7 @@ class SettingsTab:
             selectcolor=self._bg,
             font=("Terminal", 9),
         )
-        md_cb.grid(row=1, column=0, columnspan=2, sticky="w", padx=(8, 4), pady=2)
+        md_cb.grid(row=2, column=0, columnspan=2, sticky="w", padx=(8, 4), pady=2)
 
         if not TKINTERWEB_AVAILABLE:
             md_cb.config(state=tk.DISABLED)
@@ -192,7 +202,7 @@ class SettingsTab:
                 bg=self._bg,
                 fg=self._muted_fg,
                 font=("Terminal", 8, "italic"),
-            ).grid(row=1, column=2, sticky="w", padx=(0, 4), pady=2)
+            ).grid(row=2, column=2, sticky="w", padx=(0, 4), pady=2)
 
     def _build_ollama_section(self) -> None:
         cfg = self._config.get("agentx", {})

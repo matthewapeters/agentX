@@ -18,6 +18,9 @@ func runLogsWidgetCommand(coreHTTP string, out io.Writer) int {
 }
 
 func runLogsWidgetLoop(ctx context.Context, out io.Writer, idleInterval time.Duration) error {
+	hideTerminalCursor(out)
+	defer showTerminalCursor(out)
+
 	if idleInterval <= 0 {
 		idleInterval = 250 * time.Millisecond
 	}

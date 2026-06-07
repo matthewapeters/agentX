@@ -41,6 +41,7 @@ host = "localhost:8000"
     assert config["tui"]["output_split_ratio"] == 0.70
     assert config["tui"]["write_timeout_sec"] == 0.1
     assert config["tui"]["show_thinking"] is False
+    assert config["agentx"]["context_history_session_sort"] == "Ascending"
     assert config["tool_registry"]["search_paths"]
 
 
@@ -159,3 +160,44 @@ socket = "/tmp/from-config.sock"
     assert config["tui"]["output_fifo"] == "/tmp/from-env.output"
     assert config["tui"]["input_fifo"] == "/tmp/from-env.input"
     assert config["tui"]["socket"] == "/tmp/from-env.sock"
+
+
+def test_load_config_accepts_context_history_session_sort_descending(tmp_path: Path) -> None:
+    """GIVEN descending sort is configured WHEN loaded THEN the value is preserved."""
+    config_path = tmp_path / "agentx.toml"
+    _write_config(
+        config_path,
+        """
+[agentx]
+ollama_host = "localhost:11434"
+ollama_model = "gpt-oss:latest"
+context_history_session_sort = "Descending"
+
+[tui]
+enable = true
+""".strip(),
+    )
+
+    config = load_config(str(config_path))
+
+    assert config["agentx"]["context_history_session_sort"] == "Descending"
+
+
+def test_load_config_rejects_invalid_context_history_session_sort(tmp_path: Path) -> None:
+    """GIVEN an invalid history-sort value WHEN loaded THEN ConfigurationError is raised."""
+    config_path = tmp_path / "agentx.toml"
+    _write_config(
+        config_path,
+        """
+[agentx]
+ollama_host = "localhost:11434"
+ollama_model = "gpt-oss:latest"
+context_history_session_sort = "Sideways"
+
+[tui]
+enable = true
+""".strip(),
+    )
+
+    with pytest.raises(ConfigurationError, match="context_history_session_sort"):
+        load_config(str(config_path))

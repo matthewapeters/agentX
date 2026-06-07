@@ -269,6 +269,8 @@ func normalizeWidgetEscapeSequence(raw string) (string, bool) {
 		return "pgup", true
 	case "\x1b[6~":
 		return "pgdn", true
+	case "\x1b[Z", "\x1b[1;2Z":
+		return "shift-tab", true
 	case "\x1b[H", "\x1b[1~", "\x1b[7~":
 		return "top", true
 	case "\x1b[F", "\x1b[4~", "\x1b[8~":

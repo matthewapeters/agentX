@@ -13,6 +13,7 @@ import subprocess
 from datetime import UTC, datetime
 from typing import Optional
 
+from .config import normalize_context_history_session_sort
 from .history import History
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,9 @@ class SessionState:
             self._history = History(
                 user_history_path=self.user_history_folder,
                 exclude_session=self.context_folder,
+                sort_order=normalize_context_history_session_sort(
+                    self._config.get("agentx", {}).get("context_history_session_sort", "Ascending")
+                ),
             )
         return self._history
 

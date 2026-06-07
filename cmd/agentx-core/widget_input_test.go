@@ -85,3 +85,22 @@ func TestHandleWidgetLoopControlCommand(t *testing.T) {
 		t.Fatalf("expected refresh callback once, got %d", refreshCalls)
 	}
 }
+
+func TestNormalizeWidgetEscapeSequence_ShiftTab(t *testing.T) {
+	tests := []string{"\x1b[Z", "\x1b[1;2Z"}
+	for _, raw := range tests {
+		command, ok := normalizeWidgetEscapeSequence(raw)
+		if !ok {
+			t.Fatalf("expected shift-tab sequence %q to normalize", raw)
+		}
+		if command != "shift-tab" {
+			t.Fatalf("expected shift-tab for %q, got %q", raw, command)
+		}
+	}
+}
+
+func TestNormalizeWidgetControlCommand_ShiftTabEscapePassthrough(t *testing.T) {
+	if got := normalizeWidgetControlCommand("\x1b[Z", nil); got != "shift-tab" {
+		t.Fatalf("expected shift-tab from escape, got %q", got)
+	}
+}

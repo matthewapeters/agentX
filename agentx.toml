@@ -9,6 +9,7 @@ submit_timeout_seconds = 120
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"
 theme_mode = "Dark Mode"
+context_history_session_sort = "Ascending"
 show_log_locations_on_startup = true
 enable_gui_chat = false
 auto_stop_tmux_on_gui_exit = true

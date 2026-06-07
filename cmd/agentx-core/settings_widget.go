@@ -50,6 +50,7 @@ var approvedSettingsFields = []settingsField{
 	{Section: "agentx", Key: "chat_runtime", Kind: settingsFieldEnum, Options: []string{"go", "python"}},
 	{Section: "agentx", Key: "submit_timeout_seconds", Kind: settingsFieldInt, Options: []string{"30", "60", "120", "180"}},
 	{Section: "agentx", Key: "submit_execution_timeout_seconds", Kind: settingsFieldInt, Options: []string{"30", "60", "120", "180"}},
+	{Section: "agentx", Key: "context_history_session_sort", Kind: settingsFieldEnum, Options: []string{"Ascending", "Descending"}},
 	{Section: "agentx", Key: "theme_mode", Kind: settingsFieldEnum, Options: []string{"Dark Mode", "Light Mode"}},
 	{Section: "agentx", Key: "enable_gui_chat", Kind: settingsFieldBool, Options: []string{"true", "false"}},
 	{Section: "tui", Key: "enable", Kind: settingsFieldBool, Options: []string{"true", "false"}},
@@ -92,6 +93,8 @@ func runSettingsWidgetCommand(_ string, in io.Reader, out io.Writer) int {
 func runSettingsWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, state *settingsWidgetState) error {
 	commandReader, promptMode, cleanup := newFilesystemWidgetCommandReader(in)
 	defer cleanup()
+	hideTerminalCursor(out)
+	defer showTerminalCursor(out)
 	var previousLines []string
 
 	for {

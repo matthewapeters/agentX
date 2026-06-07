@@ -107,6 +107,8 @@ func runFilesystemWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) in
 func runFilesystemWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, state *filesystemWidgetState) error {
 	commandReader, promptMode, cleanup := newFilesystemWidgetCommandReader(in)
 	defer cleanup()
+	hideTerminalCursor(out)
+	defer showTerminalCursor(out)
 	var previousLines []string
 
 	for {
@@ -156,6 +158,14 @@ func runFilesystemWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, s
 			}
 		}
 	}
+}
+
+func hideTerminalCursor(out io.Writer) {
+	_, _ = fmt.Fprint(out, "\033[?25l")
+}
+
+func showTerminalCursor(out io.Writer) {
+	_, _ = fmt.Fprint(out, "\033[?25h")
 }
 
 func (s *filesystemWidgetState) adaptViewportToTerminal(out io.Writer, promptMode bool) {

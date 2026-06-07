@@ -358,8 +358,13 @@ class GUIManager(IGUIManager):
     def update_context_panel(self, context_widget: tk.Widget) -> None:
         self._side_panel.update_context_panel(context_widget)
 
-    def update_history_panel(self, history_widget: tk.Widget) -> None:
-        self._side_panel.update_history_panel(history_widget)
+    def update_history_panel(
+        self,
+        history_widget: tk.Widget,
+        context_count: int | None = None,
+        sort_order: str | None = None,
+    ) -> None:
+        self._side_panel.update_history_panel(history_widget, context_count=context_count, sort_order=sort_order)
 
     def update_working_memory_panel(self, working_memory_widget: tk.Widget, fact_count: int = 0) -> None:
         self._side_panel.update_working_memory_panel(working_memory_widget, fact_count)

@@ -414,7 +414,7 @@ func TestRunInputWidgetCommand_ContextAddAliasStillSubmits(t *testing.T) {
 	}
 }
 
-func TestInputWidgetComposeState_EscTogglesFocusAndSeedsControlPrompt(t *testing.T) {
+func TestInputWidgetComposeState_EscTogglesFocusWithoutSeedingControlPrompt(t *testing.T) {
 	state := newInputWidgetComposeState()
 	if state.focus != inputWidgetFocusInput {
 		t.Fatalf("expected default focus on input, got %v", state.focus)
@@ -424,8 +424,8 @@ func TestInputWidgetComposeState_EscTogglesFocusAndSeedsControlPrompt(t *testing
 	if state.focus != inputWidgetFocusControl {
 		t.Fatalf("expected focus to move to control after esc, got %v", state.focus)
 	}
-	if got := string(state.control); got != ":" {
-		t.Fatalf("expected control prompt to seed with colon, got %q", got)
+	if got := string(state.control); got != "" {
+		t.Fatalf("expected control prompt to remain empty on focus, got %q", got)
 	}
 
 	_ = state.handleKey(inputWidgetKey{kind: "esc"})

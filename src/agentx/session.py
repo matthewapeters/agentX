@@ -29,7 +29,7 @@ from shared.providers import ILLMServiceProvider, OllamaServiceProvider
 from shared.providers.constants import FALLBACK_CONTEXT_WINDOW
 
 from .attachment_info import AttachmentInfo
-from .config import apply_config_defaults, save_config, validate_config
+from .config import apply_config_defaults, normalize_context_history_session_sort, save_config, validate_config
 from .event_broker import EventBroker, EventType
 from .file_explorer import FileExplorer
 from .gui.gui_config import GUIConfig
@@ -744,6 +744,9 @@ class AgentXSession:
             self._history = History(
                 user_history_path=self.user_history_folder,
                 exclude_session=self.context_folder,
+                sort_order=normalize_context_history_session_sort(
+                    self.config.get("agentx", {}).get("context_history_session_sort", "Ascending")
+                ),
             )
         return self._history
 
@@ -1105,7 +1108,11 @@ class AgentXSession:
             self.user,
             on_attachment_toggle=self.on_history_attachment_toggle,
         )
-        self.gui.update_history_panel(history_widget)
+        self.gui.update_history_panel(
+            history_widget,
+            context_count=len(self.history.sessions),
+            sort_order=getattr(self.history, "sort_order", None),
+        )
 
         # Render current context in the Session tab
         context_widget = self.gui.render_context_widget(
@@ -1293,6 +1300,15 @@ class AgentXSession:
             elif section == "agentx":
                 if leaf == "markdown_render_enabled":
                     self.gui.config.markdown_render_enabled = bool(value)
+                elif leaf == "context_history_session_sort":
+                    history = History(
+                        user_history_path=self.user_history_folder,
+                        exclude_session=self.context_folder,
+                        sort_order=str(value),
+                    )
+                    self.history = history
+                    self._state.history = history
+                    self._safe_root_after(self.refresh_context_gui)
             elif section == "terminal":
                 if leaf == "exec_mode":
                     self._apply_terminal_exec_mode(str(value))

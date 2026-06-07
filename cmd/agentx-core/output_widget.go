@@ -673,6 +673,9 @@ func runOutputWidgetLoop(ctx context.Context, baseURL string, out io.Writer, ref
 }
 
 func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Reader, out io.Writer, refreshInterval time.Duration) error {
+	hideTerminalCursor(out)
+	defer showTerminalCursor(out)
+
 	if refreshInterval <= 0 {
 		refreshInterval = 300 * time.Millisecond
 	}

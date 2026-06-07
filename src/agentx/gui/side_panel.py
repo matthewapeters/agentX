@@ -416,11 +416,23 @@ class SidePanel:
         section.set_content(context_widget, fill=tk.BOTH, expand=True)
         self._widgets.system_status_context = context_widget
 
-    def update_history_panel(self, history_widget: tk.Widget) -> None:
-        """Replace the History section content."""
+    def update_history_panel(
+        self,
+        history_widget: tk.Widget,
+        context_count: int | None = None,
+        sort_order: str | None = None,
+    ) -> None:
+        """Replace the History section content and refresh its section label."""
         section = self._session_sections.get("history")
         if section is None:
             raise RuntimeError("History section not initialized")
+        label = "History"
+        if context_count is not None:
+            label = f"History ({context_count})"
+        if sort_order:
+            order_icon = "↑" if sort_order == "Ascending" else "↓"
+            label = f"{label} {order_icon}"
+        section.set_title(label)
         section.set_content(history_widget, fill=tk.BOTH, expand=False)
         self._widgets.system_status_history = history_widget
 

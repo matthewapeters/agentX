@@ -9,6 +9,20 @@ DEFAULT_TOOL_REGISTRY_SEARCH_PATHS = [
     "./agentx_tools.toml",
     "~/.agentx/agentx_tools.toml",
 ]
+DEFAULT_CONTEXT_HISTORY_SESSION_SORT = "Ascending"
+
+
+def normalize_context_history_session_sort(value: Any) -> str:
+    """Normalize the presentation-only context-history session sort order."""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"ascending", "asc"}:
+            return "Ascending"
+        if normalized in {"descending", "desc"}:
+            return "Descending"
+    raise ConfigurationError(
+        f"Invalid value for [agentx].context_history_session_sort: {value!r} (expected Ascending or Descending)"
+    )
 
 
 class ConfigurationError(ValueError):
@@ -50,6 +64,9 @@ def apply_config_defaults(config: dict[str, Any]) -> dict[str, Any]:
         raise ConfigurationError("[agentx] section must be a table")
 
     agentx.setdefault("enable_gui_chat", True)
+    agentx["context_history_session_sort"] = normalize_context_history_session_sort(
+        agentx.get("context_history_session_sort", DEFAULT_CONTEXT_HISTORY_SESSION_SORT)
+    )
 
     tui = config.setdefault("tui", {})
     if not isinstance(tui, dict):
@@ -100,6 +117,8 @@ def validate_config(config: dict[str, Any]) -> None:
     agentx = config.get("agentx", {})
     tui = config.get("tui", {})
     tool_registry = config.get("tool_registry", {})
+
+    normalize_context_history_session_sort(agentx.get("context_history_session_sort", "Ascending"))
 
     enable_gui_chat = bool(agentx.get("enable_gui_chat", True))
     enable_tui = bool(tui.get("enable", False))

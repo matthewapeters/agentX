@@ -48,6 +48,34 @@ class TestHistoryInit(unittest.TestCase):
             self.assertEqual(len(h.sessions), 1)
             self.assertEqual(h.sessions[0].session_id, "session_001")
 
+    def test_sessions_sorted_ascending_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            older = os.path.join(tmp, "session_2026-05-01_10-00-00")
+            newer = os.path.join(tmp, "session_2026-06-01_10-00-00")
+            _write_message_file(os.path.join(older, "context"), content="older")
+            _write_message_file(os.path.join(newer, "context"), content="newer")
+
+            h = History(tmp)
+
+            self.assertEqual(
+                [ctx.session_id for ctx in h.sessions],
+                ["session_2026-05-01_10-00-00", "session_2026-06-01_10-00-00"],
+            )
+
+    def test_sessions_sorted_descending_when_requested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            older = os.path.join(tmp, "session_2026-05-01_10-00-00")
+            newer = os.path.join(tmp, "session_2026-06-01_10-00-00")
+            _write_message_file(os.path.join(older, "context"), content="older")
+            _write_message_file(os.path.join(newer, "context"), content="newer")
+
+            h = History(tmp, sort_order="Descending")
+
+            self.assertEqual(
+                [ctx.session_id for ctx in h.sessions],
+                ["session_2026-06-01_10-00-00", "session_2026-05-01_10-00-00"],
+            )
+
     def test_session_without_messages_is_not_included(self):
         with tempfile.TemporaryDirectory() as tmp:
             # Create session dir but no message files

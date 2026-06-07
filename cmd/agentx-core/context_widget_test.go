@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +41,12 @@ func TestRenderContextFeedbackSections_DefaultCollapsedOrderAndMinimalHeader(t *
 	wmBlock := rendered[wmIdx:currentIdx]
 	if strings.Contains(wmBlock, "fact_count:") || strings.Contains(wmBlock, "session_id:") {
 		t.Fatalf("expected collapsed working memory to render title only by default, got:\n%s", wmBlock)
+	}
+	if !strings.Contains(rendered, "users:") || !strings.Contains(rendered, "sessions:") {
+		t.Fatalf("expected collapsed context-history summary metadata, got:\n%s", rendered)
+	}
+	if !strings.Contains(wmBlock, "facts:") {
+		t.Fatalf("expected collapsed working-memory summary metadata, got:\n%s", wmBlock)
 	}
 
 	if !strings.Contains(rendered, "prompt: \x1b[33m[collapsed]\x1b[0m") || !strings.Contains(rendered, "response: \x1b[33m[collapsed]\x1b[0m") {
@@ -324,8 +332,8 @@ func TestContextWidgetKeyboard_SpaceSelectAndEnterCollapse(t *testing.T) {
 	}
 }
 
-// TestContextWidgetKeyboard_TabSectionToggle verifies that TAB enters and exits
-// a section, cycling through: outside → inside → outside.
+// TestContextWidgetKeyboard_TabSectionToggle verifies that TAB drills into a
+// section and remains inside until Shift-Tab exits.
 func TestContextWidgetKeyboard_TabSectionToggle(t *testing.T) {
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
@@ -343,10 +351,16 @@ func TestContextWidgetKeyboard_TabSectionToggle(t *testing.T) {
 		t.Fatalf("expected first tab to enter section (insideSection=true)")
 	}
 
-	// Second TAB exits the section.
+	// Second TAB remains inside the section (drill-in semantics).
 	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if !state.insideSection {
+		t.Fatalf("expected second tab to keep section focus (insideSection=true)")
+	}
+
+	// Shift-Tab exits the section.
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
 	if state.insideSection {
-		t.Fatalf("expected second tab to exit section (insideSection=false)")
+		t.Fatalf("expected shift-tab to exit section (insideSection=false)")
 	}
 }
 
@@ -456,5 +470,266 @@ func TestContextWidgetKeyboard_LeftRightHistorySessionAndTurn(t *testing.T) {
 	applyContextWidgetCommand(state, "left", "http://127.0.0.1:0", snapshot)
 	if state.activeRowKey() != "session:s-prev" {
 		t.Fatalf("expected left to return to session row, got %q", state.activeRowKey())
+	}
+}
+
+func TestContextWidgetKeyboard_EnterHistoryUsesFocusPath(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.insideSection = true
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-prev"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+		t.Fatalf("expected enter on focused user row to collapse to section, got %#v", got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+		t.Fatalf("expected enter to re-enter section focus first, got %#v", got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
+		t.Fatalf("expected third enter on user row to expand user node, got %#v", got)
+	}
+
+	if !state.moveRowInActiveSection(1) {
+		t.Fatalf("expected move to session row to succeed")
+	}
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
+		t.Fatalf("expected enter on focused session row to collapse to parent user, got %#v", got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-prev" {
+		t.Fatalf("expected second enter on session row to focus session node, got %#v", got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
+		t.Fatalf("expected second enter on focused session to collapse to parent user, got %#v", got)
+	}
+}
+
+func TestResolveContextHistorySessionSort_EnvOverride(t *testing.T) {
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_CONTEXT_HISTORY_SESSION_SORT": "Ascending",
+	})
+
+	if got := resolveContextHistorySessionSort(""); got != contextHistorySortAscending {
+		t.Fatalf("expected env override to resolve ascending, got %q", got)
+	}
+}
+
+func TestResolveContextHistorySessionSort_FromToml(t *testing.T) {
+	projectDir := t.TempDir()
+	configPath := filepath.Join(projectDir, "agentx.toml")
+	content := "[agentx]\ncontext_history_session_sort = \"Ascending\"\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	if got := resolveContextHistorySessionSort(projectDir); got != contextHistorySortAscending {
+		t.Fatalf("expected agentx.toml value to resolve ascending, got %q", got)
+	}
+}
+
+func TestDiscoverContextHistorySessions_HonorsSortOrder(t *testing.T) {
+	projectDir := t.TempDir()
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "tester",
+	})
+
+	writeTurns := func(sessionID string, createdAt int64) {
+		t.Helper()
+		turnPath := filepath.Join(projectDir, "sessions", "tester", sessionID, "context", "turns.jsonl")
+		if err := os.MkdirAll(filepath.Dir(turnPath), 0o755); err != nil {
+			t.Fatalf("MkdirAll failed: %v", err)
+		}
+		turn := ChatTurn{Prompt: "p", Response: "r", CreatedAt: createdAt}
+		payload, err := json.Marshal(turn)
+		if err != nil {
+			t.Fatalf("Marshal failed: %v", err)
+		}
+		if err := os.WriteFile(turnPath, append(payload, '\n'), 0o644); err != nil {
+			t.Fatalf("WriteFile failed: %v", err)
+		}
+	}
+
+	writeTurns("older-session", 1_000)
+	writeTurns("newer-session", 2_000)
+	writeTurns("current-session", 3_000)
+
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_CONTEXT_HISTORY_SESSION_SORT": "Descending",
+	})
+	desc := discoverContextHistorySessions("current-session")
+	if len(desc) != 2 {
+		t.Fatalf("expected 2 history sessions, got %d", len(desc))
+	}
+	if desc[0].SessionID != "newer-session" || desc[1].SessionID != "older-session" {
+		t.Fatalf("expected descending order newer->older, got %q then %q", desc[0].SessionID, desc[1].SessionID)
+	}
+
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_CONTEXT_HISTORY_SESSION_SORT": "Ascending",
+	})
+	asc := discoverContextHistorySessions("current-session")
+	if len(asc) != 2 {
+		t.Fatalf("expected 2 history sessions, got %d", len(asc))
+	}
+	if asc[0].SessionID != "older-session" || asc[1].SessionID != "newer-session" {
+		t.Fatalf("expected ascending order older->newer, got %q then %q", asc[0].SessionID, asc[1].SessionID)
+	}
+}
+
+func TestNodeIDForRowKey_MapsCurrentHistoryAndWMNodes(t *testing.T) {
+	tests := []struct {
+		section string
+		rowKey  string
+		kind    nodeKind
+	}{
+		{section: "context-history", rowKey: "user:mpeters", kind: nodeKindUser},
+		{section: "context-history", rowKey: "session:mpeters:session_1", kind: nodeKindSession},
+		{section: "context-history", rowKey: "history:mpeters:session_1:2", kind: nodeKindTurn},
+		{section: "working-memory", rowKey: "wm:editor:key", kind: nodeKindWmCell},
+		{section: "current-context", rowKey: "current:1:prompt", kind: nodeKindEntry},
+	}
+	for _, tc := range tests {
+		id, ok := nodeIDForRowKey(tc.section, tc.rowKey)
+		if !ok {
+			t.Fatalf("expected %q in %q to map to node id", tc.rowKey, tc.section)
+		}
+		if id.Kind != tc.kind {
+			t.Fatalf("expected %q in %q to map to kind %q, got %q", tc.rowKey, tc.section, tc.kind, id.Kind)
+		}
+	}
+}
+
+func TestMoveRowInActiveSection_UpdatesFocusPath(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "current-context"
+	state.insideSection = true
+	state.updateOrderedRows([]string{"current:1:prompt", "current:1:response"})
+
+	if !state.moveRowInActiveSection(1) {
+		t.Fatalf("expected row move to succeed")
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindEntry || got.Entry != "response" {
+		t.Fatalf("expected focusPath tail to track current response entry, got %#v", got)
+	}
+}
+
+func TestMoveRowInActiveSection_HistorySiblingSwitchReplacesLeafPath(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.insideSection = true
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-1", "session:mpeters:s-2"})
+
+	if !state.moveRowInActiveSection(1) {
+		t.Fatalf("expected move to first session row to succeed")
+	}
+	sessionOne := nodeID{Kind: nodeKindSession, User: "mpeters", Session: "s-1"}
+	if !focusPathHasNode(state.focusPath, sessionOne) {
+		t.Fatalf("expected focus path to include first session node")
+	}
+
+	if !state.moveRowInActiveSection(1) {
+		t.Fatalf("expected move to sibling session row to succeed")
+	}
+	if focusPathHasNode(state.focusPath, sessionOne) {
+		t.Fatalf("expected sibling move to replace old session leaf path")
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-2" {
+		t.Fatalf("expected focus path tail to track second session, got %#v", got)
+	}
+}
+
+func TestContextWidgetKeyboard_ShiftTabPopsDeepHistoryPath(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.insideSection = true
+	state.collapsedContextHistory = false
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-1", "history:mpeters:s-1:1"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	if !state.moveRowInActiveSection(2) {
+		t.Fatalf("expected move to turn row to succeed")
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindTurn {
+		t.Fatalf("expected deep history focus before shift-tab, got %#v", got)
+	}
+
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	if state.insideSection {
+		t.Fatalf("expected shift-tab to exit section")
+	}
+	if !state.collapsedContextHistory {
+		t.Fatalf("expected shift-tab to collapse context-history section")
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-1" {
+		t.Fatalf("expected shift-tab to pop focus path to parent session node, got %#v", got)
+	}
+}
+
+func TestRenderContextFeedbackSections_CollapsedSectionsRenderBoxStubs(t *testing.T) {
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{SessionID: "sess-collapsed"}
+
+	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	if strings.Count(rendered, "┌") < 2 || strings.Count(rendered, "└") < 2 {
+		t.Fatalf("expected collapsed sections to include visible box stubs, got:\n%s", rendered)
+	}
+}
+
+func TestRenderSectionHeader_ReservesPointerWhitespace(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.insideSection = false
+	state.activeSection = "working-memory"
+
+	active := stripAnsi(renderSectionHeader("WORKING MEMORY", "working-memory", state))
+	inactive := stripAnsi(renderSectionHeader("CONTEXT HISTORY", "context-history", state))
+
+	if !strings.HasPrefix(active, "▶ ") {
+		t.Fatalf("expected active section prefix with pointer, got %q", active)
+	}
+	if !strings.HasPrefix(inactive, "  ") {
+		t.Fatalf("expected inactive section to reserve pointer whitespace, got %q", inactive)
+	}
+}
+
+func TestRenderContextFeedbackSections_FiltersEmptyTurnStubs(t *testing.T) {
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{
+		SessionID: "sess-empty-turn",
+		Turns: []ChatTurn{{Prompt: "", Response: ""}},
+	}
+
+	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	if strings.Contains(rendered, "TURN 1") {
+		t.Fatalf("expected empty turn placeholder to be filtered out, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "No current context elements.") {
+		t.Fatalf("expected empty-turn snapshot to render no-elements message, got:\n%s", rendered)
+	}
+}
+
+func TestRenderWorkingMemoryFeedbackSection_ShowsEditorCells(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.collapsedWorkingMemory = false
+
+	rendered := strings.Join(renderWorkingMemoryFeedbackSection(state, nil), "\n")
+	for _, fragment := range []string{
+		"KEY                       VALUE",
+		"┌───────────────────────┐ ┌───────────────────────┐ ┌─────┐",
+		"│ ↳OK │",
+	} {
+		if !strings.Contains(rendered, fragment) {
+			t.Fatalf("expected working-memory editor scaffold fragment %q, got:\n%s", fragment, rendered)
+		}
 	}
 }

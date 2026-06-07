@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,15 +29,181 @@ type contextWidgetSnapshot struct {
 }
 
 type contextHistorySession struct {
+	Username    string
 	SessionID   string
 	Turns       []ChatTurn
 	LastUpdated time.Time
 }
 
+type contextHistoryUser struct {
+	Username string
+	Sessions []contextHistorySession
+}
+
+type nodeKind string
+
+const (
+	nodeKindSection nodeKind = "section"
+	nodeKindUser    nodeKind = "user"
+	nodeKindSession nodeKind = "session"
+	nodeKindTurn    nodeKind = "turn"
+	nodeKindWM      nodeKind = "working-memory"
+	nodeKindWmCell  nodeKind = "working-memory-cell"
+	nodeKindEntry   nodeKind = "entry"
+)
+
+type nodeID struct {
+	Kind    nodeKind
+	Section string
+	User    string
+	Session string
+	Turn    int
+	Entry   string
+	Cell    string
+}
+
+func (id nodeID) String() string {
+	switch id.Kind {
+	case nodeKindSection:
+		return "section:" + strings.TrimSpace(id.Section)
+	case nodeKindUser:
+		return "user:" + strings.TrimSpace(id.User)
+	case nodeKindSession:
+		return "session:" + strings.TrimSpace(id.User) + ":" + strings.TrimSpace(id.Session)
+	case nodeKindTurn:
+		return fmt.Sprintf("turn:%s:%s:%d", strings.TrimSpace(id.User), strings.TrimSpace(id.Session), id.Turn)
+	case nodeKindWM:
+		return "wm"
+	case nodeKindWmCell:
+		return "wm:editor:" + strings.TrimSpace(id.Cell)
+	case nodeKindEntry:
+		return fmt.Sprintf("entry:%s:%s:%d:%s", strings.TrimSpace(id.User), strings.TrimSpace(id.Session), id.Turn, strings.TrimSpace(id.Entry))
+	default:
+		return "unknown"
+	}
+}
+
+func (id nodeID) Parent() (nodeID, bool) {
+	switch id.Kind {
+	case nodeKindTurn:
+		return nodeID{Kind: nodeKindSession, User: id.User, Session: id.Session}, true
+	case nodeKindEntry:
+		return nodeID{Kind: nodeKindTurn, User: id.User, Session: id.Session, Turn: id.Turn}, true
+	case nodeKindSession:
+		return nodeID{Kind: nodeKindUser, User: id.User}, true
+	case nodeKindUser:
+		return nodeID{Kind: nodeKindSection, Section: "context-history"}, true
+	case nodeKindWmCell:
+		return nodeID{Kind: nodeKindWM}, true
+	case nodeKindWM:
+		return nodeID{Kind: nodeKindSection, Section: "working-memory"}, true
+	case nodeKindSection:
+		return nodeID{Kind: nodeKindSection, Section: "root"}, true
+	default:
+		return nodeID{}, false
+	}
+}
+
+type focusPath []nodeID
+
+func (path focusPath) Clone() focusPath {
+	if len(path) == 0 {
+		return focusPath{}
+	}
+	clone := make(focusPath, len(path))
+	copy(clone, path)
+	return clone
+}
+
+func (path focusPath) Tail() nodeID {
+	if len(path) == 0 {
+		return nodeID{}
+	}
+	return path[len(path)-1]
+}
+
+func (path focusPath) HasFocus(id nodeID) bool {
+	return len(path) > 0 && path.Tail().String() == id.String()
+}
+
+func (path focusPath) Pop() (focusPath, nodeID, bool) {
+	if len(path) == 0 {
+		return path, nodeID{}, false
+	}
+	parent := path[:len(path)-1]
+	return parent, path[len(path)-1], true
+}
+
+func (path focusPath) Push(id nodeID) focusPath {
+	clone := path.Clone()
+	clone = append(clone, id)
+	return clone
+}
+
+func commonPathPrefix(a focusPath, b focusPath) int {
+	limit := len(a)
+	if len(b) < limit {
+		limit = len(b)
+	}
+	for i := 0; i < limit; i++ {
+		if a[i].String() != b[i].String() {
+			return i
+		}
+	}
+	return limit
+}
+
+func nodeIDForRowKey(section string, rowKey string) (nodeID, bool) {
+	key := strings.TrimSpace(rowKey)
+	switch strings.TrimSpace(section) {
+	case "context-history":
+		if strings.HasPrefix(key, "user:") {
+			return nodeID{Kind: nodeKindUser, User: strings.TrimPrefix(key, "user:")}, true
+		}
+		if strings.HasPrefix(key, "session:") {
+			parts := strings.SplitN(strings.TrimPrefix(key, "session:"), ":", 2)
+			if len(parts) == 2 {
+				return nodeID{Kind: nodeKindSession, User: parts[0], Session: parts[1]}, true
+			}
+		}
+		if strings.HasPrefix(key, "history:") {
+			parts := strings.Split(strings.TrimPrefix(key, "history:"), ":")
+			if len(parts) == 3 {
+				turn, err := strconv.Atoi(parts[2])
+				if err == nil {
+					return nodeID{Kind: nodeKindTurn, User: parts[0], Session: parts[1], Turn: turn}, true
+				}
+			}
+		}
+	case "working-memory":
+		if strings.HasPrefix(key, "wm:editor:") {
+			return nodeID{Kind: nodeKindWmCell, Cell: strings.TrimPrefix(key, "wm:editor:")}, true
+		}
+		if strings.HasPrefix(key, "wm:") {
+			return nodeID{Kind: nodeKindWM, Entry: key}, true
+		}
+	case "current-context":
+		if strings.HasPrefix(key, "current:") {
+			parts := strings.Split(strings.TrimPrefix(key, "current:"), ":")
+			if len(parts) == 2 {
+				turn, err := strconv.Atoi(parts[0])
+				if err == nil {
+					return nodeID{Kind: nodeKindEntry, Turn: turn, Entry: parts[1]}, true
+				}
+			}
+		}
+	}
+	return nodeID{}, false
+}
+
+const (
+	contextHistorySortAscending = "ascending"
+	contextHistorySortDescending = "descending"
+)
+
 type contextFeedbackViewState struct {
 	showHelp                bool
 	collapsedContextHistory bool
-	collapsedPriorSessions  map[string]bool
 	collapsedEntries        map[string]bool
 	disabledEntries         map[string]bool
 	selectedEntries         map[string]bool
@@ -54,6 +221,7 @@ type contextFeedbackViewState struct {
 	// insideSection=true means the cursor is navigating rows within the active section.
 	activeSection string
 	insideSection bool
+	focusPath     focusPath
 }
 
 const (
@@ -70,7 +238,6 @@ const (
 
 func newContextFeedbackViewState() *contextFeedbackViewState {
 	return &contextFeedbackViewState{
-		collapsedPriorSessions:  make(map[string]bool),
 		collapsedEntries:        make(map[string]bool),
 		disabledEntries:         make(map[string]bool),
 		selectedEntries:         make(map[string]bool),
@@ -81,6 +248,7 @@ func newContextFeedbackViewState() *contextFeedbackViewState {
 		collapsedWorkingMemory:  true,
 		activeSection:           "current-context",
 		insideSection:           false,
+		focusPath:               focusPath{nodeID{Kind: nodeKindSection, Section: "current-context"}},
 	}
 }
 
@@ -124,6 +292,9 @@ func (state *contextFeedbackViewState) updateOrderedRows(keys []string) {
 	if state.activeRow >= len(state.orderedRowKeys) {
 		state.activeRow = len(state.orderedRowKeys) - 1
 	}
+	if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
+		state.setFocusPath(focusPathForNode(state.activeSection, node))
+	}
 }
 
 func (state *contextFeedbackViewState) activeRowKey() string {
@@ -151,8 +322,183 @@ func (state *contextFeedbackViewState) moveRow(delta int) bool {
 	state.activeRow = next
 	if changed {
 		state.focusTextBox = false
+		if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
+			state.setFocusPath(focusPathForNode(state.activeSection, node))
+		}
 	}
 	return changed
+}
+
+func rowBelongsToSection(rowKey string, section string) bool {
+	key := strings.TrimSpace(rowKey)
+	switch strings.TrimSpace(section) {
+	case "context-history":
+		return strings.HasPrefix(key, "user:") || strings.HasPrefix(key, "session:") || strings.HasPrefix(key, "history:")
+	case "working-memory":
+		return strings.HasPrefix(key, "wm:")
+	case "current-context":
+		return strings.HasPrefix(key, "current:")
+	default:
+		return false
+	}
+}
+
+func (state *contextFeedbackViewState) ensureSectionRowFocus() bool {
+	if state == nil || len(state.orderedRowKeys) == 0 {
+		return false
+	}
+	if rowBelongsToSection(state.activeRowKey(), state.activeSection) {
+		return true
+	}
+	for idx, key := range state.orderedRowKeys {
+		if !rowBelongsToSection(key, state.activeSection) {
+			continue
+		}
+		state.activeRow = idx
+		return true
+	}
+	return false
+}
+
+func (state *contextFeedbackViewState) moveRowInActiveSection(delta int) bool {
+	if state == nil || len(state.orderedRowKeys) == 0 {
+		return false
+	}
+	indices := make([]int, 0, len(state.orderedRowKeys))
+	for idx, key := range state.orderedRowKeys {
+		if rowBelongsToSection(key, state.activeSection) {
+			indices = append(indices, idx)
+		}
+	}
+	if len(indices) == 0 {
+		return false
+	}
+	current := -1
+	for pos, idx := range indices {
+		if idx == state.activeRow {
+			current = pos
+			break
+		}
+	}
+	if current == -1 {
+		state.activeRow = indices[0]
+		state.focusTextBox = false
+		if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
+			state.setFocusPath(focusPathForNode(state.activeSection, node))
+		}
+		return true
+	}
+	next := current + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= len(indices) {
+		next = len(indices) - 1
+	}
+	changed := state.activeRow != indices[next]
+	state.activeRow = indices[next]
+	if changed {
+		state.focusTextBox = false
+		if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
+			state.setFocusPath(focusPathForNode(state.activeSection, node))
+		}
+	}
+	return changed
+}
+
+func (state *contextFeedbackViewState) setFocusPath(path focusPath) {
+	if state == nil {
+		return
+	}
+	state.focusPath = path.Clone()
+	if len(state.focusPath) == 0 {
+		state.activeSection = "current-context"
+		state.insideSection = false
+		return
+	}
+	if state.focusPath[0].Kind == nodeKindSection && strings.TrimSpace(state.focusPath[0].Section) != "" {
+		state.activeSection = state.focusPath[0].Section
+	}
+	tail := state.focusPath.Tail()
+	if tail.Kind == nodeKindSection {
+		state.insideSection = false
+		return
+	}
+	state.insideSection = true
+}
+
+func (state *contextFeedbackViewState) pushFocus(id nodeID) {
+	if state == nil {
+		return
+	}
+	state.focusPath = state.focusPath.Push(id)
+	state.setFocusPath(state.focusPath)
+}
+
+func (state *contextFeedbackViewState) popFocus() bool {
+	if state == nil || len(state.focusPath) <= 1 {
+		return false
+	}
+	parent, _, ok := state.focusPath.Pop()
+	if !ok {
+		return false
+	}
+	state.setFocusPath(parent)
+	return true
+}
+
+func (state *contextFeedbackViewState) branchTransition(next focusPath) {
+	if state == nil {
+		return
+	}
+	current := state.focusPath.Clone()
+	keep := commonPathPrefix(current, next)
+	if keep < len(current) {
+		current = current[:keep]
+	}
+	state.setFocusPath(append(current, next[keep:]...))
+}
+
+func focusPathForNode(section string, id nodeID) focusPath {
+	base := focusPath{{Kind: nodeKindSection, Section: strings.TrimSpace(section)}}
+	switch id.Kind {
+	case nodeKindUser:
+		return append(base, nodeID{Kind: nodeKindUser, User: id.User})
+	case nodeKindSession:
+		return append(base,
+			nodeID{Kind: nodeKindUser, User: id.User},
+			nodeID{Kind: nodeKindSession, User: id.User, Session: id.Session},
+		)
+	case nodeKindTurn:
+		return append(base,
+			nodeID{Kind: nodeKindUser, User: id.User},
+			nodeID{Kind: nodeKindSession, User: id.User, Session: id.Session},
+			nodeID{Kind: nodeKindTurn, User: id.User, Session: id.Session, Turn: id.Turn},
+		)
+	case nodeKindWmCell:
+		return append(base,
+			nodeID{Kind: nodeKindWM},
+			nodeID{Kind: nodeKindWmCell, Cell: id.Cell},
+		)
+	case nodeKindWM:
+		return append(base, nodeID{Kind: nodeKindWM})
+	case nodeKindEntry:
+		return append(base, nodeID{Kind: nodeKindEntry, Turn: id.Turn, Entry: id.Entry})
+	case nodeKindSection:
+		return focusPath{{Kind: nodeKindSection, Section: id.Section}}
+	default:
+		return base
+	}
+}
+
+func focusPathHasNode(path focusPath, id nodeID) bool {
+	target := id.String()
+	for _, node := range path {
+		if node.String() == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (state *contextFeedbackViewState) setActiveRowByKey(target string) bool {
@@ -206,8 +552,8 @@ func (state *contextFeedbackViewState) moveHorizontal(direction string) bool {
 		if direction != "right" {
 			return false
 		}
-		sessionID := strings.TrimPrefix(current, "session:")
-		prefix := "history:" + sessionID + ":"
+		sessionRef := strings.TrimPrefix(current, "session:")
+		prefix := "history:" + sessionRef + ":"
 		for _, key := range state.orderedRowKeys {
 			if strings.HasPrefix(key, prefix) {
 				return state.setActiveRowByKey(key)
@@ -224,8 +570,38 @@ func (state *contextFeedbackViewState) moveHorizontal(direction string) bool {
 		if len(parts) < 3 {
 			return false
 		}
-		sessionID := strings.TrimSpace(parts[1])
-		return state.setActiveRowByKey("session:" + sessionID)
+		if len(parts) == 3 {
+			sessionID := strings.TrimSpace(parts[1])
+			return state.setActiveRowByKey("session:" + sessionID)
+		}
+		username := strings.TrimSpace(parts[1])
+		sessionID := strings.TrimSpace(parts[2])
+		return state.setActiveRowByKey(historySessionRowKey(username, sessionID))
+	}
+
+	if strings.HasPrefix(current, "wm:editor:") {
+		parts := strings.Split(current, ":")
+		if len(parts) != 3 {
+			return false
+		}
+		cell := strings.TrimSpace(parts[2])
+		switch direction {
+		case "right":
+			switch cell {
+			case "key":
+				return state.setActiveRowByKey("wm:editor:value")
+			case "value":
+				return state.setActiveRowByKey("wm:editor:save")
+			}
+		case "left":
+			switch cell {
+			case "save":
+				return state.setActiveRowByKey("wm:editor:value")
+			case "value":
+				return state.setActiveRowByKey("wm:editor:key")
+			}
+		}
+		return false
 	}
 
 	return false
@@ -416,6 +792,7 @@ func discoverContextHistorySessions(currentSessionID string) []contextHistorySes
 	if projectDir == "" || username == "" {
 		return []contextHistorySession{}
 	}
+	sortOrder := resolveContextHistorySessionSort(projectDir)
 
 	sessionsRoot := filepath.Join(projectDir, "sessions", username)
 	entries, err := os.ReadDir(sessionsRoot)
@@ -437,16 +814,146 @@ func discoverContextHistorySessions(currentSessionID string) []contextHistorySes
 		if !ok {
 			continue
 		}
-		history = append(history, contextHistorySession{SessionID: sessionID, Turns: turns, LastUpdated: lastUpdated})
+		history = append(history, contextHistorySession{Username: username, SessionID: sessionID, Turns: turns, LastUpdated: lastUpdated})
 	}
 
 	sort.SliceStable(history, func(i, j int) bool {
 		if history[i].LastUpdated.Equal(history[j].LastUpdated) {
+			if sortOrder == contextHistorySortAscending {
+				return history[i].SessionID < history[j].SessionID
+			}
 			return history[i].SessionID > history[j].SessionID
+		}
+		if sortOrder == contextHistorySortAscending {
+			return history[i].LastUpdated.Before(history[j].LastUpdated)
 		}
 		return history[i].LastUpdated.After(history[j].LastUpdated)
 	})
 	return history
+}
+
+func discoverContextHistoryUsers(currentSessionID string) []contextHistoryUser {
+	projectDir := strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR"))
+	if projectDir == "" {
+		return []contextHistoryUser{}
+	}
+	sortOrder := resolveContextHistorySessionSort(projectDir)
+
+	usersRoot := filepath.Join(projectDir, "sessions")
+	userEntries, err := os.ReadDir(usersRoot)
+	if err != nil {
+		return []contextHistoryUser{}
+	}
+
+	users := make([]contextHistoryUser, 0, len(userEntries))
+	for _, userEntry := range userEntries {
+		if !userEntry.IsDir() {
+			continue
+		}
+		username := strings.TrimSpace(userEntry.Name())
+		if username == "" {
+			continue
+		}
+		sessionsRoot := filepath.Join(usersRoot, username)
+		sessionEntries, err := os.ReadDir(sessionsRoot)
+		if err != nil {
+			continue
+		}
+		sessions := make([]contextHistorySession, 0, len(sessionEntries))
+		for _, entry := range sessionEntries {
+			if !entry.IsDir() {
+				continue
+			}
+			sessionID := strings.TrimSpace(entry.Name())
+			if sessionID == "" {
+				continue
+			}
+			if username == strings.TrimSpace(os.Getenv("AGENTX_USERNAME")) && sessionID == strings.TrimSpace(currentSessionID) {
+				continue
+			}
+			turnPath := filepath.Join(sessionsRoot, sessionID, "context", "turns.jsonl")
+			turns, lastUpdated, ok := loadSessionTurns(turnPath)
+			if !ok {
+				continue
+			}
+			sessions = append(sessions, contextHistorySession{Username: username, SessionID: sessionID, Turns: turns, LastUpdated: lastUpdated})
+		}
+		if len(sessions) == 0 {
+			continue
+		}
+		sort.SliceStable(sessions, func(i, j int) bool {
+			if sessions[i].LastUpdated.Equal(sessions[j].LastUpdated) {
+				if sortOrder == contextHistorySortAscending {
+					return sessions[i].SessionID < sessions[j].SessionID
+				}
+				return sessions[i].SessionID > sessions[j].SessionID
+			}
+			if sortOrder == contextHistorySortAscending {
+				return sessions[i].LastUpdated.Before(sessions[j].LastUpdated)
+			}
+			return sessions[i].LastUpdated.After(sessions[j].LastUpdated)
+		})
+		users = append(users, contextHistoryUser{Username: username, Sessions: sessions})
+	}
+
+	sort.SliceStable(users, func(i, j int) bool {
+		return strings.ToLower(users[i].Username) < strings.ToLower(users[j].Username)
+	})
+	return users
+}
+
+func normalizeContextHistorySessionSort(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "asc", "ascending":
+		return contextHistorySortAscending
+	case "desc", "descending":
+		return contextHistorySortDescending
+	default:
+		return contextHistorySortDescending
+	}
+}
+
+func resolveContextHistorySessionSort(projectDir string) string {
+	if override := strings.TrimSpace(os.Getenv("AGENTX_CONTEXT_HISTORY_SESSION_SORT")); override != "" {
+		return normalizeContextHistorySessionSort(override)
+	}
+	root := strings.TrimSpace(projectDir)
+	if root == "" {
+		root = strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR"))
+	}
+	if root == "" {
+		return contextHistorySortDescending
+	}
+
+	configPath := filepath.Join(root, "agentx.toml")
+	file, err := os.Open(configPath)
+	if err != nil {
+		return contextHistorySortDescending
+	}
+	defer file.Close()
+
+	currentSection := ""
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			currentSection = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "["), "]"))
+			continue
+		}
+		if currentSection != "agentx" {
+			continue
+		}
+		key, value, ok := parseTomlKeyValue(line)
+		if !ok || key != "context_history_session_sort" {
+			continue
+		}
+		return normalizeContextHistorySessionSort(value)
+	}
+	return contextHistorySortDescending
 }
 
 func loadSessionTurns(turnPath string) ([]ChatTurn, time.Time, bool) {
@@ -662,10 +1169,13 @@ func renderContextWidgetWithState(snapshot contextWidgetSnapshot, tab string, mo
 
 func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []contextHistorySession, viewState *contextFeedbackViewState) []string {
 	rowKeys := make([]string, 0)
+	effectiveTurns := filterRenderableTurns(snapshot.Turns)
+	historyUsers := discoverContextHistoryUsers(snapshot.SessionID)
 	lines := []string{
 		"",
-		reverseTitle("CONTEXT FEEDBACK"),
+		reverseTitle("CONTEXT FEEDBACK APPLET"),
 	}
+	_ = history
 
 	// Section order follows the UX contract:
 	// 1) Context history (title only when collapsed)
@@ -677,40 +1187,69 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 		historyCollapsed = viewState.collapsedContextHistory
 	}
 	historyBorder := sectionBorderColor("context-history", viewState)
-	if !historyCollapsed {
-		if len(history) == 0 {
-			lines = append(lines, "No prior sessions found on disk.")
+	if historyCollapsed {
+		userCount := len(historyUsers)
+		sessionCount := 0
+		for _, user := range historyUsers {
+			sessionCount += len(user.Sessions)
+		}
+		lines = append(lines, fmt.Sprintf("  %s users: %d | sessions: %d | TAB enter | SPACE peek", styleToken("...", ansiYellow), userCount, sessionCount))
+		lines = append(lines, renderCollapsedBoxStub(historyBorder, 42)...)
+	} else {
+		historyItems := make([]string, 0)
+		if len(historyUsers) == 0 {
+			historyItems = append(historyItems, "No prior sessions found on disk.")
 		} else {
-			for _, session := range history {
-				sessionKey := "session:" + session.SessionID
-				rowKeys = append(rowKeys, sessionKey)
-				collapsed := viewState != nil && viewState.collapsedPriorSessions[session.SessionID]
-				updatedAt := "unknown"
-				if !session.LastUpdated.IsZero() {
-					updatedAt = session.LastUpdated.Format(time.RFC3339)
-				}
-				sessionLines := []string{
-					fmt.Sprintf("%s session: %s", rowMarker(viewState, sessionKey), trimSingleLine(session.SessionID, 48)),
-					fmt.Sprintf("turns: %d | updated: %s", len(session.Turns), updatedAt),
-					fmt.Sprintf("state: %s | Enter collapse/expand", mapCollapsedState(collapsed)),
-				}
-				if collapsed {
-					lines = append(lines, boxSection("SESSION", sessionLines, historyBorder)...)
+			for _, user := range historyUsers {
+				userRowKey := "user:" + user.Username
+				rowKeys = append(rowKeys, userRowKey)
+				userNode := nodeID{Kind: nodeKindUser, User: user.Username}
+				userCollapsed := !focusPathHasNode(viewState.focusPath, userNode)
+				historyItems = append(historyItems, fmt.Sprintf("%s %s %s", rowMarker(viewState, userRowKey), styleToken("📂", ansiCyan), trimSingleLine(user.Username, 32)))
+				if userCollapsed {
+					historyItems = append(historyItems, "  ┌──────────────────────────────────────┐", "  └──────────────────────────────────────┘")
 					continue
 				}
-				for idx, turn := range session.Turns {
-					turnNumber := idx + 1
-					turnKey := fmt.Sprintf("history:%s:%d", session.SessionID, turnNumber)
-					rowKeys = append(rowKeys, turnKey)
-					sessionLines = append(sessionLines,
-						fmt.Sprintf("%s %s %d user: %s", rowMarker(viewState, turnKey), styleToken("👤", ansiBlue), turnNumber, trimSingleLine(turn.Prompt, 68)),
-						fmt.Sprintf("%s %d agent: %s", styleToken("🤖", ansiGreen), turnNumber, trimSingleLine(turn.Response, 68)),
-						fmt.Sprintf("%s include: i %s %d b | Space select", styleToken("➕", ansiCyan), session.SessionID, turnNumber),
+				sessionsOffset := sectionViewportOffset(viewState, "context-history")
+				visibleSessions := viewportSessions(user.Sessions, sessionsOffset, 4)
+				for _, session := range visibleSessions {
+					sessionRowKey := historySessionRowKey(session.Username, session.SessionID)
+					rowKeys = append(rowKeys, sessionRowKey)
+					sessionNode := nodeID{Kind: nodeKindSession, User: session.Username, Session: session.SessionID}
+					sessionCollapsed := !focusPathHasNode(viewState.focusPath, sessionNode)
+					startLabel := sessionStartLabel(session)
+					historyItems = append(historyItems,
+						fmt.Sprintf("  %s %s %s", rowMarker(viewState, sessionRowKey), styleToken("📑", ansiCyan), startLabel),
+						"  ┌──────────────────────────────────────┐",
+					)
+					if sessionCollapsed {
+						historyItems = append(historyItems, "  └──────────────────────────────────────┘")
+						continue
+					}
+					if len(session.Turns) == 0 {
+						historyItems = append(historyItems, "  │ (empty session)                       │")
+					} else {
+						for idx, turn := range session.Turns {
+							turnNumber := idx + 1
+							turnKey := fmt.Sprintf("history:%s:%s:%d", session.Username, session.SessionID, turnNumber)
+							rowKeys = append(rowKeys, turnKey)
+							historyItems = append(historyItems,
+								fmt.Sprintf("  │ %s %s %d user: %s", rowMarker(viewState, turnKey), styleToken("👤", ansiBlue), turnNumber, trimSingleLine(turn.Prompt, 28)),
+								fmt.Sprintf("  │   %s %d agent: %s", styleToken("🤖", ansiGreen), turnNumber, trimSingleLine(turn.Response, 28)),
+							)
+						}
+					}
+					historyItems = append(historyItems,
+						fmt.Sprintf("  │   %s include: i %s 1 b", styleToken("➕", ansiCyan), session.SessionID),
+						"  └──────────────────────────────────────┘",
 					)
 				}
-				lines = append(lines, boxSection("SESSION", sessionLines, historyBorder)...)
+				if len(user.Sessions) > len(visibleSessions) {
+					historyItems = append(historyItems, fmt.Sprintf("  %s viewport %d/%d", styleToken("↕", ansiYellow), sessionsOffset+1, len(user.Sessions)-len(visibleSessions)+1))
+				}
 			}
 		}
+		lines = append(lines, boxContainer(historyItems, historyBorder)...)
 	}
 
 	if viewState == nil || viewState.showWorkingMemory {
@@ -722,11 +1261,11 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 	currentBorder := sectionBorderColor("current-context", viewState)
 	currentCollapsed := viewState != nil && viewState.collapsedCurrentContext
 	if currentCollapsed {
-		// Section is collapsed: no row content rendered.
-	} else if len(snapshot.Turns) == 0 {
+		lines = append(lines, renderCollapsedBoxStub(currentBorder, 38)...)
+	} else if len(effectiveTurns) == 0 {
 		lines = append(lines, "No current context elements.")
 	} else {
-		for idx, turn := range snapshot.Turns {
+		for idx, turn := range effectiveTurns {
 			turnNumber := idx + 1
 			promptKey := contextEntryKey("current", turnNumber, "prompt")
 			responseKey := contextEntryKey("current", turnNumber, "response")
@@ -773,22 +1312,20 @@ func renderWorkingMemoryFeedbackSection(viewState *contextFeedbackViewState, row
 	lines := []string{renderSectionHeader("WORKING MEMORY", "working-memory", viewState)}
 	wmBorder := sectionBorderColor("working-memory", viewState)
 	if viewState != nil && viewState.collapsedWorkingMemory {
+		facts := appendDefaultWorkingMemoryFacts(loadWorkingMemoryFacts(resolveCurrentSessionDirFromEnv()))
+		lines = append(lines, fmt.Sprintf("  %s facts: %d | TAB enter | SPACE peek", styleToken("...", ansiYellow), len(facts)))
+		lines = append(lines, renderCollapsedBoxStub(wmBorder, 54)...)
 		return lines
 	}
+	lines = append(lines, renderWorkingMemoryEditorScaffold(viewState, rowKeys, wmBorder)...)
 	sessionDir := resolveCurrentSessionDirFromEnv()
-	sessionID := strings.TrimSpace(os.Getenv("AGENTX_SESSION_ID"))
-	if sessionID != "" {
-		lines = append(lines, fmt.Sprintf("session_id: %s", trimSingleLine(sessionID, 48)))
-	}
-	if strings.TrimSpace(sessionDir) == "" {
-		return append(lines, "Session path unavailable.")
-	}
 
 	facts := loadWorkingMemoryFacts(sessionDir)
-	lines = append(lines, fmt.Sprintf("fact_count: %d", len(facts)))
+	facts = appendDefaultWorkingMemoryFacts(facts)
 	if len(facts) == 0 {
-		lines = append(lines, "No facts stored yet.")
+		lines = append(lines, boxSection("FACTS", []string{"No facts stored yet."}, wmBorder)...)
 	} else {
+		facts = viewportFacts(facts, sectionViewportOffset(viewState, "working-memory"), 8)
 		factLines := make([]string, 0, len(facts)+1)
 		for idx, fact := range facts {
 			factKey := fmt.Sprintf("wm:%s:%s", fact.owner, fact.key)
@@ -813,10 +1350,115 @@ func renderWorkingMemoryFeedbackSection(viewState *contextFeedbackViewState, row
 		}
 		lines = append(lines, boxSection("FACTS", factLines, wmBorder)...)
 	}
-	lines = append(lines,
-		"actions: mk <key> <value> | md <key> | mt <key>",
-	)
 	return lines
+}
+
+func viewportFacts(facts []workingMemoryFactLine, offset int, pageSize int) []workingMemoryFactLine {
+	if len(facts) == 0 {
+		return facts
+	}
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(facts) {
+		offset = len(facts) - 1
+	}
+	end := offset + pageSize
+	if end > len(facts) {
+		end = len(facts)
+	}
+	return facts[offset:end]
+}
+
+func viewportSessions(sessions []contextHistorySession, offset int, pageSize int) []contextHistorySession {
+	if len(sessions) == 0 {
+		return sessions
+	}
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(sessions) {
+		offset = len(sessions) - 1
+	}
+	end := offset + pageSize
+	if end > len(sessions) {
+		end = len(sessions)
+	}
+	return sessions[offset:end]
+}
+
+func sectionViewportOffset(state *contextFeedbackViewState, section string) int {
+	if state == nil {
+		return 0
+	}
+	key := "section:" + strings.TrimSpace(section)
+	if state.textScroll[key] < 0 {
+		state.textScroll[key] = 0
+	}
+	return state.textScroll[key]
+}
+
+func historySessionRowKey(username string, sessionID string) string {
+	return "session:" + strings.TrimSpace(username) + ":" + strings.TrimSpace(sessionID)
+}
+
+func sessionStartLabel(session contextHistorySession) string {
+	parts := strings.Split(strings.TrimSpace(session.SessionID), "_")
+	if len(parts) >= 2 {
+		if parsed, err := strconv.ParseInt(parts[len(parts)-1], 10, 64); err == nil && parsed > 0 {
+			return time.Unix(parsed, 0).Format("2006-01-02 15:04:05")
+		}
+	}
+	if !session.LastUpdated.IsZero() {
+		return session.LastUpdated.Format("2006-01-02 15:04:05")
+	}
+	return "unknown"
+}
+
+func indentLines(items []string, prefix string) []string {
+	if strings.TrimSpace(prefix) == "" || len(items) == 0 {
+		return items
+	}
+	indented := make([]string, 0, len(items))
+	for _, item := range items {
+		indented = append(indented, prefix+item)
+	}
+	return indented
+}
+
+func renderWorkingMemoryEditorScaffold(viewState *contextFeedbackViewState, rowKeys *[]string, borderColor string) []string {
+	keyRow := "wm:editor:key"
+	valueRow := "wm:editor:value"
+	saveRow := "wm:editor:save"
+	if rowKeys != nil {
+		*rowKeys = append(*rowKeys, keyRow, valueRow, saveRow)
+	}
+	return boxSection("WM EDITOR", []string{
+		"KEY                       VALUE",
+		"┌───────────────────────┐ ┌───────────────────────┐ ┌─────┐",
+		fmt.Sprintf("%s │                       │ %s │                       │ %s │ ↳OK │", rowMarker(viewState, keyRow), rowMarker(viewState, valueRow), rowMarker(viewState, saveRow)),
+		"└───────────────────────┘ └───────────────────────┘ └─────┘",
+	}, borderColor)
+}
+
+func appendDefaultWorkingMemoryFacts(facts []workingMemoryFactLine) []workingMemoryFactLine {
+	if len(facts) > 0 {
+		return facts
+	}
+	defaults := make([]workingMemoryFactLine, 0, 2)
+	if user := strings.TrimSpace(os.Getenv("AGENTX_USERNAME")); user != "" {
+		defaults = append(defaults, workingMemoryFactLine{owner: "user", key: "current_user", value: user, enabled: true})
+	}
+	if cwd, err := os.Getwd(); err == nil && strings.TrimSpace(cwd) != "" {
+		defaults = append(defaults, workingMemoryFactLine{owner: "user", key: "current_working_directory", value: cwd, enabled: true})
+	}
+	return defaults
 }
 
 func reverseTitle(title string) string {
@@ -830,27 +1472,53 @@ func reverseTitle(title string) string {
 // renderSectionHeader renders a section title. When the cursor is on this
 // section in outside-section mode, a ▶ indicator is prepended.
 func renderSectionHeader(title string, sectionID string, viewState *contextFeedbackViewState) string {
-	label := strings.TrimSpace(title)
+	label := sectionHeaderLabel(strings.TrimSpace(title), sectionID)
+	prefix := "  "
 	if viewState != nil && !viewState.insideSection && viewState.activeSection == sectionID {
-		return ansiCyan + "▶ " + ansiReverse + " " + label + " " + ansiReset
+		prefix = styleToken("▶ ", ansiCyan)
 	}
-	return reverseTitle(label)
+	return prefix + reverseTitle(label)
+}
+
+func sectionHeaderLabel(title string, sectionID string) string {
+	switch sectionID {
+	case "context-history":
+		return "🗄️ " + title
+	case "working-memory":
+		return "💾 " + title
+	case "current-context":
+		return "📑 " + title
+	default:
+		return title
+	}
 }
 
 // sectionBorderColor returns a bright border color when the cursor is inside
 // the given section, and a dim color otherwise.
 func sectionBorderColor(sectionID string, viewState *contextFeedbackViewState) string {
 	if viewState != nil && viewState.insideSection && viewState.activeSection == sectionID {
-		switch sectionID {
-		case "current-context":
-			return ansiCyan
-		case "working-memory":
-			return ansiGreen
-		case "context-history":
-			return ansiMagenta
-		}
+		return ansiCyan
 	}
 	return ansiDim
+}
+
+func boxContainer(items []string, borderColor string) []string {
+	if len(items) == 0 {
+		items = []string{"(empty)"}
+	}
+	maxWidth := 16
+	for _, item := range items {
+		if width := len([]rune(stripAnsi(item))); width > maxWidth {
+			maxWidth = width
+		}
+	}
+	line := strings.Repeat("─", maxWidth+2)
+	lines := []string{borderColor + "┌" + line + "┐" + ansiReset}
+	for _, item := range items {
+		lines = append(lines, borderColor+"│ "+padVisibleWidth(item, maxWidth)+" │"+ansiReset)
+	}
+	lines = append(lines, borderColor+"└"+line+"┘"+ansiReset)
+	return lines
 }
 
 // filterContextWidgetTUILines strips machine-readable protocol lines that are
@@ -941,6 +1609,58 @@ func mapCollapsedState(collapsed bool) string {
 		return "collapsed"
 	}
 	return "expanded"
+}
+
+func renderCollapsedBoxStub(borderColor string, width int) []string {
+	if width < 16 {
+		width = 16
+	}
+	line := strings.Repeat("─", width)
+	return []string{
+		borderColor + "┌" + line + "┐" + ansiReset,
+		borderColor + "└" + line + "┘" + ansiReset,
+	}
+}
+
+func filterRenderableTurns(turns []ChatTurn) []ChatTurn {
+	if len(turns) == 0 {
+		return turns
+	}
+	filtered := make([]ChatTurn, 0, len(turns))
+	for _, turn := range turns {
+		if strings.TrimSpace(turn.Prompt) == "" && strings.TrimSpace(turn.Response) == "" {
+			continue
+		}
+		filtered = append(filtered, turn)
+	}
+	return filtered
+}
+
+func styleCollapsedStateLabel(collapsed bool) string {
+	if collapsed {
+		return styleToken("collapsed", ansiYellow)
+	}
+	return styleToken("expanded", ansiGreen)
+}
+
+func formatRelativeTime(value time.Time) string {
+	if value.IsZero() {
+		return "time unknown"
+	}
+	delta := time.Since(value)
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta < time.Minute {
+		return "just now"
+	}
+	if delta < time.Hour {
+		return fmt.Sprintf("%dm ago", int(delta/time.Minute))
+	}
+	if delta < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(delta/time.Hour))
+	}
+	return fmt.Sprintf("%dd ago", int(delta/(24*time.Hour)))
 }
 
 func mapContextEntryState(disabled bool) string {
@@ -1052,13 +1772,44 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 		return
 	case "toggle":
 		if len(args) >= 3 && strings.EqualFold(args[1], "session") {
-			sessionID := strings.TrimSpace(args[2])
-			if sessionID == "" {
-				state.setStatus("Usage: :toggle session <session_id>")
+			sessionRef := strings.TrimSpace(args[2])
+			if sessionRef == "" {
+				state.setStatus("Usage: :toggle session <session_id|user:session_id>")
 				return
 			}
-			state.collapsedPriorSessions[sessionID] = !state.collapsedPriorSessions[sessionID]
-			state.setStatus(fmt.Sprintf("Session %s is now %s.", sessionID, mapCollapsedState(state.collapsedPriorSessions[sessionID])))
+			var target nodeID
+			if parts := strings.SplitN(sessionRef, ":", 2); len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" {
+				target = nodeID{Kind: nodeKindSession, User: strings.TrimSpace(parts[0]), Session: strings.TrimSpace(parts[1])}
+			} else {
+				matches := make([]nodeID, 0, 1)
+				for _, user := range discoverContextHistoryUsers(snapshot.SessionID) {
+					for _, session := range user.Sessions {
+						if session.SessionID != sessionRef {
+							continue
+						}
+						matches = append(matches, nodeID{Kind: nodeKindSession, User: user.Username, Session: session.SessionID})
+					}
+				}
+				switch len(matches) {
+				case 0:
+					state.setStatus(fmt.Sprintf("Session %s not found in history.", sessionRef))
+					return
+				case 1:
+					target = matches[0]
+				default:
+					state.setStatus(fmt.Sprintf("Session %s is ambiguous; use user:session.", sessionRef))
+					return
+				}
+			}
+
+			targetPath := focusPathForNode("context-history", target)
+			if state.focusPath.HasFocus(target) {
+				state.branchTransition(targetPath[:len(targetPath)-1])
+				state.setStatus(fmt.Sprintf("Session %s collapsed.", target.Session))
+				return
+			}
+			state.branchTransition(targetPath)
+			state.setStatus(fmt.Sprintf("Session %s expanded.", target.Session))
 			return
 		}
 		if len(args) >= 2 && strings.EqualFold(args[1], "history") {
@@ -1071,7 +1822,7 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 			state.setStatus(fmt.Sprintf("Working memory is now %s.", mapCollapsedState(state.collapsedWorkingMemory)))
 			return
 		}
-		state.setStatus("Usage: :toggle history | :toggle session <session_id> | :toggle wm")
+		state.setStatus("Usage: :toggle history | :toggle session <session_id|user:session_id> | :toggle wm")
 		return
 	case "collapse", "expand":
 		if len(args) < 4 || !strings.EqualFold(args[1], "current") {
@@ -1165,19 +1916,24 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 			turn = snapshot.Turns[turnIndex-1]
 			source = snapshot.SessionID
 		} else {
-			sessions := discoverContextHistorySessions(snapshot.SessionID)
+			users := discoverContextHistoryUsers(snapshot.SessionID)
 			found := false
-			for _, session := range sessions {
-				if session.SessionID != source {
-					continue
+			for _, user := range users {
+				for _, session := range user.Sessions {
+					if session.SessionID != source {
+						continue
+					}
+					if turnIndex > len(session.Turns) {
+						state.setStatus("Historical turn index out of range.")
+						return
+					}
+					turn = session.Turns[turnIndex-1]
+					found = true
+					break
 				}
-				if turnIndex > len(session.Turns) {
-					state.setStatus("Historical turn index out of range.")
-					return
+				if found {
+					break
 				}
-				turn = session.Turns[turnIndex-1]
-				found = true
-				break
 			}
 			if !found {
 				state.setStatus("Session not found in history.")
@@ -1226,7 +1982,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus(fmt.Sprintf("Section: %s", state.activeSection))
 			return true
 		}
-		if !state.moveRow(1) {
+		if !state.moveRowInActiveSection(1) {
 			state.setStatus("Bottom of list")
 		} else {
 			state.setStatus("Moved selection")
@@ -1244,7 +2000,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus(fmt.Sprintf("Section: %s", state.activeSection))
 			return true
 		}
-		if !state.moveRow(-1) {
+		if !state.moveRowInActiveSection(-1) {
 			state.setStatus("Top of list")
 		} else {
 			state.setStatus("Moved selection")
@@ -1268,6 +2024,16 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		if !state.insideSection {
 			return true
 		}
+		if state.activeSection == "context-history" {
+			state.textScroll["section:context-history"] = state.textScroll["section:context-history"] + 1
+			state.setStatus("Scrolled context history viewport.")
+			return true
+		}
+		if state.activeSection == "working-memory" {
+			state.textScroll["section:working-memory"] = state.textScroll["section:working-memory"] + 1
+			state.setStatus("Scrolled working memory viewport.")
+			return true
+		}
 		if state.focusTextBox {
 			rowKey := state.activeRowKey()
 			state.textScroll[rowKey] = state.textScroll[rowKey] + 5
@@ -1281,11 +2047,21 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus("Paged text box down.")
 			return true
 		}
-		state.moveRow(5)
+		state.moveRowInActiveSection(5)
 		state.setStatus("Moved selection")
 		return true
 	case "pgup":
 		if !state.insideSection {
+			return true
+		}
+		if state.activeSection == "context-history" {
+			state.textScroll["section:context-history"] = maxInt(0, state.textScroll["section:context-history"]-1)
+			state.setStatus("Scrolled context history viewport.")
+			return true
+		}
+		if state.activeSection == "working-memory" {
+			state.textScroll["section:working-memory"] = maxInt(0, state.textScroll["section:working-memory"]-1)
+			state.setStatus("Scrolled working memory viewport.")
 			return true
 		}
 		if state.focusTextBox {
@@ -1300,24 +2076,54 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus("Paged text box up.")
 			return true
 		}
-		state.moveRow(-5)
+		state.moveRowInActiveSection(-5)
 		state.setStatus("Moved selection")
 		return true
 	case "tab":
-		// TAB toggles between outside-section (header navigation) and inside-section (row navigation).
-		// When inside and in textbox-scroll mode, TAB exits textbox mode first.
+		// TAB drills into the active section and keeps focus there.
 		if state.focusTextBox {
 			state.focusTextBox = false
-			state.setStatus("Left text-box scroll.")
-		} else if state.insideSection {
-			state.insideSection = false
-			state.setStatus("Left section.")
+			state.setStatus("Text-box scroll disabled.")
 		} else {
 			if state.activeSection == "" {
 				state.activeSection = "current-context"
 			}
+			switch state.activeSection {
+			case "context-history":
+				state.collapsedContextHistory = false
+			case "working-memory":
+				state.collapsedWorkingMemory = false
+			case "current-context":
+				state.collapsedCurrentContext = false
+			}
 			state.insideSection = true
-			state.setStatus(fmt.Sprintf("Entered %s.", state.activeSection))
+		}
+		state.insideSection = true
+		state.ensureSectionRowFocus()
+		if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
+			state.setFocusPath(focusPathForNode(state.activeSection, node))
+		} else {
+			state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: state.activeSection}})
+		}
+		state.insideSection = true
+		state.setStatus(fmt.Sprintf("Entered %s.", state.activeSection))
+		return true
+	case "shift-tab", "shift+tab", "s-tab", "backtab":
+		if state.focusTextBox {
+			state.focusTextBox = false
+		}
+		if state.insideSection {
+			state.popFocus()
+			switch state.activeSection {
+			case "context-history":
+				state.collapsedContextHistory = true
+			case "working-memory":
+				state.collapsedWorkingMemory = true
+			case "current-context":
+				state.collapsedCurrentContext = true
+			}
+			state.insideSection = false
+			state.setStatus("Exited section.")
 		}
 		return true
 	case "space":
@@ -1372,11 +2178,18 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus(fmt.Sprintf("Row %s is now %s.", rowKey, mapCollapsedState(state.collapsedEntries[rowKey])))
 			return true
 		}
-		if strings.HasPrefix(rowKey, "session:") {
-			sessionID := strings.TrimPrefix(rowKey, "session:")
-			state.collapsedPriorSessions[sessionID] = !state.collapsedPriorSessions[sessionID]
-			state.setStatus(fmt.Sprintf("Session %s is now %s.", sessionID, mapCollapsedState(state.collapsedPriorSessions[sessionID])))
-			return true
+		if state.activeSection == "context-history" {
+			if id, ok := nodeIDForRowKey(state.activeSection, rowKey); ok {
+				targetPath := focusPathForNode(state.activeSection, id)
+				if state.focusPath.HasFocus(id) && len(targetPath) > 1 {
+					state.branchTransition(targetPath[:len(targetPath)-1])
+					state.setStatus("Collapsed node.")
+					return true
+				}
+				state.branchTransition(targetPath)
+				state.setStatus("Expanded node.")
+				return true
+			}
 		}
 		if strings.HasPrefix(rowKey, "wm:") {
 			state.collapsedWorkingMemory = !state.collapsedWorkingMemory

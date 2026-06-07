@@ -314,6 +314,7 @@ func newInputWidgetComposeState() *inputWidgetComposeState {
 func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *widgetActivityState, submitPrompt func(string) (int, bool)) int {
 	state := newInputWidgetComposeState()
 	state.status = "ESC toggles focus; :? toggles help; :q exits"
+	defer showTerminalCursor(out)
 
 	commandReader, cleanup, err := newInputWidgetKeyReader(in)
 	if err != nil {
@@ -331,6 +332,7 @@ func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *wi
 			fmt.Fprintf(out, "Input widget failed: %v\n", err)
 			return 1
 		}
+		state.placeTerminalCursor(out)
 		previousLines = currentLines
 
 		key, err := commandReader()
@@ -352,6 +354,65 @@ func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *wi
 				return 0
 			}
 		}
+	}
+}
+
+func (s *inputWidgetComposeState) placeTerminalCursor(out io.Writer) {
+	row, col, ok := s.terminalCursorPosition()
+	if !ok {
+		hideTerminalCursor(out)
+		return
+	}
+	_, _ = fmt.Fprintf(out, "\033[?25h\033[%d;%dH", row, col)
+}
+
+func (s *inputWidgetComposeState) terminalCursorPosition() (int, int, bool) {
+	if s == nil {
+		return 0, 0, false
+	}
+
+	preInputLines := 3
+	if s.showHelp {
+		preInputLines += 2
+	}
+
+	switch s.focus {
+	case inputWidgetFocusInput:
+		rowInView := s.cursorRow - s.viewRow
+		colInView := s.cursorCol - s.viewCol
+		if rowInView < 0 || rowInView >= s.viewportRows {
+			return 0, 0, false
+		}
+		if colInView < 0 || colInView >= s.viewportCols {
+			return 0, 0, false
+		}
+		row := preInputLines + rowInView + 2
+		col := colInView + 3
+		return row, col, true
+	case inputWidgetFocusControl:
+		cols := s.viewportCols + 1
+		if cols < 16 {
+			cols = 16
+		}
+		label := []rune("Command: ")
+		cursor := len(label) + s.controlCursor
+		start := 0
+		if cursor >= cols {
+			start = cursor - cols + 1
+		}
+		if start < 0 {
+			start = 0
+		}
+		cursorPos := cursor - start
+		if cursorPos < 0 || cursorPos >= cols {
+			return 0, 0, false
+		}
+		inputBoxLines := s.viewportRows + 3
+		row := preInputLines + inputBoxLines + 3
+		col := cursorPos + 3
+		return row, col, true
+	default:
+		return 0, 0, false
 	}
 }
 
@@ -600,7 +661,7 @@ func (s *inputWidgetComposeState) handleInputKey(key inputWidgetKey) inputWidget
 
 func (s *inputWidgetComposeState) applyControlCommand() inputWidgetAction {
 	raw := strings.TrimSpace(string(s.control))
-	if raw == "" || raw == ":" {
+	if raw == "" {
 		prompt := s.inputText()
 		if strings.TrimSpace(prompt) == "" {
 			s.status = "Input is empty"
@@ -641,10 +702,6 @@ func (s *inputWidgetComposeState) applyControlCommand() inputWidgetAction {
 func (s *inputWidgetComposeState) toggleFocus() {
 	if s.focus == inputWidgetFocusInput {
 		s.focus = inputWidgetFocusControl
-		if len(s.control) == 0 {
-			s.control = []rune{':'}
-			s.controlCursor = len(s.control)
-		}
 		s.status = "Control entry focus"
 		return
 	}
@@ -1036,13 +1093,13 @@ func (s *inputWidgetComposeState) renderControlContent(cols int) string {
 	if cols < 1 {
 		cols = 1
 	}
-	prefix := []rune(":")
+	prefix := []rune("Command: ")
 	text := append([]rune{}, s.control...)
 	if len(text) == 0 {
 		text = []rune{}
 	}
 	full := append(prefix, text...)
-	cursor := 1 + s.controlCursor
+	cursor := len(prefix) + s.controlCursor
 	start := 0
 	if cursor >= cols {
 		start = cursor - cols + 1

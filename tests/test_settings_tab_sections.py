@@ -26,6 +26,7 @@ _MINIMAL_CONFIG: dict = {
         "ollama_model": "llama3",
         "ollama_initial_load_timeout_seconds": 120,
         "screen_side": "left",
+        "context_history_session_sort": "Ascending",
         "markdown_render_enabled": True,
         "working_memory": {
             "enabled": True,
@@ -296,6 +297,18 @@ class TestRestartIconInLabels(unittest.TestCase):
             any(SettingsTab.RESTART_ICON in t for t in matching),
             f"'Default model' label {matching!r} is missing RESTART_ICON",
         )
+
+    def test_history_order_does_not_carry_restart_icon(self) -> None:
+        """
+        PD-07-AF-003 — History order label is present and does not require restart.
+
+        GIVEN the SettingsTab is constructed
+        WHEN the 'History order' label is located
+        THEN its text is present and does not contain the RESTART_ICON suffix.
+        """
+        matching = [t for t in self._all_texts if "History order" in t]
+        self.assertTrue(matching, "No label found containing 'History order'")
+        self.assertTrue(all(SettingsTab.RESTART_ICON not in t for t in matching), matching)
 
     def test_working_memory_enabled_carries_restart_icon(self) -> None:
         """
