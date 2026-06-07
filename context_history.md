@@ -8,7 +8,8 @@ This guide is to provide design concepts for the AgentX TUI (Go) implementation.
 - Within any given level of the applet, only one element may have focus at a time.  Focus and drill down within an element, but not down across multiple sibling elements.  Thus, there cannot be a scenario of mixed-focus state.
 
 Example of Widgets in Context History applet. NOTE: widgets are shown
-expanded for detail, in practice only one widget can be expanded at a time
+expanded for detail; default shipped state starts with collapsed history and
+working-memory sections, with current-context expanded at section level.
 
 ```txt
  ↳ 🗄️ CONTEXT HISTORY
@@ -115,12 +116,14 @@ Example:
 - Outside section focus (`insideSection=false`):
   - `Up/Down` moves the active section header cursor.
   - `Space` toggles expand/collapse for the active section.
-  - `Enter` and `Tab` both enter the active section.
+  - `Enter` enters the active section without changing section collapsed state.
+  - `Tab` enters the active section and forces that section expanded.
 - Inside section focus (`insideSection=true`):
   - `Up/Down` moves row selection within the active section.
   - `Left/Right` moves horizontal siblings where available (for example prompt <-> response, session <-> first turn).
   - `Space` selects/deselects the active row.
   - `Enter` executes row expansion/collapse action for rows that support it.
+    For context-history rows, `Enter` uses focus-path semantics: entering a non-focused node expands to it, and pressing `Enter` again on the focused node collapses to its parent.
   - `PgUp/PgDn` scrolls section viewports for `context-history` and `working-memory`; on expanded current-context rows, it scrolls wrapped text content.
 
 ### Toggle Options
@@ -137,11 +140,11 @@ To toggle an element as selected or not, use `Space` while inside section focus.
 
 ### Enter Exit Expandable Areas (Focus)
 
-Drill In / Enter area: `Tab` (or `Enter` when outside section focus). Entering a section forces that section expanded.
+Drill In / Enter area: `Tab` (or `Enter` when outside section focus). `Tab` forces the active section expanded; `Enter` preserves the current section collapsed/expanded state.
 
 Drill Out / Exit area: `Shift-Tab`. Exiting a section collapses that section.
 
-For deep context-history focus paths (user -> session -> turn), `Shift-Tab` exits section focus, collapses the section, and pops focus-path depth by one node.
+For deep context-history focus paths (user -> session -> turn), `Shift-Tab` exits section focus, collapses the section, and pops focus-path depth by one node (turn -> session, session -> user, user -> section).
 
 ## Layout and Default State (Shipped)
 
@@ -149,6 +152,7 @@ For deep context-history focus paths (user -> session -> turn), `Shift-Tab` exit
 - `CONTEXT HISTORY` starts collapsed and renders summary metadata when collapsed (users/sessions/sort summary).
 - `WORKING MEMORY` starts collapsed and renders summary metadata when collapsed (facts summary).
 - `CURRENT CONTEXT` starts expanded at section level, with prompt/response rows collapsed by default.
+- When collapsed, section content remains discoverable via visible box stubs and summary metadata.
 - Collapsed sections still render visible box stubs (`┌ ... └`) instead of disappearing completely.
 - Section headers reserve pointer column width for stable alignment when not active.
 
@@ -172,14 +176,13 @@ Keyboard-driven transitions use normalized status text. Representative statuses:
 
 - users are listed in alphabetical order; a system may support more than one user, their sessions are segregated in the `.sessions/` folder by user name.  Only one user session history may be expanded at a time.  Only one user session history may have focus at a time.
 - For each user, session ordering is presentation-only and deterministic.  The default sort is `Ascending` to match the current loader; `Descending` may be selected when users want most-recent-first browsing.  The active order is controlled by `agentx.context_history_session_sort` in `agentx.toml`.
-  Individual contexts can be expanded and collapsed without entering them (`Space` outside section focus).
+  Context-history nodes (`user`, `session`, `turn`) are expanded/collapsed with `Enter` while inside section focus.
 - Facelift details for the Go TUI variant:
   - section headers are iconized for quick scanning (`🗄️ Context History`, `💾 Working Memory`, `📑 Current Context`)
   - expanded context history surfaces a compact summary line (`sessions`, active `sort`, and keyboard hint)
   - each session card includes absolute timestamp plus relative age (`Xd/Xh/Xm ago`) for faster recency parsing
   - state labels are color-coded (`collapsed` vs `expanded`) to reduce visual ambiguity
-- Only one historical context can be expanded and take focus at a time
-- Only one element in the focused context can be expanded at a time
+- Focus is singular (one active row at a time), but expansion state is independent per row/section and not globally single-open.
 - A context must be in section focus to enable row navigation and viewport scrolling.
 - In context-history row focus:
   - `Enter` expands the focused history node when it is not currently the focused leaf path.
@@ -214,7 +217,7 @@ The applet-level Working Memory Widget supports editing of items for the current
 
 ## Context Widget
 
-The context widget shows each of the elements of an agentX session in the order they occur.  They are collapsed by default, showing only the first few words followed by elipses.  When expanded, the elipses disappear and the full element is shown. Scrollable viewpanes should be used for when the context exceeds more than three lines.
+The context widget shows each of the elements of an agentX session in the order they occur. Prompt and response rows are collapsed by default. When expanded, full wrapped text content is shown and can be paged with `PgUp/PgDn`.
 
 ### Applet-Level Context Widget
 
