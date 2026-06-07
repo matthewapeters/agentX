@@ -2183,6 +2183,9 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 				targetPath := focusPathForNode(state.activeSection, id)
 				if state.focusPath.HasFocus(id) && len(targetPath) > 1 {
 					state.branchTransition(targetPath[:len(targetPath)-1])
+					if state.focusPath.Tail().Kind == nodeKindSection {
+						state.insideSection = true
+					}
 					state.setStatus("Collapsed node.")
 					return true
 				}

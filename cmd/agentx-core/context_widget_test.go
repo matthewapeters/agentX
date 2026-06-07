@@ -484,15 +484,13 @@ func TestContextWidgetKeyboard_EnterHistoryUsesFocusPath(t *testing.T) {
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
 		t.Fatalf("expected enter on focused user row to collapse to section, got %#v", got)
 	}
-
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
-		t.Fatalf("expected enter to re-enter section focus first, got %#v", got)
+	if !state.insideSection {
+		t.Fatalf("expected collapse to keep section navigation active")
 	}
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
-		t.Fatalf("expected third enter on user row to expand user node, got %#v", got)
+		t.Fatalf("expected second enter on user row to expand user node without re-entry step, got %#v", got)
 	}
 
 	if !state.moveRowInActiveSection(1) {
