@@ -2289,8 +2289,12 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		if state.insideSection {
 			if state.activeSection == "context-history" {
-				historyModel.ExitSection(state)
-				state.setStatus(fmt.Sprintf("Exited section: %s.", state.activeSection))
+				historyModel.StepOutFocus(state)
+				if state.insideSection {
+					state.setStatus("Stepped back in context-history.")
+				} else {
+					state.setStatus(fmt.Sprintf("Exited section: %s.", state.activeSection))
+				}
 				return true
 			}
 			state.popFocus()

@@ -993,17 +993,17 @@ func TestContextWidgetKeyboard_ShiftTabPopsDeepHistoryPath(t *testing.T) {
 	}
 
 	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
-	if state.insideSection {
-		t.Fatalf("expected shift-tab to exit section")
+	if !state.insideSection {
+		t.Fatalf("expected shift-tab from turn to stay inside section (step back to session)")
 	}
-	if !state.collapsedContextHistory {
-		t.Fatalf("expected shift-tab to collapse context-history section")
+	if state.collapsedContextHistory {
+		t.Fatalf("expected shift-tab from turn to leave context-history expanded")
 	}
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-1" {
 		t.Fatalf("expected shift-tab to pop focus path to parent session node, got %#v", got)
 	}
-	if got := state.statusLine; got != "Exited section: context-history." {
-		t.Fatalf("expected normalized shift-tab status in deep history path, got %q", got)
+	if got := state.statusLine; got != "Stepped back in context-history." {
+		t.Fatalf("expected step-back status from turn node, got %q", got)
 	}
 }
 
@@ -1099,6 +1099,208 @@ func TestContextWidgetKeyboard_TabContextHistoryPopulatedRows_RenderCoupledProgr
 					t.Fatalf("expected normalized tab-enter status after tab %d/%d, got %q", i+1, presses, got)
 				}
 			}
+		})
+	}
+}
+
+// TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally verifies
+// that pressing Shift-Tab (n-1) times after Tab×n steps back one level at a time
+// rather than exiting the section completely on the first Shift-Tab press.
+//
+// State model:
+//
+//	S0 = outside section (insideSection=false, collapsed=true)
+//	S1 = user row, pause=true  (insideSection=true)
+//	S2 = user row, pause=false (insideSection=true)
+//	S3 = session row           (insideSection=true)
+//	S4 = turn row              (insideSection=true)
+func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *testing.T) {
+	projectDir := t.TempDir()
+	sessionID := "2026-06-06 23:20:18"
+	user := "current-user"
+	turnPath := filepath.Join(projectDir, "sessions", user, sessionID, "context", "turns.jsonl")
+	if err := os.MkdirAll(filepath.Dir(turnPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	payload, err := json.Marshal(ChatTurn{Prompt: "hello", Response: "world", CreatedAt: 1_700_000_000_000})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	if err := os.WriteFile(turnPath, append(payload, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    user,
+	})
+
+	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "q", Response: "a"}}}
+	userRowKey := "user:" + user
+	sessionRowKey := historySessionRowKey(user, sessionID)
+	turnRowKey := "history:" + user + ":" + sessionID + ":1"
+
+	assertS0 := func(t *testing.T, state *contextFeedbackViewState, label string) {
+		t.Helper()
+		if state.insideSection {
+			t.Fatalf("[%s] S0: expected insideSection=false, got true", label)
+		}
+		if !state.collapsedContextHistory {
+			t.Fatalf("[%s] S0: expected collapsedContextHistory=true, got false", label)
+		}
+		if tail := state.focusPath.Tail(); tail.Kind != nodeKindSection {
+			t.Fatalf("[%s] S0: expected focusPath tail nodeKindSection, got %#v", label, tail)
+		}
+		if state.historyTabUserPause {
+			t.Fatalf("[%s] S0: expected historyTabUserPause=false, got true", label)
+		}
+	}
+	assertS1 := func(t *testing.T, state *contextFeedbackViewState, label string) {
+		t.Helper()
+		if !state.insideSection {
+			t.Fatalf("[%s] S1: expected insideSection=true, got false", label)
+		}
+		if state.collapsedContextHistory {
+			t.Fatalf("[%s] S1: expected collapsedContextHistory=false, got true", label)
+		}
+		if got := state.activeRowKey(); got != userRowKey {
+			t.Fatalf("[%s] S1: expected activeRowKey=%q, got %q", label, userRowKey, got)
+		}
+		if tail := state.focusPath.Tail(); tail.Kind != nodeKindUser || tail.User != user {
+			t.Fatalf("[%s] S1: expected focusPath tail user:%s, got %#v", label, user, tail)
+		}
+		if !state.historyTabUserPause {
+			t.Fatalf("[%s] S1: expected historyTabUserPause=true, got false", label)
+		}
+	}
+	assertS2 := func(t *testing.T, state *contextFeedbackViewState, label string) {
+		t.Helper()
+		if !state.insideSection {
+			t.Fatalf("[%s] S2: expected insideSection=true, got false", label)
+		}
+		if state.collapsedContextHistory {
+			t.Fatalf("[%s] S2: expected collapsedContextHistory=false, got true", label)
+		}
+		if got := state.activeRowKey(); got != userRowKey {
+			t.Fatalf("[%s] S2: expected activeRowKey=%q, got %q", label, userRowKey, got)
+		}
+		if tail := state.focusPath.Tail(); tail.Kind != nodeKindUser || tail.User != user {
+			t.Fatalf("[%s] S2: expected focusPath tail user:%s, got %#v", label, user, tail)
+		}
+		if state.historyTabUserPause {
+			t.Fatalf("[%s] S2: expected historyTabUserPause=false, got true", label)
+		}
+	}
+	assertS3 := func(t *testing.T, state *contextFeedbackViewState, label string) {
+		t.Helper()
+		if !state.insideSection {
+			t.Fatalf("[%s] S3: expected insideSection=true, got false", label)
+		}
+		if state.collapsedContextHistory {
+			t.Fatalf("[%s] S3: expected collapsedContextHistory=false, got true", label)
+		}
+		if got := state.activeRowKey(); got != sessionRowKey {
+			t.Fatalf("[%s] S3: expected activeRowKey=%q, got %q", label, sessionRowKey, got)
+		}
+		if tail := state.focusPath.Tail(); tail.Kind != nodeKindSession || tail.User != user || tail.Session != sessionID {
+			t.Fatalf("[%s] S3: expected focusPath tail session:%s:%s, got %#v", label, user, sessionID, tail)
+		}
+		if state.historyTabUserPause {
+			t.Fatalf("[%s] S3: expected historyTabUserPause=false, got true", label)
+		}
+	}
+	assertS4 := func(t *testing.T, state *contextFeedbackViewState, label string) {
+		t.Helper()
+		if !state.insideSection {
+			t.Fatalf("[%s] S4: expected insideSection=true, got false", label)
+		}
+		if state.collapsedContextHistory {
+			t.Fatalf("[%s] S4: expected collapsedContextHistory=false, got true", label)
+		}
+		if got := state.activeRowKey(); got != turnRowKey {
+			t.Fatalf("[%s] S4: expected activeRowKey=%q, got %q", label, turnRowKey, got)
+		}
+		if tail := state.focusPath.Tail(); tail.Kind != nodeKindTurn || tail.User != user || tail.Session != sessionID || tail.Turn != 1 {
+			t.Fatalf("[%s] S4: expected focusPath tail turn:%s:%s:1, got %#v", label, user, sessionID, tail)
+		}
+		if state.historyTabUserPause {
+			t.Fatalf("[%s] S4: expected historyTabUserPause=false, got true", label)
+		}
+	}
+
+	// tabStates[i] is the expected state after pressing Tab i times (1-indexed).
+	tabStates := [6]func(*testing.T, *contextFeedbackViewState, string){
+		nil,      // index 0 unused
+		assertS1, // Tab 1 → S1
+		assertS2, // Tab 2 → S2
+		assertS3, // Tab 3 → S3
+		assertS4, // Tab 4 → S4
+		assertS4, // Tab 5 → S4 (no-op at leaf)
+	}
+
+	// shiftTabPaths[n] is the sequence of expected states after each Shift-Tab press
+	// when the preceding Tab×n left us at the given state.
+	shiftTabPaths := [6][]func(*testing.T, *contextFeedbackViewState, string){
+		nil,                                              // n=0 unused
+		{},                                               // n=1: 0 shift-tabs
+		{assertS1},                                       // n=2: S2→S1
+		{assertS2, assertS1},                             // n=3: S3→S2→S1
+		{assertS3, assertS2, assertS1},                   // n=4: S4→S3→S2→S1
+		{assertS3, assertS2, assertS1, assertS0},         // n=5: S4→S3→S2→S1→S0
+	}
+
+	finalStates := [6]func(*testing.T, *contextFeedbackViewState, string){
+		nil, assertS1, assertS1, assertS1, assertS1, assertS0,
+	}
+
+	// Expected status messages after each Shift-Tab press (inside→"Stepped back", exit→"Exited section").
+	shiftTabStatuses := [6][]string{
+		nil,
+		{},
+		{"Stepped back in context-history."},
+		{"Stepped back in context-history.", "Stepped back in context-history."},
+		{"Stepped back in context-history.", "Stepped back in context-history.", "Stepped back in context-history."},
+		{"Stepped back in context-history.", "Stepped back in context-history.", "Stepped back in context-history.", "Exited section: context-history."},
+	}
+
+	for n := 1; n <= 5; n++ {
+		n := n
+		t.Run("tab"+itoa(n)+"_shifttab"+itoa(n-1), func(t *testing.T) {
+			state := newContextFeedbackViewState()
+			state.activeSection = "context-history"
+			state.insideSection = false
+			state.collapsedContextHistory = false
+			state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+
+			// Populate history rows via initial render (must be expanded to register rows).
+			_ = renderContextWidgetWithState(snapshot, "context-history", "qwen3.6:latest", "ollama", 80, 200, nil, state)
+			if got := state.activeRowKey(); got != userRowKey {
+				t.Fatalf("precondition: expected render to populate history user row, got %q", got)
+			}
+
+			// Reset to S0 after render populates orderedRowKeys.
+			state.collapsedContextHistory = true
+			state.insideSection = false
+			state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+
+			// Press Tab×n, asserting expected state after each press.
+			for i := 0; i < n; i++ {
+				applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+				_ = renderContextWidgetWithState(snapshot, "context-history", "qwen3.6:latest", "ollama", 80, 200, nil, state)
+				tabStates[i+1](t, state, "after tab "+itoa(i+1)+"/"+itoa(n))
+			}
+
+			// Press Shift-Tab×(n-1), asserting expected state after each press.
+			for i := 0; i < n-1; i++ {
+				applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+				_ = renderContextWidgetWithState(snapshot, "context-history", "qwen3.6:latest", "ollama", 80, 200, nil, state)
+				shiftTabPaths[n][i](t, state, "n="+itoa(n)+" after shift-tab "+itoa(i+1)+"/"+itoa(n-1))
+				if got := state.statusLine; got != shiftTabStatuses[n][i] {
+					t.Fatalf("[n=%d shift-tab %d] expected status %q, got %q",
+						n, i+1, shiftTabStatuses[n][i], got)
+				}
+			}
+
+			finalStates[n](t, state, "n="+itoa(n)+" final")
 		})
 	}
 }

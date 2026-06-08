@@ -76,6 +76,7 @@ type contextHistoryModel interface {
 	AdvanceTabFocus(state *contextFeedbackViewState, forceExpand bool)
 	EnterSection(state *contextFeedbackViewState, forceExpand bool)
 	ExitSection(state *contextFeedbackViewState)
+	StepOutFocus(state *contextFeedbackViewState)
 }
 
 type contextHistoryTreeModel struct {
@@ -409,6 +410,46 @@ func (m *contextHistoryTreeModel) ExitSection(state *contextFeedbackViewState) {
 	state.historyTabUserPause = false
 	state.collapsedContextHistory = true
 	state.insideSection = false
+}
+
+// StepOutFocus steps back one level in the context-history focus hierarchy
+// instead of exiting completely. Reverse Tab transitions:
+//
+//	 S4 (turn)              → S3 (session):         pop to parent session row
+//	 S3 (session)           → S2 (user, pause=false): pop to parent user row
+//	 S2 (user, pause=false) → S1 (user, pause=true):  restore pause, stay inside
+//	 S1 (user, pause=true)  → S0 (outside):           exit section
+//	 S0 (section)           → S0:                     no-op
+func (m *contextHistoryTreeModel) StepOutFocus(state *contextFeedbackViewState) {
+	if state == nil {
+		return
+	}
+	wasPaused := state.historyTabUserPause
+	state.historyTabUserPause = false
+	tail := state.focusPath.Tail()
+	switch tail.Kind {
+	case nodeKindTurn:
+		// S4 → S3: move active row to the parent session, then pop focus.
+		sessionKey := historySessionRowKey(tail.User, tail.Session)
+		_ = state.setActiveRowByKey(sessionKey)
+		state.popFocus()
+	case nodeKindSession:
+		// S3 → S2: move active row to the parent user, then pop focus.
+		userKey := "user:" + strings.TrimSpace(tail.User)
+		_ = state.setActiveRowByKey(userKey)
+		state.popFocus()
+	case nodeKindUser:
+		if wasPaused {
+			// S1 → S0: exit section; setFocusPath inside popFocus sets insideSection=false.
+			state.popFocus()
+			state.collapsedContextHistory = true
+		} else {
+			// S2 → S1: restore pause; focusPath and activeRow unchanged.
+			state.historyTabUserPause = true
+		}
+	case nodeKindSection:
+		// S0 → S0: already outside, no-op.
+	}
 }
 
 func isContextHistoryRowKey(rowKey string) bool {
