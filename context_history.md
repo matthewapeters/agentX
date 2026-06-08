@@ -121,9 +121,10 @@ Example:
 - Inside section focus (`insideSection=true`):
   - `Up/Down` moves row selection within the active section.
   - `Left/Right` moves horizontal siblings where available (for example prompt <-> response, session <-> first turn).
-  - `Space` selects/deselects the active row.
+  - `Space` on `context-history` rows performs peek/expand toggle using history focus-path semantics (no row selected/enabled dot semantics for history rows).
   - `Enter` executes row expansion/collapse action for rows that support it.
-    For context-history rows, `Enter` uses focus-path semantics: entering a non-focused node expands to it, and pressing `Enter` again on the focused node collapses to its parent.
+    For context-history rows, `Enter` uses the same focus-path toggle behavior as `Space`: entering a non-focused node expands to it, and pressing the key again on the focused node collapses to its parent.
+  - `Space` on `current-context` and `working-memory` rows keeps row selection semantics.
   - `PgUp/PgDn` scrolls section viewports for `context-history` and `working-memory`; on expanded current-context rows, it scrolls wrapped text content.
 
 ### Toggle Options
@@ -136,7 +137,7 @@ To toggle expansion or collapse without entering a section, use `Space` while ou
 
 #### Enable / Disable
 
-To toggle an element as selected or not, use `Space` while inside section focus.
+To toggle an element as selected or not, use `Space` while inside section focus on `current-context` and `working-memory`. In `context-history`, `Space` is reserved for node peek/expand.
 
 ### Enter Exit Expandable Areas (Focus)
 
@@ -176,7 +177,7 @@ Keyboard-driven transitions use normalized status text. Representative statuses:
 
 - users are listed in alphabetical order; a system may support more than one user, their sessions are segregated in the `.sessions/` folder by user name.  Only one user session history may be expanded at a time.  Only one user session history may have focus at a time.
 - For each user, session ordering is presentation-only and deterministic.  The default sort is `Ascending` to match the current loader; `Descending` may be selected when users want most-recent-first browsing.  The active order is controlled by `agentx.context_history_session_sort` in `agentx.toml`.
-  Context-history nodes (`user`, `session`, `turn`) are expanded/collapsed with `Enter` while inside section focus.
+  Context-history nodes (`user`, `session`, `turn`) are applet-owned model nodes with explicit IDs/parent interfaces and are expanded/collapsed with `Enter` or `Space` while inside section focus.
 - Facelift details for the Go TUI variant:
   - section headers are iconized for quick scanning (`🗄️ Context History`, `💾 Working Memory`, `📑 Current Context`)
   - expanded context history surfaces a compact summary line (`sessions`, active `sort`, and keyboard hint)
@@ -185,9 +186,10 @@ Keyboard-driven transitions use normalized status text. Representative statuses:
 - Focus is singular (one active row at a time), but expansion state is independent per row/section and not globally single-open.
 - A context must be in section focus to enable row navigation and viewport scrolling.
 - In context-history row focus:
-  - `Enter` expands the focused history node when it is not currently the focused leaf path.
-  - `Enter` collapses to the parent node when the focused node is already the focused leaf path.
+  - `Enter` or `Space` expands the focused history node when it is not currently the focused leaf path.
+  - `Enter` or `Space` collapses to the parent node when the focused node is already the focused leaf path.
   - This yields deterministic toggle behavior for user/session nodes based on current focus path.
+  - Pressing `Down` on a section with only one user row is a no-op and does not implicitly descend into sessions.
 
 ## Working Memory Widget
 

@@ -469,8 +469,8 @@ func TestContextWidgetKeyboard_HistoryArrowNavigationDoesNotExpandNodes(t *testi
 
 	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
 
-	if got := state.activeRowKey(); got != "session:mpeters:s-prev" {
-		t.Fatalf("expected selection to move to session row, got %q", got)
+	if got := state.activeRowKey(); got != "user:mpeters" {
+		t.Fatalf("expected selection to stay on only user sibling, got %q", got)
 	}
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
 		t.Fatalf("expected history focus path to remain at section root after arrow navigation, got %#v", got)
@@ -478,8 +478,8 @@ func TestContextWidgetKeyboard_HistoryArrowNavigationDoesNotExpandNodes(t *testi
 	if focusPathHasNode(state.focusPath, nodeID{Kind: nodeKindUser, User: "mpeters"}) {
 		t.Fatalf("expected user node not to auto-expand on arrow navigation")
 	}
-	if got := state.statusLine; got != "Selection moved." {
-		t.Fatalf("expected normalized selection-moved status, got %q", got)
+	if got := state.statusLine; got != "Selection at last row." {
+		t.Fatalf("expected boundary status when no user siblings exist, got %q", got)
 	}
 }
 
@@ -512,8 +512,8 @@ func TestContextWidgetKeyboard_HistoryArrowNavigationSurvivesRenderWithoutExpans
 	snapshot := contextWidgetSnapshot{SessionID: "current-session"}
 	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
 
-	if got := state.activeRowKey(); got != "session:mpeters:s-prev" {
-		t.Fatalf("expected selection to move to session row before render, got %q", got)
+	if got := state.activeRowKey(); got != "user:mpeters" {
+		t.Fatalf("expected selection to remain on user row before render, got %q", got)
 	}
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
 		t.Fatalf("expected history focus path to remain at section root before render, got %#v", got)
@@ -526,6 +526,116 @@ func TestContextWidgetKeyboard_HistoryArrowNavigationSurvivesRenderWithoutExpans
 	}
 	if focusPathHasNode(state.focusPath, nodeID{Kind: nodeKindUser, User: "mpeters"}) {
 		t.Fatalf("expected render pass not to auto-expand user node")
+	}
+}
+
+func TestContextWidgetKeyboard_HistoryDownOnOnlyUserRowIsNoOp(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.collapsedContextHistory = false
+	state.updateOrderedRows([]string{"user:mpeters"})
+	state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+	state.insideSection = true
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+
+	if got := state.activeRowKey(); got != "user:mpeters" {
+		t.Fatalf("expected only user row to remain active, got %q", got)
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+		t.Fatalf("expected no implicit descend into sessions, got %#v", got)
+	}
+	if got := state.statusLine; got != "Selection at last row." {
+		t.Fatalf("expected lower-bound no-op status, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_HistoryDownOnSingleUserWithVisibleSessionsIsNoOp(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.collapsedContextHistory = false
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-prev", "session:mpeters:s-older"})
+	state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+	state.insideSection = true
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+
+	if got := state.activeRowKey(); got != "user:mpeters" {
+		t.Fatalf("expected down to remain on user row when no sibling users exist, got %q", got)
+	}
+	if got := state.statusLine; got != "Selection at last row." {
+		t.Fatalf("expected lower-bound no-op status, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_SpaceHistoryNodePeeksWithoutSelectionSemantics(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.collapsedContextHistory = false
+	state.insideSection = true
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-prev"})
+	state.selectedEntries["user:mpeters"] = true
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
+		t.Fatalf("expected space to expand history node via focus path, got %#v", got)
+	}
+	if state.selectedEntries["user:mpeters"] {
+		t.Fatalf("expected space on history row to avoid selected/enabled row semantics")
+	}
+	if marker := stripAnsi(rowMarker(state, "user:mpeters")); strings.Contains(marker, "●") {
+		t.Fatalf("expected history row marker without selection dot, got %q", marker)
+	}
+	if got := state.statusLine; got != "History node expanded." {
+		t.Fatalf("expected history expand status, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+		t.Fatalf("expected second space to collapse back to section, got %#v", got)
+	}
+	if got := state.statusLine; got != "History node collapsed." {
+		t.Fatalf("expected history collapse status, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_SpaceOnSessionRowPeeksWithoutSelectionSemantics(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.collapsedContextHistory = false
+	state.insideSection = true
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-prev"})
+	state.selectedEntries["session:mpeters:s-prev"] = true
+	if !state.setActiveRowByKey("session:mpeters:s-prev") {
+		t.Fatalf("expected session row activation to succeed")
+	}
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.User != "mpeters" || got.Session != "s-prev" {
+		t.Fatalf("expected space to expand focused session node, got %#v", got)
+	}
+	if state.selectedEntries["session:mpeters:s-prev"] {
+		t.Fatalf("expected session row space to avoid selected/enabled semantics")
+	}
+	if marker := stripAnsi(rowMarker(state, "session:mpeters:s-prev")); strings.Contains(marker, "●") {
+		t.Fatalf("expected session row marker without selection dot, got %q", marker)
+	}
+	if got := state.statusLine; got != "History node expanded." {
+		t.Fatalf("expected history expand status for session row, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
+		t.Fatalf("expected second space on focused session row to collapse to parent user, got %#v", got)
+	}
+	if got := state.statusLine; got != "History node collapsed." {
+		t.Fatalf("expected history collapse status for session row, got %q", got)
 	}
 }
 
@@ -833,6 +943,31 @@ func TestMoveRowInActiveSection_HistorySiblingSwitchDoesNotRewriteFocusPath(t *t
 	}
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
 		t.Fatalf("expected sibling move not to rewrite history focus path, got %#v", got)
+	}
+}
+
+func TestUpdateOrderedRows_ContextHistoryPreservesFocusByStableKeyAndPath(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.insideSection = true
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-1", "session:mpeters:s-2"})
+	if !state.setActiveRowByKey("session:mpeters:s-2") {
+		t.Fatalf("expected initial session row activation to succeed")
+	}
+	state.setFocusPath(focusPath{
+		{Kind: nodeKindSection, Section: "context-history"},
+		{Kind: nodeKindUser, User: "mpeters"},
+		{Kind: nodeKindSession, User: "mpeters", Session: "s-2"},
+	})
+
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-2"})
+	if got := state.activeRowKey(); got != "session:mpeters:s-2" {
+		t.Fatalf("expected stable row-key remap to keep focused session, got %q", got)
+	}
+
+	state.updateOrderedRows([]string{"user:mpeters"})
+	if got := state.activeRowKey(); got != "user:mpeters" {
+		t.Fatalf("expected focus-path fallback remap to nearest ancestor row, got %q", got)
 	}
 }
 

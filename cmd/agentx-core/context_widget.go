@@ -198,6 +198,30 @@ func nodeIDForRowKey(section string, rowKey string) (nodeID, bool) {
 	return nodeID{}, false
 }
 
+func rowKeyForNodeID(section string, id nodeID) string {
+	switch strings.TrimSpace(section) {
+	case "context-history":
+		switch id.Kind {
+		case nodeKindUser:
+			if strings.TrimSpace(id.User) == "" {
+				return ""
+			}
+			return "user:" + strings.TrimSpace(id.User)
+		case nodeKindSession:
+			if strings.TrimSpace(id.User) == "" || strings.TrimSpace(id.Session) == "" {
+				return ""
+			}
+			return historySessionRowKey(id.User, id.Session)
+		case nodeKindTurn:
+			if strings.TrimSpace(id.User) == "" || strings.TrimSpace(id.Session) == "" || id.Turn <= 0 {
+				return ""
+			}
+			return fmt.Sprintf("history:%s:%s:%d", strings.TrimSpace(id.User), strings.TrimSpace(id.Session), id.Turn)
+		}
+	}
+	return ""
+}
+
 const (
 	contextHistorySortAscending = "ascending"
 	contextHistorySortDescending = "descending"
@@ -301,11 +325,21 @@ func (state *contextFeedbackViewState) updateOrderedRows(keys []string) {
 	if state == nil {
 		return
 	}
+	previousKey := state.activeRowKey()
 	state.orderedRowKeys = append([]string{}, keys...)
 	if len(state.orderedRowKeys) == 0 {
 		state.activeRow = 0
 		state.focusTextBox = false
 		return
+	}
+	remapped := false
+	if previousKey != "" {
+		remapped = state.setActiveRowByKey(previousKey)
+	}
+	if !remapped && state.activeSection == "context-history" {
+		if focusKey, ok := state.preferredContextHistoryRowKey(); ok {
+			_ = state.setActiveRowByKey(focusKey)
+		}
 	}
 	if state.activeRow < 0 {
 		state.activeRow = 0
@@ -319,6 +353,34 @@ func (state *contextFeedbackViewState) updateOrderedRows(keys []string) {
 	if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
 		state.setFocusPath(focusPathForNode(state.activeSection, node))
 	}
+}
+
+func (state *contextFeedbackViewState) preferredContextHistoryRowKey() (string, bool) {
+	if state == nil || len(state.focusPath) == 0 {
+		return "", false
+	}
+	for idx := len(state.focusPath) - 1; idx >= 0; idx-- {
+		candidate := rowKeyForNodeID("context-history", state.focusPath[idx])
+		if candidate == "" {
+			continue
+		}
+		if state.hasRowKey(candidate) {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+func (state *contextFeedbackViewState) hasRowKey(target string) bool {
+	if state == nil || target == "" {
+		return false
+	}
+	for _, key := range state.orderedRowKeys {
+		if key == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (state *contextFeedbackViewState) activeRowKey() string {
@@ -1720,7 +1782,7 @@ func rowMarker(state *contextFeedbackViewState, rowKey string) string {
 		return "  "
 	}
 	active := state.activeRowKey() == rowKey
-	selected := state.selectedEntries[rowKey]
+	selected := state.selectedEntries[rowKey] && !isContextHistoryRowKey(rowKey)
 	switch {
 	case active && selected:
 		return styleToken("▶●", ansiCyan)
@@ -2013,6 +2075,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		return false
 	}
 	cmd := strings.ToLower(strings.TrimSpace(args[0]))
+	historyModel := newContextHistoryTreeModel(state.orderedRowKeys)
 	switch cmd {
 	case "j", "down":
 		if state.focusTextBox {
@@ -2024,6 +2087,14 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		if !state.insideSection {
 			state.moveSectionHeader(1)
 			state.setStatus(fmt.Sprintf("Section: %s", state.activeSection))
+			return true
+		}
+		if state.activeSection == "context-history" {
+			if !historyModel.MoveVertical(state, 1) {
+				state.setStatus("Selection at last row.")
+			} else {
+				state.setStatus("Selection moved.")
+			}
 			return true
 		}
 		if !state.moveRowInActiveSection(1) {
@@ -2044,6 +2115,14 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus(fmt.Sprintf("Section: %s", state.activeSection))
 			return true
 		}
+		if state.activeSection == "context-history" {
+			if !historyModel.MoveVertical(state, -1) {
+				state.setStatus("Selection at first row.")
+			} else {
+				state.setStatus("Selection moved.")
+			}
+			return true
+		}
 		if !state.moveRowInActiveSection(-1) {
 			state.setStatus("Selection at first row.")
 		} else {
@@ -2051,6 +2130,14 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		return true
 	case "right", "l":
+		if state.insideSection && state.activeSection == "context-history" {
+			if historyModel.MoveHorizontal(state, "right") {
+				state.setStatus("Moved right.")
+			} else {
+				state.setStatus("No right sibling.")
+			}
+			return true
+		}
 		if state.moveHorizontal("right") {
 			state.setStatus("Moved right.")
 		} else {
@@ -2058,6 +2145,14 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		return true
 	case "left", "h":
+		if state.insideSection && state.activeSection == "context-history" {
+			if historyModel.MoveHorizontal(state, "left") {
+				state.setStatus("Moved left.")
+			} else {
+				state.setStatus("No left sibling.")
+			}
+			return true
+		}
 		if state.moveHorizontal("left") {
 			state.setStatus("Moved left.")
 		} else {
@@ -2132,6 +2227,11 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			if state.activeSection == "" {
 				state.activeSection = "current-context"
 			}
+			if state.activeSection == "context-history" {
+				historyModel.EnterSection(state, true)
+				state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
+				return true
+			}
 			switch state.activeSection {
 			case "context-history":
 				state.collapsedContextHistory = false
@@ -2157,6 +2257,11 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.focusTextBox = false
 		}
 		if state.insideSection {
+			if state.activeSection == "context-history" {
+				historyModel.ExitSection(state)
+				state.setStatus(fmt.Sprintf("Exited section: %s.", state.activeSection))
+				return true
+			}
 			state.popFocus()
 			switch state.activeSection {
 			case "context-history":
@@ -2194,6 +2299,11 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus("No selectable row.")
 			return true
 		}
+		if state.activeSection == "context-history" {
+			status, _ := historyModel.TogglePeek(state)
+			state.setStatus(status)
+			return true
+		}
 		if state.selectedEntries[rowKey] {
 			delete(state.selectedEntries, rowKey)
 			state.setStatus("Deselected row.")
@@ -2208,6 +2318,11 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			if state.activeSection == "" {
 				state.activeSection = "current-context"
 			}
+			if state.activeSection == "context-history" {
+				historyModel.EnterSection(state, false)
+				state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
+				return true
+			}
 			state.insideSection = true
 			state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
 			return true
@@ -2217,26 +2332,15 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus("No expandable row.")
 			return true
 		}
+		if state.activeSection == "context-history" {
+			status, _ := historyModel.TogglePeek(state)
+			state.setStatus(status)
+			return true
+		}
 		if strings.HasPrefix(rowKey, "current:") {
 			state.collapsedEntries[rowKey] = !state.collapsedEntries[rowKey]
 			state.setStatus(fmt.Sprintf("Row %s is now %s.", rowKey, mapCollapsedState(state.collapsedEntries[rowKey])))
 			return true
-		}
-		if state.activeSection == "context-history" {
-			if id, ok := nodeIDForRowKey(state.activeSection, rowKey); ok {
-				targetPath := focusPathForNode(state.activeSection, id)
-				if state.focusPath.HasFocus(id) && len(targetPath) > 1 {
-					state.branchTransition(targetPath[:len(targetPath)-1])
-					if state.focusPath.Tail().Kind == nodeKindSection {
-						state.insideSection = true
-					}
-					state.setStatus("History node collapsed.")
-					return true
-				}
-				state.branchTransition(targetPath)
-				state.setStatus("History node expanded.")
-				return true
-			}
 		}
 		if strings.HasPrefix(rowKey, "wm:") {
 			state.collapsedWorkingMemory = !state.collapsedWorkingMemory

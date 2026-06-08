@@ -1345,6 +1345,13 @@ Each applet above must have:
   basic function observable before the final frame layout lands.
 - This section intentionally mirrors the runtime split and UX lifecycle docs so
   implementation work can be reviewed against one authoritative spec chain.
+- Context-history keyboard behavior is owned by an applet model with explicit
+  history node interfaces (user/session/turn IDs with parent links).
+- Inside `context-history`, `Space` and `Enter` both perform history node
+  peek/expand toggle semantics (focus-path based), not generic row
+  selected/enabled-dot semantics.
+- Boundary behavior is explicit: pressing `Down` when only a single user history
+  row exists is a no-op and must not auto-descend into sessions.
 
 ---
 
