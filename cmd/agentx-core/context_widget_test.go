@@ -1007,6 +1007,124 @@ func TestContextWidgetKeyboard_ShiftTabPopsDeepHistoryPath(t *testing.T) {
 	}
 }
 
+func TestContextWidgetKeyboard_TabContextHistoryPopulatedRows_IdempotentAcrossRepeatedTabs(t *testing.T) {
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	assertStableTabState := func(t *testing.T, state *contextFeedbackViewState) {
+		t.Helper()
+		if !state.insideSection {
+			t.Fatalf("expected insideSection=true")
+		}
+		if got := state.activeSection; got != "context-history" {
+			t.Fatalf("expected activeSection=context-history, got %q", got)
+		}
+		if state.collapsedContextHistory {
+			t.Fatalf("expected collapsedContextHistory=false")
+		}
+		if got := state.activeRowKey(); got != "user:mpeters" {
+			t.Fatalf("expected activeRowKey to stay on first history user row, got %q", got)
+		}
+		tail := state.focusPath.Tail()
+		if tail.Kind != nodeKindUser || tail.User != "mpeters" {
+			t.Fatalf("expected focusPath tail to remain on user node mpeters, got %#v", tail)
+		}
+	}
+
+	for presses := 1; presses <= 5; presses++ {
+		presses := presses
+		t.Run("tab_presses_"+itoa(presses), func(t *testing.T) {
+			state := newContextFeedbackViewState()
+			state.activeSection = "context-history"
+			state.insideSection = false
+			state.collapsedContextHistory = true
+			state.updateOrderedRows([]string{"current:1:prompt", "user:mpeters", "session:mpeters:s-prev"})
+			state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+
+			if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+				t.Fatalf("expected precondition focusPath at context-history section root before tab loop, got %#v", got)
+			}
+
+			for i := 0; i < presses; i++ {
+				applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+				assertStableTabState(t, state)
+				if got := state.statusLine; got != "Entered section: context-history." {
+					t.Fatalf("expected normalized tab-enter status after tab %d/%d, got %q", i+1, presses, got)
+				}
+			}
+		})
+	}
+}
+
+func TestContextWidgetKeyboard_TabContextHistoryPopulatedRows_RenderCoupledIdempotentAcrossRepeatedTabs(t *testing.T) {
+	projectDir := t.TempDir()
+	turnPath := filepath.Join(projectDir, "sessions", "mpeters", "s-prev", "context", "turns.jsonl")
+	if err := os.MkdirAll(filepath.Dir(turnPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	payload, err := json.Marshal(ChatTurn{Prompt: "hello", Response: "world", CreatedAt: 1_700_000_000_000})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	if err := os.WriteFile(turnPath, append(payload, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "current-user",
+	})
+
+	snapshot := contextWidgetSnapshot{SessionID: "current-session"}
+
+	assertStableTabState := func(t *testing.T, state *contextFeedbackViewState) {
+		t.Helper()
+		if !state.insideSection {
+			t.Fatalf("expected insideSection=true")
+		}
+		if got := state.activeSection; got != "context-history" {
+			t.Fatalf("expected activeSection=context-history, got %q", got)
+		}
+		if state.collapsedContextHistory {
+			t.Fatalf("expected collapsedContextHistory=false")
+		}
+		if got := state.activeRowKey(); got != "user:mpeters" {
+			t.Fatalf("expected activeRowKey to stay on first history user row, got %q", got)
+		}
+		tail := state.focusPath.Tail()
+		if tail.Kind != nodeKindUser || tail.User != "mpeters" {
+			t.Fatalf("expected focusPath tail to remain on user node mpeters, got %#v", tail)
+		}
+	}
+
+	for presses := 1; presses <= 5; presses++ {
+		presses := presses
+		t.Run("render_coupled_tab_presses_"+itoa(presses), func(t *testing.T) {
+			state := newContextFeedbackViewState()
+			state.activeSection = "context-history"
+			state.insideSection = false
+			state.collapsedContextHistory = false
+			state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+
+			_ = renderContextWidgetWithState(snapshot, "context-history", "qwen3.6:latest", "ollama", 80, 200, nil, state)
+			if got := state.activeRowKey(); got != "user:mpeters" {
+				t.Fatalf("expected render path to populate history user row before tab loop, got %q", got)
+			}
+
+			state.collapsedContextHistory = true
+			state.insideSection = false
+			state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+
+			for i := 0; i < presses; i++ {
+				applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+				assertStableTabState(t, state)
+				if got := state.statusLine; got != "Entered section: context-history." {
+					t.Fatalf("expected normalized tab-enter status after tab %d/%d, got %q", i+1, presses, got)
+				}
+			}
+		})
+	}
+}
+
 func TestRenderContextFeedbackSections_CollapsedSectionsRenderBoxStubs(t *testing.T) {
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "sess-collapsed"}
@@ -1134,7 +1252,7 @@ func TestRenderContextFeedbackSections_FiltersEmptyTurnStubs(t *testing.T) {
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{
 		SessionID: "sess-empty-turn",
-		Turns: []ChatTurn{{Prompt: "", Response: ""}},
+		Turns:     []ChatTurn{{Prompt: "", Response: ""}},
 	}
 
 	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")

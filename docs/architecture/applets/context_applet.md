@@ -56,8 +56,8 @@ do. The current mode is indicated visually by section-border brightness.
 
 | Mode | How to enter | How to exit | Border color |
 |------|-------------|------------|-------------|
-| **Outside section** | Initial state; `Tab` while inside; `Tab` while in textbox scroll | `Tab` or `Enter` | Dim (all sections) |
-| **Inside section** | `Tab` or `Enter` while outside | `Tab` | Bright (active section only) |
+| **Outside section** | Initial state; `Shift-Tab` while inside a section | `Tab` or `Enter` | Dim (all sections) |
+| **Inside section** | `Tab` or `Enter` while outside | `Shift-Tab` | Bright (active section only) |
 
 ### Keyboard contract (authoritative)
 
@@ -78,15 +78,15 @@ do. The current mode is indicated visually by section-border brightness.
 - `Enter`: expand or collapse the active row where applicable.
 - `PageDown` / `PageUp`: scroll text content when the active row is an expanded
   `current-context` entry; otherwise page the row cursor by 5.
-- `Tab`: exit the section (return to outside-section mode).
-  If textbox-scroll mode is active, first press exits textbox mode; second
-  press exits the section.
+- `Tab`: stay inside the section and normalize focus to the section's first
+  eligible row (drill-in/idempotent behavior).
+- `Shift-Tab`: exit the section (return to outside-section mode).
 
 **Textbox-scroll mode (inside section, expanded text row):**
 
 - `Up` / `Down`: scroll one line.
 - `PageUp` / `PageDown`: scroll five lines.
-- `Tab`: exit textbox mode (stay inside section).
+- `Tab`: exit textbox mode and remain inside the active section.
 
 ### Section list (authoritative order)
 
