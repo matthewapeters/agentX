@@ -42,15 +42,19 @@ func TestRenderContextFeedbackSections_DefaultCollapsedOrderAndMinimalHeader(t *
 	if strings.Contains(wmBlock, "fact_count:") || strings.Contains(wmBlock, "session_id:") {
 		t.Fatalf("expected collapsed working memory to render title only by default, got:\n%s", wmBlock)
 	}
-	if !strings.Contains(rendered, "users ") || !strings.Contains(rendered, "sessions ") {
-		t.Fatalf("expected collapsed context-history summary metadata, got:\n%s", rendered)
+	// Collapsed sections should NOT show freeform summary lines.
+	if strings.Contains(rendered, "users ") || strings.Contains(rendered, "sessions ") {
+		t.Fatalf("expected no freeform summary line in collapsed context-history, got:\n%s", rendered)
 	}
-	if !strings.Contains(wmBlock, "facts ") {
-		t.Fatalf("expected collapsed working-memory summary metadata, got:\n%s", wmBlock)
+	if strings.Contains(wmBlock, "facts ") {
+		t.Fatalf("expected no freeform summary line in collapsed working-memory, got:\n%s", wmBlock)
 	}
-
-	if !strings.Contains(rendered, "prompt: \x1b[33m[collapsed]\x1b[0m") || !strings.Contains(rendered, "response: \x1b[33m[collapsed]\x1b[0m") {
-		t.Fatalf("expected current-context prompt/response tiles collapsed by default, got:\n%s", rendered)
+	// Current context should render items with emoji state icons, not legacy [collapsed]/[enabled] text.
+	if strings.Contains(rendered, "[collapsed]") || strings.Contains(rendered, "[enabled]") {
+		t.Fatalf("expected no legacy [collapsed]/[enabled] text in current-context, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "👤") || !strings.Contains(rendered, "🤖") {
+		t.Fatalf("expected prompt/response emoji icons in current-context, got:\n%s", rendered)
 	}
 }
 
@@ -815,8 +819,12 @@ func TestRenderContextFeedbackSections_FiltersEmptyTurnStubs(t *testing.T) {
 	if strings.Contains(rendered, "TURN 1") {
 		t.Fatalf("expected empty turn placeholder to be filtered out, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "No current context elements.") {
-		t.Fatalf("expected empty-turn snapshot to render no-elements message, got:\n%s", rendered)
+	// Empty context renders a box stub, not a freeform text message.
+	if strings.Contains(rendered, "No current context elements.") {
+		t.Fatalf("expected empty context to render box stub not text message, got:\n%s", rendered)
+	}
+	if strings.Count(rendered, "┌") < 2 || strings.Count(rendered, "└") < 2 {
+		t.Fatalf("expected box stubs in output for empty context, got:\n%s", rendered)
 	}
 }
 
@@ -825,6 +833,7 @@ func TestRenderWorkingMemoryFeedbackSection_ShowsEditorCells(t *testing.T) {
 	state.collapsedWorkingMemory = false
 
 	rendered := strings.Join(renderWorkingMemoryFeedbackSection(state, nil), "\n")
+	// Editor cells appear inside the single WM box.
 	for _, fragment := range []string{
 		"KEY                       VALUE",
 		"┌───────────────────────┐ ┌───────────────────────┐ ┌─────┐",
@@ -833,5 +842,13 @@ func TestRenderWorkingMemoryFeedbackSection_ShowsEditorCells(t *testing.T) {
 		if !strings.Contains(rendered, fragment) {
 			t.Fatalf("expected working-memory editor scaffold fragment %q, got:\n%s", fragment, rendered)
 		}
+	}
+	// Facts appear in KEY: VALUE format with emoji state icons, not legacy [enabled]/[disabled].
+	if strings.Contains(rendered, "[enabled]") || strings.Contains(rendered, "[disabled]") {
+		t.Fatalf("expected no legacy [enabled]/[disabled] text in working memory, got:\n%s", rendered)
+	}
+	// No separate FACTS or WM EDITOR sub-section titles.
+	if strings.Contains(stripAnsi(rendered), "FACTS") || strings.Contains(stripAnsi(rendered), "WM EDITOR") {
+		t.Fatalf("expected no FACTS/WM EDITOR sub-section titles in working memory, got:\n%s", rendered)
 	}
 }

@@ -1188,12 +1188,6 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 	}
 	historyBorder := sectionBorderColor("context-history", viewState)
 	if historyCollapsed {
-		userCount := len(historyUsers)
-		sessionCount := 0
-		for _, user := range historyUsers {
-			sessionCount += len(user.Sessions)
-		}
-		lines = append(lines, fmt.Sprintf("  %s users %d, sessions %d | TAB open | SPACE toggle", styleToken("...", ansiYellow), userCount, sessionCount))
 		lines = append(lines, renderCollapsedBoxStub(historyBorder, 42)...)
 	} else {
 		historyItems := make([]string, 0)
@@ -1207,9 +1201,12 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 				userCollapsed := !focusPathHasNode(viewState.focusPath, userNode)
 				historyItems = append(historyItems, fmt.Sprintf("%s %s %s", rowMarker(viewState, userRowKey), styleToken("📂", ansiCyan), trimSingleLine(user.Username, 32)))
 				if userCollapsed {
+					// User collapsed: show a collapsed inner box stub representing user sessions.
 					historyItems = append(historyItems, "  ┌──────────────────────────────────────┐", "  └──────────────────────────────────────┘")
 					continue
 				}
+				// User expanded: wrap all sessions inside an inner user box.
+				historyItems = append(historyItems, "  ┌──────────────────────────────────────┐")
 				sessionsOffset := sectionViewportOffset(viewState, "context-history")
 				visibleSessions := viewportSessions(user.Sessions, sessionsOffset, 4)
 				for _, session := range visibleSessions {
@@ -1219,34 +1216,32 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 					sessionCollapsed := !focusPathHasNode(viewState.focusPath, sessionNode)
 					startLabel := sessionStartLabel(session)
 					historyItems = append(historyItems,
-						fmt.Sprintf("  %s %s %s", rowMarker(viewState, sessionRowKey), styleToken("📑", ansiCyan), startLabel),
-						"  ┌──────────────────────────────────────┐",
+						fmt.Sprintf("  │ %s 📑 %s", rowMarker(viewState, sessionRowKey), trimSingleLine(startLabel, 30)),
+						"  │   ┌────────────────────────────────────┐",
 					)
 					if sessionCollapsed {
-						historyItems = append(historyItems, "  └──────────────────────────────────────┘")
+						historyItems = append(historyItems, "  │   └────────────────────────────────────┘")
 						continue
 					}
 					if len(session.Turns) == 0 {
-						historyItems = append(historyItems, "  │ (empty session)                       │")
+						historyItems = append(historyItems, "  │   │ (empty session)                    │")
 					} else {
 						for idx, turn := range session.Turns {
 							turnNumber := idx + 1
 							turnKey := fmt.Sprintf("history:%s:%s:%d", session.Username, session.SessionID, turnNumber)
 							rowKeys = append(rowKeys, turnKey)
 							historyItems = append(historyItems,
-								fmt.Sprintf("  │ %s %s %d user: %s", rowMarker(viewState, turnKey), styleToken("👤", ansiBlue), turnNumber, trimSingleLine(turn.Prompt, 28)),
-								fmt.Sprintf("  │   %s %d agent: %s", styleToken("🤖", ansiGreen), turnNumber, trimSingleLine(turn.Response, 28)),
+								fmt.Sprintf("  │   │ %s 👤  %s", rowMarker(viewState, turnKey), trimSingleLine(turn.Prompt, 24)),
+								fmt.Sprintf("  │   │   🤖  %s", trimSingleLine(turn.Response, 24)),
 							)
 						}
 					}
 					historyItems = append(historyItems,
-						fmt.Sprintf("  │   %s include: i %s 1 b", styleToken("➕", ansiCyan), session.SessionID),
-						"  └──────────────────────────────────────┘",
+						fmt.Sprintf("  │   │   %s include: i %s 1 b", styleToken("➕", ansiCyan), trimSingleLine(session.SessionID, 16)),
+						"  │   └────────────────────────────────────┘",
 					)
 				}
-				if len(user.Sessions) > len(visibleSessions) {
-					historyItems = append(historyItems, fmt.Sprintf("  %s viewport %d/%d", styleToken("↕", ansiYellow), sessionsOffset+1, len(user.Sessions)-len(visibleSessions)+1))
-				}
+				historyItems = append(historyItems, "  └──────────────────────────────────────┘")
 			}
 		}
 		lines = append(lines, boxContainer(historyItems, historyBorder)...)
@@ -1263,8 +1258,10 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 	if currentCollapsed {
 		lines = append(lines, renderCollapsedBoxStub(currentBorder, 38)...)
 	} else if len(effectiveTurns) == 0 {
-		lines = append(lines, "No current context elements.")
+		// Empty context: show an empty box stub (no text message).
+		lines = append(lines, renderCollapsedBoxStub(currentBorder, 38)...)
 	} else {
+		turnItems := make([]string, 0)
 		for idx, turn := range effectiveTurns {
 			turnNumber := idx + 1
 			promptKey := contextEntryKey("current", turnNumber, "prompt")
@@ -1285,21 +1282,29 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 			promptDisabled := viewState != nil && viewState.disabledEntries[promptKey]
 			responseDisabled := viewState != nil && viewState.disabledEntries[responseKey]
 
-			turnLines := []string{fmt.Sprintf("%s turn %d", styleToken("↳", ansiMagenta), turnNumber)}
+			promptStateIcon := "✔️"
+			if promptDisabled {
+				promptStateIcon = "⬜"
+			}
+			responseStateIcon := "✔️"
+			if responseDisabled {
+				responseStateIcon = "⬜"
+			}
+
 			if promptCollapsed {
-				turnLines = append(turnLines, fmt.Sprintf("%s %s prompt: %s [%s]", rowMarker(viewState, promptKey), styleToken("👤", ansiBlue), styleToken("[collapsed]", ansiYellow), mapContextEntryState(promptDisabled)))
+				turnItems = append(turnItems, fmt.Sprintf("%s %s 👤  %s", rowMarker(viewState, promptKey), promptStateIcon, trimSingleLine(turn.Prompt, 36)))
 			} else {
-				turnLines = append(turnLines, fmt.Sprintf("%s %s prompt [%s]", rowMarker(viewState, promptKey), styleToken("👤", ansiBlue), mapContextEntryState(promptDisabled)))
-				turnLines = append(turnLines, renderWrappedTextBox(viewState, promptKey, turn.Prompt, ansiBlue)...)
+				turnItems = append(turnItems, fmt.Sprintf("%s %s 👤", rowMarker(viewState, promptKey), promptStateIcon))
+				turnItems = append(turnItems, renderWrappedTextBox(viewState, promptKey, turn.Prompt, ansiBlue)...)
 			}
 			if responseCollapsed {
-				turnLines = append(turnLines, fmt.Sprintf("%s %s response: %s [%s]", rowMarker(viewState, responseKey), styleToken("🤖", ansiGreen), styleToken("[collapsed]", ansiYellow), mapContextEntryState(responseDisabled)))
+				turnItems = append(turnItems, fmt.Sprintf("%s %s 🤖  %s", rowMarker(viewState, responseKey), responseStateIcon, trimSingleLine(turn.Response, 36)))
 			} else {
-				turnLines = append(turnLines, fmt.Sprintf("%s %s response [%s]", rowMarker(viewState, responseKey), styleToken("🤖", ansiGreen), mapContextEntryState(responseDisabled)))
-				turnLines = append(turnLines, renderWrappedTextBox(viewState, responseKey, turn.Response, ansiGreen)...)
+				turnItems = append(turnItems, fmt.Sprintf("%s %s 🤖", rowMarker(viewState, responseKey), responseStateIcon))
+				turnItems = append(turnItems, renderWrappedTextBox(viewState, responseKey, turn.Response, ansiGreen)...)
 			}
-			lines = append(lines, boxSection(fmt.Sprintf("TURN %d", turnNumber), turnLines, currentBorder)...)
 		}
+		lines = append(lines, boxContainer(turnItems, currentBorder)...)
 	}
 	if viewState != nil {
 		viewState.updateOrderedRows(rowKeys)
@@ -1312,44 +1317,32 @@ func renderWorkingMemoryFeedbackSection(viewState *contextFeedbackViewState, row
 	lines := []string{renderSectionHeader("WORKING MEMORY", "working-memory", viewState)}
 	wmBorder := sectionBorderColor("working-memory", viewState)
 	if viewState != nil && viewState.collapsedWorkingMemory {
-		facts := appendDefaultWorkingMemoryFacts(loadWorkingMemoryFacts(resolveCurrentSessionDirFromEnv()))
-		lines = append(lines, fmt.Sprintf("  %s facts %d | TAB open | SPACE toggle", styleToken("...", ansiYellow), len(facts)))
 		lines = append(lines, renderCollapsedBoxStub(wmBorder, 54)...)
 		return lines
 	}
-	lines = append(lines, renderWorkingMemoryEditorScaffold(viewState, rowKeys, wmBorder)...)
+	// Single box for entire working memory section: editor scaffold + facts list.
+	allItems := make([]string, 0)
+	allItems = append(allItems, renderWorkingMemoryEditorScaffold(viewState, rowKeys, wmBorder)...)
 	sessionDir := resolveCurrentSessionDirFromEnv()
-
 	facts := loadWorkingMemoryFacts(sessionDir)
 	facts = appendDefaultWorkingMemoryFacts(facts)
-	if len(facts) == 0 {
-		lines = append(lines, boxSection("FACTS", []string{"No facts stored yet."}, wmBorder)...)
-	} else {
-		facts = viewportFacts(facts, sectionViewportOffset(viewState, "working-memory"), 8)
-		factLines := make([]string, 0, len(facts)+1)
-		for idx, fact := range facts {
-			factKey := fmt.Sprintf("wm:%s:%s", fact.owner, fact.key)
-			if rowKeys != nil {
-				*rowKeys = append(*rowKeys, factKey)
-			}
-			status := "disabled"
-			if fact.enabled {
-				status = "enabled"
-			}
-			ownerIcon := styleToken("👤", ansiBlue)
-			if strings.EqualFold(fact.owner, "agent") {
-				ownerIcon = styleToken("🤖", ansiGreen)
-			}
-			statusLabel := status
-			if status == "disabled" {
-				statusLabel = styleToken(status, ansiRed)
-			} else {
-				statusLabel = styleToken(status, ansiGreen)
-			}
-			factLines = append(factLines, fmt.Sprintf("%s %d) %s %s:%s [%s] = %s", rowMarker(viewState, factKey), idx+1, ownerIcon, fact.owner, trimSingleLine(fact.key, 32), statusLabel, trimSingleLine(formatWorkingMemoryValue(fact.value), 72)))
+	facts = viewportFacts(facts, sectionViewportOffset(viewState, "working-memory"), 8)
+	for _, fact := range facts {
+		factKey := fmt.Sprintf("wm:%s:%s", fact.owner, fact.key)
+		if rowKeys != nil {
+			*rowKeys = append(*rowKeys, factKey)
 		}
-		lines = append(lines, boxSection("FACTS", factLines, wmBorder)...)
+		stateIcon := "✔️"
+		if !fact.enabled {
+			stateIcon = "⬜"
+		}
+		line := fmt.Sprintf("%s %s: %s", stateIcon, trimSingleLine(fact.key, 32), trimSingleLine(formatWorkingMemoryValue(fact.value), 56))
+		if viewState != nil && viewState.insideSection && viewState.activeRowKey() == factKey {
+			line = ansiReverse + line + ansiReset
+		}
+		allItems = append(allItems, line)
 	}
+	lines = append(lines, boxContainer(allItems, wmBorder)...)
 	return lines
 }
 
@@ -1439,12 +1432,26 @@ func renderWorkingMemoryEditorScaffold(viewState *contextFeedbackViewState, rowK
 	if rowKeys != nil {
 		*rowKeys = append(*rowKeys, keyRow, valueRow, saveRow)
 	}
-	return boxSection("WM EDITOR", []string{
+	keyCell := "                       "
+	valueCell := "                       "
+	saveLbl := " ↳OK "
+	if viewState != nil && viewState.insideSection {
+		if viewState.activeRowKey() == keyRow {
+			keyCell = ansiReverse + keyCell + ansiReset
+		}
+		if viewState.activeRowKey() == valueRow {
+			valueCell = ansiReverse + valueCell + ansiReset
+		}
+		if viewState.activeRowKey() == saveRow {
+			saveLbl = ansiReverse + saveLbl + ansiReset
+		}
+	}
+	return []string{
 		"KEY                       VALUE",
 		"┌───────────────────────┐ ┌───────────────────────┐ ┌─────┐",
-		fmt.Sprintf("%s │                       │ %s │                       │ %s │ ↳OK │", rowMarker(viewState, keyRow), rowMarker(viewState, valueRow), rowMarker(viewState, saveRow)),
+		fmt.Sprintf("│%s│ │%s│ │%s│", keyCell, valueCell, saveLbl),
 		"└───────────────────────┘ └───────────────────────┘ └─────┘",
-	}, borderColor)
+	}
 }
 
 func appendDefaultWorkingMemoryFacts(facts []workingMemoryFactLine) []workingMemoryFactLine {
@@ -1471,11 +1478,16 @@ func reverseTitle(title string) string {
 
 // renderSectionHeader renders a section title. When the cursor is on this
 // section in outside-section mode, a ▶ indicator is prepended.
+// When the cursor is inside the section, a ↳ indicator is prepended.
 func renderSectionHeader(title string, sectionID string, viewState *contextFeedbackViewState) string {
 	label := sectionHeaderLabel(strings.TrimSpace(title), sectionID)
 	prefix := "  "
-	if viewState != nil && !viewState.insideSection && viewState.activeSection == sectionID {
-		prefix = styleToken("▶ ", ansiCyan)
+	if viewState != nil {
+		if viewState.insideSection && viewState.activeSection == sectionID {
+			prefix = styleToken("↳ ", ansiCyan)
+		} else if !viewState.insideSection && viewState.activeSection == sectionID {
+			prefix = styleToken("▶ ", ansiCyan)
+		}
 	}
 	return prefix + reverseTitle(label)
 }
