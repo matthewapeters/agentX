@@ -9,6 +9,7 @@ const (
 	contextHistoryNodeKindUser    contextHistoryNodeKind = "user"
 	contextHistoryNodeKindSession contextHistoryNodeKind = "session"
 	contextHistoryNodeKindTurn    contextHistoryNodeKind = "turn"
+	contextHistoryNodeKindEntry   contextHistoryNodeKind = "entry"
 )
 
 // contextHistoryNodeID is applet-owned and supports tree/DAG ancestry via ParentKeys.
@@ -23,6 +24,7 @@ type contextHistoryNodeRef struct {
 	user    string
 	session string
 	turn    int
+	entry   string
 }
 
 func (id contextHistoryNodeRef) Kind() contextHistoryNodeKind {
@@ -43,6 +45,8 @@ func (id contextHistoryNodeRef) Key() string {
 			return "history:" + id.session + ":" + itoa(id.turn)
 		}
 		return "history:" + id.user + ":" + id.session + ":" + itoa(id.turn)
+	case contextHistoryNodeKindEntry:
+		return historyTurnRowKey(id.user, id.session, id.turn, id.entry)
 	default:
 		return "section:context-history"
 	}
@@ -62,6 +66,8 @@ func (id contextHistoryNodeRef) ParentKeys() []string {
 			return []string{"session:" + id.session}
 		}
 		return []string{"session:" + id.user + ":" + id.session}
+	case contextHistoryNodeKindEntry:
+		return []string{historyTurnRowKey(id.user, id.session, id.turn, "")}
 	default:
 		return []string{}
 	}
@@ -81,6 +87,11 @@ type contextHistoryModel interface {
 
 type contextHistoryTreeModel struct {
 	rowKeys []string
+}
+
+type contextHistoryIndexedRow struct {
+	idx  int
+	node contextHistoryNodeID
 }
 
 func newContextHistoryTreeModel(rowKeys []string) contextHistoryModel {
@@ -114,17 +125,13 @@ func (m *contextHistoryTreeModel) MoveVertical(state *contextFeedbackViewState, 
 	if state == nil || len(m.rowKeys) == 0 {
 		return false
 	}
-	type historyRow struct {
-		idx  int
-		node contextHistoryNodeID
-	}
-	rows := make([]historyRow, 0, len(m.rowKeys))
+	rows := make([]contextHistoryIndexedRow, 0, len(m.rowKeys))
 	for idx, key := range m.rowKeys {
 		node, ok := m.NodeForRowKey(key)
 		if !ok {
 			continue
 		}
-		rows = append(rows, historyRow{idx: idx, node: node})
+		rows = append(rows, contextHistoryIndexedRow{idx: idx, node: node})
 	}
 	if len(rows) == 0 {
 		return false
@@ -142,16 +149,7 @@ func (m *contextHistoryTreeModel) MoveVertical(state *contextFeedbackViewState, 
 		return true
 	}
 	currentNode := rows[current].node
-	siblings := make([]int, 0, len(rows))
-	for pos, row := range rows {
-		if row.node.Kind() != currentNode.Kind() {
-			continue
-		}
-		if !sharesParentIdentity(row.node, currentNode) {
-			continue
-		}
-		siblings = append(siblings, pos)
-	}
+	siblings := historyVerticalSiblingPositions(rows, currentNode)
 	if len(siblings) == 0 {
 		return false
 	}
@@ -179,6 +177,38 @@ func (m *contextHistoryTreeModel) MoveVertical(state *contextFeedbackViewState, 
 		state.focusTextBox = false
 	}
 	return changed
+}
+
+func historyVerticalSiblingPositions(rows []contextHistoryIndexedRow, currentNode contextHistoryNodeID) []int {
+	if currentRef, ok := currentNode.(contextHistoryNodeRef); ok && currentRef.kind == contextHistoryNodeKindEntry {
+		sessionSiblings := make([]int, 0, len(rows))
+		for pos, row := range rows {
+			ref, ok := row.node.(contextHistoryNodeRef)
+			if !ok || ref.kind != contextHistoryNodeKindEntry {
+				continue
+			}
+			if strings.TrimSpace(ref.user) != strings.TrimSpace(currentRef.user) {
+				continue
+			}
+			if strings.TrimSpace(ref.session) != strings.TrimSpace(currentRef.session) {
+				continue
+			}
+			sessionSiblings = append(sessionSiblings, pos)
+		}
+		return sessionSiblings
+	}
+
+	siblings := make([]int, 0, len(rows))
+	for pos, row := range rows {
+		if row.node.Kind() != currentNode.Kind() {
+			continue
+		}
+		if !sharesParentIdentity(row.node, currentNode) {
+			continue
+		}
+		siblings = append(siblings, pos)
+	}
+	return siblings
 }
 
 func sharesParentIdentity(a contextHistoryNodeID, b contextHistoryNodeID) bool {
@@ -230,10 +260,13 @@ func (m *contextHistoryTreeModel) MoveHorizontal(state *contextFeedbackViewState
 			return false
 		}
 		if turn, ok := node.(contextHistoryNodeRef); ok {
-			if turn.user != "" {
-				return state.setActiveRowByKey(historySessionRowKey(turn.user, turn.session))
+			switch turn.kind {
+			case contextHistoryNodeKindTurn, contextHistoryNodeKindEntry:
+				if turn.user != "" {
+					return state.setActiveRowByKey(historySessionRowKey(turn.user, turn.session))
+				}
+				return state.setActiveRowByKey("session:" + turn.session)
 			}
-			return state.setActiveRowByKey("session:" + turn.session)
 		}
 	}
 	return false
@@ -249,6 +282,21 @@ func (m *contextHistoryTreeModel) TogglePeek(state *contextFeedbackViewState) (s
 	}
 	if !isContextHistoryRowKey(rowKey) {
 		return "Row has no expand/collapse action.", false
+	}
+	if node, ok := parseContextHistoryNode(rowKey); ok {
+		if ref, ok := node.(contextHistoryNodeRef); ok && ref.kind == contextHistoryNodeKindEntry {
+			collapsed := true
+			if state.collapsedEntries != nil {
+				if explicit, exists := state.collapsedEntries[rowKey]; exists {
+					collapsed = explicit
+				}
+				state.collapsedEntries[rowKey] = !collapsed
+			}
+			if collapsed {
+				return "History node expanded.", true
+			}
+			return "History node collapsed.", true
+		}
 	}
 	delete(state.selectedEntries, rowKey)
 	id, ok := nodeIDForRowKey("context-history", rowKey)
@@ -370,7 +418,7 @@ func (m *contextHistoryTreeModel) firstTurnRowKeyForSession(user string, session
 			continue
 		}
 		ref, ok := node.(contextHistoryNodeRef)
-		if !ok || ref.kind != contextHistoryNodeKindTurn {
+		if !ok || (ref.kind != contextHistoryNodeKindTurn && ref.kind != contextHistoryNodeKindEntry) {
 			continue
 		}
 		if strings.TrimSpace(ref.session) != targetSession {
@@ -473,9 +521,12 @@ func parseContextHistoryNode(rowKey string) (contextHistoryNodeID, bool) {
 		return contextHistoryNodeRef{}, false
 	}
 	if strings.HasPrefix(key, "history:") {
-		user, session, turn, ok := parseHistoryRowKey(key)
+		user, session, turn, entry, ok := parseHistoryRowKeyWithEntry(key)
 		if !ok {
 			return contextHistoryNodeRef{}, false
+		}
+		if entry == "prompt" || entry == "response" {
+			return contextHistoryNodeRef{kind: contextHistoryNodeKindEntry, user: user, session: session, turn: turn, entry: entry}, true
 		}
 		return contextHistoryNodeRef{kind: contextHistoryNodeKindTurn, user: user, session: session, turn: turn}, true
 	}

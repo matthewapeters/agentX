@@ -169,7 +169,7 @@ func nodeIDForRowKey(section string, rowKey string) (nodeID, bool) {
 			}
 		}
 		if strings.HasPrefix(key, "history:") {
-			user, session, turn, ok := parseHistoryRowKey(key)
+			user, session, turn, _, ok := parseHistoryRowKeyWithEntry(key)
 			if ok {
 				return nodeID{Kind: nodeKindTurn, User: user, Session: session, Turn: turn}, true
 			}
@@ -213,7 +213,7 @@ func rowKeyForNodeID(section string, id nodeID) string {
 			if strings.TrimSpace(id.User) == "" || strings.TrimSpace(id.Session) == "" || id.Turn <= 0 {
 				return ""
 			}
-			return fmt.Sprintf("history:%s:%s:%d", strings.TrimSpace(id.User), strings.TrimSpace(id.Session), id.Turn)
+			return historyTurnRowKey(id.User, id.Session, id.Turn, "prompt")
 		}
 	}
 	return ""
@@ -332,7 +332,16 @@ func (state *contextFeedbackViewState) updateOrderedRows(keys []string) {
 	}
 	remapped := false
 	if previousKey != "" {
-		remapped = state.setActiveRowByKey(previousKey)
+		if state.hasRowKey(previousKey) {
+			_ = state.setActiveRowByKey(previousKey)
+			remapped = true
+		}
+	}
+	if !remapped {
+		if remapKey, ok := state.remapContextHistoryTurnKey(previousKey); ok {
+			_ = state.setActiveRowByKey(remapKey)
+			remapped = true
+		}
 	}
 	if !remapped && state.activeSection == "context-history" {
 		if focusKey, ok := state.preferredContextHistoryRowKey(); ok {
@@ -351,6 +360,29 @@ func (state *contextFeedbackViewState) updateOrderedRows(keys []string) {
 	if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
 		state.setFocusPath(focusPathForNode(state.activeSection, node))
 	}
+}
+
+func (state *contextFeedbackViewState) remapContextHistoryTurnKey(previousKey string) (string, bool) {
+	if state == nil {
+		return "", false
+	}
+	user, session, turn, _, ok := parseHistoryRowKeyWithEntry(previousKey)
+	if !ok {
+		return "", false
+	}
+	promptKey := historyTurnRowKey(user, session, turn, "prompt")
+	if state.hasRowKey(promptKey) {
+		return promptKey, true
+	}
+	responseKey := historyTurnRowKey(user, session, turn, "response")
+	if state.hasRowKey(responseKey) {
+		return responseKey, true
+	}
+	legacyKey := historyTurnRowKey(user, session, turn, "")
+	if state.hasRowKey(legacyKey) {
+		return legacyKey, true
+	}
+	return "", false
 }
 
 func (state *contextFeedbackViewState) preferredContextHistoryRowKey() (string, bool) {
@@ -1319,12 +1351,36 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 					} else {
 						for idx, turn := range session.Turns {
 							turnNumber := idx + 1
-							turnKey := fmt.Sprintf("history:%s:%s:%d", session.Username, session.SessionID, turnNumber)
-							rowKeys = append(rowKeys, turnKey)
-							historyItems = append(historyItems,
-								fmt.Sprintf("  │   │ %s 👤  %s", rowMarker(viewState, turnKey), trimSingleLine(turn.Prompt, 24)),
-								fmt.Sprintf("  │   │   🤖  %s", trimSingleLine(turn.Response, 24)),
-							)
+							promptKey := historyTurnRowKey(session.Username, session.SessionID, turnNumber, "prompt")
+							responseKey := historyTurnRowKey(session.Username, session.SessionID, turnNumber, "response")
+							rowKeys = append(rowKeys, promptKey, responseKey)
+
+							if viewState != nil {
+								if _, exists := viewState.collapsedEntries[promptKey]; !exists {
+									viewState.collapsedEntries[promptKey] = true
+								}
+								if _, exists := viewState.collapsedEntries[responseKey]; !exists {
+									viewState.collapsedEntries[responseKey] = true
+								}
+							}
+
+							if viewState != nil && !viewState.collapsedEntries[promptKey] {
+								historyItems = append(historyItems, fmt.Sprintf("  │   │ %s 👤", rowMarker(viewState, promptKey)))
+								for _, line := range wrapPreservingNewlines(turn.Prompt, 24) {
+									historyItems = append(historyItems, fmt.Sprintf("  │   │   %s", styleToken(line, ansiBlue)))
+								}
+							} else {
+								historyItems = append(historyItems, fmt.Sprintf("  │   │ %s 👤  %s", rowMarker(viewState, promptKey), trimSingleLine(turn.Prompt, 24)))
+							}
+
+							if viewState != nil && !viewState.collapsedEntries[responseKey] {
+								historyItems = append(historyItems, fmt.Sprintf("  │   │ %s 🤖", rowMarker(viewState, responseKey)))
+								for _, line := range wrapPreservingNewlines(turn.Response, 24) {
+									historyItems = append(historyItems, fmt.Sprintf("  │   │   %s", styleToken(line, ansiGreen)))
+								}
+							} else {
+								historyItems = append(historyItems, fmt.Sprintf("  │   │ %s 🤖  %s", rowMarker(viewState, responseKey), trimSingleLine(turn.Response, 24)))
+							}
 						}
 					}
 					historyItems = append(historyItems,
@@ -1492,34 +1548,84 @@ func historySessionRowKey(username string, sessionID string) string {
 	return "session:" + strings.TrimSpace(username) + ":" + strings.TrimSpace(sessionID)
 }
 
+func historyTurnRowKey(username string, sessionID string, turn int, entry string) string {
+	base := "history:" + strings.TrimSpace(username) + ":" + strings.TrimSpace(sessionID) + ":" + strconv.Itoa(turn)
+	normalizedEntry := strings.ToLower(strings.TrimSpace(entry))
+	if normalizedEntry == "prompt" || normalizedEntry == "response" {
+		return base + ":" + normalizedEntry
+	}
+	return base
+}
+
 func parseHistoryRowKey(rowKey string) (string, string, int, bool) {
-	key := strings.TrimSpace(rowKey)
-	if !strings.HasPrefix(key, "history:") {
+	user, session, turn, _, ok := parseHistoryRowKeyWithEntry(rowKey)
+	if !ok {
 		return "", "", 0, false
 	}
+	return user, session, turn, true
+}
+
+func parseHistoryRowKeyWithEntry(rowKey string) (string, string, int, string, bool) {
+	key := strings.TrimSpace(rowKey)
+	if !strings.HasPrefix(key, "history:") {
+		return "", "", 0, "", false
+	}
 	remainder := strings.TrimPrefix(key, "history:")
+	entry := ""
+	if strings.HasSuffix(remainder, ":prompt") {
+		remainder = strings.TrimSuffix(remainder, ":prompt")
+		entry = "prompt"
+	} else if strings.HasSuffix(remainder, ":response") {
+		remainder = strings.TrimSuffix(remainder, ":response")
+		entry = "response"
+	}
 	turnSep := strings.LastIndex(remainder, ":")
 	if turnSep <= 0 || turnSep >= len(remainder)-1 {
-		return "", "", 0, false
+		return "", "", 0, "", false
 	}
 	turn, err := strconv.Atoi(strings.TrimSpace(remainder[turnSep+1:]))
 	if err != nil || turn <= 0 {
-		return "", "", 0, false
+		return "", "", 0, "", false
 	}
 	ownerAndSession := strings.TrimSpace(remainder[:turnSep])
 	if ownerAndSession == "" {
-		return "", "", 0, false
+		return "", "", 0, "", false
 	}
 	ownerSep := strings.Index(ownerAndSession, ":")
 	if ownerSep == -1 {
-		return "", ownerAndSession, turn, true
+		return "", ownerAndSession, turn, entry, true
 	}
 	user := strings.TrimSpace(ownerAndSession[:ownerSep])
 	session := strings.TrimSpace(ownerAndSession[ownerSep+1:])
 	if session == "" {
-		return "", "", 0, false
+		return "", "", 0, "", false
 	}
-	return user, session, turn, true
+	return user, session, turn, entry, true
+}
+
+func wrapPreservingNewlines(text string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	rawLines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	wrapped := make([]string, 0, len(rawLines))
+	for _, rawLine := range rawLines {
+		line := strings.TrimRight(rawLine, "\r")
+		if line == "" {
+			wrapped = append(wrapped, "")
+			continue
+		}
+		wrappedLine := wrapTextLines(line, width)
+		if len(wrappedLine) == 0 {
+			wrapped = append(wrapped, "")
+			continue
+		}
+		wrapped = append(wrapped, wrappedLine...)
+	}
+	if len(wrapped) == 0 {
+		return []string{""}
+	}
+	return wrapped
 }
 
 func sessionStartLabel(session contextHistorySession) string {

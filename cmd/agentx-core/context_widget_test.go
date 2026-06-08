@@ -1007,6 +1007,41 @@ func TestContextWidgetKeyboard_ShiftTabPopsDeepHistoryPath(t *testing.T) {
 	}
 }
 
+func TestContextHistoryTreeModel_MoveVerticalTraversesEntryLeavesAcrossTurns(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.insideSection = true
+	state.updateOrderedRows([]string{
+		"user:mpeters",
+		"session:mpeters:s-1",
+		"history:mpeters:s-1:1:prompt",
+		"history:mpeters:s-1:1:response",
+		"history:mpeters:s-1:2:prompt",
+		"history:mpeters:s-1:2:response",
+	})
+	model := newContextHistoryTreeModel(state.orderedRowKeys)
+
+	if !state.setActiveRowByKey("history:mpeters:s-1:1:response") {
+		t.Fatalf("expected first response leaf activation to succeed")
+	}
+	if !model.MoveVertical(state, 1) {
+		t.Fatalf("expected down from turn1 response leaf to move")
+	}
+	if got := state.activeRowKey(); got != "history:mpeters:s-1:2:prompt" {
+		t.Fatalf("expected down to traverse turn1 response -> turn2 prompt, got %q", got)
+	}
+
+	if !model.MoveVertical(state, -1) {
+		t.Fatalf("expected up from turn2 prompt leaf to move")
+	}
+	if got := state.activeRowKey(); got != "history:mpeters:s-1:1:response" {
+		t.Fatalf("expected up to traverse turn2 prompt -> turn1 response, got %q", got)
+	}
+	if state.focusTextBox {
+		t.Fatalf("expected vertical traversal to keep text focus disabled")
+	}
+}
+
 func TestContextWidgetKeyboard_TabContextHistoryPopulatedRows_RenderCoupledProgressiveDrillIn(t *testing.T) {
 	projectDir := t.TempDir()
 	sessionID := "2026-06-06 23:20:18"
@@ -1046,7 +1081,7 @@ func TestContextWidgetKeyboard_TabContextHistoryPopulatedRows_RenderCoupledProgr
 		case 3:
 			wantRow = "session:mpeters:" + sessionID
 		case 4, 5:
-			wantRow = "history:mpeters:" + sessionID + ":1"
+			wantRow = "history:mpeters:" + sessionID + ":1:prompt"
 		default:
 			t.Fatalf("unexpected presses=%d", presses)
 		}
@@ -1137,7 +1172,7 @@ func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *tes
 	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "q", Response: "a"}}}
 	userRowKey := "user:" + user
 	sessionRowKey := historySessionRowKey(user, sessionID)
-	turnRowKey := "history:" + user + ":" + sessionID + ":1"
+	turnRowKey := "history:" + user + ":" + sessionID + ":1:prompt"
 
 	assertS0 := func(t *testing.T, state *contextFeedbackViewState, label string) {
 		t.Helper()
@@ -1312,6 +1347,163 @@ func TestRenderContextFeedbackSections_CollapsedSectionsRenderBoxStubs(t *testin
 	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
 	if strings.Count(rendered, "┌") < 2 || strings.Count(rendered, "└") < 2 {
 		t.Fatalf("expected collapsed sections to include visible box stubs, got:\n%s", rendered)
+	}
+}
+
+func TestContextWidgetKeyboard_HistoryTargetSessionResponseExpansion_ShowsFullMultiline(t *testing.T) {
+	projectDir := t.TempDir()
+	targetSession := "2026-06-06 23:23:13"
+	sessionOrder := []string{
+		"2026-06-06 23:24:30",
+		targetSession,
+		"2026-06-06 23:22:10",
+		"2026-06-06 23:21:05",
+		"2026-06-06 23:20:18",
+	}
+
+	writeSessionTurns := func(sessionID string, turns []ChatTurn) {
+		t.Helper()
+		parsed, err := time.Parse("2006-01-02 15:04:05", sessionID)
+		if err != nil {
+			t.Fatalf("time.Parse failed for %q: %v", sessionID, err)
+		}
+		turnPath := filepath.Join(projectDir, "sessions", "mpeters", sessionID, "context", "turns.jsonl")
+		if err := os.MkdirAll(filepath.Dir(turnPath), 0o755); err != nil {
+			t.Fatalf("MkdirAll failed: %v", err)
+		}
+		lines := make([][]byte, 0, len(turns))
+		for idx, turn := range turns {
+			if turn.CreatedAt == 0 {
+				turn.CreatedAt = parsed.UnixMilli() + int64(idx)
+			}
+			payload, err := json.Marshal(turn)
+			if err != nil {
+				t.Fatalf("Marshal failed: %v", err)
+			}
+			lines = append(lines, payload)
+		}
+		if err := os.WriteFile(turnPath, append(bytes.Join(lines, []byte{'\n'}), '\n'), 0o644); err != nil {
+			t.Fatalf("WriteFile failed: %v", err)
+		}
+	}
+
+	for _, sessionID := range sessionOrder {
+		turns := []ChatTurn{{
+			Prompt:   "prompt for " + sessionID,
+			Response: "short response " + sessionID,
+		}}
+		if sessionID == targetSession {
+			turns = []ChatTurn{
+				{
+					Prompt: "prompt for " + sessionID,
+					Response: strings.Join([]string{
+						"SENTINEL-A start",
+						"SENTINEL-B marker",
+						"SENTINEL-C final marker",
+					}, "\n"),
+				},
+				{
+					Prompt:   "follow-up prompt for " + sessionID,
+					Response: "follow-up response for " + sessionID,
+				},
+			}
+		}
+		writeSessionTurns(sessionID, turns)
+	}
+
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "current-user",
+	})
+
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "current", Response: "turn"}}}
+
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if got := state.activeSection; got != "context-history" {
+		t.Fatalf("expected context-history section selected, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if got := state.activeRowKey(); got != "user:mpeters" {
+		t.Fatalf("expected user row focus after tab enter, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if got := state.activeRowKey(); got != "session:mpeters:2026-06-06 23:24:30" {
+		t.Fatalf("expected first session selected after drill-in tabs, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	if got := state.activeRowKey(); got != "session:mpeters:"+targetSession {
+		t.Fatalf("expected down to move to target session %q, got %q", targetSession, got)
+	}
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if got := state.activeRowKey(); got != "session:mpeters:"+targetSession {
+		t.Fatalf("expected render cycle to preserve target session selection, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != targetSession {
+		t.Fatalf("expected target session expansion via space, got %#v", got)
+	}
+
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	promptKey := "history:mpeters:" + targetSession + ":1:prompt"
+	if got := state.activeRowKey(); got != promptKey {
+		t.Fatalf("expected prompt leaf row after tab into session, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	responseKey := "history:mpeters:" + targetSession + ":1:response"
+	if got := state.activeRowKey(); got != responseKey {
+		t.Fatalf("expected down to move prompt->response leaf, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	secondPromptKey := "history:mpeters:" + targetSession + ":2:prompt"
+	if got := state.activeRowKey(); got != secondPromptKey {
+		t.Fatalf("expected down to move turn1 response -> turn2 prompt, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if got := state.activeRowKey(); got != responseKey {
+		t.Fatalf("expected up to move turn2 prompt -> turn1 response, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	if got := state.activeRowKey(); got != responseKey {
+		t.Fatalf("expected render cycle to preserve expanded response leaf selection, got %q", got)
+	}
+
+	for _, sentinel := range []string{"SENTINEL-A start", "SENTINEL-B marker", "SENTINEL-C final marker"} {
+		if !strings.Contains(rendered, sentinel) {
+			t.Fatalf("expected expanded response to include %q, render:\n%s", sentinel, rendered)
+		}
+	}
+
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	if !state.insideSection {
+		t.Fatalf("expected shift-tab from response leaf to stay inside context-history")
+	}
+	if got := state.activeRowKey(); got != "session:mpeters:"+targetSession {
+		t.Fatalf("expected shift-tab from response leaf to step out to session row, got %q", got)
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != targetSession {
+		t.Fatalf("expected shift-tab from response leaf to restore session focus, got %#v", got)
+	}
+	if got := state.statusLine; got != "Stepped back in context-history." {
+		t.Fatalf("expected shift-tab step-back status from response leaf, got %q", got)
 	}
 }
 
