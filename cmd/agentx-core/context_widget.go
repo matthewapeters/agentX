@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mattn/go-runewidth"
 )
 
 type contextWidgetActivity struct {
@@ -1520,7 +1522,7 @@ func boxContainer(items []string, borderColor string) []string {
 	}
 	maxWidth := 16
 	for _, item := range items {
-		if width := len([]rune(stripAnsi(item))); width > maxWidth {
+		if width := visibleDisplayWidth(item); width > maxWidth {
 			maxWidth = width
 		}
 	}
@@ -1565,9 +1567,9 @@ func boxSection(title string, items []string, borderColor string) []string {
 	if len(items) == 0 {
 		items = []string{"(empty)"}
 	}
-	maxWidth := len([]rune(cleanTitle))
+	maxWidth := runewidth.StringWidth(cleanTitle)
 	for _, item := range items {
-		if width := len([]rune(stripAnsi(item))); width > maxWidth {
+		if width := visibleDisplayWidth(item); width > maxWidth {
 			maxWidth = width
 		}
 	}
@@ -1609,11 +1611,15 @@ func stripAnsi(value string) string {
 }
 
 func padVisibleWidth(value string, width int) string {
-	visible := len([]rune(stripAnsi(value)))
+	visible := visibleDisplayWidth(value)
 	if visible >= width {
 		return value
 	}
 	return value + strings.Repeat(" ", width-visible)
+}
+
+func visibleDisplayWidth(value string) int {
+	return runewidth.StringWidth(stripAnsi(value))
 }
 
 func mapCollapsedState(collapsed bool) string {
@@ -1717,7 +1723,7 @@ func wrapTextLines(text string, width int) []string {
 	line := words[0]
 	for i := 1; i < len(words); i++ {
 		candidate := line + " " + words[i]
-		if len([]rune(candidate)) <= width {
+		if runewidth.StringWidth(candidate) <= width {
 			line = candidate
 			continue
 		}
@@ -2481,7 +2487,7 @@ func fitLinesToWidth(lines []string, width int) []string {
 	}
 	fitted := make([]string, 0, len(lines))
 	for _, line := range lines {
-		if len([]rune(stripAnsi(line))) <= width {
+		if visibleDisplayWidth(line) <= width {
 			fitted = append(fitted, line)
 			continue
 		}
@@ -2489,12 +2495,11 @@ func fitLinesToWidth(lines []string, width int) []string {
 			fitted = append(fitted, line)
 			continue
 		}
-		runes := []rune(line)
 		if width <= 3 {
-			fitted = append(fitted, string(runes[:width]))
+			fitted = append(fitted, runewidth.Truncate(line, width, ""))
 			continue
 		}
-		fitted = append(fitted, strings.TrimSpace(string(runes[:width-3]))+"...")
+		fitted = append(fitted, strings.TrimSpace(runewidth.Truncate(line, width, "...")))
 	}
 	return fitted
 }

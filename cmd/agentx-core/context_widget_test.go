@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mattn/go-runewidth"
 )
 
 func TestRenderContextFeedbackSections_DefaultCollapsedOrderAndMinimalHeader(t *testing.T) {
@@ -102,8 +104,8 @@ func TestRenderContextWidget_ClipsToViewport(t *testing.T) {
 		t.Fatalf("expected at most 8 lines, got %d\n%s", len(lines), render)
 	}
 	for _, line := range lines {
-		if len([]rune(line)) > 55 {
-			t.Fatalf("expected line width <= 55, got %d for %q", len([]rune(line)), line)
+		if got := runewidth.StringWidth(stripAnsi(line)); got > 55 {
+			t.Fatalf("expected display width <= 55, got %d for %q", got, line)
 		}
 	}
 	if !strings.Contains(render, "... (") {
@@ -789,6 +791,38 @@ func TestRenderContextFeedbackSections_CollapsedSectionsRenderBoxStubs(t *testin
 	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
 	if strings.Count(rendered, "┌") < 2 || strings.Count(rendered, "└") < 2 {
 		t.Fatalf("expected collapsed sections to include visible box stubs, got:\n%s", rendered)
+	}
+}
+
+func TestBoxContainer_AlignsBordersWithEmojiRows(t *testing.T) {
+	rows := []string{
+		"👤 Prompt row",
+		"🤖 Response row",
+		styleToken("📑 Section marker", ansiCyan),
+	}
+	rendered := boxContainer(rows, ansiDim)
+	assertBoxAlignment(t, rendered)
+}
+
+func TestBoxSection_AlignsBordersWithEmojiRows(t *testing.T) {
+	rows := []string{
+		"👤 Prompt row",
+		"🤖 Response row",
+	}
+	rendered := boxSection("📑 CURRENT CONTEXT", rows, ansiDim)
+	assertBoxAlignment(t, rendered)
+}
+
+func assertBoxAlignment(t *testing.T, lines []string) {
+	t.Helper()
+	if len(lines) < 2 {
+		t.Fatalf("expected boxed output with borders, got %v", lines)
+	}
+	top := runewidth.StringWidth(stripAnsi(lines[0]))
+	for i, line := range lines[1:] {
+		if got := runewidth.StringWidth(stripAnsi(line)); got != top {
+			t.Fatalf("expected box line %d display width %d to match top border width %d; line=%q", i+1, got, top, line)
+		}
 	}
 }
 
