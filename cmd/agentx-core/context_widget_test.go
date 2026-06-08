@@ -813,6 +813,53 @@ func TestBoxSection_AlignsBordersWithEmojiRows(t *testing.T) {
 	assertBoxAlignment(t, rendered)
 }
 
+func TestBoxSection_RenderWidthsStableAcrossLocales(t *testing.T) {
+	locales := []string{"C.UTF-8", "ja_JP.UTF-8"}
+	var baseline []int
+
+	for i, locale := range locales {
+		setWidgetTestEnv(t, map[string]string{
+			"LANG":     locale,
+			"LC_CTYPE": locale,
+		})
+
+		lines := boxSection("· TITLE 🙂", []string{"· ambiguous + 🙂 emoji row"}, ansiDim)
+		widths := make([]int, len(lines))
+		for j, line := range lines {
+			widths[j] = renderStringWidth(stripAnsi(line))
+		}
+
+		if i == 0 {
+			baseline = widths
+			continue
+		}
+
+		if len(widths) != len(baseline) {
+			t.Fatalf("expected %d box lines for locale %s, got %d", len(baseline), locale, len(widths))
+		}
+		for j := range widths {
+			if widths[j] != baseline[j] {
+				t.Fatalf("expected stable render width across locales at line %d: baseline=%d locale(%s)=%d", j, baseline[j], locale, widths[j])
+			}
+		}
+	}
+}
+
+func TestFitLinesToWidth_ClipsAnsiEmojiRows(t *testing.T) {
+	lines := []string{styleToken("🙂🙂🙂🙂🙂🙂🙂🙂", ansiCyan)}
+	fitted := fitLinesToWidth(lines, 6)
+
+	if len(fitted) != 1 {
+		t.Fatalf("expected one fitted line, got %d", len(fitted))
+	}
+	if got := renderStringWidth(stripAnsi(fitted[0])); got > 6 {
+		t.Fatalf("expected clipped width <= 6, got %d for %q", got, fitted[0])
+	}
+	if strings.IndexByte(fitted[0], '\x1b') != -1 {
+		t.Fatalf("expected ANSI-clipped output to be plain text, got %q", fitted[0])
+	}
+}
+
 func assertBoxAlignment(t *testing.T, lines []string) {
 	t.Helper()
 	if len(lines) < 2 {

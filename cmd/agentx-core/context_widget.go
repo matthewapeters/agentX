@@ -238,6 +238,25 @@ const (
 	ansiDim     = "\033[2m"
 )
 
+var contextRenderWidthCondition = newContextRenderWidthCondition()
+
+func newContextRenderWidthCondition() *runewidth.Condition {
+	cond := runewidth.NewCondition()
+	// Make terminal rendering deterministic across locales by fixing ambiguous
+	// rune width behavior and emoji-neutral handling for this widget.
+	cond.EastAsianWidth = false
+	cond.StrictEmojiNeutral = true
+	return cond
+}
+
+func renderStringWidth(value string) int {
+	return contextRenderWidthCondition.StringWidth(value)
+}
+
+func renderTruncate(value string, width int, tail string) string {
+	return contextRenderWidthCondition.Truncate(value, width, tail)
+}
+
 func newContextFeedbackViewState() *contextFeedbackViewState {
 	return &contextFeedbackViewState{
 		collapsedEntries:        make(map[string]bool),
@@ -1567,7 +1586,8 @@ func boxSection(title string, items []string, borderColor string) []string {
 	if len(items) == 0 {
 		items = []string{"(empty)"}
 	}
-	maxWidth := runewidth.StringWidth(cleanTitle)
+	header := reverseTitle(cleanTitle)
+	maxWidth := visibleDisplayWidth(header)
 	for _, item := range items {
 		if width := visibleDisplayWidth(item); width > maxWidth {
 			maxWidth = width
@@ -1578,7 +1598,6 @@ func boxSection(title string, items []string, borderColor string) []string {
 	}
 	line := strings.Repeat("─", maxWidth+2)
 	lines := []string{borderColor + "┌" + line + "┐" + ansiReset}
-	header := reverseTitle(cleanTitle)
 	lines = append(lines, borderColor+"│ "+padVisibleWidth(header, maxWidth)+" │"+ansiReset)
 	for _, item := range items {
 		lines = append(lines, borderColor+"│ "+padVisibleWidth(item, maxWidth)+" │"+ansiReset)
@@ -1619,7 +1638,7 @@ func padVisibleWidth(value string, width int) string {
 }
 
 func visibleDisplayWidth(value string) int {
-	return runewidth.StringWidth(stripAnsi(value))
+	return renderStringWidth(stripAnsi(value))
 }
 
 func mapCollapsedState(collapsed bool) string {
@@ -1723,7 +1742,7 @@ func wrapTextLines(text string, width int) []string {
 	line := words[0]
 	for i := 1; i < len(words); i++ {
 		candidate := line + " " + words[i]
-		if runewidth.StringWidth(candidate) <= width {
+		if renderStringWidth(candidate) <= width {
 			line = candidate
 			continue
 		}
@@ -2491,15 +2510,12 @@ func fitLinesToWidth(lines []string, width int) []string {
 			fitted = append(fitted, line)
 			continue
 		}
-		if strings.IndexByte(line, '\x1b') != -1 {
-			fitted = append(fitted, line)
-			continue
-		}
+		plain := stripAnsi(line)
 		if width <= 3 {
-			fitted = append(fitted, runewidth.Truncate(line, width, ""))
+			fitted = append(fitted, renderTruncate(plain, width, ""))
 			continue
 		}
-		fitted = append(fitted, strings.TrimSpace(runewidth.Truncate(line, width, "...")))
+		fitted = append(fitted, strings.TrimSpace(renderTruncate(plain, width, "...")))
 	}
 	return fitted
 }
