@@ -169,12 +169,9 @@ func nodeIDForRowKey(section string, rowKey string) (nodeID, bool) {
 			}
 		}
 		if strings.HasPrefix(key, "history:") {
-			parts := strings.Split(strings.TrimPrefix(key, "history:"), ":")
-			if len(parts) == 3 {
-				turn, err := strconv.Atoi(parts[2])
-				if err == nil {
-					return nodeID{Kind: nodeKindTurn, User: parts[0], Session: parts[1], Turn: turn}, true
-				}
+			user, session, turn, ok := parseHistoryRowKey(key)
+			if ok {
+				return nodeID{Kind: nodeKindTurn, User: user, Session: session, Turn: turn}, true
 			}
 		}
 	case "working-memory":
@@ -248,6 +245,7 @@ type contextFeedbackViewState struct {
 	activeSection string
 	insideSection bool
 	focusPath     focusPath
+	historyTabUserPause bool
 }
 
 const (
@@ -510,6 +508,9 @@ func (state *contextFeedbackViewState) setFocusPath(path focusPath) {
 		state.activeSection = state.focusPath[0].Section
 	}
 	tail := state.focusPath.Tail()
+	if tail.Kind != nodeKindUser {
+		state.historyTabUserPause = false
+	}
 	if tail.Kind == nodeKindSection {
 		state.insideSection = false
 		return
@@ -1491,6 +1492,36 @@ func historySessionRowKey(username string, sessionID string) string {
 	return "session:" + strings.TrimSpace(username) + ":" + strings.TrimSpace(sessionID)
 }
 
+func parseHistoryRowKey(rowKey string) (string, string, int, bool) {
+	key := strings.TrimSpace(rowKey)
+	if !strings.HasPrefix(key, "history:") {
+		return "", "", 0, false
+	}
+	remainder := strings.TrimPrefix(key, "history:")
+	turnSep := strings.LastIndex(remainder, ":")
+	if turnSep <= 0 || turnSep >= len(remainder)-1 {
+		return "", "", 0, false
+	}
+	turn, err := strconv.Atoi(strings.TrimSpace(remainder[turnSep+1:]))
+	if err != nil || turn <= 0 {
+		return "", "", 0, false
+	}
+	ownerAndSession := strings.TrimSpace(remainder[:turnSep])
+	if ownerAndSession == "" {
+		return "", "", 0, false
+	}
+	ownerSep := strings.Index(ownerAndSession, ":")
+	if ownerSep == -1 {
+		return "", ownerAndSession, turn, true
+	}
+	user := strings.TrimSpace(ownerAndSession[:ownerSep])
+	session := strings.TrimSpace(ownerAndSession[ownerSep+1:])
+	if session == "" {
+		return "", "", 0, false
+	}
+	return user, session, turn, true
+}
+
 func sessionStartLabel(session contextHistorySession) string {
 	parts := strings.Split(strings.TrimSpace(session.SessionID), "_")
 	if len(parts) >= 2 {
@@ -2228,7 +2259,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 				state.activeSection = "current-context"
 			}
 			if state.activeSection == "context-history" {
-				historyModel.EnterSection(state, true)
+				historyModel.AdvanceTabFocus(state, true)
 				state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
 				return true
 			}

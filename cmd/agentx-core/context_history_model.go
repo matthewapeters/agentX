@@ -73,6 +73,7 @@ type contextHistoryModel interface {
 	MoveVertical(state *contextFeedbackViewState, delta int) bool
 	MoveHorizontal(state *contextFeedbackViewState, direction string) bool
 	TogglePeek(state *contextFeedbackViewState) (string, bool)
+	AdvanceTabFocus(state *contextFeedbackViewState, forceExpand bool)
 	EnterSection(state *contextFeedbackViewState, forceExpand bool)
 	ExitSection(state *contextFeedbackViewState)
 }
@@ -264,6 +265,124 @@ func (m *contextHistoryTreeModel) TogglePeek(state *contextFeedbackViewState) (s
 	return "History node expanded.", true
 }
 
+func (m *contextHistoryTreeModel) AdvanceTabFocus(state *contextFeedbackViewState, forceExpand bool) {
+	if state == nil {
+		return
+	}
+	if forceExpand {
+		state.collapsedContextHistory = false
+	}
+	state.insideSection = true
+	m.EnsureRowFocus(state)
+
+	tail := state.focusPath.Tail()
+	if tail.Kind == nodeKindSection && strings.TrimSpace(tail.Section) != "context-history" {
+		state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+		tail = state.focusPath.Tail()
+	}
+
+	switch tail.Kind {
+	case nodeKindSection:
+		if userKey, ok := m.firstUserRowKey(); ok {
+			_ = state.setActiveRowByKey(userKey)
+			if id, ok := nodeIDForRowKey("context-history", userKey); ok {
+				state.setFocusPath(focusPathForNode("context-history", id))
+				state.historyTabUserPause = true
+			}
+		}
+		return
+	case nodeKindUser:
+		userKey := "user:" + strings.TrimSpace(tail.User)
+		_ = state.setActiveRowByKey(userKey)
+		if state.historyTabUserPause {
+			state.historyTabUserPause = false
+			if id, ok := nodeIDForRowKey("context-history", userKey); ok {
+				state.setFocusPath(focusPathForNode("context-history", id))
+			}
+			return
+		}
+		if sessionKey, ok := m.firstSessionRowKeyForUser(strings.TrimSpace(tail.User)); ok {
+			_ = state.setActiveRowByKey(sessionKey)
+			if id, ok := nodeIDForRowKey("context-history", sessionKey); ok {
+				state.setFocusPath(focusPathForNode("context-history", id))
+			}
+		}
+		return
+	case nodeKindSession:
+		if turnKey, ok := m.firstTurnRowKeyForSession(strings.TrimSpace(tail.User), strings.TrimSpace(tail.Session)); ok {
+			_ = state.setActiveRowByKey(turnKey)
+			if id, ok := nodeIDForRowKey("context-history", turnKey); ok {
+				state.setFocusPath(focusPathForNode("context-history", id))
+			}
+		}
+		return
+	case nodeKindTurn:
+		return
+	}
+
+	if id, ok := nodeIDForRowKey("context-history", state.activeRowKey()); ok {
+		state.setFocusPath(focusPathForNode("context-history", id))
+		return
+	}
+	state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+}
+
+func (m *contextHistoryTreeModel) firstUserRowKey() (string, bool) {
+	for _, key := range m.rowKeys {
+		if strings.HasPrefix(strings.TrimSpace(key), "user:") {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+func (m *contextHistoryTreeModel) firstSessionRowKeyForUser(user string) (string, bool) {
+	targetUser := strings.TrimSpace(user)
+	if targetUser == "" {
+		return "", false
+	}
+	for _, key := range m.rowKeys {
+		node, ok := m.NodeForRowKey(key)
+		if !ok {
+			continue
+		}
+		ref, ok := node.(contextHistoryNodeRef)
+		if !ok || ref.kind != contextHistoryNodeKindSession {
+			continue
+		}
+		if strings.TrimSpace(ref.user) == targetUser {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+func (m *contextHistoryTreeModel) firstTurnRowKeyForSession(user string, session string) (string, bool) {
+	targetUser := strings.TrimSpace(user)
+	targetSession := strings.TrimSpace(session)
+	if targetSession == "" {
+		return "", false
+	}
+	for _, key := range m.rowKeys {
+		node, ok := m.NodeForRowKey(key)
+		if !ok {
+			continue
+		}
+		ref, ok := node.(contextHistoryNodeRef)
+		if !ok || ref.kind != contextHistoryNodeKindTurn {
+			continue
+		}
+		if strings.TrimSpace(ref.session) != targetSession {
+			continue
+		}
+		if targetUser != "" && strings.TrimSpace(ref.user) != targetUser {
+			continue
+		}
+		return key, true
+	}
+	return "", false
+}
+
 func (m *contextHistoryTreeModel) EnterSection(state *contextFeedbackViewState, forceExpand bool) {
 	if state == nil {
 		return
@@ -287,6 +406,7 @@ func (m *contextHistoryTreeModel) ExitSection(state *contextFeedbackViewState) {
 	if len(state.focusPath) > 1 {
 		state.popFocus()
 	}
+	state.historyTabUserPause = false
 	state.collapsedContextHistory = true
 	state.insideSection = false
 }
@@ -312,21 +432,11 @@ func parseContextHistoryNode(rowKey string) (contextHistoryNodeID, bool) {
 		return contextHistoryNodeRef{}, false
 	}
 	if strings.HasPrefix(key, "history:") {
-		parts := strings.Split(strings.TrimPrefix(key, "history:"), ":")
-		if len(parts) == 3 {
-			turn, ok := parseInt(parts[2])
-			if !ok {
-				return contextHistoryNodeRef{}, false
-			}
-			return contextHistoryNodeRef{kind: contextHistoryNodeKindTurn, user: parts[0], session: parts[1], turn: turn}, true
+		user, session, turn, ok := parseHistoryRowKey(key)
+		if !ok {
+			return contextHistoryNodeRef{}, false
 		}
-		if len(parts) == 2 {
-			turn, ok := parseInt(parts[1])
-			if !ok {
-				return contextHistoryNodeRef{}, false
-			}
-			return contextHistoryNodeRef{kind: contextHistoryNodeKindTurn, session: parts[0], turn: turn}, true
-		}
+		return contextHistoryNodeRef{kind: contextHistoryNodeKindTurn, user: user, session: session, turn: turn}, true
 	}
 	return contextHistoryNodeRef{}, false
 }
