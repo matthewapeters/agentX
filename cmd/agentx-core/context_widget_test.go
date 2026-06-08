@@ -458,6 +458,77 @@ func TestContextWidgetKeyboard_SelectionAndBoundsStatusVocabulary(t *testing.T) 
 	}
 }
 
+func TestContextWidgetKeyboard_HistoryArrowNavigationDoesNotExpandNodes(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.collapsedContextHistory = false
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-prev"})
+	state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+	state.insideSection = true
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+
+	if got := state.activeRowKey(); got != "session:mpeters:s-prev" {
+		t.Fatalf("expected selection to move to session row, got %q", got)
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+		t.Fatalf("expected history focus path to remain at section root after arrow navigation, got %#v", got)
+	}
+	if focusPathHasNode(state.focusPath, nodeID{Kind: nodeKindUser, User: "mpeters"}) {
+		t.Fatalf("expected user node not to auto-expand on arrow navigation")
+	}
+	if got := state.statusLine; got != "Selection moved." {
+		t.Fatalf("expected normalized selection-moved status, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_HistoryArrowNavigationSurvivesRenderWithoutExpansion(t *testing.T) {
+	projectDir := t.TempDir()
+	turnPath := filepath.Join(projectDir, "sessions", "mpeters", "s-prev", "context", "turns.jsonl")
+	if err := os.MkdirAll(filepath.Dir(turnPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	payload, err := json.Marshal(ChatTurn{Prompt: "hello", Response: "world", CreatedAt: 1_700_000_000_000})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	if err := os.WriteFile(turnPath, append(payload, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "current-user",
+	})
+
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.collapsedContextHistory = false
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-prev"})
+	state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+	state.insideSection = true
+
+	snapshot := contextWidgetSnapshot{SessionID: "current-session"}
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+
+	if got := state.activeRowKey(); got != "session:mpeters:s-prev" {
+		t.Fatalf("expected selection to move to session row before render, got %q", got)
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+		t.Fatalf("expected history focus path to remain at section root before render, got %#v", got)
+	}
+
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+		t.Fatalf("expected render pass not to auto-expand history path, got %#v", got)
+	}
+	if focusPathHasNode(state.focusPath, nodeID{Kind: nodeKindUser, User: "mpeters"}) {
+		t.Fatalf("expected render pass not to auto-expand user node")
+	}
+}
+
 func TestContextWidgetKeyboard_ViewportStatusVocabulary(t *testing.T) {
 	state := newContextFeedbackViewState()
 	state.insideSection = true
@@ -573,11 +644,19 @@ func TestContextWidgetKeyboard_EnterHistoryUsesFocusPath(t *testing.T) {
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
-		t.Fatalf("expected enter on focused user row to collapse to section, got %#v", got)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
+		t.Fatalf("expected first enter on user row to expand user node, got %#v", got)
 	}
 	if !state.insideSection {
-		t.Fatalf("expected collapse to keep section navigation active")
+		t.Fatalf("expected expand to keep section navigation active")
+	}
+	if got := state.statusLine; got != "History node expanded." {
+		t.Fatalf("expected normalized expand status, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+		t.Fatalf("expected second enter on focused user row to collapse to section, got %#v", got)
 	}
 	if got := state.statusLine; got != "History node collapsed." {
 		t.Fatalf("expected normalized collapse status, got %q", got)
@@ -585,37 +664,37 @@ func TestContextWidgetKeyboard_EnterHistoryUsesFocusPath(t *testing.T) {
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
-		t.Fatalf("expected second enter on user row to expand user node without re-entry step, got %#v", got)
+		t.Fatalf("expected third enter on user row to re-expand user node, got %#v", got)
 	}
 	if got := state.statusLine; got != "History node expanded." {
-		t.Fatalf("expected normalized expand status, got %q", got)
+		t.Fatalf("expected normalized expand status on third enter, got %q", got)
 	}
 
 	if !state.moveRowInActiveSection(1) {
 		t.Fatalf("expected move to session row to succeed")
 	}
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-prev" {
+		t.Fatalf("expected enter on session row to expand session node, got %#v", got)
+	}
+	if got := state.statusLine; got != "History node expanded." {
+		t.Fatalf("expected normalized expand status from session row, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
-		t.Fatalf("expected enter on focused session row to collapse to parent user, got %#v", got)
+		t.Fatalf("expected second enter on focused session row to collapse to parent user, got %#v", got)
 	}
 	if got := state.statusLine; got != "History node collapsed." {
-		t.Fatalf("expected normalized collapse status from session row, got %q", got)
+		t.Fatalf("expected normalized collapse status for focused session row, got %q", got)
 	}
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-prev" {
-		t.Fatalf("expected second enter on session row to focus session node, got %#v", got)
+		t.Fatalf("expected third enter on session row to re-expand session, got %#v", got)
 	}
 	if got := state.statusLine; got != "History node expanded." {
-		t.Fatalf("expected normalized expand status for session row, got %q", got)
-	}
-
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
-		t.Fatalf("expected second enter on focused session to collapse to parent user, got %#v", got)
-	}
-	if got := state.statusLine; got != "History node collapsed." {
-		t.Fatalf("expected normalized collapse status for focused session, got %q", got)
+		t.Fatalf("expected normalized expand status for third session enter, got %q", got)
 	}
 }
 
@@ -729,28 +808,31 @@ func TestMoveRowInActiveSection_UpdatesFocusPath(t *testing.T) {
 	}
 }
 
-func TestMoveRowInActiveSection_HistorySiblingSwitchReplacesLeafPath(t *testing.T) {
+func TestMoveRowInActiveSection_HistorySiblingSwitchDoesNotRewriteFocusPath(t *testing.T) {
 	state := newContextFeedbackViewState()
 	state.activeSection = "context-history"
 	state.insideSection = true
 	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-1", "session:mpeters:s-2"})
+	state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}, {Kind: nodeKindUser, User: "mpeters"}})
 
 	if !state.moveRowInActiveSection(1) {
 		t.Fatalf("expected move to first session row to succeed")
 	}
-	sessionOne := nodeID{Kind: nodeKindSession, User: "mpeters", Session: "s-1"}
-	if !focusPathHasNode(state.focusPath, sessionOne) {
-		t.Fatalf("expected focus path to include first session node")
+	if got := state.activeRowKey(); got != "session:mpeters:s-1" {
+		t.Fatalf("expected first session row to be active, got %q", got)
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
+		t.Fatalf("expected focus path to remain on expanded user node, got %#v", got)
 	}
 
 	if !state.moveRowInActiveSection(1) {
 		t.Fatalf("expected move to sibling session row to succeed")
 	}
-	if focusPathHasNode(state.focusPath, sessionOne) {
-		t.Fatalf("expected sibling move to replace old session leaf path")
+	if got := state.activeRowKey(); got != "session:mpeters:s-2" {
+		t.Fatalf("expected second session row to be active, got %q", got)
 	}
-	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-2" {
-		t.Fatalf("expected focus path tail to track second session, got %#v", got)
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
+		t.Fatalf("expected sibling move not to rewrite history focus path, got %#v", got)
 	}
 }
 
@@ -760,10 +842,16 @@ func TestContextWidgetKeyboard_ShiftTabPopsDeepHistoryPath(t *testing.T) {
 	state.insideSection = true
 	state.collapsedContextHistory = false
 	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-1", "history:mpeters:s-1:1"})
+	state.setFocusPath(focusPath{
+		{Kind: nodeKindSection, Section: "context-history"},
+		{Kind: nodeKindUser, User: "mpeters"},
+		{Kind: nodeKindSession, User: "mpeters", Session: "s-1"},
+		{Kind: nodeKindTurn, User: "mpeters", Session: "s-1", Turn: 1},
+	})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	if !state.moveRowInActiveSection(2) {
-		t.Fatalf("expected move to turn row to succeed")
+	if !state.setActiveRowByKey("history:mpeters:s-1:1") {
+		t.Fatalf("expected turn row activation to succeed")
 	}
 	if got := state.focusPath.Tail(); got.Kind != nodeKindTurn {
 		t.Fatalf("expected deep history focus before shift-tab, got %#v", got)
@@ -860,6 +948,24 @@ func TestFitLinesToWidth_ClipsAnsiEmojiRows(t *testing.T) {
 	}
 }
 
+func TestFitLinesToWidth_PreservesLeadingIndentWhenClipping(t *testing.T) {
+	lines := []string{"  │   │   include details"}
+	fitted := fitLinesToWidth(lines, 12)
+
+	if len(fitted) != 1 {
+		t.Fatalf("expected one fitted line, got %d", len(fitted))
+	}
+	if !strings.HasPrefix(fitted[0], "  ") {
+		t.Fatalf("expected clipped line to preserve leading indent, got %q", fitted[0])
+	}
+	if !strings.Contains(fitted[0], "...") {
+		t.Fatalf("expected clipped line to include truncation marker, got %q", fitted[0])
+	}
+	if got := renderStringWidth(fitted[0]); got > 12 {
+		t.Fatalf("expected clipped width <= 12, got %d for %q", got, fitted[0])
+	}
+}
+
 func assertBoxAlignment(t *testing.T, lines []string) {
 	t.Helper()
 	if len(lines) < 2 {
@@ -906,6 +1012,46 @@ func TestRenderContextFeedbackSections_FiltersEmptyTurnStubs(t *testing.T) {
 	}
 	if strings.Count(rendered, "┌") < 2 || strings.Count(rendered, "└") < 2 {
 		t.Fatalf("expected box stubs in output for empty context, got:\n%s", rendered)
+	}
+}
+
+func TestRenderContextFeedbackSections_HistoryIncludeArtifactIsConcise(t *testing.T) {
+	projectDir := t.TempDir()
+	turnPath := filepath.Join(projectDir, "sessions", "mpeters", "s-prev", "context", "turns.jsonl")
+	if err := os.MkdirAll(filepath.Dir(turnPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	payload, err := json.Marshal(ChatTurn{Prompt: "hello", Response: "world", CreatedAt: 1_700_000_000_000})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	if err := os.WriteFile(turnPath, append(payload, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "current-user",
+	})
+
+	state := newContextFeedbackViewState()
+	state.activeSection = "context-history"
+	state.collapsedContextHistory = false
+	state.setFocusPath(focusPath{
+		{Kind: nodeKindSection, Section: "context-history"},
+		{Kind: nodeKindUser, User: "mpeters"},
+		{Kind: nodeKindSession, User: "mpeters", Session: "s-prev"},
+	})
+
+	rendered := stripAnsi(strings.Join(renderContextFeedbackSections(contextWidgetSnapshot{SessionID: "current-session"}, nil, state), "\n"))
+	if !strings.Contains(rendered, "include") {
+		t.Fatalf("expected concise include hint line to render, got:\n%s", rendered)
+	}
+	if count := strings.Count(rendered, "include"); count != 1 {
+		t.Fatalf("expected exactly one include hint artifact, got %d in:\n%s", count, rendered)
+	}
+	if strings.Contains(rendered, "include: i ") || strings.Contains(rendered, " 1 b") {
+		t.Fatalf("expected include line not to render command token artifact, got:\n%s", rendered)
 	}
 }
 

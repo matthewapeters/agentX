@@ -313,6 +313,9 @@ func (state *contextFeedbackViewState) updateOrderedRows(keys []string) {
 	if state.activeRow >= len(state.orderedRowKeys) {
 		state.activeRow = len(state.orderedRowKeys) - 1
 	}
+	if state.activeSection == "context-history" {
+		return
+	}
 	if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
 		state.setFocusPath(focusPathForNode(state.activeSection, node))
 	}
@@ -404,8 +407,10 @@ func (state *contextFeedbackViewState) moveRowInActiveSection(delta int) bool {
 	if current == -1 {
 		state.activeRow = indices[0]
 		state.focusTextBox = false
-		if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
-			state.setFocusPath(focusPathForNode(state.activeSection, node))
+		if state.activeSection != "context-history" {
+			if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
+				state.setFocusPath(focusPathForNode(state.activeSection, node))
+			}
 		}
 		return true
 	}
@@ -420,8 +425,10 @@ func (state *contextFeedbackViewState) moveRowInActiveSection(delta int) bool {
 	state.activeRow = indices[next]
 	if changed {
 		state.focusTextBox = false
-		if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
-			state.setFocusPath(focusPathForNode(state.activeSection, node))
+		if state.activeSection != "context-history" {
+			if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
+				state.setFocusPath(focusPathForNode(state.activeSection, node))
+			}
 		}
 	}
 	return changed
@@ -1258,7 +1265,7 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 						}
 					}
 					historyItems = append(historyItems,
-						fmt.Sprintf("  │   │   %s include: i %s 1 b", styleToken("➕", ansiCyan), trimSingleLine(session.SessionID, 16)),
+						fmt.Sprintf("  │   │   %s include", styleToken("➕", ansiCyan)),
 						"  │   └────────────────────────────────────┘",
 					)
 				}
@@ -2515,7 +2522,7 @@ func fitLinesToWidth(lines []string, width int) []string {
 			fitted = append(fitted, renderTruncate(plain, width, ""))
 			continue
 		}
-		fitted = append(fitted, strings.TrimSpace(renderTruncate(plain, width, "...")))
+		fitted = append(fitted, renderTruncate(plain, width, "..."))
 	}
 	return fitted
 }
