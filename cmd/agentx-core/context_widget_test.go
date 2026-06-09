@@ -1933,6 +1933,31 @@ func TestRenderSectionHeader_ReservesPointerWhitespace(t *testing.T) {
 	}
 }
 
+func TestSectionBorderColor_ActiveSectionUsesSectionSpecificAccent(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.insideSection = true
+
+	state.activeSection = "context-history"
+	if got := sectionBorderColor("context-history", state); got != ansiCyan {
+		t.Fatalf("expected context-history active border to be cyan, got %q", got)
+	}
+
+	state.activeSection = "working-memory"
+	if got := sectionBorderColor("working-memory", state); got != ansiGreen {
+		t.Fatalf("expected working-memory active border to be green, got %q", got)
+	}
+
+	state.activeSection = "current-context"
+	if got := sectionBorderColor("current-context", state); got != ansiMagenta {
+		t.Fatalf("expected current-context active border to be magenta, got %q", got)
+	}
+
+	state.insideSection = false
+	if got := sectionBorderColor("working-memory", state); got != ansiDim {
+		t.Fatalf("expected outside-section border to be dim, got %q", got)
+	}
+}
+
 func TestRenderContextFeedbackSections_FiltersEmptyTurnStubs(t *testing.T) {
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{

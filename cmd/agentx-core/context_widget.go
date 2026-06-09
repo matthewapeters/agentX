@@ -1826,7 +1826,16 @@ func sectionHeaderLabel(title string, sectionID string) string {
 // the given section, and a dim color otherwise.
 func sectionBorderColor(sectionID string, viewState *contextFeedbackViewState) string {
 	if viewState != nil && viewState.insideSection && viewState.activeSection == sectionID {
-		return ansiCyan
+		switch sectionID {
+		case "context-history":
+			return ansiCyan
+		case "working-memory":
+			return ansiGreen
+		case "current-context":
+			return ansiMagenta
+		default:
+			return ansiCyan
+		}
 	}
 	return ansiDim
 }
@@ -2311,293 +2320,257 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 	historyModel := newContextHistoryTreeModel(state.orderedRowKeys)
 	switch cmd {
 	case "j", "down":
-		if state.focusTextBox {
-			rowKey := state.activeRowKey()
-			state.textScroll[rowKey] = state.textScroll[rowKey] + 1
-			state.setStatus("Scrolled text box down.")
-			return true
-		}
-		if !state.insideSection {
-			state.moveSectionHeader(1)
-			state.setStatus(fmt.Sprintf("Section: %s", state.activeSection))
-			return true
-		}
-		if state.activeSection == "context-history" {
-			if !historyModel.MoveVertical(state, 1) {
-				state.setStatus("Selection at last row.")
-			} else {
-				state.setStatus("Selection moved.")
-			}
-			return true
-		}
-		if !state.moveRowInActiveSection(1) {
-			state.setStatus("Selection at last row.")
-		} else {
-			state.setStatus("Selection moved.")
-		}
+		handleContextVerticalNavigation(state, historyModel, 1)
 		return true
 	case "k", "up":
-		if state.focusTextBox {
-			rowKey := state.activeRowKey()
-			state.textScroll[rowKey] = maxInt(0, state.textScroll[rowKey]-1)
-			state.setStatus("Scrolled text box up.")
-			return true
-		}
-		if !state.insideSection {
-			state.moveSectionHeader(-1)
-			state.setStatus(fmt.Sprintf("Section: %s", state.activeSection))
-			return true
-		}
-		if state.activeSection == "context-history" {
-			if !historyModel.MoveVertical(state, -1) {
-				state.setStatus("Selection at first row.")
-			} else {
-				state.setStatus("Selection moved.")
-			}
-			return true
-		}
-		if !state.moveRowInActiveSection(-1) {
-			state.setStatus("Selection at first row.")
-		} else {
-			state.setStatus("Selection moved.")
-		}
+		handleContextVerticalNavigation(state, historyModel, -1)
 		return true
 	case "right", "l":
-		if state.insideSection && state.activeSection == "context-history" {
-			if historyModel.MoveHorizontal(state, "right") {
-				state.setStatus("Moved right.")
-			} else {
-				state.setStatus("No right sibling.")
-			}
-			return true
-		}
-		if state.moveHorizontal("right") {
-			state.setStatus("Moved right.")
-		} else {
-			state.setStatus("No right sibling.")
-		}
+		handleContextHorizontalNavigation(state, historyModel, "right")
 		return true
 	case "left", "h":
-		if state.insideSection && state.activeSection == "context-history" {
-			if historyModel.MoveHorizontal(state, "left") {
-				state.setStatus("Moved left.")
-			} else {
-				state.setStatus("No left sibling.")
-			}
-			return true
-		}
-		if state.moveHorizontal("left") {
-			state.setStatus("Moved left.")
-		} else {
-			state.setStatus("No left sibling.")
-		}
+		handleContextHorizontalNavigation(state, historyModel, "left")
 		return true
 	case "pgdn":
-		if !state.insideSection {
-			return true
-		}
-		if state.activeSection == "context-history" {
-			if !state.moveRowInActiveSection(5) {
-				state.setStatus("Selection at last row.")
-			} else {
-				state.setStatus("Selection moved.")
-			}
-			return true
-		}
-		if state.activeSection == "working-memory" {
-			if !state.moveRowInActiveSection(5) {
-				state.setStatus("Selection at last row.")
-			} else {
-				state.setStatus("Selection moved.")
-			}
-			return true
-		}
-		if state.focusTextBox {
-			rowKey := state.activeRowKey()
-			state.textScroll[rowKey] = state.textScroll[rowKey] + 5
-			state.setStatus("Paged text box down.")
-			return true
-		}
-		// Scroll textbox content when on an expanded text row; otherwise page rows.
-		rowKey := state.activeRowKey()
-		if rowKey != "" && strings.HasPrefix(rowKey, "current:") && !state.collapsedEntries[rowKey] {
-			state.textScroll[rowKey] = state.textScroll[rowKey] + 5
-			state.setStatus("Paged text box down.")
-			return true
-		}
-		state.moveRowInActiveSection(5)
-		state.setStatus("Selection moved.")
+		handleContextPagingNavigation(state, 5)
 		return true
 	case "pgup":
-		if !state.insideSection {
-			return true
-		}
-		if state.activeSection == "context-history" {
-			if !state.moveRowInActiveSection(-5) {
-				state.setStatus("Selection at first row.")
-			} else {
-				state.setStatus("Selection moved.")
-			}
-			return true
-		}
-		if state.activeSection == "working-memory" {
-			if !state.moveRowInActiveSection(-5) {
-				state.setStatus("Selection at first row.")
-			} else {
-				state.setStatus("Selection moved.")
-			}
-			return true
-		}
-		if state.focusTextBox {
-			rowKey := state.activeRowKey()
-			state.textScroll[rowKey] = maxInt(0, state.textScroll[rowKey]-5)
-			state.setStatus("Paged text box up.")
-			return true
-		}
-		rowKey := state.activeRowKey()
-		if rowKey != "" && strings.HasPrefix(rowKey, "current:") && !state.collapsedEntries[rowKey] {
-			state.textScroll[rowKey] = maxInt(0, state.textScroll[rowKey]-5)
-			state.setStatus("Paged text box up.")
-			return true
-		}
-		state.moveRowInActiveSection(-5)
-		state.setStatus("Selection moved.")
+		handleContextPagingNavigation(state, -5)
 		return true
 	case "tab":
-		// TAB drills into the active section and keeps focus there.
-		if state.focusTextBox {
-			state.focusTextBox = false
-			state.setStatus("Text-box scroll disabled.")
-		} else {
-			if state.activeSection == "" {
-				state.activeSection = "current-context"
-			}
-			if state.activeSection == "context-history" {
-				historyModel.AdvanceTabFocus(state, true)
-				state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
-				return true
-			}
-			switch state.activeSection {
-			case "context-history":
-				state.collapsedContextHistory = false
-			case "working-memory":
-				state.collapsedWorkingMemory = false
-			case "current-context":
-				state.collapsedCurrentContext = false
-			}
-			state.insideSection = true
-		}
-		state.insideSection = true
-		state.ensureSectionRowFocus()
-		if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
-			state.setFocusPath(focusPathForNode(state.activeSection, node))
-		} else {
-			state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: state.activeSection}})
-		}
-		state.insideSection = true
-		state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
+		handleContextTabNavigation(state, historyModel)
 		return true
 	case "shift-tab", "shift+tab", "s-tab", "backtab":
-		if state.focusTextBox {
-			state.focusTextBox = false
-		}
-		if state.insideSection {
-			if state.activeSection == "context-history" {
-				historyModel.StepOutFocus(state)
-				if state.insideSection {
-					state.setStatus("Stepped back in context-history.")
-				} else {
-					state.setStatus(fmt.Sprintf("Exited section: %s.", state.activeSection))
-				}
-				return true
-			}
-			state.popFocus()
-			switch state.activeSection {
-			case "context-history":
-				state.collapsedContextHistory = true
-			case "working-memory":
-				state.collapsedWorkingMemory = true
-			case "current-context":
-				state.collapsedCurrentContext = true
-			}
-			state.insideSection = false
-			state.setStatus(fmt.Sprintf("Exited section: %s.", state.activeSection))
-		}
+		handleContextBacktabNavigation(state, historyModel)
 		return true
 	case "space":
-		// SPACE owns expand/collapse semantics and does not perform row selection.
-		if !state.insideSection {
-			switch state.activeSection {
-			case "context-history":
-				state.collapsedContextHistory = !state.collapsedContextHistory
-				state.setStatus(fmt.Sprintf("Context history is now %s.", mapCollapsedState(state.collapsedContextHistory)))
-			case "working-memory":
-				state.collapsedWorkingMemory = !state.collapsedWorkingMemory
-				state.setStatus(fmt.Sprintf("Working memory is now %s.", mapCollapsedState(state.collapsedWorkingMemory)))
-			case "current-context":
-				state.collapsedCurrentContext = !state.collapsedCurrentContext
-				state.setStatus(fmt.Sprintf("Current context is now %s.", mapCollapsedState(state.collapsedCurrentContext)))
-			default:
-				state.setStatus("No section selected.")
-			}
-			return true
-		}
-		rowKey := state.activeRowKey()
-		if rowKey == "" {
-			state.setStatus("No expandable row.")
-			return true
-		}
-		if state.activeSection == "context-history" {
-			status, _ := historyModel.TogglePeek(state)
-			state.setStatus(status)
-			return true
-		}
-		if strings.HasPrefix(rowKey, "current:") {
-			state.collapsedEntries[rowKey] = !state.collapsedEntries[rowKey]
-			state.setStatus(fmt.Sprintf("Row %s is now %s.", rowKey, mapCollapsedState(state.collapsedEntries[rowKey])))
-			return true
-		}
-		if state.activeSection == "working-memory" {
-			state.setStatus("Row has no expand/collapse action.")
-			return true
-		}
-		state.setStatus("Row has no expand/collapse action.")
+		handleContextSpaceAction(state, historyModel)
 		return true
 	case "enter":
-		// ENTER is action-only: no section drill-in and no expand/collapse.
-		if !state.insideSection {
-			state.setStatus("Enter has no action.")
-			return true
-		}
-		rowKey := state.activeRowKey()
-		if rowKey == "" {
-			state.setStatus("No actionable row.")
-			return true
-		}
-		if state.activeSection == "context-history" {
-			state.setStatus("Enter has no action.")
-			return true
-		}
-		if strings.HasPrefix(rowKey, "current:") {
-			if state.disabledEntries[rowKey] {
-				delete(state.disabledEntries, rowKey)
-			} else {
-				state.disabledEntries[rowKey] = true
-			}
-			state.setStatus(fmt.Sprintf("Row %s is now %s.", rowKey, mapContextEntryState(state.disabledEntries[rowKey])))
-			return true
-		}
-		if state.activeSection == "working-memory" {
-			if applyWorkingMemoryEnterAction(state, rowKey) {
-				return true
-			}
-		}
-		_ = snapshot
-		state.setStatus("Row has no action.")
+		handleContextEnterAction(state, snapshot)
 		return true
 	default:
 		return false
 	}
+}
+
+func handleContextVerticalNavigation(state *contextFeedbackViewState, historyModel contextHistoryModel, delta int) {
+	if state.focusTextBox {
+		rowKey := state.activeRowKey()
+		if delta > 0 {
+			state.textScroll[rowKey] = state.textScroll[rowKey] + 1
+			state.setStatus("Scrolled text box down.")
+			return
+		}
+		state.textScroll[rowKey] = maxInt(0, state.textScroll[rowKey]-1)
+		state.setStatus("Scrolled text box up.")
+		return
+	}
+	if !state.insideSection {
+		state.moveSectionHeader(delta)
+		state.setStatus(fmt.Sprintf("Section: %s", state.activeSection))
+		return
+	}
+	if state.activeSection == "context-history" {
+		setContextSelectionStatus(state, historyModel.MoveVertical(state, delta), delta)
+		return
+	}
+	setContextSelectionStatus(state, state.moveRowInActiveSection(delta), delta)
+}
+
+func handleContextHorizontalNavigation(state *contextFeedbackViewState, historyModel contextHistoryModel, direction string) {
+	moved := false
+	if state.insideSection && state.activeSection == "context-history" {
+		moved = historyModel.MoveHorizontal(state, direction)
+	} else {
+		moved = state.moveHorizontal(direction)
+	}
+	if moved {
+		state.setStatus(fmt.Sprintf("Moved %s.", direction))
+		return
+	}
+	state.setStatus(fmt.Sprintf("No %s sibling.", direction))
+}
+
+func handleContextPagingNavigation(state *contextFeedbackViewState, delta int) {
+	if !state.insideSection {
+		return
+	}
+	if state.activeSection == "context-history" || state.activeSection == "working-memory" {
+		setContextSelectionStatus(state, state.moveRowInActiveSection(delta), delta)
+		return
+	}
+	if state.focusTextBox {
+		scrollContextActiveRowText(state, delta)
+		return
+	}
+	rowKey := state.activeRowKey()
+	if rowKey != "" && strings.HasPrefix(rowKey, "current:") && !state.collapsedEntries[rowKey] {
+		scrollContextActiveRowText(state, delta)
+		return
+	}
+	state.moveRowInActiveSection(delta)
+	state.setStatus("Selection moved.")
+}
+
+func handleContextTabNavigation(state *contextFeedbackViewState, historyModel contextHistoryModel) {
+	// TAB drills into the active section and keeps focus there.
+	if state.focusTextBox {
+		state.focusTextBox = false
+		state.setStatus("Text-box scroll disabled.")
+	} else {
+		if state.activeSection == "" {
+			state.activeSection = "current-context"
+		}
+		if state.activeSection == "context-history" {
+			historyModel.AdvanceTabFocus(state, true)
+			state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
+			return
+		}
+		switch state.activeSection {
+		case "context-history":
+			state.collapsedContextHistory = false
+		case "working-memory":
+			state.collapsedWorkingMemory = false
+		case "current-context":
+			state.collapsedCurrentContext = false
+		}
+		state.insideSection = true
+	}
+	state.insideSection = true
+	state.ensureSectionRowFocus()
+	if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
+		state.setFocusPath(focusPathForNode(state.activeSection, node))
+	} else {
+		state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: state.activeSection}})
+	}
+	state.insideSection = true
+	state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
+}
+
+func handleContextBacktabNavigation(state *contextFeedbackViewState, historyModel contextHistoryModel) {
+	if state.focusTextBox {
+		state.focusTextBox = false
+	}
+	if !state.insideSection {
+		return
+	}
+	if state.activeSection == "context-history" {
+		historyModel.StepOutFocus(state)
+		if state.insideSection {
+			state.setStatus("Stepped back in context-history.")
+		} else {
+			state.setStatus(fmt.Sprintf("Exited section: %s.", state.activeSection))
+		}
+		return
+	}
+	state.popFocus()
+	switch state.activeSection {
+	case "context-history":
+		state.collapsedContextHistory = true
+	case "working-memory":
+		state.collapsedWorkingMemory = true
+	case "current-context":
+		state.collapsedCurrentContext = true
+	}
+	state.insideSection = false
+	state.setStatus(fmt.Sprintf("Exited section: %s.", state.activeSection))
+}
+
+func handleContextSpaceAction(state *contextFeedbackViewState, historyModel contextHistoryModel) {
+	// SPACE owns expand/collapse semantics and does not perform row selection.
+	if !state.insideSection {
+		switch state.activeSection {
+		case "context-history":
+			state.collapsedContextHistory = !state.collapsedContextHistory
+			state.setStatus(fmt.Sprintf("Context history is now %s.", mapCollapsedState(state.collapsedContextHistory)))
+		case "working-memory":
+			state.collapsedWorkingMemory = !state.collapsedWorkingMemory
+			state.setStatus(fmt.Sprintf("Working memory is now %s.", mapCollapsedState(state.collapsedWorkingMemory)))
+		case "current-context":
+			state.collapsedCurrentContext = !state.collapsedCurrentContext
+			state.setStatus(fmt.Sprintf("Current context is now %s.", mapCollapsedState(state.collapsedCurrentContext)))
+		default:
+			state.setStatus("No section selected.")
+		}
+		return
+	}
+	rowKey := state.activeRowKey()
+	if rowKey == "" {
+		state.setStatus("No expandable row.")
+		return
+	}
+	if state.activeSection == "context-history" {
+		status, _ := historyModel.TogglePeek(state)
+		state.setStatus(status)
+		return
+	}
+	if strings.HasPrefix(rowKey, "current:") {
+		state.collapsedEntries[rowKey] = !state.collapsedEntries[rowKey]
+		state.setStatus(fmt.Sprintf("Row %s is now %s.", rowKey, mapCollapsedState(state.collapsedEntries[rowKey])))
+		return
+	}
+	if state.activeSection == "working-memory" {
+		state.setStatus("Row has no expand/collapse action.")
+		return
+	}
+	state.setStatus("Row has no expand/collapse action.")
+}
+
+func handleContextEnterAction(state *contextFeedbackViewState, snapshot contextWidgetSnapshot) {
+	// ENTER is action-only: no section drill-in and no expand/collapse.
+	if !state.insideSection {
+		state.setStatus("Enter has no action.")
+		return
+	}
+	rowKey := state.activeRowKey()
+	if rowKey == "" {
+		state.setStatus("No actionable row.")
+		return
+	}
+	if state.activeSection == "context-history" {
+		state.setStatus("Enter has no action.")
+		return
+	}
+	if strings.HasPrefix(rowKey, "current:") {
+		if state.disabledEntries[rowKey] {
+			delete(state.disabledEntries, rowKey)
+		} else {
+			state.disabledEntries[rowKey] = true
+		}
+		state.setStatus(fmt.Sprintf("Row %s is now %s.", rowKey, mapContextEntryState(state.disabledEntries[rowKey])))
+		return
+	}
+	if state.activeSection == "working-memory" {
+		if applyWorkingMemoryEnterAction(state, rowKey) {
+			return
+		}
+	}
+	_ = snapshot
+	state.setStatus("Row has no action.")
+}
+
+func setContextSelectionStatus(state *contextFeedbackViewState, moved bool, delta int) {
+	if moved {
+		state.setStatus("Selection moved.")
+		return
+	}
+	if delta > 0 {
+		state.setStatus("Selection at last row.")
+		return
+	}
+	state.setStatus("Selection at first row.")
+}
+
+func scrollContextActiveRowText(state *contextFeedbackViewState, delta int) {
+	rowKey := state.activeRowKey()
+	if delta > 0 {
+		state.textScroll[rowKey] = state.textScroll[rowKey] + 5
+		state.setStatus("Paged text box down.")
+		return
+	}
+	state.textScroll[rowKey] = maxInt(0, state.textScroll[rowKey]-5)
+	state.setStatus("Paged text box up.")
 }
 
 func normalizeContextCommandAliases(args []string) []string {

@@ -80,8 +80,6 @@ type contextHistoryModel interface {
 	MoveHorizontal(state *contextFeedbackViewState, direction string) bool
 	TogglePeek(state *contextFeedbackViewState) (string, bool)
 	AdvanceTabFocus(state *contextFeedbackViewState, forceExpand bool)
-	EnterSection(state *contextFeedbackViewState, forceExpand bool)
-	ExitSection(state *contextFeedbackViewState)
 	StepOutFocus(state *contextFeedbackViewState)
 }
 
@@ -423,34 +421,6 @@ func (m *contextHistoryTreeModel) firstTurnRowKeyForSession(user string, session
 		return key, true
 	}
 	return "", false
-}
-
-func (m *contextHistoryTreeModel) EnterSection(state *contextFeedbackViewState, forceExpand bool) {
-	if state == nil {
-		return
-	}
-	if forceExpand {
-		state.collapsedContextHistory = false
-	}
-	state.insideSection = true
-	m.EnsureRowFocus(state)
-	if id, ok := nodeIDForRowKey("context-history", state.activeRowKey()); ok {
-		state.setFocusPath(focusPathForNode("context-history", id))
-		return
-	}
-	state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
-}
-
-func (m *contextHistoryTreeModel) ExitSection(state *contextFeedbackViewState) {
-	if state == nil {
-		return
-	}
-	if len(state.focusPath) > 1 {
-		state.popFocus()
-	}
-	state.historyTabUserPause = false
-	state.collapsedContextHistory = true
-	state.insideSection = false
 }
 
 // StepOutFocus steps back one level in the context-history focus hierarchy
