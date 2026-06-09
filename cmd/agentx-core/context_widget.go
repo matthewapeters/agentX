@@ -1764,6 +1764,10 @@ func appendDefaultWorkingMemoryFacts(facts []workingMemoryFactLine) []workingMem
 	if len(facts) > 0 {
 		return facts
 	}
+	return defaultWorkingMemoryFacts()
+}
+
+func defaultWorkingMemoryFacts() []workingMemoryFactLine {
 	defaults := make([]workingMemoryFactLine, 0, 2)
 	if user := strings.TrimSpace(os.Getenv("AGENTX_USERNAME")); user != "" {
 		defaults = append(defaults, workingMemoryFactLine{owner: "user", key: "current_user", value: user, enabled: true})
@@ -2868,6 +2872,16 @@ func saveWorkingMemoryEditorDraft(state *contextFeedbackViewState) bool {
 	if err != nil {
 		state.setStatus(fmt.Sprintf("Failed to load working memory: %v", err))
 		return false
+	}
+	for _, fact := range defaultWorkingMemoryFacts() {
+		compound := strings.ToLower(strings.TrimSpace(fact.owner)) + ":" + strings.TrimSpace(fact.key)
+		if compound == ":" {
+			continue
+		}
+		if _, exists := payload[compound]; exists {
+			continue
+		}
+		payload[compound] = workingMemoryFactSnapshot{Owner: fact.owner, Key: fact.key, Value: fact.value, Enabled: fact.enabled}
 	}
 	payload["user:"+key] = workingMemoryFactSnapshot{Owner: "user", Key: key, Value: strings.TrimSpace(state.wmEditorDraftValue), Enabled: true}
 	if err := saveWorkingMemoryPayload(sessionDir, payload); err != nil {

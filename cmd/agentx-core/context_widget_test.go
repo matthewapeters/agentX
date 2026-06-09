@@ -908,6 +908,91 @@ func TestContextWidgetKeyboard_EnterWorkingMemoryEditorCommitAndSave(t *testing.
 	}
 }
 
+func TestContextWidgetKeyboard_WorkingMemoryEditorSavePreservesStartupDefaultsAcrossMultipleAdds(t *testing.T) {
+	projectDir := t.TempDir()
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "mpeters",
+		"AGENTX_SESSION_ID":  "sess-wm-defaults",
+	})
+	sessionDir := filepath.Join(projectDir, "sessions", "mpeters", "sess-wm-defaults")
+
+	state := newContextFeedbackViewState()
+	state.activeSection = "working-memory"
+	state.insideSection = true
+	state.collapsedWorkingMemory = false
+	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-wm-defaults"}
+
+	applyContextWidgetCommand(state, "feature_flag", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enabled", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+
+	payload, err := loadWorkingMemoryPayload(sessionDir)
+	if err != nil {
+		t.Fatalf("loadWorkingMemoryPayload failed after first save: %v", err)
+	}
+	if _, ok := payload["user:current_user"]; !ok {
+		t.Fatalf("expected startup default current_user to persist after first save")
+	}
+	if _, ok := payload["user:current_working_directory"]; !ok {
+		t.Fatalf("expected startup default current_working_directory to persist after first save")
+	}
+	if fact, ok := payload["user:feature_flag"]; !ok || fact.Value != "enabled" {
+		t.Fatalf("expected first user key to persist after first save, got %#v (present=%v)", fact, ok)
+	}
+
+	applyContextWidgetCommand(state, "release_channel", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "stable", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+
+	payload, err = loadWorkingMemoryPayload(sessionDir)
+	if err != nil {
+		t.Fatalf("loadWorkingMemoryPayload failed after second save: %v", err)
+	}
+	if _, ok := payload["user:current_user"]; !ok {
+		t.Fatalf("expected startup default current_user to persist after second save")
+	}
+	if _, ok := payload["user:current_working_directory"]; !ok {
+		t.Fatalf("expected startup default current_working_directory to persist after second save")
+	}
+	if fact, ok := payload["user:feature_flag"]; !ok || fact.Value != "enabled" {
+		t.Fatalf("expected first user key to remain after second save, got %#v (present=%v)", fact, ok)
+	}
+	if fact, ok := payload["user:release_channel"]; !ok || fact.Value != "stable" {
+		t.Fatalf("expected second user key to persist after second save, got %#v (present=%v)", fact, ok)
+	}
+}
+
+func TestContextWidgetKeyboard_SpaceOnWorkingMemoryHeaderTogglesOnly(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "working-memory"
+	state.collapsedWorkingMemory = true
+	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save", "wm:user:current_user"})
+	if !state.setActiveRowByKey("wm:user:current_user") {
+		t.Fatalf("expected active row setup for working-memory row to succeed")
+	}
+	state.insideSection = false
+	activeBefore := state.activeRow
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+
+	if state.collapsedWorkingMemory {
+		t.Fatalf("expected SPACE on working-memory header to toggle expanded state")
+	}
+	if state.insideSection {
+		t.Fatalf("expected SPACE on working-memory header to remain outside section")
+	}
+	if state.activeRow != activeBefore {
+		t.Fatalf("expected SPACE on working-memory header not to advance row focus; got %d want %d", state.activeRow, activeBefore)
+	}
+}
+
 func TestContextWidgetKeyboard_WorkingMemoryEditorIncrementalTypingBackspaceAndLimits(t *testing.T) {
 	state := newContextFeedbackViewState()
 	state.activeSection = "working-memory"
