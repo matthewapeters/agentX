@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 )
@@ -260,6 +261,10 @@ const (
 	ansiRed     = "\033[31m"
 	ansiMagenta = "\033[35m"
 	ansiDim     = "\033[2m"
+
+	workingMemoryEditorCellWidth      = 23
+	workingMemoryEditorKeyMaxChars    = 64
+	workingMemoryEditorValueMaxBytes  = 1024
 )
 
 var contextRenderWidthCondition = newContextRenderWidthCondition()
@@ -812,7 +817,7 @@ func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Re
 	if commandInput == nil {
 		commandInput = strings.NewReader("")
 	}
-	commandReader, promptMode, cleanup := newFilesystemWidgetCommandReader(commandInput)
+	commandReader, promptMode, cleanup := newContextWidgetCommandReader(commandInput)
 	defer cleanup()
 	commands := make(chan string, 16)
 	go func() {
@@ -909,6 +914,38 @@ func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Re
 
 func normalizeContextWidgetControlCommand(raw string) string {
 	return normalizeWidgetControlCommand(raw, defaultWidgetControlAliases())
+}
+
+func newContextWidgetCommandReader(in io.Reader) (func() (string, error), bool, func()) {
+	return newWidgetCommandReader(in, normalizeContextWidgetCommand)
+}
+
+func normalizeContextWidgetCommand(raw string) string {
+	if command, ok := normalizeWidgetEscapeSequence(raw); ok {
+		// Shared escape-sequence decoding maps arrows to widget navigation tokens.
+		return command
+	}
+	if strings.TrimSpace(raw) == "" {
+		if len(raw) > 0 {
+			return "space"
+		}
+		return "enter"
+	}
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	switch trimmed {
+	case "ctrl_c":
+		return "q"
+	case "refresh":
+		return "r"
+	case "pageup", "pgup", "pu":
+		return "pgup"
+	case "pagedown", "pgdown", "pgdn", "pd":
+		return "pgdn"
+	case "last", "bottom":
+		return "end"
+	default:
+		return trimmed
+	}
 }
 
 func discoverContextHistorySessions(currentSessionID string) []contextHistorySession {
@@ -1661,18 +1698,20 @@ func renderWorkingMemoryEditorScaffold(viewState *contextFeedbackViewState, rowK
 	if rowKeys != nil {
 		*rowKeys = append(*rowKeys, keyRow, valueRow, saveRow)
 	}
-	keyCell := strings.Repeat(" ", 23)
-	valueCell := strings.Repeat(" ", 23)
+	keyCell := strings.Repeat(" ", workingMemoryEditorCellWidth)
+	valueCell := strings.Repeat(" ", workingMemoryEditorCellWidth)
 	saveLbl := " ↳OK "
+	keyActive := viewState != nil && viewState.insideSection && viewState.activeRowKey() == keyRow
+	valueActive := viewState != nil && viewState.insideSection && viewState.activeRowKey() == valueRow
 	if viewState != nil {
-		keyCell = renderWorkingMemoryEditorCellText(viewState.wmEditorDraftKey, 23)
-		valueCell = renderWorkingMemoryEditorCellText(viewState.wmEditorDraftValue, 23)
+		keyCell = renderWorkingMemoryEditorCellText(viewState.wmEditorDraftKey, workingMemoryEditorCellWidth, keyActive)
+		valueCell = renderWorkingMemoryEditorCellText(viewState.wmEditorDraftValue, workingMemoryEditorCellWidth, valueActive)
 	}
 	if viewState != nil && viewState.insideSection {
-		if viewState.activeRowKey() == keyRow {
+		if keyActive {
 			keyCell = ansiReverse + keyCell + ansiReset
 		}
-		if viewState.activeRowKey() == valueRow {
+		if valueActive {
 			valueCell = ansiReverse + valueCell + ansiReset
 		}
 		if viewState.activeRowKey() == saveRow {
@@ -1687,20 +1726,38 @@ func renderWorkingMemoryEditorScaffold(viewState *contextFeedbackViewState, rowK
 	}
 }
 
-func renderWorkingMemoryEditorCellText(value string, width int) string {
+func renderWorkingMemoryEditorCellText(value string, width int, active bool) string {
 	if width <= 0 {
 		return ""
 	}
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
+	if value == "" {
 		return strings.Repeat(" ", width)
 	}
-	truncated := renderTruncate(trimmed, width, "")
+	truncated := renderTruncate(value, width, "")
+	if active {
+		truncated = renderWorkingMemoryEditorCellTail(value, width)
+	}
 	padding := width - renderStringWidth(truncated)
 	if padding <= 0 {
 		return truncated
 	}
 	return truncated + strings.Repeat(" ", padding)
+}
+
+func renderWorkingMemoryEditorCellTail(value string, width int) string {
+	if width <= 0 || value == "" {
+		return ""
+	}
+	runes := []rune(value)
+	start := len(runes)
+	for start > 0 {
+		candidate := string(runes[start-1:])
+		if renderStringWidth(candidate) > width {
+			break
+		}
+		start--
+	}
+	return string(runes[start:])
 }
 
 func appendDefaultWorkingMemoryFacts(facts []workingMemoryFactLine) []workingMemoryFactLine {
@@ -2013,6 +2070,9 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 	}
 	line := strings.TrimSpace(raw)
 	if line == "" {
+		return
+	}
+	if handleWorkingMemoryEditorActiveInput(state, line) {
 		return
 	}
 	args := strings.Fields(strings.TrimPrefix(line, ":"))
@@ -2614,16 +2674,98 @@ func handleWorkingMemoryEditorTextInput(state *contextFeedbackViewState, line st
 	rowKey := strings.TrimSpace(state.activeRowKey())
 	switch rowKey {
 	case "wm:editor:key":
-		state.wmEditorDraftKey = strings.TrimSpace(line)
+		state.wmEditorDraftKey = applyWorkingMemoryEditorDraftDelta(state.wmEditorDraftKey, line, workingMemoryEditorKeyMaxChars, 0)
 		state.setStatus("Working-memory key staged.")
 		return true
 	case "wm:editor:value":
-		state.wmEditorDraftValue = strings.TrimSpace(line)
+		state.wmEditorDraftValue = applyWorkingMemoryEditorDraftDelta(state.wmEditorDraftValue, line, 0, workingMemoryEditorValueMaxBytes)
 		state.setStatus("Working-memory value staged.")
 		return true
 	default:
 		return false
 	}
+}
+
+func handleWorkingMemoryEditorActiveInput(state *contextFeedbackViewState, line string) bool {
+	if state == nil || !state.insideSection || state.activeSection != "working-memory" {
+		return false
+	}
+	rowKey := strings.TrimSpace(state.activeRowKey())
+	if rowKey != "wm:editor:key" && rowKey != "wm:editor:value" {
+		return false
+	}
+	commandToken := strings.ToLower(strings.TrimSpace(line))
+	switch commandToken {
+	case "home", "end":
+		return true
+	case "enter", "tab", "shift-tab", "shift+tab", "s-tab", "backtab", "pgup", "pgdn", "up", "down", "left", "right", "top", "bottom":
+		return false
+	default:
+		return handleWorkingMemoryEditorTextInput(state, line)
+	}
+}
+
+func applyWorkingMemoryEditorDraftDelta(current string, input string, maxChars int, maxBytes int) string {
+	token := strings.ToLower(strings.TrimSpace(input))
+	updated := current
+	switch token {
+	case "backspace":
+		updated = trimLastRune(current)
+	case "space":
+		updated = current + " "
+	default:
+		updated = current + input
+	}
+	if maxChars > 0 {
+		updated = clampStringRunes(updated, maxChars)
+	}
+	if maxBytes > 0 {
+		updated = clampStringBytes(updated, maxBytes)
+	}
+	return updated
+}
+
+func trimLastRune(value string) string {
+	if value == "" {
+		return ""
+	}
+	_, size := utf8.DecodeLastRuneInString(value)
+	if size <= 0 || size > len(value) {
+		return ""
+	}
+	return value[:len(value)-size]
+}
+
+func clampStringRunes(value string, maxChars int) string {
+	if maxChars <= 0 {
+		return ""
+	}
+	if utf8.RuneCountInString(value) <= maxChars {
+		return value
+	}
+	runes := []rune(value)
+	return string(runes[:maxChars])
+}
+
+func clampStringBytes(value string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(value) <= maxBytes {
+		return value
+	}
+	count := 0
+	for idx, r := range value {
+		runeBytes := utf8.RuneLen(r)
+		if runeBytes < 0 {
+			runeBytes = 1
+		}
+		if count+runeBytes > maxBytes {
+			return value[:idx]
+		}
+		count += runeBytes
+	}
+	return value
 }
 
 func applyWorkingMemoryEnterAction(state *contextFeedbackViewState, rowKey string) bool {

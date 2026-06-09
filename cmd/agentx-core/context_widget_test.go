@@ -81,6 +81,25 @@ func TestNormalizeContextWidgetControlCommand(t *testing.T) {
 	}
 }
 
+func TestNormalizeContextWidgetCommand_PreservesLiteralKeysAndBackspace(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "backspace token", raw: "backspace", want: "backspace"},
+		{name: "literal j remains j", raw: "j", want: "j"},
+		{name: "literal h remains h", raw: "h", want: "h"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeContextWidgetCommand(tc.raw); got != tc.want {
+				t.Fatalf("normalizeContextWidgetCommand(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRenderContextWidget_ClipsToViewport(t *testing.T) {
 	snapshot := contextWidgetSnapshot{
 		SessionID: "sess-1",
@@ -300,6 +319,16 @@ func TestContextWidgetCommandAliases_HelpToggleWithoutColon(t *testing.T) {
 	applyContextWidgetCommand(state, "hide-help", "http://127.0.0.1:0", snapshot)
 	if state.showHelp {
 		t.Fatalf("expected help to be hidden via hide-help command")
+	}
+}
+
+func TestContextWidgetCommandAliases_ColonPrefixedHelpOutsideEditor(t *testing.T) {
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{SessionID: "sess-hotkeys"}
+
+	applyContextWidgetCommand(state, ":help", "http://127.0.0.1:0", snapshot)
+	if !state.showHelp {
+		t.Fatalf("expected colon-prefixed help to work outside the working-memory editor")
 	}
 }
 
@@ -773,6 +802,7 @@ func TestContextWidgetKeyboard_SpaceInsideWorkingMemoryTargetsRowOnly(t *testing
 	state.insideSection = true
 	state.collapsedWorkingMemory = false
 	state.updateOrderedRows([]string{"wm:editor:key", "wm:user:current_user"})
+	_ = state.setActiveRowByKey("wm:user:current_user")
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
 	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
@@ -875,6 +905,119 @@ func TestContextWidgetKeyboard_EnterWorkingMemoryEditorCommitAndSave(t *testing.
 	}
 	if !fact.Enabled {
 		t.Fatalf("expected persisted fact to be enabled")
+	}
+}
+
+func TestContextWidgetKeyboard_WorkingMemoryEditorIncrementalTypingBackspaceAndLimits(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "working-memory"
+	state.insideSection = true
+	state.collapsedWorkingMemory = false
+	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	for _, token := range []string{"h", "j", "k", "l"} {
+		applyContextWidgetCommand(state, token, "http://127.0.0.1:0", snapshot)
+	}
+	if got := state.wmEditorDraftKey; got != "hjkl" {
+		t.Fatalf("expected incremental key typing to append hjkl, got %q", got)
+	}
+	if got := state.activeRowKey(); got != "wm:editor:key" {
+		t.Fatalf("expected editor focus to stay on key while typing, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "backspace", "http://127.0.0.1:0", snapshot)
+	if got := state.wmEditorDraftKey; got != "hjk" {
+		t.Fatalf("expected backspace to remove last key rune, got %q", got)
+	}
+
+	for i := 0; i < 80; i++ {
+		applyContextWidgetCommand(state, "x", "http://127.0.0.1:0", snapshot)
+	}
+	if got := len([]rune(state.wmEditorDraftKey)); got != workingMemoryEditorKeyMaxChars {
+		t.Fatalf("expected key to clamp at %d chars, got %d", workingMemoryEditorKeyMaxChars, got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.activeRowKey(); got != "wm:editor:value" {
+		t.Fatalf("expected enter on key to advance to value, got %q", got)
+	}
+
+	for i := 0; i < 1100; i++ {
+		applyContextWidgetCommand(state, "v", "http://127.0.0.1:0", snapshot)
+	}
+	if got := len(state.wmEditorDraftValue); got != workingMemoryEditorValueMaxBytes {
+		t.Fatalf("expected value to clamp at %d bytes, got %d", workingMemoryEditorValueMaxBytes, got)
+	}
+
+	applyContextWidgetCommand(state, "backspace", "http://127.0.0.1:0", snapshot)
+	if got := len(state.wmEditorDraftValue); got != workingMemoryEditorValueMaxBytes-1 {
+		t.Fatalf("expected value backspace to remove one rune/byte, got len=%d", got)
+	}
+}
+
+func TestContextWidgetKeyboard_WorkingMemoryEditorAllowsColonAndIgnoresHomeEnd(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "working-memory"
+	state.insideSection = true
+	state.collapsedWorkingMemory = false
+	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "feature:flag", "http://127.0.0.1:0", snapshot)
+	if got := state.wmEditorDraftKey; got != "feature:flag" {
+		t.Fatalf("expected colon to stage in key draft, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "home", "http://127.0.0.1:0", snapshot)
+	if got := state.wmEditorDraftKey; got != "feature:flag" {
+		t.Fatalf("expected home to be ignored in active key cell, got %q", got)
+	}
+	if got := state.activeRowKey(); got != "wm:editor:key" {
+		t.Fatalf("expected home to leave focus on key cell, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.activeRowKey(); got != "wm:editor:value" {
+		t.Fatalf("expected enter to advance to value cell, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "value:enabled", "http://127.0.0.1:0", snapshot)
+	if got := state.wmEditorDraftValue; got != "value:enabled" {
+		t.Fatalf("expected colon to stage in value draft, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "end", "http://127.0.0.1:0", snapshot)
+	if got := state.wmEditorDraftValue; got != "value:enabled" {
+		t.Fatalf("expected end to be ignored in active value cell, got %q", got)
+	}
+	if got := state.activeRowKey(); got != "wm:editor:value" {
+		t.Fatalf("expected end to leave focus on value cell, got %q", got)
+	}
+}
+
+func TestRenderWorkingMemoryEditorCellViewport_TailWhenActiveHeadAfterCommit(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "working-memory"
+	state.insideSection = true
+	state.collapsedWorkingMemory = false
+	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save"})
+	state.wmEditorDraftKey = "abcdefghijklmnopqrstuvwxyz"
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	activeKey := strings.Join(renderWorkingMemoryEditorScaffold(state, nil, ansiBlue), "\n")
+	if !strings.Contains(stripAnsi(activeKey), "│defghijklmnopqrstuvwxyz│") {
+		t.Fatalf("expected active key viewport to show trailing 23 chars, got:\n%s", stripAnsi(activeKey))
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.activeRowKey(); got != "wm:editor:value" {
+		t.Fatalf("expected enter to commit key and move to value, got %q", got)
+	}
+
+	committedKey := strings.Join(renderWorkingMemoryEditorScaffold(state, nil, ansiBlue), "\n")
+	if !strings.Contains(stripAnsi(committedKey), "│abcdefghijklmnopqrstuvw│") {
+		t.Fatalf("expected committed key viewport to show leading 23 chars, got:\n%s", stripAnsi(committedKey))
 	}
 }
 
