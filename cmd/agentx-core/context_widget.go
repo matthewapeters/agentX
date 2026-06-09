@@ -2301,13 +2301,19 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			return true
 		}
 		if state.activeSection == "context-history" {
-			state.textScroll["section:context-history"] = state.textScroll["section:context-history"] + 1
-			state.setStatus("Viewport moved down: context history.")
+			if !state.moveRowInActiveSection(5) {
+				state.setStatus("Selection at last row.")
+			} else {
+				state.setStatus("Selection moved.")
+			}
 			return true
 		}
 		if state.activeSection == "working-memory" {
-			state.textScroll["section:working-memory"] = state.textScroll["section:working-memory"] + 1
-			state.setStatus("Viewport moved down: working memory.")
+			if !state.moveRowInActiveSection(5) {
+				state.setStatus("Selection at last row.")
+			} else {
+				state.setStatus("Selection moved.")
+			}
 			return true
 		}
 		if state.focusTextBox {
@@ -2331,13 +2337,19 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			return true
 		}
 		if state.activeSection == "context-history" {
-			state.textScroll["section:context-history"] = maxInt(0, state.textScroll["section:context-history"]-1)
-			state.setStatus("Viewport moved up: context history.")
+			if !state.moveRowInActiveSection(-5) {
+				state.setStatus("Selection at first row.")
+			} else {
+				state.setStatus("Selection moved.")
+			}
 			return true
 		}
 		if state.activeSection == "working-memory" {
-			state.textScroll["section:working-memory"] = maxInt(0, state.textScroll["section:working-memory"]-1)
-			state.setStatus("Viewport moved up: working memory.")
+			if !state.moveRowInActiveSection(-5) {
+				state.setStatus("Selection at first row.")
+			} else {
+				state.setStatus("Selection moved.")
+			}
 			return true
 		}
 		if state.focusTextBox {
@@ -2417,8 +2429,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		return true
 	case "space":
-		// Outside a section: SPACE expands/collapses the active section.
-		// Inside a section: SPACE selects/deselects the active row.
+		// SPACE owns expand/collapse semantics and does not perform row selection.
 		if !state.insideSection {
 			switch state.activeSection {
 			case "context-history":
@@ -2437,39 +2448,6 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		}
 		rowKey := state.activeRowKey()
 		if rowKey == "" {
-			state.setStatus("No selectable row.")
-			return true
-		}
-		if state.activeSection == "context-history" {
-			status, _ := historyModel.TogglePeek(state)
-			state.setStatus(status)
-			return true
-		}
-		if state.selectedEntries[rowKey] {
-			delete(state.selectedEntries, rowKey)
-			state.setStatus("Deselected row.")
-		} else {
-			state.selectedEntries[rowKey] = true
-			state.setStatus("Selected row.")
-		}
-		return true
-	case "enter":
-		// Outside a section: ENTER enters the section (same as TAB).
-		if !state.insideSection {
-			if state.activeSection == "" {
-				state.activeSection = "current-context"
-			}
-			if state.activeSection == "context-history" {
-				historyModel.EnterSection(state, false)
-				state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
-				return true
-			}
-			state.insideSection = true
-			state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
-			return true
-		}
-		rowKey := state.activeRowKey()
-		if rowKey == "" {
 			state.setStatus("No expandable row.")
 			return true
 		}
@@ -2483,13 +2461,39 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			state.setStatus(fmt.Sprintf("Row %s is now %s.", rowKey, mapCollapsedState(state.collapsedEntries[rowKey])))
 			return true
 		}
-		if strings.HasPrefix(rowKey, "wm:") {
+		if state.activeSection == "working-memory" {
 			state.collapsedWorkingMemory = !state.collapsedWorkingMemory
 			state.setStatus(fmt.Sprintf("Working memory is now %s.", mapCollapsedState(state.collapsedWorkingMemory)))
 			return true
 		}
-		_ = snapshot
 		state.setStatus("Row has no expand/collapse action.")
+		return true
+	case "enter":
+		// ENTER is action-only: no section drill-in and no expand/collapse.
+		if !state.insideSection {
+			state.setStatus("Enter has no action.")
+			return true
+		}
+		rowKey := state.activeRowKey()
+		if rowKey == "" {
+			state.setStatus("No actionable row.")
+			return true
+		}
+		if state.activeSection == "context-history" {
+			state.setStatus("Enter has no action.")
+			return true
+		}
+		if strings.HasPrefix(rowKey, "current:") {
+			if state.disabledEntries[rowKey] {
+				delete(state.disabledEntries, rowKey)
+			} else {
+				state.disabledEntries[rowKey] = true
+			}
+			state.setStatus(fmt.Sprintf("Row %s is now %s.", rowKey, mapContextEntryState(state.disabledEntries[rowKey])))
+			return true
+		}
+		_ = snapshot
+		state.setStatus("Row has no action.")
 		return true
 	default:
 		return false

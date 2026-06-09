@@ -322,6 +322,7 @@ func (m *contextHistoryTreeModel) AdvanceTabFocus(state *contextFeedbackViewStat
 		state.collapsedContextHistory = false
 	}
 	state.insideSection = true
+	state.historyTabUserPause = false
 	m.EnsureRowFocus(state)
 
 	tail := state.focusPath.Tail()
@@ -336,20 +337,12 @@ func (m *contextHistoryTreeModel) AdvanceTabFocus(state *contextFeedbackViewStat
 			_ = state.setActiveRowByKey(userKey)
 			if id, ok := nodeIDForRowKey("context-history", userKey); ok {
 				state.setFocusPath(focusPathForNode("context-history", id))
-				state.historyTabUserPause = true
 			}
 		}
 		return
 	case nodeKindUser:
 		userKey := "user:" + strings.TrimSpace(tail.User)
 		_ = state.setActiveRowByKey(userKey)
-		if state.historyTabUserPause {
-			state.historyTabUserPause = false
-			if id, ok := nodeIDForRowKey("context-history", userKey); ok {
-				state.setFocusPath(focusPathForNode("context-history", id))
-			}
-			return
-		}
 		if sessionKey, ok := m.firstSessionRowKeyForUser(strings.TrimSpace(tail.User)); ok {
 			_ = state.setActiveRowByKey(sessionKey)
 			if id, ok := nodeIDForRowKey("context-history", sessionKey); ok {
@@ -472,31 +465,27 @@ func (m *contextHistoryTreeModel) StepOutFocus(state *contextFeedbackViewState) 
 	if state == nil {
 		return
 	}
-	wasPaused := state.historyTabUserPause
 	state.historyTabUserPause = false
 	tail := state.focusPath.Tail()
 	switch tail.Kind {
 	case nodeKindTurn:
-		// S4 → S3: move active row to the parent session, then pop focus.
+		// turn -> session
 		sessionKey := historySessionRowKey(tail.User, tail.Session)
 		_ = state.setActiveRowByKey(sessionKey)
 		state.popFocus()
 	case nodeKindSession:
-		// S3 → S2: move active row to the parent user, then pop focus.
+		// session -> user
 		userKey := "user:" + strings.TrimSpace(tail.User)
 		_ = state.setActiveRowByKey(userKey)
 		state.popFocus()
 	case nodeKindUser:
-		if wasPaused {
-			// S1 → S0: exit section; setFocusPath inside popFocus sets insideSection=false.
-			state.popFocus()
-			state.collapsedContextHistory = true
-		} else {
-			// S2 → S1: restore pause; focusPath and activeRow unchanged.
-			state.historyTabUserPause = true
-		}
+		// user -> section root (outside-section mode)
+		state.popFocus()
+		state.collapsedContextHistory = true
 	case nodeKindSection:
-		// S0 → S0: already outside, no-op.
+		// section root -> outside remains collapsed
+		state.collapsedContextHistory = true
+		state.insideSection = false
 	}
 }
 

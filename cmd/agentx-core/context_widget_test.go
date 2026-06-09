@@ -319,22 +319,21 @@ func TestContextWidgetCommandAliases_WorkingMemoryToggleWithoutColon(t *testing.
 	}
 }
 
-func TestContextWidgetKeyboard_SpaceSelectAndEnterCollapse(t *testing.T) {
+func TestContextWidgetKeyboard_SpaceAndEnterActionOwnership(t *testing.T) {
 	state := newContextFeedbackViewState()
-	// Must be inside a section for SPACE to select rows (outside SPACE collapses the section).
 	state.insideSection = true
 	state.activeSection = "current-context"
 	state.updateOrderedRows([]string{"current:1:prompt"})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "p1", Response: "r1"}}}
 
 	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
-	if !state.selectedEntries["current:1:prompt"] {
-		t.Fatalf("expected row to be selected by space key when inside section")
+	if !state.collapsedEntries["current:1:prompt"] {
+		t.Fatalf("expected space to toggle current-context row collapse")
 	}
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	if !state.collapsedEntries["current:1:prompt"] {
-		t.Fatalf("expected row to be collapsed by enter key")
+	if !state.disabledEntries["current:1:prompt"] {
+		t.Fatalf("expected enter to toggle current-context row enabled/disabled state")
 	}
 }
 
@@ -645,25 +644,27 @@ func TestContextWidgetKeyboard_ViewportStatusVocabulary(t *testing.T) {
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
 	state.activeSection = "context-history"
+	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-prev"})
 	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot)
-	if got := state.statusLine; got != "Viewport moved down: context history." {
-		t.Fatalf("expected normalized context-history pgdn viewport status, got %q", got)
+	if got := state.statusLine; got != "Selection moved." {
+		t.Fatalf("expected context-history pgdn to page rows, got %q", got)
 	}
 
 	applyContextWidgetCommand(state, "pgup", "http://127.0.0.1:0", snapshot)
-	if got := state.statusLine; got != "Viewport moved up: context history." {
-		t.Fatalf("expected normalized context-history pgup viewport status, got %q", got)
+	if got := state.statusLine; got != "Selection moved." {
+		t.Fatalf("expected context-history pgup to page rows, got %q", got)
 	}
 
 	state.activeSection = "working-memory"
+	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save", "wm:user:current_user"})
 	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot)
-	if got := state.statusLine; got != "Viewport moved down: working memory." {
-		t.Fatalf("expected normalized working-memory pgdn viewport status, got %q", got)
+	if got := state.statusLine; got != "Selection moved." {
+		t.Fatalf("expected working-memory pgdn to page rows, got %q", got)
 	}
 
 	applyContextWidgetCommand(state, "pgup", "http://127.0.0.1:0", snapshot)
-	if got := state.statusLine; got != "Viewport moved up: working memory." {
-		t.Fatalf("expected normalized working-memory pgup viewport status, got %q", got)
+	if got := state.statusLine; got != "Selection moved." {
+		t.Fatalf("expected working-memory pgup to page rows, got %q", got)
 	}
 }
 
@@ -672,14 +673,17 @@ func TestContextWidgetKeyboard_EnterTabShiftTabTransitionVocabulary(t *testing.T
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	if got := state.statusLine; got != "Entered section: current-context." {
-		t.Fatalf("expected enter transition status, got %q", got)
+	if got := state.statusLine; got != "Enter has no action." {
+		t.Fatalf("expected enter action-only status outside section, got %q", got)
+	}
+	if state.insideSection {
+		t.Fatalf("expected enter not to drill into section")
 	}
 
 	state.insideSection = false
 	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
 	if got := state.statusLine; got != "Entered section: current-context." {
-		t.Fatalf("expected tab transition status to match enter, got %q", got)
+		t.Fatalf("expected tab transition status, got %q", got)
 	}
 
 	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
@@ -746,65 +750,20 @@ func TestContextWidgetKeyboard_LeftRightHistorySessionAndTurn(t *testing.T) {
 	}
 }
 
-func TestContextWidgetKeyboard_EnterHistoryUsesFocusPath(t *testing.T) {
+func TestContextWidgetKeyboard_EnterHistoryIsActionOnly(t *testing.T) {
 	state := newContextFeedbackViewState()
 	state.activeSection = "context-history"
 	state.insideSection = true
 	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-prev"})
+	state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
 	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
-		t.Fatalf("expected first enter on user row to expand user node, got %#v", got)
+	if got := state.statusLine; got != "Enter has no action." {
+		t.Fatalf("expected enter action-only status in context-history, got %q", got)
 	}
-	if !state.insideSection {
-		t.Fatalf("expected expand to keep section navigation active")
-	}
-	if got := state.statusLine; got != "History node expanded." {
-		t.Fatalf("expected normalized expand status, got %q", got)
-	}
-
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
-		t.Fatalf("expected second enter on focused user row to collapse to section, got %#v", got)
-	}
-	if got := state.statusLine; got != "History node collapsed." {
-		t.Fatalf("expected normalized collapse status, got %q", got)
-	}
-
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
-		t.Fatalf("expected third enter on user row to re-expand user node, got %#v", got)
-	}
-	if got := state.statusLine; got != "History node expanded." {
-		t.Fatalf("expected normalized expand status on third enter, got %q", got)
-	}
-
-	if !state.moveRowInActiveSection(1) {
-		t.Fatalf("expected move to session row to succeed")
-	}
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-prev" {
-		t.Fatalf("expected enter on session row to expand session node, got %#v", got)
-	}
-	if got := state.statusLine; got != "History node expanded." {
-		t.Fatalf("expected normalized expand status from session row, got %q", got)
-	}
-
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
-		t.Fatalf("expected second enter on focused session row to collapse to parent user, got %#v", got)
-	}
-	if got := state.statusLine; got != "History node collapsed." {
-		t.Fatalf("expected normalized collapse status for focused session row, got %q", got)
-	}
-
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != "s-prev" {
-		t.Fatalf("expected third enter on session row to re-expand session, got %#v", got)
-	}
-	if got := state.statusLine; got != "History node expanded." {
-		t.Fatalf("expected normalized expand status for third session enter, got %q", got)
+		t.Fatalf("expected enter to avoid history drill-in, got %#v", got)
 	}
 }
 
@@ -1076,11 +1035,11 @@ func TestContextWidgetKeyboard_TabContextHistoryPopulatedRows_RenderCoupledProgr
 		}
 		wantRow := ""
 		switch presses {
-		case 1, 2:
+		case 1:
 			wantRow = "user:mpeters"
-		case 3:
+		case 2:
 			wantRow = "session:mpeters:" + sessionID
-		case 4, 5:
+		case 3, 4, 5:
 			wantRow = "history:mpeters:" + sessionID + ":1:prompt"
 		default:
 			t.Fatalf("unexpected presses=%d", presses)
@@ -1090,15 +1049,15 @@ func TestContextWidgetKeyboard_TabContextHistoryPopulatedRows_RenderCoupledProgr
 		}
 		tail := state.focusPath.Tail()
 		switch presses {
-		case 1, 2:
+		case 1:
 			if tail.Kind != nodeKindUser || tail.User != "mpeters" {
 				t.Fatalf("expected focusPath tail user:mpeters after %d tabs, got %#v", presses, tail)
 			}
-		case 3:
+		case 2:
 			if tail.Kind != nodeKindSession || tail.User != "mpeters" || tail.Session != sessionID {
-				t.Fatalf("expected focusPath tail session:mpeters:%s after 3 tabs, got %#v", sessionID, tail)
+				t.Fatalf("expected focusPath tail session:mpeters:%s after %d tabs, got %#v", sessionID, presses, tail)
 			}
-		case 4, 5:
+		case 3, 4, 5:
 			if tail.Kind != nodeKindTurn || tail.User != "mpeters" || tail.Session != sessionID || tail.Turn != 1 {
 				t.Fatalf("expected focusPath tail history:mpeters:%s:1 after %d tabs, got %#v", sessionID, presses, tail)
 			}
@@ -1145,10 +1104,9 @@ func TestContextWidgetKeyboard_TabContextHistoryPopulatedRows_RenderCoupledProgr
 // State model:
 //
 //	S0 = outside section (insideSection=false, collapsed=true)
-//	S1 = user row, pause=true  (insideSection=true)
-//	S2 = user row, pause=false (insideSection=true)
-//	S3 = session row           (insideSection=true)
-//	S4 = turn row              (insideSection=true)
+//	S1 = user row    (insideSection=true)
+//	S2 = session row (insideSection=true)
+//	S3 = turn row    (insideSection=true)
 func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *testing.T) {
 	projectDir := t.TempDir()
 	sessionID := "2026-06-06 23:20:18"
@@ -1185,9 +1143,6 @@ func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *tes
 		if tail := state.focusPath.Tail(); tail.Kind != nodeKindSection {
 			t.Fatalf("[%s] S0: expected focusPath tail nodeKindSection, got %#v", label, tail)
 		}
-		if state.historyTabUserPause {
-			t.Fatalf("[%s] S0: expected historyTabUserPause=false, got true", label)
-		}
 	}
 	assertS1 := func(t *testing.T, state *contextFeedbackViewState, label string) {
 		t.Helper()
@@ -1203,9 +1158,6 @@ func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *tes
 		if tail := state.focusPath.Tail(); tail.Kind != nodeKindUser || tail.User != user {
 			t.Fatalf("[%s] S1: expected focusPath tail user:%s, got %#v", label, user, tail)
 		}
-		if !state.historyTabUserPause {
-			t.Fatalf("[%s] S1: expected historyTabUserPause=true, got false", label)
-		}
 	}
 	assertS2 := func(t *testing.T, state *contextFeedbackViewState, label string) {
 		t.Helper()
@@ -1215,14 +1167,11 @@ func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *tes
 		if state.collapsedContextHistory {
 			t.Fatalf("[%s] S2: expected collapsedContextHistory=false, got true", label)
 		}
-		if got := state.activeRowKey(); got != userRowKey {
-			t.Fatalf("[%s] S2: expected activeRowKey=%q, got %q", label, userRowKey, got)
+		if got := state.activeRowKey(); got != sessionRowKey {
+			t.Fatalf("[%s] S2: expected activeRowKey=%q, got %q", label, sessionRowKey, got)
 		}
-		if tail := state.focusPath.Tail(); tail.Kind != nodeKindUser || tail.User != user {
-			t.Fatalf("[%s] S2: expected focusPath tail user:%s, got %#v", label, user, tail)
-		}
-		if state.historyTabUserPause {
-			t.Fatalf("[%s] S2: expected historyTabUserPause=false, got true", label)
+		if tail := state.focusPath.Tail(); tail.Kind != nodeKindSession || tail.User != user || tail.Session != sessionID {
+			t.Fatalf("[%s] S2: expected focusPath tail session:%s:%s, got %#v", label, user, sessionID, tail)
 		}
 	}
 	assertS3 := func(t *testing.T, state *contextFeedbackViewState, label string) {
@@ -1233,32 +1182,11 @@ func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *tes
 		if state.collapsedContextHistory {
 			t.Fatalf("[%s] S3: expected collapsedContextHistory=false, got true", label)
 		}
-		if got := state.activeRowKey(); got != sessionRowKey {
-			t.Fatalf("[%s] S3: expected activeRowKey=%q, got %q", label, sessionRowKey, got)
-		}
-		if tail := state.focusPath.Tail(); tail.Kind != nodeKindSession || tail.User != user || tail.Session != sessionID {
-			t.Fatalf("[%s] S3: expected focusPath tail session:%s:%s, got %#v", label, user, sessionID, tail)
-		}
-		if state.historyTabUserPause {
-			t.Fatalf("[%s] S3: expected historyTabUserPause=false, got true", label)
-		}
-	}
-	assertS4 := func(t *testing.T, state *contextFeedbackViewState, label string) {
-		t.Helper()
-		if !state.insideSection {
-			t.Fatalf("[%s] S4: expected insideSection=true, got false", label)
-		}
-		if state.collapsedContextHistory {
-			t.Fatalf("[%s] S4: expected collapsedContextHistory=false, got true", label)
-		}
 		if got := state.activeRowKey(); got != turnRowKey {
-			t.Fatalf("[%s] S4: expected activeRowKey=%q, got %q", label, turnRowKey, got)
+			t.Fatalf("[%s] S3: expected activeRowKey=%q, got %q", label, turnRowKey, got)
 		}
 		if tail := state.focusPath.Tail(); tail.Kind != nodeKindTurn || tail.User != user || tail.Session != sessionID || tail.Turn != 1 {
-			t.Fatalf("[%s] S4: expected focusPath tail turn:%s:%s:1, got %#v", label, user, sessionID, tail)
-		}
-		if state.historyTabUserPause {
-			t.Fatalf("[%s] S4: expected historyTabUserPause=false, got true", label)
+			t.Fatalf("[%s] S3: expected focusPath tail turn:%s:%s:1, got %#v", label, user, sessionID, tail)
 		}
 	}
 
@@ -1268,8 +1196,8 @@ func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *tes
 		assertS1, // Tab 1 → S1
 		assertS2, // Tab 2 → S2
 		assertS3, // Tab 3 → S3
-		assertS4, // Tab 4 → S4
-		assertS4, // Tab 5 → S4 (no-op at leaf)
+		assertS3, // Tab 4 → S3 (no-op at leaf)
+		assertS3, // Tab 5 → S3 (no-op at leaf)
 	}
 
 	// shiftTabPaths[n] is the sequence of expected states after each Shift-Tab press
@@ -1279,12 +1207,12 @@ func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *tes
 		{},                                               // n=1: 0 shift-tabs
 		{assertS1},                                       // n=2: S2→S1
 		{assertS2, assertS1},                             // n=3: S3→S2→S1
-		{assertS3, assertS2, assertS1},                   // n=4: S4→S3→S2→S1
-		{assertS3, assertS2, assertS1, assertS0},         // n=5: S4→S3→S2→S1→S0
+		{assertS2, assertS1, assertS0},                   // n=4: S3→S2→S1→S0
+		{assertS2, assertS1, assertS0, assertS0},         // n=5: S3→S2→S1→S0→S0
 	}
 
 	finalStates := [6]func(*testing.T, *contextFeedbackViewState, string){
-		nil, assertS1, assertS1, assertS1, assertS1, assertS0,
+		nil, assertS1, assertS1, assertS1, assertS0, assertS0,
 	}
 
 	// Expected status messages after each Shift-Tab press (inside→"Stepped back", exit→"Exited section").
@@ -1293,8 +1221,8 @@ func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *tes
 		{},
 		{"Stepped back in context-history."},
 		{"Stepped back in context-history.", "Stepped back in context-history."},
-		{"Stepped back in context-history.", "Stepped back in context-history.", "Stepped back in context-history."},
-		{"Stepped back in context-history.", "Stepped back in context-history.", "Stepped back in context-history.", "Exited section: context-history."},
+		{"Stepped back in context-history.", "Stepped back in context-history.", "Exited section: context-history."},
+		{"Stepped back in context-history.", "Stepped back in context-history.", "Exited section: context-history.", "Exited section: context-history."},
 	}
 
 	for n := 1; n <= 5; n++ {
