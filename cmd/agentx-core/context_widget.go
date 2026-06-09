@@ -220,7 +220,7 @@ func rowKeyForNodeID(section string, id nodeID) string {
 }
 
 const (
-	contextHistorySortAscending = "ascending"
+	contextHistorySortAscending  = "ascending"
 	contextHistorySortDescending = "descending"
 )
 
@@ -242,10 +242,12 @@ type contextFeedbackViewState struct {
 	// Section-level navigation state.
 	// activeSection is the section header the cursor rests on when insideSection=false.
 	// insideSection=true means the cursor is navigating rows within the active section.
-	activeSection string
-	insideSection bool
-	focusPath     focusPath
+	activeSection       string
+	insideSection       bool
+	focusPath           focusPath
 	historyTabUserPause bool
+	wmEditorDraftKey    string
+	wmEditorDraftValue  string
 }
 
 const (
@@ -1659,9 +1661,13 @@ func renderWorkingMemoryEditorScaffold(viewState *contextFeedbackViewState, rowK
 	if rowKeys != nil {
 		*rowKeys = append(*rowKeys, keyRow, valueRow, saveRow)
 	}
-	keyCell := "                       "
-	valueCell := "                       "
+	keyCell := strings.Repeat(" ", 23)
+	valueCell := strings.Repeat(" ", 23)
 	saveLbl := " ↳OK "
+	if viewState != nil {
+		keyCell = renderWorkingMemoryEditorCellText(viewState.wmEditorDraftKey, 23)
+		valueCell = renderWorkingMemoryEditorCellText(viewState.wmEditorDraftValue, 23)
+	}
 	if viewState != nil && viewState.insideSection {
 		if viewState.activeRowKey() == keyRow {
 			keyCell = ansiReverse + keyCell + ansiReset
@@ -1679,6 +1685,22 @@ func renderWorkingMemoryEditorScaffold(viewState *contextFeedbackViewState, rowK
 		fmt.Sprintf("│%s│ │%s│ │%s│", keyCell, valueCell, saveLbl),
 		"└───────────────────────┘ └───────────────────────┘ └─────┘",
 	}
+}
+
+func renderWorkingMemoryEditorCellText(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return strings.Repeat(" ", width)
+	}
+	truncated := renderTruncate(trimmed, width, "")
+	padding := width - renderStringWidth(truncated)
+	if padding <= 0 {
+		return truncated
+	}
+	return truncated + strings.Repeat(" ", padding)
 }
 
 func appendDefaultWorkingMemoryFacts(facts []workingMemoryFactLine) []workingMemoryFactLine {
@@ -2203,6 +2225,9 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 		applyWorkingMemoryCommand(state, args)
 		return
 	default:
+		if handleWorkingMemoryEditorTextInput(state, line) {
+			return
+		}
 		state.setStatus("Unknown context command (use help or ?).")
 	}
 }
@@ -2462,8 +2487,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			return true
 		}
 		if state.activeSection == "working-memory" {
-			state.collapsedWorkingMemory = !state.collapsedWorkingMemory
-			state.setStatus(fmt.Sprintf("Working memory is now %s.", mapCollapsedState(state.collapsedWorkingMemory)))
+			state.setStatus("Row has no expand/collapse action.")
 			return true
 		}
 		state.setStatus("Row has no expand/collapse action.")
@@ -2491,6 +2515,11 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 			}
 			state.setStatus(fmt.Sprintf("Row %s is now %s.", rowKey, mapContextEntryState(state.disabledEntries[rowKey])))
 			return true
+		}
+		if state.activeSection == "working-memory" {
+			if applyWorkingMemoryEnterAction(state, rowKey) {
+				return true
+			}
 		}
 		_ = snapshot
 		state.setStatus("Row has no action.")
@@ -2576,6 +2605,135 @@ func expandToggleAlias(raw string) string {
 	default:
 		return value
 	}
+}
+
+func handleWorkingMemoryEditorTextInput(state *contextFeedbackViewState, line string) bool {
+	if state == nil || !state.insideSection || state.activeSection != "working-memory" {
+		return false
+	}
+	rowKey := strings.TrimSpace(state.activeRowKey())
+	switch rowKey {
+	case "wm:editor:key":
+		state.wmEditorDraftKey = strings.TrimSpace(line)
+		state.setStatus("Working-memory key staged.")
+		return true
+	case "wm:editor:value":
+		state.wmEditorDraftValue = strings.TrimSpace(line)
+		state.setStatus("Working-memory value staged.")
+		return true
+	default:
+		return false
+	}
+}
+
+func applyWorkingMemoryEnterAction(state *contextFeedbackViewState, rowKey string) bool {
+	if state == nil {
+		return false
+	}
+	switch strings.TrimSpace(rowKey) {
+	case "wm:editor:key":
+		_ = state.setActiveRowByKey("wm:editor:value")
+		state.setStatus("Committed working-memory key.")
+		return true
+	case "wm:editor:value":
+		_ = state.setActiveRowByKey("wm:editor:save")
+		state.setStatus("Committed working-memory value.")
+		return true
+	case "wm:editor:save":
+		if saveWorkingMemoryEditorDraft(state) {
+			_ = state.setActiveRowByKey("wm:editor:key")
+			state.wmEditorDraftKey = ""
+			state.wmEditorDraftValue = ""
+		}
+		return true
+	}
+	if owner, key, ok := parseWorkingMemoryFactRowKey(rowKey); ok {
+		return toggleWorkingMemoryFact(state, owner, key)
+	}
+	return false
+}
+
+func parseWorkingMemoryFactRowKey(rowKey string) (string, string, bool) {
+	trimmed := strings.TrimSpace(rowKey)
+	if !strings.HasPrefix(trimmed, "wm:") || strings.HasPrefix(trimmed, "wm:editor:") {
+		return "", "", false
+	}
+	parts := strings.SplitN(strings.TrimPrefix(trimmed, "wm:"), ":", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	owner := strings.ToLower(strings.TrimSpace(parts[0]))
+	key := strings.TrimSpace(parts[1])
+	if owner == "" || key == "" {
+		return "", "", false
+	}
+	return owner, key, true
+}
+
+func toggleWorkingMemoryFact(state *contextFeedbackViewState, owner string, key string) bool {
+	sessionDir := strings.TrimSpace(resolveCurrentSessionDirFromEnv())
+	if sessionDir == "" {
+		state.setStatus("Working memory unavailable (missing session env).")
+		return true
+	}
+	payload, err := loadWorkingMemoryPayload(sessionDir)
+	if err != nil {
+		state.setStatus(fmt.Sprintf("Failed to load working memory: %v", err))
+		return true
+	}
+	compound := strings.ToLower(strings.TrimSpace(owner)) + ":" + strings.TrimSpace(key)
+	snapshot, ok := payload[compound]
+	if !ok {
+		for _, fact := range appendDefaultWorkingMemoryFacts(loadWorkingMemoryFacts(sessionDir)) {
+			if fact.owner == owner && fact.key == key {
+				snapshot = workingMemoryFactSnapshot{Owner: owner, Key: key, Value: fact.value, Enabled: fact.enabled}
+				ok = true
+				break
+			}
+		}
+	}
+	if !ok {
+		state.setStatus("Working-memory fact not found.")
+		return true
+	}
+	snapshot.Owner = owner
+	snapshot.Key = key
+	snapshot.Enabled = !snapshot.Enabled
+	payload[compound] = snapshot
+	if err := saveWorkingMemoryPayload(sessionDir, payload); err != nil {
+		state.setStatus(fmt.Sprintf("Failed to persist working memory: %v", err))
+		return true
+	}
+	state.setStatus(fmt.Sprintf("Updated working-memory key %s (%s).", key, mapContextEntryState(!snapshot.Enabled)))
+	return true
+}
+
+func saveWorkingMemoryEditorDraft(state *contextFeedbackViewState) bool {
+	if state == nil {
+		return false
+	}
+	sessionDir := strings.TrimSpace(resolveCurrentSessionDirFromEnv())
+	if sessionDir == "" {
+		state.setStatus("Working memory unavailable (missing session env).")
+		return false
+	}
+	key := strings.TrimSpace(state.wmEditorDraftKey)
+	if key == "" {
+		state.setStatus("Working-memory key cannot be empty.")
+		return false
+	}
+	payload, err := loadWorkingMemoryPayload(sessionDir)
+	if err != nil {
+		state.setStatus(fmt.Sprintf("Failed to load working memory: %v", err))
+		return false
+	}
+	payload["user:"+key] = workingMemoryFactSnapshot{Owner: "user", Key: key, Value: strings.TrimSpace(state.wmEditorDraftValue), Enabled: true}
+	if err := saveWorkingMemoryPayload(sessionDir, payload); err != nil {
+		state.setStatus(fmt.Sprintf("Failed to persist working memory: %v", err))
+		return false
+	}
+	state.setStatus(fmt.Sprintf("Updated working-memory key %s.", key))
+	return true
 }
 
 func resolveCurrentSessionDirFromEnv() string {

@@ -767,6 +767,117 @@ func TestContextWidgetKeyboard_EnterHistoryIsActionOnly(t *testing.T) {
 	}
 }
 
+func TestContextWidgetKeyboard_SpaceInsideWorkingMemoryTargetsRowOnly(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.activeSection = "working-memory"
+	state.insideSection = true
+	state.collapsedWorkingMemory = false
+	state.updateOrderedRows([]string{"wm:editor:key", "wm:user:current_user"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+
+	if state.collapsedWorkingMemory {
+		t.Fatalf("expected space inside working-memory to avoid section collapse")
+	}
+	if got := state.statusLine; got != "Row has no expand/collapse action." {
+		t.Fatalf("expected focused-target no-op status, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_EnterWorkingMemoryFactTogglesEnabledState(t *testing.T) {
+	projectDir := t.TempDir()
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "mpeters",
+		"AGENTX_SESSION_ID":  "sess-wm-enter",
+	})
+
+	sessionDir := filepath.Join(projectDir, "sessions", "mpeters", "sess-wm-enter")
+	if err := saveWorkingMemoryPayload(sessionDir, map[string]workingMemoryFactSnapshot{
+		"user:topic": {Owner: "user", Key: "topic", Value: "go", Enabled: true},
+	}); err != nil {
+		t.Fatalf("saveWorkingMemoryPayload failed: %v", err)
+	}
+
+	state := newContextFeedbackViewState()
+	state.activeSection = "working-memory"
+	state.insideSection = true
+	state.updateOrderedRows([]string{"wm:user:topic"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	payload, err := loadWorkingMemoryPayload(sessionDir)
+	if err != nil {
+		t.Fatalf("loadWorkingMemoryPayload failed: %v", err)
+	}
+	if payload["user:topic"].Enabled {
+		t.Fatalf("expected first enter to disable focused fact")
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	payload, err = loadWorkingMemoryPayload(sessionDir)
+	if err != nil {
+		t.Fatalf("loadWorkingMemoryPayload failed: %v", err)
+	}
+	if !payload["user:topic"].Enabled {
+		t.Fatalf("expected second enter to re-enable focused fact")
+	}
+}
+
+func TestContextWidgetKeyboard_EnterWorkingMemoryEditorCommitAndSave(t *testing.T) {
+	projectDir := t.TempDir()
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "mpeters",
+		"AGENTX_SESSION_ID":  "sess-wm-editor",
+	})
+	sessionDir := filepath.Join(projectDir, "sessions", "mpeters", "sess-wm-editor")
+
+	state := newContextFeedbackViewState()
+	state.activeSection = "working-memory"
+	state.insideSection = true
+	state.collapsedWorkingMemory = false
+	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save"})
+	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
+
+	applyContextWidgetCommand(state, "feature_flag", "http://127.0.0.1:0", snapshot)
+	if got := state.wmEditorDraftKey; got != "feature_flag" {
+		t.Fatalf("expected key draft staged, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.activeRowKey(); got != "wm:editor:value" {
+		t.Fatalf("expected enter on key cell to advance to value cell, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "enabled", "http://127.0.0.1:0", snapshot)
+	if got := state.wmEditorDraftValue; got != "enabled" {
+		t.Fatalf("expected value draft staged, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	if got := state.activeRowKey(); got != "wm:editor:save" {
+		t.Fatalf("expected enter on value cell to advance to save cell, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	payload, err := loadWorkingMemoryPayload(sessionDir)
+	if err != nil {
+		t.Fatalf("loadWorkingMemoryPayload failed: %v", err)
+	}
+	fact, ok := payload["user:feature_flag"]
+	if !ok {
+		t.Fatalf("expected save cell enter to persist feature_flag")
+	}
+	if fact.Value != "enabled" {
+		t.Fatalf("expected persisted value enabled, got %#v", fact.Value)
+	}
+	if !fact.Enabled {
+		t.Fatalf("expected persisted fact to be enabled")
+	}
+}
+
 func TestResolveContextHistorySessionSort_EnvOverride(t *testing.T) {
 	setWidgetTestEnv(t, map[string]string{
 		"AGENTX_CONTEXT_HISTORY_SESSION_SORT": "Ascending",
@@ -1203,12 +1314,12 @@ func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *tes
 	// shiftTabPaths[n] is the sequence of expected states after each Shift-Tab press
 	// when the preceding Tab×n left us at the given state.
 	shiftTabPaths := [6][]func(*testing.T, *contextFeedbackViewState, string){
-		nil,                                              // n=0 unused
-		{},                                               // n=1: 0 shift-tabs
-		{assertS1},                                       // n=2: S2→S1
-		{assertS2, assertS1},                             // n=3: S3→S2→S1
-		{assertS2, assertS1, assertS0},                   // n=4: S3→S2→S1→S0
-		{assertS2, assertS1, assertS0, assertS0},         // n=5: S3→S2→S1→S0→S0
+		nil,                                      // n=0 unused
+		{},                                       // n=1: 0 shift-tabs
+		{assertS1},                               // n=2: S2→S1
+		{assertS2, assertS1},                     // n=3: S3→S2→S1
+		{assertS2, assertS1, assertS0},           // n=4: S3→S2→S1→S0
+		{assertS2, assertS1, assertS0, assertS0}, // n=5: S3→S2→S1→S0→S0
 	}
 
 	finalStates := [6]func(*testing.T, *contextFeedbackViewState, string){
