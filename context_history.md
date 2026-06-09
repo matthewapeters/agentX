@@ -116,16 +116,18 @@ Example:
 - Outside section focus (`insideSection=false`):
   - `Up/Down` moves the active section header cursor.
   - `Space` toggles expand/collapse for the active section.
-  - `Enter` enters the active section without changing section collapsed state.
-  - `Tab` enters the active section and forces that section expanded.
+  - `Tab` drills into the active section by one level, expanding the target section if needed and placing focus on that expanded target.
+  - `Enter` is action-only and does not perform drill-in or node expand/collapse.
 - Inside section focus (`insideSection=true`):
   - `Up/Down` moves row selection within the active section.
   - `Left/Right` moves horizontal siblings where available (for example prompt <-> response, session <-> first turn).
-  - `Space` on `context-history` rows performs peek/expand toggle using history focus-path semantics (no row selected/enabled dot semantics for history rows).
-  - `Enter` executes row expansion/collapse action for rows that support it.
-    For context-history rows, `Enter` uses the same focus-path toggle behavior as `Space`: entering a non-focused node expands to it, and pressing the key again on the focused node collapses to its parent.
-  - `Space` on `current-context` and `working-memory` rows keeps row selection semantics.
-  - `PgUp/PgDn` scrolls section viewports for `context-history` and `working-memory`; on expanded current-context rows, it scrolls wrapped text content.
+  - `Space` performs peek/expand on the focused section or node: it toggles the focused node branch visibility without moving focus.
+  - `Enter` performs action only on the focused element/cell:
+    - enable/disable a focused element,
+    - commit a focused cell value and advance focus to the next cell,
+    - save a Working Memory key/value pair when focus is on the Save cell.
+  - `PgUp/PgDn` scrolls wrapped text content when the active row is an expanded `current-context` text entry; otherwise it pages the row cursor by 5.
+  - Section-specific note: in `context-history` and `working-memory`, `PgUp/PgDn` always pages row selection by 5 rows (no separate textbox scroll mode).
 
 ### Toggle Options
 
@@ -137,15 +139,15 @@ To toggle expansion or collapse without entering a section, use `Space` while ou
 
 #### Enable / Disable
 
-To toggle an element as selected or not, use `Space` while inside section focus on `current-context` and `working-memory`. In `context-history`, `Space` is reserved for node peek/expand.
+To toggle an element enabled/disabled, use `Enter` while inside section focus on `current-context` and `working-memory`. In `context-history`, `Space` is reserved for node peek/expand.
 
 ### Enter Exit Expandable Areas (Focus)
 
-Drill In / Enter area: `Tab` (or `Enter` when outside section focus). `Tab` forces the active section expanded; `Enter` preserves the current section collapsed/expanded state.
+Drill In / Enter area: `Tab`. `Tab` drills in one level; if the target section/node is collapsed, it is expanded and focus is moved to that expanded target.
 
-Drill Out / Exit area: `Shift-Tab`. Exiting a section collapses that section.
+Drill Out / Exit area: `Shift-Tab`. `Shift-Tab` backs out one level and collapses the exited node.
 
-For deep context-history focus paths (user -> session -> turn), `Shift-Tab` exits section focus, collapses the section, and pops focus-path depth by one node (turn -> session, session -> user, user -> section).
+For deep context-history focus paths (user -> session -> turn), each `Shift-Tab` backs out exactly one level and collapses the node being exited (turn -> session, session -> user, user -> section). When backing out from the section root, section focus exits and the section remains collapsed.
 
 ## Layout and Default State (Shipped)
 
@@ -175,19 +177,18 @@ Keyboard-driven transitions use normalized status text. Representative statuses:
 
 ## Context History Widget
 
-- users are listed in alphabetical order; a system may support more than one user, their sessions are segregated in the `.sessions/` folder by user name.  Only one user session history may be expanded at a time.  Only one user session history may have focus at a time.
+- users are listed in alphabetical order; a system may support more than one user, their sessions are segregated in the `.sessions/` folder by user name.
 - For each user, session ordering is presentation-only and deterministic.  The default sort is `Ascending` to match the current loader; `Descending` may be selected when users want most-recent-first browsing.  The active order is controlled by `agentx.context_history_session_sort` in `agentx.toml`.
-  Context-history nodes (`user`, `session`, `turn`) are applet-owned model nodes with explicit IDs/parent interfaces and are expanded/collapsed with `Enter` or `Space` while inside section focus.
+  Context-history nodes (`user`, `session`, `turn`) are applet-owned model nodes with explicit IDs/parent interfaces and are expanded/collapsed with `Space` while inside section focus.
 - Facelift details for the Go TUI variant:
   - section headers are iconized for quick scanning (`🗄️ Context History`, `💾 Working Memory`, `📑 Current Context`)
   - expanded context history surfaces a compact summary line (`sessions`, active `sort`, and keyboard hint)
   - each session card includes absolute timestamp plus relative age (`Xd/Xh/Xm ago`) for faster recency parsing
   - state labels are color-coded (`collapsed` vs `expanded`) to reduce visual ambiguity
-- Focus is singular (one active row at a time), but expansion state is independent per row/section and not globally single-open.
+- Focus is singular (one active row at a time). Expansion state may be multi-open per row/section unless a section-specific behavior explicitly constrains it.
 - A context must be in section focus to enable row navigation and viewport scrolling.
 - In context-history row focus:
-  - `Enter` or `Space` expands the focused history node when it is not currently the focused leaf path.
-  - `Enter` or `Space` collapses to the parent node when the focused node is already the focused leaf path.
+  - `Space` performs peek/expand: it toggles the focused history node branch visibility without moving focus.
   - This yields deterministic toggle behavior for user/session nodes based on current focus path.
   - Pressing `Down` on a section with only one user row is a no-op and does not implicitly descend into sessions.
 
@@ -196,14 +197,14 @@ Keyboard-driven transitions use normalized status text. Representative statuses:
 - Working memory should be persisted in a JSON file within the current context folder in the file system, along with enabled/disabled/deleted state.
 - existing working keys/values are read-only displays
   - Working Memory (scrollable view port with scrollbar & thumbnail)
-- if the Working Memory exceeds the expanded window's area, show scrollbar and thumbnail. Up/Down arrows and PageUp/PageDown allow for scrolling through these KV pairs.
-- User may enable or disable working memory elements by using the Space bar.  Enabled elements will be used in the next prompt context.  Enabled and disabled state are remembered for the duration of the session and the user can change them between prompts
+- if the Working Memory exceeds the expanded window's area, show scrollbar and thumbnail. Up/Down arrows move row selection, and `PgUp/PgDn` pages row selection by 5 through these KV pairs.
+- User may enable or disable working memory elements by using `Enter` on the focused element. Enabled elements will be used in the next prompt context. Enabled and disabled state are remembered for the duration of the session and the user can change them between prompts.
 - To remove a KV pair from working memory, the user selects the pair and hits the "DELETE" key. This will not delete the pair from the file persistence, but will change the state to "deleted" and will not be displayed on [re]rendering.  NOTE: if a user want to un-delete a working memory KV pair, they must edit the persistence file and modify it there.  Disable is the better option for "soft delete"
 
 ### Context History Widget Working Memory Version
 
-- The working memory widget within the Context History widget does not allow users to change values.  However, users may select items from it and copy them into the current working memory by selecting the pair and hitting ENTER.
-  This is a nested import affordance only: historical facts may be mined into the current Working Memory, but they do not redefine the current-session editor.
+- The working memory widget within the Context History widget does not allow users to change values and remains read-only in this surface.
+  This surface supports review only; editing and save actions belong to the applet-level Working Memory editor.
 - there are four affordances in the area:
   - Key entry cell (user enters key name)
   - Value entry area (user enters value to map to key)
@@ -215,7 +216,9 @@ Keyboard-driven transitions use normalized status text. Representative statuses:
 
 The applet-level Working Memory Widget supports editing of items for the current context.
 
-- When the area is in focus, the Key cell has first focus, the Value cell as second focus, and the Enter button as third focus. Finally, the scrollable Working Memory viewport has fourth focus.  Focus wraps back and forth.  User can use Left and Right arrow keys to move between these areas.  Active cell and title are bright-colored, inactive are muted
+- When the area is in focus, the Key cell has first focus, the Value cell as second focus, and the Save cell as third focus. Finally, the scrollable Working Memory viewport has fourth focus. Focus wraps back and forth. User can use Left and Right arrow keys to move between these areas. Active cell and title are bright-colored, inactive are muted.
+- `Enter` in Key/Value cells commits the current cell value and advances focus to the next cell.
+- `Enter` on the Save cell saves the Working Memory key/value pair.
 
 ## Context Widget
 

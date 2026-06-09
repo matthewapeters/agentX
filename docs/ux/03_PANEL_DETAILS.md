@@ -1347,11 +1347,20 @@ Each applet above must have:
   implementation work can be reviewed against one authoritative spec chain.
 - Context-history keyboard behavior is owned by an applet model with explicit
   history node interfaces (user/session/turn IDs with parent links).
-- Inside `context-history`, `Space` and `Enter` both perform history node
-  peek/expand toggle semantics (focus-path based), not generic row
-  selected/enabled-dot semantics.
+- `Tab` drills in one level and moves focus to the expanded target.
+- `Shift-Tab` backs out one level and collapses the exited node.
+- Inside `context-history`, `Space` performs history node peek/expand: it
+  toggles the focused node branch visibility without moving focus.
+- `Enter` is action-only: enable/disable element, commit cell value and advance
+  to the next cell, or save a Working Memory pair.
+- `PgUp/PgDn` scrolls wrapped text content only when the active row is an
+  expanded `current-context` text entry; otherwise it pages row selection by 5
+  rows (including `context-history` and `working-memory`).
 - Boundary behavior is explicit: pressing `Down` when only a single user history
   row exists is a no-op and must not auto-descend into sessions.
+- Runtime-default note: the Go TUI context applet defaults (`current-context`
+  expanded; `context-history` and `working-memory` collapsed) are runtime-
+  specific and may differ from legacy GUI Session tab defaults.
 
 ---
 

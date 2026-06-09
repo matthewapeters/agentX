@@ -26,6 +26,7 @@ Core tokens (cross-applet baseline):
 - `top` / `end`
 - `enter`
 - `tab`
+- `shift-tab`
 - `space`
 
 Extended tokens (applet-specific):

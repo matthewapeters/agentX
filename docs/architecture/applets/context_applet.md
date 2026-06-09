@@ -56,8 +56,8 @@ do. The current mode is indicated visually by section-border brightness.
 
 | Mode | How to enter | How to exit | Border color |
 |------|-------------|------------|-------------|
-| **Outside section** | Initial state; `Shift-Tab` while inside a section | `Tab` or `Enter` | Dim (all sections) |
-| **Inside section** | `Tab` or `Enter` while outside | `Shift-Tab` | Bright (active section only) |
+| **Outside section** | Initial state; `Shift-Tab` from section root | `Tab` | Dim (all sections) |
+| **Inside section** | `Tab` while outside | `Shift-Tab` | Bright (active section only) |
 
 ### Keyboard contract (authoritative)
 
@@ -67,26 +67,39 @@ do. The current mode is indicated visually by section-border brightness.
   section list: `context-history` → `working-memory` → `current-context`.
   Cursor clamps at both ends.
 - `Space`: expand or collapse the currently focused section.
-- `Enter` / `Tab`: enter the focused section (switch to inside-section mode).
+- `Tab`: drill into the focused section by one level (switch to inside-section
+  mode), expanding the target section if needed and placing focus on the
+  expanded target.
+- `Enter`: action-only; no section drill-in and no expand/collapse behavior.
 
 **Inside-section mode (row navigation):**
 
 - `Up` / `Down` (`k` / `j`): move the active row within the section.
 - `Left` / `Right` (`h` / `l`): horizontal sibling movement (current
   prompt/response and prior-session group/item transitions).
-- `Space`: select or deselect the active row.
-- `Enter`: expand or collapse the active row where applicable.
+- `Space`: perform peek/expand on the focused section or node; toggle the
+  focused node branch visibility without moving focus.
+- `Enter`: perform action only on the focused element/cell:
+  - enable or disable an element,
+  - commit a cell value and advance to the next cell,
+  - save the Working Memory key/value pair when focus is on the Save cell.
 - `PageDown` / `PageUp`: scroll text content when the active row is an expanded
   `current-context` entry; otherwise page the row cursor by 5.
-- `Tab`: stay inside the section and normalize focus to the section's first
-  eligible row (drill-in/idempotent behavior).
-- `Shift-Tab`: exit the section (return to outside-section mode).
+- Section-specific note: for `context-history` and `working-memory`,
+  `PageDown` / `PageUp` always page row selection by 5 (no separate textbox
+  scroll mode).
+- `Tab`: drill one level deeper from the focused target and move focus to the
+  expanded target.
+- `Shift-Tab`: back out one level and collapse the exited node.
 
 **Textbox-scroll mode (inside section, expanded text row):**
 
 - `Up` / `Down`: scroll one line.
 - `PageUp` / `PageDown`: scroll five lines.
 - `Tab`: exit textbox mode and remain inside the active section.
+
+Rule: when `Shift-Tab` backs out from the section root, focus returns to
+outside-section mode and the exited section is collapsed.
 
 ### Section list (authoritative order)
 
