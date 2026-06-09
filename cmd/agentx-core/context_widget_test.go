@@ -993,6 +993,52 @@ func TestContextWidgetKeyboard_SpaceOnWorkingMemoryHeaderTogglesOnly(t *testing.
 	}
 }
 
+// TestContextWidgetKeyboard_SpaceAfterExitWMSection_DoesNotReenterSection covers
+// the exact regression where the user was inside the WM section (insideSection=true,
+// activeRow pointing at a WM row), pressed Shift-Tab to exit, then pressed SPACE
+// to expand the section. The subsequent updateOrderedRows call (simulating a render)
+// previously called setFocusPath unconditionally, which re-set insideSection=true.
+func TestContextWidgetKeyboard_SpaceAfterExitWMSection_DoesNotReenterSection(t *testing.T) {
+	wmRows := []string{"wm:editor:key", "wm:editor:value", "wm:editor:save", "wm:user:project"}
+	snapshot := contextWidgetSnapshot{SessionID: "sess-space-reenter"}
+
+	state := newContextFeedbackViewState()
+	state.activeSection = "working-memory"
+	state.insideSection = true
+	state.collapsedWorkingMemory = false
+	state.updateOrderedRows(wmRows)
+	_ = state.setActiveRowByKey("wm:editor:key")
+	if got := state.activeRowKey(); got != "wm:editor:key" {
+		t.Fatalf("expected wm:editor:key to be active inside section, got %q", got)
+	}
+
+	// Shift-Tab exits the section.
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	if state.insideSection {
+		t.Fatalf("expected shift-tab to set insideSection=false, got true")
+	}
+
+	// SPACE expands the section from outside.
+	state.collapsedWorkingMemory = true // simulate collapsed before SPACE
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	if state.collapsedWorkingMemory {
+		t.Fatalf("expected SPACE to expand working-memory section")
+	}
+	if state.insideSection {
+		t.Fatalf("expected SPACE to leave insideSection=false, got true (immediate check)")
+	}
+
+	// Simulate the render cycle: updateOrderedRows is called with WM rows visible
+	// (WM is now expanded). This is the step that previously triggered the bug.
+	state.updateOrderedRows(wmRows)
+	if state.insideSection {
+		t.Fatalf("expected updateOrderedRows after SPACE-expand not to set insideSection=true (regression: TAB effect)")
+	}
+	if state.activeSection != "working-memory" {
+		t.Fatalf("expected activeSection to remain working-memory, got %q", state.activeSection)
+	}
+}
+
 func TestContextWidgetKeyboard_WorkingMemoryEditorIncrementalTypingBackspaceAndLimits(t *testing.T) {
 	state := newContextFeedbackViewState()
 	state.activeSection = "working-memory"

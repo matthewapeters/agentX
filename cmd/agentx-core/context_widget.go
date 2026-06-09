@@ -364,8 +364,15 @@ func (state *contextFeedbackViewState) updateOrderedRows(keys []string) {
 	if state.activeSection == "context-history" {
 		return
 	}
-	if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
-		state.setFocusPath(focusPathForNode(state.activeSection, node))
+	// Only sync the focus path when the user is already inside the section.
+	// Calling setFocusPath with a non-section node sets insideSection=true;
+	// doing that unconditionally would flip insideSection when the user is in
+	// outside-section mode (e.g. after SPACE expands a section), producing the
+	// same effect as pressing TAB.
+	if state.insideSection {
+		if node, ok := nodeIDForRowKey(state.activeSection, state.activeRowKey()); ok {
+			state.setFocusPath(focusPathForNode(state.activeSection, node))
+		}
 	}
 }
 
