@@ -424,13 +424,12 @@ func (m *contextHistoryTreeModel) firstTurnRowKeyForSession(user string, session
 }
 
 // StepOutFocus steps back one level in the context-history focus hierarchy
-// instead of exiting completely. Reverse Tab transitions:
+// instead of exiting completely. Shift-Tab transitions:
 //
-//	 S4 (turn)              → S3 (session):         pop to parent session row
-//	 S3 (session)           → S2 (user, pause=false): pop to parent user row
-//	 S2 (user, pause=false) → S1 (user, pause=true):  restore pause, stay inside
-//	 S1 (user, pause=true)  → S0 (outside):           exit section
-//	 S0 (section)           → S0:                     no-op
+//	 Turn row    → Session row: pop focus to parent session
+//	 Session row → User row:    pop focus to parent user
+//	 User row    → Section root: pop focus, collapse section, stay inside
+//	 Section root → Outside:     collapse section, exit section mode (no-op if already outside)
 func (m *contextHistoryTreeModel) StepOutFocus(state *contextFeedbackViewState) {
 	if state == nil {
 		return

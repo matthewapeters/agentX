@@ -1958,6 +1958,41 @@ func TestSectionBorderColor_ActiveSectionUsesSectionSpecificAccent(t *testing.T)
 	}
 }
 
+func TestRenderContextFeedbackSections_SectionSpecificActiveBorderColorsAppearInRenderedOutput(t *testing.T) {
+	state := newContextFeedbackViewState()
+	state.insideSection = true
+
+	snapshot := contextWidgetSnapshot{SessionID: "sess-colors", Turns: []ChatTurn{{Prompt: "p1", Response: "r1"}}}
+
+	state.activeSection = "context-history"
+	state.collapsedContextHistory = false
+	state.updateOrderedRows([]string{"user:mpeters"})
+	renderedHistory := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	if !strings.Contains(renderedHistory, ansiCyan) {
+		t.Fatalf("expected context-history active border rendered with cyan accent in output")
+	}
+
+	state.activeSection = "working-memory"
+	state.collapsedWorkingMemory = false
+	renderedWM := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	if !strings.Contains(renderedWM, ansiGreen) {
+		t.Fatalf("expected working-memory active border rendered with green accent in output")
+	}
+
+	state.activeSection = "current-context"
+	state.collapsedCurrentContext = false
+	renderedCurrent := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	if !strings.Contains(renderedCurrent, ansiMagenta) {
+		t.Fatalf("expected current-context active border rendered with magenta accent in output")
+	}
+
+	state.insideSection = false
+	renderedOutside := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	if !strings.Contains(renderedOutside, ansiDim) {
+		t.Fatalf("expected outside-section borders rendered with dim accent in output")
+	}
+}
+
 func TestRenderContextFeedbackSections_FiltersEmptyTurnStubs(t *testing.T) {
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{
