@@ -20,6 +20,11 @@ See [docs/architecture/channel_registry.md](architecture/channel_registry.md) fo
 
 See [docs/architecture/runtime_split.md](architecture/runtime_split.md) for the authoritative runtime split and migration plan: Go core and Go applets, IPC contract, migration phases, and thin-GUI contract. All parity and migration claims must reference this doc.
 
+## Applet Contracts (Authoritative)
+
+See [docs/architecture/applets/](architecture/applets/README.md) for the authoritative per-applet UX/architecture contracts.
+The **Output applet** interactive design (navigation model, ownership boundary, phased implementation plan) is the canonical source of truth at [docs/architecture/applets/output_applet.md](architecture/applets/output_applet.md).
+
 ## Startup Modes (Authoritative)
 
 See [docs/architecture/startup_modes.md](architecture/startup_modes.md) for the authoritative startup-mode catalog, startup switches, and launch patterns.
