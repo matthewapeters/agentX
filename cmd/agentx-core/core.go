@@ -1302,7 +1302,16 @@ func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
 			}
 		}
 
-		launchCmd := ac.buildPaneAppletLaunchCommand(spec, base)
+		launchCmd := ""
+		if spec.Runtime == appletRuntimeGo {
+			paneHeight, paneWidth, err := ac.paneDimensions(ctx, ac.paneTargetForName(spec.PaneName))
+			if err != nil {
+				return fmt.Errorf("failed to resolve pane dimensions for %s: %w", spec.Name, err)
+			}
+			launchCmd = ac.buildPaneAppletLaunchCommand(spec, base, paneHeight, paneWidth)
+		} else {
+			launchCmd = ac.buildPaneAppletLaunchCommand(spec, base, 0, 0)
+		}
 
 		if err := ac.runTmux(ctx, "respawn-pane", "-k", "-t", ac.paneTargetForName(spec.PaneName), launchCmd); err != nil {
 			return fmt.Errorf("failed launching %s pane applet: %w", spec.Name, err)
@@ -1355,7 +1364,7 @@ func shellEnvPrefix(env map[string]string) string {
 	return strings.Join(parts, " ")
 }
 
-func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base appletBaseRuntimeConfig) string {
+func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base appletBaseRuntimeConfig, paneHeight int, paneWidth int) string {
 	baseEnv := map[string]string{
 		"AGENTX_APPLET_NAME":                 spec.Name,
 		"AGENTX_SESSION_ID":                  base.SessionID,
@@ -1372,6 +1381,8 @@ func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base 
 
 	if spec.Runtime == appletRuntimeGo {
 		delete(baseEnv, "AGENTX_CORE_OWNS_STARTUP_BOOTSTRAP")
+		baseEnv["AGENTX_WIDGET_PANE_HEIGHT"] = strconv.Itoa(paneHeight)
+		baseEnv["AGENTX_WIDGET_PANE_WIDTH"] = strconv.Itoa(paneWidth)
 		if spec.Name == "chat" {
 			return fmt.Sprintf(
 				"%s %s --output-widget --core-http %s",
@@ -1435,6 +1446,28 @@ func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base 
 		shellSingleQuote(ac.pythonExecutable),
 		shellSingleQuote(ac.chatAppletScript),
 	)
+}
+
+func (ac *AgentXCore) paneDimensions(ctx context.Context, paneTarget string) (int, int, error) {
+	output, err := ac.runTmuxCapture(ctx, "display-message", "-p", "-t", paneTarget, "#{pane_height}|#{pane_width}")
+	if err != nil {
+		return 0, 0, err
+	}
+
+	parts := strings.Split(strings.TrimSpace(output), "|")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("unexpected pane dimension output %q", output)
+	}
+
+	height, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil || height <= 0 {
+		return 0, 0, fmt.Errorf("invalid pane height %q", strings.TrimSpace(parts[0]))
+	}
+	width, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil || width <= 0 {
+		return 0, 0, fmt.Errorf("invalid pane width %q", strings.TrimSpace(parts[1]))
+	}
+	return height, width, nil
 }
 
 func (ac *AgentXCore) PrepareHealthEndpoint() error {

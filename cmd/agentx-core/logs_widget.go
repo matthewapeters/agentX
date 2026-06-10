@@ -20,12 +20,13 @@ func runLogsWidgetCommand(coreHTTP string, out io.Writer) int {
 func runLogsWidgetLoop(ctx context.Context, out io.Writer, idleInterval time.Duration) error {
 	hideTerminalCursor(out)
 	defer showTerminalCursor(out)
+	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
 
 	if idleInterval <= 0 {
 		idleInterval = 250 * time.Millisecond
 	}
 	var previousLines []string
-	render := renderLogsWidget(out)
+	render := renderLogsWidgetWithPaneSize(startupHeight, startupWidth)
 	if err := writeFilesystemWidgetFrameDiff(out, previousLines, filesystemWidgetFrameLines(render)); err != nil {
 		return err
 	}
@@ -51,6 +52,10 @@ func runLogsWidgetLoop(ctx context.Context, out io.Writer, idleInterval time.Dur
 
 func renderLogsWidget(out io.Writer) string {
 	height, width := resolveWidgetPaneSizeForWriter(out)
+	return renderLogsWidgetWithPaneSize(height, width)
+}
+
+func renderLogsWidgetWithPaneSize(height int, width int) string {
 	lines := []string{
 		"[LOGS]",
 		"Logs ready.",

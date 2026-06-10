@@ -262,9 +262,9 @@ const (
 	ansiMagenta = "\033[35m"
 	ansiDim     = "\033[2m"
 
-	workingMemoryEditorCellWidth      = 23
-	workingMemoryEditorKeyMaxChars    = 64
-	workingMemoryEditorValueMaxBytes  = 1024
+	workingMemoryEditorCellWidth     = 23
+	workingMemoryEditorKeyMaxChars   = 64
+	workingMemoryEditorValueMaxBytes = 1024
 )
 
 var contextRenderWidthCondition = newContextRenderWidthCondition()
@@ -843,6 +843,8 @@ func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Re
 	}()
 	viewState := newContextFeedbackViewState()
 	currentSnapshot := contextWidgetSnapshot{}
+	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
+	firstRender := true
 	var previousLines []string
 
 	for {
@@ -885,6 +887,10 @@ func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Re
 		if err == nil {
 			currentSnapshot = snapshot
 			height, width := resolveWidgetPaneSizeForWriter(out)
+			if firstRender {
+				height, width = startupHeight, startupWidth
+				firstRender = false
+			}
 			tab := resolveContextWidgetTab()
 			model := strings.TrimSpace(os.Getenv("AGENTX_OLLAMA_MODEL"))
 			if model == "" {

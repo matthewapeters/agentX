@@ -37,6 +37,8 @@ type settingsWidgetState struct {
 	showHelp     bool
 	status       string
 	bellPending  bool
+
+	startupViewportApplied bool
 }
 
 const defaultSettingsViewportRows = 12
@@ -95,6 +97,8 @@ func runSettingsWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, sta
 	defer cleanup()
 	hideTerminalCursor(out)
 	defer showTerminalCursor(out)
+	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
+	state.seedViewportFromStartup(startupHeight, startupWidth, promptMode)
 	var previousLines []string
 
 	for {
@@ -290,9 +294,31 @@ func (s *settingsWidgetState) headerLineCount() int {
 }
 
 func (s *settingsWidgetState) adaptViewportToTerminal(out io.Writer, promptMode bool) {
+	if s.startupViewportApplied {
+		s.startupViewportApplied = false
+		return
+	}
 	rows, cols := resolveWidgetViewport(out, s.headerLineCount(), settingsWidgetBorderLines, promptMode, defaultSettingsViewportCols, 20)
 	s.viewportRows = rows
 	s.viewportCols = cols
+}
+
+func (s *settingsWidgetState) seedViewportFromStartup(height int, width int, promptMode bool) {
+	s.viewportRows = height - s.headerLineCount() - settingsWidgetBorderLines
+	if promptMode {
+		s.viewportRows--
+	}
+	if s.viewportRows < 1 {
+		s.viewportRows = 1
+	}
+	s.viewportCols = defaultSettingsViewportCols
+	if width > 4 {
+		s.viewportCols = width - 4
+	}
+	if s.viewportCols < 20 {
+		s.viewportCols = 20
+	}
+	s.startupViewportApplied = true
 }
 
 func (s *settingsWidgetState) viewportContentWidth() int {

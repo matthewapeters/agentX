@@ -17,6 +17,10 @@ func setupFakeTmux(t *testing.T) string {
 	script := "#!/usr/bin/env bash\n" +
 		"set -euo pipefail\n" +
 		"printf '%s\\n' \"$*\" >> \"${TMUX_LOG}\"\n" +
+		"if [[ \"$1\" == \"display-message\" ]]; then\n" +
+		"  if [[ \"$*\" == *\"#{pane_height}|#{pane_width}\"* ]]; then echo \"37|111\"; fi\n" +
+		"  exit 0\n" +
+		"fi\n" +
 		"if [[ \"$1\" == \"split-window\" ]]; then\n" +
 		"  if [[ \"$*\" == *\" -v \"* ]]; then echo \"%3\"; else echo \"%4\"; fi\n" +
 		"fi\n"

@@ -45,6 +45,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - Loop quit/help/refresh pre-handling via `handleWidgetLoopControlCommand`.
 - Context widget (`cmd/agentx-core/context_widget.go`):
   - Loop quit/help/refresh pre-handling via `handleWidgetLoopControlCommand`.
+- Shared viewport sizing (`cmd/agentx-core/widget_viewport.go`):
+  - Removed hidden `AGENTX_WIDGET_PANE_HEIGHT` / `AGENTX_WIDGET_PANE_WIDTH` consumption so live writer resolution only reads terminal size or test defaults.
+  - Startup seeding remains isolated in `cmd/agentx-core/widget_startup.go`, preserving first-frame pane sizing for native Go widget launches.
 - Upgraded the Go filesystem applet row rendering in `cmd/agentx-core/filesystem_widget.go` with semantic visual styling:
   - directories now use reverse-video styling,
   - parent directory (`..`) row now uses a dedicated background highlight,
@@ -78,12 +81,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - `TestRunOutputWidgetLoopWithInput_QuitTokenStopsLoop` — migrated to shared loop harness.
 - Extended `cmd/agentx-core/context_widget_test.go`:
   - `TestRunContextWidgetLoopWithInput_QuitTokenStopsLoop` — quit-loop coverage via shared loop harness.
+- Added viewport seeding regression coverage in `cmd/agentx-core/logs_widget_test.go`:
+  - verifies `resolveWidgetPaneSizeForWriter` does not consume startup seeds,
+  - verifies startup resolution still consumes the seed exactly once.
 - Added comprehensive coverage to `cmd/agentx-core/input_widget_test.go`:
   - State machine tests: compose state transitions, help gate toggle, multiline submit/cancel, multiline discard, context-add command.
 - Added style-contract coverage in `cmd/agentx-core/filesystem_widget_test.go` (`TestFilesystemWidgetRender_StylesFolderHiddenConfigAndCodeFiles`).
 
 #### Changed
 
+- Native Go widget startup now seeds pane dimensions from tmux at launch (`AGENTX_WIDGET_PANE_HEIGHT` / `AGENTX_WIDGET_PANE_WIDTH`) so the first frame renders with accurate sizing before any user input.
 - Migrated settings config-fixture setup in `TestUpdateAgentXTomlScalar_*` tests to `createWidgetTestConfigProject` helper.
 - Migrated project-tree fixture setup in context files-tab and filesystem hard-select tests to `createWidgetTestProjectDir` helper.
 - Migrated environment setup blocks in context/filesystem/settings tests to `setWidgetTestEnv` helper.

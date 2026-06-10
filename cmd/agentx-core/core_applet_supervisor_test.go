@@ -174,13 +174,16 @@ func TestBuildPaneAppletLaunchCommand_InputPaneUsesNativeWidget(t *testing.T) {
 	core.runtimeConfig.SubmitTimeout = 10 * time.Second
 
 	base := core.buildAppletBaseRuntimeConfig()
-	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "input", PaneName: "input", Runtime: appletRuntimeGo}, base)
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "input", PaneName: "input", Runtime: appletRuntimeGo}, base, 37, 111)
 
 	if !strings.Contains(cmd, "--input-widget --core-http") {
 		t.Fatalf("expected native input widget launch args, got:\n%s", cmd)
 	}
 	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='input'") {
 		t.Fatalf("expected input applet env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_WIDGET_PANE_HEIGHT='37'") || !strings.Contains(cmd, "AGENTX_WIDGET_PANE_WIDTH='111'") {
+		t.Fatalf("expected seeded pane dimensions in input launch command, got:\n%s", cmd)
 	}
 	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='go'") {
 		t.Fatalf("expected go applet runtime env var, got:\n%s", cmd)
@@ -197,13 +200,16 @@ func TestBuildPaneAppletLaunchCommand_ContextPaneUsesNativeWidget(t *testing.T) 
 	core.runtimeConfig.SubmitTimeout = 10 * time.Second
 
 	base := core.buildAppletBaseRuntimeConfig()
-	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "context", PaneName: "context", Runtime: appletRuntimeGo}, base)
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "context", PaneName: "context", Runtime: appletRuntimeGo}, base, 37, 111)
 
 	if !strings.Contains(cmd, "--context-widget --core-http") {
 		t.Fatalf("expected native context widget launch args, got:\n%s", cmd)
 	}
 	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='context'") {
 		t.Fatalf("expected context applet env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_WIDGET_PANE_HEIGHT='37'") || !strings.Contains(cmd, "AGENTX_WIDGET_PANE_WIDTH='111'") {
+		t.Fatalf("expected seeded pane dimensions in context launch command, got:\n%s", cmd)
 	}
 	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='go'") {
 		t.Fatalf("expected go applet runtime env var, got:\n%s", cmd)
@@ -220,13 +226,16 @@ func TestBuildPaneAppletLaunchCommand_LogsPaneUsesNativeWidget(t *testing.T) {
 	core.runtimeConfig.SubmitTimeout = 10 * time.Second
 
 	base := core.buildAppletBaseRuntimeConfig()
-	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "logs", PaneName: "logs", Runtime: appletRuntimeGo}, base)
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "logs", PaneName: "logs", Runtime: appletRuntimeGo}, base, 37, 111)
 
 	if !strings.Contains(cmd, "--logs-widget --core-http") {
 		t.Fatalf("expected native logs widget launch args, got:\n%s", cmd)
 	}
 	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='logs'") {
 		t.Fatalf("expected logs applet env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_WIDGET_PANE_HEIGHT='37'") || !strings.Contains(cmd, "AGENTX_WIDGET_PANE_WIDTH='111'") {
+		t.Fatalf("expected seeded pane dimensions in logs launch command, got:\n%s", cmd)
 	}
 	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='go'") {
 		t.Fatalf("expected go applet runtime env var, got:\n%s", cmd)
@@ -243,13 +252,16 @@ func TestBuildPaneAppletLaunchCommand_FilesAppletUsesFilesystemWidget(t *testing
 	core.runtimeConfig.SubmitTimeout = 10 * time.Second
 
 	base := core.buildAppletBaseRuntimeConfig()
-	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "files", PaneName: "files", Runtime: appletRuntimeGo}, base)
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "files", PaneName: "files", Runtime: appletRuntimeGo}, base, 37, 111)
 
 	if !strings.Contains(cmd, "--filesystem-widget --core-http") {
 		t.Fatalf("expected filesystem widget launch args for files applet, got:\n%s", cmd)
 	}
 	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='files'") {
 		t.Fatalf("expected dedicated applet name env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_WIDGET_PANE_HEIGHT='37'") || !strings.Contains(cmd, "AGENTX_WIDGET_PANE_WIDTH='111'") {
+		t.Fatalf("expected seeded pane dimensions in files launch command, got:\n%s", cmd)
 	}
 	if strings.Contains(cmd, "AGENTX_CONTEXT_WIDGET_TAB='files'") {
 		t.Fatalf("expected files applet not to use context widget tab env var, got:\n%s", cmd)
@@ -263,7 +275,7 @@ func TestBuildPaneAppletLaunchCommand_ConfigurationAppletUsesSettingsWidget(t *t
 	core.runtimeConfig.SubmitTimeout = 10 * time.Second
 
 	base := core.buildAppletBaseRuntimeConfig()
-	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "configuration", PaneName: "configuration", Runtime: appletRuntimeGo}, base)
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "configuration", PaneName: "configuration", Runtime: appletRuntimeGo}, base, 37, 111)
 
 	if !strings.Contains(cmd, "--settings-widget --core-http") {
 		t.Fatalf("expected settings widget launch args for configuration applet, got:\n%s", cmd)
@@ -307,7 +319,7 @@ func TestBuildPaneAppletLaunchCommand_ChatPaneUsesPythonTemplate(t *testing.T) {
 	core.chatAppletScript = "/tmp/template.py"
 
 	base := core.buildAppletBaseRuntimeConfig()
-	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "chat", PaneName: "chat", Runtime: appletRuntimePython}, base)
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "chat", PaneName: "chat", Runtime: appletRuntimePython}, base, 0, 0)
 
 	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='chat'") {
 		t.Fatalf("expected chat applet env var, got:\n%s", cmd)
@@ -333,13 +345,16 @@ func TestBuildPaneAppletLaunchCommand_ChatPaneUsesNativeOutputWidget(t *testing.
 	core.runtimeConfig.SubmitTimeout = 10 * time.Second
 
 	base := core.buildAppletBaseRuntimeConfig()
-	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "chat", PaneName: "chat", Runtime: appletRuntimeGo}, base)
+	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "chat", PaneName: "chat", Runtime: appletRuntimeGo}, base, 37, 111)
 
 	if !strings.Contains(cmd, "--output-widget --core-http") {
 		t.Fatalf("expected native output widget launch args, got:\n%s", cmd)
 	}
 	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='chat'") {
 		t.Fatalf("expected chat applet env var, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "AGENTX_WIDGET_PANE_HEIGHT='37'") || !strings.Contains(cmd, "AGENTX_WIDGET_PANE_WIDTH='111'") {
+		t.Fatalf("expected seeded pane dimensions in go chat launch command, got:\n%s", cmd)
 	}
 	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='go'") {
 		t.Fatalf("expected go applet runtime env var, got:\n%s", cmd)

@@ -38,6 +38,8 @@ type filesystemWidgetState struct {
 	softSelected map[string]bool
 	status       string
 	bellPending  bool
+
+	startupViewportApplied bool
 }
 
 const defaultFilesystemViewportRows = 12
@@ -109,6 +111,8 @@ func runFilesystemWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, s
 	defer cleanup()
 	hideTerminalCursor(out)
 	defer showTerminalCursor(out)
+	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
+	state.seedViewportFromStartup(startupHeight, startupWidth, promptMode)
 	var previousLines []string
 
 	for {
@@ -169,9 +173,18 @@ func showTerminalCursor(out io.Writer) {
 }
 
 func (s *filesystemWidgetState) adaptViewportToTerminal(out io.Writer, promptMode bool) {
+	if s.startupViewportApplied {
+		s.startupViewportApplied = false
+		return
+	}
 	rows, cols := resolveWidgetViewport(out, s.headerLineCount(), filesystemWidgetBorderLines, promptMode, defaultFilesystemViewportCols, 1)
 	s.viewportRows = rows
 	s.viewportCols = cols
+}
+
+func (s *filesystemWidgetState) seedViewportFromStartup(height int, width int, promptMode bool) {
+	s.applyViewportDimensions(height, width, promptMode)
+	s.startupViewportApplied = true
 }
 
 func (s *filesystemWidgetState) applyViewportDimensions(height int, width int, promptMode bool) {

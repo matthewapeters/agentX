@@ -31,6 +31,10 @@ func setupFakeTmuxLogsHeadless(t *testing.T) string {
 		"if [[ \"$1\" == \"send-keys\" && \"$*\" == *\":1.0\"* ]]; then\n" +
 		"  exit 1\n" +
 		"fi\n" +
+		"if [[ \"$1\" == \"display-message\" ]]; then\n" +
+		"  if [[ \"$*\" == *\"#{pane_height}|#{pane_width}\"* ]]; then echo \"37|111\"; fi\n" +
+		"  exit 0\n" +
+		"fi\n" +
 		"if [[ \"$1\" == \"split-window\" ]]; then\n" +
 		"  if [[ \"$*\" == *\" -v \"* ]]; then echo \"%3\"; else echo \"%4\"; fi\n" +
 		"fi\n"

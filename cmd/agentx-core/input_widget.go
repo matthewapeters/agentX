@@ -299,6 +299,8 @@ type inputWidgetComposeState struct {
 
 	viewportRows int
 	viewportCols int
+
+	startupViewportApplied bool
 }
 
 func newInputWidgetComposeState() *inputWidgetComposeState {
@@ -314,6 +316,8 @@ func newInputWidgetComposeState() *inputWidgetComposeState {
 func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *widgetActivityState, submitPrompt func(string) (int, bool)) int {
 	state := newInputWidgetComposeState()
 	state.status = "ESC toggles focus; :? toggles help; :q exits"
+	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
+	state.seedViewportFromStartup(startupHeight, startupWidth)
 	defer showTerminalCursor(out)
 
 	commandReader, cleanup, err := newInputWidgetKeyReader(in)
@@ -924,6 +928,10 @@ func (s *inputWidgetComposeState) inputText() string {
 }
 
 func (s *inputWidgetComposeState) adaptViewportToTerminal(out io.Writer) {
+	if s.startupViewportApplied {
+		s.startupViewportApplied = false
+		return
+	}
 	height, width := resolveWidgetPaneSizeForWriter(out)
 	if width < 44 {
 		width = 44
@@ -948,6 +956,34 @@ func (s *inputWidgetComposeState) adaptViewportToTerminal(out io.Writer) {
 	}
 	s.viewportRows = textRows
 	s.viewportCols = textCols
+	s.ensureCursorVisible()
+}
+
+func (s *inputWidgetComposeState) seedViewportFromStartup(height int, width int) {
+	if width < 44 {
+		width = 44
+	}
+	header := 4
+	if s.showHelp {
+		header += 2
+	}
+	controlOuter := 3
+	inputOuter := height - header - controlOuter
+	if inputOuter < 5 {
+		inputOuter = 5
+	}
+	inputInner := inputOuter - 2
+	textRows := inputInner - 1
+	if textRows < 1 {
+		textRows = 1
+	}
+	textCols := width - 6
+	if textCols < 12 {
+		textCols = 12
+	}
+	s.viewportRows = textRows
+	s.viewportCols = textCols
+	s.startupViewportApplied = true
 	s.ensureCursorVisible()
 }
 

@@ -685,6 +685,8 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 	commands := startOutputWidgetCommandReader(ctx, in)
 	viewState := newOutputWidgetViewState()
 	snapshot := outputWidgetSnapshot{}
+	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
+	firstRender := true
 
 	previousLines := []string(nil)
 	for {
@@ -722,6 +724,10 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 			snapshot = updatedSnapshot
 			viewState.normalize(len(snapshot.Turns))
 			height, width := resolveWidgetPaneSizeForWriter(out)
+			if firstRender {
+				height, width = startupHeight, startupWidth
+				firstRender = false
+			}
 			render := renderOutputWidgetWithViewState(snapshot, height, width, viewState)
 			currentLines := filesystemWidgetFrameLines(render)
 			if len(previousLines) == 0 || strings.Join(previousLines, "\n") != strings.Join(currentLines, "\n") {

@@ -1,5 +1,5 @@
 name: agentX
-version: 1.0.0
+version: 1.0.2
 description: APM project for agentX
 author: MatthewAPeters
 dependencies:
