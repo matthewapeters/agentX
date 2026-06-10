@@ -2338,7 +2338,7 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 		handleContextPagingNavigation(state, -5)
 		return true
 	case "tab":
-		handleContextTabNavigation(state, historyModel)
+		handleContextTabNavigation(state, historyModel, snapshot)
 		return true
 	case "shift-tab", "shift+tab", "s-tab", "backtab":
 		handleContextBacktabNavigation(state, historyModel)
@@ -2413,7 +2413,25 @@ func handleContextPagingNavigation(state *contextFeedbackViewState, delta int) {
 	state.setStatus("Selection moved.")
 }
 
-func handleContextTabNavigation(state *contextFeedbackViewState, historyModel contextHistoryModel) {
+func bootstrapContextHistoryTabFocusFromStartup(state *contextFeedbackViewState, snapshot contextWidgetSnapshot) bool {
+	if state == nil {
+		return false
+	}
+	historyUsers := discoverContextHistoryUsers(snapshot.SessionID)
+	if len(historyUsers) == 0 {
+		return false
+	}
+	firstUser := strings.TrimSpace(historyUsers[0].Username)
+	if firstUser == "" {
+		return false
+	}
+	_ = state.setActiveRowByKey("user:" + firstUser)
+	state.setFocusPath(focusPathForNode("context-history", nodeID{Kind: nodeKindUser, User: firstUser}))
+	state.insideSection = true
+	return true
+}
+
+func handleContextTabNavigation(state *contextFeedbackViewState, historyModel contextHistoryModel, snapshot contextWidgetSnapshot) {
 	// TAB drills into the active section and keeps focus there.
 	if state.focusTextBox {
 		state.focusTextBox = false
@@ -2424,6 +2442,16 @@ func handleContextTabNavigation(state *contextFeedbackViewState, historyModel co
 		}
 		if state.activeSection == "context-history" {
 			historyModel.AdvanceTabFocus(state, true)
+			tail := state.focusPath.Tail()
+			if tail.Kind == nodeKindSection && strings.TrimSpace(tail.Section) == "context-history" {
+				_ = bootstrapContextHistoryTabFocusFromStartup(state, snapshot)
+				tail = state.focusPath.Tail()
+			}
+			if tail.Kind == nodeKindSection && strings.TrimSpace(tail.Section) == "context-history" {
+				state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
+				state.setStatus("No context-history rows.")
+				return
+			}
 			state.setStatus(fmt.Sprintf("Entered section: %s.", state.activeSection))
 			return
 		}

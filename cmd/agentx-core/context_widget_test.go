@@ -378,6 +378,9 @@ func TestContextWidgetKeyboard_TabSectionToggle(t *testing.T) {
 	if state.activeSection != "current-context" {
 		t.Fatalf("expected default activeSection to be current-context, got %q", state.activeSection)
 	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "current-context" {
+		t.Fatalf("expected startup contract to point at current-context header while outside sections, got %#v", got)
+	}
 
 	// First TAB enters the active section.
 	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
@@ -404,6 +407,244 @@ func TestContextWidgetKeyboard_TabSectionToggle(t *testing.T) {
 	}
 	if got := state.statusLine; got != "Exited section: current-context." {
 		t.Fatalf("expected normalized shift-tab status, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_StartupHeaderPointerTabIntoContextHistoryFocusesFirstUser(t *testing.T) {
+	projectDir := t.TempDir()
+	user := "alpha-user"
+	sessionID := "2026-06-09 10:30:00"
+	turnPath := filepath.Join(projectDir, "sessions", user, sessionID, "context", "turns.jsonl")
+	if err := os.MkdirAll(filepath.Dir(turnPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	payload, err := json.Marshal(ChatTurn{Prompt: "hello", Response: "world", CreatedAt: 1_700_000_000_000})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	if err := os.WriteFile(turnPath, append(payload, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "current-user",
+	})
+
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "current", Response: "turn"}}}
+
+	if state.insideSection {
+		t.Fatalf("precondition: startup should be outside sections")
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "current-context" {
+		t.Fatalf("precondition: startup should point at current-context header, got %#v", got)
+	}
+
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if got := state.activeSection; got != "context-history" {
+		t.Fatalf("expected pointer to move to context-history header, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if !state.insideSection {
+		t.Fatalf("expected TAB from context-history header to enter section")
+	}
+	if state.collapsedContextHistory {
+		t.Fatalf("expected TAB to expand context-history section")
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != user {
+		t.Fatalf("expected TAB to focus first context-history user container, got %#v", got)
+	}
+
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if got := state.activeRowKey(); got != "user:"+user {
+		t.Fatalf("expected render cycle to map focused user container to active row, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_ShiftTabExitThenHeaderTabReentersContextHistoryFirstUser(t *testing.T) {
+	projectDir := t.TempDir()
+	user := "alpha-user"
+	sessionID := "2026-06-09 10:30:00"
+	turnPath := filepath.Join(projectDir, "sessions", user, sessionID, "context", "turns.jsonl")
+	if err := os.MkdirAll(filepath.Dir(turnPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	payload, err := json.Marshal(ChatTurn{Prompt: "hello", Response: "world", CreatedAt: 1_700_000_000_000})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	if err := os.WriteFile(turnPath, append(payload, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "current-user",
+	})
+
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "current", Response: "turn"}}}
+
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if got := state.activeRowKey(); got != "user:"+user {
+		t.Fatalf("expected first TAB to place focus on first user row, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	if state.insideSection {
+		t.Fatalf("expected shift-tab from user to exit context-history section")
+	}
+	if got := state.activeSection; got != "context-history" {
+		t.Fatalf("expected section pointer to remain on context-history header after exit, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	if got := state.activeSection; got != "current-context" {
+		t.Fatalf("expected pointer to move away to current-context, got %q", got)
+	}
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if got := state.activeSection; got != "context-history" {
+		t.Fatalf("expected pointer to return to context-history header, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if !state.insideSection {
+		t.Fatalf("expected re-entry TAB to enter context-history")
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != user {
+		t.Fatalf("expected re-entry TAB to focus first user container, got %#v", got)
+	}
+
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if got := state.activeRowKey(); got != "user:"+user {
+		t.Fatalf("expected re-entry render cycle to keep first user row active, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_TabFromContextHistoryHeaderWithNoRows_StaysOutsideAndReportsNoRows(t *testing.T) {
+	projectDir := t.TempDir()
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "current-user",
+	})
+
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "current", Response: "turn"}}}
+
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if got := state.activeSection; got != "context-history" {
+		t.Fatalf("expected pointer to move to context-history header, got %q", got)
+	}
+
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if state.insideSection {
+		t.Fatalf("precondition: expected startup pointer mode outside section")
+	}
+	if got := state.activeSection; got != "context-history" {
+		t.Fatalf("precondition: expected active section pointer on context-history header, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if state.insideSection {
+		t.Fatalf("expected TAB with empty history to remain outside section mode")
+	}
+	if got := state.statusLine; got != "No context-history rows." {
+		t.Fatalf("expected no-rows TAB status, got %q", got)
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+		t.Fatalf("expected TAB no-rows path to remain on context-history header, got %#v", got)
+	}
+
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if state.insideSection {
+		t.Fatalf("expected post-render no-rows invariant to remain outside section mode")
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
+		t.Fatalf("expected post-render no-rows invariant to preserve section header focus, got %#v", got)
+	}
+
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	if got := state.activeSection; got != "working-memory" {
+		t.Fatalf("expected down after no-rows TAB to navigate section headers, got %q", got)
+	}
+	if got := state.statusLine; got != "Section: working-memory" {
+		t.Fatalf("expected outside-mode section-navigation status, got %q", got)
+	}
+}
+
+func TestContextWidgetKeyboard_StartupHeaderPointerTabIntoContextHistoryFocusesAlphabeticalFirstUserAndReentry(t *testing.T) {
+	projectDir := t.TempDir()
+	writeHistoryTurn := func(user string, sessionID string, createdAt int64) {
+		t.Helper()
+		turnPath := filepath.Join(projectDir, "sessions", user, sessionID, "context", "turns.jsonl")
+		if err := os.MkdirAll(filepath.Dir(turnPath), 0o755); err != nil {
+			t.Fatalf("MkdirAll failed: %v", err)
+		}
+		payload, err := json.Marshal(ChatTurn{Prompt: "hello", Response: "world", CreatedAt: createdAt})
+		if err != nil {
+			t.Fatalf("Marshal failed: %v", err)
+		}
+		if err := os.WriteFile(turnPath, append(payload, '\n'), 0o644); err != nil {
+			t.Fatalf("WriteFile failed: %v", err)
+		}
+	}
+
+	writeHistoryTurn("zulu-user", "2026-06-09 10:35:00", 1_700_000_001_000)
+	writeHistoryTurn("alpha-user", "2026-06-09 10:30:00", 1_700_000_000_000)
+
+	setWidgetTestEnv(t, map[string]string{
+		"AGENTX_PROJECT_DIR": projectDir,
+		"AGENTX_USERNAME":    "current-user",
+	})
+
+	state := newContextFeedbackViewState()
+	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "current", Response: "turn"}}}
+
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	if got := state.activeSection; got != "context-history" {
+		t.Fatalf("expected pointer to move to context-history header, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if !state.insideSection {
+		t.Fatalf("expected TAB from context-history header to enter section")
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "alpha-user" {
+		t.Fatalf("expected first TAB to focus alphabetical first user, got %#v", got)
+	}
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if got := state.activeRowKey(); got != "user:alpha-user" {
+		t.Fatalf("expected render cycle to map focus to alphabetical first user row, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	if state.insideSection {
+		t.Fatalf("expected shift-tab from user node to exit context-history section")
+	}
+	if got := state.activeSection; got != "context-history" {
+		t.Fatalf("expected section pointer to remain on context-history header, got %q", got)
+	}
+
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	if !state.insideSection {
+		t.Fatalf("expected re-entry TAB to enter context-history")
+	}
+	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "alpha-user" {
+		t.Fatalf("expected re-entry TAB to focus same alphabetical first user, got %#v", got)
+	}
+	_ = renderContextFeedbackSections(snapshot, nil, state)
+	if got := state.activeRowKey(); got != "user:alpha-user" {
+		t.Fatalf("expected re-entry render cycle to keep alphabetical first user row active, got %q", got)
 	}
 }
 
