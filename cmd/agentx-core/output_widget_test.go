@@ -182,6 +182,224 @@ func TestRenderOutputWidgetWithViewState_NewTurnAutoFocusesNewest(t *testing.T) 
 	if view.focusedTurn != 2 {
 		t.Fatalf("expected new turn to become focused, got %d", view.focusedTurn)
 	}
+	render := renderOutputWidgetWithViewState(outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 2,
+		Turns: []ChatTurn{
+			{Prompt: "status update", Response: "all green"},
+			{Prompt: "what is 2+2?", Response: "4"},
+		},
+	}, 80, 200, view)
+	if !strings.Contains(render, "Response: 4") {
+		t.Fatalf("expected newest turn to stay expanded and readable, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_FocusedCompactedTurnShowsPointer(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "status update", Response: "all green"}},
+	}
+
+	_ = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	view.applyCommand(":collapse", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	if !strings.Contains(render, "* [assistant] all green") {
+		t.Fatalf("expected compacted focused turn pointer, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_CompactedPointerOnlyOnFocusedTurn(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := testOutputWidgetSnapshot()
+
+	_ = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	view.setTurnExpanded(1, false)
+	view.setTurnExpanded(2, false)
+	view.focusedTurn = 2
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if strings.Contains(render, "* [assistant] all green") {
+		t.Fatalf("did not expect non-focused compact turn pointer, got:\n%s", render)
+	}
+	if !strings.Contains(render, "* [assistant] 4") {
+		t.Fatalf("expected focused compact turn pointer, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_SameTurnResponseUpdateAutoExpandsLatest(t *testing.T) {
+	view := newOutputWidgetViewState()
+	initial := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "status update", Response: "partial"}},
+	}
+
+	_ = renderOutputWidgetWithViewState(initial, 80, 200, view)
+	view.applyCommand(":collapse", initial)
+	collapsedRender := renderOutputWidgetWithViewState(initial, 80, 200, view)
+	if !strings.Contains(collapsedRender, "* [assistant] partial") {
+		t.Fatalf("expected compact summary after collapse, got:\n%s", collapsedRender)
+	}
+	if strings.Contains(collapsedRender, "Response: partial") {
+		t.Fatalf("did not expect expanded response while collapsed, got:\n%s", collapsedRender)
+	}
+
+	updated := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "status update", Response: "final answer"}},
+	}
+	updatedRender := renderOutputWidgetWithViewState(updated, 80, 200, view)
+	if view.focusedTurn != 1 {
+		t.Fatalf("expected latest turn to stay focused, got %d", view.focusedTurn)
+	}
+	if !strings.Contains(updatedRender, "Response: final answer") {
+		t.Fatalf("expected updated latest response to auto-expand, got:\n%s", updatedRender)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_SessionSwitchResetsLatestTrackingAndStillExpands(t *testing.T) {
+	view := newOutputWidgetViewState()
+	firstSession := outputWidgetSnapshot{
+		SessionID: "sess-a",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "status update", Response: "partial"}},
+	}
+
+	_ = renderOutputWidgetWithViewState(firstSession, 80, 200, view)
+	if view.lastLatestSession != "sess-a" {
+		t.Fatalf("expected latest tracking session sess-a, got %q", view.lastLatestSession)
+	}
+
+	secondSession := outputWidgetSnapshot{
+		SessionID: "sess-b",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "status update", Response: "partial"}},
+	}
+	_ = renderOutputWidgetWithViewState(secondSession, 80, 200, view)
+	if view.lastLatestSession != "sess-b" {
+		t.Fatalf("expected latest tracking session reset to sess-b, got %q", view.lastLatestSession)
+	}
+
+	view.applyCommand(":collapse", secondSession)
+	collapsed := renderOutputWidgetWithViewState(secondSession, 80, 200, view)
+	if strings.Contains(collapsed, "Response: partial") {
+		t.Fatalf("did not expect expanded response while collapsed, got:\n%s", collapsed)
+	}
+
+	secondSessionUpdated := outputWidgetSnapshot{
+		SessionID: "sess-b",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "status update", Response: "final answer"}},
+	}
+	updatedRender := renderOutputWidgetWithViewState(secondSessionUpdated, 80, 200, view)
+	if !strings.Contains(updatedRender, "Response: final answer") {
+		t.Fatalf("expected updated latest response to auto-expand, got:\n%s", updatedRender)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_SessionSwitchGuardsAgainstViewStateLeaks(t *testing.T) {
+	view := newOutputWidgetViewState()
+	sessionA := outputWidgetSnapshot{
+		SessionID: "sess-a",
+		TurnCount: 2,
+		Turns: []ChatTurn{
+			{Prompt: "a1", Response: "response a1"},
+			{Prompt: "a2", Response: "response a2"},
+		},
+	}
+	_ = renderOutputWidgetWithViewState(sessionA, 80, 200, view)
+	view.applyCommand(":focus 1", sessionA)
+	view.applyCommand(":collapse", sessionA)
+	view.applyCommand(":pagedown", sessionA)
+	view.setEntryCollapsed(1, "thinking", true)
+	view.setEntryCollapsed(1, "response", true)
+
+	if view.focusedTurn != 1 {
+		t.Fatalf("expected session A to focus turn 1, got %d", view.focusedTurn)
+	}
+	if view.turnScrollOffset(1) == 0 {
+		t.Fatal("expected session A to have a non-zero scroll offset")
+	}
+	if !view.thinkingCollapsed(1) || !view.entryCollapsed(1, "response") {
+		t.Fatal("expected collapsed thinking/response state in session A")
+	}
+
+	sessionB := outputWidgetSnapshot{
+		SessionID: "sess-b",
+		TurnCount: 2,
+		Turns: []ChatTurn{
+			{Prompt: "b1", Response: "response b1"},
+			{Prompt: "b2", Response: "response b2"},
+		},
+	}
+	_ = renderOutputWidgetWithViewState(sessionB, 80, 200, view)
+
+	if view.focusedTurn != 2 {
+		t.Fatalf("expected session B to reset focus to newest turn, got %d", view.focusedTurn)
+	}
+	if _, ok := view.turnHasExplicitState(1); ok {
+		t.Fatal("expected collapsed/expanded per-turn state from session A to be cleared")
+	}
+	if view.turnScrollOffset(1) != 0 {
+		t.Fatalf("expected session B scroll offsets to reset, got %d", view.turnScrollOffset(1))
+	}
+	if view.thinkingCollapsed(1) || view.entryCollapsed(1, "response") {
+		t.Fatal("expected session B entry collapse state to reset")
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_SessionSwitchDefaultsToNewestExpandedTurn(t *testing.T) {
+	view := newOutputWidgetViewState()
+	sessionA := outputWidgetSnapshot{
+		SessionID: "sess-a",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "a1", Response: "response a1"}},
+	}
+	_ = renderOutputWidgetWithViewState(sessionA, 80, 200, view)
+	view.applyCommand(":collapse", sessionA)
+
+	sessionB := outputWidgetSnapshot{
+		SessionID: "sess-b",
+		TurnCount: 2,
+		Turns: []ChatTurn{
+			{Prompt: "b1", Response: "response b1"},
+			{Prompt: "b2", Response: "response b2"},
+		},
+	}
+	render := renderOutputWidgetWithViewState(sessionB, 80, 200, view)
+
+	if view.focusedTurn != 2 {
+		t.Fatalf("expected newest turn focused in session B, got %d", view.focusedTurn)
+	}
+	if !strings.Contains(render, "Response: response b2") {
+		t.Fatalf("expected newest turn expanded by default in session B, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_CollapsedLatestStaysCollapsedWhenUnchanged(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "status update", Response: "partial"}},
+	}
+
+	_ = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	view.applyCommand(":collapse", snapshot)
+	firstCollapsed := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if strings.Contains(firstCollapsed, "Response: partial") {
+		t.Fatalf("did not expect expanded response while collapsed, got:\n%s", firstCollapsed)
+	}
+
+	secondCollapsed := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if strings.Contains(secondCollapsed, "Response: partial") {
+		t.Fatalf("expected latest turn to remain collapsed when unchanged, got:\n%s", secondCollapsed)
+	}
 }
 
 func TestOutputWidgetViewState_NavigationAndToggleControls(t *testing.T) {

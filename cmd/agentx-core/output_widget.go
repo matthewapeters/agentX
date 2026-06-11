@@ -22,6 +22,7 @@ type outputWidgetViewState struct {
 	turnScroll        map[int]int
 	collapsedThinking map[int]bool
 	collapsedEntries  map[string]bool
+	sessionID         string
 	focusedTurn       int
 	focusedEntry      string
 	showHelp          bool
@@ -31,6 +32,9 @@ type outputWidgetViewState struct {
 	statusLine        string
 	statusUntil       time.Time
 	lastTurnCount     int
+	lastLatestSession string
+	lastLatestTurn    int
+	lastLatestReply   string
 }
 
 func newOutputWidgetViewState() *outputWidgetViewState {
@@ -251,18 +255,33 @@ func (state *outputWidgetViewState) activeStatus() string {
 	return state.statusLine
 }
 
-func (state *outputWidgetViewState) normalize(turnCount int) {
+func (state *outputWidgetViewState) resetTurnViewState() {
 	if state == nil {
 		return
 	}
+	state.focusedTurn = 0
+	state.turnExpanded = make(map[int]bool)
+	state.turnScroll = make(map[int]int)
+	state.collapsedThinking = make(map[int]bool)
+	state.collapsedEntries = make(map[string]bool)
+	state.lastTurnCount = 0
+	state.lastLatestTurn = 0
+	state.lastLatestReply = ""
+}
+
+func (state *outputWidgetViewState) normalize(sessionID string, turnCount int) {
+	if state == nil {
+		return
+	}
+	normalizedSessionID := strings.TrimSpace(sessionID)
+	if normalizedSessionID != state.sessionID {
+		state.sessionID = normalizedSessionID
+		state.lastLatestSession = normalizedSessionID
+		state.resetTurnViewState()
+	}
 	if turnCount <= 0 {
-		state.focusedTurn = 0
+		state.resetTurnViewState()
 		state.focusedEntry = "response"
-		state.turnExpanded = make(map[int]bool)
-		state.turnScroll = make(map[int]int)
-		state.collapsedThinking = make(map[int]bool)
-		state.collapsedEntries = make(map[string]bool)
-		state.lastTurnCount = 0
 		return
 	}
 	if turnCount > state.lastTurnCount {
@@ -310,12 +329,45 @@ func (state *outputWidgetViewState) normalize(turnCount int) {
 	state.lastTurnCount = turnCount
 }
 
+func (state *outputWidgetViewState) maybeExpandLatestTurn(snapshot outputWidgetSnapshot) {
+	if state == nil {
+		return
+	}
+	sessionID := strings.TrimSpace(snapshot.SessionID)
+	if sessionID != state.lastLatestSession {
+		state.lastLatestSession = sessionID
+		state.lastLatestTurn = 0
+		state.lastLatestReply = ""
+	}
+	turnCount := len(snapshot.Turns)
+	if turnCount <= 0 {
+		state.lastLatestTurn = 0
+		state.lastLatestReply = ""
+		return
+	}
+	latestReply := strings.TrimSpace(snapshot.Turns[turnCount-1].Response)
+	if state.lastLatestTurn == 0 && state.lastLatestReply == "" {
+		state.lastLatestTurn = turnCount
+		state.lastLatestReply = latestReply
+		return
+	}
+	changed := turnCount != state.lastLatestTurn || latestReply != state.lastLatestReply
+	if changed {
+		state.focusedTurn = turnCount
+		state.setTurnExpanded(turnCount, true)
+		state.setTurnScrollOffset(turnCount, 0)
+		state.setEntryCollapsed(turnCount, "response", false)
+	}
+	state.lastLatestTurn = turnCount
+	state.lastLatestReply = latestReply
+}
+
 func (state *outputWidgetViewState) applyCommand(raw string, snapshot outputWidgetSnapshot) {
 	if state == nil {
 		return
 	}
 	turnCount := len(snapshot.Turns)
-	state.normalize(turnCount)
+	state.normalize(snapshot.SessionID, turnCount)
 	line := normalizeOutputWidgetControlCommand(raw)
 	if line == "" {
 		return
@@ -772,7 +824,7 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 		updatedSnapshot, err := fetchOutputWidgetSnapshot(ctx, baseURL)
 		if err == nil {
 			snapshot = updatedSnapshot
-			viewState.normalize(len(snapshot.Turns))
+			viewState.normalize(snapshot.SessionID, len(snapshot.Turns))
 			height, width := resolveWidgetPaneSizeForWriter(out)
 			if firstRender {
 				height, width = startupHeight, startupWidth
@@ -809,7 +861,7 @@ func fetchOutputWidgetSnapshot(ctx context.Context, baseURL string) (outputWidge
 	}, nil
 }
 
-func renderOutputWidgetTurnSummary(turn ChatTurn) string {
+func renderOutputWidgetTurnSummary(turn ChatTurn, focused bool) string {
 	prompt := strings.TrimSpace(turn.Prompt)
 	response := strings.TrimSpace(turn.Response)
 	summary := response
@@ -821,7 +873,11 @@ func renderOutputWidgetTurnSummary(turn ChatTurn) string {
 	if summary == "" {
 		summary = "none"
 	}
-	return fmt.Sprintf("[%s] %s", role, trimSingleLine(summary, 60))
+	pointer := " "
+	if focused {
+		pointer = "*"
+	}
+	return fmt.Sprintf("%s [%s] %s", pointer, role, trimSingleLine(summary, 60))
 }
 
 func renderOutputWidgetTurnDetails(snapshot outputWidgetSnapshot, turnIndex int, viewState *outputWidgetViewState) []string {
@@ -884,7 +940,8 @@ func renderOutputWidget(snapshot outputWidgetSnapshot, paneHeight int, paneWidth
 
 func renderOutputWidgetWithViewState(snapshot outputWidgetSnapshot, paneHeight int, paneWidth int, viewState *outputWidgetViewState) string {
 	if viewState != nil {
-		viewState.normalize(len(snapshot.Turns))
+		viewState.normalize(snapshot.SessionID, len(snapshot.Turns))
+		viewState.maybeExpandLatestTurn(snapshot)
 	}
 
 	lines := []string{"[OUTPUT]", "Chat ready."}
@@ -924,7 +981,7 @@ func renderOutputWidgetWithViewState(snapshot outputWidgetSnapshot, paneHeight i
 			continue
 		}
 		if viewState != nil && !viewState.turnExpandedState(turnIndex) {
-			lines = append(lines, renderOutputWidgetTurnSummary(turn))
+			lines = append(lines, renderOutputWidgetTurnSummary(turn, viewState.focusedTurn == turnIndex))
 			continue
 		}
 		lines = append(lines, renderOutputWidgetTurnDetails(snapshot, turnIndex, viewState)...)
