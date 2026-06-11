@@ -18,6 +18,8 @@ type outputWidgetSnapshot struct {
 }
 
 type outputWidgetViewState struct {
+	turnExpanded      map[int]bool
+	turnScroll        map[int]int
 	collapsedThinking map[int]bool
 	collapsedEntries  map[string]bool
 	focusedTurn       int
@@ -28,10 +30,13 @@ type outputWidgetViewState struct {
 	clipboardSource   string
 	statusLine        string
 	statusUntil       time.Time
+	lastTurnCount     int
 }
 
 func newOutputWidgetViewState() *outputWidgetViewState {
 	return &outputWidgetViewState{
+		turnExpanded:      make(map[int]bool),
+		turnScroll:        make(map[int]int),
 		collapsedThinking: make(map[int]bool),
 		collapsedEntries:  make(map[string]bool),
 		focusedEntry:      "response",
@@ -75,6 +80,58 @@ func (state *outputWidgetViewState) entryCollapsed(turnIndex int, entry string) 
 		return state.collapsedThinking[turnIndex]
 	}
 	return state.collapsedEntries[outputEntryCollapsedKey(turnIndex, entry)]
+}
+
+func (state *outputWidgetViewState) turnHasExplicitState(turnIndex int) (bool, bool) {
+	if state == nil {
+		return false, false
+	}
+	value, ok := state.turnExpanded[turnIndex]
+	return value, ok
+}
+
+func (state *outputWidgetViewState) turnExpandedState(turnIndex int) bool {
+	if state == nil {
+		return true
+	}
+	if explicit, ok := state.turnHasExplicitState(turnIndex); ok {
+		return explicit
+	}
+	return turnIndex == state.focusedTurn
+}
+
+func (state *outputWidgetViewState) setTurnExpanded(turnIndex int, expanded bool) {
+	if state == nil || turnIndex < 1 {
+		return
+	}
+	state.turnExpanded[turnIndex] = expanded
+}
+
+func (state *outputWidgetViewState) clearTurnExpanded(turnIndex int) {
+	if state == nil || turnIndex < 1 {
+		return
+	}
+	delete(state.turnExpanded, turnIndex)
+}
+
+func (state *outputWidgetViewState) turnScrollOffset(turnIndex int) int {
+	if state == nil {
+		return 0
+	}
+	if offset := state.turnScroll[turnIndex]; offset > 0 {
+		return offset
+	}
+	return 0
+}
+
+func (state *outputWidgetViewState) setTurnScrollOffset(turnIndex int, offset int) {
+	if state == nil || turnIndex < 1 {
+		return
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	state.turnScroll[turnIndex] = offset
 }
 
 func (state *outputWidgetViewState) setEntryCollapsed(turnIndex int, entry string, collapsed bool) {
@@ -201,9 +258,15 @@ func (state *outputWidgetViewState) normalize(turnCount int) {
 	if turnCount <= 0 {
 		state.focusedTurn = 0
 		state.focusedEntry = "response"
+		state.turnExpanded = make(map[int]bool)
+		state.turnScroll = make(map[int]int)
 		state.collapsedThinking = make(map[int]bool)
 		state.collapsedEntries = make(map[string]bool)
+		state.lastTurnCount = 0
 		return
+	}
+	if turnCount > state.lastTurnCount {
+		state.focusedTurn = turnCount
 	}
 	if state.focusedTurn <= 0 {
 		state.focusedTurn = turnCount
@@ -214,6 +277,16 @@ func (state *outputWidgetViewState) normalize(turnCount int) {
 	for idx := range state.collapsedThinking {
 		if idx < 1 || idx > turnCount {
 			delete(state.collapsedThinking, idx)
+		}
+	}
+	for idx := range state.turnExpanded {
+		if idx < 1 || idx > turnCount {
+			delete(state.turnExpanded, idx)
+		}
+	}
+	for idx := range state.turnScroll {
+		if idx < 1 || idx > turnCount {
+			delete(state.turnScroll, idx)
 		}
 	}
 	for key := range state.collapsedEntries {
@@ -234,6 +307,7 @@ func (state *outputWidgetViewState) normalize(turnCount int) {
 	if normalizeOutputEntry(state.focusedEntry) == "" {
 		state.focusedEntry = "response"
 	}
+	state.lastTurnCount = turnCount
 }
 
 func (state *outputWidgetViewState) applyCommand(raw string, snapshot outputWidgetSnapshot) {
@@ -250,6 +324,11 @@ func (state *outputWidgetViewState) applyCommand(raw string, snapshot outputWidg
 		state.setStatus("Output widget controls must start with ':' (use :help).")
 		return
 	}
+	if state.showHelp && line != ":help" {
+		state.showHelp = false
+		state.setStatus("Output controls hidden.")
+		return
+	}
 
 	args := strings.Fields(strings.TrimPrefix(line, ":"))
 	if len(args) == 0 {
@@ -259,11 +338,22 @@ func (state *outputWidgetViewState) applyCommand(raw string, snapshot outputWidg
 
 	parseTurnArg := func(arg string) (int, bool) {
 		target := strings.ToLower(strings.TrimSpace(arg))
-		if target == "focused" || target == "current" {
+		switch target {
+		case "focused", "current":
 			if state.focusedTurn < 1 || state.focusedTurn > turnCount {
 				return 0, false
 			}
 			return state.focusedTurn, true
+		case "oldest", "first", "top":
+			if turnCount < 1 {
+				return 0, false
+			}
+			return 1, true
+		case "newest", "last", "all", "end":
+			if turnCount < 1 {
+				return 0, false
+			}
+			return turnCount, true
 		}
 		value, err := strconv.Atoi(strings.TrimSpace(arg))
 		if err != nil || value < 1 || value > turnCount {
@@ -272,59 +362,14 @@ func (state *outputWidgetViewState) applyCommand(raw string, snapshot outputWidg
 		return value, true
 	}
 
-	parseCollapseArgs := func() (entry string, target string, ok bool) {
-		if len(args) < 2 {
-			return "", "", false
-		}
-		if len(args) >= 3 {
-			first := normalizeOutputEntry(args[1])
-			second := normalizeOutputEntry(args[2])
-			if first != "" {
-				return first, strings.ToLower(strings.TrimSpace(args[2])), true
-			}
-			if second != "" {
-				return second, strings.ToLower(strings.TrimSpace(args[1])), true
-			}
-		}
-		return "thinking", strings.ToLower(strings.TrimSpace(args[1])), true
-	}
-
-	setCollapseForAll := func(entry string, collapsed bool) {
-		if turnCount == 0 {
-			state.setStatus("No turns to update.")
-			return
-		}
-		for i := 1; i <= turnCount; i++ {
-			state.setEntryCollapsed(i, entry, collapsed)
-		}
-		if collapsed {
-			state.setStatus(fmt.Sprintf("Collapsed %s entries for all turns.", entry))
-		} else {
-			state.setStatus(fmt.Sprintf("Expanded %s entries for all turns.", entry))
-		}
-	}
-
-	setCollapseForTurn := func(entry string, turnIndex int, collapsed bool, toggled bool) {
-		state.setEntryCollapsed(turnIndex, entry, collapsed)
-		if toggled {
-			if state.entryCollapsed(turnIndex, entry) {
-				state.setStatus(fmt.Sprintf("Collapsed %s entry for turn %d.", entry, turnIndex))
-			} else {
-				state.setStatus(fmt.Sprintf("Expanded %s entry for turn %d.", entry, turnIndex))
-			}
-			return
-		}
-		if collapsed {
-			state.setStatus(fmt.Sprintf("Collapsed %s entry for turn %d.", entry, turnIndex))
-		} else {
-			state.setStatus(fmt.Sprintf("Expanded %s entry for turn %d.", entry, turnIndex))
-		}
-	}
-
 	switch cmd {
 	case "help", "controls":
-		state.showHelp = true
-		state.setStatus("Output controls visible.")
+		state.showHelp = !state.showHelp
+		if state.showHelp {
+			state.setStatus("Output controls visible.")
+		} else {
+			state.setStatus("Output controls hidden.")
+		}
 		return
 	case "hide-help":
 		state.showHelp = false
@@ -335,9 +380,8 @@ func (state *outputWidgetViewState) applyCommand(raw string, snapshot outputWidg
 			state.setStatus("No turns to focus.")
 			return
 		}
-		state.focusedTurn++
-		if state.focusedTurn > turnCount {
-			state.focusedTurn = 1
+		if state.focusedTurn < turnCount {
+			state.focusedTurn++
 		}
 		state.setStatus(fmt.Sprintf("Focused turn %d.", state.focusedTurn))
 		return
@@ -346,90 +390,77 @@ func (state *outputWidgetViewState) applyCommand(raw string, snapshot outputWidg
 			state.setStatus("No turns to focus.")
 			return
 		}
-		state.focusedTurn--
-		if state.focusedTurn < 1 {
-			state.focusedTurn = turnCount
+		if state.focusedTurn > 1 {
+			state.focusedTurn--
 		}
 		state.setStatus(fmt.Sprintf("Focused turn %d.", state.focusedTurn))
 		return
-	case "focus", "toggle", "collapse", "expand":
+	case "focus":
+		if turnCount == 0 {
+			state.setStatus("No turns to focus.")
+			return
+		}
 		if len(args) < 2 {
-			state.setStatus(fmt.Sprintf("Usage: :%s <turn|all|entry turn>", cmd))
+			state.focusedTurn = turnCount
+			state.setStatus(fmt.Sprintf("Focused turn %d.", state.focusedTurn))
 			return
 		}
-		if cmd == "focus" {
-			if strings.EqualFold(strings.TrimSpace(args[1]), "all") {
-				if turnCount == 0 {
-					state.setStatus("No turns to focus.")
-					return
-				}
-				state.focusedTurn = turnCount
-				state.setStatus(fmt.Sprintf("Focused turn %d.", state.focusedTurn))
-				return
-			}
-			turnIndex, ok := parseTurnArg(args[1])
-			if !ok {
-				state.setStatus(fmt.Sprintf("Invalid turn number %q.", args[1]))
-				return
-			}
-			state.focusedTurn = turnIndex
-			if len(args) >= 3 {
-				entry := normalizeOutputEntry(args[2])
-				if entry == "" {
-					state.setStatus(fmt.Sprintf("Unknown entry %q.", args[2]))
-					return
-				}
-				state.focusedEntry = entry
-				state.setStatus(fmt.Sprintf("Focused turn %d %s entry.", turnIndex, entry))
-				return
-			}
-			state.setStatus(fmt.Sprintf("Focused turn %d.", turnIndex))
-			return
-		}
-
-		entry, target, ok := parseCollapseArgs()
+		turnIndex, ok := parseTurnArg(args[1])
 		if !ok {
-			state.setStatus(fmt.Sprintf("Usage: :%s <entry> <turn|all>", cmd))
+			state.setStatus(fmt.Sprintf("Invalid turn number %q.", args[1]))
 			return
 		}
-		if entry == "" || entry == "user" {
-			state.setStatus("Entry is not collapsible.")
-			return
-		}
-
-		if target == "all" {
-			switch cmd {
-			case "collapse":
-				setCollapseForAll(entry, true)
-			case "expand":
-				setCollapseForAll(entry, false)
-			case "toggle":
-				if turnCount == 0 {
-					state.setStatus("No turns to update.")
-					return
-				}
-				for i := 1; i <= turnCount; i++ {
-					state.setEntryCollapsed(i, entry, !state.entryCollapsed(i, entry))
-				}
-				state.setStatus(fmt.Sprintf("Toggled %s entries for all turns.", entry))
+		state.focusedTurn = turnIndex
+		if len(args) >= 3 {
+			entry := normalizeOutputEntry(args[2])
+			if entry == "" {
+				state.setStatus(fmt.Sprintf("Unknown entry %q.", args[2]))
+				return
 			}
+			state.focusedEntry = entry
+		}
+		state.setStatus(fmt.Sprintf("Focused turn %d.", state.focusedTurn))
+		return
+	case "toggle", "collapse", "expand":
+		targetTurn := state.focusedTurn
+		if len(args) >= 2 {
+			if parsed, ok := parseTurnArg(args[1]); ok {
+				targetTurn = parsed
+			}
+		}
+		if targetTurn < 1 || targetTurn > turnCount {
+			state.setStatus("No turns to update.")
 			return
 		}
-
-		turnIndex, validTurn := parseTurnArg(target)
-		if !validTurn {
-			state.setStatus(fmt.Sprintf("Invalid turn number %q.", target))
-			return
-		}
-
 		switch cmd {
-		case "collapse":
-			setCollapseForTurn(entry, turnIndex, true, false)
-		case "expand":
-			setCollapseForTurn(entry, turnIndex, false, false)
 		case "toggle":
-			setCollapseForTurn(entry, turnIndex, !state.entryCollapsed(turnIndex, entry), true)
+			state.setTurnExpanded(targetTurn, !state.turnExpandedState(targetTurn))
+		case "collapse":
+			state.setTurnExpanded(targetTurn, false)
+		case "expand":
+			state.setTurnExpanded(targetTurn, true)
 		}
+		if targetTurn == state.focusedTurn {
+			state.setTurnScrollOffset(targetTurn, 0)
+		}
+		if state.turnExpandedState(targetTurn) {
+			state.setStatus(fmt.Sprintf("Expanded turn %d.", targetTurn))
+		} else {
+			state.setStatus(fmt.Sprintf("Collapsed turn %d.", targetTurn))
+		}
+		return
+	case "pageup", "pagedown":
+		targetTurn := state.focusedTurn
+		if targetTurn < 1 || targetTurn > turnCount {
+			state.setStatus("No focused turn to scroll.")
+			return
+		}
+		delta := 1
+		if cmd == "pageup" {
+			delta = -1
+		}
+		state.setTurnScrollOffset(targetTurn, state.turnScrollOffset(targetTurn)+delta)
+		state.setStatus(fmt.Sprintf("Adjusted scroll for turn %d.", targetTurn))
 		return
 	case "entry", "focus-entry", "select":
 		if len(args) < 2 {
@@ -554,11 +585,21 @@ func normalizeOutputWidgetControlCommand(raw string) string {
 		return ":help"
 	case "q", "quit", "ctrl_c":
 		return ":q"
-	case "k", "up", "left", "pgup":
+	case "k", "up":
 		return ":prev"
-	case "j", "down", "right", "pgdn":
+	case "j", "down":
 		return ":next"
-	case "top":
+	case "h", "left":
+		return ":collapse"
+	case "l", "right":
+		return ":expand"
+	case "enter", "space":
+		return ":toggle"
+	case "pgup":
+		return ":pageup"
+	case "pgdn":
+		return ":pagedown"
+	case "top", "home":
 		return ":focus 1"
 	case "end":
 		return ":focus all"
@@ -698,12 +739,21 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 					break
 				}
 				normalized := normalizeOutputWidgetControlCommand(cmd)
+				if viewState.showHelp && normalized != ":help" {
+					viewState.showHelp = false
+					viewState.setStatus("Output controls hidden.")
+					continue
+				}
 				action := handleWidgetLoopControlCommand(normalized, widgetLoopControlHandlers{
 					QuitTokens: []string{":q", ":quit"},
 					HelpTokens: []string{":help"},
 					OnHelp: func() {
-						viewState.showHelp = true
-						viewState.setStatus("Output controls visible.")
+						viewState.showHelp = !viewState.showHelp
+						if viewState.showHelp {
+							viewState.setStatus("Output controls visible.")
+						} else {
+							viewState.setStatus("Output controls hidden.")
+						}
 					},
 				})
 				if action == widgetLoopControlQuit {
@@ -759,6 +809,75 @@ func fetchOutputWidgetSnapshot(ctx context.Context, baseURL string) (outputWidge
 	}, nil
 }
 
+func renderOutputWidgetTurnSummary(turn ChatTurn) string {
+	prompt := strings.TrimSpace(turn.Prompt)
+	response := strings.TrimSpace(turn.Response)
+	summary := response
+	role := "assistant"
+	if summary == "" {
+		summary = prompt
+		role = "user"
+	}
+	if summary == "" {
+		summary = "none"
+	}
+	return fmt.Sprintf("[%s] %s", role, trimSingleLine(summary, 60))
+}
+
+func renderOutputWidgetTurnDetails(snapshot outputWidgetSnapshot, turnIndex int, viewState *outputWidgetViewState) []string {
+	if turnIndex < 1 || turnIndex > len(snapshot.Turns) {
+		return nil
+	}
+	turn := snapshot.Turns[turnIndex-1]
+	prompt := strings.TrimSpace(turn.Prompt)
+	response := strings.TrimSpace(turn.Response)
+	classify := classifyPrompt(prompt)
+	prefix := " "
+	if viewState != nil && viewState.focusedTurn == turnIndex {
+		prefix = "*"
+	}
+	entryPrefix := func(entry string) string {
+		if viewState == nil {
+			return " "
+		}
+		if viewState.focusedTurn == turnIndex && viewState.focusedEntry == entry {
+			return ">"
+		}
+		return " "
+	}
+
+	lines := []string{
+		"",
+		fmt.Sprintf("%s User: %s", prefix, trimSingleLine(prompt, 96)),
+	}
+	if viewState != nil && viewState.entryCollapsed(turnIndex, "classification") {
+		lines = append(lines, fmt.Sprintf("%s ⚙️ [classification entry - collapsed]", entryPrefix("classification")))
+	} else {
+		lines = append(lines, fmt.Sprintf("%s ⚙️ Classification: %s -> %s", entryPrefix("classification"), classify.Intent, classify.NextStep))
+	}
+	if viewState != nil && viewState.entryCollapsed(turnIndex, "thinking") {
+		lines = append(lines, fmt.Sprintf("%s 💭 [thinking block - collapsed]", entryPrefix("thinking")))
+	} else {
+		lines = append(lines, fmt.Sprintf("%s 💭 [thinking block - %s]", entryPrefix("thinking"), formatOutputWidgetPhase(snapshot.PromptCycle.Thinking)))
+	}
+	if viewState != nil && viewState.entryCollapsed(turnIndex, "response") {
+		lines = append(lines, fmt.Sprintf("%s 🤖 [response entry - collapsed]", entryPrefix("response")))
+	} else {
+		lines = append(lines, fmt.Sprintf("%s Response: %s", entryPrefix("response"), trimSingleLine(response, 96)))
+	}
+	if viewState != nil {
+		if offset := viewState.turnScrollOffset(turnIndex); offset > 0 && len(lines) > 1 {
+			content := lines[1:]
+			if offset >= len(content) {
+				lines = []string{lines[0]}
+			} else {
+				lines = append([]string{lines[0]}, content[offset:]...)
+			}
+		}
+	}
+	return lines
+}
+
 func renderOutputWidget(snapshot outputWidgetSnapshot, paneHeight int, paneWidth int) string {
 	return renderOutputWidgetWithViewState(snapshot, paneHeight, paneWidth, nil)
 }
@@ -770,17 +889,25 @@ func renderOutputWidgetWithViewState(snapshot outputWidgetSnapshot, paneHeight i
 
 	lines := []string{"[OUTPUT]", "Chat ready."}
 	if viewState != nil {
-		lines = append(lines, "Controls: :help for output affordances.")
+		lines = append(lines, "Controls: use ? to toggle the keymap.")
 		if status := viewState.activeStatus(); status != "" {
 			lines = append(lines, fmt.Sprintf("Status: %s", status))
 		}
 		if viewState.showHelp {
 			lines = append(lines,
-				"Output commands:",
-				"  :focus <n> [entry] | :entry <entry> | :next | :prev",
-				"  :collapse [entry] <n|all> | :expand [entry] <n|all> | :toggle [entry] <n|all>",
-				"  :copy <entry|turn> [n|focused] | :copy clipboard|show|hide|clear",
-				"  :hide-help",
+				"Output keymap:",
+				"  j / ↓   next turn",
+				"  k / ↑   previous turn",
+				"  l / →   expand focused turn",
+				"  h / ←   collapse focused turn",
+				"  Enter   expand/toggle focused turn",
+				"  Space   collapse/toggle focused turn",
+				"  PgUp    scroll focused turn up",
+				"  PgDn    scroll focused turn down",
+				"  Home    jump to oldest turn",
+				"  End     jump to newest turn",
+				"  ?       toggle help",
+				"  q       close widget",
 			)
 		}
 		lines = append(lines, fmt.Sprintf("Clipboard: %s", viewState.clipboardSummary()))
@@ -791,57 +918,16 @@ func renderOutputWidgetWithViewState(snapshot outputWidgetSnapshot, paneHeight i
 			)
 		}
 	}
-	for i := range snapshot.Turns {
-		turn := snapshot.Turns[i]
-		prompt := strings.TrimSpace(turn.Prompt)
-		response := strings.TrimSpace(turn.Response)
-		if prompt == "" && response == "" {
+	for turnIndex := len(snapshot.Turns); turnIndex >= 1; turnIndex-- {
+		turn := snapshot.Turns[turnIndex-1]
+		if strings.TrimSpace(turn.Prompt) == "" && strings.TrimSpace(turn.Response) == "" {
 			continue
 		}
-		classify := classifyPrompt(prompt)
-		prefix := " "
-		isThinkingCollapsed := false
-		isClassificationCollapsed := false
-		isResponseCollapsed := false
-		entryPrefix := func(turnNumber int, entry string) string {
-			if viewState == nil {
-				return " "
-			}
-			if viewState.focusedTurn == turnNumber && viewState.focusedEntry == entry {
-				return ">"
-			}
-			return " "
+		if viewState != nil && !viewState.turnExpandedState(turnIndex) {
+			lines = append(lines, renderOutputWidgetTurnSummary(turn))
+			continue
 		}
-		if viewState != nil {
-			turnNumber := i + 1
-			if viewState.focusedTurn == turnNumber {
-				prefix = "*"
-			}
-			isThinkingCollapsed = viewState.entryCollapsed(turnNumber, "thinking")
-			isClassificationCollapsed = viewState.entryCollapsed(turnNumber, "classification")
-			isResponseCollapsed = viewState.entryCollapsed(turnNumber, "response")
-		}
-		lines = append(lines,
-			"",
-			fmt.Sprintf("%s User: %s", prefix, trimSingleLine(prompt, 96)),
-		)
-		if isClassificationCollapsed {
-			lines = append(lines, fmt.Sprintf("%s ⚙️ [classification entry - collapsed]", entryPrefix(i+1, "classification")))
-		} else {
-			lines = append(lines, fmt.Sprintf("%s ⚙️ Classification: %s -> %s", entryPrefix(i+1, "classification"), classify.Intent, classify.NextStep))
-		}
-		if isThinkingCollapsed {
-			lines = append(lines, fmt.Sprintf("%s 💭 [thinking block - collapsed]", entryPrefix(i+1, "thinking")))
-		} else {
-			lines = append(lines, fmt.Sprintf("%s 💭 [thinking block - %s]", entryPrefix(i+1, "thinking"), formatOutputWidgetPhase(snapshot.PromptCycle.Thinking)))
-		}
-		if isResponseCollapsed {
-			lines = append(lines, fmt.Sprintf("%s 🤖 [response entry - collapsed]", entryPrefix(i+1, "response")))
-		} else {
-			lines = append(lines,
-				fmt.Sprintf("%s Response: %s", entryPrefix(i+1, "response"), trimSingleLine(response, 96)),
-			)
-		}
+		lines = append(lines, renderOutputWidgetTurnDetails(snapshot, turnIndex, viewState)...)
 	}
 	if len(snapshot.Turns) == 0 {
 		lines = append(lines, "No turns yet.")

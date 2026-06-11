@@ -41,6 +41,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Output widget (`cmd/agentx-core/output_widget.go`):
   - `startOutputWidgetCommandReader` migrated to shared `newWidgetCommandReader`.
   - Loop quit (`:q`/`:quit`) and help (`:help`) pre-handling replaced by `handleWidgetLoopControlCommand`.
+  - Redesigned the pane-local output navigation model to default the newest turn to expanded, compact older turns, and honor terminal-style navigation/collapse/expand controls (`j/k`, arrows, `h/l`, `Enter`, `Space`, `PgUp`, `PgDn`, `Home`, `End`, `?`, `q`).
 - Settings widget (`cmd/agentx-core/settings_widget.go`):
   - Loop quit/help/refresh pre-handling via `handleWidgetLoopControlCommand`.
 - Context widget (`cmd/agentx-core/context_widget.go`):
@@ -79,6 +80,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - `TestRunFilesystemWidgetCommand_QuitTokenStopsLoop` — quit-loop coverage via shared command harness.
 - Extended `cmd/agentx-core/output_widget_test.go`:
   - `TestRunOutputWidgetLoopWithInput_QuitTokenStopsLoop` — migrated to shared loop harness.
+  - Latest-first turn rendering, focus navigation, toggle/collapse/expand, help overlay, and compact-summary regressions.
 - Extended `cmd/agentx-core/context_widget_test.go`:
   - `TestRunContextWidgetLoopWithInput_QuitTokenStopsLoop` — quit-loop coverage via shared loop harness.
 - Added viewport seeding regression coverage in `cmd/agentx-core/logs_widget_test.go`:

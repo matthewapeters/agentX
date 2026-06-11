@@ -58,7 +58,12 @@ func TestNormalizeOutputWidgetControlCommand(t *testing.T) {
 		{name: "quit token", raw: "q", want: ":q"},
 		{name: "prev token", raw: "k", want: ":prev"},
 		{name: "next token", raw: "j", want: ":next"},
-		{name: "top token", raw: "top", want: ":focus 1"},
+		{name: "collapse token", raw: "h", want: ":collapse"},
+		{name: "expand token", raw: "l", want: ":expand"},
+		{name: "toggle token", raw: "space", want: ":toggle"},
+		{name: "page up token", raw: "pgup", want: ":pageup"},
+		{name: "page down token", raw: "pgdn", want: ":pagedown"},
+		{name: "home token", raw: "home", want: ":focus 1"},
 		{name: "end token", raw: "end", want: ":focus all"},
 	}
 
@@ -137,64 +142,123 @@ func TestRenderOutputWidget_UsesPaneLifecycleContract(t *testing.T) {
 	}
 }
 
-func TestRenderOutputWidgetWithViewState_CollapsesThinkingBlock(t *testing.T) {
+func TestRenderOutputWidgetWithViewState_LatestFirstFocusExpandsNewest(t *testing.T) {
 	view := newOutputWidgetViewState()
-	view.applyCommand(":collapse 1", outputWidgetSnapshot{Turns: []ChatTurn{{Prompt: "status?", Response: "all green"}}})
+	render := renderOutputWidgetWithViewState(testOutputWidgetSnapshot(), 80, 200, view)
 
-	render := renderOutputWidgetWithViewState(outputWidgetSnapshot{
+	if view.focusedTurn != 2 {
+		t.Fatalf("expected newest turn focused by default, got %d", view.focusedTurn)
+	}
+	for _, fragment := range []string{
+		"[assistant] all green",
+		"Response: 4",
+	} {
+		if !strings.Contains(render, fragment) {
+			t.Fatalf("expected render to contain %q, got:\n%s", fragment, render)
+		}
+	}
+	if strings.Contains(render, "Response: all green") {
+		t.Fatalf("did not expect older turn to stay expanded, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_NewTurnAutoFocusesNewest(t *testing.T) {
+	view := newOutputWidgetViewState()
+	_ = renderOutputWidgetWithViewState(outputWidgetSnapshot{
 		SessionID: "sess-output",
 		TurnCount: 1,
-		Turns:     []ChatTurn{{Prompt: "status?", Response: "all green"}},
-		PromptCycle: PromptCycleStatus{
-			Thinking: PromptCyclePhase{State: "done", ElapsedMs: 11},
+		Turns:     []ChatTurn{{Prompt: "status update", Response: "all green"}},
+	}, 80, 200, view)
+
+	_ = renderOutputWidgetWithViewState(outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 2,
+		Turns: []ChatTurn{
+			{Prompt: "status update", Response: "all green"},
+			{Prompt: "what is 2+2?", Response: "4"},
 		},
 	}, 80, 200, view)
 
-	if !strings.Contains(render, "💭 [thinking block - collapsed]") {
-		t.Fatalf("expected collapsed thinking block marker, got:\n%s", render)
-	}
-	if strings.Contains(render, "💭 [thinking block - done (00:00:00.011)]") {
-		t.Fatalf("did not expect expanded thinking marker after collapse, got:\n%s", render)
-	}
-}
-
-func TestOutputWidgetViewState_HelpAndFocusCommands(t *testing.T) {
-	view := newOutputWidgetViewState()
-	snapshot := testOutputWidgetSnapshot()
-	view.applyCommand(":help", snapshot)
-	if !view.showHelp {
-		t.Fatal("expected help panel to be visible after :help")
-	}
-
-	view.applyCommand(":focus 1", snapshot)
-	if view.focusedTurn != 1 {
-		t.Fatalf("expected focused turn 1, got %d", view.focusedTurn)
-	}
-
-	view.applyCommand(":next", snapshot)
 	if view.focusedTurn != 2 {
-		t.Fatalf("expected focused turn 2 after :next, got %d", view.focusedTurn)
+		t.Fatalf("expected new turn to become focused, got %d", view.focusedTurn)
 	}
 }
 
-func TestRenderOutputWidgetWithViewState_CollapsesClassificationAndResponseEntries(t *testing.T) {
+func TestOutputWidgetViewState_NavigationAndToggleControls(t *testing.T) {
 	view := newOutputWidgetViewState()
 	snapshot := testOutputWidgetSnapshot()
 
-	view.applyCommand(":collapse classification 1", snapshot)
-	view.applyCommand(":collapse response 1", snapshot)
-	view.applyCommand(":focus 1 response", snapshot)
+	view.applyCommand("k", snapshot)
+	if view.focusedTurn != 1 {
+		t.Fatalf("expected k to move to older turn, got %d", view.focusedTurn)
+	}
+
+	view.applyCommand("j", snapshot)
+	view.applyCommand("j", snapshot)
+	if view.focusedTurn != 2 {
+		t.Fatalf("expected j to clamp at newest turn, got %d", view.focusedTurn)
+	}
+
+	view.applyCommand("home", snapshot)
+	if view.focusedTurn != 1 {
+		t.Fatalf("expected home to jump to oldest turn, got %d", view.focusedTurn)
+	}
+
+	view.applyCommand("end", snapshot)
+	if view.focusedTurn != 2 {
+		t.Fatalf("expected end to jump to newest turn, got %d", view.focusedTurn)
+	}
+}
+
+func TestOutputWidgetViewState_EnterAndSpaceToggleFocusedTurn(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "detailed prompt", Response: "Detailed response."}},
+	}
+
+	view.applyCommand("space", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "[assistant] Detailed response.") {
+		t.Fatalf("expected compact summary after space, got:\n%s", render)
+	}
+	if strings.Contains(render, "Response: Detailed response.") {
+		t.Fatalf("did not expect full turn content after collapsing, got:\n%s", render)
+	}
+
+	view.applyCommand("enter", snapshot)
+	render = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "Response: Detailed response.") {
+		t.Fatalf("expected full turn content after enter, got:\n%s", render)
+	}
+}
+
+func TestOutputWidgetViewState_HelpOverlayTogglesAndDismisses(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := testOutputWidgetSnapshot()
+
+	view.applyCommand("?", snapshot)
+	if !view.showHelp {
+		t.Fatal("expected help panel to be visible after ?")
+	}
 
 	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	for _, fragment := range []string{
+		"j / ↓   next turn",
+		"k / ↑   previous turn",
+		"Enter   expand/toggle focused turn",
+		"Space   collapse/toggle focused turn",
+		"?       toggle help",
+	} {
+		if !strings.Contains(render, fragment) {
+			t.Fatalf("expected help render to contain %q, got:\n%s", fragment, render)
+		}
+	}
 
-	if !strings.Contains(render, "⚙️ [classification entry - collapsed]") {
-		t.Fatalf("expected collapsed classification marker, got:\n%s", render)
-	}
-	if !strings.Contains(render, "🤖 [response entry - collapsed]") {
-		t.Fatalf("expected collapsed response marker, got:\n%s", render)
-	}
-	if strings.Contains(render, "Response: all green") {
-		t.Fatalf("did not expect response line after collapsing response entry, got:\n%s", render)
+	view.applyCommand("j", snapshot)
+	if view.showHelp {
+		t.Fatal("expected any key to dismiss help overlay")
 	}
 }
 
@@ -239,23 +303,6 @@ func TestOutputWidgetViewState_CopyFocusedUsesFocusedEntryAndTurn(t *testing.T) 
 	}
 	if view.clipboardSource != "turn 1 classification" {
 		t.Fatalf("expected focused clipboard source, got %q", view.clipboardSource)
-	}
-}
-
-func TestRenderOutputWidgetWithViewState_HelpIncludesCopyAndEntryCommands(t *testing.T) {
-	view := newOutputWidgetViewState()
-	snapshot := testOutputWidgetSnapshot()
-	view.applyCommand(":help", snapshot)
-
-	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
-	for _, fragment := range []string{
-		":entry <entry>",
-		":collapse [entry] <n|all>",
-		":copy <entry|turn>",
-	} {
-		if !strings.Contains(render, fragment) {
-			t.Fatalf("expected help render to contain %q, got:\n%s", fragment, render)
-		}
 	}
 }
 
