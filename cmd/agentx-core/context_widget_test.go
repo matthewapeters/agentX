@@ -24,7 +24,7 @@ func TestRenderContextFeedbackSections_DefaultCollapsedOrderAndMinimalHeader(t *
 	}
 	history := []contextHistorySession{{SessionID: "s-prev", Turns: []ChatTurn{{Prompt: "old", Response: "resp"}}}}
 
-	rendered := strings.Join(renderContextFeedbackSections(snapshot, history, state), "\n")
+	rendered := strings.Join(renderContextFeedbackSections(snapshot, history, state, 120), "\n")
 
 	historyIdx := strings.Index(rendered, "CONTEXT HISTORY")
 	wmIdx := strings.Index(rendered, "WORKING MEMORY")
@@ -458,7 +458,7 @@ func TestContextWidgetKeyboard_StartupHeaderPointerTabIntoContextHistoryFocusesF
 		t.Fatalf("expected TAB to focus first context-history user container, got %#v", got)
 	}
 
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.activeRowKey(); got != "user:"+user {
 		t.Fatalf("expected render cycle to map focused user container to active row, got %q", got)
 	}
@@ -491,7 +491,7 @@ func TestContextWidgetKeyboard_ShiftTabExitThenHeaderTabReentersContextHistoryFi
 	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
 	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
 	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.activeRowKey(); got != "user:"+user {
 		t.Fatalf("expected first TAB to place focus on first user row, got %q", got)
 	}
@@ -523,7 +523,7 @@ func TestContextWidgetKeyboard_ShiftTabExitThenHeaderTabReentersContextHistoryFi
 		t.Fatalf("expected re-entry TAB to focus first user container, got %#v", got)
 	}
 
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.activeRowKey(); got != "user:"+user {
 		t.Fatalf("expected re-entry render cycle to keep first user row active, got %q", got)
 	}
@@ -545,7 +545,7 @@ func TestContextWidgetKeyboard_TabFromContextHistoryHeaderWithNoRows_StaysOutsid
 		t.Fatalf("expected pointer to move to context-history header, got %q", got)
 	}
 
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if state.insideSection {
 		t.Fatalf("precondition: expected startup pointer mode outside section")
 	}
@@ -564,7 +564,7 @@ func TestContextWidgetKeyboard_TabFromContextHistoryHeaderWithNoRows_StaysOutsid
 		t.Fatalf("expected TAB no-rows path to remain on context-history header, got %#v", got)
 	}
 
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if state.insideSection {
 		t.Fatalf("expected post-render no-rows invariant to remain outside section mode")
 	}
@@ -622,7 +622,7 @@ func TestContextWidgetKeyboard_StartupHeaderPointerTabIntoContextHistoryFocusesA
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "alpha-user" {
 		t.Fatalf("expected first TAB to focus alphabetical first user, got %#v", got)
 	}
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.activeRowKey(); got != "user:alpha-user" {
 		t.Fatalf("expected render cycle to map focus to alphabetical first user row, got %q", got)
 	}
@@ -642,7 +642,7 @@ func TestContextWidgetKeyboard_StartupHeaderPointerTabIntoContextHistoryFocusesA
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "alpha-user" {
 		t.Fatalf("expected re-entry TAB to focus same alphabetical first user, got %#v", got)
 	}
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.activeRowKey(); got != "user:alpha-user" {
 		t.Fatalf("expected re-entry render cycle to keep alphabetical first user row active, got %q", got)
 	}
@@ -788,7 +788,7 @@ func TestContextWidgetKeyboard_HistoryArrowNavigationSurvivesRenderWithoutExpans
 		t.Fatalf("expected history focus path to remain at section root before render, got %#v", got)
 	}
 
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
 		t.Fatalf("expected render pass not to auto-expand history path, got %#v", got)
@@ -1898,7 +1898,7 @@ func TestRenderContextFeedbackSections_CollapsedSectionsRenderBoxStubs(t *testin
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "sess-collapsed"}
 
-	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state, 120), "\n")
 	if strings.Count(rendered, "┌") < 2 || strings.Count(rendered, "└") < 2 {
 		t.Fatalf("expected collapsed sections to include visible box stubs, got:\n%s", rendered)
 	}
@@ -1980,38 +1980,41 @@ func TestContextWidgetKeyboard_HistoryTargetSessionResponseExpansion_ShowsFullMu
 	}
 
 	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 
 	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.activeRowKey(); got != "user:mpeters" {
 		t.Fatalf("expected user row focus after tab enter, got %q", got)
 	}
 
 	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
 	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
-	_ = renderContextFeedbackSections(snapshot, nil, state)
-	if got := state.activeRowKey(); got != "session:mpeters:2026-06-06 23:24:30" {
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
+	if got := state.activeRowKey(); got != "session:mpeters:2026-06-06 23:20:18" {
 		t.Fatalf("expected first session selected after drill-in tabs, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
-	if got := state.activeRowKey(); got != "session:mpeters:"+targetSession {
-		t.Fatalf("expected down to move to target session %q, got %q", targetSession, got)
+	targetSessionRow := "session:mpeters:" + targetSession
+	for steps := 0; steps < 8 && state.activeRowKey() != targetSessionRow; steps++ {
+		applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
 	}
-	_ = renderContextFeedbackSections(snapshot, nil, state)
-	if got := state.activeRowKey(); got != "session:mpeters:"+targetSession {
+	if got := state.activeRowKey(); got != targetSessionRow {
+		t.Fatalf("expected down navigation to reach target session %q, got %q", targetSession, got)
+	}
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
+	if got := state.activeRowKey(); got != targetSessionRow {
 		t.Fatalf("expected render cycle to preserve target session selection, got %q", got)
 	}
 
 	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != targetSession {
 		t.Fatalf("expected target session expansion via space, got %#v", got)
 	}
 
 	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
-	_ = renderContextFeedbackSections(snapshot, nil, state)
+	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	promptKey := "history:mpeters:" + targetSession + ":1:prompt"
 	if got := state.activeRowKey(); got != promptKey {
 		t.Fatalf("expected prompt leaf row after tab into session, got %q", got)
@@ -2035,7 +2038,7 @@ func TestContextWidgetKeyboard_HistoryTargetSessionResponseExpansion_ShowsFullMu
 	}
 
 	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
-	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state, 120), "\n")
 	if got := state.activeRowKey(); got != responseKey {
 		t.Fatalf("expected render cycle to preserve expanded response leaf selection, got %q", got)
 	}
@@ -2208,27 +2211,27 @@ func TestRenderContextFeedbackSections_SectionSpecificActiveBorderColorsAppearIn
 	state.activeSection = "context-history"
 	state.collapsedContextHistory = false
 	state.updateOrderedRows([]string{"user:mpeters"})
-	renderedHistory := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	renderedHistory := strings.Join(renderContextFeedbackSections(snapshot, nil, state, 120), "\n")
 	if !strings.Contains(renderedHistory, ansiCyan) {
 		t.Fatalf("expected context-history active border rendered with cyan accent in output")
 	}
 
 	state.activeSection = "working-memory"
 	state.collapsedWorkingMemory = false
-	renderedWM := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	renderedWM := strings.Join(renderContextFeedbackSections(snapshot, nil, state, 120), "\n")
 	if !strings.Contains(renderedWM, ansiGreen) {
 		t.Fatalf("expected working-memory active border rendered with green accent in output")
 	}
 
 	state.activeSection = "current-context"
 	state.collapsedCurrentContext = false
-	renderedCurrent := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	renderedCurrent := strings.Join(renderContextFeedbackSections(snapshot, nil, state, 120), "\n")
 	if !strings.Contains(renderedCurrent, ansiMagenta) {
 		t.Fatalf("expected current-context active border rendered with magenta accent in output")
 	}
 
 	state.insideSection = false
-	renderedOutside := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	renderedOutside := strings.Join(renderContextFeedbackSections(snapshot, nil, state, 120), "\n")
 	if !strings.Contains(renderedOutside, ansiDim) {
 		t.Fatalf("expected outside-section borders rendered with dim accent in output")
 	}
@@ -2241,7 +2244,7 @@ func TestRenderContextFeedbackSections_FiltersEmptyTurnStubs(t *testing.T) {
 		Turns:     []ChatTurn{{Prompt: "", Response: ""}},
 	}
 
-	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state), "\n")
+	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state, 120), "\n")
 	if strings.Contains(rendered, "TURN 1") {
 		t.Fatalf("expected empty turn placeholder to be filtered out, got:\n%s", rendered)
 	}
@@ -2282,7 +2285,7 @@ func TestRenderContextFeedbackSections_HistoryIncludeArtifactIsConcise(t *testin
 		{Kind: nodeKindSession, User: "mpeters", Session: "s-prev"},
 	})
 
-	rendered := stripAnsi(strings.Join(renderContextFeedbackSections(contextWidgetSnapshot{SessionID: "current-session"}, nil, state), "\n"))
+	rendered := stripAnsi(strings.Join(renderContextFeedbackSections(contextWidgetSnapshot{SessionID: "current-session"}, nil, state, 120), "\n"))
 	if !strings.Contains(rendered, "include") {
 		t.Fatalf("expected concise include hint line to render, got:\n%s", rendered)
 	}
@@ -2298,7 +2301,7 @@ func TestRenderWorkingMemoryFeedbackSection_ShowsEditorCells(t *testing.T) {
 	state := newContextFeedbackViewState()
 	state.collapsedWorkingMemory = false
 
-	rendered := strings.Join(renderWorkingMemoryFeedbackSection(state, nil), "\n")
+	rendered := strings.Join(renderWorkingMemoryFeedbackSection(state, nil, 120), "\n")
 	// Editor cells appear inside the single WM box.
 	for _, fragment := range []string{
 		"KEY                       VALUE",

@@ -1,6 +1,6 @@
 # Output Applet Contract
 
-Last updated: 2026-06-04
+Last updated: 2026-06-11
 Applet ID: `chat/output`
 Runtime entry: `agentx-core --output-widget`
 
@@ -30,6 +30,9 @@ prompt orchestration, tool execution state, or context lifecycle transitions.
 - **Latest-first, focus-expands**: on any new turn arriving, the widget
   automatically scrolls to and expands the newest turn; all prior turns are
   compacted to a one-line summary.
+- **Newest-turn pointer is always visible**: the newest turn is marked with a
+  persistent visual indicator (`LATEST`) plus a high-contrast focus style when
+  selected so users can immediately identify the most recent response.
 - **Compact non-focused entries**: turns and entries that are not focused show
   only a single summary line (role prefix + first ~60 chars).  The focused
   turn/entry is rendered in full.
@@ -43,13 +46,18 @@ prompt orchestration, tool execution state, or context lifecycle transitions.
 The output applet is an **interactive read-only navigator**; it accepts no
 text input but handles the following keys:
 
+All navigation keys below MUST be handled in single-keystroke mode with no
+line buffering and no Enter confirmation requirement.
+
 | Key(s) | Action |
 | --- | --- |
 | `↑` / `k` | Move focus to the previous (older) turn |
 | `↓` / `j` | Move focus to the next (newer) turn |
-| `←` / `h` | Collapse the focused entry / step focus to parent turn |
-| `→` / `l` | Expand the focused entry / step focus to first child entry |
-| `Enter` / `Space` | Toggle expand/compact on the focused turn or entry |
+| `Tab` | Drill into focused turn container (entry focus mode) |
+| `Shift-Tab` | Drill out to focused turn container mode |
+| `h` / `l` | Collapse/expand the focused target (turn in container mode, entry in entry mode) |
+| `Enter` / `Space` | Toggle expand/compact on the focused target (turn or entry by mode) |
+| `←` / `→` | Previous/next turn navigation (non-toggle, no drill conflict) |
 | `PgUp` | Scroll up one page within the expanded focused entry |
 | `PgDn` | Scroll down one page within the expanded focused entry |
 | `Home` | Jump to the oldest turn |
@@ -57,8 +65,8 @@ text input but handles the following keys:
 | `?` | Toggle inline help overlay showing the keymap |
 | `q` | Close / detach the output widget |
 
-Navigation ergonomics match familiar terminal conventions (`vi`-style j/k,
-h/l for hierarchy) so users need no relearning from other applets.
+Navigation ergonomics preserve single-keystroke responsiveness while making
+container-vs-entry intent explicit via drill in/out.
 
 ---
 
@@ -68,11 +76,23 @@ h/l for hierarchy) so users need no relearning from other applets.
   entries: prompt, tool calls, tool results, assistant reply).
 - An **entry** is one atomic block within a turn (e.g., a single tool result).
 - Compact form: `[role] <summary line>` — one terminal line maximum.
+  For collapsed turn containers, the summary line is sourced from the first
+  words of the user prompt (falling back to response only when prompt is empty).
 - Expanded form: full content with syntax/markdown rendering where supported.
 - The most recently received turn starts expanded; all others start compacted.
+- Focus is two-level per focused turn:
+  - container focus mode uses marker `↳` on the user row.
+  - entry focus mode uses marker `▶` on the focused entry row.
 - After manual expand/compact, the applet preserves the user-set state until
   navigation focus leaves that turn; returning focus restores the user-set
   state for that turn within the session.
+- Expandable content must provide explicit affordances (`[+]` collapsed,
+  `[-]` expanded) and remain keyboard discoverable via `Tab` and `?` help.
+- Expanded container renders a visible box around turn entries.
+- Collapsed container renders an empty box stub (top/bottom border) so users
+  can still see container presence in compact mode.
+- User prompt rows include a person emoji prefix (`👤 User:`) to improve
+  role-scannability in dense output streams.
 
 ---
 
@@ -81,6 +101,8 @@ h/l for hierarchy) so users need no relearning from other applets.
 - `PD-01` ChatPanel output surface (`docs/ux/03_PANEL_DETAILS.md`)
 - `PD-17-AF-011` startup greeting parity (`docs/ux/07_DEMO_MODE.md`)
 - `PD-17-AF-012` prompt lifecycle parity (`docs/ux/07_DEMO_MODE.md`)
+- Context interaction parity (**normative**) (`docs/architecture/applets/context_applet.md`)
+- Context History visual language (**informative**) (`context_history.md`)
 - Traceability row: runtime applet closure table (`docs/ux/UX_LIFECYCLE.md`)
 
 ---
@@ -97,18 +119,28 @@ h/l for hierarchy) so users need no relearning from other applets.
 
 ## Affordance List
 
-| ID | Affordance | Status |
-| --- | --- | --- |
-| `PD-17-AF-011` | Startup greeting appears in output at session start | Built |
-| `PD-17-AF-012` | Prompt lifecycle rows stream in deterministic order | Built |
-| `OUT-AF-001` | Latest-first default: newest turn auto-expanded on arrival | Planned (Phase 1) |
-| `OUT-AF-002` | Focus navigation with `j/k` / arrows across turns | Planned (Phase 1) |
-| `OUT-AF-003` | Per-entry collapse/expand with `h/l` / Enter / Space | Planned (Phase 1) |
-| `OUT-AF-004` | PgUp/PgDn scrolling within expanded entry | Planned (Phase 1) |
-| `OUT-AF-005` | Home/End jump to oldest/newest turn | Planned (Phase 1) |
-| `OUT-AF-006` | Inline keymap help overlay via `?` | Planned (Phase 2) |
-| `OUT-AF-007` | Compact non-focused turns to preserve working space | Planned (Phase 1) |
-| `PD-01` | Per-entry interactive controls (collapse/expand, TUI copy) | Planned (Phase 1–2) |
+Status taxonomy used in this table:
+
+- `Priority`: `Required` (release-gating contract requirement) or `Advisory` (non-gating improvement).
+- `Implementation state`: `Built`, `Partial`, or `Not built`.
+
+| ID | Affordance | Priority | Implementation state | Acceptance criteria |
+| --- | --- | --- | --- | --- |
+| `PD-17-AF-011` | Output startup surface omits boilerplate chrome lines (`[OUTPUT]`, `Chat ready.`, `Controls...`, `Clipboard...`) | Required | Not built | On fresh launch before the first user prompt, the first rendered output row is a lifecycle row or conversation row; none of the four forbidden boilerplate strings appears in any rendered output row. |
+| `PD-17-AF-012` | Prompt lifecycle rows stream in deterministic order | Required | Built | For one prompt cycle, lifecycle rows are ordered consistently with core lifecycle events and do not reorder on redraw. |
+| `OUT-AF-001` | Latest-first default: newest turn auto-expanded on arrival | Required | Not built | On new turn arrival, newest turn is expanded and focused; previously focused older turn becomes compact. |
+| `OUT-AF-002` | Focus navigation with `j/k` / arrows across turns (single-key responsive) | Required | Partial | Each single `j/k` or arrow keypress causes exactly one focus move with no Enter requirement; key events are not dropped or coalesced. |
+| `OUT-AF-003` | Per-entry collapse/expand with `h/l` / Enter / Space (single-key responsive) | Required | Partial | `h/l`, `Enter`, and `Space` each toggle only the focused region, and the changed expanded/collapsed state is visible in the first frame rendered after that key event. |
+| `OUT-AF-004` | PgUp/PgDn scrolling within expanded entry (single-key responsive) | Required | Partial | `PgUp/PgDn` changes viewport position immediately while retaining focus and without requiring Enter. |
+| `OUT-AF-005` | Home/End jump to oldest/newest turn | Required | Partial | `Home` lands on oldest visible turn; `End` lands on newest turn and restores latest-first focus state. |
+| `OUT-AF-006` | Inline keymap help overlay via `?` | Required | Built | `?` opens and closes help overlay; overlay includes all supported navigation keys including `Tab`. |
+| `OUT-AF-007` | Compact non-focused turns to preserve working space | Required | Built | Only focused turn is expanded by default; non-focused turns render one-line summaries unless manually expanded. |
+| `OUT-AF-008` | `Tab` navigation between expandable regions in focused turn | Required | Not built | Repeated `Tab` cycles through expandable controls/regions predictably and wraps within the focused turn. |
+| `OUT-AF-009` | Clear visual pointer to most recent response | Required | Not built | Newest response always displays `LATEST` marker; marker remains visible even when focus moves elsewhere. |
+| `OUT-AF-010` | Strong focus marker in compact and expanded modes | Required | Not built | Focused row/entry is distinguished by at least two cues present simultaneously in both compact and expanded modes: an explicit pointer marker and non-default ANSI style; non-focused rows must not use both cues together. |
+| `OUT-AF-011` | Expand/collapse affordances are explicit and discoverable | Required | Not built | Each collapsible region shows `[+]` or `[-]` state icon and appears in `?` help legend. |
+| `OUT-AF-012` | Interaction look/feel aligns with Context History applet | Required | Not built | Output applet matches `context_applet.md` keyboard contract timing semantics (single keypress action, no Enter gating for navigation keys) and uses the same expand/collapse affordance tokens (`[+]`/`[-]`) defined here and referenced by context-history visual conventions in `context_history.md`. |
+| `PD-01` | Per-entry interactive controls (collapse/expand, TUI copy) | Required | Partial | Collapse/expand is keyboard-operable; copy action is visible and reachable for focused entry content. |
 
 ---
 
@@ -124,7 +156,8 @@ h/l for hierarchy) so users need no relearning from other applets.
 
 - Flow A: startup greeting parity
 - Flow B: prompt lifecycle parity
-- Flow C: interactive navigation (focus, collapse/expand) — **Planned**
+- Flow C: interactive navigation (focus, collapse/expand) — **Implemented with input responsiveness gaps**
+- Flow D: most-recent-pointer and affordance discoverability parity with Context History — **Required**
 
 Evidence anchors:
 
@@ -171,27 +204,25 @@ Applet process launch index: `1` (first applet process launched by core).
 
 ## Phased Implementation Plan
 
-### Phase 1 — Core interactive navigation (OUT-AF-001 through OUT-AF-005, OUT-AF-007)
+### Remediation R1 — Input responsiveness and newest-turn correctness
 
-1. Add pane-local view-state struct (`focusIndex int`, `expandedMap map[int]bool`).
-2. Implement latest-first default: on new turn IPC message, set `focusIndex` to
-   newest turn and `expandedMap[newest] = true`; compact all prior.
-3. Implement `j/k` / arrow turn navigation: move `focusIndex`, trigger redraw.
-4. Implement `h/l` / Enter / Space: toggle `expandedMap[focusIndex]` and redraw.
-5. Implement PgUp/PgDn: scroll within the viewport of the focused expanded entry.
-6. Implement Home/End: jump `focusIndex` to first/last turn.
-7. Render loop: expanded entry = full content; compact entry = single summary line.
+1. Enforce raw/single-keystroke input handling for `Tab`, arrows, `h/j/k/l`,
+  `Enter`, `Space`, `PgUp`, `PgDn`, `Home`, and `End`.
+2. Remove key buffering behavior that waits for Enter before dispatch.
+3. Reassert newest-turn auto-expand/focus on new turn arrival and persistent
+  `LATEST` marker rendering.
 
-### Phase 2 — Help overlay and copy affordances (OUT-AF-006, PD-01 copy)
+### Remediation R2 — Discoverability and visual parity
 
-1. Implement `?` toggle: render keymap table as an overlay; dismiss on any key.
-2. Implement TUI copy action for focused entry content (explicit app-level action).
+1. Add explicit `[+]`/`[-]` affordances for all collapsible regions.
+2. Strengthen focus styling in expanded mode to match compact mode clarity.
+3. Align focus and affordance styling with Context History applet conventions.
 
-### Phase 3 — Parity sign-off
+### Remediation R3 — Startup output hygiene
 
-1. Map all `PD-01` interactive affordances to Phase 1/2 deliverables.
-2. Close `OUT-AF-*` rows in the UX affordance ownership matrix.
-3. Add regression tests for each affordance under `output.feature`.
+1. Remove startup boilerplate rows (`[OUTPUT]`, `Chat ready.`, `Controls...`,
+  `Clipboard...`) from the output surface.
+2. Preserve lifecycle and conversation rows as first meaningful output.
 
 ---
 
@@ -209,9 +240,12 @@ Applet process launch index: `1` (first applet process launched by core).
 
 ## Gap Note
 
-- Phase 1 navigation affordances (`OUT-AF-001` through `OUT-AF-005`,
-  `OUT-AF-007`) are **not yet implemented**; Gherkin scenarios in
-  `output.feature` are expected to fail until Phase 1 is complete.
-- UX contract coverage is strong for startup/lifecycle rows; interactive
-  per-entry controls are now tracked as explicit implementation work items
-  (not open direction ambiguity).
+- Current implementation includes baseline interactive navigation, but key
+  handling is not consistently single-keystroke responsive and may buffer until
+  Enter (`OUT-AF-002` through `OUT-AF-005`).
+- Newest-turn default behavior is currently inconsistent with contract intent;
+  newest response may render collapsed (`OUT-AF-001`, `OUT-AF-009`).
+- Expand/collapse affordance discoverability and focus prominence are below
+  contract requirement (`OUT-AF-010`, `OUT-AF-011`).
+- Startup boilerplate rows currently violate output hygiene requirement
+  (`PD-17-AF-011`).

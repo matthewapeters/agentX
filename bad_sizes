@@ -1,0 +1,84 @@
+# Output Applet Display Issues
+
+The following screen scrape was of the output panel in windowed mode.  It exhibits several issues:
+
+- the pointer emoji for the collapsed prompr response on line 1 should not be present.  A collapsed widget should only have a pointer if it is the subject of navigation (which it currently is not because the widget below it is expanded).
+- the triangle pointer emoji is never used.
+- the right border of the expanded widget is over-written by white-space.  Word wraps need to consider the border as beyond their available workspace allowance.
+- the [+] on line 1 should not replace the user emoji.  on the expanded prompt, the user emoji is used, but there is no corresponding [-] to show the widget is expanded.  These symbols have roles as affodances and should have state representation so they are consistently employed and rendered.
+- the widths of prompt boxes should be the same - they currently appear to be computed by content, and not by available screen real-estate.  Their sizes control the internal space availabel for rendering, not the other way around.
+- there is no pointer inside the expanded prompt to control the '[-]' toggles.  If these cannot be triggered to change their display state, why are they present?  They should not be
+- the Thinking contains none of the agent thought output.  It should.  It should be collapsed but expandable if the user wishes to see the content.  It should use a collapsed box and `[+]` to reflect that it contains content.
+- We will want to implement a markdown detection and rendering component in the near future, capable to responding to thing like, for example: `**highlighted**` text, `- bullet points` and `| tables | that can be neatly rendered |`
+- I think the prompt order should be reversed here - is it being governed by a user config setting?  It should not be governed by the sort config setting used by the Context History applet.  By default, chat response applications put the latest turn at the bottom and history scrolls up.  We should do the same.  If it is already goverened by a config value, add a new config value to the agentx.toml and set it to reflect the new default and use the new config to change the display order.  If it is not currently governed by a config, do not bother to implement a config, just fix the display order.
+
+----
+
+↳ [+] [user] how does an AI harness implement sub-agent processes? [LATEST]
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  👤 User: Hi!  Identify yourself!
+  ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ [-] ⚙️  Classification: complex_action -> invoke_planner
+  │ [-] 💭 Thinking: done (00:00:41.433)
+  │ [-] 🤖 Response: Hello! 👋
+  │
+  │   I’m **AgentX** – a multi‑model personal assistant built from a suite of inference models, code‑execution tools,
+  │   and a web‑search capability, all running locally for you.
+  │
+  │   **What that means for you**
+  │
+  │   | Capability | How it works for you |
+  │   |------------|----------------------|
+  │   | **Natural‑language reasoning** | I can understand and respond to complex queries, break them down, and generate
+  │   step‑by‑step solutions. |
+  │   | **Internet research** | I can perform live web searches (with source citations) to fetch the latest data,
+  │   statistics, or reference material you need. |
+  │   | **Programmatic assistance** | I can run or simulate Python/JavaScript snippets, manipulate data, generate
+  │   charts, and even help you debug code snippets. |
+  │   | **Local, private processing** | All our interactions stay on your device; nothing is sent to external servers
+  │   unless you explicitly trigger a live web search, and even then the data is processed in a secure sandbox. |
+  │
+  │   **How can I help you today?**
+  │   - Research a topic, compile a summary, and cite sources.
+  │   - Write, run, or debug a short script.
+  │   - Generate a plan, checklist, or outline for a project.
+  │   - Answer any question you have—technical, academic, creative, or everyday.
+  │
+  │   Just let me know what you’d like to tackle, and I’ll get started! 🚀
+  └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+----
+
+# Context History Applet Display Issues
+
+The following screen scrape shows similar concerns to the output widget:
+
+- boxes should be computed from available screen real-estate and should be the same size.  Their size governs the space available for rendering text, which should only elipse if:
+  - the text exceeds the available space within the containing box AND the text is a collapsable object
+  - text should not be elipsed mid-word.  Split on white space
+
+----
+ CONTEXT FEEDBACK APPLET
+
+   🗄️  CONTEXT HISTORY
+┌──────────────────────────────────────────┐
+└──────────────────────────────────────────┘
+
+▶  💾 WORKING MEMORY
+┌─────────────────────────────────────────────────────────────┐
+│ KEY                       VALUE                             │
+│ ┌───────────────────────┐ ┌───────────────────────┐ ┌─────┐ │
+│ │                       │ │                       │ │ ↳OK │ │
+│ └───────────────────────┘ └───────────────────────┘ └─────┘ │
+│ ✔️  current_user: mpeters                                     │
+│ ✔️  current_working_directory: /home/mpeters/Projects/agentX  │
+└─────────────────────────────────────────────────────────────┘
+
+📑 CURRENT CONTEXT
+┌───────────────────────────────────────────────┐
+│    ✔️  👤  Hi! Identify yourself!               │
+│    ✔️  🤖  Hello! 👋 I’m **AgentX** –...        │
+│    ✔️  👤  how does an AI harness implement...  │
+│    ✔️  🤖  The term "AI harness" isn't a sta... │
+└───────────────────────────────────────────────┘
+----

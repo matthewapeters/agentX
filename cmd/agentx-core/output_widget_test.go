@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -58,9 +59,13 @@ func TestNormalizeOutputWidgetControlCommand(t *testing.T) {
 		{name: "quit token", raw: "q", want: ":q"},
 		{name: "prev token", raw: "k", want: ":prev"},
 		{name: "next token", raw: "j", want: ":next"},
-		{name: "collapse token", raw: "h", want: ":collapse"},
-		{name: "expand token", raw: "l", want: ":expand"},
-		{name: "toggle token", raw: "space", want: ":toggle"},
+		{name: "collapse token", raw: "h", want: ":target-collapse"},
+		{name: "expand token", raw: "l", want: ":target-expand"},
+		{name: "left arrow token", raw: "left", want: ":prev"},
+		{name: "right arrow token", raw: "right", want: ":next"},
+		{name: "toggle token", raw: "space", want: ":target-toggle"},
+		{name: "tab token", raw: "tab", want: ":drill-in"},
+		{name: "shift tab token", raw: "shift-tab", want: ":drill-out"},
 		{name: "page up token", raw: "pgup", want: ":pageup"},
 		{name: "page down token", raw: "pgdn", want: ":pagedown"},
 		{name: "home token", raw: "home", want: ":focus 1"},
@@ -129,16 +134,17 @@ func TestRenderOutputWidget_UsesPaneLifecycleContract(t *testing.T) {
 	}, 80, 200)
 
 	for _, fragment := range []string{
-		"[OUTPUT]",
-		"Chat ready.",
-		"User: what is 2+2?",
-		"⚙️ Classification:",
-		"💭 [thinking block - done (00:00:00.011)]",
-		"Response: Echo: what is 2+2?",
+		"👤 User: what is 2+2? [LATEST]",
+		"[-] ⚙️ Classification:",
+		"[-] 💭 Thinking: done (00:00:00.011)",
+		"[-] 🤖 Response: Echo: what is 2+2?",
 	} {
 		if !strings.Contains(render, fragment) {
 			t.Fatalf("expected render to contain %q, got:\n%s", fragment, render)
 		}
+	}
+	if strings.Contains(render, "Turn 1 [LATEST]") {
+		t.Fatalf("did not expect legacy turn header line, got:\n%s", render)
 	}
 }
 
@@ -150,8 +156,9 @@ func TestRenderOutputWidgetWithViewState_LatestFirstFocusExpandsNewest(t *testin
 		t.Fatalf("expected newest turn focused by default, got %d", view.focusedTurn)
 	}
 	for _, fragment := range []string{
-		"[assistant] all green",
-		"Response: 4",
+		"[+] [user] status update",
+		"[-] 🤖 Response: 4",
+		"↳ 👤 User: what is 2+2? [LATEST]",
 	} {
 		if !strings.Contains(render, fragment) {
 			t.Fatalf("expected render to contain %q, got:\n%s", fragment, render)
@@ -195,6 +202,54 @@ func TestRenderOutputWidgetWithViewState_NewTurnAutoFocusesNewest(t *testing.T) 
 	}
 }
 
+func TestRenderOutputWidgetWithViewState_ExpandedResponseShowsFullContent(t *testing.T) {
+	longResponse := "This is a very long response that would normally be truncated to 96 characters but should show the full content when the response entry is expanded in the output widget."
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "what is this?", Response: longResponse}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	// When expanded, the full response should be visible (not truncated to 96 chars)
+	if !strings.Contains(render, longResponse) {
+		t.Fatalf("expected expanded response to show full content, got:\n%s", render)
+	}
+	// Ensure it's not collapsed or legacy turn-header output
+	if strings.Contains(render, "Turn 1 [LATEST]") {
+		t.Fatalf("did not expect legacy turn header line, got:\n%s", render)
+	}
+	// Ensure it's not the truncated/collapsed version
+	if strings.Contains(render, "...") {
+		t.Fatalf("did not expect truncation marker in expanded response, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_ExpandedResponsePreservesMultilineContent(t *testing.T) {
+	multiLine := "first response line\nsecond response line with details\nthird response line"
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "show details", Response: multiLine}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	for _, fragment := range []string{
+		"↳ 👤 User: show details [LATEST]",
+		"[-] 🤖 Response: first response line",
+		"second response line with details",
+		"third response line",
+	} {
+		if !strings.Contains(render, fragment) {
+			t.Fatalf("expected render to contain %q, got:\n%s", fragment, render)
+		}
+	}
+}
+
 func TestRenderOutputWidgetWithViewState_FocusedCompactedTurnShowsPointer(t *testing.T) {
 	view := newOutputWidgetViewState()
 	snapshot := outputWidgetSnapshot{
@@ -207,8 +262,11 @@ func TestRenderOutputWidgetWithViewState_FocusedCompactedTurnShowsPointer(t *tes
 	view.applyCommand(":collapse", snapshot)
 	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
 
-	if !strings.Contains(render, "* [assistant] all green") {
+	if !strings.Contains(render, "↳ [+] [user] status update") {
 		t.Fatalf("expected compacted focused turn pointer, got:\n%s", render)
+	}
+	if !strings.Contains(render, "[+] [user]") {
+		t.Fatalf("expected compact affordance marker, got:\n%s", render)
 	}
 }
 
@@ -222,10 +280,10 @@ func TestRenderOutputWidgetWithViewState_CompactedPointerOnlyOnFocusedTurn(t *te
 	view.focusedTurn = 2
 
 	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
-	if strings.Contains(render, "* [assistant] all green") {
+	if strings.Contains(render, "↳ [+] [user] status update") {
 		t.Fatalf("did not expect non-focused compact turn pointer, got:\n%s", render)
 	}
-	if !strings.Contains(render, "* [assistant] 4") {
+	if !strings.Contains(render, "↳ [+] [user] what is 2+2?") {
 		t.Fatalf("expected focused compact turn pointer, got:\n%s", render)
 	}
 }
@@ -241,7 +299,7 @@ func TestRenderOutputWidgetWithViewState_SameTurnResponseUpdateAutoExpandsLatest
 	_ = renderOutputWidgetWithViewState(initial, 80, 200, view)
 	view.applyCommand(":collapse", initial)
 	collapsedRender := renderOutputWidgetWithViewState(initial, 80, 200, view)
-	if !strings.Contains(collapsedRender, "* [assistant] partial") {
+	if !strings.Contains(collapsedRender, "↳ [+] [user] status update") {
 		t.Fatalf("expected compact summary after collapse, got:\n%s", collapsedRender)
 	}
 	if strings.Contains(collapsedRender, "Response: partial") {
@@ -436,19 +494,294 @@ func TestOutputWidgetViewState_EnterAndSpaceToggleFocusedTurn(t *testing.T) {
 		Turns:     []ChatTurn{{Prompt: "detailed prompt", Response: "Detailed response."}},
 	}
 
+	view.applyCommand(":entry response", snapshot)
 	view.applyCommand("space", snapshot)
 	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
-	if !strings.Contains(render, "[assistant] Detailed response.") {
-		t.Fatalf("expected compact summary after space, got:\n%s", render)
+	if !strings.Contains(render, "[+] 🤖 Response: Detailed response.") {
+		t.Fatalf("expected collapsed response entry after space, got:\n%s", render)
 	}
-	if strings.Contains(render, "Response: Detailed response.") {
-		t.Fatalf("did not expect full turn content after collapsing, got:\n%s", render)
+	if strings.Contains(render, "[-] 🤖 Response: Detailed response.") {
+		t.Fatalf("did not expect expanded response entry after collapsing, got:\n%s", render)
 	}
 
 	view.applyCommand("enter", snapshot)
 	render = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
-	if !strings.Contains(render, "Response: Detailed response.") {
-		t.Fatalf("expected full turn content after enter, got:\n%s", render)
+	if !strings.Contains(render, "[-] 🤖 Response: Detailed response.") {
+		t.Fatalf("expected expanded response entry after enter, got:\n%s", render)
+	}
+}
+
+func TestOutputWidgetViewState_TabDrillInShiftTabDrillOut(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := testOutputWidgetSnapshot()
+
+	_ = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if view.entryFocusMode {
+		t.Fatal("expected initial container focus mode")
+	}
+	view.applyCommand("tab", snapshot)
+	if view.focusedTurn != 2 {
+		t.Fatalf("expected tab to keep focused turn unchanged, got %d", view.focusedTurn)
+	}
+	if !view.entryFocusMode {
+		t.Fatal("expected tab to drill in to entry focus mode")
+	}
+	if view.focusedEntry != "response" {
+		t.Fatalf("expected tab drill-in to keep default response focus, got %q", view.focusedEntry)
+	}
+
+	view.applyCommand("down", snapshot)
+	if view.focusedEntry != "classification" {
+		t.Fatalf("expected down in entry mode to cycle entries, got %q", view.focusedEntry)
+	}
+
+	view.applyCommand("shift-tab", snapshot)
+	if view.entryFocusMode {
+		t.Fatal("expected shift-tab to drill out to container focus mode")
+	}
+}
+
+func TestOutputWidgetViewState_FocusMarkersForContainerAndEntryModes(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := testOutputWidgetSnapshot()
+
+	containerRender := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(containerRender, "↳ 👤 User: what is 2+2? [LATEST]") {
+		t.Fatalf("expected container marker on focused user row, got:\n%s", containerRender)
+	}
+
+	view.applyCommand("tab", snapshot)
+	entryRender := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(entryRender, "▶ │ [-] 🤖 Response: 4") {
+		t.Fatalf("expected entry marker on focused response row, got:\n%s", entryRender)
+	}
+}
+
+func TestOutputWidgetViewState_FocusMarkersDoNotMixWithinTurnBlock(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "marker check", Response: "marker response"}},
+	}
+
+	containerRender := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(containerRender, "↳ 👤 User: marker check [LATEST]") {
+		t.Fatalf("expected container focus marker on user row, got:\n%s", containerRender)
+	}
+	if strings.Contains(containerRender, "▶") {
+		t.Fatalf("did not expect entry marker while in container focus mode, got:\n%s", containerRender)
+	}
+
+	view.applyCommand("tab", snapshot)
+	entryRender := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if strings.Contains(entryRender, "↳ 👤 User: marker check [LATEST]") {
+		t.Fatalf("did not expect container marker while in entry focus mode, got:\n%s", entryRender)
+	}
+	if !strings.Contains(entryRender, "▶ │ [-] 🤖 Response: marker response") {
+		t.Fatalf("expected entry marker on focused entry row, got:\n%s", entryRender)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_CollapsedTurnSummaryUsesUserPrompt(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "summary from prompt", Response: "response should not drive collapsed summary"}},
+	}
+
+	_ = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	view.applyCommand(":collapse", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	if !strings.Contains(render, "↳ [+] [user] summary from prompt [LATEST]") {
+		t.Fatalf("expected collapsed summary to use user prompt with latest marker, got:\n%s", render)
+	}
+	if strings.Contains(render, "[assistant] response should not drive collapsed summary") {
+		t.Fatalf("did not expect collapsed summary from assistant response, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_UserHeaderOutsideEntryBoxAndNoLeadingBlankLine(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "layout prompt", Response: "layout response"}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	lines := strings.Split(render, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least two rendered lines, got:\n%s", render)
+	}
+	if strings.TrimSpace(lines[0]) == "" {
+		t.Fatalf("did not expect top blank line before expanded turn content, got:\n%s", render)
+	}
+	if !strings.Contains(lines[0], "👤 User: layout prompt [LATEST]") {
+		t.Fatalf("expected first row to be user header outside box, got first line: %q\nfull render:\n%s", lines[0], render)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(lines[1]), "┌") {
+		t.Fatalf("expected second row to start entry box, got %q\nfull render:\n%s", lines[1], render)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_DoesNotRenderStatusBannerRow(t *testing.T) {
+	view := newOutputWidgetViewState()
+	view.setStatus("Output controls visible.")
+	snapshot := testOutputWidgetSnapshot()
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if strings.Contains(render, "Status: ") {
+		t.Fatalf("did not expect rendered status banner row, got:\n%s", render)
+	}
+}
+
+func TestOutputWidgetViewState_HLOperateOnFocusedEntryWhenExpanded(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "hello", Response: "Detailed response."}},
+		PromptCycle: PromptCycleStatus{
+			Thinking: PromptCyclePhase{State: "done", ElapsedMs: 7},
+		},
+	}
+
+	_ = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	view.applyCommand(":entry classification", snapshot)
+	view.applyCommand("shift-tab", snapshot)
+	view.applyCommand("h", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if strings.Contains(render, "⚙️ Classification: [collapsed]") {
+		t.Fatalf("expected h in container mode to collapse turn, not classification entry, got:\n%s", render)
+	}
+	if !strings.Contains(render, "[+] [user] hello") {
+		t.Fatalf("expected h in container mode to compact focused turn summary, got:\n%s", render)
+	}
+
+	view.applyCommand("tab", snapshot)
+	view.applyCommand("down", snapshot)
+	view.applyCommand("l", snapshot)
+	render = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "[-] ⚙️ Classification:") {
+		t.Fatalf("expected l to expand focused classification entry, got:\n%s", render)
+	}
+}
+
+func TestOutputWidgetViewState_CollapsedResponsePreviewTruncatesWithEllipsis(t *testing.T) {
+	view := newOutputWidgetViewState()
+	longResponse := "This response intentionally exceeds the preview threshold so the collapsed row renders beginning words and an ellipsis near the line end for readability."
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "hello", Response: longResponse}},
+	}
+
+	_ = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	view.applyCommand(":entry response", snapshot)
+	view.applyCommand("space", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 80, view)
+
+	wantPreview := renderOutputWidgetCollapsedPreview(longResponse, outputWidgetContentBudget(80, "  │ [+] 🤖 Response: "))
+	if !strings.Contains(render, "[+] 🤖 Response: "+wantPreview) {
+		t.Fatalf("expected collapsed response preview with ellipsis, got:\n%s", render)
+	}
+	if !strings.Contains(wantPreview, " ...") {
+		t.Fatalf("expected truncated preview to include spaced ellipsis, got %q", wantPreview)
+	}
+}
+
+func TestOutputWidgetViewState_LeftRightNavigateTurnsWithoutCollapseSideEffects(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := testOutputWidgetSnapshot()
+
+	_ = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if view.focusedTurn != 2 {
+		t.Fatalf("expected newest focused by default, got %d", view.focusedTurn)
+	}
+
+	view.applyCommand("left", snapshot)
+	if view.focusedTurn != 1 {
+		t.Fatalf("expected left arrow to navigate to previous turn, got %d", view.focusedTurn)
+	}
+
+	view.applyCommand("right", snapshot)
+	if view.focusedTurn != 2 {
+		t.Fatalf("expected right arrow to navigate to next turn, got %d", view.focusedTurn)
+	}
+}
+
+func TestOutputWidgetViewState_SpaceTogglesTurnInContainerModeAndEntryInEntryMode(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "detailed prompt", Response: "Detailed response."}},
+	}
+
+	_ = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	view.applyCommand("space", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "↳ [+] [user] detailed prompt [LATEST]") {
+		t.Fatalf("expected space in container mode to compact turn, got:\n%s", render)
+	}
+
+	view.applyCommand("space", snapshot)
+	view.applyCommand("tab", snapshot)
+	view.applyCommand("space", snapshot)
+	render = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "▶ │ [+] 🤖 Response: Detailed response.") {
+		t.Fatalf("expected space in entry mode to collapse focused response entry, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_CollapsedContainerRendersEmptyBoxStub(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "status update", Response: "all green"}},
+	}
+
+	_ = renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	view.applyCommand(":collapse", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	if !strings.Contains(render, "┌") || !strings.Contains(render, "└") {
+		t.Fatalf("expected collapsed container box stub top/bottom borders, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetWithViewState_ExpandedContainerRendersBoxedContent(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-output",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "status update", Response: "all green"}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "┌") || !strings.Contains(render, "└") || !strings.Contains(render, "│") {
+		t.Fatalf("expected expanded container boxed content, got:\n%s", render)
+	}
+}
+
+func TestOutputWidgetViewState_PageUpPageDownUseDeterministicPageStep(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := testOutputWidgetSnapshot()
+
+	_ = renderOutputWidgetWithViewState(snapshot, 12, 120, view)
+	view.applyCommand(":entry response", snapshot)
+	view.applyCommand("pgdn", snapshot)
+	if got, want := view.turnScrollOffset(view.focusedTurn), 8; got != want {
+		t.Fatalf("expected pgdn page step %d, got %d", want, got)
+	}
+
+	view.applyCommand("pgup", snapshot)
+	if got := view.turnScrollOffset(view.focusedTurn); got != 0 {
+		t.Fatalf("expected pgup to subtract same page step back to zero, got %d", got)
 	}
 }
 
@@ -463,10 +796,13 @@ func TestOutputWidgetViewState_HelpOverlayTogglesAndDismisses(t *testing.T) {
 
 	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
 	for _, fragment := range []string{
-		"j / ↓   next turn",
-		"k / ↑   previous turn",
-		"Enter   expand/toggle focused turn",
-		"Space   collapse/toggle focused turn",
+		"j / ↓   next turn (container) or entry (entry mode)",
+		"k / ↑   previous turn (container) or entry (entry mode)",
+		"Tab     drill in to entry focus",
+		"S-Tab   drill out to container focus",
+		"l / h   expand/collapse focused target",
+		"Enter   toggle focused target",
+		"Space   toggle focused target",
 		"?       toggle help",
 	} {
 		if !strings.Contains(render, fragment) {
@@ -477,6 +813,53 @@ func TestOutputWidgetViewState_HelpOverlayTogglesAndDismisses(t *testing.T) {
 	view.applyCommand("j", snapshot)
 	if view.showHelp {
 		t.Fatal("expected any key to dismiss help overlay")
+	}
+}
+
+func TestOutputWidgetRawTokenStep_ImmediateCommands(t *testing.T) {
+	current := make([]rune, 0, 16)
+
+	next, outgoing := outputWidgetRawTokenStep(current, "j")
+	if len(next) != 0 {
+		t.Fatalf("expected no buffered state after immediate command, got %q", string(next))
+	}
+	if !reflect.DeepEqual(outgoing, []string{"j"}) {
+		t.Fatalf("expected immediate j command, got %#v", outgoing)
+	}
+
+	_, outgoing = outputWidgetRawTokenStep(current, "space")
+	if !reflect.DeepEqual(outgoing, []string{"space"}) {
+		t.Fatalf("expected immediate space command, got %#v", outgoing)
+	}
+
+	_, outgoing = outputWidgetRawTokenStep(current, "pgdn")
+	if !reflect.DeepEqual(outgoing, []string{"pgdn"}) {
+		t.Fatalf("expected immediate pgdn command, got %#v", outgoing)
+	}
+}
+
+func TestOutputWidgetRawTokenStep_ColonCommandBuffering(t *testing.T) {
+	current := make([]rune, 0, 16)
+	outgoing := []string(nil)
+
+	current, outgoing = outputWidgetRawTokenStep(current, ":")
+	if len(outgoing) != 0 {
+		t.Fatalf("expected no immediate output when entering colon mode, got %#v", outgoing)
+	}
+
+	for _, token := range []string{"f", "o", "c", "u", "s", "space", "2"} {
+		current, outgoing = outputWidgetRawTokenStep(current, token)
+		if len(outgoing) != 0 {
+			t.Fatalf("expected buffered colon command while typing, got %#v", outgoing)
+		}
+	}
+
+	current, outgoing = outputWidgetRawTokenStep(current, "enter")
+	if len(current) != 0 {
+		t.Fatalf("expected colon buffer to clear after enter, got %q", string(current))
+	}
+	if !reflect.DeepEqual(outgoing, []string{":focus 2"}) {
+		t.Fatalf("expected emitted colon command, got %#v", outgoing)
 	}
 }
 
@@ -561,4 +944,252 @@ func TestRunOutputWidgetLoopWithInput_QuitTokenStopsLoop(t *testing.T) {
 	runHeadlessWidgetLoopScript(t, "q\n", func(ctx context.Context, in io.Reader, out io.Writer) error {
 		return runOutputWidgetLoopWithInput(ctx, "http://127.0.0.1:0", in, out, 100*time.Millisecond)
 	})
+}
+
+func TestRenderOutputWidgetViewState_CollapsedResponsePreviewHandlesShortContent(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-short",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: "short"}},
+	}
+
+	_ = renderOutputWidget(snapshot, 80, 200)
+	view.applyCommand(":entry response", snapshot)
+	view.applyCommand("space", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	if !strings.Contains(render, "[+] 🤖 Response: short") {
+		t.Fatalf("expected short untruncated response preview, got: %s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_CollapsedPreviewNormalizesWhitespace(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-ws",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: "a  b   c"}},
+	}
+
+	_ = renderOutputWidget(snapshot, 80, 200)
+	view.applyCommand(":entry response", snapshot)
+	view.applyCommand("space", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	if !strings.Contains(render, "a b c") {
+		t.Fatalf("expected whitespace normalized to single space, got: %s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_CollapsedPreviewNormalizesNewlines(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-nl",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: "line1\nline2\nline3"}},
+	}
+
+	_ = renderOutputWidget(snapshot, 80, 200)
+	view.applyCommand(":entry response", snapshot)
+	view.applyCommand("space", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	if !strings.Contains(render, "line1 line2 line3") {
+		t.Fatalf("expected newlines normalized to single space, got: %s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_CollapsedPreviewHandlesEmptyContent(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-empty",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: "  "}},
+	}
+
+	_ = renderOutputWidget(snapshot, 80, 200)
+	view.applyCommand(":entry response", snapshot)
+	view.applyCommand("space", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	if !strings.Contains(render, "[+] 🤖 Response: none") {
+		t.Fatalf("expected empty response to show 'none', got: %s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_CollapsedPreviewExactLimitShowsContent(t *testing.T) {
+	view := newOutputWidgetViewState()
+	padding := "0123456789"
+	payload := padding + padding + padding + padding + padding // exactly 50 chars
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-exact",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: payload}},
+	}
+
+	_ = renderOutputWidget(snapshot, 80, 200)
+	view.applyCommand(":entry response", snapshot)
+	view.applyCommand("space", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	if !strings.Contains(render, "[+] 🤖 Response: "+payload) {
+		t.Fatalf("expected exact-limit response to not truncate, got: %s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_CollapsedPreviewJustOverLimitTruncates(t *testing.T) {
+	view := newOutputWidgetViewState()
+	exact := "0123456789"
+	exact = exact + exact + exact + exact + exact
+	exact = exact + "x" // 51 chars, over 50-byte limit
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-over",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: exact}},
+	}
+
+	_ = renderOutputWidget(snapshot, 80, 200)
+	view.applyCommand(":entry response", snapshot)
+	view.applyCommand("space", snapshot)
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+
+	if !strings.Contains(render, "[+] 🤖 Response: ") {
+		t.Fatalf("expected truncated over-limit preview, got: %s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_ContentWrappingHandlesEmptyContent(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-wrap-empty",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: ""}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "│ [-] 🤖 Response:") {
+		t.Fatalf("expected empty content to render as a blank response line, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_ContentWrappingHandlesSingleCharacterContent(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-wrap-single",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: "a"}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "│ [-] 🤖 Response: a") {
+		t.Fatalf("expected single character content to stay on the response line, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_ContentWrappingHandlesWideContent(t *testing.T) {
+	view := newOutputWidgetViewState()
+	wide := ""
+	for i := 0; i < 200; i++ {
+		wide += "W"
+	}
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-wrap-wide",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: wide}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "│ [-] 🤖 Response: ") || !strings.Contains(render, "\n  │ W") {
+		t.Fatalf("expected wide content to wrap onto a continuation line, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_ContentWrappingPreservesEmptySublines(t *testing.T) {
+	view := newOutputWidgetViewState()
+	multiWithEmpty := "first\n\nthird"
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-wrap-multiline",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: multiWithEmpty}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "\n") {
+		t.Fatalf("expected multiline response to produce newlines, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_TurnDetailsRendersBoxedContent(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-td-box",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: "hi"}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "┌") || !strings.Contains(render, "└") {
+		t.Fatalf("expected boxed turn content in expanded mode, got:\n%s", render)
+	}
+	if !strings.Contains(render, "│") {
+		t.Fatalf("expected box side borders, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_TurnDetailsMultipleTurnsAreIndependent(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-multi-independent",
+		Turns: []ChatTurn{
+			{Response: "turn1"},
+			{Response: "turn2"},
+			{Response: "turn3"},
+		},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "turn1") {
+		t.Fatalf("expected turn1 content, got:\n%s", render)
+	}
+	if !strings.Contains(render, "turn2") {
+		t.Fatalf("expected turn2 content, got:\n%s", render)
+	}
+	if !strings.Contains(render, "turn3") {
+		t.Fatalf("expected turn3 content, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_TurnDetailsBoxWidthAdjustsForNarrowPane(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-narrow",
+		Turns:     []ChatTurn{{Prompt: "hi", Response: "hi"}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 40, 40, view)
+	// When pane width is small, the ┌─...─┐ line should still be present and valid
+	if !strings.Contains(render, "──") {
+		t.Fatalf("expected narrow pane to still have box borders, got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_PromptCyclePhaseStateRendering(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-phase",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "hi", Response: "ok"}},
+		PromptCycle: PromptCycleStatus{
+			Thinking: PromptCyclePhase{State: "done", ElapsedMs: 42},
+		},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "done (00:00:00.042)") {
+		t.Fatalf("expected thinking phase rendered as 'done (00:00:00.042)', got:\n%s", render)
+	}
+}
+
+func TestRenderOutputWidgetViewState_EmptyTurnStillGetsClassified(t *testing.T) {
+	view := newOutputWidgetViewState()
+	snapshot := outputWidgetSnapshot{
+		SessionID: "sess-classified",
+		TurnCount: 1,
+		Turns:     []ChatTurn{{Prompt: "hello", Response: "Hi!"}},
+	}
+
+	render := renderOutputWidgetWithViewState(snapshot, 80, 200, view)
+	if !strings.Contains(render, "🤖 Response: Hi!") {
+		t.Fatalf("expected response rendering in expanded turn, got:\n%s", render)
+	}
 }

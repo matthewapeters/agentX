@@ -1,6 +1,6 @@
 [agentx]
 ollama_host = "localhost:11434"
-ollama_model = "qwen3.6:latest"
+ollama_model = "nemotron-cascade-2:latest"
 chat_backend = "ollama"
 chat_runtime = "go"
 chat_bridge_response_timeout_seconds = 120

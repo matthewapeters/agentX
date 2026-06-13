@@ -7,7 +7,7 @@ import "testing"
 // THEN window 0 should be explicitly named tui-chat for UX parity.
 func TestBuildNewSessionCommand_NamesPrimaryWindowTUIChat(t *testing.T) {
 	session := "agentx_test"
-	got := buildNewSessionCommand(session)
+	got := buildNewSessionCommand(session, 120, 40)
 
 	found := false
 	for i := 0; i < len(got)-1; i++ {
@@ -24,7 +24,7 @@ func TestBuildNewSessionCommand_NamesPrimaryWindowTUIChat(t *testing.T) {
 
 func TestBuildNewSessionCommand(t *testing.T) {
 	session := "agentx_test"
-	got := buildNewSessionCommand(session)
+	got := buildNewSessionCommand(session, 120, 40)
 	want := []string{"new-session", "-d", "-s", session, "-n", tmuxPrimaryWindow, "-x", "120", "-y", "40"}
 
 	if len(got) != len(want) {
@@ -34,6 +34,32 @@ func TestBuildNewSessionCommand(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("new session command arg %d mismatch: got %q want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestResolveStartupWindowSize_UsesEnvironmentWithMinimums(t *testing.T) {
+	t.Setenv("LINES", "28")
+	t.Setenv("COLUMNS", "92")
+
+	width, height := resolveStartupWindowSize(nil)
+	if width != 92 {
+		t.Fatalf("expected startup width 92, got %d", width)
+	}
+	if height != 28 {
+		t.Fatalf("expected startup height 28, got %d", height)
+	}
+}
+
+func TestResolveStartupWindowSize_ClampsMinimums(t *testing.T) {
+	t.Setenv("LINES", "12")
+	t.Setenv("COLUMNS", "60")
+
+	width, height := resolveStartupWindowSize(nil)
+	if width != minStartupWindowWidth {
+		t.Fatalf("expected startup width clamp %d, got %d", minStartupWindowWidth, width)
+	}
+	if height != minStartupWindowHeight {
+		t.Fatalf("expected startup height clamp %d, got %d", minStartupWindowHeight, height)
 	}
 }
 

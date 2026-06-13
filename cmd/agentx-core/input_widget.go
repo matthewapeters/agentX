@@ -301,6 +301,13 @@ type inputWidgetComposeState struct {
 	viewportCols int
 
 	startupViewportApplied bool
+	screen                 InputWidgetScreenState
+	renderLayout           inputWidgetRenderLayout
+}
+
+type inputWidgetRenderLayout struct {
+	inputInnerTopRow   int
+	controlInnerTopRow int
 }
 
 func newInputWidgetComposeState() *inputWidgetComposeState {
@@ -375,11 +382,6 @@ func (s *inputWidgetComposeState) terminalCursorPosition() (int, int, bool) {
 		return 0, 0, false
 	}
 
-	preInputLines := 3
-	if s.showHelp {
-		preInputLines += 2
-	}
-
 	switch s.focus {
 	case inputWidgetFocusInput:
 		rowInView := s.cursorRow - s.viewRow
@@ -390,14 +392,15 @@ func (s *inputWidgetComposeState) terminalCursorPosition() (int, int, bool) {
 		if colInView < 0 || colInView >= s.viewportCols {
 			return 0, 0, false
 		}
-		row := preInputLines + rowInView + 2
+		baseRow := s.renderLayout.inputInnerTopRow
+		if s.screen.Components.Cursor.InputInnerTopRow > 0 {
+			baseRow = s.screen.Components.Cursor.InputInnerTopRow
+		}
+		row := baseRow + rowInView
 		col := colInView + 3
 		return row, col, true
 	case inputWidgetFocusControl:
-		cols := s.viewportCols + 1
-		if cols < 16 {
-			cols = 16
-		}
+		cols := s.screen.Components.ControlBox.controlCols(s.viewportCols)
 		label := []rune("Command: ")
 		cursor := len(label) + s.controlCursor
 		start := 0
@@ -411,8 +414,10 @@ func (s *inputWidgetComposeState) terminalCursorPosition() (int, int, bool) {
 		if cursorPos < 0 || cursorPos >= cols {
 			return 0, 0, false
 		}
-		inputBoxLines := s.viewportRows + 3
-		row := preInputLines + inputBoxLines + 3
+		row := s.renderLayout.controlInnerTopRow
+		if s.screen.Components.Cursor.ControlInnerTopRow > 0 {
+			row = s.screen.Components.Cursor.ControlInnerTopRow
+		}
 		col := cursorPos + 3
 		return row, col, true
 	default:
@@ -933,56 +938,20 @@ func (s *inputWidgetComposeState) adaptViewportToTerminal(out io.Writer) {
 		return
 	}
 	height, width := resolveWidgetPaneSizeForWriter(out)
-	if width < 44 {
-		width = 44
-	}
-	header := 4
-	if s.showHelp {
-		header += 2
-	}
-	controlOuter := 3
-	inputOuter := height - header - controlOuter
-	if inputOuter < 5 {
-		inputOuter = 5
-	}
-	inputInner := inputOuter - 2
-	textRows := inputInner - 1
-	if textRows < 1 {
-		textRows = 1
-	}
-	textCols := width - 6
-	if textCols < 12 {
-		textCols = 12
-	}
-	s.viewportRows = textRows
-	s.viewportCols = textCols
+	screen := NewInputWidgetScreenStateFromPane(height, width, s.showHelp)
+	s.screen = screen
+	s.viewportRows = screen.ViewportRows
+	s.viewportCols = screen.ViewportCols
+	s.renderLayout = screen.Layout
 	s.ensureCursorVisible()
 }
 
 func (s *inputWidgetComposeState) seedViewportFromStartup(height int, width int) {
-	if width < 44 {
-		width = 44
-	}
-	header := 4
-	if s.showHelp {
-		header += 2
-	}
-	controlOuter := 3
-	inputOuter := height - header - controlOuter
-	if inputOuter < 5 {
-		inputOuter = 5
-	}
-	inputInner := inputOuter - 2
-	textRows := inputInner - 1
-	if textRows < 1 {
-		textRows = 1
-	}
-	textCols := width - 6
-	if textCols < 12 {
-		textCols = 12
-	}
-	s.viewportRows = textRows
-	s.viewportCols = textCols
+	screen := NewInputWidgetScreenStateFromPane(height, width, s.showHelp)
+	s.screen = screen
+	s.viewportRows = screen.ViewportRows
+	s.viewportCols = screen.ViewportCols
+	s.renderLayout = screen.Layout
 	s.startupViewportApplied = true
 	s.ensureCursorVisible()
 }
@@ -990,6 +959,7 @@ func (s *inputWidgetComposeState) seedViewportFromStartup(height int, width int)
 func (s *inputWidgetComposeState) render(activityLabel string) string {
 	s.ensureInputInitialized()
 	s.ensureCursorVisible()
+	_ = activityLabel
 	inputColor := ansiBlue
 	controlColor := ansiBlue
 	if s.focus == inputWidgetFocusInput {
@@ -998,20 +968,16 @@ func (s *inputWidgetComposeState) render(activityLabel string) string {
 		controlColor = ansiCyan
 	}
 
-	lines := []string{
-		"[INPUT]",
-		trimSingleLine(fmt.Sprintf("activity: %s", activityLabel), 96),
-	}
-	if s.showHelp {
-		lines = append(lines,
-			trimSingleLine("help: arrows move cursor | Shift+arrows pan view | Tab inserts tab", 96),
-			trimSingleLine("control: ESC then :q quit | :? toggle help | Enter submit from control", 96),
-		)
-	}
+	lines := []string{}
+
+	screen := NewInputWidgetScreenStateFromViewport(s.viewportRows, s.viewportCols, s.showHelp)
+	s.screen = screen
+	s.renderLayout = screen.Layout
+	lines = append(lines, s.screen.Components.renderHeaderLines(s.showHelp)...)
 	lines = append(lines, "")
-	lines = append(lines, s.renderInputBox(inputColor)...)
+	lines = append(lines, s.screen.Components.ComposeBox.render(inputColor, s)...)
 	lines = append(lines, "")
-	lines = append(lines, s.renderControlBox(controlColor)...)
+	lines = append(lines, s.screen.Components.ControlBox.render(controlColor, s)...)
 	return strings.Join(lines, "\n")
 }
 
@@ -1023,37 +989,7 @@ func (s *inputWidgetComposeState) focusLabel() string {
 }
 
 func (s *inputWidgetComposeState) renderInputBox(color string) []string {
-	textRows := s.viewportRows
-	textCols := s.viewportCols
-	vOverflow := len(s.inputLines) > textRows
-	maxLine := 0
-	for _, line := range s.inputLines {
-		if len(line) > maxLine {
-			maxLine = len(line)
-		}
-	}
-	hOverflow := maxLine > textCols
-	trackRowStart, trackRowLen := scrollbarThumb(len(s.inputLines), textRows, s.viewRow, textRows)
-	trackColStart, trackColLen := scrollbarThumb(maxLine, textCols, s.viewCol, textCols)
-
-	top := color + "┌" + strings.Repeat("─", textCols+3) + "┐" + ansiReset
-	rows := []string{top}
-	for i := 0; i < textRows; i++ {
-		lineIndex := s.viewRow + i
-		content := s.renderInputViewportRow(lineIndex, textCols)
-		scrollCell := " "
-		if vOverflow {
-			if i >= trackRowStart && i < trackRowStart+trackRowLen {
-				scrollCell = ansiReverse + "█" + ansiReset
-			} else {
-				scrollCell = ansiReverse + " " + ansiReset
-			}
-		}
-		rows = append(rows, color+"│ "+content+scrollCell+" │"+ansiReset)
-	}
-	rows = append(rows, color+"│ "+s.renderHorizontalScrollbar(textCols, hOverflow, trackColStart, trackColLen)+" │"+ansiReset)
-	rows = append(rows, color+"└"+strings.Repeat("─", textCols+3)+"┘"+ansiReset)
-	return rows
+	return s.screen.Components.ComposeBox.render(color, s)
 }
 
 func (s *inputWidgetComposeState) renderInputViewportRow(lineIndex int, cols int) string {
@@ -1113,16 +1049,7 @@ func (s *inputWidgetComposeState) renderHorizontalScrollbar(trackLen int, overfl
 }
 
 func (s *inputWidgetComposeState) renderControlBox(color string) []string {
-	cols := s.viewportCols + 1
-	if cols < 16 {
-		cols = 16
-	}
-	content := s.renderControlContent(cols)
-	return []string{
-		color + "┌" + strings.Repeat("─", cols+2) + "┐" + ansiReset,
-		color + "│ " + content + " │" + ansiReset,
-		color + "└" + strings.Repeat("─", cols+2) + "┘" + ansiReset,
-	}
+	return s.screen.Components.ControlBox.render(color, s)
 }
 
 func (s *inputWidgetComposeState) renderControlContent(cols int) string {

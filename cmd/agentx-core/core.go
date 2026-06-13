@@ -39,6 +39,15 @@ var systemTabAliases = map[string]string{
 	"visualizer":         "context-visualizer",
 }
 
+const (
+	defaultStartupWindowWidth  = 120
+	defaultStartupWindowHeight = 40
+	minStartupWindowWidth      = 80
+	minStartupWindowHeight     = 20
+	minInputPaneHeight         = 6
+	minSystemPaneWidth         = 24
+)
+
 func normalizeSystemTab(raw string) string {
 	normalized := strings.ToLower(strings.TrimSpace(raw))
 	if normalized == "" {
@@ -659,7 +668,9 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 		return err
 	}
 
-	if err := ac.runTmux(ctx, buildNewSessionCommand(ac.tmuxSessionName)...); err != nil {
+	startupWidth, startupHeight := resolveStartupWindowSize(os.Stdout)
+
+	if err := ac.runTmux(ctx, buildNewSessionCommand(ac.tmuxSessionName, startupWidth, startupHeight)...); err != nil {
 		return fmt.Errorf("failed to create tmux session: %w", err)
 	}
 
@@ -681,7 +692,7 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 		if killErr := ac.runTmux(ctx, "kill-session", "-t", ac.tmuxSessionName); killErr != nil && !isTmuxMissingSessionError(killErr) {
 			return fmt.Errorf("failed to reset tmux session after visible-windows startup failure: %w", killErr)
 		}
-		if err := ac.runTmux(ctx, buildNewSessionCommand(ac.tmuxSessionName)...); err != nil {
+		if err := ac.runTmux(ctx, buildNewSessionCommand(ac.tmuxSessionName, startupWidth, startupHeight)...); err != nil {
 			return fmt.Errorf("failed to recreate tmux session for default layout fallback: %w", err)
 		}
 	}
@@ -768,6 +779,9 @@ func (ac *AgentXCore) initializeDefaultTmuxLayout(ctx context.Context) error {
 		return fmt.Errorf("failed to set context pane title: %w", err)
 	}
 
+	// Keep ratio-first startup while guaranteeing a minimally usable input/system area.
+	ac.enforceDefaultLayoutPaneMinimums(ctx, inputPaneTarget, contextPaneTarget)
+
 	if err := ac.runTmux(ctx, "new-window", "-t", ac.tmuxSessionName+":1", "-n", tmuxLogsWindow); err != nil {
 		return fmt.Errorf("failed to create logs window: %w", err)
 	}
@@ -801,6 +815,33 @@ func (ac *AgentXCore) initializeDefaultTmuxLayout(ctx context.Context) error {
 	return nil
 }
 
+func (ac *AgentXCore) enforceDefaultLayoutPaneMinimums(ctx context.Context, inputPaneTarget string, contextPaneTarget string) {
+	windowTarget := ac.tmuxSessionName + ":0"
+	if err := ac.runTmux(ctx, "set-window-option", "-t", windowTarget, "window-size", "smallest"); err != nil {
+		log.Printf("[AgentX Core] startup pane sizing: window-size normalization skipped: %v", err)
+	}
+
+	if inputHeight, _, err := ac.paneDimensions(ctx, inputPaneTarget); err == nil {
+		if inputHeight < minInputPaneHeight {
+			if resizeErr := ac.runTmux(ctx, "resize-pane", "-t", inputPaneTarget, "-y", strconv.Itoa(minInputPaneHeight)); resizeErr != nil {
+				log.Printf("[AgentX Core] startup pane sizing: input minimum height enforcement skipped: %v", resizeErr)
+			}
+		}
+	} else {
+		log.Printf("[AgentX Core] startup pane sizing: input height probe skipped: %v", err)
+	}
+
+	if _, contextWidth, err := ac.paneDimensions(ctx, contextPaneTarget); err == nil {
+		if contextWidth < minSystemPaneWidth {
+			if resizeErr := ac.runTmux(ctx, "resize-pane", "-t", contextPaneTarget, "-x", strconv.Itoa(minSystemPaneWidth)); resizeErr != nil {
+				log.Printf("[AgentX Core] startup pane sizing: system minimum width enforcement skipped: %v", resizeErr)
+			}
+		}
+	} else {
+		log.Printf("[AgentX Core] startup pane sizing: system width probe skipped: %v", err)
+	}
+}
+
 func (ac *AgentXCore) runTmux(ctx context.Context, args ...string) error {
 	cmd := exec.CommandContext(ctx, "tmux", args...)
 	return cmd.Run()
@@ -824,8 +865,27 @@ func paneTargets(sessionName, chatTarget, inputTarget, contextTarget string) []t
 	}
 }
 
-func buildNewSessionCommand(sessionName string) []string {
-	return []string{"new-session", "-d", "-s", sessionName, "-n", tmuxPrimaryWindow, "-x", "120", "-y", "40"}
+func buildNewSessionCommand(sessionName string, width int, height int) []string {
+	return []string{"new-session", "-d", "-s", sessionName, "-n", tmuxPrimaryWindow, "-x", strconv.Itoa(width), "-y", strconv.Itoa(height)}
+}
+
+func resolveStartupWindowSize(out io.Writer) (width int, height int) {
+	height, width = resolveWidgetPaneSizeForWriter(out)
+	if width <= 0 {
+		width = defaultStartupWindowWidth
+	}
+	if height <= 0 {
+		height = defaultStartupWindowHeight
+	}
+
+	if width < minStartupWindowWidth {
+		width = minStartupWindowWidth
+	}
+	if height < minStartupWindowHeight {
+		height = minStartupWindowHeight
+	}
+
+	return width, height
 }
 
 func buildTmuxSessionName(username string, sessionID string) string {

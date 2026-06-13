@@ -27,6 +27,7 @@ type contextWidgetSnapshot struct {
 	SessionID   string                `json:"session_id"`
 	TurnCount   int                   `json:"turn_count"`
 	Turns       []ChatTurn            `json:"turns"`
+	ThinkingContent string            `json:"thinking_content,omitempty"`
 	PromptCycle PromptCycleStatus     `json:"prompt_cycle"`
 	Activity    contextWidgetActivity `json:"activity"`
 }
@@ -1085,7 +1086,7 @@ func normalizeContextHistorySessionSort(raw string) string {
 	case "desc", "descending":
 		return contextHistorySortDescending
 	default:
-		return contextHistorySortDescending
+		return contextHistorySortAscending
 	}
 }
 
@@ -1098,13 +1099,13 @@ func resolveContextHistorySessionSort(projectDir string) string {
 		root = strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR"))
 	}
 	if root == "" {
-		return contextHistorySortDescending
+		return contextHistorySortAscending
 	}
 
 	configPath := filepath.Join(root, "agentx.toml")
 	file, err := os.Open(configPath)
 	if err != nil {
-		return contextHistorySortDescending
+		return contextHistorySortAscending
 	}
 	defer file.Close()
 
@@ -1128,7 +1129,7 @@ func resolveContextHistorySessionSort(projectDir string) string {
 		}
 		return normalizeContextHistorySessionSort(value)
 	}
-	return contextHistorySortDescending
+	return contextHistorySortAscending
 }
 
 func loadSessionTurns(turnPath string) ([]ChatTurn, time.Time, bool) {
@@ -1310,7 +1311,7 @@ func renderContextWidgetWithState(snapshot contextWidgetSnapshot, tab string, mo
 				Turns:      snapshot.Turns,
 			})...)
 		}
-		lines = append(lines, renderContextFeedbackSections(snapshot, history, viewState)...)
+		lines = append(lines, renderContextFeedbackSections(snapshot, history, viewState, paneWidth)...)
 	default:
 		lines = append(lines,
 			"== CONTEXT WINDOW ==",
@@ -1342,7 +1343,7 @@ func renderContextWidgetWithState(snapshot contextWidgetSnapshot, tab string, mo
 	return strings.Join(lines, "\n")
 }
 
-func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []contextHistorySession, viewState *contextFeedbackViewState) []string {
+func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []contextHistorySession, viewState *contextFeedbackViewState, paneWidth int) []string {
 	rowKeys := make([]string, 0)
 	effectiveTurns := filterRenderableTurns(snapshot.Turns)
 	historyUsers := discoverContextHistoryUsers(snapshot.SessionID)
@@ -1363,7 +1364,7 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 	}
 	historyBorder := sectionBorderColor("context-history", viewState)
 	if historyCollapsed {
-		lines = append(lines, renderCollapsedBoxStub(historyBorder, 42)...)
+		lines = append(lines, renderCollapsedBoxStub(historyBorder, contextSectionStubWidth(paneWidth, 4))...)
 	} else {
 		historyItems := make([]string, 0)
 		if len(historyUsers) == 0 {
@@ -1448,17 +1449,17 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 
 	if viewState == nil || viewState.showWorkingMemory {
 		lines = append(lines, "")
-		lines = append(lines, renderWorkingMemoryFeedbackSection(viewState, &rowKeys)...)
+		lines = append(lines, renderWorkingMemoryFeedbackSection(viewState, &rowKeys, paneWidth)...)
 	}
 
 	lines = append(lines, "", renderSectionHeader("CURRENT CONTEXT", "current-context", viewState))
 	currentBorder := sectionBorderColor("current-context", viewState)
 	currentCollapsed := viewState != nil && viewState.collapsedCurrentContext
 	if currentCollapsed {
-		lines = append(lines, renderCollapsedBoxStub(currentBorder, 38)...)
+		lines = append(lines, renderCollapsedBoxStub(currentBorder, contextSectionStubWidth(paneWidth, 4))...)
 	} else if len(effectiveTurns) == 0 {
 		// Empty context: show an empty box stub (no text message).
-		lines = append(lines, renderCollapsedBoxStub(currentBorder, 38)...)
+		lines = append(lines, renderCollapsedBoxStub(currentBorder, contextSectionStubWidth(paneWidth, 4))...)
 	} else {
 		turnItems := make([]string, 0)
 		for idx, turn := range effectiveTurns {
@@ -1512,11 +1513,11 @@ func renderContextFeedbackSections(snapshot contextWidgetSnapshot, history []con
 	return lines
 }
 
-func renderWorkingMemoryFeedbackSection(viewState *contextFeedbackViewState, rowKeys *[]string) []string {
+func renderWorkingMemoryFeedbackSection(viewState *contextFeedbackViewState, rowKeys *[]string, paneWidth int) []string {
 	lines := []string{renderSectionHeader("WORKING MEMORY", "working-memory", viewState)}
 	wmBorder := sectionBorderColor("working-memory", viewState)
 	if viewState != nil && viewState.collapsedWorkingMemory {
-		lines = append(lines, renderCollapsedBoxStub(wmBorder, 54)...)
+		lines = append(lines, renderCollapsedBoxStub(wmBorder, contextSectionStubWidth(paneWidth, 4))...)
 		return lines
 	}
 	// Single box for entire working memory section: editor scaffold + facts list.
@@ -1970,6 +1971,17 @@ func renderCollapsedBoxStub(borderColor string, width int) []string {
 	}
 }
 
+func contextSectionStubWidth(paneWidth int, margin int) int {
+	if margin < 0 {
+		margin = 0
+	}
+	width := paneWidth - margin
+	if width < 16 {
+		width = 16
+	}
+	return width
+}
+
 func filterRenderableTurns(turns []ChatTurn) []ChatTurn {
 	if len(turns) == 0 {
 		return turns
@@ -2049,18 +2061,46 @@ func wrapTextLines(text string, width int) []string {
 	if len(words) == 0 {
 		return []string{"(empty)"}
 	}
-	lines := make([]string, 0)
-	line := words[0]
-	for i := 1; i < len(words); i++ {
-		candidate := line + " " + words[i]
-		if renderStringWidth(candidate) <= width {
-			line = candidate
-			continue
+	lines := make([]string, 0, len(words))
+	line := ""
+	flushLine := func() {
+		if line != "" {
+			lines = append(lines, line)
+			line = ""
 		}
-		lines = append(lines, line)
-		line = words[i]
 	}
-	lines = append(lines, line)
+	for _, word := range words {
+		segments := []string{word}
+		if renderStringWidth(word) > width {
+			flushLine()
+			runes := []rune(word)
+			segments = segments[:0]
+			for start := 0; start < len(runes); start += width {
+				end := start + width
+				if end > len(runes) {
+					end = len(runes)
+				}
+				segments = append(segments, string(runes[start:end]))
+			}
+		}
+		for _, segment := range segments {
+			if line == "" {
+				line = segment
+				continue
+			}
+			candidate := line + " " + segment
+			if renderStringWidth(candidate) <= width {
+				line = candidate
+				continue
+			}
+			flushLine()
+			line = segment
+		}
+	}
+	flushLine()
+	if len(lines) == 0 {
+		return []string{"(empty)"}
+	}
 	return lines
 }
 
@@ -3099,7 +3139,7 @@ func fitLinesToWidth(lines []string, width int) []string {
 			fitted = append(fitted, renderTruncate(plain, width, ""))
 			continue
 		}
-		fitted = append(fitted, renderTruncate(plain, width, "..."))
+		fitted = append(fitted, trimSingleLine(plain, width))
 	}
 	return fitted
 }

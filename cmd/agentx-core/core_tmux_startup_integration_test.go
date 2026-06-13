@@ -151,3 +151,68 @@ func TestInitializeTmuxSession_VisibleWindowsStartupMode(t *testing.T) {
 		t.Fatalf("unexpected system pane target: got %q", got)
 	}
 }
+
+// GIVEN startup probes pane dimensions during default-layout bootstrap
+// WHEN tmux reports cramped input/system panes
+// THEN core enforces minimum input height and system width before applets launch.
+func TestInitializeTmuxSession_DefaultLayoutEnforcesPaneMinimums(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "tmux.log")
+	fakeTmuxPath := filepath.Join(tmpDir, "tmux")
+	fakeTmuxScript := "#!/usr/bin/env bash\n" +
+		"set -euo pipefail\n" +
+		"printf '%s\\n' \"$*\" >> \"${TMUX_LOG}\"\n" +
+		"if [[ \"$1\" == \"split-window\" ]]; then\n" +
+		"  if [[ \"$*\" == *\" -v \"* ]]; then echo \"%3\"; else echo \"%4\"; fi\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"if [[ \"$1\" == \"display-message\" ]]; then\n" +
+		"  if [[ \"$*\" == *\"-t %3\"* && \"$*\" == *\"#{pane_height}|#{pane_width}\"* ]]; then echo \"3|96\"; exit 0; fi\n" +
+		"  if [[ \"$*\" == *\"-t %4\"* && \"$*\" == *\"#{pane_height}|#{pane_width}\"* ]]; then echo \"28|18\"; exit 0; fi\n" +
+		"  exit 0\n" +
+		"fi\n"
+	if err := os.WriteFile(fakeTmuxPath, []byte(fakeTmuxScript), 0o755); err != nil {
+		t.Fatalf("failed to write fake tmux script: %v", err)
+	}
+
+	oldPath := os.Getenv("PATH")
+	oldTmuxLog := os.Getenv("TMUX_LOG")
+	if err := os.Setenv("PATH", tmpDir+":"+oldPath); err != nil {
+		t.Fatalf("failed to set PATH: %v", err)
+	}
+	if err := os.Setenv("TMUX_LOG", logPath); err != nil {
+		t.Fatalf("failed to set TMUX_LOG: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("PATH", oldPath)
+		_ = os.Setenv("TMUX_LOG", oldTmuxLog)
+	})
+
+	cfg := &Config{ProjectDir: tmpDir, Username: "tester", SessionID: "sess-minimums"}
+	core := NewAgentXCore(cfg)
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("failed to initialize tmux session: %v", err)
+	}
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed to read tmux command log: %v", err)
+	}
+	commands := string(data)
+
+	if !strings.Contains(commands, "set-window-option -t "+core.tmuxSessionName+":0 window-size smallest") {
+		t.Fatalf("expected startup window-size normalization command, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "display-message -p -t %3 #{pane_height}|#{pane_width}") {
+		t.Fatalf("expected input pane dimension probe, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "resize-pane -t %3 -y 6") {
+		t.Fatalf("expected input minimum height enforcement, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "display-message -p -t %4 #{pane_height}|#{pane_width}") {
+		t.Fatalf("expected system pane dimension probe, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "resize-pane -t %4 -x 24") {
+		t.Fatalf("expected system minimum width enforcement, commands:\n%s", commands)
+	}
+}

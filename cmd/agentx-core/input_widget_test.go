@@ -487,6 +487,54 @@ func TestInputWidgetComposeState_ControlEnterCommands(t *testing.T) {
 	}
 }
 
+func TestInputWidgetRender_DoesNotShowActivityHeaderLine(t *testing.T) {
+	state := newInputWidgetComposeState()
+	state.viewportRows = 3
+	state.viewportCols = 12
+
+	render := state.render("agentx[done]")
+	if strings.Contains(render, "activity:") {
+		t.Fatalf("expected input render to omit activity header line, got:\n%s", render)
+	}
+}
+
+func TestInputWidgetCursorPosition_AnchoredToRenderedBoxes(t *testing.T) {
+	state := newInputWidgetComposeState()
+	state.viewportRows = 3
+	state.viewportCols = 12
+	state.inputLines = [][]rune{[]rune("hello")}
+	state.cursorRow = 0
+	state.cursorCol = 1
+	state.viewRow = 0
+	state.viewCol = 0
+
+	_ = state.render("agentx")
+
+	row, col, ok := state.terminalCursorPosition()
+	if !ok {
+		t.Fatal("expected visible cursor in input focus")
+	}
+	if row != state.renderLayout.inputInnerTopRow {
+		t.Fatalf("expected input cursor row %d, got %d", state.renderLayout.inputInnerTopRow, row)
+	}
+	if col != 4 {
+		t.Fatalf("expected input cursor col 4, got %d", col)
+	}
+
+	state.focus = inputWidgetFocusControl
+	state.control = []rune(":q")
+	state.controlCursor = len(state.control)
+	_ = state.render("agentx")
+
+	row, _, ok = state.terminalCursorPosition()
+	if !ok {
+		t.Fatal("expected visible cursor in control focus")
+	}
+	if row != state.renderLayout.controlInnerTopRow {
+		t.Fatalf("expected control cursor row %d, got %d", state.renderLayout.controlInnerTopRow, row)
+	}
+}
+
 func TestNormalizeInputWidgetEscapeSequence(t *testing.T) {
 	tests := []struct {
 		name     string
