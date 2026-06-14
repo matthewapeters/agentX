@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+// collapsedPreviewEmpty is the sentinel rendered when FormatCollapsedPreview returns
+// an empty string (e.g. formatter received empty/whitespace content).
+const collapsedPreviewEmpty = "none"
+
 type outputTurnRenderer struct {
 	snapshot   outputWidgetSnapshot
 	turnIndex  int
@@ -108,6 +112,9 @@ func (r *outputTurnRenderer) appendEntry(prefix string, entry string, icon strin
 		body := "[collapsed]"
 		if normalizeOutputEntry(entry) == "response" {
 			body = r.formatter.FormatCollapsedPreview(content, outputWidgetContentBudget(r.paneWidth, linePrefix))
+			if body == "" {
+				body = collapsedPreviewEmpty
+			}
 		}
 		return []string{r.formatBoxLine(prefix, fmt.Sprintf("%s %s %s: %s", r.affordance(entry), icon, label, body), innerWidth)}
 	}

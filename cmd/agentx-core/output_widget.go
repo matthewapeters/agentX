@@ -1365,6 +1365,9 @@ func renderOutputWidgetWithViewState(snapshot outputWidgetSnapshot, paneHeight i
 }
 
 func renderOutputWidgetWithViewStateAndFormatter(snapshot outputWidgetSnapshot, paneHeight int, paneWidth int, viewState *outputWidgetViewState, formatter OutputResponseFormatter) string {
+	if formatter == nil {
+		formatter = ResolveOutputResponseFormatterFromEnv()
+	}
 	if viewState != nil {
 		viewState.normalize(snapshot.SessionID, len(snapshot.Turns))
 		viewState.maybeExpandLatestTurn(snapshot)
