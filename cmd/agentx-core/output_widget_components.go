@@ -10,6 +10,7 @@ type outputTurnRenderer struct {
 	turnIndex  int
 	paneWidth  int
 	viewState  *outputWidgetViewState
+	formatter  OutputResponseFormatter
 	turn       ChatTurn
 	prompt     string
 	response   string
@@ -19,8 +20,15 @@ type outputTurnRenderer struct {
 }
 
 func newOutputTurnRenderer(snapshot outputWidgetSnapshot, turnIndex int, paneWidth int, viewState *outputWidgetViewState) (*outputTurnRenderer, bool) {
+	return newOutputTurnRendererWithFormatter(snapshot, turnIndex, paneWidth, viewState, nil)
+}
+
+func newOutputTurnRendererWithFormatter(snapshot outputWidgetSnapshot, turnIndex int, paneWidth int, viewState *outputWidgetViewState, formatter OutputResponseFormatter) (*outputTurnRenderer, bool) {
 	if turnIndex < 1 || turnIndex > len(snapshot.Turns) {
 		return nil, false
+	}
+	if formatter == nil {
+		formatter = DefaultOutputResponseFormatter()
 	}
 	turn := snapshot.Turns[turnIndex-1]
 	prompt := strings.TrimSpace(turn.Prompt)
@@ -32,6 +40,7 @@ func newOutputTurnRenderer(snapshot outputWidgetSnapshot, turnIndex int, paneWid
 		turnIndex:        turnIndex,
 		paneWidth:        paneWidth,
 		viewState:        viewState,
+		formatter:        formatter,
 		turn:             turn,
 		prompt:           prompt,
 		response:         response,
@@ -98,12 +107,15 @@ func (r *outputTurnRenderer) appendEntry(prefix string, entry string, icon strin
 	if collapsed {
 		body := "[collapsed]"
 		if normalizeOutputEntry(entry) == "response" {
-			body = renderOutputWidgetCollapsedPreview(content, outputWidgetContentBudget(r.paneWidth, linePrefix))
+			body = r.formatter.FormatCollapsedPreview(content, outputWidgetContentBudget(r.paneWidth, linePrefix))
 		}
 		return []string{r.formatBoxLine(prefix, fmt.Sprintf("%s %s %s: %s", r.affordance(entry), icon, label, body), innerWidth)}
 	}
 
 	parts := wrapOutputWidgetContent(content, outputWidgetContentBudget(r.paneWidth, linePrefix))
+	if normalizeOutputEntry(entry) == "response" {
+		parts = r.formatter.FormatResponse(content, outputWidgetContentBudget(r.paneWidth, linePrefix))
+	}
 	if len(parts) == 0 {
 		parts = []string{""}
 	}

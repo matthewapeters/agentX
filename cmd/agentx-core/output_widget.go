@@ -1345,7 +1345,11 @@ func wrapOutputWidgetContent(content string, width int) []string {
 }
 
 func renderOutputWidgetTurnDetails(snapshot outputWidgetSnapshot, turnIndex int, paneWidth int, viewState *outputWidgetViewState) []string {
-	renderer, ok := newOutputTurnRenderer(snapshot, turnIndex, paneWidth, viewState)
+	return renderOutputWidgetTurnDetailsWithFormatter(snapshot, turnIndex, paneWidth, viewState, nil)
+}
+
+func renderOutputWidgetTurnDetailsWithFormatter(snapshot outputWidgetSnapshot, turnIndex int, paneWidth int, viewState *outputWidgetViewState, formatter OutputResponseFormatter) []string {
+	renderer, ok := newOutputTurnRendererWithFormatter(snapshot, turnIndex, paneWidth, viewState, formatter)
 	if !ok {
 		return nil
 	}
@@ -1357,6 +1361,10 @@ func renderOutputWidget(snapshot outputWidgetSnapshot, paneHeight int, paneWidth
 }
 
 func renderOutputWidgetWithViewState(snapshot outputWidgetSnapshot, paneHeight int, paneWidth int, viewState *outputWidgetViewState) string {
+	return renderOutputWidgetWithViewStateAndFormatter(snapshot, paneHeight, paneWidth, viewState, nil)
+}
+
+func renderOutputWidgetWithViewStateAndFormatter(snapshot outputWidgetSnapshot, paneHeight int, paneWidth int, viewState *outputWidgetViewState, formatter OutputResponseFormatter) string {
 	if viewState != nil {
 		viewState.normalize(snapshot.SessionID, len(snapshot.Turns))
 		viewState.maybeExpandLatestTurn(snapshot)
@@ -1408,7 +1416,7 @@ func renderOutputWidgetWithViewState(snapshot outputWidgetSnapshot, paneHeight i
 			)
 			continue
 		}
-		lines = append(lines, renderOutputWidgetTurnDetails(snapshot, turnIndex, paneWidth, viewState)...)
+		lines = append(lines, renderOutputWidgetTurnDetailsWithFormatter(snapshot, turnIndex, paneWidth, viewState, formatter)...)
 	}
 	if len(snapshot.Turns) == 0 {
 		lines = append(lines, "No turns yet.")
