@@ -153,7 +153,6 @@ func buildInputWidgetComponents(viewportRows int, viewportCols int, showHelp boo
 			ControlInnerTopRow: layout.controlInnerTopRow,
 		},
 	}
-
 	return components, layout
 }
 

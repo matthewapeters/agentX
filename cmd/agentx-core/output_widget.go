@@ -4,18 +4,21 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	appstate "github.com/matthewapeters/agentX/cmd/agentx-core/internal/state"
 )
 
 type outputWidgetSnapshot struct {
-	SessionID   string            `json:"session_id"`
-	TurnCount   int               `json:"turn_count"`
-	Turns       []ChatTurn        `json:"turns"`
-	ThinkingContent string        `json:"thinking_content,omitempty"`
-	PromptCycle PromptCycleStatus `json:"prompt_cycle"`
+	SessionID       string            `json:"session_id"`
+	TurnCount       int               `json:"turn_count"`
+	Turns           []ChatTurn        `json:"turns"`
+	ThinkingContent string            `json:"thinking_content,omitempty"`
+	PromptCycle     PromptCycleStatus `json:"prompt_cycle"`
 }
 
 type outputWidgetViewState struct {
@@ -107,6 +110,120 @@ func newOutputWidgetViewState() *outputWidgetViewState {
 		focusedEntry:      "response",
 		entryFocusMode:    false,
 	}
+}
+
+func (state *outputWidgetViewState) exportPersistedState() *appstate.OutputAppletState {
+	persisted := appstate.NewOutputAppletState()
+	if state == nil {
+		return persisted
+	}
+
+	for turnIndex, expanded := range state.turnExpanded {
+		if turnIndex < 1 {
+			continue
+		}
+		if !expanded {
+			persisted.CollapsedTurns[turnIndex] = true
+		}
+	}
+
+	if state.focusedTurn > 0 {
+		persisted.FocusedTurnIdx = state.focusedTurn
+	}
+
+	if entry := state.normalizedFocusedEntry(); entry != "" {
+		persisted.EntryFocusPath = []string{entry}
+	}
+
+	return persisted
+}
+
+func (state *outputWidgetViewState) applyPersistedState(persisted *appstate.OutputAppletState, turnCount int) {
+	if state == nil || persisted == nil {
+		return
+	}
+
+	for turnIndex, collapsed := range persisted.CollapsedTurns {
+		if !collapsed || turnIndex < 1 {
+			continue
+		}
+		if turnCount > 0 && turnIndex > turnCount {
+			continue
+		}
+		state.setTurnExpanded(turnIndex, false)
+	}
+
+	if persisted.FocusedTurnIdx > 0 {
+		state.focusedTurn = persisted.FocusedTurnIdx
+	}
+
+	if len(persisted.EntryFocusPath) > 0 {
+		if entry := normalizeOutputEntry(persisted.EntryFocusPath[0]); entry != "" {
+			state.focusedEntry = entry
+		}
+	}
+
+	state.normalize(state.sessionID, turnCount)
+}
+
+func outputWidgetPersistedStateEqual(left *appstate.OutputAppletState, right *appstate.OutputAppletState) bool {
+	if left == nil && right == nil {
+		return true
+	}
+	if left == nil || right == nil {
+		return false
+	}
+	if left.FocusedTurnIdx != right.FocusedTurnIdx {
+		return false
+	}
+	if len(left.EntryFocusPath) != len(right.EntryFocusPath) {
+		return false
+	}
+	for idx := range left.EntryFocusPath {
+		if left.EntryFocusPath[idx] != right.EntryFocusPath[idx] {
+			return false
+		}
+	}
+	if len(left.CollapsedTurns) != len(right.CollapsedTurns) {
+		return false
+	}
+	for key, value := range left.CollapsedTurns {
+		if right.CollapsedTurns[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func resolveOutputWidgetAppletStateDir(sessionID string) string {
+	projectDir := strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR"))
+	username := strings.TrimSpace(os.Getenv("AGENTX_USERNAME"))
+	trimmedSessionID := strings.TrimSpace(sessionID)
+	if projectDir == "" || username == "" || trimmedSessionID == "" {
+		return ""
+	}
+	cfg := &Config{ProjectDir: projectDir, Username: username}
+	return cfg.AppletStateDir(trimmedSessionID)
+}
+
+func saveOutputWidgetViewStateIfChanged(viewState *outputWidgetViewState, sessionID string, appletStateDir string, lastPersisted *appstate.OutputAppletState) *appstate.OutputAppletState {
+	trimmedSessionID := strings.TrimSpace(sessionID)
+	trimmedStateDir := strings.TrimSpace(appletStateDir)
+	if viewState == nil || trimmedSessionID == "" || trimmedStateDir == "" {
+		return lastPersisted
+	}
+
+	persisted := viewState.exportPersistedState()
+	if outputWidgetPersistedStateEqual(lastPersisted, persisted) {
+		return lastPersisted
+	}
+
+	if err := appstate.SaveOutputAppletState(trimmedSessionID, trimmedStateDir, persisted); err != nil {
+		log.Printf("[output_widget] Warning: failed to save state: %v", err)
+		return lastPersisted
+	}
+
+	return persisted
 }
 
 func outputEntryAliases() map[string]string {
@@ -1008,6 +1125,8 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 	commands := startOutputWidgetCommandReader(ctx, in)
 	viewState := newOutputWidgetViewState()
 	snapshot := outputWidgetSnapshot{}
+	lastPersistedState := (*appstate.OutputAppletState)(nil)
+	loadedPersistedSession := ""
 	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
 	firstRender := true
 
@@ -1045,6 +1164,9 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 					continue
 				}
 				viewState.applyCommand(normalized, snapshot)
+				if sessionID := strings.TrimSpace(snapshot.SessionID); sessionID != "" {
+					lastPersistedState = saveOutputWidgetViewStateIfChanged(viewState, sessionID, resolveOutputWidgetAppletStateDir(sessionID), lastPersistedState)
+				}
 			default:
 				goto commandsDrained
 			}
@@ -1055,6 +1177,19 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 		if err == nil {
 			snapshot = updatedSnapshot
 			viewState.normalize(snapshot.SessionID, len(snapshot.Turns))
+			if sessionID := strings.TrimSpace(snapshot.SessionID); sessionID != "" && sessionID != loadedPersistedSession {
+				loadedPersistedSession = sessionID
+				lastPersistedState = nil
+				if appletStateDir := resolveOutputWidgetAppletStateDir(sessionID); appletStateDir != "" {
+					persistedState, loadErr := appstate.LoadOutputAppletState(sessionID, appletStateDir)
+					if loadErr != nil {
+						log.Printf("[output_widget] Warning: failed to load state: %v", loadErr)
+					} else {
+						viewState.applyPersistedState(persistedState, len(snapshot.Turns))
+						lastPersistedState = viewState.exportPersistedState()
+					}
+				}
+			}
 			height, width := resolveWidgetPaneSizeForWriter(out)
 			if firstRender {
 				height, width = startupHeight, startupWidth
@@ -1067,6 +1202,9 @@ func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Rea
 					return err
 				}
 				previousLines = currentLines
+			}
+			if sessionID := strings.TrimSpace(snapshot.SessionID); sessionID != "" {
+				lastPersistedState = saveOutputWidgetViewStateIfChanged(viewState, sessionID, resolveOutputWidgetAppletStateDir(sessionID), lastPersistedState)
 			}
 		}
 
@@ -1084,11 +1222,11 @@ func fetchOutputWidgetSnapshot(ctx context.Context, baseURL string) (outputWidge
 		return outputWidgetSnapshot{}, err
 	}
 	return outputWidgetSnapshot{
-		SessionID:   ctxSnapshot.SessionID,
-		TurnCount:   ctxSnapshot.TurnCount,
-		Turns:       ctxSnapshot.Turns,
+		SessionID:       ctxSnapshot.SessionID,
+		TurnCount:       ctxSnapshot.TurnCount,
+		Turns:           ctxSnapshot.Turns,
 		ThinkingContent: strings.TrimSpace(ctxSnapshot.ThinkingContent),
-		PromptCycle: ctxSnapshot.PromptCycle,
+		PromptCycle:     ctxSnapshot.PromptCycle,
 	}, nil
 }
 

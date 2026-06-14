@@ -94,12 +94,19 @@ func (c *Config) SessionContextDir(sessionID string) string {
 	return filepath.Join(c.SessionDataDir(sessionID), "context")
 }
 
+// AppletStateDir returns the session applet state directory.
+// This directory stores versioned applet widget state snapshots.
+func (c *Config) AppletStateDir(sessionID string) string {
+	return filepath.Join(c.SessionDataDir(sessionID), "applet_state")
+}
+
 // EnsureSessionDirs creates necessary session directories.
 func (c *Config) EnsureSessionDirs(sessionID string) error {
 	dirs := []string{
 		c.SessionDir(),
 		c.SessionLogDir(sessionID),
 		c.SessionContextDir(sessionID),
+		c.AppletStateDir(sessionID),
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
