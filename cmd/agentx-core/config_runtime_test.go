@@ -140,3 +140,25 @@ func TestResolveCoreRuntimeConfig_RuntimeOverrideBeatsPromotedDefault(t *testing
 		t.Fatalf("expected explicit AGENTX_CHAT_RUNTIME override to win, got %q", runtimeConfig.ChatRuntime)
 	}
 }
+
+func TestResolveCoreRuntimeConfig_ChatRuntimePythonStillForcesGoChatAppletRuntime(t *testing.T) {
+	t.Setenv("AGENTX_CHAT_RUNTIME", "python")
+
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-runtime-force-go"}
+	core := NewAgentXCore(cfg)
+
+	if core.runtimeConfig.ChatRuntime != "python" {
+		t.Fatalf("expected runtime config to preserve configured chat runtime value, got %q", core.runtimeConfig.ChatRuntime)
+	}
+
+	for _, spec := range core.defaultAppletRuntimeSpecs() {
+		if spec.Name == "chat" {
+			if spec.Runtime != appletRuntimeGo {
+				t.Fatalf("expected chat applet runtime to be forced to %q, got %q", appletRuntimeGo, spec.Runtime)
+			}
+			return
+		}
+	}
+
+	t.Fatalf("expected chat applet runtime spec to be present")
+}

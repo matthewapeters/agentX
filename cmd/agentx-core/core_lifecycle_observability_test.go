@@ -37,6 +37,74 @@ func TestStartAppletSupervisor_EmitsStartupLifecycleOnce(t *testing.T) {
 	}
 }
 
+func TestStartAppletSupervisor_EmitsRuntimeContractSignalWhenChatRuntimeForcedGo(t *testing.T) {
+	logPath := setupFakeTmux(t)
+	t.Setenv("AGENTX_CHAT_RUNTIME", "python")
+
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "tester", SessionID: "s-lifecycle-runtime-contract"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+
+	if !strings.Contains(commands, "stage=runtime_contract") {
+		t.Fatalf("expected runtime contract lifecycle signal, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "hook=chat_runtime_forced_go") {
+		t.Fatalf("expected forced-go runtime hook details, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "configured_chat_runtime=python") {
+		t.Fatalf("expected configured runtime detail for python, commands:\n%s", commands)
+	}
+	if !strings.Contains(commands, "effective_chat_runtime=go") {
+		t.Fatalf("expected effective runtime detail for go, commands:\n%s", commands)
+	}
+
+	runtimeContractIndex := strings.Index(commands, "stage=runtime_contract")
+	startupGreetingIndex := strings.Index(commands, "stage=startup_greeting")
+	if runtimeContractIndex == -1 || startupGreetingIndex == -1 {
+		t.Fatalf("expected startup lifecycle and runtime contract events, commands:\n%s", commands)
+	}
+	if runtimeContractIndex > startupGreetingIndex {
+		t.Fatalf("expected runtime contract signal before startup greeting, commands:\n%s", commands)
+	}
+}
+
+func TestStartAppletSupervisor_DoesNotEmitRuntimeContractSignalWhenChatRuntimeConfiguredGo(t *testing.T) {
+	logPath := setupFakeTmux(t)
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
+
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "tester", SessionID: "s-lifecycle-runtime-contract-go"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.InitializeTmuxSession(context.Background()); err != nil {
+		t.Fatalf("InitializeTmuxSession failed: %v", err)
+	}
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor failed: %v", err)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+
+	if strings.Contains(commands, "stage=runtime_contract") {
+		t.Fatalf("expected no runtime contract lifecycle signal when chat runtime is configured as go, commands:\n%s", commands)
+	}
+}
+
 // TestRouteInputPrompt_EmitsLifecycleStagesInOrder validates deterministic lifecycle stage ordering.
 //
 // GIVEN an initialized core and applet supervisor

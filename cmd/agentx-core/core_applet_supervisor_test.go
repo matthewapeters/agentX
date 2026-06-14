@@ -309,6 +309,26 @@ func TestDefaultAppletRuntimeSpecs_DedicatedSystemTabsUseGoRuntime(t *testing.T)
 	}
 }
 
+func TestDefaultAppletRuntimeSpecs_ChatAlwaysUsesGoRuntime(t *testing.T) {
+	t.Setenv("AGENTX_CHAT_RUNTIME", "python")
+
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-chat-runtime-forced-go"}
+	core := NewAgentXCore(cfg)
+
+	specs := core.defaultAppletRuntimeSpecs()
+	for _, spec := range specs {
+		if spec.Name != "chat" {
+			continue
+		}
+		if spec.Runtime != appletRuntimeGo {
+			t.Fatalf("expected chat applet runtime %q, got %q", appletRuntimeGo, spec.Runtime)
+		}
+		return
+	}
+
+	t.Fatalf("expected chat runtime spec to be present")
+}
+
 // TestBuildPaneAppletLaunchCommand_ChatPaneUsesPythonTemplate verifies the
 // shared applet base launch builder routes chat pane through python applet mode.
 func TestBuildPaneAppletLaunchCommand_ChatPaneUsesPythonTemplate(t *testing.T) {
@@ -371,6 +391,24 @@ func TestStartAppletSupervisor_ChatRuntimeGoFromEnv(t *testing.T) {
 	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
 
 	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-chat-runtime-go"}
+	core := NewAgentXCore(cfg)
+
+	if err := core.StartAppletSupervisor(context.Background()); err != nil {
+		t.Fatalf("StartAppletSupervisor returned error: %v", err)
+	}
+
+	snapshot := core.healthSnapshot()
+	for _, applet := range snapshot.Applets {
+		if applet.Name == "chat" && applet.Runtime != string(appletRuntimeGo) {
+			t.Fatalf("expected chat applet runtime %q, got %q", appletRuntimeGo, applet.Runtime)
+		}
+	}
+}
+
+func TestStartAppletSupervisor_ChatRuntimeForcedGoWhenEnvRequestsPython(t *testing.T) {
+	t.Setenv("AGENTX_CHAT_RUNTIME", "python")
+
+	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-chat-runtime-forced-go-python-env"}
 	core := NewAgentXCore(cfg)
 
 	if err := core.StartAppletSupervisor(context.Background()); err != nil {

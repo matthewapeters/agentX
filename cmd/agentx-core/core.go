@@ -349,6 +349,7 @@ const (
 	tmuxLogsWindow    = PaneTitleLogs
 
 	lifecycleStageStartupGreeting = "startup_greeting"
+	lifecycleStageRuntimeContract = "runtime_contract"
 	lifecycleStageSubmitted       = "submitted"
 	lifecycleStageClassified      = "classified"
 	lifecycleStageThinking        = "thinking"
@@ -540,14 +541,13 @@ func resolveChatRuntimeKind(raw string) appletRuntimeKind {
 
 func (ac *AgentXCore) defaultAppletRuntimeSpecs() []appletRuntimeSpec {
 	specs := make([]appletRuntimeSpec, 0, len(DefaultPaneLayout())+len(dedicatedSystemAppletTabs))
-	chatRuntime := resolveChatRuntimeKind(ac.runtimeConfig.ChatRuntime)
 	for _, pane := range DefaultPaneLayout() {
 		runtime := appletRuntimePython
 		if pane.Name == "input" || pane.Name == "context" || pane.Name == "logs" {
 			runtime = appletRuntimeGo
 		}
 		if pane.Name == "chat" {
-			runtime = chatRuntime
+			runtime = appletRuntimeGo
 		}
 		specs = append(specs, appletRuntimeSpec{
 			Name:     pane.Name,
@@ -1267,7 +1267,37 @@ func (ac *AgentXCore) emitStartupGreetingLifecycleEvent(ctx context.Context) {
 	ac.startupLifecycleEmitted = true
 	ac.mu.Unlock()
 
+	if details, ok := ac.runtimeContractSignalDetails(); ok {
+		ac.emitLifecycleEvent(ctx, lifecycleStageRuntimeContract, details)
+	}
+
 	ac.emitLifecycleEvent(ctx, lifecycleStageStartupGreeting, "hook=runtime_ready")
+}
+
+func (ac *AgentXCore) runtimeContractSignalDetails() (string, bool) {
+	configuredRuntime := resolveChatRuntimeKind(ac.runtimeConfig.ChatRuntime)
+	effectiveChatRuntime := appletRuntimeGo
+
+	for _, spec := range ac.defaultAppletRuntimeSpecs() {
+		if spec.Name == "chat" {
+			effectiveChatRuntime = spec.Runtime
+			break
+		}
+	}
+
+	if configuredRuntime == effectiveChatRuntime {
+		return "", false
+	}
+
+	if configuredRuntime != appletRuntimeGo && effectiveChatRuntime == appletRuntimeGo {
+		return fmt.Sprintf(
+			"hook=chat_runtime_forced_go configured_chat_runtime=%s effective_chat_runtime=%s",
+			configuredRuntime,
+			effectiveChatRuntime,
+		), true
+	}
+
+	return "", false
 }
 
 func (ac *AgentXCore) emitLifecycleEvent(ctx context.Context, stage string, details string) {
