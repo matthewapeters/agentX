@@ -1,2 +1,2 @@
-cat agentx.logo
+cat logo/agentx.logo
 ./bin/agentx $@

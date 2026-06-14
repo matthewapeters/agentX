@@ -3158,11 +3158,11 @@ func fitLinesToWidth(lines []string, width int) []string {
 			continue
 		}
 		plain := stripAnsi(line)
+		tail := "..."
 		if width <= 3 {
-			fitted = append(fitted, renderTruncate(plain, width, ""))
-			continue
+			tail = ""
 		}
-		fitted = append(fitted, trimSingleLine(plain, width))
+		fitted = append(fitted, renderTruncate(plain, width, tail))
 	}
 	return fitted
 }
