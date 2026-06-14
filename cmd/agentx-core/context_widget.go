@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	appstate "github.com/matthewapeters/agentX/cmd/agentx-core/internal/state"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -843,6 +844,14 @@ func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Re
 		}
 	}()
 	viewState := newContextFeedbackViewState()
+
+	// Load persisted context state on startup
+	sessionID := strings.TrimSpace(os.Getenv("AGENTX_SESSION_ID"))
+	stateDir := resolveContextStateDir(sessionID)
+	if persistedState, err := appstate.LoadContextAppletState(sessionID, stateDir); err == nil && persistedState != nil {
+		restoreContextViewStateFromAppletState(viewState, persistedState)
+	}
+
 	currentSnapshot := contextWidgetSnapshot{}
 	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
 	firstRender := true
@@ -876,7 +885,7 @@ func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Re
 					renderChanged = true
 					continue
 				}
-				applyContextWidgetCommand(viewState, cmd, baseURL, currentSnapshot)
+				applyContextWidgetCommand(viewState, cmd, baseURL, currentSnapshot, sessionID, stateDir)
 				renderChanged = true
 			default:
 				goto commandQueueDrained
@@ -2130,7 +2139,7 @@ func renderWrappedTextBox(state *contextFeedbackViewState, rowKey string, text s
 	return visible
 }
 
-func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, baseURL string, snapshot contextWidgetSnapshot) {
+func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, baseURL string, snapshot contextWidgetSnapshot, sessionID, stateDir string) {
 	if state == nil {
 		return
 	}
@@ -2147,7 +2156,7 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 	}
 	args = normalizeContextCommandAliases(args)
 
-	if handleContextKeyboardCommand(state, args, snapshot) {
+	if handleContextKeyboardCommand(state, args, snapshot, sessionID, stateDir) {
 		return
 	}
 
@@ -2206,11 +2215,13 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 		if len(args) >= 2 && strings.EqualFold(args[1], "history") {
 			state.collapsedContextHistory = !state.collapsedContextHistory
 			state.setStatus(fmt.Sprintf("Context history is now %s.", mapCollapsedState(state.collapsedContextHistory)))
+			go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 			return
 		}
 		if len(args) >= 2 && strings.EqualFold(args[1], "wm") {
 			state.collapsedWorkingMemory = !state.collapsedWorkingMemory
 			state.setStatus(fmt.Sprintf("Working memory is now %s.", mapCollapsedState(state.collapsedWorkingMemory)))
+			go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 			return
 		}
 		state.setStatus("Usage: :toggle history | :toggle session <session_id|user:session_id> | :toggle wm")
@@ -2238,6 +2249,7 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 			state.collapsedEntries[contextEntryKey("current", turnIndex, entry)] = collapsed
 		}
 		state.setStatus(fmt.Sprintf("Set turn %d %s to %s.", turnIndex, entry, mapCollapsedState(collapsed)))
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return
 	case "disable":
 		if len(args) < 4 || !strings.EqualFold(args[1], "current") {
@@ -2280,6 +2292,7 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 			setDisabled(entry)
 		}
 		state.setStatus(fmt.Sprintf("Updated disabled state for turn %d %s.", turnIndex, entry))
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return
 	case "include":
 		if len(args) < 4 {
@@ -2358,7 +2371,7 @@ func applyContextWidgetCommand(state *contextFeedbackViewState, raw string, base
 	}
 }
 
-func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string, snapshot contextWidgetSnapshot) bool {
+func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string, snapshot contextWidgetSnapshot, sessionID, stateDir string) bool {
 	if state == nil || len(args) == 0 {
 		return false
 	}
@@ -2367,33 +2380,43 @@ func handleContextKeyboardCommand(state *contextFeedbackViewState, args []string
 	switch cmd {
 	case "j", "down":
 		handleContextVerticalNavigation(state, historyModel, 1)
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return true
 	case "k", "up":
 		handleContextVerticalNavigation(state, historyModel, -1)
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return true
 	case "right", "l":
 		handleContextHorizontalNavigation(state, historyModel, "right")
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return true
 	case "left", "h":
 		handleContextHorizontalNavigation(state, historyModel, "left")
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return true
 	case "pgdn":
 		handleContextPagingNavigation(state, 5)
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return true
 	case "pgup":
 		handleContextPagingNavigation(state, -5)
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return true
 	case "tab":
 		handleContextTabNavigation(state, historyModel, snapshot)
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return true
 	case "shift-tab", "shift+tab", "s-tab", "backtab":
 		handleContextBacktabNavigation(state, historyModel)
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return true
 	case "space":
 		handleContextSpaceAction(state, historyModel)
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return true
 	case "enter":
 		handleContextEnterAction(state, snapshot)
+		go saveContextAppletStateAsync(sessionID, stateDir, contextAppletStateFromViewState(state))
 		return true
 	default:
 		return false
@@ -3164,4 +3187,78 @@ func clipLinesForHeight(lines []string, height int) []string {
 	clipped = append(clipped, fmt.Sprintf("... (%d lines truncated)", truncated))
 	clipped = append(clipped, lines[len(lines)-1])
 	return clipped
+}
+
+// resolveContextStateDir returns the state directory for persisting context widget applet state.
+// It uses the session-scoped directory structure.
+func resolveContextStateDir(sessionID string) string {
+	if sessionID == "" {
+		sessionID = "default"
+	}
+	projectDir := strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR"))
+	if projectDir == "" {
+		projectDir = filepath.Join(os.Getenv("HOME"), ".agentx")
+	}
+	username := strings.TrimSpace(os.Getenv("USER"))
+	if username == "" {
+		username = "default"
+	}
+	return filepath.Join(projectDir, "sessions", username)
+}
+
+// restoreContextViewStateFromAppletState restores the given viewState from a persisted ContextAppletState.
+// It gracefully handles missing fields and falls back to defaults.
+func restoreContextViewStateFromAppletState(viewState *contextFeedbackViewState, appletState *appstate.ContextAppletState) {
+	if viewState == nil || appletState == nil {
+		return
+	}
+
+	// Restore scroll offset
+	if appletState.ScrollRowOffset >= 0 && appletState.ScrollRowOffset < len(viewState.orderedRowKeys) {
+		viewState.activeRow = appletState.ScrollRowOffset
+	}
+
+	// Restore focused row key (best-effort; if row doesn't exist, gracefully skip)
+	if appletState.FocusedRowKey != "" && viewState.hasRowKey(appletState.FocusedRowKey) {
+		_ = viewState.setActiveRowByKey(appletState.FocusedRowKey)
+	}
+}
+
+// contextAppletStateFromViewState extracts a snapshot of the current view state
+// and returns it as a ContextAppletState suitable for persistence.
+func contextAppletStateFromViewState(viewState *contextFeedbackViewState) *appstate.ContextAppletState {
+	if viewState == nil {
+		return appstate.NewContextAppletState()
+	}
+
+	focusedRowKey := ""
+	if viewState.activeRow >= 0 && viewState.activeRow < len(viewState.orderedRowKeys) {
+		focusedRowKey = viewState.orderedRowKeys[viewState.activeRow]
+	}
+
+	return &appstate.ContextAppletState{
+		ScrollRowOffset: viewState.activeRow,
+		FocusedRowKey:   focusedRowKey,
+		SortKey:         "timestamp", // default sort key
+		SortAscending:   true,         // default ascending
+		FilterSession:   "",           // no session filter by default
+	}
+}
+
+// saveContextAppletStateAsync asynchronously saves the given ContextAppletState to disk.
+// It recovers from panics and logs errors without blocking the caller.
+func saveContextAppletStateAsync(sessionID, stateDir string, appletState *appstate.ContextAppletState) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("[context_widget_persistence] panic in saveContextAppletStateAsync: %v\n", r)
+		}
+	}()
+
+	if sessionID == "" || stateDir == "" || appletState == nil {
+		return
+	}
+
+	if err := appstate.SaveContextAppletState(sessionID, stateDir, appletState); err != nil {
+		fmt.Printf("[context_widget_persistence] warning: failed to save context applet state: %v\n", err)
+	}
 }

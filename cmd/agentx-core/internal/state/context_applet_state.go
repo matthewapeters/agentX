@@ -1,5 +1,12 @@
 package state
 
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
 // ContextAppletState represents persisted state for the context widget:
 // scroll position, focused row, and sort filter preferences.
 type ContextAppletState struct {
@@ -28,4 +35,67 @@ func (c *ContextAppletState) IsEmpty() bool {
 		c.SortKey == "timestamp" &&
 		c.SortAscending &&
 		c.FilterSession == ""
+}
+
+// ToJSON marshals ContextAppletState to JSON bytes.
+func (c *ContextAppletState) ToJSON() ([]byte, error) {
+	if c == nil {
+		return json.Marshal(NewContextAppletState())
+	}
+	return json.MarshalIndent(c, "", "  ")
+}
+
+// FromJSON unmarshals JSON bytes into ContextAppletState.
+func (c *ContextAppletState) FromJSON(data []byte) error {
+	if c == nil {
+		return fmt.Errorf("cannot unmarshal into nil ContextAppletState")
+	}
+	if len(data) == 0 {
+		// Empty data: initialize with defaults
+		*c = *NewContextAppletState()
+		return nil
+	}
+	if err := json.Unmarshal(data, c); err != nil {
+		return fmt.Errorf("failed to unmarshal context applet state: %w", err)
+	}
+	return nil
+}
+
+// SaveToPath writes ContextAppletState to disk as JSON.
+func (c *ContextAppletState) SaveToPath(filePath string) error {
+	if c == nil {
+		return fmt.Errorf("cannot save nil ContextAppletState")
+	}
+	data, err := c.ToJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal context applet state: %w", err)
+	}
+	// Ensure directory exists
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write context applet state to %s: %w", filePath, err)
+	}
+	return nil
+}
+
+// LoadFromPath reads ContextAppletState from disk JSON.
+// If the file does not exist, returns an empty ContextAppletState (no error).
+// Other errors are returned.
+func (c *ContextAppletState) LoadFromPath(filePath string) error {
+	if c == nil {
+		return fmt.Errorf("cannot load into nil ContextAppletState")
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// File not found: initialize to empty state (no error)
+			*c = *NewContextAppletState()
+			return nil
+		}
+		return fmt.Errorf("failed to read context applet state from %s: %w", filePath, err)
+	}
+	return c.FromJSON(data)
 }

@@ -300,7 +300,7 @@ func TestContextWidgetCommandAliases_HotkeyCollapseWithoutColon(t *testing.T) {
 		},
 	}
 
-	applyContextWidgetCommand(state, "c 1 p", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "c 1 p", "http://127.0.0.1:0", snapshot, "", "")
 
 	if !state.collapsedEntries[contextEntryKey("current", 1, "prompt")] {
 		t.Fatalf("expected prompt entry to be collapsed via hotkey alias")
@@ -311,12 +311,12 @@ func TestContextWidgetCommandAliases_HelpToggleWithoutColon(t *testing.T) {
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "sess-hotkeys"}
 
-	applyContextWidgetCommand(state, "?", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "?", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.showHelp {
 		t.Fatalf("expected help to be shown via '?' alias")
 	}
 
-	applyContextWidgetCommand(state, "hide-help", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "hide-help", "http://127.0.0.1:0", snapshot, "", "")
 	if state.showHelp {
 		t.Fatalf("expected help to be hidden via hide-help command")
 	}
@@ -326,7 +326,7 @@ func TestContextWidgetCommandAliases_ColonPrefixedHelpOutsideEditor(t *testing.T
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "sess-hotkeys"}
 
-	applyContextWidgetCommand(state, ":help", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, ":help", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.showHelp {
 		t.Fatalf("expected colon-prefixed help to work outside the working-memory editor")
 	}
@@ -337,12 +337,12 @@ func TestContextWidgetCommandAliases_WorkingMemoryToggleWithoutColon(t *testing.
 	snapshot := contextWidgetSnapshot{SessionID: "sess-hotkeys"}
 	initialCollapsed := state.collapsedWorkingMemory
 
-	applyContextWidgetCommand(state, "m", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "m", "http://127.0.0.1:0", snapshot, "", "")
 	if state.collapsedWorkingMemory == initialCollapsed {
 		t.Fatalf("expected working memory collapse state to toggle with 'm'")
 	}
 
-	applyContextWidgetCommand(state, "m show", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "m show", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.showWorkingMemory || state.collapsedWorkingMemory {
 		t.Fatalf("expected working memory section visible and expanded after 'm show'")
 	}
@@ -355,12 +355,12 @@ func TestContextWidgetKeyboard_SpaceAndEnterActionOwnership(t *testing.T) {
 	state.updateOrderedRows([]string{"current:1:prompt"})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "p1", Response: "r1"}}}
 
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.collapsedEntries["current:1:prompt"] {
 		t.Fatalf("expected space to toggle current-context row collapse")
 	}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.disabledEntries["current:1:prompt"] {
 		t.Fatalf("expected enter to toggle current-context row enabled/disabled state")
 	}
@@ -383,7 +383,7 @@ func TestContextWidgetKeyboard_TabSectionToggle(t *testing.T) {
 	}
 
 	// First TAB enters the active section.
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.insideSection {
 		t.Fatalf("expected first tab to enter section (insideSection=true)")
 	}
@@ -392,7 +392,7 @@ func TestContextWidgetKeyboard_TabSectionToggle(t *testing.T) {
 	}
 
 	// Second TAB remains inside the section (drill-in semantics).
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.insideSection {
 		t.Fatalf("expected second tab to keep section focus (insideSection=true)")
 	}
@@ -401,7 +401,7 @@ func TestContextWidgetKeyboard_TabSectionToggle(t *testing.T) {
 	}
 
 	// Shift-Tab exits the section.
-	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot, "", "")
 	if state.insideSection {
 		t.Fatalf("expected shift-tab to exit section (insideSection=false)")
 	}
@@ -441,13 +441,13 @@ func TestContextWidgetKeyboard_StartupHeaderPointerTabIntoContextHistoryFocusesF
 		t.Fatalf("precondition: startup should point at current-context header, got %#v", got)
 	}
 
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeSection; got != "context-history" {
 		t.Fatalf("expected pointer to move to context-history header, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.insideSection {
 		t.Fatalf("expected TAB from context-history header to enter section")
 	}
@@ -488,15 +488,15 @@ func TestContextWidgetKeyboard_ShiftTabExitThenHeaderTabReentersContextHistoryFi
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "current", Response: "turn"}}}
 
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.activeRowKey(); got != "user:"+user {
 		t.Fatalf("expected first TAB to place focus on first user row, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot, "", "")
 	if state.insideSection {
 		t.Fatalf("expected shift-tab from user to exit context-history section")
 	}
@@ -504,18 +504,18 @@ func TestContextWidgetKeyboard_ShiftTabExitThenHeaderTabReentersContextHistoryFi
 		t.Fatalf("expected section pointer to remain on context-history header after exit, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeSection; got != "current-context" {
 		t.Fatalf("expected pointer to move away to current-context, got %q", got)
 	}
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeSection; got != "context-history" {
 		t.Fatalf("expected pointer to return to context-history header, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.insideSection {
 		t.Fatalf("expected re-entry TAB to enter context-history")
 	}
@@ -539,8 +539,8 @@ func TestContextWidgetKeyboard_TabFromContextHistoryHeaderWithNoRows_StaysOutsid
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "current", Response: "turn"}}}
 
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeSection; got != "context-history" {
 		t.Fatalf("expected pointer to move to context-history header, got %q", got)
 	}
@@ -553,7 +553,7 @@ func TestContextWidgetKeyboard_TabFromContextHistoryHeaderWithNoRows_StaysOutsid
 		t.Fatalf("precondition: expected active section pointer on context-history header, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	if state.insideSection {
 		t.Fatalf("expected TAB with empty history to remain outside section mode")
 	}
@@ -572,7 +572,7 @@ func TestContextWidgetKeyboard_TabFromContextHistoryHeaderWithNoRows_StaysOutsid
 		t.Fatalf("expected post-render no-rows invariant to preserve section header focus, got %#v", got)
 	}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeSection; got != "working-memory" {
 		t.Fatalf("expected down after no-rows TAB to navigate section headers, got %q", got)
 	}
@@ -609,13 +609,13 @@ func TestContextWidgetKeyboard_StartupHeaderPointerTabIntoContextHistoryFocusesA
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "current", Response: "turn"}}}
 
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeSection; got != "context-history" {
 		t.Fatalf("expected pointer to move to context-history header, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.insideSection {
 		t.Fatalf("expected TAB from context-history header to enter section")
 	}
@@ -627,7 +627,7 @@ func TestContextWidgetKeyboard_StartupHeaderPointerTabIntoContextHistoryFocusesA
 		t.Fatalf("expected render cycle to map focus to alphabetical first user row, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot, "", "")
 	if state.insideSection {
 		t.Fatalf("expected shift-tab from user node to exit context-history section")
 	}
@@ -635,7 +635,7 @@ func TestContextWidgetKeyboard_StartupHeaderPointerTabIntoContextHistoryFocusesA
 		t.Fatalf("expected section pointer to remain on context-history header, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.insideSection {
 		t.Fatalf("expected re-entry TAB to enter context-history")
 	}
@@ -657,13 +657,13 @@ func TestContextWidgetKeyboard_SpaceCollapsesSection(t *testing.T) {
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
 	initiallyCollapsed := state.collapsedContextHistory
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 	if state.collapsedContextHistory == initiallyCollapsed {
 		t.Fatalf("expected SPACE to toggle context-history collapsed state")
 	}
 
 	// Second SPACE collapses it again.
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 	if state.collapsedContextHistory != initiallyCollapsed {
 		t.Fatalf("expected second SPACE to restore original collapsed state")
 	}
@@ -677,23 +677,23 @@ func TestContextWidgetKeyboard_ArrowMovesSectionHeader(t *testing.T) {
 	state.activeSection = "current-context"
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if state.activeSection != "working-memory" {
 		t.Fatalf("expected up to move to working-memory, got %q", state.activeSection)
 	}
 
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if state.activeSection != "context-history" {
 		t.Fatalf("expected second up to move to context-history, got %q", state.activeSection)
 	}
 
 	// Up at the top should stay at context-history (clamp at start).
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if state.activeSection != "context-history" {
 		t.Fatalf("expected up at top to stay at context-history, got %q", state.activeSection)
 	}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 	if state.activeSection != "working-memory" {
 		t.Fatalf("expected down to move to working-memory, got %q", state.activeSection)
 	}
@@ -706,22 +706,22 @@ func TestContextWidgetKeyboard_SelectionAndBoundsStatusVocabulary(t *testing.T) 
 	state.updateOrderedRows([]string{"current:1:prompt", "current:1:response"})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "p1", Response: "r1"}}}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Selection moved." {
 		t.Fatalf("expected normalized selection-moved status, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Selection at last row." {
 		t.Fatalf("expected normalized lower-bound status, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Selection moved." {
 		t.Fatalf("expected normalized selection-moved status after up, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Selection at first row." {
 		t.Fatalf("expected normalized upper-bound status, got %q", got)
 	}
@@ -736,7 +736,7 @@ func TestContextWidgetKeyboard_HistoryArrowNavigationDoesNotExpandNodes(t *testi
 	state.insideSection = true
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 
 	if got := state.activeRowKey(); got != "user:mpeters" {
 		t.Fatalf("expected selection to stay on only user sibling, got %q", got)
@@ -779,7 +779,7 @@ func TestContextWidgetKeyboard_HistoryArrowNavigationSurvivesRenderWithoutExpans
 	state.insideSection = true
 
 	snapshot := contextWidgetSnapshot{SessionID: "current-session"}
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 
 	if got := state.activeRowKey(); got != "user:mpeters" {
 		t.Fatalf("expected selection to remain on user row before render, got %q", got)
@@ -807,7 +807,7 @@ func TestContextWidgetKeyboard_HistoryDownOnOnlyUserRowIsNoOp(t *testing.T) {
 	state.insideSection = true
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 
 	if got := state.activeRowKey(); got != "user:mpeters" {
 		t.Fatalf("expected only user row to remain active, got %q", got)
@@ -829,7 +829,7 @@ func TestContextWidgetKeyboard_HistoryDownOnSingleUserWithVisibleSessionsIsNoOp(
 	state.insideSection = true
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 
 	if got := state.activeRowKey(); got != "user:mpeters" {
 		t.Fatalf("expected down to remain on user row when no sibling users exist, got %q", got)
@@ -848,7 +848,7 @@ func TestContextWidgetKeyboard_SpaceHistoryNodePeeksWithoutSelectionSemantics(t 
 	state.selectedEntries["user:mpeters"] = true
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
 		t.Fatalf("expected space to expand history node via focus path, got %#v", got)
@@ -863,7 +863,7 @@ func TestContextWidgetKeyboard_SpaceHistoryNodePeeksWithoutSelectionSemantics(t 
 		t.Fatalf("expected history expand status, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSection || got.Section != "context-history" {
 		t.Fatalf("expected second space to collapse back to section, got %#v", got)
 	}
@@ -884,7 +884,7 @@ func TestContextWidgetKeyboard_SpaceOnSessionRowPeeksWithoutSelectionSemantics(t
 	}
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.User != "mpeters" || got.Session != "s-prev" {
 		t.Fatalf("expected space to expand focused session node, got %#v", got)
@@ -899,7 +899,7 @@ func TestContextWidgetKeyboard_SpaceOnSessionRowPeeksWithoutSelectionSemantics(t
 		t.Fatalf("expected history expand status for session row, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.focusPath.Tail(); got.Kind != nodeKindUser || got.User != "mpeters" {
 		t.Fatalf("expected second space on focused session row to collapse to parent user, got %#v", got)
 	}
@@ -915,24 +915,24 @@ func TestContextWidgetKeyboard_ViewportStatusVocabulary(t *testing.T) {
 
 	state.activeSection = "context-history"
 	state.updateOrderedRows([]string{"user:mpeters", "session:mpeters:s-prev"})
-	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Selection moved." {
 		t.Fatalf("expected context-history pgdn to page rows, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "pgup", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "pgup", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Selection moved." {
 		t.Fatalf("expected context-history pgup to page rows, got %q", got)
 	}
 
 	state.activeSection = "working-memory"
 	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save", "wm:user:current_user"})
-	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Selection moved." {
 		t.Fatalf("expected working-memory pgdn to page rows, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "pgup", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "pgup", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Selection moved." {
 		t.Fatalf("expected working-memory pgup to page rows, got %q", got)
 	}
@@ -942,7 +942,7 @@ func TestContextWidgetKeyboard_EnterTabShiftTabTransitionVocabulary(t *testing.T
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Enter has no action." {
 		t.Fatalf("expected enter action-only status outside section, got %q", got)
 	}
@@ -951,12 +951,12 @@ func TestContextWidgetKeyboard_EnterTabShiftTabTransitionVocabulary(t *testing.T
 	}
 
 	state.insideSection = false
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Entered section: current-context." {
 		t.Fatalf("expected tab transition status, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Exited section: current-context." {
 		t.Fatalf("expected shift-tab transition status, got %q", got)
 	}
@@ -974,7 +974,7 @@ func TestContextWidgetKeyboard_PgDnScrollsExpandedRow(t *testing.T) {
 	state.collapsedEntries["current:1:prompt"] = false
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys", Turns: []ChatTurn{{Prompt: "one two three four five six seven eight nine ten eleven twelve", Response: "ok"}}}
 
-	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "pgdn", "http://127.0.0.1:0", snapshot, "", "")
 	if state.textScroll["current:1:prompt"] == 0 {
 		t.Fatalf("expected pgdn to scroll expanded text row when inside section")
 	}
@@ -989,12 +989,12 @@ func TestContextWidgetKeyboard_LeftRightCurrentTurnSibling(t *testing.T) {
 		t.Fatalf("expected initial active row to be prompt")
 	}
 
-	applyContextWidgetCommand(state, "right", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "right", "http://127.0.0.1:0", snapshot, "", "")
 	if state.activeRowKey() != "current:1:response" {
 		t.Fatalf("expected right to move to response sibling, got %q", state.activeRowKey())
 	}
 
-	applyContextWidgetCommand(state, "left", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "left", "http://127.0.0.1:0", snapshot, "", "")
 	if state.activeRowKey() != "current:1:prompt" {
 		t.Fatalf("expected left to move back to prompt sibling, got %q", state.activeRowKey())
 	}
@@ -1009,12 +1009,12 @@ func TestContextWidgetKeyboard_LeftRightHistorySessionAndTurn(t *testing.T) {
 		t.Fatalf("expected initial active row to be session row")
 	}
 
-	applyContextWidgetCommand(state, "right", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "right", "http://127.0.0.1:0", snapshot, "", "")
 	if state.activeRowKey() != "history:s-prev:1" {
 		t.Fatalf("expected right to enter first session turn, got %q", state.activeRowKey())
 	}
 
-	applyContextWidgetCommand(state, "left", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "left", "http://127.0.0.1:0", snapshot, "", "")
 	if state.activeRowKey() != "session:s-prev" {
 		t.Fatalf("expected left to return to session row, got %q", state.activeRowKey())
 	}
@@ -1028,7 +1028,7 @@ func TestContextWidgetKeyboard_EnterHistoryIsActionOnly(t *testing.T) {
 	state.setFocusPath(focusPath{{Kind: nodeKindSection, Section: "context-history"}})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.statusLine; got != "Enter has no action." {
 		t.Fatalf("expected enter action-only status in context-history, got %q", got)
 	}
@@ -1046,7 +1046,7 @@ func TestContextWidgetKeyboard_SpaceInsideWorkingMemoryTargetsRowOnly(t *testing
 	_ = state.setActiveRowByKey("wm:user:current_user")
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 
 	if state.collapsedWorkingMemory {
 		t.Fatalf("expected space inside working-memory to avoid section collapse")
@@ -1077,7 +1077,7 @@ func TestContextWidgetKeyboard_EnterWorkingMemoryFactTogglesEnabledState(t *test
 	state.updateOrderedRows([]string{"wm:user:topic"})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	payload, err := loadWorkingMemoryPayload(sessionDir)
 	if err != nil {
 		t.Fatalf("loadWorkingMemoryPayload failed: %v", err)
@@ -1086,7 +1086,7 @@ func TestContextWidgetKeyboard_EnterWorkingMemoryFactTogglesEnabledState(t *test
 		t.Fatalf("expected first enter to disable focused fact")
 	}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	payload, err = loadWorkingMemoryPayload(sessionDir)
 	if err != nil {
 		t.Fatalf("loadWorkingMemoryPayload failed: %v", err)
@@ -1112,27 +1112,27 @@ func TestContextWidgetKeyboard_EnterWorkingMemoryEditorCommitAndSave(t *testing.
 	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save"})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "feature_flag", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "feature_flag", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.wmEditorDraftKey; got != "feature_flag" {
 		t.Fatalf("expected key draft staged, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeRowKey(); got != "wm:editor:value" {
 		t.Fatalf("expected enter on key cell to advance to value cell, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "enabled", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enabled", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.wmEditorDraftValue; got != "enabled" {
 		t.Fatalf("expected value draft staged, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeRowKey(); got != "wm:editor:save" {
 		t.Fatalf("expected enter on value cell to advance to save cell, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	payload, err := loadWorkingMemoryPayload(sessionDir)
 	if err != nil {
 		t.Fatalf("loadWorkingMemoryPayload failed: %v", err)
@@ -1165,11 +1165,11 @@ func TestContextWidgetKeyboard_WorkingMemoryEditorSavePreservesStartupDefaultsAc
 	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save"})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-wm-defaults"}
 
-	applyContextWidgetCommand(state, "feature_flag", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "enabled", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "feature_flag", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "enabled", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 
 	payload, err := loadWorkingMemoryPayload(sessionDir)
 	if err != nil {
@@ -1185,11 +1185,11 @@ func TestContextWidgetKeyboard_WorkingMemoryEditorSavePreservesStartupDefaultsAc
 		t.Fatalf("expected first user key to persist after first save, got %#v (present=%v)", fact, ok)
 	}
 
-	applyContextWidgetCommand(state, "release_channel", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "stable", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "release_channel", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "stable", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 
 	payload, err = loadWorkingMemoryPayload(sessionDir)
 	if err != nil {
@@ -1221,7 +1221,7 @@ func TestContextWidgetKeyboard_SpaceOnWorkingMemoryHeaderTogglesOnly(t *testing.
 	activeBefore := state.activeRow
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 
 	if state.collapsedWorkingMemory {
 		t.Fatalf("expected SPACE on working-memory header to toggle expanded state")
@@ -1254,14 +1254,14 @@ func TestContextWidgetKeyboard_SpaceAfterExitWMSection_DoesNotReenterSection(t *
 	}
 
 	// Shift-Tab exits the section.
-	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot, "", "")
 	if state.insideSection {
 		t.Fatalf("expected shift-tab to set insideSection=false, got true")
 	}
 
 	// SPACE expands the section from outside.
 	state.collapsedWorkingMemory = true // simulate collapsed before SPACE
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 	if state.collapsedWorkingMemory {
 		t.Fatalf("expected SPACE to expand working-memory section")
 	}
@@ -1289,7 +1289,7 @@ func TestContextWidgetKeyboard_WorkingMemoryEditorIncrementalTypingBackspaceAndL
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
 	for _, token := range []string{"h", "j", "k", "l"} {
-		applyContextWidgetCommand(state, token, "http://127.0.0.1:0", snapshot)
+		applyContextWidgetCommand(state, token, "http://127.0.0.1:0", snapshot, "", "")
 	}
 	if got := state.wmEditorDraftKey; got != "hjkl" {
 		t.Fatalf("expected incremental key typing to append hjkl, got %q", got)
@@ -1298,31 +1298,31 @@ func TestContextWidgetKeyboard_WorkingMemoryEditorIncrementalTypingBackspaceAndL
 		t.Fatalf("expected editor focus to stay on key while typing, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "backspace", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "backspace", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.wmEditorDraftKey; got != "hjk" {
 		t.Fatalf("expected backspace to remove last key rune, got %q", got)
 	}
 
 	for i := 0; i < 80; i++ {
-		applyContextWidgetCommand(state, "x", "http://127.0.0.1:0", snapshot)
+		applyContextWidgetCommand(state, "x", "http://127.0.0.1:0", snapshot, "", "")
 	}
 	if got := len([]rune(state.wmEditorDraftKey)); got != workingMemoryEditorKeyMaxChars {
 		t.Fatalf("expected key to clamp at %d chars, got %d", workingMemoryEditorKeyMaxChars, got)
 	}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeRowKey(); got != "wm:editor:value" {
 		t.Fatalf("expected enter on key to advance to value, got %q", got)
 	}
 
 	for i := 0; i < 1100; i++ {
-		applyContextWidgetCommand(state, "v", "http://127.0.0.1:0", snapshot)
+		applyContextWidgetCommand(state, "v", "http://127.0.0.1:0", snapshot, "", "")
 	}
 	if got := len(state.wmEditorDraftValue); got != workingMemoryEditorValueMaxBytes {
 		t.Fatalf("expected value to clamp at %d bytes, got %d", workingMemoryEditorValueMaxBytes, got)
 	}
 
-	applyContextWidgetCommand(state, "backspace", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "backspace", "http://127.0.0.1:0", snapshot, "", "")
 	if got := len(state.wmEditorDraftValue); got != workingMemoryEditorValueMaxBytes-1 {
 		t.Fatalf("expected value backspace to remove one rune/byte, got len=%d", got)
 	}
@@ -1336,12 +1336,12 @@ func TestContextWidgetKeyboard_WorkingMemoryEditorAllowsColonAndIgnoresHomeEnd(t
 	state.updateOrderedRows([]string{"wm:editor:key", "wm:editor:value", "wm:editor:save"})
 	snapshot := contextWidgetSnapshot{SessionID: "sess-keys"}
 
-	applyContextWidgetCommand(state, "feature:flag", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "feature:flag", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.wmEditorDraftKey; got != "feature:flag" {
 		t.Fatalf("expected colon to stage in key draft, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "home", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "home", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.wmEditorDraftKey; got != "feature:flag" {
 		t.Fatalf("expected home to be ignored in active key cell, got %q", got)
 	}
@@ -1349,17 +1349,17 @@ func TestContextWidgetKeyboard_WorkingMemoryEditorAllowsColonAndIgnoresHomeEnd(t
 		t.Fatalf("expected home to leave focus on key cell, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeRowKey(); got != "wm:editor:value" {
 		t.Fatalf("expected enter to advance to value cell, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "value:enabled", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "value:enabled", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.wmEditorDraftValue; got != "value:enabled" {
 		t.Fatalf("expected colon to stage in value draft, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "end", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "end", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.wmEditorDraftValue; got != "value:enabled" {
 		t.Fatalf("expected end to be ignored in active value cell, got %q", got)
 	}
@@ -1382,7 +1382,7 @@ func TestRenderWorkingMemoryEditorCellViewport_TailWhenActiveHeadAfterCommit(t *
 		t.Fatalf("expected active key viewport to show trailing 23 chars, got:\n%s", stripAnsi(activeKey))
 	}
 
-	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "enter", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeRowKey(); got != "wm:editor:value" {
 		t.Fatalf("expected enter to commit key and move to value, got %q", got)
 	}
@@ -1577,7 +1577,7 @@ func TestContextWidgetKeyboard_ShiftTabPopsDeepHistoryPath(t *testing.T) {
 		t.Fatalf("expected deep history focus before shift-tab, got %#v", got)
 	}
 
-	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.insideSection {
 		t.Fatalf("expected shift-tab from turn to stay inside section (step back to session)")
 	}
@@ -1712,7 +1712,7 @@ func TestContextWidgetKeyboard_TabContextHistoryPopulatedRows_RenderCoupledProgr
 			}
 
 			for i := 0; i < presses; i++ {
-				applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+				applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 				_ = renderContextWidgetWithState(snapshot, "context-history", "qwen3.6:latest", "ollama", 80, 200, nil, state)
 				assertExpected(t, state, i+1)
 				if got := state.statusLine; got != "Entered section: context-history." {
@@ -1873,14 +1873,14 @@ func TestContextWidgetKeyboard_TabNShiftTabNMinus1_StepsBackIncrementally(t *tes
 
 			// Press Tab×n, asserting expected state after each press.
 			for i := 0; i < n; i++ {
-				applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+				applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 				_ = renderContextWidgetWithState(snapshot, "context-history", "qwen3.6:latest", "ollama", 80, 200, nil, state)
 				tabStates[i+1](t, state, "after tab "+itoa(i+1)+"/"+itoa(n))
 			}
 
 			// Press Shift-Tab×(n-1), asserting expected state after each press.
 			for i := 0; i < n-1; i++ {
-				applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+				applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot, "", "")
 				_ = renderContextWidgetWithState(snapshot, "context-history", "qwen3.6:latest", "ollama", 80, 200, nil, state)
 				shiftTabPaths[n][i](t, state, "n="+itoa(n)+" after shift-tab "+itoa(i+1)+"/"+itoa(n-1))
 				if got := state.statusLine; got != shiftTabStatuses[n][i] {
@@ -1973,23 +1973,23 @@ func TestContextWidgetKeyboard_HistoryTargetSessionResponseExpansion_ShowsFullMu
 	state := newContextFeedbackViewState()
 	snapshot := contextWidgetSnapshot{SessionID: "current-session", Turns: []ChatTurn{{Prompt: "current", Response: "turn"}}}
 
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeSection; got != "context-history" {
 		t.Fatalf("expected context-history section selected, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.activeRowKey(); got != "user:mpeters" {
 		t.Fatalf("expected user row focus after tab enter, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.activeRowKey(); got != "session:mpeters:2026-06-06 23:20:18" {
 		t.Fatalf("expected first session selected after drill-in tabs, got %q", got)
@@ -1997,7 +1997,7 @@ func TestContextWidgetKeyboard_HistoryTargetSessionResponseExpansion_ShowsFullMu
 
 	targetSessionRow := "session:mpeters:" + targetSession
 	for steps := 0; steps < 8 && state.activeRowKey() != targetSessionRow; steps++ {
-		applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+		applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 	}
 	if got := state.activeRowKey(); got != targetSessionRow {
 		t.Fatalf("expected down navigation to reach target session %q, got %q", targetSession, got)
@@ -2007,37 +2007,37 @@ func TestContextWidgetKeyboard_HistoryTargetSessionResponseExpansion_ShowsFullMu
 		t.Fatalf("expected render cycle to preserve target session selection, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	if got := state.focusPath.Tail(); got.Kind != nodeKindSession || got.Session != targetSession {
 		t.Fatalf("expected target session expansion via space, got %#v", got)
 	}
 
-	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "tab", "http://127.0.0.1:0", snapshot, "", "")
 	_ = renderContextFeedbackSections(snapshot, nil, state, 120)
 	promptKey := "history:mpeters:" + targetSession + ":1:prompt"
 	if got := state.activeRowKey(); got != promptKey {
 		t.Fatalf("expected prompt leaf row after tab into session, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 	responseKey := "history:mpeters:" + targetSession + ":1:response"
 	if got := state.activeRowKey(); got != responseKey {
 		t.Fatalf("expected down to move prompt->response leaf, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "down", "http://127.0.0.1:0", snapshot, "", "")
 	secondPromptKey := "history:mpeters:" + targetSession + ":2:prompt"
 	if got := state.activeRowKey(); got != secondPromptKey {
 		t.Fatalf("expected down to move turn1 response -> turn2 prompt, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "up", "http://127.0.0.1:0", snapshot, "", "")
 	if got := state.activeRowKey(); got != responseKey {
 		t.Fatalf("expected up to move turn2 prompt -> turn1 response, got %q", got)
 	}
 
-	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "space", "http://127.0.0.1:0", snapshot, "", "")
 	rendered := strings.Join(renderContextFeedbackSections(snapshot, nil, state, 120), "\n")
 	if got := state.activeRowKey(); got != responseKey {
 		t.Fatalf("expected render cycle to preserve expanded response leaf selection, got %q", got)
@@ -2049,7 +2049,7 @@ func TestContextWidgetKeyboard_HistoryTargetSessionResponseExpansion_ShowsFullMu
 		}
 	}
 
-	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot)
+	applyContextWidgetCommand(state, "shift-tab", "http://127.0.0.1:0", snapshot, "", "")
 	if !state.insideSection {
 		t.Fatalf("expected shift-tab from response leaf to stay inside context-history")
 	}
