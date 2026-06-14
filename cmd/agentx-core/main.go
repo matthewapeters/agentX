@@ -71,6 +71,17 @@ func main() {
 		log.Fatalf("--demo-start requires a demo mode flag")
 	}
 
+	printStartupLogoForMode(startupLogoMode{
+		inputWidget:      *inputWidget,
+		outputWidget:     *outputWidget,
+		logsWidget:       *logsWidget,
+		contextWidget:    *contextWidget,
+		filesystemWidget: *filesystemWidget,
+		settingsWidget:   *settingsWidget,
+		layoutTemplate:   strings.TrimSpace(*layoutTemplate) != "",
+		dumpDefaultLayout: strings.TrimSpace(*dumpDefaultLayoutPath) != "",
+	})
+
 	if *inputWidget {
 		exitCode := runInputWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdin, os.Stdout)
 		if exitCode != 0 {
