@@ -1341,12 +1341,6 @@ func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
 		if spec.Runtime == appletRuntimeGo && spec.Name != "input" && spec.Name != "context" && spec.Name != "chat" && spec.Name != "logs" && !isDedicatedSystemAppletTab(spec.Name) {
 			continue
 		}
-		if spec.Runtime == appletRuntimePython {
-			if _, err := os.Stat(ac.chatAppletScript); err != nil {
-				log.Printf("[AgentX Core] Pane applet launch skipped for %s (template unavailable): %v", spec.Name, err)
-				continue
-			}
-		}
 
 		launchCmd := ""
 		if spec.Runtime == appletRuntimeGo {

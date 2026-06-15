@@ -329,35 +329,6 @@ func TestDefaultAppletRuntimeSpecs_ChatAlwaysUsesGoRuntime(t *testing.T) {
 	t.Fatalf("expected chat runtime spec to be present")
 }
 
-// TestBuildPaneAppletLaunchCommand_ChatPaneUsesPythonTemplate verifies the
-// shared applet base launch builder routes chat pane through python applet mode.
-func TestBuildPaneAppletLaunchCommand_ChatPaneUsesPythonTemplate(t *testing.T) {
-	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-chat-launch"}
-	core := NewAgentXCore(cfg)
-	core.healthAddr = "127.0.0.1:33333"
-	core.runtimeConfig.SubmitTimeout = 10 * time.Second
-	core.chatAppletScript = "/tmp/template.py"
-
-	base := core.buildAppletBaseRuntimeConfig()
-	cmd := core.buildPaneAppletLaunchCommand(appletRuntimeSpec{Name: "chat", PaneName: "chat", Runtime: appletRuntimePython}, base, 0, 0)
-
-	if !strings.Contains(cmd, "AGENTX_APPLET_NAME='chat'") {
-		t.Fatalf("expected chat applet env var, got:\n%s", cmd)
-	}
-	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='python'") {
-		t.Fatalf("expected python applet runtime env var, got:\n%s", cmd)
-	}
-	if !strings.Contains(cmd, "AGENTX_CORE_OWNS_STARTUP_BOOTSTRAP='1'") {
-		t.Fatalf("expected startup bootstrap ownership env var, got:\n%s", cmd)
-	}
-	if !strings.Contains(cmd, "/tmp/template.py") {
-		t.Fatalf("expected python template applet launch path, got:\n%s", cmd)
-	}
-	if strings.Contains(cmd, "--input-widget") {
-		t.Fatalf("expected chat pane not to use native input widget args, got:\n%s", cmd)
-	}
-}
-
 func TestBuildPaneAppletLaunchCommand_ChatPaneUsesNativeOutputWidget(t *testing.T) {
 	cfg := &Config{ProjectDir: t.TempDir(), Username: "dev", SessionID: "s-chat-launch-go"}
 	core := NewAgentXCore(cfg)
