@@ -330,18 +330,17 @@ func TestRouteInputPrompt_UsesPythonBridgeTemplate(t *testing.T) {
 	}
 }
 
-// GIVEN a project with Python template applet available
+// GIVEN the chat runtime contract forces Go routing
 // WHEN two prompts are routed through the chat handler
-// THEN the same persistent bridge process is reused for both prompts.
+// THEN both prompts route through Go telemetry and persist turns without Python bridge process tracking.
 func TestRouteInputPrompt_PythonBridgeProcessReusedAcrossPrompts(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available in test environment")
-	}
+	t.Setenv("AGENTX_CHAT_RUNTIME", "python")
+	t.Setenv("AGENTX_CHAT_BACKEND", "echo")
 
 	projectDir := t.TempDir()
 	stageTemplateApplet(t, projectDir)
 
-	setupFakeTmux(t)
+	logPath := setupFakeTmux(t)
 	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-reuse"}
 	core := NewAgentXCore(cfg)
 
@@ -360,15 +359,6 @@ func TestRouteInputPrompt_PythonBridgeProcessReusedAcrossPrompts(t *testing.T) {
 		t.Fatalf("unexpected first response %q", firstResponse)
 	}
 
-	core.mu.RLock()
-	chatApplet := core.applets["chat"]
-	if chatApplet == nil || chatApplet.Cmd == nil || chatApplet.Cmd.Process == nil {
-		core.mu.RUnlock()
-		t.Fatal("expected tracked persistent chat process after first prompt")
-	}
-	firstPID := chatApplet.Cmd.Process.Pid
-	core.mu.RUnlock()
-
 	secondResponse, err := core.RouteInputPrompt(context.Background(), "second bridge prompt")
 	if err != nil {
 		t.Fatalf("second RouteInputPrompt failed: %v", err)
@@ -377,17 +367,30 @@ func TestRouteInputPrompt_PythonBridgeProcessReusedAcrossPrompts(t *testing.T) {
 		t.Fatalf("unexpected second response %q", secondResponse)
 	}
 
-	core.mu.RLock()
-	chatApplet = core.applets["chat"]
-	if chatApplet == nil || chatApplet.Cmd == nil || chatApplet.Cmd.Process == nil {
-		core.mu.RUnlock()
-		t.Fatal("expected tracked persistent chat process after second prompt")
+	turns := core.ContextTurnsSnapshot()
+	if len(turns) != 2 {
+		t.Fatalf("expected two persisted turns, got %d", len(turns))
 	}
-	secondPID := chatApplet.Cmd.Process.Pid
-	core.mu.RUnlock()
+	if turns[0].Response != "Echo: first bridge prompt" {
+		t.Fatalf("unexpected first persisted response %q", turns[0].Response)
+	}
+	if turns[1].Response != "Echo: second bridge prompt" {
+		t.Fatalf("unexpected second persisted response %q", turns[1].Response)
+	}
 
-	if firstPID != secondPID {
-		t.Fatalf("expected persistent chat process reuse, got pid change %d -> %d", firstPID, secondPID)
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if strings.Count(commands, "[bridge] event=go_chat_route_start") < 2 {
+		t.Fatalf("expected go_chat_route_start for both prompts, got:\n%s", commands)
+	}
+	if strings.Count(commands, "[bridge] event=go_chat_response_ok") < 2 {
+		t.Fatalf("expected go_chat_response_ok for both prompts, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=bridge_route_start") {
+		t.Fatalf("did not expect Python bridge route telemetry, got:\n%s", commands)
 	}
 
 	if err := core.Shutdown(context.Background()); err != nil {
@@ -449,8 +452,8 @@ func TestRouteInputPrompt_PythonBridgeLifecycleStagesInOrder(t *testing.T) {
 		lastIndex = idx
 	}
 
-	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
-		t.Fatalf("expected bridge_response_ok in command log, got:\n%s", commands)
+	if !strings.Contains(commands, "[bridge] event=go_chat_response_ok") {
+		t.Fatalf("expected go_chat_response_ok in command log, got:\n%s", commands)
 	}
 }
 
@@ -567,13 +570,11 @@ func TestRouteInputPrompt_HangingBridgeFallsBackToEcho(t *testing.T) {
 	}
 }
 
-// GIVEN template bridge emits chunk events for multi-token responses
+// GIVEN Go chat runtime is active
 // WHEN a prompt is routed through the chat path
-// THEN stream chunk lines and final consolidated response are both rendered.
+// THEN final response rendering occurs without Python bridge stream chunk rendering.
 func TestRouteInputPrompt_RendersStreamChunksAndFinalResponse(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available in test environment")
-	}
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
 
 	projectDir := t.TempDir()
 	stageTemplateApplet(t, projectDir)
@@ -602,11 +603,14 @@ func TestRouteInputPrompt_RendersStreamChunksAndFinalResponse(t *testing.T) {
 		t.Fatalf("failed reading tmux command log: %v", err)
 	}
 	commands := string(commandsRaw)
-	if !strings.Contains(commands, "[assistant-stream] Echo:") {
-		t.Fatalf("expected stream chunk render in tmux commands, got:\n%s", commands)
+	if strings.Contains(commands, "[assistant-stream]") {
+		t.Fatalf("did not expect stream chunk render in Go runtime, got:\n%s", commands)
 	}
 	if !strings.Contains(commands, "[assistant] Echo: stream chunk demo") {
 		t.Fatalf("expected final consolidated render in tmux commands, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[bridge] event=go_chat_response_ok") {
+		t.Fatalf("expected go_chat_response_ok in tmux commands, got:\n%s", commands)
 	}
 
 	if err := core.Shutdown(context.Background()); err != nil {
@@ -614,26 +618,21 @@ func TestRouteInputPrompt_RendersStreamChunksAndFinalResponse(t *testing.T) {
 	}
 }
 
-// GIVEN chat backend is configured for Ollama with a streaming endpoint
-// WHEN a prompt is routed through the persistent bridge
-// THEN chunk events are sourced from backend stream and final response is rendered.
+// GIVEN chat backend is configured for Ollama under forced Go runtime
+// WHEN a prompt is routed through the Go chat path
+// THEN direct backend response is rendered with Go telemetry and no Python bridge events.
 func TestRouteInputPrompt_OllamaStreamingBackendRendersChunks(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available in test environment")
-	}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/chat" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintln(w, `{"message":{"content":"Ollama"},"done":false}`)
-		_, _ = fmt.Fprintln(w, `{"message":{"content":"stream"},"done":false}`)
-		_, _ = fmt.Fprintln(w, `{"message":{"content":"reply"},"done":true}`)
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"Ollama direct reply"}}`)
 	}))
 	defer server.Close()
 
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
 	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
 	t.Setenv("AGENTX_OLLAMA_HOST", server.URL)
 	t.Setenv("AGENTX_OLLAMA_MODEL", "test-model")
@@ -656,8 +655,8 @@ func TestRouteInputPrompt_OllamaStreamingBackendRendersChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RouteInputPrompt failed: %v", err)
 	}
-	if response != "Ollama stream reply" {
-		t.Fatalf("expected ollama streamed response, got %q", response)
+	if response != "Ollama direct reply" {
+		t.Fatalf("expected ollama response, got %q", response)
 	}
 
 	commandsRaw, err := os.ReadFile(logPath)
@@ -665,20 +664,23 @@ func TestRouteInputPrompt_OllamaStreamingBackendRendersChunks(t *testing.T) {
 		t.Fatalf("failed reading tmux command log: %v", err)
 	}
 	commands := string(commandsRaw)
-	if !strings.Contains(commands, "[assistant-stream] Ollama") {
-		t.Fatalf("expected ollama stream chunk render in tmux log, got:\n%s", commands)
+	if strings.Contains(commands, "[assistant-stream]") {
+		t.Fatalf("did not expect stream chunk render in Go runtime, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "[assistant] Ollama stream reply") {
+	if !strings.Contains(commands, "[assistant] Ollama direct reply") {
 		t.Fatalf("expected final ollama response render in tmux log, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "[bridge] event=bridge_start") {
-		t.Fatalf("expected bridge_start event in logs pane commands, got:\n%s", commands)
+	if !strings.Contains(commands, "[bridge] event=go_chat_route_start") {
+		t.Fatalf("expected go_chat_route_start event in logs pane commands, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "[bridge] event=bridge_chunk") {
-		t.Fatalf("expected bridge_chunk event in logs pane commands, got:\n%s", commands)
+	if !strings.Contains(commands, "[bridge] event=go_chat_response_ok") {
+		t.Fatalf("expected go_chat_response_ok event in logs pane commands, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
-		t.Fatalf("expected bridge_response_ok event in logs pane commands, got:\n%s", commands)
+	if strings.Contains(commands, "[bridge] event=bridge_start") {
+		t.Fatalf("did not expect bridge_start event in Go runtime, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=bridge_chunk") {
+		t.Fatalf("did not expect bridge_chunk event in Go runtime, got:\n%s", commands)
 	}
 
 	if err := core.Shutdown(context.Background()); err != nil {
@@ -686,22 +688,37 @@ func TestRouteInputPrompt_OllamaStreamingBackendRendersChunks(t *testing.T) {
 	}
 }
 
-// GIVEN a bridge that emits one chunk and then stalls
-// WHEN the first route is canceled mid-stream and a second prompt is routed immediately
-// THEN cancellation is propagated and the next prompt succeeds via a restarted bridge process.
+// GIVEN forced Go runtime with an Ollama backend that times out once then recovers
+// WHEN the first route is canceled by context deadline and a second prompt is routed
+// THEN cancellation is propagated and the next prompt succeeds without Python bridge telemetry.
 func TestRouteInputPrompt_CanceledMidStreamRecoversOnImmediateRetry(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available in test environment")
-	}
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
+	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		requestCount++
+		if requestCount == 1 {
+			time.Sleep(300 * time.Millisecond)
+			_, _ = fmt.Fprintln(w, `{"message":{"content":"late response"}}`)
+			return
+		}
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"Go retry recovered"}}`)
+	}))
+	defer server.Close()
+	t.Setenv("AGENTX_OLLAMA_HOST", server.URL)
+	t.Setenv("AGENTX_OLLAMA_MODEL", "test-model")
 
 	projectDir := t.TempDir()
-	slowScript := stageSlowChunkBridgeApplet(t, projectDir)
 
 	logPath := setupFakeTmux(t)
 	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-cancel-retry"}
 	core := NewAgentXCore(cfg)
-	core.chatAppletScript = slowScript
-	core.chatBridgeResponseTimeout = 3 * time.Second
 
 	if err := core.InitializeTmuxSession(context.Background()); err != nil {
 		t.Fatalf("InitializeTmuxSession failed: %v", err)
@@ -729,7 +746,7 @@ func TestRouteInputPrompt_CanceledMidStreamRecoversOnImmediateRetry(t *testing.T
 	if retryErr != nil {
 		t.Fatalf("retry RouteInputPrompt failed: %v", retryErr)
 	}
-	if retryResponse != "Echo: recover after cancel" {
+	if retryResponse != "Go retry recovered" {
 		t.Fatalf("unexpected retry response %q", retryResponse)
 	}
 
@@ -742,13 +759,16 @@ func TestRouteInputPrompt_CanceledMidStreamRecoversOnImmediateRetry(t *testing.T
 		t.Fatalf("failed reading tmux command log: %v", err)
 	}
 	commands := string(commandsRaw)
-	if !strings.Contains(commands, "[bridge] event=bridge_canceled") {
-		t.Fatalf("expected bridge_canceled event in tmux log, got:\n%s", commands)
+	if !strings.Contains(commands, "[bridge] event=go_chat_fallback_skipped") {
+		t.Fatalf("expected go_chat_fallback_skipped event in tmux log, got:\n%s", commands)
 	}
-	if strings.Count(commands, "[bridge] event=bridge_start") < 2 {
-		t.Fatalf("expected bridge restart after cancellation, got commands:\n%s", commands)
+	if !strings.Contains(commands, "[bridge] event=go_chat_response_ok") {
+		t.Fatalf("expected go_chat_response_ok event in tmux log, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "[assistant] Echo: recover after cancel") {
+	if strings.Contains(commands, "[bridge] event=bridge_start") {
+		t.Fatalf("did not expect Python bridge start telemetry in Go runtime, got:\n%s", commands)
+	}
+	if !strings.Contains(commands, "[assistant] Go retry recovered") {
 		t.Fatalf("expected successful retry render in tmux log, got:\n%s", commands)
 	}
 
@@ -761,9 +781,8 @@ func TestRouteInputPrompt_CanceledMidStreamRecoversOnImmediateRetry(t *testing.T
 // WHEN a prompt is routed through the bridge
 // THEN malformed frames are ignored and final response succeeds with response-ok observability.
 func TestRouteInputPrompt_MalformedJSONIsIgnoredAndResponseSucceeds(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available in test environment")
-	}
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
+	t.Setenv("AGENTX_CHAT_BACKEND", "echo")
 
 	projectDir := t.TempDir()
 	scriptPath := stageMalformedBridgeApplet(t, projectDir)
@@ -784,8 +803,8 @@ func TestRouteInputPrompt_MalformedJSONIsIgnoredAndResponseSucceeds(t *testing.T
 	if err != nil {
 		t.Fatalf("RouteInputPrompt failed: %v", err)
 	}
-	if response != "Noisy recovered: malformed input" {
-		t.Fatalf("expected recovered response, got %q", response)
+	if response != "Echo: malformed input" {
+		t.Fatalf("expected go-runtime response, got %q", response)
 	}
 
 	commandsRaw, err := os.ReadFile(logPath)
@@ -793,11 +812,14 @@ func TestRouteInputPrompt_MalformedJSONIsIgnoredAndResponseSucceeds(t *testing.T
 		t.Fatalf("failed reading tmux command log: %v", err)
 	}
 	commands := string(commandsRaw)
-	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
-		t.Fatalf("expected bridge_response_ok event in tmux log, got:\n%s", commands)
+	if !strings.Contains(commands, "[bridge] event=go_chat_response_ok") {
+		t.Fatalf("expected go_chat_response_ok event in tmux log, got:\n%s", commands)
 	}
 	if strings.Contains(commands, "[bridge] event=bridge_fallback") {
 		t.Fatalf("did not expect fallback for malformed-json tolerant route, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=bridge_response_ok") {
+		t.Fatalf("did not expect Python bridge response event in Go runtime, got:\n%s", commands)
 	}
 
 	if err := core.Shutdown(context.Background()); err != nil {
@@ -809,9 +831,27 @@ func TestRouteInputPrompt_MalformedJSONIsIgnoredAndResponseSucceeds(t *testing.T
 // WHEN prompts are routed twice
 // THEN first route falls back and second route recovers after restart with response-ok observability.
 func TestRouteInputPrompt_ErrorFrameFallbackThenRecovery(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available in test environment")
-	}
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
+	t.Setenv("AGENTX_CHAT_BACKEND", "ollama")
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		requestCount++
+		if requestCount == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprintln(w, `{"error":"unavailable"}`)
+			return
+		}
+		_, _ = fmt.Fprintln(w, `{"message":{"content":"Go backend recovered"}}`)
+	}))
+	defer server.Close()
+	t.Setenv("AGENTX_OLLAMA_HOST", server.URL)
+	t.Setenv("AGENTX_OLLAMA_MODEL", "test-model")
 
 	projectDir := t.TempDir()
 	scriptPath := stageErrorFrameBridgeApplet(t, projectDir)
@@ -840,8 +880,8 @@ func TestRouteInputPrompt_ErrorFrameFallbackThenRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second RouteInputPrompt failed: %v", err)
 	}
-	if secondResponse != "Error-frame recovered: second error-frame" {
-		t.Fatalf("expected recovered response, got %q", secondResponse)
+	if secondResponse != "Go backend recovered" {
+		t.Fatalf("expected recovered backend response, got %q", secondResponse)
 	}
 
 	commandsRaw, err := os.ReadFile(logPath)
@@ -849,17 +889,20 @@ func TestRouteInputPrompt_ErrorFrameFallbackThenRecovery(t *testing.T) {
 		t.Fatalf("failed reading tmux command log: %v", err)
 	}
 	commands := string(commandsRaw)
-	if !strings.Contains(commands, "[bridge] event=bridge_response_error") {
-		t.Fatalf("expected bridge_response_error in tmux log, got:\n%s", commands)
+	if !strings.Contains(commands, "[bridge] event=go_chat_fallback") {
+		t.Fatalf("expected go_chat_fallback in tmux log, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "[bridge] event=bridge_fallback") {
-		t.Fatalf("expected bridge_fallback in tmux log, got:\n%s", commands)
+	if !strings.Contains(commands, "[bridge] event=go_chat_response_ok") {
+		t.Fatalf("expected go_chat_response_ok in tmux log, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
-		t.Fatalf("expected bridge_response_ok in tmux log, got:\n%s", commands)
+	if strings.Contains(commands, "[bridge] event=bridge_response_error") {
+		t.Fatalf("did not expect bridge_response_error in Go runtime, got:\n%s", commands)
 	}
-	if strings.Count(commands, "[bridge] event=bridge_start") < 2 {
-		t.Fatalf("expected bridge restart across fallback/recovery, got:\n%s", commands)
+	if strings.Contains(commands, "[bridge] event=bridge_start") {
+		t.Fatalf("did not expect bridge_start in Go runtime, got:\n%s", commands)
+	}
+	if strings.Index(commands, "[bridge] event=go_chat_fallback") >= strings.Index(commands, "[bridge] event=go_chat_response_ok") {
+		t.Fatalf("expected fallback before recovery success in tmux log, got:\n%s", commands)
 	}
 
 	if err := core.Shutdown(context.Background()); err != nil {
@@ -871,9 +914,8 @@ func TestRouteInputPrompt_ErrorFrameFallbackThenRecovery(t *testing.T) {
 // WHEN a prompt is routed through the bridge
 // THEN empty chunks do not render stream output while final response and persistence still succeed.
 func TestRouteInputPrompt_EmptyChunkIgnoredWithPersistence(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available in test environment")
-	}
+	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
+	t.Setenv("AGENTX_CHAT_BACKEND", "echo")
 
 	projectDir := t.TempDir()
 	scriptPath := stageEmptyChunkBridgeApplet(t, projectDir)
@@ -894,7 +936,7 @@ func TestRouteInputPrompt_EmptyChunkIgnoredWithPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RouteInputPrompt failed: %v", err)
 	}
-	if response != "Empty-chunk recovered: empty chunk route" {
+	if response != "Echo: empty chunk route" {
 		t.Fatalf("unexpected response %q", response)
 	}
 
@@ -902,7 +944,7 @@ func TestRouteInputPrompt_EmptyChunkIgnoredWithPersistence(t *testing.T) {
 	if len(turns) != 1 {
 		t.Fatalf("expected one persisted turn, got %d", len(turns))
 	}
-	if turns[0].Response != "Empty-chunk recovered: empty chunk route" {
+	if turns[0].Response != "Echo: empty chunk route" {
 		t.Fatalf("expected persisted response to match final response, got %q", turns[0].Response)
 	}
 
@@ -917,8 +959,11 @@ func TestRouteInputPrompt_EmptyChunkIgnoredWithPersistence(t *testing.T) {
 	if strings.Contains(commands, "[bridge] event=bridge_chunk") {
 		t.Fatalf("did not expect bridge_chunk events for empty chunks, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "[bridge] event=bridge_response_ok") {
-		t.Fatalf("expected bridge_response_ok event, got:\n%s", commands)
+	if !strings.Contains(commands, "[bridge] event=go_chat_response_ok") {
+		t.Fatalf("expected go_chat_response_ok event, got:\n%s", commands)
+	}
+	if strings.Contains(commands, "[bridge] event=bridge_response_ok") {
+		t.Fatalf("did not expect Python bridge response telemetry, got:\n%s", commands)
 	}
 
 	if err := core.Shutdown(context.Background()); err != nil {

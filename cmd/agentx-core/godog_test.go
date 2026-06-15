@@ -39,7 +39,6 @@ type bddState struct {
 	inputResp    string
 	inputExit    bool
 	contextTurns []ChatTurn
-	chatPID      int
 	bridgeScript string
 	originalChatRuntime string
 	originalChatBackend string
@@ -69,7 +68,6 @@ func (s *bddState) reset() {
 	s.inputResp = ""
 	s.inputExit = false
 	s.contextTurns = nil
-	s.chatPID = 0
 	s.bridgeScript = ""
 	s.originalChatRuntime = ""
 	s.originalChatBackend = ""
@@ -897,47 +895,6 @@ func (s *bddState) contextTurnsShouldIncludeResponse(response string) error {
 	return fmt.Errorf("expected context turns to include response %q", response)
 }
 
-func (s *bddState) iCaptureTheTrackedChatAppletProcessPID() error {
-	if s.core == nil {
-		return errors.New("core not initialized")
-	}
-
-	s.core.mu.RLock()
-	defer s.core.mu.RUnlock()
-
-	chatApplet, exists := s.core.applets["chat"]
-	if !exists || chatApplet == nil || chatApplet.Cmd == nil || chatApplet.Cmd.Process == nil {
-		return errors.New("tracked chat applet process unavailable")
-	}
-
-	s.chatPID = chatApplet.Cmd.Process.Pid
-	return nil
-}
-
-func (s *bddState) trackedChatAppletProcessPIDShouldRemainTheSame() error {
-	if s.core == nil {
-		return errors.New("core not initialized")
-	}
-
-	s.core.mu.RLock()
-	defer s.core.mu.RUnlock()
-
-	chatApplet, exists := s.core.applets["chat"]
-	if !exists || chatApplet == nil || chatApplet.Cmd == nil || chatApplet.Cmd.Process == nil {
-		return errors.New("tracked chat applet process unavailable")
-	}
-
-	currentPID := chatApplet.Cmd.Process.Pid
-	if s.chatPID == 0 {
-		return errors.New("expected prior chat applet pid capture")
-	}
-	if s.chatPID != currentPID {
-		return fmt.Errorf("expected persistent chat applet pid %d, got %d", s.chatPID, currentPID)
-	}
-
-	return nil
-}
-
 func (s *bddState) tmuxInitializationShouldCompleteWithoutError() error {
 	if s.err != nil {
 		return s.err
@@ -1164,8 +1121,6 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^context turns should have length (\d+)$`, state.contextTurnsShouldHaveLength)
 	ctx.Step(`^context turns should include prompt "([^"]*)"$`, state.contextTurnsShouldIncludePrompt)
 	ctx.Step(`^context turns should include response "([^"]*)"$`, state.contextTurnsShouldIncludeResponse)
-	ctx.Step(`^I capture the tracked chat applet process pid$`, state.iCaptureTheTrackedChatAppletProcessPID)
-	ctx.Step(`^the tracked chat applet process pid should remain the same$`, state.trackedChatAppletProcessPIDShouldRemainTheSame)
 	ctx.Step(`^startup should name window 0 as "([^"]*)"$`, state.startupShouldNameWindowZeroAs)
 	ctx.Step(`^startup should select window 0$`, state.startupShouldSelectWindowZero)
 	ctx.Step(`^the core has a tracked applet "([^"]*)" on pane "([^"]*)"$`, state.theCoreHasATrackedAppletOnPane)

@@ -84,9 +84,10 @@ Feature: IPC router integration
     Then context turns should have length 1
     And context turns should include prompt "persist across restart"
 
-  Scenario: Python chat bridge process is reused across routed prompts
+  Scenario: Go chat runtime routes repeated prompts with direct telemetry and persistence
     Given a temporary project directory
-    And the project contains template chat applet
+    And I set chat runtime override to "python"
+    And I set chat backend override to "echo"
     And a core config with username "dev" and session "sess-7"
     And a fake tmux executable that records commands
     When I construct the AgentX core
@@ -95,15 +96,20 @@ Feature: IPC router integration
     And I route input prompt "bridge prompt one"
     Then prompt routing should complete without error
     And routed response should equal "Echo: bridge prompt one"
-    And I capture the tracked chat applet process pid
     When I route input prompt "bridge prompt two"
     Then prompt routing should complete without error
     And routed response should equal "Echo: bridge prompt two"
-    And the tracked chat applet process pid should remain the same
+    And tmux commands should include "[bridge] event=go_chat_route_start" at least 2 times
+    And tmux commands should include "[bridge] event=go_chat_response_ok" at least 2 times
+    And tmux commands should not include "[bridge] event=bridge_route_start"
+    When I capture the context turns snapshot
+    Then context turns should have length 2
+    And context turns should include response "Echo: bridge prompt two"
 
-  Scenario: Python bridge streaming renders chunks and persists final turn
+  Scenario: Go chat runtime renders final response without stream chunk events
     Given a temporary project directory
-    And the project contains template chat applet
+    And I set chat runtime override to "go"
+    And I set chat backend override to "echo"
     And a core config with username "dev" and session "sess-8"
     And a fake tmux executable that records commands
     When I construct the AgentX core
@@ -112,7 +118,8 @@ Feature: IPC router integration
     And I route input prompt "streaming godog prompt"
     Then prompt routing should complete without error
     And routed response should equal "Echo: streaming godog prompt"
-    And tmux commands should include "[assistant-stream]"
+    And tmux commands should not include "[assistant-stream]"
+    And tmux commands should include "[bridge] event=go_chat_response_ok"
     And tmux should include rendered chat response "Echo: streaming godog prompt"
     When I capture the context turns snapshot
     Then context turns should have length 1
@@ -135,78 +142,78 @@ Feature: IPC router integration
     And tmux command snippet "[context] turn=1" should appear before "[context] turn=2"
     And tmux commands should include "..."
 
-  Scenario: Bridge lifecycle events reflect timeout fallback and subsequent recovery
+  Scenario: Go chat backend delayed recovery transitions from direct fallback to direct success
     Given a temporary project directory
-    And the project contains flaky chat bridge applet
+    And I set chat runtime override to "go"
+    And I set chat backend override to "ollama"
+    And I start a sequenced delayed ollama backend with delay 120 ms and statuses 503 then 200
     And a core config with username "dev" and session "sess-10"
     And a fake tmux executable that records commands
     When I construct the AgentX core
-    And I configure core chat bridge to use prepared applet script with timeout 150 ms
     And I initialize the tmux session
     And I start the applet supervisor
-    And I route input prompt "first timeout"
+    And I route input prompt "delayed recovery first"
     Then prompt routing should complete without error
-    And routed response should equal "Echo: first timeout"
-    And tmux commands should include "[bridge] event=bridge_timeout"
-    And tmux commands should include "[bridge] event=bridge_fallback"
-    When I route input prompt "second recovery"
+    And routed response should equal "Echo: delayed recovery first"
+    And tmux commands should include "[bridge] event=go_chat_fallback"
+    And tmux commands should not include "[bridge] event=bridge_route_start"
+    When I route input prompt "delayed recovery second"
     Then prompt routing should complete without error
-    And routed response should equal "Flaky recovered: second recovery"
-    And tmux commands should include "[bridge] event=bridge_response_ok"
-    And tmux command snippet "[bridge] event=bridge_timeout" should appear before "[bridge] event=bridge_fallback"
-    And tmux command snippet "[bridge] event=bridge_fallback" should appear before "[bridge] event=bridge_response_ok"
-    And tmux commands should include "[bridge] event=bridge_start" at least 2 times
+    And routed response should equal "Delayed backend recovery reply"
+    And tmux commands should include "[bridge] event=go_chat_response_ok"
+    And tmux command snippet "[bridge] event=go_chat_fallback" should appear before "[bridge] event=go_chat_response_ok"
 
-  Scenario: Malformed bridge frames are tolerated without fallback
+  Scenario: Go runtime emits direct success telemetry for deterministic responses
     Given a temporary project directory
-    And the project contains malformed chat bridge applet
+    And I set chat runtime override to "go"
+    And I set chat backend override to "echo"
     And a core config with username "dev" and session "sess-11"
     And a fake tmux executable that records commands
     When I construct the AgentX core
-    And I configure core chat bridge to use prepared applet script with timeout 300 ms
     And I initialize the tmux session
     And I start the applet supervisor
     And I route input prompt "malformed case"
     Then prompt routing should complete without error
-    And routed response should equal "Malformed recovered: malformed case"
-    And tmux commands should include "[bridge] event=bridge_response_ok"
+    And routed response should equal "Echo: malformed case"
+    And tmux commands should include "[bridge] event=go_chat_response_ok"
     And tmux commands should not include "[bridge] event=bridge_fallback"
+    And tmux commands should not include "[bridge] event=bridge_response_ok"
 
-  Scenario: Error frame triggers fallback then recovery on next prompt
+  Scenario: Go runtime records fallback before subsequent backend recovery
     Given a temporary project directory
-    And the project contains error-frame chat bridge applet
+    And I set chat runtime override to "go"
+    And I set chat backend override to "ollama"
+    And I start a sequenced delayed ollama backend with delay 120 ms and statuses 503 then 200
     And a core config with username "dev" and session "sess-12"
     And a fake tmux executable that records commands
     When I construct the AgentX core
-    And I configure core chat bridge to use prepared applet script with timeout 300 ms
     And I initialize the tmux session
     And I start the applet supervisor
-    And I route input prompt "error first"
+    And I route input prompt "recover first"
     Then prompt routing should complete without error
-    And routed response should equal "Echo: error first"
-    And tmux commands should include "[bridge] event=bridge_response_error"
-    And tmux commands should include "[bridge] event=bridge_fallback"
+    And routed response should equal "Echo: recover first"
+    And tmux commands should include "[bridge] event=go_chat_fallback"
+    And tmux commands should not include "[bridge] event=bridge_response_error"
     When I route input prompt "recover second"
     Then prompt routing should complete without error
-    And routed response should equal "Error recovered: recover second"
-    And tmux commands should include "[bridge] event=bridge_response_ok"
-    And tmux command snippet "[bridge] event=bridge_response_error" should appear before "[bridge] event=bridge_fallback"
-    And tmux command snippet "[bridge] event=bridge_fallback" should appear before "[bridge] event=bridge_response_ok"
-    And tmux commands should include "[bridge] event=bridge_start" at least 2 times
+    And routed response should equal "Delayed backend recovery reply"
+    And tmux commands should include "[bridge] event=go_chat_response_ok"
+    And tmux command snippet "[bridge] event=go_chat_fallback" should appear before "[bridge] event=go_chat_response_ok"
+    And tmux commands should not include "[bridge] event=bridge_start"
 
-  Scenario: Empty chunk frames do not emit stream chunk events
+  Scenario: Go runtime produces no stream chunk events for echo responses
     Given a temporary project directory
-    And the project contains empty-chunk chat bridge applet
+    And I set chat runtime override to "go"
+    And I set chat backend override to "echo"
     And a core config with username "dev" and session "sess-13"
     And a fake tmux executable that records commands
     When I construct the AgentX core
-    And I configure core chat bridge to use prepared applet script with timeout 300 ms
     And I initialize the tmux session
     And I start the applet supervisor
     And I route input prompt "empty chunk integration"
     Then prompt routing should complete without error
-    And routed response should equal "Empty recovered: empty chunk integration"
-    And tmux commands should include "[bridge] event=bridge_response_ok"
+    And routed response should equal "Echo: empty chunk integration"
+    And tmux commands should include "[bridge] event=go_chat_response_ok"
     And tmux commands should not include "[bridge] event=bridge_chunk"
     And tmux commands should not include "[assistant-stream]"
 
