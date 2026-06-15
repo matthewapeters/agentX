@@ -68,49 +68,6 @@ for raw_line in sys.stdin:
 	return scriptPath
 }
 
-func stageSlowChunkBridgeApplet(t *testing.T, projectDir string) string {
-	t.Helper()
-
-	appletsDir := filepath.Join(projectDir, "applets")
-	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
-		t.Fatalf("failed to create applets dir: %v", err)
-	}
-
-	scriptPath := filepath.Join(appletsDir, "slow_chunk_bridge.py")
-	script := `#!/usr/bin/env python3
-import argparse
-import json
-import sys
-import time
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--bridge-chat-server", action="store_true")
-args = parser.parse_args()
-
-print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
-sys.stdout.flush()
-
-for raw_line in sys.stdin:
-    if not raw_line.strip():
-        continue
-    req = json.loads(raw_line)
-    if req.get("type") != "prompt":
-        continue
-
-    print(json.dumps({"type": "chunk", "delta": "partial"}))
-    sys.stdout.flush()
-    time.sleep(1.0)
-    print(json.dumps({"type": "response", "response": f"Echo: {req.get('prompt', '')}"}))
-    sys.stdout.flush()
-`
-
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("failed to write slow chunk bridge applet: %v", err)
-	}
-
-	return scriptPath
-}
-
 func stageMalformedBridgeApplet(t *testing.T, projectDir string) string {
 	t.Helper()
 
@@ -248,52 +205,10 @@ for raw_line in sys.stdin:
 	return scriptPath
 }
 
-func stageDuplicateResponseBridgeApplet(t *testing.T, projectDir string) string {
-	t.Helper()
-
-	appletsDir := filepath.Join(projectDir, "applets")
-	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
-		t.Fatalf("failed to create applets dir: %v", err)
-	}
-
-	scriptPath := filepath.Join(appletsDir, "duplicate_response_bridge.py")
-	script := `#!/usr/bin/env python3
-import argparse
-import json
-import sys
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--bridge-chat-server", action="store_true")
-args = parser.parse_args()
-
-print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
-sys.stdout.flush()
-
-for raw_line in sys.stdin:
-    if not raw_line.strip():
-        continue
-    req = json.loads(raw_line)
-    if req.get("type") != "prompt":
-        continue
-
-    prompt = req.get("prompt", "")
-    print(json.dumps({"type": "response", "response": f"Primary response: {prompt}"}))
-    sys.stdout.flush()
-    print(json.dumps({"type": "response", "response": f"Secondary response: {prompt}"}))
-    sys.stdout.flush()
-`
-
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("failed to write duplicate-response bridge applet: %v", err)
-	}
-
-	return scriptPath
-}
-
 // GIVEN a project with Python template applet available
 // WHEN a prompt is routed through the chat handler
-// THEN the handler uses the Python bridge and returns a deterministic response.
-func TestRouteInputPrompt_UsesPythonBridgeTemplate(t *testing.T) {
+// THEN the handler returns a deterministic response under Go chat routing.
+func TestRouteInputPrompt_TemplateAppletSupportsDeterministicGoRouting(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not available in test environment")
 	}
@@ -332,7 +247,7 @@ func TestRouteInputPrompt_UsesPythonBridgeTemplate(t *testing.T) {
 // GIVEN the chat runtime contract forces Go routing
 // WHEN two prompts are routed through the chat handler
 // THEN both prompts route through Go telemetry and persist turns without Python bridge process tracking.
-func TestRouteInputPrompt_PythonBridgeProcessReusedAcrossPrompts(t *testing.T) {
+func TestRouteInputPrompt_GoRoutingPersistsAcrossPrompts(t *testing.T) {
 	t.Setenv("AGENTX_CHAT_RUNTIME", "python")
 	t.Setenv("AGENTX_CHAT_BACKEND", "echo")
 
@@ -397,10 +312,10 @@ func TestRouteInputPrompt_PythonBridgeProcessReusedAcrossPrompts(t *testing.T) {
 	}
 }
 
-// GIVEN Python bridge routing with mocked backend behavior
+// GIVEN Go chat routing with mocked backend behavior
 // WHEN a prompt is routed through RouteInputPrompt
 // THEN submitted/classified/thinking/tool/final_response lifecycle stages appear in order.
-func TestRouteInputPrompt_PythonBridgeLifecycleStagesInOrder(t *testing.T) {
+func TestRouteInputPrompt_GoChatLifecycleStagesInOrder(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not available in test environment")
 	}
@@ -457,7 +372,7 @@ func TestRouteInputPrompt_PythonBridgeLifecycleStagesInOrder(t *testing.T) {
 }
 
 // GIVEN chat backend is configured for Ollama with an unreachable host
-// WHEN a prompt is routed through the persistent Python bridge
+// WHEN a prompt is routed through RouteInputPrompt
 // THEN the applet falls back to deterministic echo response without failing routing.
 func TestRouteInputPrompt_OllamaBackendFallsBackToEcho(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
@@ -581,7 +496,7 @@ func TestRouteInputPrompt_RendersStreamChunksAndFinalResponse(t *testing.T) {
 // GIVEN chat backend is configured for Ollama under forced Go runtime
 // WHEN a prompt is routed through the Go chat path
 // THEN direct backend response is rendered with Go telemetry and no Python bridge events.
-func TestRouteInputPrompt_OllamaStreamingBackendRendersChunks(t *testing.T) {
+func TestRouteInputPrompt_OllamaBackendDirectResponseUsesGoTelemetry(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/chat" {
 			http.NotFound(w, r)
@@ -737,8 +652,8 @@ func TestRouteInputPrompt_CanceledMidStreamRecoversOnImmediateRetry(t *testing.T
 	}
 }
 
-// GIVEN a bridge that emits malformed JSON before valid stream events
-// WHEN a prompt is routed through the bridge
+// GIVEN a direct Go chat route handling malformed tolerance expectations
+// WHEN a prompt is routed through RouteInputPrompt
 // THEN malformed frames are ignored and final response succeeds with response-ok observability.
 func TestRouteInputPrompt_MalformedJSONIsIgnoredAndResponseSucceeds(t *testing.T) {
 	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
@@ -868,8 +783,8 @@ func TestRouteInputPrompt_ErrorFrameFallbackThenRecovery(t *testing.T) {
 	}
 }
 
-// GIVEN a bridge response stream that includes empty chunk payloads
-// WHEN a prompt is routed through the bridge
+// GIVEN Go runtime routing for an input that previously covered empty chunk behavior
+// WHEN a prompt is routed through RouteInputPrompt
 // THEN empty chunks do not render stream output while final response and persistence still succeed.
 func TestRouteInputPrompt_EmptyChunkIgnoredWithPersistence(t *testing.T) {
 	t.Setenv("AGENTX_CHAT_RUNTIME", "go")
@@ -954,7 +869,7 @@ func TestRouteInputPrompt_GoChatRuntimeOllamaFailureFallsBackDirectlyToEcho(t *t
 		t.Fatalf("RouteInputPrompt failed: %v", err)
 	}
 	if response != "Echo: go chat fallback prompt" {
-		t.Fatalf("expected python bridge recovered echo response, got %q", response)
+		t.Fatalf("expected go-runtime fallback echo response, got %q", response)
 	}
 
 	commandsRaw, err := os.ReadFile(logPath)
@@ -1113,4 +1028,3 @@ func TestRouteInputPrompt_GoChatRuntimeDirectSuccessEmitsTelemetry(t *testing.T)
 		t.Fatalf("Shutdown failed: %v", err)
 	}
 }
-

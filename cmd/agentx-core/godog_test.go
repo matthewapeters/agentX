@@ -18,32 +18,31 @@ import (
 )
 
 type bddState struct {
-	tmpDir       string
-	cfg          *Config
-	core         *AgentXCore
-	layout       []PaneConfig
-	router       *IPCRouter
-	inputFIFO    string
-	outputFIFO   string
-	err          error
-	contextMgr   *ContextManager
-	healthErr    error
-	cancelCtx    context.Context
-	fakeTmuxLog  string
-	oldPath      string
-	oldTmuxLog   string
-	oldPaneMode  string
-	tmuxCommands string
-	snapshot     HealthSnapshot
-	routedResp   string
-	inputResp    string
-	inputExit    bool
-	contextTurns []ChatTurn
-	bridgeScript string
+	tmpDir              string
+	cfg                 *Config
+	core                *AgentXCore
+	layout              []PaneConfig
+	router              *IPCRouter
+	inputFIFO           string
+	outputFIFO          string
+	err                 error
+	contextMgr          *ContextManager
+	healthErr           error
+	cancelCtx           context.Context
+	fakeTmuxLog         string
+	oldPath             string
+	oldTmuxLog          string
+	oldPaneMode         string
+	tmuxCommands        string
+	snapshot            HealthSnapshot
+	routedResp          string
+	inputResp           string
+	inputExit           bool
+	contextTurns        []ChatTurn
 	originalChatRuntime string
 	originalChatBackend string
-	originalOllamaHost string
-	backendStubServer *httptest.Server
+	originalOllamaHost  string
+	backendStubServer   *httptest.Server
 }
 
 func (s *bddState) reset() {
@@ -68,7 +67,6 @@ func (s *bddState) reset() {
 	s.inputResp = ""
 	s.inputExit = false
 	s.contextTurns = nil
-	s.bridgeScript = ""
 	s.originalChatRuntime = ""
 	s.originalChatBackend = ""
 	s.originalOllamaHost = ""
@@ -193,239 +191,6 @@ func (s *bddState) setOllamaHostOverride(host string) error {
 	return os.Setenv("AGENTX_OLLAMA_HOST", strings.TrimSpace(host))
 }
 
-func stageFlakyBridgeApplet(projectDir string) (string, error) {
-	appletsDir := filepath.Join(projectDir, "applets")
-	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create applets dir: %w", err)
-	}
-
-	scriptPath := filepath.Join(appletsDir, "flaky_bridge.py")
-	markerPath := filepath.Join(appletsDir, ".flaky_once_marker")
-	script := fmt.Sprintf(`#!/usr/bin/env python3
-import argparse
-import json
-import os
-import sys
-import time
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--bridge-chat-server", action="store_true")
-args = parser.parse_args()
-
-marker_path = %q
-
-print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
-sys.stdout.flush()
-
-for raw_line in sys.stdin:
-	if not raw_line.strip():
-		continue
-	req = json.loads(raw_line)
-	if req.get("type") != "prompt":
-		continue
-
-	if not os.path.exists(marker_path):
-		with open(marker_path, "w", encoding="utf-8") as marker_file:
-			marker_file.write("first-timeout-done\n")
-		time.sleep(1.0)
-		continue
-
-	prompt = req.get("prompt", "")
-	print(json.dumps({"type": "chunk", "delta": "Flaky"}))
-	sys.stdout.flush()
-	print(json.dumps({"type": "chunk", "delta": "recovered:"}))
-	sys.stdout.flush()
-	print(json.dumps({"type": "chunk", "delta": prompt}))
-	sys.stdout.flush()
-	print(json.dumps({"type": "response", "response": f"Flaky recovered: {prompt}"}))
-	sys.stdout.flush()
-`, markerPath)
-
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		return "", fmt.Errorf("failed to write flaky bridge applet: %w", err)
-	}
-
-	return scriptPath, nil
-}
-
-func stageMalformedBridgeAppletBDD(projectDir string) (string, error) {
-	appletsDir := filepath.Join(projectDir, "applets")
-	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create applets dir: %w", err)
-	}
-
-	scriptPath := filepath.Join(appletsDir, "malformed_bridge.py")
-	script := `#!/usr/bin/env python3
-import argparse
-import json
-import sys
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--bridge-chat-server", action="store_true")
-args = parser.parse_args()
-
-print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
-sys.stdout.flush()
-
-for raw_line in sys.stdin:
-	if not raw_line.strip():
-		continue
-	req = json.loads(raw_line)
-	if req.get("type") != "prompt":
-		continue
-
-	print("not-json")
-	sys.stdout.flush()
-	prompt = req.get("prompt", "")
-	print(json.dumps({"type": "response", "response": f"Malformed recovered: {prompt}"}))
-	sys.stdout.flush()
-`
-
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		return "", fmt.Errorf("failed to write malformed bridge applet: %w", err)
-	}
-
-	return scriptPath, nil
-}
-
-func stageErrorFrameBridgeAppletBDD(projectDir string) (string, error) {
-	appletsDir := filepath.Join(projectDir, "applets")
-	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create applets dir: %w", err)
-	}
-
-	scriptPath := filepath.Join(appletsDir, "error_frame_bridge.py")
-	markerPath := filepath.Join(appletsDir, ".error_frame_once_marker")
-	script := fmt.Sprintf(`#!/usr/bin/env python3
-import argparse
-import json
-import os
-import sys
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--bridge-chat-server", action="store_true")
-args = parser.parse_args()
-
-marker_path = %q
-
-print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
-sys.stdout.flush()
-
-for raw_line in sys.stdin:
-	if not raw_line.strip():
-		continue
-	req = json.loads(raw_line)
-	if req.get("type") != "prompt":
-		continue
-
-	prompt = req.get("prompt", "")
-	if not os.path.exists(marker_path):
-		with open(marker_path, "w", encoding="utf-8") as marker_file:
-			marker_file.write("error-triggered\n")
-		print(json.dumps({"type": "error", "error": "synthetic error frame"}))
-		sys.stdout.flush()
-		continue
-
-	print(json.dumps({"type": "response", "response": f"Error recovered: {prompt}"}))
-	sys.stdout.flush()
-`, markerPath)
-
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		return "", fmt.Errorf("failed to write error-frame bridge applet: %w", err)
-	}
-
-	return scriptPath, nil
-}
-
-func stageEmptyChunkBridgeAppletBDD(projectDir string) (string, error) {
-	appletsDir := filepath.Join(projectDir, "applets")
-	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create applets dir: %w", err)
-	}
-
-	scriptPath := filepath.Join(appletsDir, "empty_chunk_bridge.py")
-	script := `#!/usr/bin/env python3
-import argparse
-import json
-import sys
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--bridge-chat-server", action="store_true")
-args = parser.parse_args()
-
-print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
-sys.stdout.flush()
-
-for raw_line in sys.stdin:
-	if not raw_line.strip():
-		continue
-	req = json.loads(raw_line)
-	if req.get("type") != "prompt":
-		continue
-
-	prompt = req.get("prompt", "")
-	print(json.dumps({"type": "chunk", "delta": "   "}))
-	sys.stdout.flush()
-	print(json.dumps({"type": "response", "response": f"Empty recovered: {prompt}"}))
-	sys.stdout.flush()
-`
-
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		return "", fmt.Errorf("failed to write empty-chunk bridge applet: %w", err)
-	}
-
-	return scriptPath, nil
-}
-
-func stageStartupLatencyBridgeAppletBDD(projectDir string) (string, error) {
-	appletsDir := filepath.Join(projectDir, "applets")
-	if err := os.MkdirAll(appletsDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create applets dir: %w", err)
-	}
-
-	scriptPath := filepath.Join(appletsDir, "startup_latency_bridge.py")
-	markerPath := filepath.Join(appletsDir, ".startup_latency_once_marker")
-	script := fmt.Sprintf(`#!/usr/bin/env python3
-import argparse
-import json
-import os
-import sys
-import time
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--bridge-chat-server", action="store_true")
-args = parser.parse_args()
-
-marker_path = %q
-
-# Simulate intermittent process startup latency for the first bridge process only.
-if not os.path.exists(marker_path):
-	with open(marker_path, "w", encoding="utf-8") as marker_file:
-		marker_file.write("slow-start-consumed\n")
-	time.sleep(0.45)
-
-print("READY " + json.dumps({"type": "ready", "applet": "chat", "session": "test"}))
-sys.stdout.flush()
-
-for raw_line in sys.stdin:
-	if not raw_line.strip():
-		continue
-	req = json.loads(raw_line)
-	if req.get("type") != "prompt":
-		continue
-
-	prompt = req.get("prompt", "")
-	print(json.dumps({"type": "response", "response": f"Startup latency recovered: {prompt}"}))
-	sys.stdout.flush()
-`, markerPath)
-
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		return "", fmt.Errorf("failed to write startup-latency bridge applet: %w", err)
-	}
-
-	return scriptPath, nil
-}
-
 func (s *bddState) theProjectContainsTemplateChatApplet() error {
 	if s.tmpDir == "" {
 		return errors.New("temporary project directory not initialized")
@@ -455,76 +220,6 @@ func (s *bddState) iHaveATemporaryProjectDirectory() error {
 		return err
 	}
 	s.tmpDir = d
-	return nil
-}
-
-func (s *bddState) theProjectContainsFlakyChatBridgeApplet() error {
-	if s.tmpDir == "" {
-		return errors.New("temporary project directory not initialized")
-	}
-
-	scriptPath, err := stageFlakyBridgeApplet(s.tmpDir)
-	if err != nil {
-		return err
-	}
-
-	s.bridgeScript = scriptPath
-	return nil
-}
-
-func (s *bddState) theProjectContainsMalformedChatBridgeApplet() error {
-	if s.tmpDir == "" {
-		return errors.New("temporary project directory not initialized")
-	}
-
-	scriptPath, err := stageMalformedBridgeAppletBDD(s.tmpDir)
-	if err != nil {
-		return err
-	}
-
-	s.bridgeScript = scriptPath
-	return nil
-}
-
-func (s *bddState) theProjectContainsErrorFrameChatBridgeApplet() error {
-	if s.tmpDir == "" {
-		return errors.New("temporary project directory not initialized")
-	}
-
-	scriptPath, err := stageErrorFrameBridgeAppletBDD(s.tmpDir)
-	if err != nil {
-		return err
-	}
-
-	s.bridgeScript = scriptPath
-	return nil
-}
-
-func (s *bddState) theProjectContainsEmptyChunkChatBridgeApplet() error {
-	if s.tmpDir == "" {
-		return errors.New("temporary project directory not initialized")
-	}
-
-	scriptPath, err := stageEmptyChunkBridgeAppletBDD(s.tmpDir)
-	if err != nil {
-		return err
-	}
-
-	s.bridgeScript = scriptPath
-	return nil
-}
-
-func (s *bddState) theProjectContainsStartupLatencyChatBridgeApplet() error {
-	if s.tmpDir == "" {
-		return errors.New("temporary project directory not initialized")
-	}
-
-	scriptPath, err := stageStartupLatencyBridgeAppletBDD(s.tmpDir)
-	if err != nil {
-		return err
-	}
-
-	s.bridgeScript = scriptPath
 	return nil
 }
 
@@ -1056,11 +751,6 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 
 	ctx.Step(`^a temporary project directory$`, state.iHaveATemporaryProjectDirectory)
 	ctx.Step(`^the project contains template chat applet$`, state.theProjectContainsTemplateChatApplet)
-	ctx.Step(`^the project contains flaky chat bridge applet$`, state.theProjectContainsFlakyChatBridgeApplet)
-	ctx.Step(`^the project contains malformed chat bridge applet$`, state.theProjectContainsMalformedChatBridgeApplet)
-	ctx.Step(`^the project contains error-frame chat bridge applet$`, state.theProjectContainsErrorFrameChatBridgeApplet)
-	ctx.Step(`^the project contains empty-chunk chat bridge applet$`, state.theProjectContainsEmptyChunkChatBridgeApplet)
-	ctx.Step(`^the project contains startup-latency chat bridge applet$`, state.theProjectContainsStartupLatencyChatBridgeApplet)
 	ctx.Step(`^I set chat runtime override to "([^"]*)"$`, state.setChatRuntimeOverride)
 	ctx.Step(`^I set chat backend override to "([^"]*)"$`, state.setChatBackendOverride)
 	ctx.Step(`^I set ollama host override to "([^"]*)"$`, state.setOllamaHostOverride)
