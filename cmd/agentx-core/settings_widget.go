@@ -49,7 +49,7 @@ var approvedSettingsFields = []settingsField{
 	{Section: "agentx", Key: "ollama_model", Kind: settingsFieldEnum, Options: []string{"qwen3.6:latest", "llama3.2", "phi4-mini:3.8b"}},
 	{Section: "agentx", Key: "chat_backend", Kind: settingsFieldEnum, Options: []string{"ollama", "echo"}},
 	{Section: "agentx", Key: "ollama_host", Kind: settingsFieldEnum, Options: []string{"localhost:11434", "127.0.0.1:11434"}},
-	{Section: "agentx", Key: "chat_runtime", Kind: settingsFieldEnum, Options: []string{"go", "python"}},
+	{Section: "agentx", Key: "chat_runtime", Kind: settingsFieldEnum, Options: []string{"go"}},
 	{Section: "agentx", Key: "submit_timeout_seconds", Kind: settingsFieldInt, Options: []string{"30", "60", "120", "180"}},
 	{Section: "agentx", Key: "submit_execution_timeout_seconds", Kind: settingsFieldInt, Options: []string{"30", "60", "120", "180"}},
 	{Section: "agentx", Key: "context_history_session_sort", Kind: settingsFieldEnum, Options: []string{"Ascending", "Descending"}},

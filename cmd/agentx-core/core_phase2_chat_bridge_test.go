@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -497,43 +496,6 @@ func TestRouteInputPrompt_OllamaBackendFallsBackToEcho(t *testing.T) {
 }
 
 // GIVEN a hanging chat bridge applet process
-// WHEN direct bridge routing is called
-// THEN it returns a timeout error bounded by configured response timeout.
-func TestRoutePromptViaPythonChatApplet_TimesOutOnNoResponse(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available in test environment")
-	}
-
-	projectDir := t.TempDir()
-	hangingScript := stageHangingBridgeApplet(t, projectDir)
-
-	setupFakeTmux(t)
-	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-timeout-direct"}
-	core := NewAgentXCore(cfg)
-	core.chatAppletScript = hangingScript
-	core.chatBridgeResponseTimeout = 150 * time.Millisecond
-
-	if err := core.InitializeTmuxSession(context.Background()); err != nil {
-		t.Fatalf("InitializeTmuxSession failed: %v", err)
-	}
-	if err := core.StartAppletSupervisor(context.Background()); err != nil {
-		t.Fatalf("StartAppletSupervisor failed: %v", err)
-	}
-
-	_, err := core.routePromptViaPythonChatApplet(context.Background(), "timeout direct")
-	if err == nil {
-		t.Fatal("expected timeout error, got nil")
-	}
-	if got := err.Error(); got == "" || !strings.Contains(got, "timeout") {
-		t.Fatalf("expected timeout error, got %q", got)
-	}
-
-	if err := core.Shutdown(context.Background()); err != nil {
-		t.Fatalf("Shutdown failed: %v", err)
-	}
-}
-
-// GIVEN a hanging chat bridge applet process
 // WHEN prompt routing occurs through the public RouteInputPrompt path
 // THEN the chat handler falls back to deterministic echo response.
 func TestRouteInputPrompt_HangingBridgeFallsBackToEcho(t *testing.T) {
@@ -548,7 +510,6 @@ func TestRouteInputPrompt_HangingBridgeFallsBackToEcho(t *testing.T) {
 	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-timeout-fallback"}
 	core := NewAgentXCore(cfg)
 	core.chatAppletScript = hangingScript
-	core.chatBridgeResponseTimeout = 150 * time.Millisecond
 
 	if err := core.InitializeTmuxSession(context.Background()); err != nil {
 		t.Fatalf("InitializeTmuxSession failed: %v", err)
@@ -1158,73 +1119,3 @@ func TestRouteInputPrompt_GoChatRuntimeDirectSuccessEmitsTelemetry(t *testing.T)
 	}
 }
 
-// GIVEN a bridge response stream with duplicate response frames
-// WHEN parsing bridge output
-// THEN the first response frame is authoritative.
-func TestReadChatBridgeResponseFromScanner_DuplicateResponseUsesFirst(t *testing.T) {
-	t.Parallel()
-
-	scanner := bufio.NewScanner(strings.NewReader(strings.Join([]string{
-		`READY {"type":"ready"}`,
-		`{"type":"response","response":"primary"}`,
-		`{"type":"response","response":"secondary"}`,
-	}, "\n")))
-
-	result := readChatBridgeResponseFromScanner(scanner, nil)
-	if result.err != nil {
-		t.Fatalf("expected no error, got %v", result.err)
-	}
-	if result.response != "primary" {
-		t.Fatalf("expected primary response, got %q", result.response)
-	}
-}
-
-// GIVEN a bridge stream containing malformed frames before valid frames
-// WHEN parsing bridge output
-// THEN malformed frames are ignored and valid chunk/response frames are processed.
-func TestReadChatBridgeResponseFromScanner_MalformedFramesIgnored(t *testing.T) {
-	t.Parallel()
-
-	chunks := []string{}
-	scanner := bufio.NewScanner(strings.NewReader(strings.Join([]string{
-		`READY {"type":"ready"}`,
-		`not-json`,
-		`{"type":"chunk","delta":"valid"}`,
-		`{"type":"response","response":"valid response"}`,
-	}, "\n")))
-
-	result := readChatBridgeResponseFromScanner(scanner, func(delta string) error {
-		chunks = append(chunks, delta)
-		return nil
-	})
-	if result.err != nil {
-		t.Fatalf("expected no error, got %v", result.err)
-	}
-	if result.response != "valid response" {
-		t.Fatalf("unexpected response %q", result.response)
-	}
-	if len(chunks) != 1 || chunks[0] != "valid" {
-		t.Fatalf("expected one valid chunk callback, got %v", chunks)
-	}
-}
-
-// GIVEN a bridge stream with a terminal response followed by late error frame
-// WHEN parsing bridge output
-// THEN terminal response is returned and late frames are ignored for that parse cycle.
-func TestReadChatBridgeResponseFromScanner_LateErrorAfterResponseIgnored(t *testing.T) {
-	t.Parallel()
-
-	scanner := bufio.NewScanner(strings.NewReader(strings.Join([]string{
-		`READY {"type":"ready"}`,
-		`{"type":"response","response":"done"}`,
-		`{"type":"error","error":"late"}`,
-	}, "\n")))
-
-	result := readChatBridgeResponseFromScanner(scanner, nil)
-	if result.err != nil {
-		t.Fatalf("expected no error, got %v", result.err)
-	}
-	if result.response != "done" {
-		t.Fatalf("expected done response, got %q", result.response)
-	}
-}

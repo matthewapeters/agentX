@@ -627,19 +627,6 @@ func (s *bddState) iConstructTheAgentXCore() error {
 	return nil
 }
 
-func (s *bddState) iConfigureCoreChatBridgeToUsePreparedAppletScriptWithTimeoutMs(timeoutMs int) error {
-	if s.core == nil {
-		return errors.New("core not initialized")
-	}
-	if s.bridgeScript == "" {
-		return errors.New("prepared bridge script not initialized")
-	}
-
-	s.core.chatAppletScript = s.bridgeScript
-	s.core.chatBridgeResponseTimeout = time.Duration(timeoutMs) * time.Millisecond
-	return nil
-}
-
 func (s *bddState) theCoreSessionIDShouldBeNonempty() error {
 	if s.core == nil || s.core.SessionID == "" {
 		return errors.New("expected non-empty session id")
@@ -1090,7 +1077,6 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^FIFO paths should include applet name "([^"]*)"$`, state.fifoPathsShouldIncludeAppletName)
 	ctx.Step(`^a core config with username "([^"]*)" and session "([^"]*)"$`, state.aCoreConfigWithUsernameAndSession)
 	ctx.Step(`^I construct the AgentX core$`, state.iConstructTheAgentXCore)
-	ctx.Step(`^I configure core chat bridge to use prepared applet script with timeout (\d+) ms$`, state.iConfigureCoreChatBridgeToUsePreparedAppletScriptWithTimeoutMs)
 	ctx.Step(`^the core session id should be non-empty$`, state.theCoreSessionIDShouldBeNonempty)
 	ctx.Step(`^the core tmux session name should include username "([^"]*)"$`, state.theCoreTmuxSessionNameShouldIncludeUsername)
 	ctx.Step(`^a context manager with a temporary context directory$`, state.aContextManagerWithATemporaryContextDirectory)

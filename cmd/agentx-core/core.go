@@ -384,7 +384,6 @@ type AgentXCore struct {
 	applets                   map[string]*AppletProcess
 	pythonExecutable          string
 	chatAppletScript          string
-	chatBridgeResponseTimeout time.Duration
 	inputHistory              []string
 	exitRequested             bool
 	mu                        sync.RWMutex
@@ -495,18 +494,6 @@ func deriveActivityState(promptCycle PromptCycleStatus) (state string, phase str
 	return "idle", "none"
 }
 
-type chatBridgeRequest struct {
-	Type   string `json:"type"`
-	Prompt string `json:"prompt"`
-}
-
-type chatBridgeResponse struct {
-	Type     string `json:"type"`
-	Response string `json:"response,omitempty"`
-	Delta    string `json:"delta,omitempty"`
-	Error    string `json:"error,omitempty"`
-}
-
 type appletBaseRuntimeConfig struct {
 	SessionID            string
 	CoreHTTP             string
@@ -524,6 +511,10 @@ const (
 	appletRuntimePython appletRuntimeKind = "python"
 	appletRuntimeGo     appletRuntimeKind = "go"
 )
+
+func (k appletRuntimeKind) String() string {
+	return string(k)
+}
 
 type appletRuntimeSpec struct {
 	Name     string
@@ -605,7 +596,6 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 		applets:                   make(map[string]*AppletProcess),
 		pythonExecutable:          "python3",
 		chatAppletScript:          filepath.Join(cfg.ProjectDir, "applets", "template.py"),
-		chatBridgeResponseTimeout: runtimeConfig.ChatBridgeResponseTimeout,
 		inputHistory:              make([]string, 0),
 		startedAt:                 time.Now(),
 		healthAddr:                "127.0.0.1:0",
@@ -1126,11 +1116,7 @@ func (ac *AgentXCore) StartAppletSupervisor(ctx context.Context) error {
 
 		handler := defaultPromptHandler(spec.Name)
 		if spec.Name == "chat" {
-			if spec.Runtime == appletRuntimeGo {
-				handler = ac.goChatPromptHandler()
-			} else {
-				handler = ac.pythonChatPromptHandler()
-			}
+			handler = ac.goChatPromptHandler()
 		}
 
 		applet.Runtime = spec.Runtime
@@ -1267,37 +1253,7 @@ func (ac *AgentXCore) emitStartupGreetingLifecycleEvent(ctx context.Context) {
 	ac.startupLifecycleEmitted = true
 	ac.mu.Unlock()
 
-	if details, ok := ac.runtimeContractSignalDetails(); ok {
-		ac.emitLifecycleEvent(ctx, lifecycleStageRuntimeContract, details)
-	}
-
 	ac.emitLifecycleEvent(ctx, lifecycleStageStartupGreeting, "hook=runtime_ready")
-}
-
-func (ac *AgentXCore) runtimeContractSignalDetails() (string, bool) {
-	configuredRuntime := resolveChatRuntimeKind(ac.runtimeConfig.ChatRuntime)
-	effectiveChatRuntime := appletRuntimeGo
-
-	for _, spec := range ac.defaultAppletRuntimeSpecs() {
-		if spec.Name == "chat" {
-			effectiveChatRuntime = spec.Runtime
-			break
-		}
-	}
-
-	if configuredRuntime == effectiveChatRuntime {
-		return "", false
-	}
-
-	if configuredRuntime != appletRuntimeGo && effectiveChatRuntime == appletRuntimeGo {
-		return fmt.Sprintf(
-			"hook=chat_runtime_forced_go configured_chat_runtime=%s effective_chat_runtime=%s",
-			configuredRuntime,
-			effectiveChatRuntime,
-		), true
-	}
-
-	return "", false
 }
 
 func (ac *AgentXCore) emitLifecycleEvent(ctx context.Context, stage string, details string) {
@@ -1587,21 +1543,6 @@ func defaultPromptHandler(appletName string) func(context.Context, string) (stri
 	}
 }
 
-func (ac *AgentXCore) pythonChatPromptHandler() func(context.Context, string) (string, error) {
-	return func(ctx context.Context, prompt string) (string, error) {
-		response, err := ac.routePromptViaPythonChatApplet(ctx, prompt)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				ac.emitBridgeLog(context.Background(), "bridge_fallback_skipped", err.Error())
-				return "", err
-			}
-			ac.emitBridgeLog(ctx, "bridge_fallback", err.Error())
-			return defaultPromptHandler("chat")(ctx, prompt)
-		}
-		return response, nil
-	}
-}
-
 func (ac *AgentXCore) goChatPromptHandler() func(context.Context, string) (string, error) {
 	return func(ctx context.Context, prompt string) (string, error) {
 		response, err := ac.routePromptViaGoChatBackend(ctx, prompt)
@@ -1724,154 +1665,6 @@ func (ac *AgentXCore) loadAgentIdentityPrompt() string {
 	return prompt
 }
 
-func (ac *AgentXCore) routePromptViaPythonChatApplet(ctx context.Context, prompt string) (string, error) {
-	ac.emitBridgeLog(ctx, "bridge_route_start", fmt.Sprintf("prompt_chars=%d", len(prompt)))
-
-	ac.mu.RLock()
-	chatApplet, exists := ac.applets["chat"]
-	ac.mu.RUnlock()
-	if !exists {
-		ac.emitBridgeLog(ctx, "bridge_route_error", "chat applet not registered")
-		return "", fmt.Errorf("chat applet is not registered")
-	}
-
-	chatApplet.BridgeMu.Lock()
-	defer chatApplet.BridgeMu.Unlock()
-
-	if err := ac.ensureChatBridgeProcessLocked(chatApplet); err != nil {
-		ac.emitBridgeLog(ctx, "bridge_start_error", err.Error())
-		return "", err
-	}
-
-	request := chatBridgeRequest{Type: "prompt", Prompt: prompt}
-	if err := json.NewEncoder(chatApplet.BridgeStdin).Encode(request); err != nil {
-		ac.emitBridgeLog(ctx, "bridge_request_error", err.Error())
-		ac.teardownChatBridgeProcessLocked(chatApplet)
-		return "", err
-	}
-
-	readResultChan := make(chan chatBridgeReadResult, 1)
-	go func() {
-		readResultChan <- readChatBridgeResponseFromScanner(chatApplet.BridgeStdout, func(delta string) error {
-			return ac.renderChatStreamChunk(ctx, delta)
-		})
-	}()
-
-	select {
-	case readResult := <-readResultChan:
-		if readResult.err != nil {
-			ac.emitBridgeLog(ctx, "bridge_response_error", readResult.err.Error())
-			ac.teardownChatBridgeProcessLocked(chatApplet)
-			return "", readResult.err
-		}
-		ac.emitBridgeLog(ctx, "bridge_response_ok", fmt.Sprintf("response_chars=%d", len(readResult.response)))
-		return readResult.response, nil
-	case <-ctx.Done():
-		ac.emitBridgeLog(context.Background(), "bridge_canceled", ctx.Err().Error())
-		ac.teardownChatBridgeProcessLocked(chatApplet)
-		return "", ctx.Err()
-	case <-time.After(ac.chatBridgeResponseTimeout):
-		ac.emitBridgeLog(ctx, "bridge_timeout", fmt.Sprintf("timeout=%s", ac.chatBridgeResponseTimeout))
-		ac.teardownChatBridgeProcessLocked(chatApplet)
-		return "", fmt.Errorf("chat bridge response timeout after %s", ac.chatBridgeResponseTimeout)
-	}
-}
-
-func shouldRenderInteractivePanesViaCore() bool {
-	mode := strings.TrimSpace(strings.ToLower(os.Getenv("AGENTX_PANE_RENDER_MODE")))
-	if mode == "" {
-		return false
-	}
-	return mode == "core" || mode == "1" || mode == "true"
-}
-
-func (ac *AgentXCore) renderChatStreamChunk(ctx context.Context, delta string) error {
-	if !shouldRenderInteractivePanesViaCore() {
-		return nil
-	}
-
-	trimmed := strings.TrimSpace(delta)
-	if trimmed == "" {
-		return nil
-	}
-	ac.emitBridgeLog(ctx, "bridge_chunk", fmt.Sprintf("chunk_chars=%d", len(trimmed)))
-	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote("[assistant-stream] "+trimmed))
-	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(PaneTitleOutput), renderCmd, "Enter"); err != nil {
-		return fmt.Errorf("failed rendering chat stream chunk: %w", err)
-	}
-	return nil
-}
-
-func (ac *AgentXCore) ensureChatBridgeProcessLocked(chatApplet *AppletProcess) error {
-	if _, err := os.Stat(ac.chatAppletScript); err != nil {
-		return fmt.Errorf("chat applet script unavailable: %w", err)
-	}
-
-	if chatApplet.Cmd != nil && chatApplet.BridgeStdin != nil && chatApplet.BridgeStdout != nil {
-		if chatApplet.DoneChan != nil {
-			select {
-			case <-chatApplet.DoneChan:
-				ac.teardownChatBridgeProcessLocked(chatApplet)
-			default:
-				return nil
-			}
-		} else {
-			return nil
-		}
-	}
-
-	processCtx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(processCtx, ac.pythonExecutable, ac.chatAppletScript, "--bridge-chat-server")
-	chatBackend := ac.runtimeConfig.ChatBackend
-	ollamaHost := ac.runtimeConfig.OllamaHost
-	ollamaModel := ac.runtimeConfig.OllamaModel
-	cmd.Env = append(os.Environ(),
-		"AGENTX_APPLET_NAME=chat",
-		"AGENTX_SESSION_ID="+ac.SessionID,
-		"AGENTX_CHAT_BACKEND="+chatBackend,
-		"AGENTX_OLLAMA_HOST="+ollamaHost,
-		"AGENTX_OLLAMA_MODEL="+ollamaModel,
-	)
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		cancel()
-		return err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		cancel()
-		return err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		cancel()
-		return err
-	}
-
-	if err := cmd.Start(); err != nil {
-		cancel()
-		return err
-	}
-
-	chatApplet.Cmd = cmd
-	chatApplet.Cancel = cancel
-	chatApplet.BridgeStdin = stdin
-	chatApplet.BridgeStdout = bufio.NewScanner(stdout)
-	chatApplet.DoneChan = make(chan error, 1)
-	ac.emitBridgeLog(context.Background(), "bridge_start", "backend="+chatBackend)
-	doneChan := chatApplet.DoneChan
-
-	go func(applet *AppletProcess, process *exec.Cmd, processStderr io.Reader) {
-		_, _ = io.Copy(io.Discard, processStderr)
-		err := process.Wait()
-		doneChan <- err
-	}(chatApplet, cmd, stderr)
-
-	ac.markAppletStatus(chatApplet.Name, AppletStatusRunning, nil)
-	return nil
-}
-
 func (ac *AgentXCore) emitBridgeLog(ctx context.Context, event string, details string) {
 	trimmedEvent := strings.TrimSpace(event)
 	if trimmedEvent == "" {
@@ -1891,86 +1684,6 @@ func (ac *AgentXCore) emitBridgeLog(ctx context.Context, event string, details s
 	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(PaneTitleLogs), renderCmd, "Enter"); err != nil {
 		log.Printf("[AgentX Core] Bridge log render failed: %v", err)
 	}
-}
-
-func (ac *AgentXCore) teardownChatBridgeProcessLocked(chatApplet *AppletProcess) {
-	if chatApplet.BridgeStdin != nil {
-		_ = chatApplet.BridgeStdin.Close()
-	}
-	if chatApplet.Cancel != nil {
-		chatApplet.Cancel()
-	}
-	if chatApplet.Cmd != nil && chatApplet.Cmd.Process != nil {
-		_ = chatApplet.Cmd.Process.Kill()
-	}
-
-	chatApplet.BridgeStdin = nil
-	chatApplet.BridgeStdout = nil
-	chatApplet.Cmd = nil
-	chatApplet.Cancel = nil
-	chatApplet.DoneChan = nil
-}
-
-type chatBridgeReadResult struct {
-	response string
-	streamed bool
-	err      error
-}
-
-func readChatBridgeResponseFromScanner(scanner *bufio.Scanner, onChunk func(string) error) chatBridgeReadResult {
-	var responseBuilder strings.Builder
-	streamed := false
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "READY ") {
-			continue
-		}
-
-		var response chatBridgeResponse
-		if err := json.Unmarshal([]byte(line), &response); err != nil {
-			continue
-		}
-
-		switch response.Type {
-		case "chunk":
-			trimmedDelta := strings.TrimSpace(response.Delta)
-			if trimmedDelta == "" {
-				continue
-			}
-			if onChunk != nil {
-				if err := onChunk(trimmedDelta); err != nil {
-					return chatBridgeReadResult{err: err}
-				}
-			}
-			if responseBuilder.Len() > 0 {
-				responseBuilder.WriteString(" ")
-			}
-			responseBuilder.WriteString(trimmedDelta)
-			streamed = true
-			continue
-		case "response":
-			finalResponse := strings.TrimSpace(response.Response)
-			if finalResponse == "" {
-				finalResponse = strings.TrimSpace(responseBuilder.String())
-			}
-			if finalResponse == "" {
-				return chatBridgeReadResult{err: fmt.Errorf("chat bridge returned empty response")}
-			}
-			return chatBridgeReadResult{response: finalResponse, streamed: streamed}
-		case "error":
-			if response.Error == "" {
-				return chatBridgeReadResult{err: fmt.Errorf("chat bridge returned empty error")}
-			}
-			return chatBridgeReadResult{err: fmt.Errorf("chat bridge error: %s", response.Error)}
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return chatBridgeReadResult{err: err}
-	}
-
-	return chatBridgeReadResult{err: fmt.Errorf("chat bridge produced no response")}
 }
 
 func shellSingleQuote(input string) string {
@@ -2000,6 +1713,14 @@ func (ac *AgentXCore) setPaneTitle(ctx context.Context, target string, title str
 		return err
 	}
 	return ac.runTmux(ctx, "select-pane", "-t", target, "-T", title)
+}
+
+func shouldRenderInteractivePanesViaCore() bool {
+	mode := strings.TrimSpace(strings.ToLower(os.Getenv("AGENTX_PANE_RENDER_MODE")))
+	if mode == "" {
+		return false
+	}
+	return mode == "core" || mode == "1" || mode == "true"
 }
 
 func (ac *AgentXCore) renderChatResponse(ctx context.Context, response string) error {

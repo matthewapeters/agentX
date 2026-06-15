@@ -12,8 +12,7 @@ import (
 
 const (
 	defaultChatBackend = "echo"
-	defaultChatRuntime = "python"
-	chatRuntimeDefaultEnvKey = "AGENTX_CHAT_RUNTIME_DEFAULT"
+	defaultChatRuntime = "go"
 	startupModeEnvKey = "AGENTX_STARTUP_MODE"
 	defaultStartupMode = "default"
 	visibleWindowsStartupMode = "visible-windows"
@@ -128,14 +127,9 @@ type AppletConfig struct {
 }
 
 func defaultCoreRuntimeConfig() CoreRuntimeConfig {
-	chatRuntime := defaultChatRuntime
-	if promoted := strings.ToLower(strings.TrimSpace(os.Getenv(chatRuntimeDefaultEnvKey))); promoted == "go" {
-		chatRuntime = "go"
-	}
-
 	return CoreRuntimeConfig{
 		ChatBackend:               defaultChatBackend,
-		ChatRuntime:               chatRuntime,
+		ChatRuntime:               defaultChatRuntime,
 		OllamaHost:                defaultOllamaHost,
 		OllamaModel:               defaultOllamaModel,
 		ChatBridgeResponseTimeout: time.Duration(defaultChatBridgeResponseTimeoutSeconds) * time.Second,
@@ -148,7 +142,15 @@ func resolveCoreRuntimeConfig(projectDir string) CoreRuntimeConfig {
 	runtimeConfig := defaultCoreRuntimeConfig()
 	applyAgentXTomlRuntimeConfig(projectDir, &runtimeConfig)
 	applyRuntimeEnvOverrides(&runtimeConfig)
+	runtimeConfig.ChatRuntime = normalizeChatRuntime(runtimeConfig.ChatRuntime)
 	return runtimeConfig
+}
+
+func normalizeChatRuntime(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), appletRuntimeGo.String()) {
+		return appletRuntimeGo.String()
+	}
+	return defaultChatRuntime
 }
 
 func applyRuntimeEnvOverrides(runtimeConfig *CoreRuntimeConfig) {
