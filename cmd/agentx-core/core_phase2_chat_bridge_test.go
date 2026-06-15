@@ -504,12 +504,11 @@ func TestRouteInputPrompt_HangingBridgeFallsBackToEcho(t *testing.T) {
 	}
 
 	projectDir := t.TempDir()
-	hangingScript := stageHangingBridgeApplet(t, projectDir)
+	stageHangingBridgeApplet(t, projectDir)
 
 	setupFakeTmux(t)
 	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-timeout-fallback"}
 	core := NewAgentXCore(cfg)
-	core.chatAppletScript = hangingScript
 
 	if err := core.InitializeTmuxSession(context.Background()); err != nil {
 		t.Fatalf("InitializeTmuxSession failed: %v", err)
@@ -746,12 +745,11 @@ func TestRouteInputPrompt_MalformedJSONIsIgnoredAndResponseSucceeds(t *testing.T
 	t.Setenv("AGENTX_CHAT_BACKEND", "echo")
 
 	projectDir := t.TempDir()
-	scriptPath := stageMalformedBridgeApplet(t, projectDir)
+	stageMalformedBridgeApplet(t, projectDir)
 
 	logPath := setupFakeTmux(t)
 	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-malformed-json"}
 	core := NewAgentXCore(cfg)
-	core.chatAppletScript = scriptPath
 
 	if err := core.InitializeTmuxSession(context.Background()); err != nil {
 		t.Fatalf("InitializeTmuxSession failed: %v", err)
@@ -815,12 +813,11 @@ func TestRouteInputPrompt_ErrorFrameFallbackThenRecovery(t *testing.T) {
 	t.Setenv("AGENTX_OLLAMA_MODEL", "test-model")
 
 	projectDir := t.TempDir()
-	scriptPath := stageErrorFrameBridgeApplet(t, projectDir)
+	stageErrorFrameBridgeApplet(t, projectDir)
 
 	logPath := setupFakeTmux(t)
 	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-error-frame"}
 	core := NewAgentXCore(cfg)
-	core.chatAppletScript = scriptPath
 
 	if err := core.InitializeTmuxSession(context.Background()); err != nil {
 		t.Fatalf("InitializeTmuxSession failed: %v", err)
@@ -879,12 +876,11 @@ func TestRouteInputPrompt_EmptyChunkIgnoredWithPersistence(t *testing.T) {
 	t.Setenv("AGENTX_CHAT_BACKEND", "echo")
 
 	projectDir := t.TempDir()
-	scriptPath := stageEmptyChunkBridgeApplet(t, projectDir)
+	stageEmptyChunkBridgeApplet(t, projectDir)
 
 	logPath := setupFakeTmux(t)
 	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-empty-chunk"}
 	core := NewAgentXCore(cfg)
-	core.chatAppletScript = scriptPath
 
 	if err := core.InitializeTmuxSession(context.Background()); err != nil {
 		t.Fatalf("InitializeTmuxSession failed: %v", err)
@@ -993,7 +989,6 @@ func TestRouteInputPrompt_GoChatRuntimeFallbackDoesNotDependOnTemplateScript(t *
 	logPath := setupFakeTmux(t)
 	cfg := &Config{ProjectDir: projectDir, Username: "tester", SessionID: "s-phase2-go-chat-fallback-echo"}
 	core := NewAgentXCore(cfg)
-	core.chatAppletScript = filepath.Join(projectDir, "applets", "missing_template.py")
 
 	if err := core.InitializeTmuxSession(context.Background()); err != nil {
 		t.Fatalf("InitializeTmuxSession failed: %v", err)

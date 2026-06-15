@@ -382,8 +382,6 @@ type AgentXCore struct {
 	coreExecutablePath        string
 	tmuxInitialized           bool
 	applets                   map[string]*AppletProcess
-	pythonExecutable          string
-	chatAppletScript          string
 	inputHistory              []string
 	exitRequested             bool
 	mu                        sync.RWMutex
@@ -508,8 +506,7 @@ type appletBaseRuntimeConfig struct {
 type appletRuntimeKind string
 
 const (
-	appletRuntimePython appletRuntimeKind = "python"
-	appletRuntimeGo     appletRuntimeKind = "go"
+	appletRuntimeGo appletRuntimeKind = "go"
 )
 
 func (k appletRuntimeKind) String() string {
@@ -522,28 +519,13 @@ type appletRuntimeSpec struct {
 	Runtime  appletRuntimeKind
 }
 
-func resolveChatRuntimeKind(raw string) appletRuntimeKind {
-	runtime := strings.ToLower(strings.TrimSpace(raw))
-	if runtime == "go" {
-		return appletRuntimeGo
-	}
-	return appletRuntimePython
-}
-
 func (ac *AgentXCore) defaultAppletRuntimeSpecs() []appletRuntimeSpec {
 	specs := make([]appletRuntimeSpec, 0, len(DefaultPaneLayout())+len(dedicatedSystemAppletTabs))
 	for _, pane := range DefaultPaneLayout() {
-		runtime := appletRuntimePython
-		if pane.Name == "input" || pane.Name == "context" || pane.Name == "logs" {
-			runtime = appletRuntimeGo
-		}
-		if pane.Name == "chat" {
-			runtime = appletRuntimeGo
-		}
 		specs = append(specs, appletRuntimeSpec{
 			Name:     pane.Name,
 			PaneName: pane.Name,
-			Runtime:  runtime,
+			Runtime:  appletRuntimeGo,
 		})
 	}
 	for _, tab := range dedicatedSystemAppletTabs {
@@ -594,8 +576,6 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 		tmuxSessionName:           buildTmuxSessionName(cfg.Username, sessionID),
 		coreExecutablePath:        coreExecutablePath,
 		applets:                   make(map[string]*AppletProcess),
-		pythonExecutable:          "python3",
-		chatAppletScript:          filepath.Join(cfg.ProjectDir, "applets", "template.py"),
 		inputHistory:              make([]string, 0),
 		startedAt:                 time.Now(),
 		healthAddr:                "127.0.0.1:0",
@@ -1100,7 +1080,7 @@ func (ac *AgentXCore) refreshPaneTargetsFromTitles(ctx context.Context) error {
 	return nil
 }
 
-// StartAppletSupervisor launches Python applets in goroutines.
+// StartAppletSupervisor launches pane applets in goroutines.
 func (ac *AgentXCore) StartAppletSupervisor(ctx context.Context) error {
 	ac.mu.Lock()
 	shouldLaunchPaneApplets := ac.tmuxInitialized
@@ -1338,20 +1318,11 @@ func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
 	base := ac.buildAppletBaseRuntimeConfig()
 
 	for _, spec := range ac.defaultAppletRuntimeSpecs() {
-		if spec.Runtime == appletRuntimeGo && spec.Name != "input" && spec.Name != "context" && spec.Name != "chat" && spec.Name != "logs" && !isDedicatedSystemAppletTab(spec.Name) {
-			continue
+		paneHeight, paneWidth, err := ac.paneDimensions(ctx, ac.paneTargetForName(spec.PaneName))
+		if err != nil {
+			return fmt.Errorf("failed to resolve pane dimensions for %s: %w", spec.Name, err)
 		}
-
-		launchCmd := ""
-		if spec.Runtime == appletRuntimeGo {
-			paneHeight, paneWidth, err := ac.paneDimensions(ctx, ac.paneTargetForName(spec.PaneName))
-			if err != nil {
-				return fmt.Errorf("failed to resolve pane dimensions for %s: %w", spec.Name, err)
-			}
-			launchCmd = ac.buildPaneAppletLaunchCommand(spec, base, paneHeight, paneWidth)
-		} else {
-			launchCmd = ac.buildPaneAppletLaunchCommand(spec, base, 0, 0)
-		}
+		launchCmd := ac.buildPaneAppletLaunchCommand(spec, base, paneHeight, paneWidth)
 
 		if err := ac.runTmux(ctx, "respawn-pane", "-k", "-t", ac.paneTargetForName(spec.PaneName), launchCmd); err != nil {
 			return fmt.Errorf("failed launching %s pane applet: %w", spec.Name, err)
@@ -1416,75 +1387,64 @@ func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base 
 		"AGENTX_CHAT_BACKEND":                base.ChatBackend,
 		"AGENTX_OLLAMA_HOST":                 base.OllamaHost,
 		"AGENTX_OLLAMA_MODEL":                base.OllamaModel,
-		"AGENTX_CORE_OWNS_STARTUP_BOOTSTRAP": "1",
 	}
 
-	if spec.Runtime == appletRuntimeGo {
-		delete(baseEnv, "AGENTX_CORE_OWNS_STARTUP_BOOTSTRAP")
-		baseEnv["AGENTX_WIDGET_PANE_HEIGHT"] = strconv.Itoa(paneHeight)
-		baseEnv["AGENTX_WIDGET_PANE_WIDTH"] = strconv.Itoa(paneWidth)
-		if spec.Name == "chat" {
-			return fmt.Sprintf(
-				"%s %s --output-widget --core-http %s",
-				shellEnvPrefix(baseEnv),
-				shellSingleQuote(ac.coreExecutablePath),
-				shellSingleQuote(base.CoreHTTP),
-			)
-		}
-		if spec.Name == "logs" {
-			return fmt.Sprintf(
-				"%s %s --logs-widget --core-http %s",
-				shellEnvPrefix(baseEnv),
-				shellSingleQuote(ac.coreExecutablePath),
-				shellSingleQuote(base.CoreHTTP),
-			)
-		}
-		if spec.Name == "context" {
-			return fmt.Sprintf(
-				"%s %s --context-widget --core-http %s",
-				shellEnvPrefix(baseEnv),
-				shellSingleQuote(ac.coreExecutablePath),
-				shellSingleQuote(base.CoreHTTP),
-			)
-		}
-		if spec.Name == "files" {
-			return fmt.Sprintf(
-				"%s %s --filesystem-widget --core-http %s",
-				shellEnvPrefix(baseEnv),
-				shellSingleQuote(ac.coreExecutablePath),
-				shellSingleQuote(base.CoreHTTP),
-			)
-		}
-		if spec.Name == "configuration" {
-			return fmt.Sprintf(
-				"%s %s --settings-widget --core-http %s",
-				shellEnvPrefix(baseEnv),
-				shellSingleQuote(ac.coreExecutablePath),
-				shellSingleQuote(base.CoreHTTP),
-			)
-		}
-		if isDedicatedSystemAppletTab(spec.Name) {
-			baseEnv["AGENTX_CONTEXT_WIDGET_TAB"] = spec.Name
-			return fmt.Sprintf(
-				"%s %s --context-widget --core-http %s",
-				shellEnvPrefix(baseEnv),
-				shellSingleQuote(ac.coreExecutablePath),
-				shellSingleQuote(base.CoreHTTP),
-			)
-		}
+	baseEnv["AGENTX_WIDGET_PANE_HEIGHT"] = strconv.Itoa(paneHeight)
+	baseEnv["AGENTX_WIDGET_PANE_WIDTH"] = strconv.Itoa(paneWidth)
+	if spec.Name == "chat" {
 		return fmt.Sprintf(
-			"%s %s --input-widget --core-http %s",
+			"%s %s --output-widget --core-http %s",
 			shellEnvPrefix(baseEnv),
 			shellSingleQuote(ac.coreExecutablePath),
 			shellSingleQuote(base.CoreHTTP),
 		)
 	}
-
+	if spec.Name == "logs" {
+		return fmt.Sprintf(
+			"%s %s --logs-widget --core-http %s",
+			shellEnvPrefix(baseEnv),
+			shellSingleQuote(ac.coreExecutablePath),
+			shellSingleQuote(base.CoreHTTP),
+		)
+	}
+	if spec.Name == "context" {
+		return fmt.Sprintf(
+			"%s %s --context-widget --core-http %s",
+			shellEnvPrefix(baseEnv),
+			shellSingleQuote(ac.coreExecutablePath),
+			shellSingleQuote(base.CoreHTTP),
+		)
+	}
+	if spec.Name == "files" {
+		return fmt.Sprintf(
+			"%s %s --filesystem-widget --core-http %s",
+			shellEnvPrefix(baseEnv),
+			shellSingleQuote(ac.coreExecutablePath),
+			shellSingleQuote(base.CoreHTTP),
+		)
+	}
+	if spec.Name == "configuration" {
+		return fmt.Sprintf(
+			"%s %s --settings-widget --core-http %s",
+			shellEnvPrefix(baseEnv),
+			shellSingleQuote(ac.coreExecutablePath),
+			shellSingleQuote(base.CoreHTTP),
+		)
+	}
+	if isDedicatedSystemAppletTab(spec.Name) {
+		baseEnv["AGENTX_CONTEXT_WIDGET_TAB"] = spec.Name
+		return fmt.Sprintf(
+			"%s %s --context-widget --core-http %s",
+			shellEnvPrefix(baseEnv),
+			shellSingleQuote(ac.coreExecutablePath),
+			shellSingleQuote(base.CoreHTTP),
+		)
+	}
 	return fmt.Sprintf(
-		"%s %s %s",
+		"%s %s --input-widget --core-http %s",
 		shellEnvPrefix(baseEnv),
-		shellSingleQuote(ac.pythonExecutable),
-		shellSingleQuote(ac.chatAppletScript),
+		shellSingleQuote(ac.coreExecutablePath),
+		shellSingleQuote(base.CoreHTTP),
 	)
 }
 
@@ -2129,7 +2089,7 @@ func (ac *AgentXCore) ensureTrackedAppletLocked(appletName, paneName string) *Ap
 	applet := &AppletProcess{
 		Name:      appletName,
 		PaneName:  paneName,
-		Runtime:   appletRuntimePython,
+		Runtime:   appletRuntimeGo,
 		Status:    AppletStatusStarting,
 		StartedAt: time.Now(),
 	}
