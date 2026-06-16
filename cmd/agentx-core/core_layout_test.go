@@ -1,13 +1,19 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"io"
+	"sync"
+	"strings"
+	"testing"
+)
 
 // GIVEN tmux session startup is building the initial command
 // WHEN the command is generated for first attach view
 // THEN window 0 should be explicitly named tui-chat for UX parity.
 func TestBuildNewSessionCommand_NamesPrimaryWindowTUIChat(t *testing.T) {
 	session := "agentx_test"
-	got := buildNewSessionCommand(session, 120, 40)
+	got := buildNewSessionCommand(defaultMultiplexerBackend, session, 120, 40, "")
 
 	found := false
 	for i := 0; i < len(got)-1; i++ {
@@ -24,7 +30,7 @@ func TestBuildNewSessionCommand_NamesPrimaryWindowTUIChat(t *testing.T) {
 
 func TestBuildNewSessionCommand(t *testing.T) {
 	session := "agentx_test"
-	got := buildNewSessionCommand(session, 120, 40)
+	got := buildNewSessionCommand(defaultMultiplexerBackend, session, 120, 40, "")
 	want := []string{"new-session", "-d", "-s", session, "-n", tmuxPrimaryWindow, "-x", "120", "-y", "40"}
 
 	if len(got) != len(want) {
@@ -34,6 +40,215 @@ func TestBuildNewSessionCommand(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("new session command arg %d mismatch: got %q want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestBuildNewSessionCommand_ZellijIgnoresLayout(t *testing.T) {
+	session := "agentx_test"
+	layout := "/tmp/zellij-layout.kdl"
+	got := buildNewSessionCommand("zellij", session, 120, 40, layout)
+	// zellij 0.40+: background session creation; layout not supported via attach --create-background
+	want := []string{"attach", "--create-background", session}
+
+	if len(got) != len(want) {
+		t.Fatalf("zellij new session command length mismatch: got %d want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("zellij new session command arg %d mismatch: got %q want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestBuildKillSessionCommand_TmuxUsesTargetFlag(t *testing.T) {
+	got := buildKillSessionCommand(defaultMultiplexerBackend, "agentx_test")
+	want := []string{"kill-session", "-t", "agentx_test"}
+	if len(got) != len(want) {
+		t.Fatalf("tmux kill session command length mismatch: got %d want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("tmux kill session command arg %d mismatch: got %q want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestBuildKillSessionCommand_ZellijUsesDeleteSession(t *testing.T) {
+	got := buildKillSessionCommand("zellij", "agentx_test")
+	want := []string{"delete-session", "agentx_test"}
+	if len(got) != len(want) {
+		t.Fatalf("zellij kill session command length mismatch: got %d want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("zellij kill session command arg %d mismatch: got %q want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestLaunchZellijPaneApplets_AppliesLayoutOncePerCoreInstance(t *testing.T) {
+	driver := &stubMultiplexerDriver{backendName: "zellij"}
+	core := &AgentXCore{
+		multiplexerDriver: driver,
+		Config: &Config{
+			ProjectDir: t.TempDir(),
+			Username:   "tester",
+		},
+		runtimeConfig: CoreRuntimeConfig{
+			ChatBackend:   "echo",
+			OllamaHost:    "http://localhost:11434",
+			OllamaModel:   "llama3.2",
+			SubmitTimeout: 30,
+		},
+		SessionID:          "sess-zellij-layout-once",
+		tmuxSessionName:    "agentx_tester_sess-zellij-layout-once",
+		coreExecutablePath: "agentx-core",
+		healthAddr:         "127.0.0.1:7777",
+	}
+
+	if err := core.launchZellijPaneApplets(context.Background()); err != nil {
+		t.Fatalf("first layout apply failed: %v", err)
+	}
+	if err := core.launchZellijPaneApplets(context.Background()); err != nil {
+		t.Fatalf("second layout apply should be a no-op, got: %v", err)
+	}
+
+	if len(driver.runCalls) != 1 {
+		t.Fatalf("expected exactly one zellij layout apply call, got %d (%v)", len(driver.runCalls), driver.runCalls)
+	}
+	if len(driver.runCalls[0]) != 4 {
+		t.Fatalf("expected zellij layout apply arg length 4, got %d (%v)", len(driver.runCalls[0]), driver.runCalls[0])
+	}
+	if driver.runCalls[0][0] != "--session" || driver.runCalls[0][1] != core.tmuxSessionName || driver.runCalls[0][2] != "--layout" {
+		t.Fatalf("unexpected zellij layout apply args: %v", driver.runCalls[0])
+	}
+}
+
+type blockingRunDriver struct {
+	backendName string
+
+	mu          sync.Mutex
+	runCalls    [][]string
+	runStarted  chan struct{}
+	releaseRun  chan struct{}
+	runErr      error
+	startedOnce sync.Once
+}
+
+func (d *blockingRunDriver) BackendName() string {
+	if d.backendName == "" {
+		return "zellij"
+	}
+	return d.backendName
+}
+
+func (d *blockingRunDriver) Run(_ context.Context, args ...string) error {
+	d.mu.Lock()
+	d.runCalls = append(d.runCalls, append([]string(nil), args...))
+	d.mu.Unlock()
+
+	d.startedOnce.Do(func() {
+		close(d.runStarted)
+	})
+	<-d.releaseRun
+
+	return d.runErr
+}
+
+func (d *blockingRunDriver) RunCombined(_ context.Context, _ ...string) (string, error) {
+	return "", nil
+}
+
+func (d *blockingRunDriver) Capture(_ context.Context, _ ...string) (string, error) {
+	return "", nil
+}
+
+func (d *blockingRunDriver) AttachSession(_ context.Context, _ string, _ io.Reader, _ io.Writer, _ io.Writer) error {
+	return nil
+}
+
+func (d *blockingRunDriver) runCallCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.runCalls)
+}
+
+func TestLaunchZellijPaneApplets_ConcurrentCallsApplyLayoutOnlyOnce(t *testing.T) {
+	driver := &blockingRunDriver{
+		backendName: "zellij",
+		runStarted:  make(chan struct{}),
+		releaseRun:  make(chan struct{}),
+	}
+
+	core := &AgentXCore{
+		multiplexerDriver: driver,
+		Config: &Config{
+			ProjectDir: t.TempDir(),
+			Username:   "tester",
+		},
+		runtimeConfig: CoreRuntimeConfig{
+			ChatBackend:   "echo",
+			OllamaHost:    "http://localhost:11434",
+			OllamaModel:   "llama3.2",
+			SubmitTimeout: 30,
+		},
+		SessionID:          "sess-zellij-layout-concurrent",
+		tmuxSessionName:    "agentx_tester_sess-zellij-layout-concurrent",
+		coreExecutablePath: "agentx-core",
+		healthAddr:         "127.0.0.1:7777",
+	}
+
+	errCh := make(chan error, 2)
+	start := make(chan struct{})
+
+	for i := 0; i < 2; i++ {
+		go func() {
+			<-start
+			errCh <- core.launchZellijPaneApplets(context.Background())
+		}()
+	}
+
+	close(start)
+	<-driver.runStarted
+
+	if got := driver.runCallCount(); got != 1 {
+		t.Fatalf("expected exactly one in-flight zellij layout apply call, got %d", got)
+	}
+
+	close(driver.releaseRun)
+
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil {
+			t.Fatalf("concurrent launch returned error: %v", err)
+		}
+	}
+
+	if got := driver.runCallCount(); got != 1 {
+		t.Fatalf("expected exactly one total zellij layout apply call, got %d", got)
+	}
+}
+
+func TestBuildZellijAppletLayout_PlacesInputInBottomSplit(t *testing.T) {
+	cmds := map[string]string{
+		"chat":    "chat-command",
+		"context": "context-command",
+		"input":   "input-command",
+		"logs":    "logs-command",
+	}
+
+	layout := buildZellijAppletLayout(cmds)
+
+	if !strings.Contains(layout, "pane split_direction=\"horizontal\"") {
+		t.Fatalf("expected top-level horizontal split for top/bottom layout, got:\n%s", layout)
+	}
+	if !strings.Contains(layout, "pane split_direction=\"vertical\"") {
+		t.Fatalf("expected nested vertical split for chat/context side-by-side layout, got:\n%s", layout)
+	}
+	if !strings.Contains(layout, "pane name=\"input\" size=\"20%\"") {
+		t.Fatalf("expected dedicated input pane in layout, got:\n%s", layout)
+	}
+	if !strings.Contains(layout, "floating_panes") || !strings.Contains(layout, "pane name=\"logs\"") {
+		t.Fatalf("expected floating logs pane block in layout, got:\n%s", layout)
 	}
 }
 

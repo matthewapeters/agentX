@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWriteFilesystemWidgetFrame_UsesCRLF(t *testing.T) {
@@ -270,6 +271,58 @@ func TestFilesystemWidgetToggleHelp_ShowsAndHidesLegend(t *testing.T) {
 	}
 	if state.status != "Help hidden" {
 		t.Fatalf("expected help toggle to set hidden status, got %q", state.status)
+	}
+}
+
+func TestRunFilesystemWidgetLoop_ReRendersOnIdleResize(t *testing.T) {
+	projectDir := t.TempDir()
+	t.Setenv("LINES", "24")
+	t.Setenv("COLUMNS", "40")
+
+	state := &filesystemWidgetState{
+		baseURL:      "http://127.0.0.1:65535",
+		projectDir:   projectDir,
+		homeDir:      projectDir,
+		currentDir:   projectDir,
+		history:      []string{projectDir},
+		historyIndex: 0,
+		entries:      []filesystemWidgetEntry{},
+		selected:     0,
+		viewOffset:   0,
+		viewportRows: defaultFilesystemViewportRows,
+		viewportCols: defaultFilesystemViewportCols,
+		softSelected: map[string]bool{},
+		status:       "Ready",
+	}
+
+	inputReader, inputWriter := io.Pipe()
+	defer inputWriter.Close()
+
+	var output bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- runFilesystemWidgetLoop(ctx, inputReader, &output, state)
+	}()
+
+	time.Sleep(90 * time.Millisecond)
+	t.Setenv("COLUMNS", "80")
+	time.Sleep(220 * time.Millisecond)
+	cancel()
+	_ = inputWriter.Close()
+
+	if err := <-done; err != nil {
+		t.Fatalf("runFilesystemWidgetLoop returned error: %v", err)
+	}
+
+	rendered := output.String()
+	if !strings.Contains(rendered, strings.Repeat("─", 38)) {
+		t.Fatalf("expected initial narrow frame width render, got output:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, strings.Repeat("─", 78)) {
+		t.Fatalf("expected wider frame render after idle resize, got output:\n%s", rendered)
 	}
 }
 

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCycleSettingValue_ConstrainedOptions(t *testing.T) {
@@ -115,5 +118,57 @@ func TestRunSettingsWidgetCommand_QuitTokenStopsLoop(t *testing.T) {
 	}
 	if !strings.Contains(output, "SYSTEM SETTINGS") {
 		t.Fatalf("expected settings frame output, got %q", output)
+	}
+}
+
+func TestRunSettingsWidgetLoop_ReRendersOnIdleResize(t *testing.T) {
+	projectDir := t.TempDir()
+	t.Setenv("AGENTX_PROJECT_DIR", projectDir)
+	t.Setenv("LINES", "24")
+	t.Setenv("COLUMNS", "40")
+
+	state := &settingsWidgetState{
+		projectDir:   projectDir,
+		configPath:   filepath.Join(projectDir, "agentx.toml"),
+		fields:       append([]settingsField{}, approvedSettingsFields...),
+		values:       map[string]string{},
+		selected:     0,
+		viewOffset:   0,
+		viewportRows: defaultSettingsViewportRows,
+		viewportCols: defaultSettingsViewportCols,
+		status:       "Ready",
+	}
+	if err := state.reload(); err != nil {
+		t.Fatalf("reload returned error: %v", err)
+	}
+
+	inputReader, inputWriter := io.Pipe()
+	defer inputWriter.Close()
+
+	var output bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- runSettingsWidgetLoop(ctx, inputReader, &output, state)
+	}()
+
+	time.Sleep(90 * time.Millisecond)
+	t.Setenv("COLUMNS", "80")
+	time.Sleep(220 * time.Millisecond)
+	cancel()
+	_ = inputWriter.Close()
+
+	if err := <-done; err != nil {
+		t.Fatalf("runSettingsWidgetLoop returned error: %v", err)
+	}
+
+	rendered := output.String()
+	if !strings.Contains(rendered, strings.Repeat("─", 38)) {
+		t.Fatalf("expected initial narrow frame width render, got output:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, strings.Repeat("─", 78)) {
+		t.Fatalf("expected wider frame render after idle resize, got output:\n%s", rendered)
 	}
 }

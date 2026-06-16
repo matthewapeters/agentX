@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -567,5 +569,88 @@ func TestNormalizeInputWidgetEscapeSequence(t *testing.T) {
 				t.Fatalf("expected kind %q, got %q", tc.wantKind, gotKind)
 			}
 		})
+	}
+}
+
+func TestRunInputWidgetInteractiveLoop_ReRendersOnIdleResizeAndExitsCleanly(t *testing.T) {
+	t.Setenv("LINES", "24")
+	t.Setenv("COLUMNS", "40")
+
+	originalReader := newInputWidgetKeyReaderFn
+	defer func() {
+		newInputWidgetKeyReaderFn = originalReader
+	}()
+
+	keys := []inputWidgetKey{
+		{kind: "esc"},
+		{kind: "text", raw: ":"},
+		{kind: "text", raw: "q"},
+		{kind: "enter"},
+	}
+	idx := 0
+	newInputWidgetKeyReaderFn = func(_ *os.File) (func() (inputWidgetKey, error), func(), error) {
+		reader := func() (inputWidgetKey, error) {
+			if idx >= len(keys) {
+				return inputWidgetKey{}, io.EOF
+			}
+			if idx == 1 {
+				t.Setenv("COLUMNS", "80")
+			}
+			key := keys[idx]
+			idx++
+			return key, nil
+		}
+		cleanup := func() {}
+		return reader, cleanup, nil
+	}
+
+	var output bytes.Buffer
+	activityState := newWidgetActivityState()
+	submitted := make([]string, 0, 1)
+	submitPrompt := func(prompt string) (int, bool) {
+		submitted = append(submitted, prompt)
+		if prompt == ":q" {
+			return 0, true
+		}
+		return 0, false
+	}
+
+	tmpFile, err := os.CreateTemp(t.TempDir(), "input-widget-interactive")
+	if err != nil {
+		t.Fatalf("failed to create temp input file: %v", err)
+	}
+	defer tmpFile.Close()
+
+	exitCode := runInputWidgetInteractiveLoop(tmpFile, &output, activityState, submitPrompt)
+	if exitCode != 0 {
+		t.Fatalf("expected interactive loop exit code 0, got %d", exitCode)
+	}
+	if len(submitted) != 1 || submitted[0] != ":q" {
+		t.Fatalf("expected clean quit submit, got %#v", submitted)
+	}
+
+	rendered := output.String()
+	minDashRun := -1
+	maxDashRun := -1
+	for _, line := range strings.Split(rendered, "\n") {
+		run := strings.Count(line, "─")
+		if run <= 0 {
+			continue
+		}
+		if minDashRun == -1 || run < minDashRun {
+			minDashRun = run
+		}
+		if run > maxDashRun {
+			maxDashRun = run
+		}
+	}
+	if minDashRun == -1 || maxDashRun == -1 {
+		t.Fatalf("expected rendered frame borders in output, got:\n%s", rendered)
+	}
+	if minDashRun >= maxDashRun {
+		t.Fatalf("expected widened frame after idle resize, got min=%d max=%d output:\n%s", minDashRun, maxDashRun, rendered)
+	}
+	if strings.Contains(rendered, "Input widget failed") {
+		t.Fatalf("expected clean interactive loop exit without failure, got output:\n%s", rendered)
 	}
 }

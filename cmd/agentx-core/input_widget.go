@@ -320,6 +320,8 @@ func newInputWidgetComposeState() *inputWidgetComposeState {
 	}
 }
 
+var newInputWidgetKeyReaderFn = newInputWidgetKeyReader
+
 func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *widgetActivityState, submitPrompt func(string) (int, bool)) int {
 	state := newInputWidgetComposeState()
 	state.status = "ESC toggles focus; :? toggles help; :q exits"
@@ -327,43 +329,71 @@ func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *wi
 	state.seedViewportFromStartup(startupHeight, startupWidth)
 	defer showTerminalCursor(out)
 
-	commandReader, cleanup, err := newInputWidgetKeyReader(in)
+	commandReader, cleanup, err := newInputWidgetKeyReaderFn(in)
 	if err != nil {
 		fmt.Fprintf(out, "Input widget failed: %v\n", err)
 		return 1
 	}
 	defer cleanup()
+	ticker := time.NewTicker(120 * time.Millisecond)
+	defer ticker.Stop()
+
+	type keyEvent struct {
+		key inputWidgetKey
+		err error
+	}
+	keyEvents := make(chan keyEvent, 32)
+	go func() {
+		defer close(keyEvents)
+		for {
+			key, readErr := commandReader()
+			if readErr != nil {
+				keyEvents <- keyEvent{err: readErr}
+				return
+			}
+			keyEvents <- keyEvent{key: key}
+		}
+	}()
 
 	var previousLines []string
 
 	for {
 		state.adaptViewportToTerminal(out)
 		currentLines := filesystemWidgetFrameLines(state.render(activityState.promptLabel()))
-		if err := writeFilesystemWidgetFrameDiff(out, previousLines, currentLines); err != nil {
-			fmt.Fprintf(out, "Input widget failed: %v\n", err)
-			return 1
+		renderChanged := len(previousLines) == 0 || strings.Join(previousLines, "\n") != strings.Join(currentLines, "\n")
+		if renderChanged {
+			if err := writeFilesystemWidgetFrameDiff(out, previousLines, currentLines); err != nil {
+				fmt.Fprintf(out, "Input widget failed: %v\n", err)
+				return 1
+			}
+			previousLines = currentLines
 		}
 		state.placeTerminalCursor(out)
-		previousLines = currentLines
 
-		key, err := commandReader()
-		if err != nil {
-			if err == io.EOF {
+		select {
+		case event, ok := <-keyEvents:
+			if !ok {
 				return 0
 			}
-			fmt.Fprintf(out, "Input widget failed: %v\n", err)
-			return 1
-		}
+			if event.err != nil {
+				if event.err == io.EOF {
+					return 0
+				}
+				fmt.Fprintf(out, "Input widget failed: %v\n", event.err)
+				return 1
+			}
 
-		action := state.handleKey(key)
-		if strings.TrimSpace(action.submitPrompt) != "" {
-			exitCode, shouldExit := submitPrompt(action.submitPrompt)
-			if shouldExit {
-				return exitCode
+			action := state.handleKey(event.key)
+			if strings.TrimSpace(action.submitPrompt) != "" {
+				exitCode, shouldExit := submitPrompt(action.submitPrompt)
+				if shouldExit {
+					return exitCode
+				}
+				if action.quitOnSubmit {
+					return 0
+				}
 			}
-			if action.quitOnSubmit {
-				return 0
-			}
+		case <-ticker.C:
 		}
 	}
 }

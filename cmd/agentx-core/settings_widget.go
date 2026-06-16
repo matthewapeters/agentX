@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type settingsFieldKind string
@@ -100,59 +101,96 @@ func runSettingsWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, sta
 	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
 	state.seedViewportFromStartup(startupHeight, startupWidth, promptMode)
 	var previousLines []string
+	ticker := time.NewTicker(150 * time.Millisecond)
+	defer ticker.Stop()
+
+	type commandEvent struct {
+		command string
+		err     error
+	}
+	commandEvents := make(chan commandEvent, 16)
+	go func() {
+		defer close(commandEvents)
+		for {
+			command, readErr := commandReader()
+			if readErr != nil {
+				select {
+				case commandEvents <- commandEvent{err: readErr}:
+				case <-ctx.Done():
+				}
+				return
+			}
+			select {
+			case commandEvents <- commandEvent{command: command}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	for {
 		state.adaptViewportToTerminal(out, promptMode)
 		currentLines := filesystemWidgetFrameLines(state.render())
-		if err := writeFilesystemWidgetFrameDiff(out, previousLines, currentLines); err != nil {
-			return err
-		}
-		previousLines = currentLines
-		if promptMode {
-			if _, err := fmt.Fprint(out, "settings> "); err != nil {
+		renderChanged := len(previousLines) == 0 || strings.Join(previousLines, "\n") != strings.Join(currentLines, "\n")
+		if renderChanged {
+			if err := writeFilesystemWidgetFrameDiff(out, previousLines, currentLines); err != nil {
 				return err
+			}
+			previousLines = currentLines
+			if promptMode {
+				if _, err := fmt.Fprint(out, "settings> "); err != nil {
+					return err
+				}
 			}
 		}
 
-		command, readErr := commandReader()
-		if readErr != nil {
-			if readErr == io.EOF {
+		select {
+		case <-ctx.Done():
+			return nil
+		case event, ok := <-commandEvents:
+			if !ok {
 				return nil
 			}
-			return readErr
-		}
-		command = normalizeSettingsWidgetControlCommand(command)
-
-		action := handleWidgetLoopControlCommand(command, widgetLoopControlHandlers{
-			QuitTokens:    []string{"q", "quit"},
-			HelpTokens:    []string{"help"},
-			RefreshTokens: []string{"r", "refresh"},
-			OnHelp: func() {
-				state.toggleHelp()
-			},
-			OnRefresh: func() {
-				if err := state.reload(); err != nil {
-					state.status = fmt.Sprintf("Error: %v", err)
-					return
+			if event.err != nil {
+				if event.err == io.EOF {
+					return nil
 				}
-				state.status = "Reloaded from agentx.toml"
-			},
-		})
-		if action == widgetLoopControlQuit {
-			return nil
-		}
-		if action == widgetLoopControlHandled {
-			continue
-		}
-
-		if err := state.handleCommand(ctx, command); err != nil {
-			state.status = fmt.Sprintf("Error: %v", err)
-			continue
-		}
-		if state.consumeBell() {
-			if _, err := fmt.Fprint(out, "\a"); err != nil {
-				return err
+				return event.err
 			}
+			command := normalizeSettingsWidgetControlCommand(event.command)
+
+			action := handleWidgetLoopControlCommand(command, widgetLoopControlHandlers{
+				QuitTokens:    []string{"q", "quit"},
+				HelpTokens:    []string{"help"},
+				RefreshTokens: []string{"r", "refresh"},
+				OnHelp: func() {
+					state.toggleHelp()
+				},
+				OnRefresh: func() {
+					if err := state.reload(); err != nil {
+						state.status = fmt.Sprintf("Error: %v", err)
+						return
+					}
+					state.status = "Reloaded from agentx.toml"
+				},
+			})
+			if action == widgetLoopControlQuit {
+				return nil
+			}
+			if action == widgetLoopControlHandled {
+				continue
+			}
+
+			if err := state.handleCommand(ctx, command); err != nil {
+				state.status = fmt.Sprintf("Error: %v", err)
+				continue
+			}
+			if state.consumeBell() {
+				if _, err := fmt.Fprint(out, "\a"); err != nil {
+					return err
+				}
+			}
+		case <-ticker.C:
 		}
 	}
 }

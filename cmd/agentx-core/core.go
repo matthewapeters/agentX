@@ -372,35 +372,39 @@ func isDedicatedSystemAppletTab(name string) bool {
 	return false
 }
 
-// AgentXCore orchestrates the tmux session, applets, and IPC.
+// AgentXCore orchestrates the multiplexer session, applets, and IPC.
 type AgentXCore struct {
-	Config                    *Config
-	runtimeConfig             CoreRuntimeConfig
-	systemAppletHost          SystemAppletHost
-	SessionID                 string
-	tmuxSessionName           string
-	coreExecutablePath        string
-	tmuxInitialized           bool
-	applets                   map[string]*AppletProcess
-	inputHistory              []string
-	exitRequested             bool
-	mu                        sync.RWMutex
-	startedAt                 time.Time
-	healthAddr                string // Address for health endpoint
-	healthListener            net.Listener
-	contextManager            *ContextManager
-	lifecycleEventCounter     int
-	startupLifecycleEmitted   bool
-	paneTargetByName          map[string]string
-	shutdownProvider          func()
-	lastPromptCycle           PromptCycleStatus
-	classifyPhaseStartedAt    time.Time
-	thinkingPhaseStartedAt    time.Time
-	toolPhaseStartedAt        time.Time
-	respondPhaseStartedAt     time.Time
-	contextRenderLoopStarted  bool
-	systemRenderMu            sync.Mutex
-	lastSystemRender          string
+	Config                   *Config
+	multiplexerDriver        MultiplexerDriver
+	runtimeConfig            CoreRuntimeConfig
+	systemAppletHost         SystemAppletHost
+	SessionID                string
+	tmuxSessionName          string
+	coreExecutablePath       string
+	tmuxInitialized          bool
+	applets                  map[string]*AppletProcess
+	inputHistory             []string
+	exitRequested            bool
+	mu                       sync.RWMutex
+	startedAt                time.Time
+	healthAddr               string // Address for health endpoint
+	healthListener           net.Listener
+	contextManager           *ContextManager
+	lifecycleEventCounter    int
+	startupLifecycleEmitted  bool
+	paneTargetByName         map[string]string
+	shutdownProvider         func()
+	lastPromptCycle          PromptCycleStatus
+	classifyPhaseStartedAt   time.Time
+	thinkingPhaseStartedAt   time.Time
+	toolPhaseStartedAt       time.Time
+	respondPhaseStartedAt    time.Time
+	contextRenderLoopStarted bool
+	zellijLayoutApplied      bool
+	zellijLayoutApplying     bool
+	zellijLayoutCond         *sync.Cond
+	systemRenderMu           sync.Mutex
+	lastSystemRender         string
 }
 
 type submitRequest struct {
@@ -558,9 +562,22 @@ type AppletProcess struct {
 
 // NewAgentXCore creates a new orchestrator instance.
 func NewAgentXCore(cfg *Config) *AgentXCore {
+	return NewAgentXCoreWithDriver(cfg, nil)
+}
+
+// NewAgentXCoreWithDriver creates a new orchestrator instance with an injected multiplexer driver.
+func NewAgentXCoreWithDriver(cfg *Config, driver MultiplexerDriver) *AgentXCore {
 	sessionID := cfg.SessionID
 	if sessionID == "" {
 		sessionID = fmt.Sprintf("agentx_%d", time.Now().Unix())
+	}
+	if driver == nil {
+		resolvedDriver, err := runtimeMultiplexerDriver(cfg.ProjectDir)
+		if err != nil {
+			driver = NewTmuxMultiplexerDriver()
+		} else {
+			driver = resolvedDriver
+		}
 	}
 	runtimeConfig := resolveCoreRuntimeConfig(cfg.ProjectDir)
 	coreExecutablePath := "agentx-core"
@@ -569,17 +586,18 @@ func NewAgentXCore(cfg *Config) *AgentXCore {
 	}
 
 	core := &AgentXCore{
-		Config:                    cfg,
-		runtimeConfig:             runtimeConfig,
-		systemAppletHost:          newSystemAppletHost(),
-		SessionID:                 sessionID,
-		tmuxSessionName:           buildTmuxSessionName(cfg.Username, sessionID),
-		coreExecutablePath:        coreExecutablePath,
-		applets:                   make(map[string]*AppletProcess),
-		inputHistory:              make([]string, 0),
-		startedAt:                 time.Now(),
-		healthAddr:                "127.0.0.1:0",
-		paneTargetByName:          make(map[string]string),
+		Config:             cfg,
+		multiplexerDriver:  driver,
+		runtimeConfig:      runtimeConfig,
+		systemAppletHost:   newSystemAppletHost(),
+		SessionID:          sessionID,
+		tmuxSessionName:    buildTmuxSessionName(cfg.Username, sessionID),
+		coreExecutablePath: coreExecutablePath,
+		applets:            make(map[string]*AppletProcess),
+		inputHistory:       make([]string, 0),
+		startedAt:          time.Now(),
+		healthAddr:         "127.0.0.1:0",
+		paneTargetByName:   make(map[string]string),
 		lastPromptCycle: PromptCycleStatus{
 			Classify: PromptCyclePhase{State: "pending", ElapsedMs: 0},
 			Thinking: PromptCyclePhase{State: "pending", ElapsedMs: 0},
@@ -619,16 +637,19 @@ func (ac *AgentXCore) requestRuntimeShutdown() {
 	if provider != nil {
 		provider()
 	}
-	if err := ac.runTmux(context.Background(), "kill-session", "-t", ac.tmuxSessionName); err != nil && !isTmuxMissingSessionError(err) {
+	if err := ac.runTmux(context.Background(), buildKillSessionCommand(ac.multiplexerDriver.BackendName(), ac.tmuxSessionName)...); err != nil && !isTmuxMissingSessionError(err) {
 		log.Printf("[AgentX Core] Runtime shutdown session kill failed: %v", err)
 	}
 }
 
 func (ac *AgentXCore) FocusInputPane(ctx context.Context) error {
+	if ac.multiplexerDriver.BackendName() != defaultMultiplexerBackend {
+		return nil
+	}
 	return ac.runTmux(ctx, "select-pane", "-t", ac.paneTargetForName(PaneTitleInput))
 }
 
-// InitializeTmuxSession creates the tmux session and panes with the designed layout:
+// InitializeTmuxSession creates the multiplexer session and panes with the designed layout:
 // Top (80% height): Chat (80% width left) | Context (20% width right)
 // Bottom (20% height): Input (full width)
 // Separate window: Logs (hidden, navigable via ctrl-b)
@@ -639,12 +660,16 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 	}
 
 	startupWidth, startupHeight := resolveStartupWindowSize(os.Stdout)
+	backendName := ac.multiplexerDriver.BackendName()
 
-	if err := ac.runTmux(ctx, buildNewSessionCommand(ac.tmuxSessionName, startupWidth, startupHeight)...); err != nil {
-		return fmt.Errorf("failed to create tmux session: %w", err)
+	// For non-tmux backends (e.g. zellij), create a bare background session now.
+	// The layout with applet commands is applied in launchPaneAppletProcesses once the
+	// health address is known.
+	if err := ac.runTmux(ctx, buildNewSessionCommand(backendName, ac.tmuxSessionName, startupWidth, startupHeight, strings.TrimSpace(ac.Config.LayoutFile))...); err != nil {
+		return fmt.Errorf("failed to create %s session: %w", backendName, err)
 	}
 
-	if ac.Config.StartupMode == visibleWindowsStartupMode {
+	if backendName == defaultMultiplexerBackend && ac.Config.StartupMode == visibleWindowsStartupMode {
 		if err := ac.initializeVisibleWindowsTmuxLayout(ctx); err == nil {
 			if err := ac.runTmux(ctx, "select-window", "-t", ac.tmuxSessionName+":2"); err != nil {
 				return fmt.Errorf("failed to select input window in visible-windows mode: %w", err)
@@ -653,30 +678,42 @@ func (ac *AgentXCore) InitializeTmuxSession(ctx context.Context) error {
 				return fmt.Errorf("failed to focus input pane in visible-windows mode: %w", err)
 			}
 
-			log.Printf("[AgentX Core] tmux session '%s' initialized in startup mode: visible-windows", ac.tmuxSessionName)
+			log.Printf("[AgentX Core] %s session '%s' initialized in startup mode: visible-windows", backendName, ac.tmuxSessionName)
 			ac.tmuxInitialized = true
 			return nil
 		}
 
 		log.Printf("[AgentX Core] startup mode '%s' failed; falling back to default layout", visibleWindowsStartupMode)
-		if killErr := ac.runTmux(ctx, "kill-session", "-t", ac.tmuxSessionName); killErr != nil && !isTmuxMissingSessionError(killErr) {
-			return fmt.Errorf("failed to reset tmux session after visible-windows startup failure: %w", killErr)
+		if killErr := ac.runTmux(ctx, buildKillSessionCommand(backendName, ac.tmuxSessionName)...); killErr != nil && !isTmuxMissingSessionError(killErr) {
+			return fmt.Errorf("failed to reset %s session after visible-windows startup failure: %w", backendName, killErr)
 		}
-		if err := ac.runTmux(ctx, buildNewSessionCommand(ac.tmuxSessionName, startupWidth, startupHeight)...); err != nil {
-			return fmt.Errorf("failed to recreate tmux session for default layout fallback: %w", err)
+		if err := ac.runTmux(ctx, buildNewSessionCommand(backendName, ac.tmuxSessionName, startupWidth, startupHeight, strings.TrimSpace(ac.Config.LayoutFile))...); err != nil {
+			return fmt.Errorf("failed to recreate %s session for default layout fallback: %w", backendName, err)
 		}
 	}
 
-	if err := ac.initializeDefaultTmuxLayout(ctx); err != nil {
-		return err
+	if backendName == defaultMultiplexerBackend {
+		if err := ac.initializeDefaultTmuxLayout(ctx); err != nil {
+			return err
+		}
+
+		// Keep startup cursor in the interactive input pane.
+		if err := ac.runTmux(ctx, "select-pane", "-t", ac.paneTargetForName(PaneTitleInput)); err != nil {
+			return fmt.Errorf("failed to focus input pane: %w", err)
+		}
+	} else {
+		// Non-tmux backends (e.g., zellij) rely on the KDL layout file for pane topology.
+		// Register logical pane name mappings with placeholder targets for compatibility.
+		ac.paneTargetByName[PaneTitleOutput] = "chat"
+		ac.paneTargetByName["chat"] = "chat"
+		ac.paneTargetByName[PaneTitleInput] = "input"
+		ac.paneTargetByName[PaneTitleSystem] = "context"
+		ac.paneTargetByName["context"] = "context"
+		ac.paneTargetByName[PaneTitleLogs] = "logs"
+		ac.paneTargetByName["logs"] = "logs"
 	}
 
-	// Keep startup cursor in the interactive input pane.
-	if err := ac.runTmux(ctx, "select-pane", "-t", ac.paneTargetForName(PaneTitleInput)); err != nil {
-		return fmt.Errorf("failed to focus input pane: %w", err)
-	}
-
-	log.Printf("[AgentX Core] tmux session '%s' initialized with layout: chat(80x80)|context(20x80) top, input(100x20) bottom, logs hidden", ac.tmuxSessionName)
+	log.Printf("[AgentX Core] %s session '%s' initialized with layout: chat(80x80)|context(20x80) top, input(100x20) bottom, logs hidden", backendName, ac.tmuxSessionName)
 	ac.tmuxInitialized = true
 	return nil
 }
@@ -813,17 +850,11 @@ func (ac *AgentXCore) enforceDefaultLayoutPaneMinimums(ctx context.Context, inpu
 }
 
 func (ac *AgentXCore) runTmux(ctx context.Context, args ...string) error {
-	cmd := exec.CommandContext(ctx, "tmux", args...)
-	return cmd.Run()
+	return ac.multiplexerDriver.Run(ctx, args...)
 }
 
 func (ac *AgentXCore) runTmuxCapture(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "tmux", args...)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+	return ac.multiplexerDriver.Capture(ctx, args...)
 }
 
 func paneTargets(sessionName, chatTarget, inputTarget, contextTarget string) []tmuxPaneTarget {
@@ -835,8 +866,27 @@ func paneTargets(sessionName, chatTarget, inputTarget, contextTarget string) []t
 	}
 }
 
-func buildNewSessionCommand(sessionName string, width int, height int) []string {
-	return []string{"new-session", "-d", "-s", sessionName, "-n", tmuxPrimaryWindow, "-x", strconv.Itoa(width), "-y", strconv.Itoa(height)}
+// buildKillSessionCommand returns the backend-specific command args for killing a session.
+// Tmux: kill-session -t <name>  |  Zellij: delete-session <name>  (positional, no -t flag)
+func buildKillSessionCommand(backendName string, sessionName string) []string {
+	switch strings.ToLower(strings.TrimSpace(backendName)) {
+	case "zellij":
+		return []string{"delete-session", sessionName}
+	default:
+		return []string{"kill-session", "-t", sessionName}
+	}
+}
+
+func buildNewSessionCommand(backendName string, sessionName string, width int, height int, layoutFile string) []string {
+	switch strings.ToLower(strings.TrimSpace(backendName)) {
+	case "zellij":
+		// zellij 0.40+: create a detached (background) session via 'attach --create-background'.
+		// Layout via -l / --layout is only supported on foreground starts, not background attach.
+		// Session name is a positional arg, not a flag.
+		return []string{"attach", "--create-background", sessionName}
+	default:
+		return []string{"new-session", "-d", "-s", sessionName, "-n", tmuxPrimaryWindow, "-x", strconv.Itoa(width), "-y", strconv.Itoa(height)}
+	}
 }
 
 func resolveStartupWindowSize(out io.Writer) (width int, height int) {
@@ -1259,6 +1309,10 @@ func (ac *AgentXCore) emitLifecycleEvent(ctx context.Context, stage string, deta
 }
 
 func (ac *AgentXCore) renderStartupStatus(ctx context.Context, message string) error {
+	if ac.multiplexerDriver.BackendName() != defaultMultiplexerBackend {
+		return nil
+	}
+
 	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote(message))
 	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(PaneTitleLogs), renderCmd, "Enter"); err != nil {
 		trimmedMessage := strings.TrimSpace(message)
@@ -1315,6 +1369,10 @@ func (ac *AgentXCore) RunStartupBootstrap(ctx context.Context) error {
 }
 
 func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
+	if ac.multiplexerDriver.BackendName() != defaultMultiplexerBackend {
+		return ac.launchZellijPaneApplets(ctx)
+	}
+
 	base := ac.buildAppletBaseRuntimeConfig()
 
 	for _, spec := range ac.defaultAppletRuntimeSpecs() {
@@ -1330,6 +1388,142 @@ func (ac *AgentXCore) launchPaneAppletProcesses(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// launchZellijPaneApplets creates a zellij session with a dynamically generated KDL layout
+// that embeds all applet commands. Called by launchPaneAppletProcesses for non-tmux backends.
+// The session is created here (not in InitializeTmuxSession) so the health address is known.
+func (ac *AgentXCore) launchZellijPaneApplets(ctx context.Context) (err error) {
+	ac.mu.Lock()
+	if ac.zellijLayoutCond == nil {
+		ac.zellijLayoutCond = sync.NewCond(&ac.mu)
+	}
+	for ac.zellijLayoutApplying {
+		ac.zellijLayoutCond.Wait()
+	}
+	if ac.zellijLayoutApplied {
+		ac.mu.Unlock()
+		log.Printf("[AgentX Core] zellij applet layout already applied for session %q; skipping duplicate apply", ac.tmuxSessionName)
+		return nil
+	}
+	ac.zellijLayoutApplying = true
+	ac.mu.Unlock()
+
+	defer func() {
+		ac.mu.Lock()
+		ac.zellijLayoutApplying = false
+		if err == nil {
+			ac.zellijLayoutApplied = true
+		}
+		ac.zellijLayoutCond.Broadcast()
+		ac.mu.Unlock()
+	}()
+
+	base := ac.buildAppletBaseRuntimeConfig()
+
+	// Build shell commands for the four primary panes.
+	type paneSpec struct {
+		name string
+	}
+	primaryPanes := []paneSpec{
+		{name: "chat"},
+		{name: "context"},
+		{name: "input"},
+		{name: "logs"},
+	}
+	cmds := make(map[string]string, len(primaryPanes))
+	for _, p := range primaryPanes {
+		spec := appletRuntimeSpec{Name: p.name, PaneName: p.name, Runtime: appletRuntimeGo}
+		cmds[p.name] = ac.buildPaneAppletLaunchCommand(spec, base, 0, 0)
+	}
+
+	kdlContent := buildZellijAppletLayout(cmds)
+
+	tmpFile, err := os.CreateTemp("", "agentx-zellij-*.kdl")
+	if err != nil {
+		return fmt.Errorf("failed to create zellij layout temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.WriteString(kdlContent); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write zellij layout temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Apply dynamic layout (with applet commands) to the existing background session.
+	// zellij --session <name> --layout <file> adds a new tab with the layout when a session exists.
+	if err := ac.multiplexerDriver.Run(ctx, "--session", ac.tmuxSessionName, "--layout", tmpPath); err != nil {
+		return fmt.Errorf("failed to apply zellij applet layout: %w", err)
+	}
+
+	log.Printf("[AgentX Core] zellij session %q created with applet layout", ac.tmuxSessionName)
+	return nil
+}
+
+// buildZellijAppletLayout generates a KDL layout string embedding the provided pane commands.
+// Each command is run via bash -lc so that shell env-prefix assignments are honoured.
+func buildZellijAppletLayout(cmds map[string]string) string {
+	var sb strings.Builder
+
+	sb.WriteString("layout {\n")
+	// Keep input anchored below the main area: top-level horizontal split means
+	// main/chat area on top, dedicated input pane at the bottom.
+	sb.WriteString("    pane split_direction=\"horizontal\" {\n")
+	sb.WriteString("        pane split_direction=\"vertical\" {\n")
+
+	if cmd, ok := cmds["chat"]; ok {
+		sb.WriteString("            pane name=\"chat\" size=\"80%\" focus=true {\n")
+		sb.WriteString("                command \"bash\"\n")
+		fmt.Fprintf(&sb, "                args \"-lc\" %s\n", zellijKDLString(cmd))
+		sb.WriteString("            }\n")
+	}
+	if cmd, ok := cmds["context"]; ok {
+		sb.WriteString("            pane name=\"context\" size=\"20%\" {\n")
+		sb.WriteString("                command \"bash\"\n")
+		fmt.Fprintf(&sb, "                args \"-lc\" %s\n", zellijKDLString(cmd))
+		sb.WriteString("            }\n")
+	}
+
+	sb.WriteString("        }\n") // close inner horizontal split
+	if cmd, ok := cmds["input"]; ok {
+		sb.WriteString("        pane name=\"input\" size=\"20%\" {\n")
+		sb.WriteString("            command \"bash\"\n")
+		fmt.Fprintf(&sb, "            args \"-lc\" %s\n", zellijKDLString(cmd))
+		sb.WriteString("        }\n")
+	}
+	sb.WriteString("    }\n") // close outer vertical split
+
+	if cmd, ok := cmds["logs"]; ok {
+		sb.WriteString("    floating_panes {\n")
+		sb.WriteString("        pane name=\"logs\" x=\"68%\" y=\"8%\" width=\"30%\" height=\"28%\" {\n")
+		sb.WriteString("            command \"bash\"\n")
+		fmt.Fprintf(&sb, "            args \"-lc\" %s\n", zellijKDLString(cmd))
+		sb.WriteString("        }\n")
+		sb.WriteString("    }\n")
+	}
+
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+// zellijKDLString returns a KDL-quoted string (double-quoted, with backslash and double-quote escaped).
+func zellijKDLString(s string) string {
+	var sb strings.Builder
+	sb.WriteByte('"')
+	for _, c := range s {
+		switch c {
+		case '"':
+			sb.WriteString(`\"`)
+		case '\\':
+			sb.WriteString(`\\`)
+		default:
+			sb.WriteRune(c)
+		}
+	}
+	sb.WriteByte('"')
+	return sb.String()
 }
 
 func (ac *AgentXCore) buildAppletBaseRuntimeConfig() appletBaseRuntimeConfig {
@@ -1377,16 +1571,16 @@ func shellEnvPrefix(env map[string]string) string {
 
 func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base appletBaseRuntimeConfig, paneHeight int, paneWidth int) string {
 	baseEnv := map[string]string{
-		"AGENTX_APPLET_NAME":                 spec.Name,
-		"AGENTX_SESSION_ID":                  base.SessionID,
-		"AGENTX_CORE_HTTP":                   base.CoreHTTP,
-		"AGENTX_PROJECT_DIR":                 base.ProjectDir,
-		"AGENTX_USERNAME":                    base.Username,
-		"AGENTX_APPLET_RUNTIME":              string(spec.Runtime),
-		"AGENTX_SUBMIT_TIMEOUT_SEC":          base.SubmitTimeoutSeconds,
-		"AGENTX_CHAT_BACKEND":                base.ChatBackend,
-		"AGENTX_OLLAMA_HOST":                 base.OllamaHost,
-		"AGENTX_OLLAMA_MODEL":                base.OllamaModel,
+		"AGENTX_APPLET_NAME":        spec.Name,
+		"AGENTX_SESSION_ID":         base.SessionID,
+		"AGENTX_CORE_HTTP":          base.CoreHTTP,
+		"AGENTX_PROJECT_DIR":        base.ProjectDir,
+		"AGENTX_USERNAME":           base.Username,
+		"AGENTX_APPLET_RUNTIME":     string(spec.Runtime),
+		"AGENTX_SUBMIT_TIMEOUT_SEC": base.SubmitTimeoutSeconds,
+		"AGENTX_CHAT_BACKEND":       base.ChatBackend,
+		"AGENTX_OLLAMA_HOST":        base.OllamaHost,
+		"AGENTX_OLLAMA_MODEL":       base.OllamaModel,
 	}
 
 	baseEnv["AGENTX_WIDGET_PANE_HEIGHT"] = strconv.Itoa(paneHeight)
@@ -1620,6 +1814,10 @@ func (ac *AgentXCore) loadAgentIdentityPrompt() string {
 }
 
 func (ac *AgentXCore) emitBridgeLog(ctx context.Context, event string, details string) {
+	if ac.multiplexerDriver.BackendName() != defaultMultiplexerBackend {
+		return
+	}
+
 	trimmedEvent := strings.TrimSpace(event)
 	if trimmedEvent == "" {
 		trimmedEvent = "bridge_event"
@@ -1665,6 +1863,10 @@ func (ac *AgentXCore) paneTargetForName(paneName string) string {
 func (ac *AgentXCore) setPaneTitle(ctx context.Context, target string, title string) error {
 	if err := validatePaneTitle(title); err != nil {
 		return err
+	}
+	// Zellij pane title management uses a different action API; skip for non-tmux backends.
+	if ac.multiplexerDriver.BackendName() != defaultMultiplexerBackend {
+		return nil
 	}
 	return ac.runTmux(ctx, "select-pane", "-t", target, "-T", title)
 }
@@ -2190,19 +2392,15 @@ func (ac *AgentXCore) StartHealthEndpoint(ctx context.Context) error {
 	return nil
 }
 
-// AttachTmuxSession attaches the current terminal to the managed tmux session.
+// AttachTmuxSession attaches the current terminal to the managed multiplexer session.
 func (ac *AgentXCore) AttachTmuxSession(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "tmux", "attach-session", "-t", ac.tmuxSessionName)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to attach tmux session: %w", err)
+	if err := ac.multiplexerDriver.AttachSession(ctx, ac.tmuxSessionName, os.Stdin, os.Stdout, os.Stderr); err != nil {
+		return fmt.Errorf("failed to attach multiplexer session: %w", err)
 	}
 	return nil
 }
 
-// Shutdown gracefully stops all goroutines, applets, and tmux session.
+// Shutdown gracefully stops all goroutines, applets, and the multiplexer session.
 func (ac *AgentXCore) Shutdown(ctx context.Context) error {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
@@ -2219,12 +2417,11 @@ func (ac *AgentXCore) Shutdown(ctx context.Context) error {
 		log.Printf("[AgentX Core] Stopped applet: %s", name)
 	}
 
-	// Kill tmux session.
+	// Kill multiplexer session.
 	tmuxKillCtx, tmuxKillCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer tmuxKillCancel()
-	cmd := exec.CommandContext(tmuxKillCtx, "tmux", "kill-session", "-t", ac.tmuxSessionName)
-	if err := cmd.Run(); err != nil {
-		log.Printf("[AgentX Core] Warning: failed to kill tmux session: %v", err)
+	if err := ac.runTmux(tmuxKillCtx, buildKillSessionCommand(ac.multiplexerDriver.BackendName(), ac.tmuxSessionName)...); err != nil && !isTmuxMissingSessionError(err) {
+		log.Printf("[AgentX Core] Warning: failed to kill multiplexer session: %v", err)
 	}
 	if ac.healthListener != nil {
 		_ = ac.healthListener.Close()

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -114,52 +113,89 @@ func runFilesystemWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, s
 	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
 	state.seedViewportFromStartup(startupHeight, startupWidth, promptMode)
 	var previousLines []string
+	ticker := time.NewTicker(150 * time.Millisecond)
+	defer ticker.Stop()
+
+	type commandEvent struct {
+		command string
+		err     error
+	}
+	commandEvents := make(chan commandEvent, 16)
+	go func() {
+		defer close(commandEvents)
+		for {
+			command, readErr := commandReader()
+			if readErr != nil {
+				select {
+				case commandEvents <- commandEvent{err: readErr}:
+				case <-ctx.Done():
+				}
+				return
+			}
+			select {
+			case commandEvents <- commandEvent{command: command}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	for {
 		state.adaptViewportToTerminal(out, promptMode)
 		currentLines := filesystemWidgetFrameLines(state.render())
-		if err := writeFilesystemWidgetFrameDiff(out, previousLines, currentLines); err != nil {
-			return err
-		}
-		previousLines = currentLines
-		if promptMode {
-			if _, err := fmt.Fprint(out, "files> "); err != nil {
+		renderChanged := len(previousLines) == 0 || strings.Join(previousLines, "\n") != strings.Join(currentLines, "\n")
+		if renderChanged {
+			if err := writeFilesystemWidgetFrameDiff(out, previousLines, currentLines); err != nil {
 				return err
+			}
+			previousLines = currentLines
+			if promptMode {
+				if _, err := fmt.Fprint(out, "files> "); err != nil {
+					return err
+				}
 			}
 		}
 
-		command, readErr := commandReader()
-		if readErr != nil {
-			if errors.Is(readErr, io.EOF) {
+		select {
+		case <-ctx.Done():
+			return nil
+		case event, ok := <-commandEvents:
+			if !ok {
 				return nil
 			}
-			return readErr
-		}
-		command = normalizeFilesystemWidgetControlCommand(command)
-
-		action := handleWidgetLoopControlCommand(command, widgetLoopControlHandlers{
-			QuitTokens: []string{"q", "quit"},
-			HelpTokens: []string{"help"},
-			OnHelp: func() {
-				state.toggleHelp()
-			},
-		})
-		if action == widgetLoopControlQuit {
-			return nil
-		}
-		if action == widgetLoopControlHandled {
-			continue
-		}
-
-		actionErr := state.handleCommand(ctx, command)
-		if actionErr != nil {
-			state.status = fmt.Sprintf("Error: %v", actionErr)
-			continue
-		}
-		if state.consumeBell() {
-			if _, err := fmt.Fprint(out, "\a"); err != nil {
-				return err
+			if event.err != nil {
+				if errors.Is(event.err, io.EOF) {
+					return nil
+				}
+				return event.err
 			}
+			command := normalizeFilesystemWidgetControlCommand(event.command)
+
+			action := handleWidgetLoopControlCommand(command, widgetLoopControlHandlers{
+				QuitTokens: []string{"q", "quit"},
+				HelpTokens: []string{"help"},
+				OnHelp: func() {
+					state.toggleHelp()
+				},
+			})
+			if action == widgetLoopControlQuit {
+				return nil
+			}
+			if action == widgetLoopControlHandled {
+				continue
+			}
+
+			actionErr := state.handleCommand(ctx, command)
+			if actionErr != nil {
+				state.status = fmt.Sprintf("Error: %v", actionErr)
+				continue
+			}
+			if state.consumeBell() {
+				if _, err := fmt.Fprint(out, "\a"); err != nil {
+					return err
+				}
+			}
+		case <-ticker.C:
 		}
 	}
 }
@@ -1043,22 +1079,39 @@ func launchEditorTmuxWindow(filePath string) error {
 	editor := resolveEditor(os.Getenv("EDITOR"))
 	windowName := buildEditorWindowName(filePath)
 	editorCommand := buildEditorCommand(editor, filePath)
-	cmd := exec.Command("tmux", "new-window", "-t", sessionName+":", "-n", windowName, editorCommand)
-	if runErr := cmd.Run(); runErr != nil {
+	projectDir := "."
+	if envProjectDir := strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR")); envProjectDir != "" {
+		projectDir = envProjectDir
+	}
+
+	driver, err := runtimeMultiplexerDriver(projectDir)
+	if err != nil {
+		return fmt.Errorf("failed to initialize multiplexer driver: %w", err)
+	}
+	if runErr := driver.Run(context.Background(), "new-window", "-t", sessionName+":", "-n", windowName, editorCommand); runErr != nil {
 		return fmt.Errorf("failed launching editor window: %w", runErr)
 	}
 	return nil
 }
 
 func resolveTmuxSessionName() (string, error) {
+	projectDir := "."
+	if envProjectDir := strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR")); envProjectDir != "" {
+		projectDir = envProjectDir
+	}
+
+	driver, err := runtimeMultiplexerDriver(projectDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize multiplexer driver: %w", err)
+	}
 	fromEnv := strings.TrimSpace(os.Getenv("AGENTX_TMUX_SESSION"))
 	if fromEnv != "" {
 		return fromEnv, nil
 	}
 
-	output, err := exec.Command("tmux", "display-message", "-p", "#{session_name}").Output()
+	output, err := driver.Capture(context.Background(), "display-message", "-p", "#{session_name}")
 	if err == nil {
-		sessionName := strings.TrimSpace(string(output))
+		sessionName := strings.TrimSpace(output)
 		if sessionName != "" {
 			return sessionName, nil
 		}
