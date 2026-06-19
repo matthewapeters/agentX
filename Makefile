@@ -12,7 +12,8 @@ UV_PROJECT_ENV ?= $(CURDIR)/.venv
 	generate-startup-logo \
 	build build-core build-applets clean python-build python-test test-all \
 	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e go-test-pane-layout \
-	test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-ux-flow-what-is-2-plus-2-headless test-tmux-attached-runtime-headless test-tmux-attached-runtime-layout-headless test-startup-ollama-bootstrap-headless demo-smoke test-demo-ux-use-cases-headless test-demo-ux-use-cases-layout-headless test-demo-system-panel-tour-headless test-layout-file-fallback-headless layout-path-tests verify-tmux-layout hybrid-merge-gate hybrid-parity-gate \
+	go-test-multiplexer-contract go-test-multiplexer-boundary-leak \
+	test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-ux-flow-what-is-2-plus-2-headless test-tmux-attached-runtime-headless test-tmux-attached-runtime-layout-headless test-startup-ollama-bootstrap-headless test-applet-resize-api-headless demo-smoke test-demo-ux-use-cases-headless test-demo-ux-use-cases-layout-headless test-demo-system-panel-tour-headless test-layout-file-fallback-headless layout-path-tests verify-tmux-layout hybrid-merge-gate hybrid-parity-gate \
 	hybrid-parity-gate-inner \
 	run run-attached run-with-applets
 
@@ -36,6 +37,8 @@ help:
 	@echo "  go-test-functional  Run GoDog @functional suite"
 	@echo "  go-test-e2e         Run GoDog @e2e suite"
 	@echo "  go-test-pane-layout Run pane-layout unit tests"
+	@echo "  go-test-multiplexer-contract Run multiplexer contract scaffold tests"
+	@echo "  go-test-multiplexer-boundary-leak Run structural gate for direct tmux exec boundaries"
 	@echo "  test-tmux-layout-headless Run headless tmux UX layout validation script"
 	@echo "  test-demo-split-layout-headless Run headless DemoMode split-layout validation script"
 	@echo "  test-tmux-pane-affordances-headless Run headless pane-affordance UX contract script"
@@ -43,6 +46,7 @@ help:
 	@echo "  test-tmux-attached-runtime-headless Run attached-runtime focus and shutdown E2E script"
 	@echo "  test-tmux-attached-runtime-layout-headless Run attached-runtime focus/shutdown via --layout-file path"
 	@echo "  test-startup-ollama-bootstrap-headless Run startup E2E that verifies ollama backend bootstrap response"
+	@echo "  test-applet-resize-api-headless Run resize applet API contract check against seeded pane dimensions"
 	@echo "  demo-smoke          Run headless DemoMode smoke test"
 	@echo "  test-demo-ux-use-cases-headless Run five basic DemoMode UX use-cases (greet/cycle/input/logs/system)"
 	@echo "  test-demo-ux-use-cases-layout-headless Run UX use-cases through --layout-file overlay path"
@@ -128,6 +132,12 @@ go-test-e2e:
 go-test-pane-layout:
 	cd $(GO_CORE_DIR) && go test -v -run 'TestBuildNewSessionCommand|TestSplitCommandsUsePaneIDCapture|TestPaneTargets_MapsAllPanesCorrectly' ./...
 
+go-test-multiplexer-contract:
+	cd $(GO_CORE_DIR) && go test -v -run 'TestMultiplexerContract_' ./...
+
+go-test-multiplexer-boundary-leak:
+	cd $(GO_CORE_DIR) && go test -v -run 'TestMultiplexerBoundaryLeak_' ./...
+
 test-tmux-layout-headless:
 	./tests/test_tmux_layout_headless.sh
 
@@ -148,6 +158,9 @@ test-tmux-attached-runtime-layout-headless: build-core
 
 test-startup-ollama-bootstrap-headless: build-core
 	./tests/test_startup_ollama_bootstrap_headless.sh
+
+test-applet-resize-api-headless: build-core
+	./tests/test_applet_resize_api_headless.sh
 
 demo-smoke: build-core
 	./tests/test_demo_smoke_headless.sh
@@ -170,7 +183,7 @@ layout-path-tests: test-layout-file-fallback-headless test-tmux-attached-runtime
 verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-ux-flow-what-is-2-plus-2-headless
 	@echo "tmux layout verification complete"
 
-hybrid-merge-gate: build-core go-test verify-tmux-layout demo-smoke test-tmux-attached-runtime-headless test-startup-ollama-bootstrap-headless
+hybrid-merge-gate: build-core go-test go-test-multiplexer-contract go-test-multiplexer-boundary-leak verify-tmux-layout demo-smoke test-tmux-attached-runtime-headless test-startup-ollama-bootstrap-headless
 	@echo "hybrid merge-readiness gate complete"
 
 hybrid-parity-gate:

@@ -500,6 +500,50 @@ func TestInputWidgetRender_DoesNotShowActivityHeaderLine(t *testing.T) {
 	}
 }
 
+func TestInputWidgetRender_DoesNotShowInputBannerHeader(t *testing.T) {
+	state := newInputWidgetComposeState()
+	state.viewportRows = 3
+	state.viewportCols = 12
+
+	render := state.render("agentx")
+	if strings.Contains(render, "[INPUT]") {
+		t.Fatalf("expected input render to omit [INPUT] banner, got:\n%s", render)
+	}
+}
+
+func TestInputWidgetRender_ComposeAndControlBoxesShareWidth(t *testing.T) {
+	state := newInputWidgetComposeState()
+	state.viewportRows = 3
+	state.viewportCols = 20
+
+	render := state.render("agentx")
+	lines := strings.Split(render, "\n")
+
+	composeTop := ""
+	controlTop := ""
+	for _, line := range lines {
+		plain := stripAnsi(line)
+		if strings.HasPrefix(plain, "┌") && strings.HasSuffix(plain, "┐") {
+			if composeTop == "" {
+				composeTop = plain
+				continue
+			}
+			controlTop = plain
+			break
+		}
+	}
+
+	if composeTop == "" || controlTop == "" {
+		t.Fatalf("expected both compose and control top borders in render:\n%s", render)
+	}
+
+	composeWidth := len([]rune(composeTop))
+	controlWidth := len([]rune(controlTop))
+	if composeWidth != controlWidth {
+		t.Fatalf("expected compose/control box widths to match, got compose=%d control=%d\nrender:\n%s", composeWidth, controlWidth, render)
+	}
+}
+
 func TestInputWidgetCursorPosition_AnchoredToRenderedBoxes(t *testing.T) {
 	state := newInputWidgetComposeState()
 	state.viewportRows = 3

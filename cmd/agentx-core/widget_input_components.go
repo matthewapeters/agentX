@@ -3,7 +3,7 @@ package main
 import "strings"
 
 func (c InputWidgetComponents) renderHeaderLines(showHelp bool) []string {
-	lines := []string{"[INPUT]"}
+	lines := []string{}
 	if showHelp {
 		lines = append(lines,
 			trimSingleLine("help: arrows move cursor | Shift+arrows pan view | Tab inserts tab", 96),

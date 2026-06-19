@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -1387,6 +1386,15 @@ func submitDemoPrompt(ctx context.Context, healthURL, prompt string) (string, er
 }
 
 func runTmuxCommand(tmuxSessionName string, args ...string) (string, error) {
+	projectDir := "."
+	if envProjectDir := strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR")); envProjectDir != "" {
+		projectDir = envProjectDir
+	}
+
+	driver, err := runtimeMultiplexerDriver(projectDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize multiplexer driver: %w", err)
+	}
 	commandArgs := make([]string, 0, len(args)+2)
 	commandArgs = append(commandArgs, args...)
 	hasExplicitTarget := false
@@ -1401,13 +1409,12 @@ func runTmuxCommand(tmuxSessionName string, args ...string) (string, error) {
 		commandArgs = append(commandArgs, "-t", tmuxSessionName)
 	}
 
-	cmd := exec.Command("tmux", commandArgs...)
-	output, err := cmd.CombinedOutput()
+	output, err := driver.RunCombined(context.Background(), commandArgs...)
 	if err != nil {
-		return "", fmt.Errorf("tmux %s failed: %w (%s)", strings.Join(commandArgs, " "), err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("tmux %s failed: %w (%s)", strings.Join(commandArgs, " "), err, strings.TrimSpace(output))
 	}
 
-	return string(output), nil
+	return output, nil
 }
 
 func sanitizePathComponent(value string) string {

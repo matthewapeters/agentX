@@ -1,5 +1,5 @@
 // Package main provides the AgentX Go core orchestrator.
-// It manages tmux session/pane lifecycle, supervises pane applets, routes IPC, and exposes a health endpoint.
+// It manages multiplexer session/pane lifecycle, supervises pane applets, routes IPC, and exposes a health endpoint.
 package main
 
 import (
@@ -27,14 +27,17 @@ func main() {
 		contextWidget         = flag.Bool("context-widget", false, "Run native Go context widget mode over stdout")
 		filesystemWidget      = flag.Bool("filesystem-widget", false, "Run native Go filesystem widget mode over stdin/stdout")
 		settingsWidget        = flag.Bool("settings-widget", false, "Run native Go system settings widget mode over stdin/stdout")
+		appletResize          = flag.Bool("applet-resize", false, "Run native Go resize applet test mode over stdout")
+		appletResizeAPIAddr   = flag.String("applet-resize-api-addr", firstNonEmpty(strings.TrimSpace(os.Getenv("AGENTX_APPLET_RESIZE_API_ADDR")), strings.TrimSpace(os.Getenv("AGENTX_APPLET_API_ADDR"))), "HTTP bind address for resize applet render API (overrides AGENTX_APPLET_API_ADDR)")
+		appletAPIAddr         = flag.String("applet-api-addr", strings.TrimSpace(os.Getenv("AGENTX_APPLET_API_ADDR")), "HTTP bind address for any applet's render API; activates /render and /health on the applet (default disabled)")
 		coreHTTP              = flag.String("core-http", strings.TrimSpace(os.Getenv("AGENTX_CORE_HTTP")), "Core HTTP base URL for widget/bridge modes")
-		layout                = flag.String("layout", "", "tmuxp layout file to apply after core windows are created (defaults to .agentx/layouts/default-layout.yaml)")
+		layout                = flag.String("layout", "", "layout file to apply after core windows are created (defaults to backend-specific layout in .agentx/layouts)")
 		layoutFile            = flag.String("layout-file", "", "Legacy alias for --layout")
-		layoutTemplate        = flag.String("layout-template", "", "Write a starter tmuxp layout template to this file and exit")
-		dumpDefaultLayoutPath = flag.String("dump-default-layout", "", "Write the built-in default tmuxp layout to a file path, or '-' for stdout")
+		layoutTemplate        = flag.String("layout-template", "", "Write a starter layout template to this file and exit")
+		dumpDefaultLayoutPath = flag.String("dump-default-layout", "", "Write the built-in default layout to a file path, or '-' for stdout")
 		startupMode           = flag.String("startup-mode", resolveStartupModeDefault(), "Startup topology mode: default|visible-windows")
-		attach                = flag.Bool("attach", true, "Attach to tmux session after startup (use -attach=false for headless mode)")
-		demo                  = flag.Bool("demo", false, "Run DemoMode with a split tmux controller and live core session")
+		attach                = flag.Bool("attach", true, "Attach to multiplexer session after startup (use -attach=false for headless mode)")
+		demo                  = flag.Bool("demo", false, "Run DemoMode with a split controller and live core session")
 		demoDefault           = flag.Bool("default", false, "Use default frame-based startup topology (works for normal and demo startup)")
 		demoWindowed          = flag.Bool("windowed", false, "Use windowed startup topology (works for normal and demo startup)")
 		demoHeadless          = flag.Bool("demo-headless", false, "Run DemoMode without the split-pane controller (internal)")
@@ -42,7 +45,7 @@ func main() {
 		demoSplit             = flag.Bool("demo-split", false, "Enable split-view controller behavior (internal)")
 		demoStoriesFile       = flag.String("demo-stories-file", "", "Stories board file path for split-view demo mode (internal)")
 		demoStart             = flag.String("demo-start", "", "Demo start selector (test id or 1-based index). Requires a demo mode flag")
-		demoCoreSession       = flag.String("demo-core-session", "", "Live core tmux session used by the DemoMode controller (internal)")
+		demoCoreSession       = flag.String("demo-core-session", "", "Live core multiplexer session used by the DemoMode controller (internal)")
 		healthAddr            = flag.String("health-addr", "", "Health endpoint address override for internal controller/runtime wiring")
 	)
 	flag.Parse()
@@ -72,18 +75,19 @@ func main() {
 	}
 
 	printStartupLogoForMode(startupLogoMode{
-		inputWidget:      *inputWidget,
-		outputWidget:     *outputWidget,
-		logsWidget:       *logsWidget,
-		contextWidget:    *contextWidget,
-		filesystemWidget: *filesystemWidget,
-		settingsWidget:   *settingsWidget,
-		layoutTemplate:   strings.TrimSpace(*layoutTemplate) != "",
+		inputWidget:       *inputWidget,
+		outputWidget:      *outputWidget,
+		logsWidget:        *logsWidget,
+		contextWidget:     *contextWidget,
+		filesystemWidget:  *filesystemWidget,
+		settingsWidget:    *settingsWidget,
+		appletResize:      *appletResize,
+		layoutTemplate:    strings.TrimSpace(*layoutTemplate) != "",
 		dumpDefaultLayout: strings.TrimSpace(*dumpDefaultLayoutPath) != "",
 	})
 
 	if *inputWidget {
-		exitCode := runInputWidgetCommand(strings.TrimSpace(*coreHTTP), os.Stdin, os.Stdout)
+		exitCode := runInputWidgetCommandWithAPI(strings.TrimSpace(*coreHTTP), strings.TrimSpace(*appletAPIAddr), os.Stdin, os.Stdout)
 		if exitCode != 0 {
 			os.Exit(exitCode)
 		}
@@ -130,6 +134,14 @@ func main() {
 		return
 	}
 
+	if *appletResize {
+		exitCode := runAppletResizeCommand(strings.TrimSpace(*appletResizeAPIAddr), os.Stdout)
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
+	}
+
 	if strings.TrimSpace(*layoutTemplate) != "" && strings.TrimSpace(*dumpDefaultLayoutPath) != "" {
 		log.Fatalf("--layout-template and --dump-default-layout cannot be used together")
 	}
@@ -139,7 +151,7 @@ func main() {
 			log.Fatalf("Failed to dump default layout: %v", err)
 		}
 		if strings.TrimSpace(*dumpDefaultLayoutPath) != "-" {
-			fmt.Printf("[AgentX Core] Wrote default tmuxp layout: %s\n", strings.TrimSpace(*dumpDefaultLayoutPath))
+			fmt.Printf("[AgentX Core] Wrote default layout: %s\n", strings.TrimSpace(*dumpDefaultLayoutPath))
 		}
 		return
 	}
@@ -148,7 +160,7 @@ func main() {
 		if err := writeTmuxpLayoutTemplate(strings.TrimSpace(*layoutTemplate)); err != nil {
 			log.Fatalf("Failed to write layout template: %v", err)
 		}
-		fmt.Printf("[AgentX Core] Wrote tmuxp layout template: %s\n", strings.TrimSpace(*layoutTemplate))
+		fmt.Printf("[AgentX Core] Wrote layout template: %s\n", strings.TrimSpace(*layoutTemplate))
 		return
 	}
 
@@ -156,15 +168,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
+	resolvedBackend := resolveMultiplexerBackend(*projectDir)
 	if resolvedLayoutFile == "" {
-		resolvedLayoutFile, err = ensureDefaultLayoutFile(*projectDir)
+		resolvedLayoutFile, err = resolveImplicitLayoutFile(*projectDir, resolvedBackend)
 		if err != nil {
-			log.Fatalf("Failed to materialize default layout file: %v", err)
+			log.Fatalf("Failed to resolve layout file for backend %q: %v", resolvedBackend, err)
 		}
 	}
 
-	if err := validateRuntimePrerequisites(); err != nil {
+	if err := validateRuntimePrerequisites(*projectDir); err != nil {
 		log.Fatalf("Missing runtime prerequisite: %v", err)
+	}
+
+	if (*demo || *demoHeadless || *demoController) && !multiplexerSupportsDemoSplit(resolvedBackend) {
+		log.Fatalf("Demo split mode is currently unsupported for multiplexer backend %q", resolvedBackend)
 	}
 
 	if *demoHeadless {
@@ -187,16 +204,21 @@ func main() {
 			StartupMode: demoStartupMode,
 		}
 
-		core := NewAgentXCore(cfg)
+		driver, err := newMultiplexerDriverFromConfig(*projectDir)
+		if err != nil {
+			log.Fatalf("Failed to initialize multiplexer driver: %v", err)
+		}
+
+		core := NewAgentXCoreWithDriver(cfg, driver)
 		core.SetShutdownProvider(cancel)
 		if err := core.InitializeTmuxSession(ctx); err != nil {
-			log.Fatalf("Failed to initialize demo tmux session: %v", err)
+			log.Fatalf("Failed to initialize demo multiplexer session: %v", err)
 		}
 		if err := core.PrepareHealthEndpoint(); err != nil {
 			log.Fatalf("Failed to prepare demo health endpoint: %v", err)
 		}
 		fmt.Printf("[AgentX Demo] Live TUI session initialized: %s\n", core.tmuxSessionName)
-		fmt.Printf("[AgentX Demo] Attach in another terminal with: tmux attach -t %s\n", core.tmuxSessionName)
+		fmt.Printf("[AgentX Demo] Attach in another terminal with: %s\n", multiplexerAttachHint(driver.BackendName(), core.tmuxSessionName))
 
 		if err := core.StartAppletSupervisor(ctx); err != nil {
 			log.Fatalf("Failed to start demo applet supervisor: %v", err)
@@ -267,7 +289,7 @@ func main() {
 			}
 
 			if strings.TrimSpace(testCase.ID) == "e2e-003" && strings.EqualFold(strings.TrimSpace(response), "quit") {
-				if killErr := runTmux(context.Background(), "kill-session", "-t", runtimeConfig.TmuxSessionName); killErr != nil && !isTmuxMissingSessionError(killErr) {
+				if killErr := runTmux(context.Background(), buildKillSessionCommand(resolvedBackend, runtimeConfig.TmuxSessionName)...); killErr != nil && !isTmuxMissingSessionError(killErr) {
 					return "", fmt.Errorf("failed to close live core session after final shutdown test: %w", killErr)
 				}
 			}
@@ -367,18 +389,28 @@ func main() {
 	fmt.Println("[AgentX Core] ✓ Shutdown complete")
 }
 
-func validateRuntimePrerequisites() error {
-	for _, binary := range []string{"tmux", "tmuxp"} {
+func validateRuntimePrerequisites(projectDir string) error {
+	driver, err := runtimeMultiplexerDriver(projectDir)
+	if err != nil {
+		return fmt.Errorf("failed to initialize multiplexer driver: %w", err)
+	}
+	requiredBinaries := []string{driver.BackendName()}
+	if driver.BackendName() == defaultMultiplexerBackend {
+		requiredBinaries = append(requiredBinaries, "tmuxp")
+	}
+	for _, binary := range requiredBinaries {
 		if _, err := exec.LookPath(binary); err != nil {
 			return fmt.Errorf("%s not found in PATH", binary)
 		}
 	}
 
-	if output, err := exec.Command("tmux", "-V").CombinedOutput(); err != nil {
-		return fmt.Errorf("tmux probe failed: %v (%s)", err, strings.TrimSpace(string(output)))
+	if output, err := driver.RunCombined(context.Background(), "-V"); err != nil {
+		return fmt.Errorf("%s probe failed: %v (%s)", driver.BackendName(), err, strings.TrimSpace(output))
 	}
-	if output, err := exec.Command("tmuxp", "--version").CombinedOutput(); err != nil {
-		return fmt.Errorf("tmuxp probe failed: %v (%s)", err, strings.TrimSpace(string(output)))
+	if driver.BackendName() == defaultMultiplexerBackend {
+		if output, err := exec.Command("tmuxp", "--version").CombinedOutput(); err != nil {
+			return fmt.Errorf("tmuxp probe failed: %v (%s)", err, strings.TrimSpace(string(output)))
+		}
 	}
 
 	return nil
@@ -418,13 +450,18 @@ func resolveStartupModeSelection(defaultFlag, windowedFlag bool, fallback string
 }
 
 func startAgentXCore(ctx context.Context, cancel context.CancelFunc, cfg *Config, attach bool) (*AgentXCore, error) {
-	core := NewAgentXCore(cfg)
+	driver, err := newMultiplexerDriverFromConfig(cfg.ProjectDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize multiplexer driver: %w", err)
+	}
+
+	core := NewAgentXCoreWithDriver(cfg, driver)
 	core.SetShutdownProvider(cancel)
 
 	if err := core.InitializeTmuxSession(ctx); err != nil {
 		return nil, err
 	}
-	fmt.Println("[AgentX Core] ✓ tmux session initialized")
+	fmt.Printf("[AgentX Core] ✓ %s session initialized\n", driver.BackendName())
 
 	if err := core.PrepareHealthEndpoint(); err != nil {
 		return nil, err
@@ -449,11 +486,11 @@ func startAgentXCore(ctx context.Context, cancel context.CancelFunc, cfg *Config
 	fmt.Println("[AgentX Core] ✓ Health endpoint started")
 
 	if attach {
-		fmt.Printf("[AgentX Core] Attaching to tmux session '%s'...\n", core.tmuxSessionName)
+		fmt.Printf("[AgentX Core] Attaching to %s session '%s'...\n", driver.BackendName(), core.tmuxSessionName)
 		if err := core.AttachTmuxSession(ctx); err != nil {
 			return nil, err
 		}
-		fmt.Println("[AgentX Core] tmux client detached; core still running")
+		fmt.Printf("[AgentX Core] %s client detached; core still running\n", driver.BackendName())
 	}
 
 	return core, nil

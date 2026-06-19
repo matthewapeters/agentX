@@ -9,14 +9,43 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
 )
+
+var (
+	inputWidgetRenderObserverMu sync.RWMutex
+	inputWidgetRenderObserver   func(height int, width int, lines []string)
+)
+
+func setInputWidgetRenderObserver(observer func(height int, width int, lines []string)) func() {
+	inputWidgetRenderObserverMu.Lock()
+	inputWidgetRenderObserver = observer
+	inputWidgetRenderObserverMu.Unlock()
+	return func() {
+		inputWidgetRenderObserverMu.Lock()
+		inputWidgetRenderObserver = nil
+		inputWidgetRenderObserverMu.Unlock()
+	}
+}
+
+func notifyInputWidgetRenderObserver(height int, width int, lines []string) {
+	inputWidgetRenderObserverMu.RLock()
+	observer := inputWidgetRenderObserver
+	inputWidgetRenderObserverMu.RUnlock()
+	if observer == nil {
+		return
+	}
+	copyLines := append([]string(nil), lines...)
+	observer(height, width, copyLines)
+}
 
 type widgetActivitySnapshot struct {
 	SessionID    string            `json:"session_id"`
@@ -121,6 +150,10 @@ func runInputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 		fmt.Fprintln(out, "Input widget failed: missing core HTTP base URL")
 		return 1
 	}
+	stopWatchdog := startWidgetCoreWatchdog(resolveWidgetCorePIDFromEnv(), 500*time.Millisecond, os.Stderr, func() {
+		os.Exit(0)
+	})
+	defer stopWatchdog()
 	baseURL = strings.TrimRight(baseURL, "/")
 	activityState := newWidgetActivityState()
 	stopPoller := startWidgetActivityPoller(baseURL, activityState)
@@ -329,6 +362,10 @@ func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *wi
 	state.seedViewportFromStartup(startupHeight, startupWidth)
 	defer showTerminalCursor(out)
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sigChan)
+
 	commandReader, cleanup, err := newInputWidgetKeyReaderFn(in)
 	if err != nil {
 		fmt.Fprintf(out, "Input widget failed: %v\n", err)
@@ -360,6 +397,8 @@ func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *wi
 	for {
 		state.adaptViewportToTerminal(out)
 		currentLines := filesystemWidgetFrameLines(state.render(activityState.promptLabel()))
+		height, width := resolveWidgetPaneSizeForWriter(out)
+		notifyInputWidgetRenderObserver(height, width, currentLines)
 		renderChanged := len(previousLines) == 0 || strings.Join(previousLines, "\n") != strings.Join(currentLines, "\n")
 		if renderChanged {
 			if err := writeFilesystemWidgetFrameDiff(out, previousLines, currentLines); err != nil {
@@ -371,6 +410,8 @@ func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *wi
 		state.placeTerminalCursor(out)
 
 		select {
+		case <-sigChan:
+			return 0
 		case event, ok := <-keyEvents:
 			if !ok {
 				return 0
@@ -1003,8 +1044,11 @@ func (s *inputWidgetComposeState) render(activityLabel string) string {
 	screen := NewInputWidgetScreenStateFromViewport(s.viewportRows, s.viewportCols, s.showHelp)
 	s.screen = screen
 	s.renderLayout = screen.Layout
-	lines = append(lines, s.screen.Components.renderHeaderLines(s.showHelp)...)
-	lines = append(lines, "")
+	headerLines := s.screen.Components.renderHeaderLines(s.showHelp)
+	lines = append(lines, headerLines...)
+	if len(headerLines) > 0 {
+		lines = append(lines, "")
+	}
 	lines = append(lines, s.screen.Components.ComposeBox.render(inputColor, s)...)
 	lines = append(lines, "")
 	lines = append(lines, s.screen.Components.ControlBox.render(controlColor, s)...)

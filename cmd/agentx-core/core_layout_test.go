@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"io"
-	"sync"
 	"strings"
+	"sync"
 	"testing"
 )
 

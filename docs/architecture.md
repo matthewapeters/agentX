@@ -29,6 +29,18 @@ The **Output applet** interactive design (navigation model, ownership boundary, 
 
 See [docs/architecture/startup_modes.md](architecture/startup_modes.md) for the authoritative startup-mode catalog, startup switches, and launch patterns.
 
+## Architecture Decisions (ADRs)
+
+See [docs/architecture/adr/00_INDEX.md](architecture/adr/00_INDEX.md) for the orchestration architecture decision record (ADR) entrypoint and index of accepted decisions.
+
+## Orchestration Design and Behavior Contracts
+
+See [docs/architecture/design/00_INDEX.md](architecture/design/00_INDEX.md) for implementation-level object/interface design contracts derived from ADR 0001-0005.
+
+See [docs/architecture/behavior/00_INDEX.md](architecture/behavior/00_INDEX.md) for detailed Gherkin behavior use-cases and traceability mapping.
+
+See [docs/architecture/schemas/00_INDEX.md](architecture/schemas/00_INDEX.md) for the authoritative orchestration schema home.
+
 | GUI Tab / Surface | TUI Analog / Surface | Owner (Go/Py) | Status |
 | --- | --- | --- | --- |
 | Chat (Output) | Output Pane (chat) | Go (current) | ✅ Implemented |

@@ -1100,8 +1100,12 @@ func runOutputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 		fmt.Fprintln(out, "Output widget failed: missing core HTTP base URL")
 		return 1
 	}
+	ctx, cancel := widgetCommandContext()
+	defer cancel()
+	stopWatchdog := startWidgetCoreWatchdog(resolveWidgetCorePIDFromEnv(), 500*time.Millisecond, os.Stderr, cancel)
+	defer stopWatchdog()
 
-	if err := runOutputWidgetLoopWithInput(context.Background(), strings.TrimRight(baseURL, "/"), in, out, 300*time.Millisecond); err != nil {
+	if err := runOutputWidgetLoopWithInput(ctx, strings.TrimRight(baseURL, "/"), in, out, 300*time.Millisecond); err != nil {
 		fmt.Fprintf(out, "Output widget failed: %v\n", err)
 		return 1
 	}

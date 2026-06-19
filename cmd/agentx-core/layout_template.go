@@ -10,6 +10,8 @@ import (
 
 const defaultLayoutRelativePath = ".agentx/layouts/default-layout.yaml"
 
+const backendLayoutDirRelativePath = ".agentx/layouts"
+
 const tmuxpLayoutTemplate = `# AgentX tmuxp layout template
 #
 # Usage:
@@ -54,6 +56,62 @@ windows:
     panes:
       - shell_command: ""
 `
+
+var backendLayoutExtensions = map[string]string{
+	defaultMultiplexerBackend: ".yaml",
+	"zellij":                ".kdl",
+}
+
+func backendLayoutDirectory(projectDir string) string {
+	trimmedProjectDir := strings.TrimSpace(projectDir)
+	if trimmedProjectDir == "" {
+		trimmedProjectDir = "."
+	}
+	return filepath.Join(trimmedProjectDir, backendLayoutDirRelativePath)
+}
+
+func backendLayoutExtension(backendName string) (string, bool) {
+	ext, ok := backendLayoutExtensions[strings.ToLower(strings.TrimSpace(backendName))]
+	return ext, ok
+}
+
+func backendLayoutFilePath(projectDir string, backendName string) (string, bool) {
+	ext, ok := backendLayoutExtension(backendName)
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(backendLayoutDirectory(projectDir), strings.ToLower(strings.TrimSpace(backendName))+"-layout"+ext), true
+}
+
+// resolveImplicitLayoutFile picks the backend-native layout file when the user did not
+// explicitly pass --layout/--layout-file. The deterministic pattern is:
+// .agentx/layouts/{backend}-layout.{ext}. Tmux preserves backward compatibility by
+// falling back to default-layout.yaml and materializing it for legacy installs.
+// Zellij requires zellij-layout.kdl so missing files fail deterministically.
+func resolveImplicitLayoutFile(projectDir string, backendName string) (string, error) {
+	normalizedBackend := strings.ToLower(strings.TrimSpace(backendName))
+	specificPath, ok := backendLayoutFilePath(projectDir, normalizedBackend)
+	if !ok {
+		return "", nil
+	}
+	if _, err := os.Stat(specificPath); err == nil {
+		return specificPath, nil
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to stat %s layout file: %w", normalizedBackend, err)
+	}
+
+	if normalizedBackend == defaultMultiplexerBackend {
+		legacyPath := defaultLayoutFilePath(projectDir)
+		if _, err := os.Stat(legacyPath); err == nil {
+			return legacyPath, nil
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("failed to stat legacy tmux layout file: %w", err)
+		}
+		return ensureDefaultLayoutFile(projectDir)
+	}
+
+	return "", fmt.Errorf("layout file not found for backend %q: expected %s", normalizedBackend, specificPath)
+}
 
 func defaultLayoutFilePath(projectDir string) string {
 	trimmedProjectDir := strings.TrimSpace(projectDir)

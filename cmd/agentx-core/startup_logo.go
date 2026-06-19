@@ -14,12 +14,13 @@ type startupLogoMode struct {
 	contextWidget     bool
 	filesystemWidget  bool
 	settingsWidget    bool
+	appletResize      bool
 	layoutTemplate    bool
 	dumpDefaultLayout bool
 }
 
 func shouldPrintStartupLogo(mode startupLogoMode) bool {
-	if mode.inputWidget || mode.outputWidget || mode.logsWidget || mode.contextWidget || mode.filesystemWidget || mode.settingsWidget {
+	if mode.inputWidget || mode.outputWidget || mode.logsWidget || mode.contextWidget || mode.filesystemWidget || mode.settingsWidget || mode.appletResize {
 		return false
 	}
 	if mode.layoutTemplate || mode.dumpDefaultLayout {

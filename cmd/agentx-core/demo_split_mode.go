@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -111,7 +110,7 @@ func runDemoSplitMode(ctx context.Context, cfg *Config, core *AgentXCore, startS
 	fmt.Printf("[AgentX Demo] Left-top pane: story browser\n")
 	fmt.Printf("[AgentX Demo] Left-bottom pane: controller prompt loop\n")
 	fmt.Printf("[AgentX Demo] Right pane: live core session %s\n", core.tmuxSessionName)
-	fmt.Printf("[AgentX Demo] Attach to the split demo session with: tmux attach -t %s\n", demoSessionName)
+	fmt.Printf("[AgentX Demo] Attach to the split demo session with: %s\n", multiplexerAttachHint(resolveMultiplexerBackend(cfg.ProjectDir), demoSessionName))
 
 	attachErr := attachTmuxSession(ctx, demoSessionName)
 	if killErr := runTmux(ctx, "kill-session", "-t", demoSessionName); killErr != nil && !isTmuxMissingSessionError(killErr) {
@@ -237,7 +236,7 @@ func closeCurrentTmuxSession(ctx context.Context) error {
 
 	target := strings.TrimSpace(sessionName)
 	if target == "" {
-		return fmt.Errorf("unable to resolve current tmux session")
+		return fmt.Errorf("unable to resolve current multiplexer session")
 	}
 
 	if err := runTmux(ctx, "kill-session", "-t", target); err != nil && !isTmuxMissingSessionError(err) {
@@ -257,33 +256,52 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
+func resolveMultiplexerProjectDir() string {
+	if envProjectDir := strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR")); envProjectDir != "" {
+		return envProjectDir
+	}
+	return "."
+}
+
 func runTmuxInteractive(ctx context.Context, args ...string) error {
-	cmd := exec.CommandContext(ctx, "tmux", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("tmux %s failed: %w", strings.Join(args, " "), err)
+	driver, err := runtimeMultiplexerDriver(resolveMultiplexerProjectDir())
+	if err != nil {
+		return fmt.Errorf("failed to initialize multiplexer driver: %w", err)
+	}
+	if len(args) >= 3 && args[0] == "attach-session" && args[1] == "-t" {
+		if err := driver.AttachSession(ctx, args[2], os.Stdin, os.Stdout, os.Stderr); err != nil {
+			return fmt.Errorf("multiplexer %s failed: %w", strings.Join(args, " "), err)
+		}
+		return nil
+	}
+	if err := driver.Run(ctx, args...); err != nil {
+		return fmt.Errorf("multiplexer %s failed: %w", strings.Join(args, " "), err)
 	}
 	return nil
 }
 
 func runTmux(ctx context.Context, args ...string) error {
-	cmd := exec.CommandContext(ctx, "tmux", args...)
-	output, err := cmd.CombinedOutput()
+	driver, err := runtimeMultiplexerDriver(resolveMultiplexerProjectDir())
 	if err != nil {
-		return fmt.Errorf("tmux %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("failed to initialize multiplexer driver: %w", err)
+	}
+	output, err := driver.RunCombined(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("multiplexer %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(output))
 	}
 	return nil
 }
 
 func runTmuxCapture(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "tmux", args...)
-	output, err := cmd.CombinedOutput()
+	driver, err := runtimeMultiplexerDriver(resolveMultiplexerProjectDir())
 	if err != nil {
-		return "", fmt.Errorf("tmux %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("failed to initialize multiplexer driver: %w", err)
 	}
-	return strings.TrimSpace(string(output)), nil
+	output, err := driver.RunCombined(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf("multiplexer %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(output))
+	}
+	return strings.TrimSpace(output), nil
 }
 
 func isTmuxMissingSessionError(err error) bool {

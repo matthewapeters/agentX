@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/orchestration/trace-event.schema.json",
+  "title": "TraceEvent",
+  "type": "object",
+  "required": [
+    "event_id",
+    "timestamp",
+    "correlation_id",
+    "task_id",
+    "node_id",
+    "run_id",
+    "stage",
+    "event_type",
+    "status",
+    "attempt"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "correlation_id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "node_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "parent_node_id": { "type": "string" },
+    "stage": {
+      "type": "string",
+      "enum": ["classify", "dispatch", "execute", "policy", "persist", "respond"]
+    },
+    "event_type": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["started", "completed", "failed", "canceled", "timed_out"],
+      "description": "ExecutionOutcome.status mapping: success->completed, retriable_failure->failed, terminal_failure->failed, timeout->timed_out, canceled->canceled."
+    },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "channel": {
+      "type": "string",
+      "enum": ["interactive", "orchestration", "maintenance"]
+    },
+    "reason_codes": { "type": "array", "items": { "type": "string" } },
+    "payload_meta": { "type": "object" },
+    "redaction": {
+      "type": "object",
+      "required": ["applied", "rule_set_version", "field_count", "categories"],
+      "properties": {
+        "applied": { "type": "boolean" },
+        "rule_set_version": { "type": "string", "minLength": 1 },
+        "field_count": { "type": "integer", "minimum": 0 },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["pii", "credential", "secret", "token", "system_path", "other"]
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

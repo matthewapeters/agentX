@@ -3,24 +3,52 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestRenderLogsWidget_AdaptsToPaneWidth(t *testing.T) {
-	t.Setenv("LINES", "20")
-	t.Setenv("COLUMNS", "120")
-	renderWide := renderLogsWidget(nil)
-	if !strings.Contains(renderWide, "mode: expanded") {
-		t.Fatalf("expected expanded mode on wide pane, got:\n%s", renderWide)
+func TestRenderLogsWidgetLines_ShowsHeader(t *testing.T) {
+	lines := renderLogsWidgetLines(nil, 10, 80, false)
+	if len(lines) == 0 || lines[0] != "[LOGS]" {
+		t.Fatalf("expected [LOGS] header, got: %v", lines)
 	}
+}
 
-	t.Setenv("COLUMNS", "60")
-	renderNarrow := renderLogsWidget(nil)
-	if !strings.Contains(renderNarrow, "mode: compact") {
-		t.Fatalf("expected compact mode on narrow pane, got:\n%s", renderNarrow)
+func TestRenderLogsWidgetLines_ShowsConnectingOnFetchError(t *testing.T) {
+	lines := renderLogsWidgetLines(nil, 10, 80, true)
+	if len(lines) == 0 || !strings.Contains(lines[0], "connecting") {
+		t.Fatalf("expected connecting header on fetch error, got: %v", lines)
+	}
+}
+
+func TestRenderLogsWidgetLines_RendersEvents(t *testing.T) {
+	events := []LogEvent{
+		{At: time.Now(), Message: "test event one"},
+		{At: time.Now(), Message: "test event two"},
+	}
+	lines := renderLogsWidgetLines(events, 10, 80, false)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "test event one") {
+		t.Fatalf("expected event one in output, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "test event two") {
+		t.Fatalf("expected event two in output, got:\n%s", joined)
+	}
+}
+
+func TestRenderLogsWidgetLines_CapsToHeight(t *testing.T) {
+	events := make([]LogEvent, 50)
+	for i := range events {
+		events[i] = LogEvent{At: time.Now(), Message: "line"}
+	}
+	lines := renderLogsWidgetLines(events, 8, 80, false)
+	if len(lines) > 8 {
+		t.Fatalf("expected at most 8 lines for height=8, got %d", len(lines))
 	}
 }
 
@@ -71,16 +99,42 @@ func TestResolveWidgetPaneSizeForWriter_DoesNotConsumeStartupSeed(t *testing.T) 
 	}
 }
 
-func TestRunLogsWidgetLoop_PrintsReadyBanner(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+func TestRunLogsWidgetLoop_FetchesAndRendersEvents(t *testing.T) {
+	events := []LogEvent{
+		{At: time.Now(), Message: "[bridge] event=go_chat_route_start details=prompt_chars=12"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/events" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"events": events})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
 	output := &bytes.Buffer{}
-	if err := runLogsWidgetLoop(ctx, output, 10*time.Millisecond); err != nil {
+	if err := runLogsWidgetLoop(ctx, server.URL, output, 10*time.Millisecond); err != nil {
 		t.Fatalf("runLogsWidgetLoop returned error: %v", err)
 	}
+	if !strings.Contains(output.String(), "go_chat_route_start") {
+		t.Fatalf("expected event in logs widget output, got:\n%s", output.String())
+	}
+}
 
-	if !strings.Contains(output.String(), "Logs ready.") {
-		t.Fatalf("expected logs ready banner, got:\n%s", output.String())
+func TestRunLogsWidgetLoop_ToleratesFetchError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
+	defer cancel()
+
+	output := &bytes.Buffer{}
+	// Point at a guaranteed-unused port so every fetch errors out.
+	if err := runLogsWidgetLoop(ctx, "http://127.0.0.1:1", output, 10*time.Millisecond); err != nil {
+		t.Fatalf("runLogsWidgetLoop should tolerate fetch errors, got: %v", err)
+	}
+	if !strings.Contains(output.String(), "[LOGS]") {
+		t.Fatalf("expected [LOGS] header even on fetch failure, got:\n%s", output.String())
 	}
 }

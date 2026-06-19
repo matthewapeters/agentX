@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/orchestration/request-envelope.schema.json",
+  "title": "RequestEnvelope",
+  "type": "object",
+  "required": [
+    "correlation_id",
+    "request_id",
+    "session_id",
+    "intent",
+    "payload",
+    "submitted_at"
+  ],
+  "properties": {
+    "correlation_id": { "type": "string", "minLength": 1 },
+    "request_id": { "type": "string", "minLength": 1 },
+    "session_id": { "type": "string", "minLength": 1 },
+    "intent": {
+      "type": "string",
+      "enum": ["direct", "tool_assisted", "high_assurance"]
+    },
+    "priority_class": {
+      "type": "string",
+      "enum": ["interactive", "orchestration", "maintenance"],
+      "default": "interactive"
+    },
+    "payload": { "type": "object" },
+    "constraints": { "type": "object" },
+    "submitted_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

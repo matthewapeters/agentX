@@ -12,6 +12,80 @@ import (
 	"net/http/httptest"
 )
 
+func TestResolveMultiplexerProjectDir_UsesAgentXProjectDirEnvWhenSet(t *testing.T) {
+	t.Setenv("AGENTX_PROJECT_DIR", "/tmp/agentx-project")
+
+	if got := resolveMultiplexerProjectDir(); got != "/tmp/agentx-project" {
+		t.Fatalf("expected AGENTX_PROJECT_DIR value, got %q", got)
+	}
+}
+
+func TestResolveMultiplexerProjectDir_DefaultsToDotWhenUnsetOrBlank(t *testing.T) {
+	t.Run("unset", func(t *testing.T) {
+		t.Setenv("AGENTX_PROJECT_DIR", "")
+		if got := resolveMultiplexerProjectDir(); got != "." {
+			t.Fatalf("expected default project dir '.', got %q", got)
+		}
+	})
+
+	t.Run("blank", func(t *testing.T) {
+		t.Setenv("AGENTX_PROJECT_DIR", "   ")
+		if got := resolveMultiplexerProjectDir(); got != "." {
+			t.Fatalf("expected default project dir '.', got %q", got)
+		}
+	})
+}
+
+func TestRunTmuxHelpers_ReturnWrappedErrorWhenDriverInitializationFails(t *testing.T) {
+	projectDir := t.TempDir()
+	configPath := filepath.Join(projectDir, "agentx.toml")
+	content := "[agentx]\nmultiplexer_backend = \"invalid-backend\"\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+	t.Setenv("AGENTX_PROJECT_DIR", projectDir)
+
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "interactive",
+			run: func() error {
+				return runTmuxInteractive(context.Background(), "select-pane", "-t", "%1")
+			},
+		},
+		{
+			name: "run",
+			run: func() error {
+				return runTmux(context.Background(), "select-pane", "-t", "%1")
+			},
+		},
+		{
+			name: "capture",
+			run: func() error {
+				_, err := runTmuxCapture(context.Background(), "display-message", "-p", "#{session_name}")
+				return err
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run()
+			if err == nil {
+				t.Fatal("expected helper to return initialization error")
+			}
+			if !strings.Contains(err.Error(), "failed to initialize multiplexer driver") {
+				t.Fatalf("expected wrapped initialization error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "unsupported multiplexer backend: invalid-backend") {
+				t.Fatalf("expected root cause in wrapped error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestBuildDemoControllerArgs_IncludesControllerFlags(t *testing.T) {
 	// GIVEN a split-pane demo controller launch plan
 	// WHEN controller arguments are built
@@ -50,6 +124,27 @@ func TestBuildDemoControllerArgs_IncludesControllerFlags(t *testing.T) {
 	}
 	if !strings.Contains(joined, "--demo-start e2e-002") {
 		t.Fatalf("expected demo start selector in args, got %q", joined)
+	}
+}
+
+func TestAttachTmuxSession_UsesInteractiveAttachCommandParity(t *testing.T) {
+	// GIVEN a fake tmux binary used for deterministic command capture
+	// WHEN demo helper attachTmuxSession is invoked
+	// THEN it must route through the interactive attach-session command shape.
+	logPath := setupFakeTmux(t)
+
+	err := attachTmuxSession(context.Background(), "agentx_demo_attach")
+	if err != nil {
+		t.Fatalf("expected attach helper to succeed, got %v", err)
+	}
+
+	commandsRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed reading tmux command log: %v", err)
+	}
+	commands := string(commandsRaw)
+	if !strings.Contains(commands, "attach-session -t agentx_demo_attach") {
+		t.Fatalf("expected interactive attach-session command parity, got:\n%s", commands)
 	}
 }
 

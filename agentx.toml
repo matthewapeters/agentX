@@ -13,6 +13,9 @@ context_history_session_sort = "Ascending"
 show_log_locations_on_startup = true
 enable_gui_chat = false
 auto_stop_tmux_on_gui_exit = true
+multiplexer_backend = "zellij"    # Options: "tmux" (default) or "zellij"
+applet_api_port_range_start = 19100   # First port in the range assigned to applet render APIs
+applet_api_port_range_end   = 19199   # Last port (inclusive); must be >= start + number of applets
 
 [agentix]
 system_prompts_dir = "system_prompts"

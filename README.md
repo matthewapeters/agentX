@@ -27,8 +27,10 @@ A local-first AI agent desktop application with a **Tkinter GUI**, streaming LLM
 | Python | 3.12.x | Enforced by `pyproject.toml`; 3.13 not yet supported |
 | [uv](https://docs.astral.sh/uv/) | latest | Package and venv manager |
 | [Ollama](https://ollama.com) | latest | Must be running locally before launching AgentX |
-| [tmux](https://github.com/tmux/tmux/wiki) | latest | Required for Go core / hybrid runtime session orchestration |
-| [tmuxp](https://tmuxp.git-pull.com/) | latest | Required for tmux composition loading in Go core / hybrid runtime |
+| **Multiplexer** (one of) | — | See "Multiplexer Backend" section |
+| [tmux](https://github.com/tmux/tmux/wiki) | latest | Default backend for Go core session orchestration |
+| [zellij](https://zellij.dev) | latest | Alternative modern backend (Rust-based) |
+| [tmuxp](https://tmuxp.git-pull.com/) | latest | Required for tmux layout composition (tmux backend only) |
 | Agentix | optional | Provides prompt classification and server-side tools |
 | TK | Required | Provides Python GUI |
 
@@ -60,6 +62,73 @@ python agentx_diagnostics.py
 
 ---
 
+## Multiplexer Backend Selection
+
+AgentX Go core supports two terminal multiplexer backends for session management:
+
+### Default: tmux
+
+No additional setup needed. Tmux is the default backend.
+
+```bash
+# Tmux will be used automatically
+./bin/agentx --project-dir . --user "$USER" --attach
+```
+
+**Requirements**: `tmux` and `tmuxp` installed
+
+**Install**:
+
+```bash
+# macOS
+brew install tmux tmuxp
+
+# Linux
+sudo apt install tmux python3-tmuxp    # Debian/Ubuntu
+sudo dnf install tmux tmuxp            # Fedora/RHEL
+sudo pacman -S tmux                    # Arch (then: pip install tmuxp)
+```
+
+### Alternative: zellij
+
+Modern Rust-based multiplexer with improved UX and mouse support.
+
+**Setup**:
+
+1. Install zellij:
+
+   ```bash
+   # macOS
+   brew install zellij
+   
+   # Linux
+   cargo install zellij                # Rust toolchain required
+   # Or use package manager if available
+   sudo apt install zellij             # Debian/Ubuntu (if in repos)
+   ```
+
+2. Edit `agentx.toml` and add:
+
+   ```toml
+   [agentx]
+   multiplexer_backend = "zellij"
+   ```
+
+3. Start AgentX (zellij will be used automatically):
+
+   ```bash
+   ./bin/agentx --project-dir . --user "$USER" --attach
+   ```
+
+**Keybindings differ from tmux**:
+
+- Navigate panes: `Alt+arrow` (instead of `Ctrl+b arrow`)
+- Zoom pane: `Alt+z`
+- Detach session: `Alt+q`
+- See [Backend Migration Guide](./docs/backend-migration-guide.md) for full reference
+
+---
+
 ## Configuration
 
 All runtime settings live in **`agentx.toml`** at the project root. Edit this file before starting the application.
@@ -70,6 +139,7 @@ ollama_host = "localhost:11434"   # host:port of your Ollama instance
 ollama_model = "llama3.2"         # must match an installed model name
 ollama_initial_load_timeout_seconds = 120
 screen_side = "left"              # "left" or "right" — which monitor edge the window anchors to
+multiplexer_backend = "tmux"      # "tmux" (default) or "zellij"
 
 [agentix]
 host = "localhost:8000"           # Agentix middleware host:port (optional)
@@ -93,6 +163,13 @@ show_next_step = true
 ```
 
 > **Tip:** If you are not running Agentix, set `classify_prompts = false` and AgentX will talk directly to Ollama.
+
+**Multiplexer Backend Selection**:
+
+- `multiplexer_backend = "tmux"` (default if unset)
+- `multiplexer_backend = "zellij"` (modern alternative)
+
+For detailed migration steps, see [Backend Migration Guide](./docs/backend-migration-guide.md).
 
 ---
 
@@ -322,6 +399,8 @@ Conversations are stored under `sessions/<session_id>/context/` as JSON. The `Co
 |----------|-------------|
 | [`docs/architecture.md`](docs/architecture.md) | Module index and architecture overview |
 | [`docs/tool_usage_plan.md`](docs/tool_usage_plan.md) | Phased implementation plan for the tool pipeline |
+| [`docs/backend-migration-guide.md`](docs/backend-migration-guide.md) | Switching between tmux and zellij backends |
+| [`docs/troubleshooting.md`](docs/troubleshooting.md) | Backend setup and troubleshooting |
 | [`docs/integration/`](docs/integration/) | AgentX ↔ Agentix integration design and decisions |
 
 ---

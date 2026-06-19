@@ -405,6 +405,9 @@ type AgentXCore struct {
 	zellijLayoutCond         *sync.Cond
 	systemRenderMu           sync.Mutex
 	lastSystemRender         string
+	// appletPortAllocator assigns each pane applet a unique port within the
+	// range configured in agentx.toml [agentx] applet_api_port_range_start/end.
+	appletPortAllocator      *AppletPortAllocator
 }
 
 type submitRequest struct {
@@ -620,6 +623,12 @@ func NewAgentXCoreWithDriver(cfg *Config, driver MultiplexerDriver) *AgentXCore 
 		core.requestRuntimeShutdown()
 		return nil
 	})
+
+	if alloc, err := NewAppletPortAllocator(runtimeConfig.AppletPortRangeStart, runtimeConfig.AppletPortRangeEnd); err == nil {
+		core.appletPortAllocator = alloc
+	} else {
+		log.Printf("[AgentX Core] applet port allocator init failed (%v); applets will not bind render APIs", err)
+	}
 
 	return core
 }
@@ -1309,6 +1318,12 @@ func (ac *AgentXCore) emitLifecycleEvent(ctx context.Context, stage string, deta
 }
 
 func (ac *AgentXCore) renderStartupStatus(ctx context.Context, message string) error {
+	// Always buffer the message for the logs widget.
+	if ac.contextManager != nil {
+		ac.contextManager.AppendEvent(message)
+	}
+
+	// Echo into the multiplexer pane only for tmux (legacy path).
 	if ac.multiplexerDriver.BackendName() != defaultMultiplexerBackend {
 		return nil
 	}
@@ -1574,6 +1589,7 @@ func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base 
 		"AGENTX_APPLET_NAME":        spec.Name,
 		"AGENTX_SESSION_ID":         base.SessionID,
 		"AGENTX_CORE_HTTP":          base.CoreHTTP,
+		"AGENTX_CORE_PID":           strconv.Itoa(os.Getpid()),
 		"AGENTX_PROJECT_DIR":        base.ProjectDir,
 		"AGENTX_USERNAME":           base.Username,
 		"AGENTX_APPLET_RUNTIME":     string(spec.Runtime),
@@ -1585,6 +1601,13 @@ func (ac *AgentXCore) buildPaneAppletLaunchCommand(spec appletRuntimeSpec, base 
 
 	baseEnv["AGENTX_WIDGET_PANE_HEIGHT"] = strconv.Itoa(paneHeight)
 	baseEnv["AGENTX_WIDGET_PANE_WIDTH"] = strconv.Itoa(paneWidth)
+	if ac.appletPortAllocator != nil {
+		if port, err := ac.appletPortAllocator.Next(); err == nil {
+			baseEnv["AGENTX_APPLET_API_ADDR"] = fmt.Sprintf("127.0.0.1:%d", port)
+		} else {
+			log.Printf("[AgentX Core] could not allocate applet API port for %s: %v", spec.Name, err)
+		}
+	}
 	if spec.Name == "chat" {
 		return fmt.Sprintf(
 			"%s %s --output-widget --core-http %s",
@@ -1814,10 +1837,6 @@ func (ac *AgentXCore) loadAgentIdentityPrompt() string {
 }
 
 func (ac *AgentXCore) emitBridgeLog(ctx context.Context, event string, details string) {
-	if ac.multiplexerDriver.BackendName() != defaultMultiplexerBackend {
-		return
-	}
-
 	trimmedEvent := strings.TrimSpace(event)
 	if trimmedEvent == "" {
 		trimmedEvent = "bridge_event"
@@ -1832,9 +1851,17 @@ func (ac *AgentXCore) emitBridgeLog(ctx context.Context, event string, details s
 		message += " details=" + trimmedDetails
 	}
 
-	renderCmd := fmt.Sprintf("echo %s", shellSingleQuote(message))
-	if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(PaneTitleLogs), renderCmd, "Enter"); err != nil {
-		log.Printf("[AgentX Core] Bridge log render failed: %v", err)
+	// Always buffer the event so the logs widget can fetch it via /events.
+	if ac.contextManager != nil {
+		ac.contextManager.AppendEvent(message)
+	}
+
+	// Also echo into the multiplexer pane when using tmux (legacy path).
+	if ac.multiplexerDriver.BackendName() == defaultMultiplexerBackend {
+		renderCmd := fmt.Sprintf("echo %s", shellSingleQuote(message))
+		if err := ac.runTmux(ctx, "send-keys", "-t", ac.paneTargetForName(PaneTitleLogs), renderCmd, "Enter"); err != nil {
+			log.Printf("[AgentX Core] Bridge log render failed: %v", err)
+		}
 	}
 }
 
@@ -2446,6 +2473,7 @@ type ContextManager struct {
 	contextFiles       []string
 	contextFilesLoaded bool
 	mu                 sync.RWMutex
+	events             *EventRing
 }
 
 // NewContextManager creates a new context manager.
@@ -2455,7 +2483,16 @@ func NewContextManager(contextDir string) *ContextManager {
 		startedAt:     time.Now(),
 		submitTimeout: 120 * time.Second,
 		turns:         make([]ChatTurn, 0),
+		events:        NewEventRing(defaultEventRingCapacity),
 	}
+}
+
+// AppendEvent records a lifecycle or bridge event in the in-memory ring buffer.
+func (cm *ContextManager) AppendEvent(message string) {
+	if cm == nil {
+		return
+	}
+	cm.events.Append(message)
 }
 
 func (cm *ContextManager) turnsFilePath() string {
@@ -2781,6 +2818,20 @@ func (cm *ContextManager) HealthHandler() http.Handler {
 				"state": activityState,
 				"phase": activityPhase,
 			},
+		})
+	})
+
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		events := cm.events.Snapshot()
+		if events == nil {
+			events = []LogEvent{}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"events": events,
 		})
 	})
 

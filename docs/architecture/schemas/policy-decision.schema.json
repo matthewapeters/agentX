@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/orchestration/policy-decision.schema.json",
+  "title": "PolicyDecision",
+  "type": "object",
+  "required": ["decision", "reason_codes", "audit_id", "policy_default"],
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["allow", "deny", "allow_with_constraints"]
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "value"],
+        "properties": {
+          "type": { "type": "string" },
+          "value": {}
+        },
+        "additionalProperties": false
+      }
+    },
+    "audit_id": { "type": "string", "minLength": 1 },
+    "policy_default": {
+      "type": "string",
+      "enum": ["deny", "allow"],
+      "description": "Default decision used when explicit policy rule cannot be resolved. Default is deny unless explicitly overridden by policy configuration."
+    },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "destructive_confirmation": {
+      "type": "object",
+      "required": ["required", "evidence_present"],
+      "properties": {
+        "required": {
+          "type": "boolean",
+          "description": "True when the requested action is destructive and explicit confirmation evidence is required."
+        },
+        "evidence_present": {
+          "type": "boolean",
+          "description": "True only when explicit user confirmation evidence is attached and policy-verified."
+        },
+        "evidence_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Trace or audit reference to the confirmation evidence artifact."
+        },
+        "confirmed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "confirmed_by": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Actor identifier for the explicit confirmation event."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "evidence_present": { "const": true }
+            },
+            "required": ["evidence_present"]
+          },
+          "then": {
+            "required": ["evidence_ref", "confirmed_at", "confirmed_by"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": { "const": "allow_with_constraints" }
+        },
+        "required": ["decision"]
+      },
+      "then": {
+        "required": ["constraints"],
+        "properties": {
+          "constraints": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "destructive_confirmation": {
+            "type": "object",
+            "properties": {
+              "required": { "const": true },
+              "evidence_present": { "const": false }
+            },
+            "required": ["required", "evidence_present"]
+          }
+        },
+        "required": ["destructive_confirmation"]
+      },
+      "then": {
+        "properties": {
+          "decision": { "const": "deny" },
+          "reason_codes": {
+            "contains": {
+              "const": "destructive_confirmation_missing"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

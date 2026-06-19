@@ -13,6 +13,7 @@ import (
 const (
 	defaultChatBackend = "echo"
 	defaultChatRuntime = "go"
+	defaultMultiplexerBackend = "tmux"
 	startupModeEnvKey = "AGENTX_STARTUP_MODE"
 	defaultStartupMode = "default"
 	visibleWindowsStartupMode = "visible-windows"
@@ -21,17 +22,31 @@ const (
 	defaultChatBridgeResponseTimeoutSeconds = 120
 	defaultSubmitExecutionTimeoutSeconds    = 120
 	defaultSubmitTimeoutSeconds             = 120
+
+	// defaultAppletPortRangeStart / End define the port band used to assign
+	// each applet its own render API listener.  The range must have at least
+	// as many ports as there are concurrently running applets.
+	defaultAppletPortRangeStart = 19100
+	defaultAppletPortRangeEnd   = 19199
 )
 
 // CoreRuntimeConfig captures runtime chat backend settings used by the Go core.
 type CoreRuntimeConfig struct {
 	ChatBackend               string
 	ChatRuntime               string
+	// MultiplexerBackend selects the terminal multiplexer backend.
+	// Supported values are "tmux" (default) and "zellij"; when unset it defaults to tmux.
+	MultiplexerBackend        string
 	OllamaHost                string
 	OllamaModel               string
 	ChatBridgeResponseTimeout time.Duration
 	SubmitExecutionTimeout    time.Duration
 	SubmitTimeout             time.Duration
+	// AppletPortRangeStart and AppletPortRangeEnd define the inclusive port
+	// band from which each applet is assigned its own render/API listener.
+	// Set via agentx.toml [agentx] applet_api_port_range_start / _end.
+	AppletPortRangeStart      int
+	AppletPortRangeEnd        int
 }
 
 // Config holds runtime configuration for AgentX Core.
@@ -39,7 +54,7 @@ type Config struct {
 	ProjectDir string // Root project directory
 	Username   string // Username for session isolation
 	SessionID  string // Session ID; auto-generated if empty
-	LayoutFile string // Optional tmuxp layout overlay file
+	LayoutFile string // Optional multiplexer layout file
 	StartupMode string // Startup topology mode scaffold
 }
 
@@ -63,7 +78,7 @@ func resolveStartupModeDefault() string {
 	return defaultStartupMode
 }
 
-// PaneConfig defines a tmux pane in the layout.
+// PaneConfig defines a pane in the layout.
 type PaneConfig struct {
 	Name    string            // Pane name (e.g., "chat", "logs", "input")
 	Index   int               // Pane index in window
@@ -130,16 +145,21 @@ func defaultCoreRuntimeConfig() CoreRuntimeConfig {
 	return CoreRuntimeConfig{
 		ChatBackend:               defaultChatBackend,
 		ChatRuntime:               defaultChatRuntime,
+		MultiplexerBackend:        defaultMultiplexerBackend,
 		OllamaHost:                defaultOllamaHost,
 		OllamaModel:               defaultOllamaModel,
 		ChatBridgeResponseTimeout: time.Duration(defaultChatBridgeResponseTimeoutSeconds) * time.Second,
 		SubmitExecutionTimeout:    time.Duration(defaultSubmitExecutionTimeoutSeconds) * time.Second,
 		SubmitTimeout:             time.Duration(defaultSubmitTimeoutSeconds) * time.Second,
+		AppletPortRangeStart:      defaultAppletPortRangeStart,
+		AppletPortRangeEnd:        defaultAppletPortRangeEnd,
 	}
 }
 
 func resolveCoreRuntimeConfig(projectDir string) CoreRuntimeConfig {
 	runtimeConfig := defaultCoreRuntimeConfig()
+	// multiplexer_backend is read from the [agentx] section as a generic string.
+	// Specific backend values are validated later by the multiplexer driver factory.
 	applyAgentXTomlRuntimeConfig(projectDir, &runtimeConfig)
 	applyRuntimeEnvOverrides(&runtimeConfig)
 	runtimeConfig.ChatRuntime = normalizeChatRuntime(runtimeConfig.ChatRuntime)
@@ -218,6 +238,8 @@ func applyAgentXTomlRuntimeConfig(projectDir string, runtimeConfig *CoreRuntimeC
 				runtimeConfig.OllamaHost = value
 			case "ollama_model":
 				runtimeConfig.OllamaModel = value
+			case "multiplexer_backend":
+				runtimeConfig.MultiplexerBackend = value
 			case "chat_backend":
 				runtimeConfig.ChatBackend = value
 			case "chat_runtime":
@@ -233,6 +255,14 @@ func applyAgentXTomlRuntimeConfig(projectDir string, runtimeConfig *CoreRuntimeC
 			case "submit_timeout_seconds":
 				if seconds := parsePositiveSeconds(value); seconds > 0 {
 					runtimeConfig.SubmitTimeout = time.Duration(seconds) * time.Second
+				}
+			case "applet_api_port_range_start":
+				if port, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && port > 0 {
+					runtimeConfig.AppletPortRangeStart = port
+				}
+			case "applet_api_port_range_end":
+				if port, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && port > 0 {
+					runtimeConfig.AppletPortRangeEnd = port
 				}
 			}
 		case "agentix":
@@ -296,7 +326,7 @@ func parseTomlKeyValue(line string) (string, string, bool) {
 	return key, trimmed, true
 }
 
-// DefaultPaneLayout returns the initial tmux layout (pane placeholders).
+// DefaultPaneLayout returns the initial layout (pane placeholders).
 // Layout: Chat (80%x80% top-left) | Context (20%x80% top-right)
 //
 //	Input (100%x20% bottom)
@@ -326,4 +356,16 @@ func DefaultPaneLayout() []PaneConfig {
 			// Logs pane: created in separate hidden window
 		},
 	}
+}
+
+// firstNonEmpty returns the first non-empty string from the provided values,
+// or an empty string when all are empty.  Used to chain env-var fallbacks in
+// flag default expressions.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

@@ -798,8 +798,12 @@ func runContextWidgetCommandWithInput(coreHTTP string, in io.Reader, out io.Writ
 		fmt.Fprintln(out, "Context widget failed: missing core HTTP base URL")
 		return 1
 	}
+	ctx, cancel := widgetCommandContext()
+	defer cancel()
+	stopWatchdog := startWidgetCoreWatchdog(resolveWidgetCorePIDFromEnv(), 500*time.Millisecond, os.Stderr, cancel)
+	defer stopWatchdog()
 
-	if err := runContextWidgetLoopWithInput(context.Background(), strings.TrimRight(baseURL, "/"), in, out, 300*time.Millisecond); err != nil {
+	if err := runContextWidgetLoopWithInput(ctx, strings.TrimRight(baseURL, "/"), in, out, 300*time.Millisecond); err != nil {
 		fmt.Fprintf(out, "Context widget failed: %v\n", err)
 		return 1
 	}

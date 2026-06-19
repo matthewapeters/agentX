@@ -38,3 +38,13 @@ func TestResolveLayoutFileSelection_EmptyWhenUnset(t *testing.T) {
 		t.Fatalf("expected empty resolved layout when unset, got %q", resolved)
 	}
 }
+
+func TestResolveLayoutFileSelection_RetainsExplicitZellijLayout(t *testing.T) {
+	resolved, err := resolveLayoutFileSelection("custom-layout.kdl", "")
+	if err != nil {
+		t.Fatalf("resolveLayoutFileSelection returned error: %v", err)
+	}
+	if resolved != "custom-layout.kdl" {
+		t.Fatalf("resolved explicit layout mismatch: got %q want %q", resolved, "custom-layout.kdl")
+	}
+}

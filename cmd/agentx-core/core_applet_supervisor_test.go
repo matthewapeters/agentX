@@ -188,6 +188,9 @@ func TestBuildPaneAppletLaunchCommand_InputPaneUsesNativeWidget(t *testing.T) {
 	if !strings.Contains(cmd, "AGENTX_APPLET_RUNTIME='go'") {
 		t.Fatalf("expected go applet runtime env var, got:\n%s", cmd)
 	}
+	if !strings.Contains(cmd, "AGENTX_CORE_PID='") {
+		t.Fatalf("expected core pid env var in applet launch command, got:\n%s", cmd)
+	}
 	if strings.Contains(cmd, "template.py") {
 		t.Fatalf("expected input pane not to launch python template applet, got:\n%s", cmd)
 	}
@@ -429,8 +432,10 @@ func TestStartAppletSupervisor_LaunchesPaneAppletProcesses_GoChatUsesNativeOutpu
 	if !strings.Contains(commands, "--output-widget --core-http") {
 		t.Fatalf("expected native output widget launch args for go chat pane, got:\n%s", commands)
 	}
-	if !strings.Contains(commands, "respawn-pane -k -t "+core.tmuxSessionName+":0.0 AGENTX_APPLET_NAME='chat' AGENTX_APPLET_RUNTIME='go'") {
-		t.Fatalf("expected chat pane respawn command to use native go runtime, got:\n%s", commands)
+	if !strings.Contains(commands, "respawn-pane -k -t "+core.tmuxSessionName+":0.0") ||
+		!strings.Contains(commands, "AGENTX_APPLET_NAME='chat'") ||
+		!strings.Contains(commands, "AGENTX_APPLET_RUNTIME='go'") {
+		t.Fatalf("expected chat pane respawn command to target chat with go runtime, got:\n%s", commands)
 	}
 	if !strings.Contains(commands, "AGENTX_APPLET_NAME='input'") {
 		t.Fatalf("expected input pane applet launch command, got:\n%s", commands)

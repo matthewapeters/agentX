@@ -19,7 +19,7 @@ func TestValidateRuntimePrerequisites_SucceedsWhenBinariesHealthy(t *testing.T) 
 		_ = os.Setenv("PATH", oldPath)
 	})
 
-	if err := validateRuntimePrerequisites(); err != nil {
+	if err := validateRuntimePrerequisites(t.TempDir()); err != nil {
 		t.Fatalf("expected prerequisites to pass, got: %v", err)
 	}
 }
@@ -37,8 +37,29 @@ func TestValidateRuntimePrerequisites_FailsWhenTmuxpProbeFails(t *testing.T) {
 		_ = os.Setenv("PATH", oldPath)
 	})
 
-	if err := validateRuntimePrerequisites(); err == nil {
+	if err := validateRuntimePrerequisites(t.TempDir()); err == nil {
 		t.Fatalf("expected tmuxp probe failure")
+	}
+}
+
+func TestValidateRuntimePrerequisites_ZellijBackendSkipsTmuxpProbe(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "agentx.toml")
+	if err := os.WriteFile(configPath, []byte("[agentx]\nmultiplexer_backend = \"zellij\"\n"), 0o644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+	createExecutable(t, filepath.Join(tmpDir, "zellij"), "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"-V\" ]]; then\n  echo zellij 0.39.0\n  exit 0\nfi\nexit 1\n")
+
+	oldPath := os.Getenv("PATH")
+	if err := os.Setenv("PATH", tmpDir+":"+oldPath); err != nil {
+		t.Fatalf("failed to set PATH: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("PATH", oldPath)
+	})
+
+	if err := validateRuntimePrerequisites(tmpDir); err != nil {
+		t.Fatalf("expected zellij prerequisites to pass without tmuxp, got: %v", err)
 	}
 }
 
