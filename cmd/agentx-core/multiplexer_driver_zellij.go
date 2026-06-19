@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,6 +102,12 @@ func ensureZellijConfigFile(configDir string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
+	copyCmd := zellijCopyCommand()
+	if copyCmd == "" {
+		log.Printf("[AgentX Core] ℹ Auto-generated .agentx/config.kdl with clipboard auto-copy (no clipboard helper found)")
+	} else {
+		log.Printf("[AgentX Core] ℹ Auto-generated .agentx/config.kdl with clipboard auto-copy (%s)", extractCopyToolName(copyCmd))
+	}
 	return os.WriteFile(configPath, []byte(defaultZellijConfigKDL()), 0o644)
 }
 
@@ -115,6 +122,10 @@ func defaultZellijConfigKDL() string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
+// zellijCopyCommand detects the system's clipboard helper.
+// Prefers wl-copy on Wayland, falls back to xclip on X11.
+// Clipboard detection occurs at instantiation time; mid-session X11↔Wayland switches
+// are not supported because zellij requires static configuration files.
 func zellijCopyCommand() string {
 	if hasExecutable("wl-copy") && (strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) != "" || strings.EqualFold(strings.TrimSpace(os.Getenv("XDG_SESSION_TYPE")), "wayland")) {
 		return "wl-copy"
@@ -123,6 +134,14 @@ func zellijCopyCommand() string {
 		return "xclip -selection clipboard"
 	}
 	return ""
+}
+
+func extractCopyToolName(cmd string) string {
+	parts := strings.Fields(cmd)
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return cmd
 }
 
 func hasExecutable(name string) bool {

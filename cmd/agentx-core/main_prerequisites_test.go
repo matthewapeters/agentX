@@ -48,7 +48,7 @@ func TestValidateRuntimePrerequisites_ZellijBackendSkipsTmuxpProbe(t *testing.T)
 	if err := os.WriteFile(configPath, []byte("[agentx]\nmultiplexer_backend = \"zellij\"\n"), 0o644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
-	createExecutable(t, filepath.Join(tmpDir, "zellij"), "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"-V\" ]]; then\n  echo zellij 0.39.0\n  exit 0\nfi\nexit 1\n")
+	createExecutable(t, filepath.Join(tmpDir, "zellij"), "#!/usr/bin/env bash\nset -euo pipefail\nwhile [[ $# -gt 0 ]]; do\n  case \"$1\" in\n    --config-dir)\n      shift 2\n      ;;\n    -V)\n      echo zellij 0.39.0\n      exit 0\n      ;;\n    *)\n      shift\n      ;;\n  esac\ndone\nexit 1\n")
 
 	oldPath := os.Getenv("PATH")
 	if err := os.Setenv("PATH", tmpDir+":"+oldPath); err != nil {

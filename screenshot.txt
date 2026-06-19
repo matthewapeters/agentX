@@ -1,0 +1,114 @@
+↳ 👤 User: Hi!  Identify yourself! [LATEST]                                                            │== CONTEXT WINDOW ==
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────┐      │model: nemotron-cascad...
+  │ [-] ⚙️ Classification: complex_action -> invoke_planner                                      │      │consumed: 1.7% (138/8192)
+  │ [-] 💭 Thinking: done (00:00:04.264)                                                        │      │Top Contributors:
+  │ [-] 🤖 Response: Hello! I’m **AgentX**—your friendly, locally‑run assistant. I combine      │      │  1. 👤 User Prompts  ...
+  │ natural‑language reasoning with the ability to call out to external tools                   │      │  2. 🤖 Agent Response...
+  │ (search, calculations, code execution, etc.) while keeping everything                       │      │== CONTEXT VISUALIZER ==
+  │ private and tailored just for you.                                                          │      │💾 Working Memory     ...
+  │                                                                                             │      │🧠 System Prompts     ...
+  │ **What that means for us:**                                                                 │      │👤 User Prompts       ...
+  │                                                                                             │      │📎 Attachments        ...
+  │ - **Research on the fly:** Need up‑to‑date facts, definitions, or background                │      │🤔 Thinking           ...
+  │ info? I can search, summarize, and cite sources without exposing your data.                 │      │🤖 Agent Response     ...
+  │ - **Problem solving:** Whether it’s math, coding, logical puzzles, or                       │      │🔧 Tool Calls         ...
+  │ drafting documents, I can write and run the necessary code to give you exact                │      │░ Remaining           ...
+  │ answers.                                                                                    │      │== PROMPT CYCLE ==
+  │ - **Personalized help:** I remember the context of our current conversation,                │      │○ 🤔 Classify 00:00:00...
+  │ adapt my tone, and can store preferences (like formatting style) only for                   │      │○ 💭 Think    00:00:04...
+  │ the duration of this session.                                                               │      │○ 🔧 Tool     00:00:00...
+  │                                                                                             │      │○ 🤖 Respond  00:00:00...
+  │ Think of me as a “Swiss‑army knife” for information and computation, always                 │      │
+  │ at your service. How can I assist you today?                                                │      │
+  └─────────────────────────────────────────────────────────────────────────────────────────────┘      │
+                                                                                                       │
+                                                                                                       │
+                                                                                                       │
+                                                                                                       │
+                                                                                                       │
+                                                                                                       │
+                                                                                                       │
+                                                                                                       │
+                                                                                                       │
+                                                                                                       │
+                                                                                                       │
+                                                                                                       │
+───────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────
+│                                                                                                                              │
+│                                                                                                                              │
+│                                                                                                                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Command:                                                                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+[agentx_mp0:tui-chat* 1:logs  2:files  3:configuration  4:context-history  5:working-memory-              "input" 12:06 14-Jun-26
+----
+# Input applet should render like this:
+- note location of `_` denotes input cursor on line 3, column 3
+- note removal of empty line between input and command cells and after the command cell
+- note there should be NO SYSTEM OUTPUT in this applet denoting state!
+- note line 2 is reserved for indicating number of attachments
+- these affordances should be described in the docs/ux for int input container
+- the applet has a 3-part DAG tree:
+  - attachements (not rendered if empty)
+  - Input Text Cell
+  - Command Cell
+- navigation between these nodes is by cycling ESC.  SPACE has a navigational control
+on the attachements if rendered (rendered when there is one or more attachments)
+----
+
+## No Attachments
+
+```
+───────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│_                                                                                                                             │
+│                                                                                                                              │
+│                                                                                                                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Command:                                                                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[agentx_mp0:tui-chat* 1:logs  2:files  3:configuration  4:context-history  5:working-memory-              "input" 12:06 14-Jun-26
+```
+----
+
+## Attachments Collapsed:
+- navigation between these nodes is by cycling ESC.  SPACE has a navigational control
+on oggling the attachements if rendered (rendered when there is one or more attachments)
+```
+───────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────
+  [+] 5 attachments
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│_                                                                                                                             │
+│                                                                                                                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Command:                                                                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[agentx_mp0:tui-chat* 1:logs  2:files  3:configuration  4:context-history  5:working-memory-              "input" 12:06 14-Jun-26
+```
+
+----
+
+## Attachments Expanded:
+- navigation between these nodes is by cycling ESC.  SPACE has a navigational control
+on toggling the attachements if rendered (rendered when there is one or more attachments)
+- note files are arranged tabularaly within box to take advantage or minimal space availability
+- note the input cell is collapsed to make room
+```
+───────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────
+↳ [-] 5 attachments
+  ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ - file1.txt    - file3.txt   - file5.txt                                                                                   │
+  │ - file2.txt    - file4.txt                                                                                                 │
+  └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Command:                                                                                                                     │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[agentx_mp0:tui-chat* 1:logs  2:files  3:configuration  4:context-history  5:working-memory-              "input" 12:06 14-Jun-26
+```

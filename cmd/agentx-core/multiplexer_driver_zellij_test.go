@@ -305,6 +305,62 @@ func TestZellijCopyCommand_FallsBackToXclip(t *testing.T) {
 	}
 }
 
+func TestZellijCopyCommand_NoClipboardToolsAvailable(t *testing.T) {
+	emptyDir := t.TempDir()
+
+	oldPath := os.Getenv("PATH")
+	oldWayland := os.Getenv("WAYLAND_DISPLAY")
+	oldSessionType := os.Getenv("XDG_SESSION_TYPE")
+	if err := os.Setenv("PATH", emptyDir); err != nil {
+		t.Fatalf("failed to set PATH to empty: %v", err)
+	}
+	if err := os.Unsetenv("WAYLAND_DISPLAY"); err != nil {
+		t.Fatalf("failed to unset WAYLAND_DISPLAY: %v", err)
+	}
+	if err := os.Setenv("XDG_SESSION_TYPE", "x11"); err != nil {
+		t.Fatalf("failed to set XDG_SESSION_TYPE: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("PATH", oldPath)
+		_ = os.Setenv("WAYLAND_DISPLAY", oldWayland)
+		_ = os.Setenv("XDG_SESSION_TYPE", oldSessionType)
+	})
+
+	if got := zellijCopyCommand(); got != "" {
+		t.Fatalf("expected empty string when no tools available, got %q", got)
+	}
+
+	config := defaultZellijConfigKDL()
+	if strings.Contains(config, "copy_command") {
+		t.Fatalf("expected no copy_command in config when no tools available, got %q", config)
+	}
+}
+
+func TestDefaultZellijConfigKDL_ValidSyntax(t *testing.T) {
+	config := defaultZellijConfigKDL()
+
+	requiredLines := []string{
+		"copy_on_select true",
+		"copy_clipboard \"system\"",
+	}
+	for _, line := range requiredLines {
+		if !strings.Contains(config, line) {
+			t.Fatalf("expected config to contain %q, got: %q", line, config)
+		}
+	}
+}
+
+func TestZellijDriver_DirectoryCreationError(t *testing.T) {
+	driver := &ZellijMultiplexerDriver{
+		configDir: "/dev/null/invalid/agentx",
+	}
+
+	err := driver.Run(context.Background(), "list-sessions")
+	if err == nil {
+		t.Fatal("expected Run to fail with invalid directory path")
+	}
+}
+
 type fakeZellijBehavior struct {
 	Stdout   string
 	Stderr   string
