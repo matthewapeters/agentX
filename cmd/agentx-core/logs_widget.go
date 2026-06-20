@@ -33,6 +33,7 @@ func fetchLogsWidgetEvents(ctx context.Context, baseURL string) ([]LogEvent, err
 	return payload.Events, nil
 }
 
+// runLogsWidgetCommand starts the logs widget loop against the core HTTP API.
 func runLogsWidgetCommand(coreHTTP string, out io.Writer) int {
 	baseURL := strings.TrimRight(strings.TrimSpace(coreHTTP), "/")
 	if baseURL == "" {
@@ -53,6 +54,8 @@ func runLogsWidgetCommand(coreHTTP string, out io.Writer) int {
 	return 0
 }
 
+// runLogsWidgetLoop polls /events on an interval and redraws the pane when
+// the rendered log lines change.
 func runLogsWidgetLoop(ctx context.Context, baseURL string, out io.Writer, idleInterval time.Duration) error {
 	hideTerminalCursor(out)
 	defer showTerminalCursor(out)
@@ -90,6 +93,8 @@ func runLogsWidgetLoop(ctx context.Context, baseURL string, out io.Writer, idleI
 	}
 }
 
+// renderLogsWidgetLines renders a fixed-height tail view where the newest
+// events stay visible and the frame is padded to fill the pane.
 func renderLogsWidgetLines(events []LogEvent, height, width int, fetchErr bool) []string {
 	if height < 1 {
 		height = 1

@@ -65,7 +65,9 @@ type OutputWidgetContentComponent struct {
 func NewInputWidgetScreenStateFromPane(height int, width int, showHelp bool) InputWidgetScreenState {
 	pane := AppletPaneSize{Height: height, Width: width}
 	rows, cols := computeInputWidgetViewportSize(pane, showHelp)
-	return NewInputWidgetScreenStateFromViewport(rows, cols, showHelp)
+	state := NewInputWidgetScreenStateFromViewport(rows, cols, showHelp)
+	state.Pane = pane
+	return state
 }
 
 func NewInputWidgetScreenStateFromViewport(viewportRows int, viewportCols int, showHelp bool) InputWidgetScreenState {
@@ -74,6 +76,9 @@ func NewInputWidgetScreenStateFromViewport(viewportRows int, viewportCols int, s
 	}
 	if viewportCols < 12 {
 		viewportCols = 12
+	}
+	if viewportCols > 512 {
+		viewportCols = 512
 	}
 	components, layout := buildInputWidgetComponents(viewportRows, viewportCols, showHelp)
 	return InputWidgetScreenState{

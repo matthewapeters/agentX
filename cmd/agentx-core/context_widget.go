@@ -227,6 +227,9 @@ const (
 	contextHistorySortDescending = "descending"
 )
 
+// contextFeedbackViewState tracks interactive context-widget UI state such as
+// section focus, expanded/collapsed rows, row-level text scroll, and temporary
+// status/help affordances.
 type contextFeedbackViewState struct {
 	showHelp                bool
 	collapsedContextHistory bool
@@ -789,6 +792,8 @@ func runContextWidgetCommand(coreHTTP string, out io.Writer) int {
 	return runContextWidgetCommandWithInput(coreHTTP, nil, out)
 }
 
+// runContextWidgetCommandWithInput configures core endpoint/watchdog state and
+// runs the interactive context-widget polling/render loop.
 func runContextWidgetCommandWithInput(coreHTTP string, in io.Reader, out io.Writer) int {
 	baseURL := strings.TrimSpace(coreHTTP)
 	if baseURL == "" {
@@ -814,6 +819,8 @@ func runContextWidgetLoop(ctx context.Context, baseURL string, out io.Writer, re
 	return runContextWidgetLoopWithInput(ctx, baseURL, nil, out, refreshInterval)
 }
 
+// runContextWidgetLoopWithInput processes input commands, polls /context,
+// applies persisted view state, and redraws only when the pane frame changes.
 func runContextWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Reader, out io.Writer, refreshInterval time.Duration) error {
 	// Hide the terminal cursor for the duration of the widget loop to prevent
 	// cursor flicker at the end of rendered content.
@@ -1235,6 +1242,8 @@ func renderContextWidget(snapshot contextWidgetSnapshot, tab string, model strin
 	return renderContextWidgetWithState(snapshot, tab, model, backend, paneHeight, paneWidth, nil, nil)
 }
 
+// renderContextWidgetWithState renders the active system/context surface for
+// the selected tab and enforces pane width/height limits before display.
 func renderContextWidgetWithState(snapshot contextWidgetSnapshot, tab string, model string, backend string, paneHeight int, paneWidth int, history []contextHistorySession, viewState *contextFeedbackViewState) string {
 	lines := []string{
 		"[SYSTEM]",

@@ -45,14 +45,14 @@ func (a *InputApplet) Render(height, width int) []string {
 	a.compose.seedViewportFromStartup(height, width)
 	frame := a.compose.render(a.activity.promptLabel())
 	lines := strings.Split(frame, "\n")
-	return clipLinesForHeight(lines, height)
+	return clipLinesToHeight(lines, height)
 }
 
 // runInputWidgetCommandWithAPI is the entry point for --input-widget when
 // --applet-api-addr is also supplied.  It:
 //  1. Starts the AppletBase HTTP API server (GET /health, GET /render).
-//  2. Runs a background snapshot-refresh goroutine that periodically calls
-//     applet.Render so GET /render always reflects the live widget state.
+//  2. Registers an input-widget render observer that stores the latest
+//     rendered frame in the applet snapshot for GET /render.
 //  3. Runs the normal input widget loop unmodified.
 //
 // When apiAddr is empty the function falls back to plain runInputWidgetCommand.
@@ -73,11 +73,20 @@ func runInputWidgetCommandWithAPI(coreHTTP string, apiAddr string, in io.Reader,
 	_ = boundAddr
 
 	removeObserver := setInputWidgetRenderObserver(func(height int, width int, lines []string) {
-		applet.StoreSnapshot(applet.Name(), height, width, clipLinesForHeight(lines, height))
+		applet.StoreSnapshot(applet.Name(), height, width, clipLinesToHeight(lines, height))
 	})
 	defer removeObserver()
 
 	return runInputWidgetCommand(coreHTTP, in, out)
+}
+
+func clipLinesToHeight(lines []string, height int) []string {
+	if height <= 0 || len(lines) <= height {
+		return lines
+	}
+	clipped := make([]string, height)
+	copy(clipped, lines[:height])
+	return clipped
 }
 
 

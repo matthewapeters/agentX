@@ -26,6 +26,8 @@ type settingsField struct {
 	Options []string
 }
 
+// settingsWidgetState stores the settings applet UI model: constrained fields,
+// current values loaded from agentx.toml, selection/viewport, and status/help.
 type settingsWidgetState struct {
 	projectDir   string
 	configPath   string
@@ -61,6 +63,8 @@ var approvedSettingsFields = []settingsField{
 	{Section: "terminal", Key: "exec_mode", Kind: settingsFieldEnum, Options: []string{"autonomous", "confirm"}},
 }
 
+// runSettingsWidgetCommand initializes approved-field state and starts the
+// interactive settings render/control loop.
 func runSettingsWidgetCommand(_ string, in io.Reader, out io.Writer) int {
 	projectDir := strings.TrimSpace(os.Getenv("AGENTX_PROJECT_DIR"))
 	if projectDir == "" {
@@ -93,6 +97,8 @@ func runSettingsWidgetCommand(_ string, in io.Reader, out io.Writer) int {
 	return 0
 }
 
+// runSettingsWidgetLoop processes control commands, redraws on state changes,
+// and keeps viewport sizing responsive to pane dimensions.
 func runSettingsWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, state *settingsWidgetState) error {
 	commandReader, promptMode, cleanup := newFilesystemWidgetCommandReader(in)
 	defer cleanup()
@@ -252,6 +258,8 @@ func (s *settingsWidgetState) handleCommand(_ context.Context, command string) e
 	}
 }
 
+// render builds the settings panel text frame, including constrained field rows
+// and optional inline help/status lines.
 func (s *settingsWidgetState) render() string {
 	s.ensureSelectionVisible()
 	start, end := s.visibleRange()

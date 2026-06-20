@@ -223,6 +223,8 @@ func buildResizeBorderLines(height int, width int) []string {
 // runAppletResizeCommand — entry point for --applet-resize CLI flag.
 // ---------------------------------------------------------------------------
 
+// runAppletResizeCommand boots the resize test applet, publishes /render via
+// AppletBase, and redraws whenever pane dimensions change.
 func runAppletResizeCommand(apiAddr string, out io.Writer) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

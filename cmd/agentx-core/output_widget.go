@@ -21,6 +21,9 @@ type outputWidgetSnapshot struct {
 	PromptCycle     PromptCycleStatus `json:"prompt_cycle"`
 }
 
+// outputWidgetViewState stores interactive UI state that is not part of the
+// core snapshot, including focus, collapse state, per-turn scroll offsets, and
+// clipboard/help overlays.
 type outputWidgetViewState struct {
 	turnExpanded      map[int]bool
 	turnScroll        map[int]int
@@ -1091,6 +1094,8 @@ func normalizeOutputWidgetCommandToken(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }
 
+// runOutputWidgetCommand resolves core endpoint configuration and starts the
+// interactive output widget event/render loop.
 func runOutputWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 	baseURL := strings.TrimSpace(coreHTTP)
 	if baseURL == "" {
@@ -1116,6 +1121,8 @@ func runOutputWidgetLoop(ctx context.Context, baseURL string, out io.Writer, ref
 	return runOutputWidgetLoopWithInput(ctx, baseURL, nil, out, refreshInterval)
 }
 
+// runOutputWidgetLoopWithInput merges command handling, periodic snapshot
+// polling, persisted view-state restore/save, and redraw-on-diff rendering.
 func runOutputWidgetLoopWithInput(ctx context.Context, baseURL string, in io.Reader, out io.Writer, refreshInterval time.Duration) error {
 	hideTerminalCursor(out)
 	defer showTerminalCursor(out)
@@ -1368,6 +1375,9 @@ func renderOutputWidgetWithViewState(snapshot outputWidgetSnapshot, paneHeight i
 	return renderOutputWidgetWithViewStateAndFormatter(snapshot, paneHeight, paneWidth, viewState, nil)
 }
 
+// renderOutputWidgetWithViewStateAndFormatter renders turns into a pane-sized
+// text frame, applying focus/collapse state, help/clipboard overlays, width
+// fitting, and vertical clipping for the current viewport.
 func renderOutputWidgetWithViewStateAndFormatter(snapshot outputWidgetSnapshot, paneHeight int, paneWidth int, viewState *outputWidgetViewState, formatter OutputResponseFormatter) string {
 	if formatter == nil {
 		formatter = ResolveOutputResponseFormatterFromEnv()

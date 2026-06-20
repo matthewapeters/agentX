@@ -548,6 +548,7 @@ func TestInputWidgetCursorPosition_AnchoredToRenderedBoxes(t *testing.T) {
 	state := newInputWidgetComposeState()
 	state.viewportRows = 3
 	state.viewportCols = 12
+	state.screen.Pane = AppletPaneSize{Height: 24, Width: 80}
 	state.inputLines = [][]rune{[]rune("hello")}
 	state.cursorRow = 0
 	state.cursorCol = 1
@@ -578,6 +579,89 @@ func TestInputWidgetCursorPosition_AnchoredToRenderedBoxes(t *testing.T) {
 	}
 	if row != state.renderLayout.controlInnerTopRow {
 		t.Fatalf("expected control cursor row %d, got %d", state.renderLayout.controlInnerTopRow, row)
+	}
+}
+
+func TestInputWidgetPlaceTerminalCursor_HidesCursorWhenRowExceedsPaneHeight(t *testing.T) {
+	state := newInputWidgetComposeState()
+	state.focus = inputWidgetFocusInput
+	state.viewportRows = 3
+	state.viewportCols = 12
+	state.inputLines = [][]rune{[]rune("hello")}
+	state.cursorRow = 0
+	state.cursorCol = 0
+	state.viewRow = 0
+	state.viewCol = 0
+	state.renderLayout.inputInnerTopRow = 7
+	state.screen.Pane = AppletPaneSize{Height: 6, Width: 80}
+
+	var out bytes.Buffer
+	state.placeTerminalCursor(&out)
+
+	if !strings.Contains(out.String(), "\x1b[?25l") {
+		t.Fatalf("expected terminal cursor hide escape when cursor row exceeds pane height, got %q", out.String())
+	}
+}
+
+func TestInputWidgetRender_UsesPaneGeometryAsAuthority(t *testing.T) {
+	state := newInputWidgetComposeState()
+	state.screen.Pane = AppletPaneSize{Height: 16, Width: 44}
+	state.viewportRows = 99
+	state.viewportCols = 300
+
+	render := state.render("agentx")
+	lines := strings.Split(render, "\n")
+
+	var composeTop, controlTop string
+	for _, line := range lines {
+		plain := stripAnsi(line)
+		if strings.HasPrefix(plain, "┌") && strings.HasSuffix(plain, "┐") {
+			if composeTop == "" {
+				composeTop = plain
+				continue
+			}
+			controlTop = plain
+			break
+		}
+	}
+
+	if composeTop == "" || controlTop == "" {
+		t.Fatalf("expected compose and control borders in render:\n%s", render)
+	}
+
+	expectedCols := 44 - 6
+	expectedTopWidth := expectedCols + 5
+	if got := len([]rune(composeTop)); got != expectedTopWidth {
+		t.Fatalf("expected compose top width %d from pane budget, got %d", expectedTopWidth, got)
+	}
+	if got := len([]rune(controlTop)); got != expectedTopWidth {
+		t.Fatalf("expected control top width %d from pane budget, got %d", expectedTopWidth, got)
+	}
+	if state.viewportCols != expectedCols {
+		t.Fatalf("expected viewport cols %d from pane geometry, got %d", expectedCols, state.viewportCols)
+	}
+}
+
+func TestInputWidgetRender_DisablesSoftwareCursorWhenConfigured(t *testing.T) {
+	state := newInputWidgetComposeState()
+	state.screen.Pane = AppletPaneSize{Height: 24, Width: 80}
+	state.viewportRows = 3
+	state.viewportCols = 12
+	state.inputLines = [][]rune{[]rune("abc")}
+	state.cursorRow = 0
+	state.cursorCol = 1
+	state.focus = inputWidgetFocusInput
+
+	state.renderSoftwareCursor = false
+	renderNoCursor := state.render("agentx")
+	if strings.Contains(renderNoCursor, ansiReverse) {
+		t.Fatalf("expected no software cursor highlight when disabled, got:\n%s", renderNoCursor)
+	}
+
+	state.renderSoftwareCursor = true
+	renderWithCursor := state.render("agentx")
+	if !strings.Contains(renderWithCursor, ansiReverse) {
+		t.Fatalf("expected software cursor highlight when enabled, got:\n%s", renderWithCursor)
 	}
 }
 
@@ -696,5 +780,152 @@ func TestRunInputWidgetInteractiveLoop_ReRendersOnIdleResizeAndExitsCleanly(t *t
 	}
 	if strings.Contains(rendered, "Input widget failed") {
 		t.Fatalf("expected clean interactive loop exit without failure, got output:\n%s", rendered)
+	}
+}
+
+func TestRunInputWidgetInteractiveLoop_ClipsRenderedFrameToPaneHeight(t *testing.T) {
+	t.Setenv("LINES", "6")
+	t.Setenv("COLUMNS", "40")
+
+	originalReader := newInputWidgetKeyReaderFn
+	defer func() {
+		newInputWidgetKeyReaderFn = originalReader
+	}()
+
+	keys := []inputWidgetKey{
+		{kind: "esc"},
+		{kind: "text", raw: ":"},
+		{kind: "text", raw: "?"},
+		{kind: "enter"},
+		{kind: "esc"},
+		{kind: "text", raw: ":"},
+		{kind: "text", raw: "q"},
+		{kind: "enter"},
+	}
+	idx := 0
+	newInputWidgetKeyReaderFn = func(_ *os.File) (func() (inputWidgetKey, error), func(), error) {
+		reader := func() (inputWidgetKey, error) {
+			if idx >= len(keys) {
+				return inputWidgetKey{}, io.EOF
+			}
+			key := keys[idx]
+			idx++
+			return key, nil
+		}
+		return reader, func() {}, nil
+	}
+
+	var observed []struct {
+		height int
+		lines  int
+	}
+	restoreObserver := setInputWidgetRenderObserver(func(height int, _ int, lines []string) {
+		observed = append(observed, struct {
+			height int
+			lines  int
+		}{height: height, lines: len(lines)})
+	})
+	defer restoreObserver()
+
+	var output bytes.Buffer
+	activityState := newWidgetActivityState()
+	submitPrompt := func(prompt string) (int, bool) {
+		if prompt == ":q" {
+			return 0, true
+		}
+		return 0, false
+	}
+
+	tmpFile, err := os.CreateTemp(t.TempDir(), "input-widget-interactive-clipping")
+	if err != nil {
+		t.Fatalf("failed to create temp input file: %v", err)
+	}
+	defer tmpFile.Close()
+
+	exitCode := runInputWidgetInteractiveLoop(tmpFile, &output, activityState, submitPrompt)
+	if exitCode != 0 {
+		t.Fatalf("expected interactive loop exit code 0, got %d", exitCode)
+	}
+	if len(observed) == 0 {
+		t.Fatal("expected at least one observed interactive render frame")
+	}
+	for i, frame := range observed {
+		if frame.height <= 0 {
+			t.Fatalf("expected positive pane height in observed frame %d, got %d", i, frame.height)
+		}
+		if frame.lines > frame.height {
+			t.Fatalf("expected clipped frame lines <= pane height, frame %d has lines=%d height=%d", i, frame.lines, frame.height)
+		}
+	}
+}
+
+func TestRunInputWidgetInteractiveLoop_UsesTerminalCursorOnly(t *testing.T) {
+	t.Setenv("LINES", "24")
+	t.Setenv("COLUMNS", "80")
+
+	originalReader := newInputWidgetKeyReaderFn
+	defer func() {
+		newInputWidgetKeyReaderFn = originalReader
+	}()
+
+	keys := []inputWidgetKey{
+		{kind: "text", raw: "h"},
+		{kind: "esc"},
+		{kind: "text", raw: ":"},
+		{kind: "text", raw: "q"},
+		{kind: "enter"},
+	}
+	idx := 0
+	newInputWidgetKeyReaderFn = func(_ *os.File) (func() (inputWidgetKey, error), func(), error) {
+		reader := func() (inputWidgetKey, error) {
+			if idx >= len(keys) {
+				return inputWidgetKey{}, io.EOF
+			}
+			key := keys[idx]
+			idx++
+			return key, nil
+		}
+		return reader, func() {}, nil
+	}
+
+	var observedLines []string
+	restoreObserver := setInputWidgetRenderObserver(func(_ int, _ int, lines []string) {
+		if len(lines) > 0 {
+			observedLines = append(observedLines, strings.Join(lines, "\n"))
+		}
+	})
+	defer restoreObserver()
+
+	var output bytes.Buffer
+	activityState := newWidgetActivityState()
+	submitPrompt := func(prompt string) (int, bool) {
+		if prompt == ":q" {
+			return 0, true
+		}
+		return 0, false
+	}
+
+	tmpFile, err := os.CreateTemp(t.TempDir(), "input-widget-interactive-cursor")
+	if err != nil {
+		t.Fatalf("failed to create temp input file: %v", err)
+	}
+	defer tmpFile.Close()
+
+	exitCode := runInputWidgetInteractiveLoop(tmpFile, &output, activityState, submitPrompt)
+	if exitCode != 0 {
+		t.Fatalf("expected interactive loop exit code 0, got %d", exitCode)
+	}
+	if len(observedLines) == 0 {
+		t.Fatal("expected observed interactive render frames")
+	}
+	for i, frame := range observedLines {
+		if strings.Contains(frame, ansiReverse) {
+			t.Fatalf("expected no software cursor highlight in interactive frame %d, got:\n%s", i, frame)
+		}
+	}
+
+	rendered := output.String()
+	if !strings.Contains(rendered, "\x1b[?25h\x1b[") {
+		t.Fatalf("expected interactive output to place a hardware cursor, got:\n%s", rendered)
 	}
 }

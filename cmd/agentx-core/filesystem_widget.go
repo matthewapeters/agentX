@@ -21,6 +21,8 @@ type filesystemWidgetEntry struct {
 	Exists bool
 }
 
+// filesystemWidgetState is the full UI model for the files applet, including
+// directory navigation history, selection/viewport state, and help/status UI.
 type filesystemWidgetState struct {
 	baseURL      string
 	projectDir   string
@@ -57,6 +59,8 @@ const (
 	filesystemMissingStyle    = ansiRed
 )
 
+// runFilesystemWidgetCommand initializes filesystem widget state and starts
+// the interactive command/render loop.
 func runFilesystemWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) int {
 	baseURL := strings.TrimSpace(coreHTTP)
 	if baseURL == "" {
@@ -105,6 +109,8 @@ func runFilesystemWidgetCommand(coreHTTP string, in io.Reader, out io.Writer) in
 	return 0
 }
 
+// runFilesystemWidgetLoop handles keyboard commands, keeps viewport dimensions
+// in sync with terminal size, and performs incremental frame redraws.
 func runFilesystemWidgetLoop(ctx context.Context, in io.Reader, out io.Writer, state *filesystemWidgetState) error {
 	commandReader, promptMode, cleanup := newFilesystemWidgetCommandReader(in)
 	defer cleanup()
@@ -449,6 +455,8 @@ func (s *filesystemWidgetState) handleCommand(ctx context.Context, command strin
 	}
 }
 
+// render builds the complete pane frame using the current viewport, selection,
+// and optional help content.
 func (s *filesystemWidgetState) render() string {
 	s.ensureSelectionVisible()
 	start, end := s.visibleRange()

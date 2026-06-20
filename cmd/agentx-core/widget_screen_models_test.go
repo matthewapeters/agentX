@@ -4,6 +4,9 @@ import "testing"
 
 func TestNewInputWidgetScreenStateFromPane_ComputesViewportAndLayout(t *testing.T) {
 	screen := NewInputWidgetScreenStateFromPane(24, 80, false)
+	if screen.Pane.Height != 24 || screen.Pane.Width != 80 {
+		t.Fatalf("expected pane dimensions to be retained, got height=%d width=%d", screen.Pane.Height, screen.Pane.Width)
+	}
 	if screen.ViewportRows < 1 {
 		t.Fatalf("expected positive viewport rows, got %d", screen.ViewportRows)
 	}

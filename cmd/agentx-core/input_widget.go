@@ -25,6 +25,8 @@ var (
 	inputWidgetRenderObserver   func(height int, width int, lines []string)
 )
 
+// setInputWidgetRenderObserver installs a single render observer callback used
+// by the input applet API bridge. The returned function removes the observer.
 func setInputWidgetRenderObserver(observer func(height int, width int, lines []string)) func() {
 	inputWidgetRenderObserverMu.Lock()
 	inputWidgetRenderObserver = observer
@@ -55,6 +57,8 @@ type widgetActivitySnapshot struct {
 	ContextFiles []string          `json:"context_files,omitempty"`
 }
 
+// widgetActivityState tracks the latest core activity plus short-lived
+// done/failed indicators used when rendering the input prompt label.
 type widgetActivityState struct {
 	mu          sync.RWMutex
 	state       string
@@ -65,6 +69,7 @@ type widgetActivityState struct {
 	contextFile string
 }
 
+// newWidgetActivityState initializes prompt-label activity to an idle state.
 func newWidgetActivityState() *widgetActivityState {
 	return &widgetActivityState{state: "idle", phase: "none"}
 }
@@ -111,6 +116,8 @@ func (ws *widgetActivityState) promptLabel() string {
 	return "agentx" + contextSuffix
 }
 
+// startWidgetActivityPoller polls core /activity and updates prompt-label
+// state used by the input widget render path.
 func startWidgetActivityPoller(baseURL string, target *widgetActivityState) func() {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -336,6 +343,7 @@ type inputWidgetComposeState struct {
 	startupViewportApplied bool
 	screen                 InputWidgetScreenState
 	renderLayout           inputWidgetRenderLayout
+	renderSoftwareCursor   bool
 }
 
 type inputWidgetRenderLayout struct {
@@ -350,6 +358,7 @@ func newInputWidgetComposeState() *inputWidgetComposeState {
 		inputLines:   [][]rune{[]rune{}},
 		viewportRows: 8,
 		viewportCols: 56,
+		renderSoftwareCursor: true,
 	}
 }
 
@@ -357,6 +366,7 @@ var newInputWidgetKeyReaderFn = newInputWidgetKeyReader
 
 func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *widgetActivityState, submitPrompt func(string) (int, bool)) int {
 	state := newInputWidgetComposeState()
+	state.renderSoftwareCursor = false
 	state.status = "ESC toggles focus; :? toggles help; :q exits"
 	startupHeight, startupWidth := resolveWidgetPaneSizeAtStartup(out)
 	state.seedViewportFromStartup(startupHeight, startupWidth)
@@ -398,6 +408,7 @@ func runInputWidgetInteractiveLoop(in *os.File, out io.Writer, activityState *wi
 		state.adaptViewportToTerminal(out)
 		currentLines := filesystemWidgetFrameLines(state.render(activityState.promptLabel()))
 		height, width := resolveWidgetPaneSizeForWriter(out)
+		currentLines = clipLinesForHeight(currentLines, height)
 		notifyInputWidgetRenderObserver(height, width, currentLines)
 		renderChanged := len(previousLines) == 0 || strings.Join(previousLines, "\n") != strings.Join(currentLines, "\n")
 		if renderChanged {
@@ -469,6 +480,9 @@ func (s *inputWidgetComposeState) terminalCursorPosition() (int, int, bool) {
 		}
 		row := baseRow + rowInView
 		col := colInView + 3
+		if s.screen.Pane.Height > 0 && row > s.screen.Pane.Height {
+			return 0, 0, false
+		}
 		return row, col, true
 	case inputWidgetFocusControl:
 		cols := s.screen.Components.ControlBox.controlCols(s.viewportCols)
@@ -490,6 +504,9 @@ func (s *inputWidgetComposeState) terminalCursorPosition() (int, int, bool) {
 			row = s.screen.Components.Cursor.ControlInnerTopRow
 		}
 		col := cursorPos + 3
+		if s.screen.Pane.Height > 0 && row > s.screen.Pane.Height {
+			return 0, 0, false
+		}
 		return row, col, true
 	default:
 		return 0, 0, false
@@ -1029,6 +1046,7 @@ func (s *inputWidgetComposeState) seedViewportFromStartup(height int, width int)
 
 func (s *inputWidgetComposeState) render(activityLabel string) string {
 	s.ensureInputInitialized()
+	s.refreshRenderScreenState()
 	s.ensureCursorVisible()
 	_ = activityLabel
 	inputColor := ansiBlue
@@ -1041,9 +1059,6 @@ func (s *inputWidgetComposeState) render(activityLabel string) string {
 
 	lines := []string{}
 
-	screen := NewInputWidgetScreenStateFromViewport(s.viewportRows, s.viewportCols, s.showHelp)
-	s.screen = screen
-	s.renderLayout = screen.Layout
 	headerLines := s.screen.Components.renderHeaderLines(s.showHelp)
 	lines = append(lines, headerLines...)
 	if len(headerLines) > 0 {
@@ -1053,6 +1068,17 @@ func (s *inputWidgetComposeState) render(activityLabel string) string {
 	lines = append(lines, "")
 	lines = append(lines, s.screen.Components.ControlBox.render(controlColor, s)...)
 	return strings.Join(lines, "\n")
+}
+
+func (s *inputWidgetComposeState) refreshRenderScreenState() {
+	if s.screen.Pane.Height > 0 && s.screen.Pane.Width > 0 {
+		s.screen = NewInputWidgetScreenStateFromPane(s.screen.Pane.Height, s.screen.Pane.Width, s.showHelp)
+	} else {
+		s.screen = NewInputWidgetScreenStateFromViewport(s.viewportRows, s.viewportCols, s.showHelp)
+	}
+	s.viewportRows = s.screen.ViewportRows
+	s.viewportCols = s.screen.ViewportCols
+	s.renderLayout = s.screen.Layout
 }
 
 func (s *inputWidgetComposeState) focusLabel() string {
@@ -1090,7 +1116,7 @@ func (s *inputWidgetComposeState) renderInputViewportRow(lineIndex int, cols int
 		visible = append(visible, " ")
 	}
 
-	if s.focus == inputWidgetFocusInput && lineIndex == s.cursorRow {
+	if s.renderSoftwareCursor && s.focus == inputWidgetFocusInput && lineIndex == s.cursorRow {
 		cursor := s.cursorCol - s.viewCol
 		if cursor >= 0 && cursor < cols {
 			ch := visible[cursor]
@@ -1158,7 +1184,7 @@ func (s *inputWidgetComposeState) renderControlContent(cols int) string {
 	for len(visible) < cols {
 		visible = append(visible, " ")
 	}
-	if s.focus == inputWidgetFocusControl {
+	if s.renderSoftwareCursor && s.focus == inputWidgetFocusControl {
 		cursorPos := cursor - start
 		if cursorPos >= 0 && cursorPos < cols {
 			ch := visible[cursorPos]
