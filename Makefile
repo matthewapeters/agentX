@@ -8,7 +8,7 @@ UV ?= uv
 PYTHON_TEST_ARGS ?= -q
 UV_PROJECT_ENV ?= $(CURDIR)/.venv
 
-.PHONY: help \
+.PHONY: help all \
 	generate-startup-logo \
 	build build-core build-applets clean python-build python-test test-all \
 	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e go-test-pane-layout \
@@ -19,6 +19,9 @@ UV_PROJECT_ENV ?= $(CURDIR)/.venv
 
 help:
 	@echo "AgentX Make Targets"
+	@echo ""
+	@echo "Baseline:"
+	@echo "  all                 Canonical baseline alias for clean then build"
 	@echo ""
 	@echo "Build:"
 	@echo "  build               Build Go core and prepare applets"
@@ -61,6 +64,11 @@ help:
 	@echo "  run                 Build and run Go core"
 	@echo "  run-attached        Build, run, and attach to tmux session"
 	@echo "  run-with-applets    Build and run Go core with applets prepared"
+
+
+all:
+	@$(MAKE) clean && $(MAKE) build
+	@echo "Baseline verification complete"
 
 build: build-core build-applets
 	@echo "Build complete"
