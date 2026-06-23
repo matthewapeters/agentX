@@ -35,6 +35,20 @@ This plan is additive. It does not replace existing contracts in:
   phase.
 4. At M1-M4 start, run the mandatory Go-core preflight decision gate from
   `01_comprehensive_build_plan.md` before any executable claim is made.
+5. Use `../validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md` to package checkpoint
+  evidence for M0-M4.
+
+## Builder Quickstart Checklist
+
+- Confirm milestone scope and source docs using `02_phase_reference_matrix.md`.
+- Confirm owners are assigned at kickoff: Delivery Lead, Architecture Reviewer,
+  UX Reviewer, QA Lead, and Security Reviewer where required.
+- Run milestone preflight (`test -d cmd/agentx-core`) for M1-M4 and record the
+  result.
+- Fill `../validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md` with AC coverage,
+  regression evidence, and required links before gate review.
+- Record unresolved decisions with owner, due milestone, and tracking reference
+  in `../implementation/90_open_questions.md`.
 
 ## Document Map
 
@@ -45,7 +59,8 @@ This plan is additive. It does not replace existing contracts in:
 
 - Weekly execution cadence: one phase checkpoint per week unless a phase is
   explicitly split into multiple checkpoints.
-- Gate reviews: architecture + UX + QA checks at each phase exit.
+- Gate reviews: architecture + UX + QA checks at each phase exit, plus
+  conditional Security Reviewer gates for M1, M3b, and M4.
 - Evidence packaging is mandatory at each checkpoint and must include:
   - gate command outputs
   - AC coverage table with test case IDs

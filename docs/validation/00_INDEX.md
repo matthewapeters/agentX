@@ -1,6 +1,6 @@
 # Validation & Verification Documentation
 
-_Last updated: 2026-05-16 (v0.49.1)_
+_Last updated: 2026-06-23 (v0.50.0)_
 
 This folder contains validation and verification infrastructure for AgentX, including issue-specific verification harnesses, validation protocols, and UAT procedures.
 
@@ -9,6 +9,7 @@ This folder contains validation and verification infrastructure for AgentX, incl
 | File | Purpose | Status |
 |------|---------|--------|
 | [01_ISSUE_9_WIDE_PROFILE_VERIFICATION.md](01_ISSUE_9_WIDE_PROFILE_VERIFICATION.md) | Deterministic verification harness for Issue #9 (headless tmux ENTER prompt false positive); enforces fixed tmux geometry (200x60 default) for reproducible validation evidence | Maintained |
+| [02_CHECKPOINT_EVIDENCE_TEMPLATE.md](02_CHECKPOINT_EVIDENCE_TEMPLATE.md) | Reusable M0-M4 checkpoint evidence package template with fail-close ownership, AC coverage, regression proof, negative-path matrix (conditional), and sign-off fields | Active |
 
 ## Quick Start: Running Verification Scripts
 
@@ -36,6 +37,21 @@ The script will:
 - Collect pane captures, window lists, and diagnostic logs for each trial
 - Generate `summary.csv` and `report.md` in the temp directory
 - Print the directory path to stdout so you can inspect artifacts
+
+## Quick Start: Checkpoint Evidence Workflow (M0-M4)
+
+Use this path when producing milestone checkpoint evidence packages.
+
+1. Pick checkpoint ID and create evidence folder: `docs/validation/evidence/<checkpoint_id>/`
+2. Copy and fill [02_CHECKPOINT_EVIDENCE_TEMPLATE.md](02_CHECKPOINT_EVIDENCE_TEMPLATE.md)
+3. Run required gate commands for the milestone (see build-plan phase matrix)
+4. Record normalized preflight/gate proof rows: command, exit_code, timestamp,
+   operator, artifact_link (`none` allowed for silent commands)
+5. Populate AC coverage table with test case IDs using format
+   `TC-<milestone>-<area>-<nnn>`
+6. Add defer metadata where required: owner role, due milestone/date, tracking
+   reference
+7. Complete sign-off block and final checkpoint disposition
 
 ## Maintenance Policy
 

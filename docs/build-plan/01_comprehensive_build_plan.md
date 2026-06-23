@@ -76,6 +76,7 @@ Every milestone checkpoint must publish an evidence package containing:
 - regression and negative-path results (where required)
 - unresolved decision log
 - runtime compatibility delta
+- evidence document based on `docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md`
 
 ### 3.6 Ownership Requirements
 
@@ -90,26 +91,26 @@ obligations.
 
 Startup authority:
 
-- Authority owner: [OWNER_REQUIRED_AT_KICKOFF]
+- Authority owner: Delivery Lead
 - Python GUI/Agentix owns user-initiated startup intent and configuration
   request assembly.
 - Go core owns runtime session bootstrap execution semantics.
 
 Surface registration transport:
 
-- Authority owner: [OWNER_REQUIRED_AT_KICKOFF]
+- Authority owner: Architecture Reviewer
 - Registration request/response transport contract and validation semantics are
   owned by architecture contracts and implemented by runtime surfaces.
 
 Attach-token lifecycle:
 
-- Authority owner: [OWNER_REQUIRED_AT_KICKOFF]
+- Authority owner: Security Reviewer
 - Token issuance, validation, expiry, and revoke semantics are owned by policy
   and security contracts.
 
 Event schema compatibility:
 
-- Authority owner: [OWNER_REQUIRED_AT_KICKOFF]
+- Authority owner: Architecture Reviewer
 - Channel/event schema version compatibility, change control, and drift
   detection are jointly owned by architecture and implementation contract
   maintainers.
@@ -123,8 +124,8 @@ Compatibility rule:
 
 ### M0: Contract Alignment Baseline
 
-Milestone owner: [OWNER_REQUIRED_AT_KICKOFF]
-Gate owners: Architecture=[OWNER_REQUIRED], UX=[OWNER_REQUIRED], QA=[OWNER_REQUIRED]
+Milestone owner: Delivery Lead
+Gate owners: Architecture=Architecture Reviewer, UX=UX Reviewer, QA=QA Lead
 
 Goal:
 
@@ -185,8 +186,9 @@ Quality gate:
 
 ### M1: Runtime Skeleton And Surface Registration Foundation
 
-Milestone owner: [OWNER_REQUIRED_AT_KICKOFF]
-Gate owners: Architecture=[OWNER_REQUIRED], UX=[OWNER_REQUIRED], QA=[OWNER_REQUIRED]
+Milestone owner: Delivery Lead
+Gate owners: Architecture=Architecture Reviewer, UX=UX Reviewer, QA=QA Lead,
+Security=Security Reviewer
 
 Goal:
 
@@ -249,8 +251,8 @@ Quality gate:
 
 ### M2: UX Surface Parity Baseline (TUI + System Surfaces)
 
-Milestone owner: [OWNER_REQUIRED_AT_KICKOFF]
-Gate owners: Architecture=[OWNER_REQUIRED], UX=[OWNER_REQUIRED], QA=[OWNER_REQUIRED]
+Milestone owner: Delivery Lead
+Gate owners: Architecture=Architecture Reviewer, UX=UX Reviewer, QA=QA Lead
 
 Goal:
 
@@ -312,8 +314,8 @@ Quality gate:
 
 ### M3a: LLM Prompt Stack And Model Behavior
 
-Milestone owner: [OWNER_REQUIRED_AT_KICKOFF]
-Gate owners: Architecture=[OWNER_REQUIRED], UX=[OWNER_REQUIRED], QA=[OWNER_REQUIRED]
+Milestone owner: Delivery Lead
+Gate owners: Architecture=Architecture Reviewer, UX=UX Reviewer, QA=QA Lead
 
 Goal:
 
@@ -373,8 +375,9 @@ Quality gate:
 
 ### M3b: Tool Runtime And Policy Enforcement
 
-Milestone owner: [OWNER_REQUIRED_AT_KICKOFF]
-Gate owners: Architecture=[OWNER_REQUIRED], UX=[OWNER_REQUIRED], QA=[OWNER_REQUIRED]
+Milestone owner: Delivery Lead
+Gate owners: Architecture=Architecture Reviewer, UX=UX Reviewer, QA=QA Lead,
+Security=Security Reviewer
 
 Goal:
 
@@ -446,8 +449,9 @@ Quality gate:
 
 ### M4: Persistence, Replay, And Operational Hardening
 
-Milestone owner: [OWNER_REQUIRED_AT_KICKOFF]
-Gate owners: Architecture=[OWNER_REQUIRED], UX=[OWNER_REQUIRED], QA=[OWNER_REQUIRED]
+Milestone owner: Delivery Lead
+Gate owners: Architecture=Architecture Reviewer, UX=UX Reviewer, QA=QA Lead,
+Security=Security Reviewer
 
 Goal:
 
@@ -550,6 +554,9 @@ Suggested cadence:
 
 Checkpoint template (for each milestone):
 
+Use `docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md` as the required base
+template for M0-M4 checkpoint packages.
+
 - Checkpoint input:
   - scope slice and linked contracts
   - open risk delta
@@ -632,10 +639,15 @@ M4:
 
 - Add a lightweight `docs/build-plan/CHANGELOG.md` only if this folder begins to
   change independently across multiple delivery cycles.
-- Add a per-milestone evidence template under docs/validation once M1 begins, so
-  gate outcomes are captured in a repeatable format.
-- Introduce a single owner field per milestone in future revisions for clearer
-  accountability during parallel work.
+- Keep `docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md` as the reusable
+  checkpoint evidence baseline and revise only when gate requirements change.
+- Add role-to-person mapping at milestone kickoff (for example, "QA Lead =
+  <name/handle>") in checkpoint evidence so required roles stay unambiguous.
+- Use a canonical evidence artifact path/name convention for checkpoint assets:
+  `docs/validation/evidence/<checkpoint_id>/` with files named
+  `<checkpoint_id>_<artifact_type>_<YYYYMMDD-HHMMSS>.<ext>`.
+- Use a lightweight AC test case ID format convention:
+  `TC-<milestone>-<area>-<nnn>` (example: `TC-M3b-policy-003`).
 - Consider adding a machine-readable milestone manifest (YAML/JSON) after the
   first full execution cycle if automation/reporting is needed.
 

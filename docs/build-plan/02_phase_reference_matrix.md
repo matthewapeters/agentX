@@ -8,6 +8,14 @@ Status: Active
 Map each build milestone to concrete source documents in architecture, UX, and
 implementation folders so builders can navigate quickly and avoid contract drift.
 
+## Standard Role Mapping (Fail-Close)
+
+- Milestone owner: Delivery Lead
+- Gate owners: Architecture Reviewer, UX Reviewer, QA Lead
+- Security gate owner (required for M1, M3b, M4): Security Reviewer
+
+Missing role assignment at checkpoint kickoff is fail-close.
+
 ## M0: Contract Alignment Baseline
 
 Primary references:
@@ -29,6 +37,8 @@ Mandatory gate requirements:
 - AC-to-test-case traceability table required at checkpoint exit.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched planning
   functions/flows.
+- Checkpoint evidence package must use
+  docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md.
 
 ## M1: Runtime Skeleton And Surface Registration Foundation
 
@@ -61,6 +71,8 @@ Mandatory gate requirements:
   executable Go-core claims.
 - AC-to-test-case traceability table and regression control evidence required.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched functions.
+- Checkpoint evidence package must use
+  docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md.
 
 ## M2: UX Surface Parity Baseline (TUI + System Surfaces)
 
@@ -90,6 +102,8 @@ Mandatory gate requirements:
 - Start-of-milestone preflight: `test -d cmd/agentx-core`.
 - AC-to-test-case traceability table and regression control evidence required.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched flows.
+- Checkpoint evidence package must use
+  docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md.
 
 ## M3a: LLM Prompt Stack And Model Behavior
 
@@ -119,6 +133,8 @@ Mandatory gate requirements:
 - Start-of-milestone preflight: `test -d cmd/agentx-core`.
 - AC-to-test-case traceability table and regression control evidence required.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched functions.
+- Checkpoint evidence package must use
+  docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md.
 
 ## M3b: Tool Runtime And Policy Enforcement
 
@@ -150,6 +166,8 @@ Mandatory gate requirements:
 - AC-to-test-case traceability table and regression control evidence required.
 - Negative-path matrix is mandatory.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched functions.
+- Checkpoint evidence package must use
+  docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md.
 
 ## M4: Persistence, Replay, And Operational Hardening
 
@@ -181,6 +199,8 @@ Mandatory gate requirements:
 - AC-to-test-case traceability table and regression control evidence required.
 - Negative-path matrix is mandatory.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched functions.
+- Checkpoint evidence package must use
+  docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md.
 
 ## Cross-Phase Quality Gate References
 
@@ -194,12 +214,27 @@ Mandatory gate requirements:
 
 | Milestone | Gate commands (minimum set) | Mandatory evidence |
 | --- | --- | --- |
-| M0 | `rg -n "^#|^##" docs/build-plan/00_index.md docs/build-plan/01_comprehensive_build_plan.md docs/build-plan/02_phase_reference_matrix.md` | AC table, owner assignments, conflict/defer list, runtime compatibility delta |
+| M0 | `rg -n "^Milestone owner:|^Gate owners:" docs/build-plan/01_comprehensive_build_plan.md` plus `rg -n "^\| AC ID \|" docs/build-plan/01_comprehensive_build_plan.md docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md` plus `rg -n "^\| Decision/AC ID \|" docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md` | AC table, owner assignments, defer metadata fields (owner/due/tracking reference), conflict/defer list, runtime compatibility delta |
 | M1 | `test -d cmd/agentx-core` plus milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | preflight result, AC table, regression evidence, GIVEN/WHEN/THEN links |
 | M2 | `test -d cmd/agentx-core` plus milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, UX lifecycle reconciliation, GIVEN/WHEN/THEN links |
 | M3a | `test -d cmd/agentx-core` plus milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, prompt/model determinism evidence, GIVEN/WHEN/THEN links |
 | M3b | `test -d cmd/agentx-core` plus milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, negative-path matrix, policy deny/allow evidence, GIVEN/WHEN/THEN links |
 | M4 | `test -d cmd/agentx-core` plus milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, negative-path matrix, replay determinism evidence, GIVEN/WHEN/THEN links |
+
+M0 evidence normalization requirements (applies to each listed command, including silent commands such as `test -d` when used):
+
+- Record one normalized proof row per command with fields:
+  - command
+  - exit_code
+  - timestamp (UTC ISO-8601)
+  - operator
+  - artifact_link (or `none` when no stdout/stderr artifact exists)
+- A non-zero exit code requires explicit hold/remediate or approved defer entry.
+
+Canonical evidence artifact convention:
+
+- Base path: `docs/validation/evidence/<checkpoint_id>/`
+- File naming: `<checkpoint_id>_<artifact_type>_<YYYYMMDD-HHMMSS>.<ext>`
 
 ## Cross-Phase Review Checkpoint Inputs
 
