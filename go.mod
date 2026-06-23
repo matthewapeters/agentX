@@ -1,6 +1,6 @@
 module agentx
 
-go 1.25.0
+go 1.26.4
 
 require golang.org/x/term v0.44.0
 
