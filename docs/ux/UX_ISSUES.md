@@ -26,7 +26,7 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 **Agent**: For each `[ ]` entry:
 
 1. **Locate the affordance** — Open [docs/ux/00_INDEX.md](00_INDEX.md) and find
-   the relevant panel.  Then look up the Affordance ID in the
+   the relevant surface.  Then look up the Affordance ID in the
    [Traceability Matrix](UX_LIFECYCLE.md#4-traceability-matrix-as-built) (§4).
 
 2. **Check the spec** — Read the affordance cut-sheet in
@@ -169,12 +169,12 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Committed**: v0.22.15
 - **UAT Status**: User-approved in UAT on 2026-05-02.
   
-[/] Issue: output pane text cannot be screen-scraped or coppied - strategies and behavior tests needed.
+[/] Issue: output surface text cannot be screen-scraped or coppied - strategies and behavior tests needed.
 
 - The copy menu now displays on right-click over scraped content, but if the user clicks elsewhere or hits ESCAPE key, it remains visible.  It only disappears if clicked or if a new area of text is highlighted and left-clicked.  Normal pop-up menu behavior should be enforced (consistently thoughtout the application: may require a cut-sheet for pop-ups and a common pop-up class inheritence for enforced consistent behavior)
-- The user can scrape content in the Output panel, ctrl-C copies to pasteboard, and ctrl-v to the user-input panel successfully pastes the content. ✅ (already implemented)
-- **Right-click to copy from Output panel** — right-clicking highlighted text in the Output panel should produce a popup showing "Copy"; selecting "Copy" adds the highlighted content to the clipboard. Affordance: **PD-01-AF-010**.
-- **Right-click context menu on User Input panel** — right-clicking in the user input widget should display a popup with:
+- The user can scrape content in the Output surface, ctrl-C copies to pasteboard, and ctrl-v to the user-input surface successfully pastes the content. ✅ (already implemented)
+- **Right-click to copy from Output surface** — right-clicking highlighted text in the Output surface should produce a popup showing "Copy"; selecting "Copy" adds the highlighted content to the clipboard. Affordance: **PD-01-AF-010**.
+- **Right-click context menu on User Input surface** — right-clicking in the user input widget should display a popup with:
   - "Copy" (visible only when text is selected) — copies selected text to clipboard. Affordance: **PD-02-AF-009 / PD-02-AF-011**.
   - "Paste" (visible only when clipboard is non-empty) — replaces selected text with clipboard content, or inserts at cursor if nothing is selected. Affordance: **PD-02-AF-010 / PD-02-AF-012**.
 - All popups use the Wayland-safe `tk.Toplevel(overrideredirect=True)` pattern established by the FileExplorer context menu.
@@ -188,7 +188,7 @@ When the user performs UAT and the fix still fails: change `[/]` back to `[ ]` a
 - **Affordances**: PD-01-AF-010, PD-02-AF-008, PD-02-AF-009, PD-02-AF-010, PD-02-AF-011, PD-02-AF-012.
 - **Tests**: `tests/test_chat_panel_copy_context_menu.py` (19 tests), `tests/test_input_panel_context_menu.py` (20 tests), `tests/test_startup_log_notice.py` (5 tests).
   
-[/] Issue: The Working Memory widget should be collapsed at start-up like the other widgets in the context / history.  This should be reflected in Gherkin use-cases, unit tests, and cut-sheet details.  Its behavior should be consistent with widgets on this pane, and should be governed by common functionality, use-cases, and patterns within the cut-sheets.  It may be necessary to describe these widgets as a class of component with their own cut-sheet and use-cases.
+[/] Issue: The Working Memory widget should be collapsed at start-up like the other widgets in the context / history.  This should be reflected in Gherkin use-cases, unit tests, and cut-sheet details.  Its behavior should be consistent with surfaces in this area, and should be governed by common functionality, use-cases, and patterns within the cut-sheets.  It may be necessary to describe these surfaces as a class of component with their own cut-sheet and use-cases.
 
 - **Fixed in v0.22.20**: Changed `initial_collapsed=False` → `True` for `working_memory` in `SidePanel.create()`. Added affordance `PD-03-AF-015` with Gherkin spec in `03_PANEL_DETAILS.md`. Updated `test_session_sections_start_collapsed` to assert `working_memory` is collapsed.
 - **UAT-confirmed by user** (2026-05-06). Issue closed.
@@ -279,7 +279,7 @@ Implementation: `src/agentx/gui/status_tab.py` — implemented; 40 unit tests pa
 - **Tests**: `tests/test_launch_vibe_shutdown.py` updated for TUI-first ordering and attach-window selection assertions.
 - **UAT Status**: latest fix candidate ready for UAT.
 - Tool/tooling backlog items were moved to `docs/tools/tools_issues.md` to keep UX and tooling triage separate.
-[ ] User requested that agent run 'nvtop' in BASH terminal.  Application presented modal to authorize.  When the user accepted, the GUI crashed, but the TUI remained running with no clear way to terminate (user had to close each panel).  Application crashes should cleanly close the application.  The application should not crash when attempting to run commands in the terminal.
+[ ] User requested that agent run 'nvtop' in BASH terminal.  Application presented modal to authorize.  When the user accepted, the GUI crashed, but the TUI remained running with no clear way to terminate (user had to close each surface).  Application crashes should cleanly close the application.  The application should not crash when attempting to run commands in the terminal.
 
 - **Intake/Triage (2026-05-14)**:
   - **Decision**: new issue created: <https://github.com/matthewapeters/agentX/issues/6>

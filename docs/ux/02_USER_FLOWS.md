@@ -263,7 +263,7 @@ sequenceDiagram
 
 ## UF-09: Working Memory Management
 
-**Trigger**: User interacts with a fact in the Working Memory panel.
+**Trigger**: User interacts with a fact in the Working Memory surface.
 
 ```mermaid
 flowchart TD

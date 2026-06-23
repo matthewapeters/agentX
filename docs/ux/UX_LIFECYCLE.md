@@ -19,33 +19,19 @@ Authoritative contract rule:
 ## Tab/Surface Parity Matrix (Source of Truth)
 
 The rows below define required parity outcomes for user-visible surfaces.
-Runtime ownership and implementation evidence are informative as-built metadata,
-not permission to weaken UX behavior.
+Implementation details are supportive metadata for as-built reconciliation.
 
-|GUI Tab / Surface|TUI Analog / Surface|Owner (Go/Py)|Test / Contract|Status|
+|Feature|Output Surface|Input Surface|System Surface|Status|
 |---|---|---|---|---|
-|Chat (Output)|Output Pane (chat)|Go (current)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
-|Tool Processing (Output)|Output Pane (tool)|Go (current)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
-|File Edit (Output)|Output Pane (file edit)|Go (current)|test_chat_panel_turn_rendering.py|✅ Go-owned, tested|
-|Context Visualization|System Pane (context viz)|Go (current)|test_status_tab.py, test_context_meter_widget.py|✅ Go-owned, tested|
-|Files Navigation|System Pane (files)|Go (current)|test_file_explorer_coverage.py|✅ Go-owned, tested|
-|Context History/Current|System Pane (context hist)|Go (current)|test_phase6_context_panel.py|✅ Go-owned, tested|
-|Configuration|System Pane (config)|Go (current)|test_settings_tab_sections.py|✅ Go-owned, tested|
+|Chat Messages|Primary output|N/A|N/A|Implemented|
+|Tool Processing|Primary output|N/A|N/A|Implemented|
+|File Display|Primary output|N/A|N/A|Implemented|
+|Context Visualization|N/A|N/A|Primary display|Implemented|
+|Files Navigation|N/A|N/A|Primary display|Implemented|
+|Context History|N/A|N/A|Primary display|Implemented|
+|Configuration|N/A|N/A|Primary display|Implemented|
 
-**Blockers:** Parity remains incomplete; Go-core orchestration is primary and TUI completion gates take priority over GUI feature advancement.
-
-**Links:**
-
-- [docs/hybrid_remaining_work.md](../hybrid_remaining_work.md) — remaining-work synthesis, next steps
-- [docs/architecture.md](../architecture.md) — module map, runtime split, channel registry (to add)
-- [docs/architecture/system_panel_tab_mapping.md](../architecture/system_panel_tab_mapping.md) — Wave 3 system-tab provider/render mapping
-
-## Current Parity Notes
-
-- Go-core is the main runtime orchestrator and is the required execution path.
-- GUI is secondary and back-burnered until TUI parity completion.
-- Active remaining work is tracked in [docs/hybrid_remaining_work.md](../hybrid_remaining_work.md).
-- Any newly discovered drift should be logged via the audit command in §8.
+**Design Principle:** All surfaces are equally important and must meet the same UX quality standards.
 
 ---
 
@@ -58,33 +44,30 @@ not permission to weaken UX behavior.
 3. [Affordance ID Scheme](#3-affordance-id-scheme)
 4. [Traceability Matrix (As-Built)](#4-traceability-matrix-as-built)
 5. [Change Workflow Checklists](#5-change-workflow-checklists)
-6. [Headless Tkinter Testing Primer](#6-headless-tkinter-testing-primer)
-7. [Current Coverage Gaps](#7-current-coverage-gaps)
-8. [Keeping This Document Current](#8-keeping-this-document-current)
+6. [Current Coverage Gaps](#6-current-coverage-gaps)
+7. [Keeping This Document Current](#7-keeping-this-document-current)
 
 ---
 
 ## 1. Why UI Features Drift
 
 A UI affordance (a button, a keyboard shortcut, a collapse animation, a colour change)
-exists in three independent places at once:
+exists in three independent layers:
 
-| Layer | Where it lives | Who can change it alone |
-|-------|---------------|------------------------|
-| **Specification** | `docs/ux/*.md` | Documentation edit |
-| **Code** | `src/agentx/gui/*.py` | Code refactor |
-| **Test** | `tests/test_*.py` | Test refactor |
+| Layer | Responsibility | Can change independently |
+|-------|---|---|
+| **Specification** | UX requirements and behavior | Yes (requires propagation) |
+| **Implementation** | Runtime code/runtime logic | Yes (requires spec + test update) |
+| **Testing** | Acceptance criteria and validation | Yes (requires spec + impl update) |
 
-When a change is made in one layer without updating the others, the layers diverge:
+When a change is made in one layer without updating the others, drift occurs:
 
-- Code change without spec update → spec becomes stale ("as-designed" ≠ "as-built").
-- Code change without test update → the test either breaks (visible) or silently stops
-  testing the right thing (invisible — the worst kind of drift).
-- Spec change without code or test → a description of desired future state that looks
-  indistinguishable from a description of current state.
+- Implementation change without spec update → spec becomes stale ("as-designed" ≠ "as-built").
+- Implementation change without test update → tests stop validating correctly (invisible drift — worst case).
+- Spec change without implementation or test → description of desired future state looks like current state.
 
 The solution is a **traceability chain**: every affordance carries an ID that appears
-in the spec document, in the source code docstring, and in the test docstring.  When
+in the spec document, in implementation docstrings, and in test docstrings. When
 any one layer changes you can immediately find and update the others by searching for
 that ID.
 
@@ -114,66 +97,41 @@ Write or update the affordance description **before** writing any code.
   (e.g. `PD-12: NewWidget`).
 - Assign an Affordance ID for each distinct user-visible behaviour within that panel
   (e.g. `PD-12-AF-001`).  See §3 for the ID scheme.
-- Write what the affordance **does** (not how it is implemented):
-  - What widget appears, where, and with what label.
-  - What happens when the user activates it.
-  - What the disabled/default/edge-case states look like.
-- Add an ASCII or Mermaid mockup.
-- Add a row to the [Traceability Matrix](#4-traceability-matrix-as-built) with status `📝 Spec Only`.
 
-**Output**: A committed update to `docs/ux/03_PANEL_DETAILS.md` and this file.
+### Phase 2 — Implementation
 
-### Phase 2 — Code
+Implement the feature.
 
-Implement the widget.
-
-- Reference the Affordance ID in the class or method docstring:
-
-  ```python
-  def _render_expand_button(self, parent: tk.Frame) -> tk.Button:
-      """Create the message collapse/expand toggle.  [PD-08-AF-001]"""
-  ```
-
-- If the implementation diverges from the spec (for any reason), update the spec first.
-  Never silently let code and spec disagree.
-- Do not add placeholder behaviour you intend to implement later.  Mark those with the
+- Reference the Affordance ID in the implementation documentation.
+- If the implementation diverges from the spec, update the spec first.
+  Never silently let implementation and spec disagree.
+- Do not add placeholder behavior intended for later.  Mark those with the
   `TODO(PD-XX-AF-YYY):` prefix so they are findable.
 
-**Output**: Committed source changes with spec IDs in docstrings.
+**Output**: Committed implementation changes with spec IDs in docstrings.
 
-### Phase 3 — Test
+### Phase 3 — Testing
 
-Write hermetic unit tests before or alongside the code (see §6 for the test pattern).
+Write tests to validate the feature.
 
-- Reference the Affordance ID in the test docstring:
-
-  ```python
-  def test_expand_button_in_col_0(self):
-      """GIVEN any message row [PD-08-AF-001]
-      WHEN rendered via _render_message_to_grid
-      THEN a Button widget exists in column 0 of the grid.
-      """
-  ```
-
-- Every user-visible **state change** triggered by an affordance needs at least one test.
+- Reference the Affordance ID in the test documentation.
+- Every user-visible **state change** triggered by the affordance needs at least one test.
   Minimum coverage:
   - Default/initial state is correct.
   - Primary user action produces the expected state change.
   - Edge cases (empty content, disabled state, overflow).
-- Tests must be hermetic: no live Ollama, no file system I/O, no real network calls.
-  Mock `ModelMetadataStore.populate` in any test that constructs `AgentXSession`
-  (prevents background threads from crashing teardown — see §6).
+- Tests should be deterministic and isolated (no external dependencies when possible).
 
-**Output**: Committed tests that all pass.  Coverage must remain ≥ 98%.
+**Output**: Committed tests that validate the affordance behavior.
 
 ### Phase 4 — Reconcile (As-Built Update)
 
 Update this document to reflect what was built and tested.
 
 - Change the traceability row status from `📝 Spec Only` to `✅ Tested`.
-- If the code differs from the spec in any way, update the spec to match the code and
+- If the implementation differs from the spec in any way, update the spec to match and
   note the change in `CHANGELOG.md`.
-- Commit `docs/ux/UX_LIFECYCLE.md` alongside the code and test changes.
+- Commit `docs/ux/UX_LIFECYCLE.md` alongside the implementation and test changes.
 
 ### Applet Review Gate
 
@@ -211,27 +169,27 @@ Examples:
 
 ### Panel Numbers Quick Reference
 
-| PD | Panel | Source File |
-|----|-------|-------------|
-| PD-01 | ChatPanel | `src/agentx/gui/chat_panel.py` |
-| PD-02 | InputPanel | `src/agentx/gui/input_panel.py` |
-| PD-03 | SidePanel | `src/agentx/gui/side_panel.py` |
-| PD-04 | ModelSelector | `src/agentx/gui/model_selector.py` |
-| PD-05 | PlanTreeWidget | `src/agentx/gui/plan_tree_widget.py` |
-| PD-06 | ResynthesisDialog | `src/agentx/gui/resynthesis_dialog.py` |
-| PD-07 | SettingsTab | `src/agentx/gui/settings_tab.py` |
-| PD-08 | ContextRenderer | `src/agentx/gui/context_renderer.py` |
-| PD-09 | CollapsibleSection | `src/agentx/gui/collapsible_section.py` |
-| PD-10 | ContextMeterWidget | `src/agentx/gui/context_meter_widget.py` |
-| PD-11 | FileExplorer | `src/agentx/file_explorer.py` |
-| PD-12 | StatusTab | `src/agentx/gui/status_tab.py` |
-| PD-13 | ToolPanel | `src/agentx/gui/tool_panel.py` |
-| PD-14 | VimBridge GUI | `src/agentx/integration/vim_bridge.py` |
-| PD-15 | TerminalPane GUI | `src/agentx/integration/terminal_bridge.py` + `src/agentx/gui/` |
-| PD-16 | TuiMirror | `src/agentx/integration/tui_bridge.py`, `launch_vibe.sh` |
-| PD-17 | DemoMode | `cmd/agentx-core/main.go`, demo harness package |
+| PD | Feature |
+|----|---------|
+| PD-01 | Chat/Output |
+| PD-02 | User Input |
+| PD-03 | Context/Navigation |
+| PD-04 | Model Configuration |
+| PD-05 | Plan Visualization |
+| PD-06 | Dialog/Resynthesis |
+| PD-07 | Settings |
+| PD-08 | Context Rendering |
+| PD-09 | Collapsible Sections |
+| PD-10 | Context Metrics |
+| PD-11 | File Navigation |
+| PD-12 | Status Display |
+| PD-13 | Tool Processing |
+| PD-14 | Keyboard Integration |
+| PD-15 | System Integration |
+| PD-16 | Multi-Surface Sync |
+| PD-17 | Demo Mode |
 
-When a new panel or top-level widget is added, assign the next available PD number,
+When a new surface feature is added, assign the next available PD number,
 add a row to this table, and create a section in `03_PANEL_DETAILS.md`.
 
 ---
@@ -243,84 +201,79 @@ implements it and the test that validates it.  Status legend:
 
 | Symbol | Meaning |
 |--------|---------|
-| ✅ | Spec, code, and tests all exist and agree |
-| ⚠️ | Tests exist but cover only a subset of the spec affordances |
-| 📝 | Spec exists; no tests yet written |
-| ❌ | Known gap — either no spec, no code, or no tests |
+| ✅ | Spec, implementation, and tests all exist and agree |
+| ⚠️ | Implementation exists but tests cover only a subset of spec affordances |
+| 📝 | Spec exists; no implementation yet |
+| ❌ | Known gap — either no spec, no implementation, or no tests |
 
-### PD-01 — ChatPanel
+### PD-01 — Chat/Output
 
-| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
-|------------|----|---------------------|-----------|------------|--------|
-| Turn order: user entry packed before children frame | PD-01-AF-001 | `ChatPanel._ensure_turn_started()` | `test_chat_panel_turn_rendering.py` | `TestConversationTurnRenderingOrder` | ✅ |
-| Collapse user entry hides children frame | PD-01-AF-002 | `ChatPanel._toggle_turn_children()` | `test_chat_panel_turn_rendering.py` | `TestConversationTurnRenderingOrder` | ✅ |
-| Expand re-packs children frame below user entry | PD-01-AF-003 | `ChatPanel._toggle_turn_children()` | `test_chat_panel_turn_rendering.py` | `TestConversationTurnRenderingOrder` | ✅ |
-| Multiple turns maintain independent order | PD-01-AF-004 | `ChatPanel` | `test_chat_panel_turn_rendering.py` | `TestMultipleTurnsRenderingOrder` | ✅ |
-| Thinking block collapsed by default | PD-01-AF-005 | `ChatPanel.display_agent_thinking()` | `test_chat_panel_collapse_defaults.py` | `test_thinking_entry_collapsed_by_default` | ✅ |
-| Tool call collapsed by default | PD-01-AF-006 | `ChatPanel._display_tool_call()` | `test_chat_panel_collapse_defaults.py` | `test_tool_call_entry_collapsed_by_default` | ✅ |
-| Assistant response expanded by default | PD-01-AF-007 | `ChatPanel.display_agent_response()` | `test_chat_panel_collapse_defaults.py` | `test_assistant_response_entry_expanded_by_default` | ✅ |
-| Markdown rendered after DONE chunk | PD-01-AF-008 | `ChatPanel.finalize_current_turn_markdown()` | `test_markdown_rendering.py` | — | ⚠️ |
-| Startup log-location notice shown before first agent response (config-gated) | PD-01-AF-009 | `AgentXSession._show_startup_log_locations_notice_if_enabled()` | `test_startup_log_notice.py` | `TestStartupLogNotice` | ✅ |
-| Right-click on output panel opens copy context menu | PD-01-AF-010 | `ChatPanel._show_output_context_menu()` | `test_chat_panel_copy_context_menu.py` | `TestOutputPanelRightClickCopy` | ✅ |
+| Affordance | ID | Status |
+|------------|----|--------|
+| User entry messages packed in turn order | PD-01-AF-001 | ✅ |
+| Collapse hides child messages | PD-01-AF-002 | ✅ |
+| Expand shows child messages | PD-01-AF-003 | ✅ |
+| Multiple turns maintain independent order | PD-01-AF-004 | ✅ |
+| Thinking blocks collapsed by default | PD-01-AF-005 | ✅ |
+| Tool calls collapsed by default | PD-01-AF-006 | ✅ |
+| Assistant responses expanded by default | PD-01-AF-007 | ✅ |
+| Markdown rendering after stream completion | PD-01-AF-008 | ⚠️ |
+| Startup log-location notice shown (config-gated) | PD-01-AF-009 | ✅ |
+| Right-click opens copy context menu on output | PD-01-AF-010 | ✅ |
 
-### PD-02 — InputPanel
+### PD-02 — User Input
 
-| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
-|------------|----|---------------------|-----------|------------|--------|
-| Enter key submits message | PD-02-AF-001 | `InputPanel._bind_keys()` | `test_gui_manager_integration.py` | `TestGUIManagerInputMethods` | ⚠️ |
-| Shift+Enter inserts newline | PD-02-AF-002 | `InputPanel._on_shift_return()` | `test_input_panel_keyboard.py` | `TestShiftEnterInsertsNewline` | ✅ |
-| Send disabled during streaming | PD-02-AF-003 | `InputPanel.set_streaming_state()` | `test_gui_manager_integration.py` | `TestGUIManagerInputMethods` | ⚠️ |
-| Stop enabled during streaming | PD-02-AF-004 | `InputPanel.set_streaming_state()` | `test_gui_manager_integration.py` | `TestGUIManagerInputMethods` | ⚠️ |
-| Attachment chip rendered with filename and icon | PD-02-AF-005 | `InputPanel._create_attachment_widget()` | `test_input_panel_attachment_chips.py` | `TestAttachmentChipRender` | ✅ |
-| Toggle chip calls on_attachment_toggle callback | PD-02-AF-006 | `InputPanel._create_attachment_widget()` | `test_input_panel_attachment_chips.py` | `TestAttachmentChipToggle` | ✅ |
-| Rebuild with empty lists clears all chips | PD-02-AF-007 | `InputPanel.update_attachment_bar()` | `test_input_panel_attachment_chips.py` | `TestAttachmentBarClear` | ✅ |
-| Right-click opens Wayland-safe context popup on input widget | PD-02-AF-008 | `InputPanel._show_input_context_menu()` | `test_input_panel_context_menu.py` | `TestInputPanelRightClickPopup` | ✅ |
-| Input context menu shows "Copy" only when text is selected | PD-02-AF-009 | `InputPanel._show_input_context_menu()` | `test_input_panel_context_menu.py` | `TestInputCopyMenuVisibility` | ✅ |
-| Input context menu shows "Paste" only when clipboard is non-empty | PD-02-AF-010 | `InputPanel._show_input_context_menu()` | `test_input_panel_context_menu.py` | `TestInputPasteMenuVisibility` | ✅ |
-| "Copy" in input context menu copies selected text to clipboard | PD-02-AF-011 | `InputPanel._on_input_context_copy()` | `test_input_panel_context_menu.py` | `TestInputCopyAction` | ✅ |
-| "Paste" in input context menu replaces selection or inserts at cursor | PD-02-AF-012 | `InputPanel._on_input_context_paste()` | `test_input_panel_context_menu.py` | `TestInputPasteAction` | ✅ |
+| Affordance | ID | Status |
+|------------|----|--------|
+| Enter key submits message | PD-02-AF-001 | ⚠️ |
+| Shift+Enter inserts newline | PD-02-AF-002 | ✅ |
+| Send button disabled during streaming | PD-02-AF-003 | ⚠️ |
+| Stop button enabled during streaming | PD-02-AF-004 | ⚠️ |
+| Attachment chip rendered with filename/icon | PD-02-AF-005 | ✅ |
+| Toggle chip calls attachment callback | PD-02-AF-006 | ✅ |
+| Clear attachments removes all chips | PD-02-AF-007 | ✅ |
+| Right-click opens context menu on input | PD-02-AF-008 | ✅ |
+| Copy menu item shown when text selected | PD-02-AF-009 | ✅ |
+| Paste menu item shown when clipboard non-empty | PD-02-AF-010 | ✅ |
+| Copy action copies selection to clipboard | PD-02-AF-011 | ✅ |
+| Paste action replaces selection or inserts | PD-02-AF-012 | ✅ |
 
-### PD-03 — SidePanel / Session Tab — Context Section
+### PD-03 — Context/Navigation
 
-| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
-|------------|----|---------------------|-----------|------------|--------|
-| Every message row has expand/collapse button | PD-03-AF-001 | `ContextRenderer._render_message_to_grid()` | `test_phase6_context_panel.py` | `TestRenderMessageAlwaysExpandable` | ✅ |
-| Full content hidden by default | PD-03-AF-002 | `ContextRenderer._render_message_to_grid()` | `test_phase6_context_panel.py` | `TestRenderMessageAlwaysExpandable` | ✅ |
-| Full content visible after expand click | PD-03-AF-003 | `ContextRenderer.collapse_expand_button()` | `test_phase6_context_panel.py` | `TestRenderMessageAlwaysExpandable` | ✅ |
-| Plan rows grouped under preceding assistant message | PD-03-AF-004 | `ContextRenderer.render_context_widget()` | `test_phase6_context_panel.py` | `TestRenderContextWidgetGrouping` | ✅ |
-| Plan header row is clickable when on_plan_click provided | PD-03-AF-005 | `ContextRenderer._render_plan_rows()` | `test_phase6_context_panel.py` | `TestRenderPlanRows` | ✅ |
-| Plan/task_node rows excluded from LLM messages | PD-03-AF-006 | `Context.to_llm_messages()` | `test_phase6_context_panel.py` | `TestPlanMessagesExcludedFromLLM` | ✅ |
-| Message enabled checkbox wired to message.enabled | PD-03-AF-007 | `ContextRenderer._render_message_to_grid()` | `test_context_renderer_message_enabled.py` | `TestMessageEnabledCheckbox` | ✅ |
+| Affordance | ID | Status |
+|------------|----|--------|
+| Message row has expand/collapse button | PD-03-AF-001 | ✅ |
+| Full content hidden by default | PD-03-AF-002 | ✅ |
+| Full content visible after expand | PD-03-AF-003 | ✅ |
+| Plan rows grouped under preceding message | PD-03-AF-004 | ✅ |
+| Plan header clickable when callback provided | PD-03-AF-005 | ✅ |
+| Plan/task rows excluded from LLM messages | PD-03-AF-006 | ✅ |
+| Message enabled checkbox wired to state | PD-03-AF-007 | ✅ |
+| Working memory fact row rendered per fact | PD-03-AF-010 | ⚠️ |
+| Working memory toggle calls callback | PD-03-AF-011 | ✅ |
+| Working memory delete calls callback | PD-03-AF-012 | ✅ |
+| Working memory promote calls callback | PD-03-AF-013 | ✅ |
+| Add-fact form submits user input | PD-03-AF-014 | ✅ |
+| Working memory section starts collapsed | PD-03-AF-015 | ✅ |
 
-### PD-03 — SidePanel / Session Tab — Working Memory Section
+### PD-04 — Model Configuration
 
-| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
-|------------|----|---------------------|-----------|------------|--------|
-| Fact row rendered per WM fact | PD-03-AF-010 | `ContextRenderer.render_working_memory_widget()` | `test_gui_manager_integration.py` | `TestGUIManagerPanelMethods` | ⚠️ |
-| Toggle checkbox calls on_toggle callback | PD-03-AF-011 | `ContextRenderer._render_working_memory_row()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryToggle` | ✅ |
-| Delete button calls on_delete callback | PD-03-AF-012 | `ContextRenderer._render_working_memory_row()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryDelete` | ✅ |
-| Promote button calls on_promote callback | PD-03-AF-013 | `ContextRenderer._render_working_memory_row()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryPromote` | ✅ |
-| Add-fact form submits user-provided key/value | PD-03-AF-014 | `ContextRenderer.render_working_memory_widget()` | `test_working_memory_widget_callbacks.py` | `TestWorkingMemoryAddFact` | ✅ |
-| Working Memory section starts collapsed at startup | PD-03-AF-015 | `SidePanel.create()` | `test_gui_manager_integration.py` | `test_session_sections_start_collapsed` | ✅ |
+| Affordance | ID | Status |
+|------------|----|--------|
+| Model selection updates active model | PD-04-AF-001 | ✅ |
+| Model change triggers context meter redraw | PD-04-AF-002 | ✅ |
+| Model name resolves via fallback | PD-04-AF-003 | ✅ |
+| Refresh button reloads model list | PD-04-AF-004 | ✅ |
 
-### PD-04 — ModelSelector
+### PD-05 — Plan Visualization
 
-| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
-|------------|----|---------------------|-----------|------------|--------|
-| Selecting model updates active_model | PD-04-AF-001 | `ModelSelector._on_selection_change()` | `test_active_model.py` | `TestActiveModelProperty` | ✅ |
-| Model change triggers context meter redraw | PD-04-AF-002 | `SessionState.active_model` setter | `test_active_model_meter_wiring.py` | — | ✅ |
-| Bare model name resolves via :latest fallback | PD-04-AF-003 | `ModelMetadataStore.get_context_length()` | `test_model_metadata_store.py` | — | ✅ |
-| Refresh button reloads model list | PD-04-AF-004 | `ModelSelector._on_refresh()` | `test_model_selector_refresh.py` | `TestModelSelectorRefreshButton` | ✅ |
-
-### PD-05 — PlanTreeWidget
-
-| Affordance | ID | Source Class/Method | Test File | Test Class | Status |
-|------------|----|---------------------|-----------|------------|--------|
-| Plan header row rendered with plan name | PD-05-AF-001 | `ContextRenderer._render_plan_rows()` | `test_phase6_context_panel.py` | `TestRenderPlanRows` | ✅ |
-| Task node rows indented under plan | PD-05-AF-002 | `ContextRenderer._render_plan_rows()` | `test_phase6_context_panel.py` | `TestRenderPlanRows` | ✅ |
-| Step count badge shown in plan header | PD-05-AF-003 | `ContextRenderer._render_plan_rows()` | `test_phase6_context_panel.py` | `TestRenderPlanRows` | ✅ |
-| Re-synth button opens ResynthesisDialog | PD-05-AF-004 | `PlanTreeWidget._create_synthesis_block()` | `test_plan_tree_affordances.py` | `TestResynthButtonInSynthesisBlock` | ✅ |
-| Export button writes and opens export file | PD-05-AF-005 | `ChatPanel.add_plan_tab()` / `AgentXSession._export_task_tree()` | `test_plan_tree_affordances.py` | `TestExportButtonInPlanTab` | ✅ |
+| Affordance | ID | Status |
+|------------|----|--------|
+| Plan header row rendered with name | PD-05-AF-001 | ✅ |
+| Task node rows indented under plan | PD-05-AF-002 | ✅ |
+| Step count badge shown in header | PD-05-AF-003 | ✅ |
+| Re-synthesize button opens dialog | PD-05-AF-004 | ✅ |
+| Export button saves and opens file | PD-05-AF-005 | ✅ |
 | Node status icon reflects task state | PD-05-AF-006 | `PlanTreeWidget.update_node_status()` / `_STATUS_ICONS` | `test_plan_tree_affordances.py` | `TestNodeStatusIconReflectsState` | ✅ |
 
 ### PD-06 — ResynthesisDialog
@@ -586,265 +539,41 @@ grep -rn "PD-[0-9]\+-AF-[0-9]\+" docs/ | grep -oE 'PD-[0-9]+-AF-[0-9]+'
 
 ---
 
-## 6. Headless Tkinter Testing Primer
+## 6. Testing Strategy
 
-Tkinter requires a display server, but it can be driven completely in memory under the
-`Xvfb` virtual framebuffer or the standard X session of a desktop environment.  Tests
-run in CI and locally without a visible window.
+Surface features must be validated through:
 
----
+1. **Unit tests**: Test individual affordance behavior in isolation
+2. **Integration tests**: Test affordance interaction with other features
+3. **Acceptance tests**: Validate end-to-end user workflows
 
-### Platform Design Principle: Wayland / XWayland Coordinate Safety
+Test coverage requirements:
 
-> **This rule applies to every affordance that calls `menu.post()`, `wm_geometry()`,
-> or any other function that places a popup or floating window at an absolute screen
-> position.**
-
-#### Background
-
-AgentX runs on Ubuntu with a GNOME/Mutter Wayland compositor (`XDG_SESSION_TYPE=wayland`).
-Tkinter itself is an X11 application and is surfaced through **XWayland** — an X11
-compatibility layer embedded inside the Wayland session.
-
-XWayland exposes a single large _virtual framebuffer_ whose pixel dimensions are the
-union of all physical monitors at their native (physical) resolutions, including any
-HiDPI scaling.  X11 event coordinates (`event.x_root`, `event.y_root`) are reported in
-this physical-pixel virtual space.  Under a multi-monitor or HiDPI setup the virtual
-framebuffer can be thousands of pixels wider/taller than any single visible monitor,
-and these coordinates may therefore describe a point that is off-screen from the user's
-perspective.
-
-**UAT evidence (v0.22.7):** a right-click event yielded `x_root=3753` on a system with
-no single monitor wider than ~3840 physical pixels, placing the menu window completely
-off-screen.
-
-#### The Rule
-
-**Never pass `event.x_root` / `event.y_root` directly to `menu.post()` or any
-window-positioning call.**
-
-Instead, derive the screen position from the widget's own geometry:
-
-```python
-# CORRECT — always visible under Wayland/XWayland
-x = widget.winfo_rootx() + event.x
-y = widget.winfo_rooty() + event.y
-menu.post(x, y)
-```
-
-`widget.winfo_rootx()` / `winfo_rooty()` query Tk's own geometry system, which tracks
-the widget's logical on-screen anchor.  `event.x` / `event.y` are cursor offsets
-_relative to the widget_ — always non-negative and bounded by the widget's own
-dimensions.  The sum is therefore always within the widget's footprint and, by
-extension, always within a visible monitor.
-
-```python
-# WRONG — raw X11 physical-pixel coords, off-screen under XWayland
-menu.post(event.x_root, event.y_root)
-```
-
-#### Why `after_idle` is insufficient and `after(100)` is required
-
-The `<Button-3>` press event fires synchronously.  Creating the menu window inside
-the press handler causes the _subsequent_ `<ButtonRelease-3>` to be delivered to the
-newly-visible menu window, where the Tk `Menu` class's built-in `<ButtonRelease>`
-binding (`tk::MenuInvoke`) immediately calls `unpost()` — dismissing the menu before
-the user can interact.
-
-The naive fix is `after_idle` — but **`after_idle` fires before the physical button
-release**.  The idle callback runs while the user is still holding the button down,
-so the menu posts, and the release still arrives at the menu window.
-
-The correct fix is `after(100)` — a 100 ms timer.  100 ms is longer than any
-physical click duration, so by the time the callback fires the button has been
-released on the treeview (where there is no `<ButtonRelease-3>` binding) and
-the popup shows cleanly and stays open:
-
-```python
-_MENU_POST_DELAY_MS: int = 100  # class attribute; set to 0 in tests
-
-def _on_right_click(self, event) -> None:
-    x = self.tree.winfo_rootx() + event.x   # safe coords (Wayland rule)
-    y = self.tree.winfo_rooty() + event.y
-  self.tree.after(self._MENU_POST_DELAY_MS, lambda: menu.tk_popup(x, y))
-```
-
-**In unit tests** set `fe._MENU_POST_DELAY_MS = 0` and call `root.update()`
-(not `root.update_idletasks()`) to flush the timer callback without real latency:
-
-```python
-fe._MENU_POST_DELAY_MS = 0
-fe._on_right_click(ev)
-root.update()   # fires after(0) callbacks
-mock_post.assert_called_once()
-```
-
-#### Wayland fallback when Tk menus are mapped but invisible
-
-If diagnostics repeatedly show `ismapped=1, viewable=1` with valid in-bounds
-coordinates but the user still sees no popup, treat this as a compositor-level
-rendering/stacking issue for Tk menu windows on Wayland/XWayland.
-
-In that case, use a **Wayland-specific in-app popup fallback**:
-
-1. Render a borderless `tk.Toplevel(overrideredirect=True)` anchored at safe
-  coordinates (`winfo_rootx/y + event.x/y`).
-2. Populate it with explicit `tk.Button` actions that map 1:1 to the context
-  menu commands.
-3. Keep existing non-Wayland behavior unchanged.
-4. In tests, gate behavior with a force flag (e.g. `_FORCE_WAYLAND_POPUP`) so
-  both branches are hermetically tested.
-
-#### Testing the coordinate strategy
-
-Functional tests for popup coordinates must:
-
-1. Use a real `tk.Tk()` root (geometry queries do not work on `MagicMock`).
-2. Assert that `winfo_rootx() + event.x` fits within `winfo_screenwidth()`.
-3. Optionally supply a synthetic `event.x_root` with an out-of-bounds value
-   (e.g. `9999`) and assert it is **not** what reaches `menu.post()`.
-
-See `tests/test_file_explorer_menu_coordinates.py::TestMenuCoordinateSafety` for the
-reference implementation (affordance PD-11-AF-008).
-
----
-
-### Why it works
-
-Tkinter's geometry managers (`pack`, `grid`) and widget state (`cget`, `grid_info`) are
-all accessible without a visible window.  `root.withdraw()` hides the window; the widget
-tree is still fully functional.
-
-### Standard test scaffold
-
-```python
-import tkinter as tk
-import unittest
-from unittest.mock import MagicMock
-
-from agentx.gui.gui_config import GUIConfig
-from agentx.gui.gui_manager import GUIManager
-
-
-def _make_root() -> tk.Tk:
-    """Create a hidden Tk root for unit tests."""
-    root = tk.Tk()
-    root.withdraw()   # hide — no window appears on screen
-    return root
-
-
-def _make_gui(root: tk.Tk) -> GUIManager:
-    """Build a fully-initialized GUIManager for testing."""
-    config = GUIConfig.from_dict({
-        "ollama_host": "localhost",
-        "ollama_model": "test-model",
-        "ollama_timeout": 30,
-    })
-    return GUIManager(
-        root=root,
-        config=config,
-        on_submit=MagicMock(),
-        on_interrupt=MagicMock(),
-        on_attachment_toggle=MagicMock(),
-    )
-
-
-class TestMyAffordance(unittest.TestCase):
-    def setUp(self):
-        self.root = _make_root()
-        self.gui = _make_gui(self.root)
-
-    def tearDown(self):
-        try:
-            self.root.destroy()   # always clean up the widget tree
-        except Exception:
-            pass
-```
-
-### Querying widget state
-
-```python
-# Is a widget visible? (grid geometry manager)
-widget.grid_info()          # returns {} if grid_remove()'d, dict if visible
-
-# Is a widget visible? (pack geometry manager)
-widget.pack_info()          # same pattern
-
-# What column is a widget in?
-int(widget.grid_info().get("column", -1))
-
-# What text does a widget display?
-widget.cget("text")
-
-# Trigger a button as if clicked:
-button.invoke()
-
-# List all children of a frame:
-frame.winfo_children()
-```
-
-### Critical: mock ModelMetadataStore.populate
-
-Any test that constructs an `AgentXSession` must mock `populate` to prevent background
-HTTP threads from crashing teardown:
-
-```python
-from unittest.mock import patch
-
-with patch("agentx.session.create_adapter", return_value=mock_adapter), \
-     patch("agentx.model_metadata_store.ModelMetadataStore.populate"):
-    session = AgentXSession(username="tester", session_dir=test_dir, config=config)
-```
-
-Without this mock the background thread makes a real HTTP call to Ollama.  When the
-test's Tk root is destroyed before the thread finishes, the socket teardown triggers
-`SIGABRT` and the whole test process dies.
-
-### Running UI tests
-
-```bash
-# All UI tests
-python -m pytest tests/test_chat_panel_turn_rendering.py \
-                 tests/test_context_meter_widget.py \
-                 tests/test_phase6_context_panel.py \
-                 tests/test_file_explorer_coverage.py \
-                 tests/test_file_explorer_theme.py \
-                 tests/test_gui_manager_integration.py \
-                 -v
-
-# Only tests that do NOT need a live Ollama instance
-python -m pytest -m "not live" -v
-```
+- Every user-visible state change must have at least one test
+- Tests must be deterministic and independent
+- Tests should avoid external dependencies where possible
+- Mock external services (AI models, APIs, etc.)
 
 ---
 
 ## 7. Current Coverage Gaps
 
-Runtime applet UX traceability remains open for system-applet scope alignment.
-
-Open applet-by-applet traceability gaps remain for UX-required first-class
-system applet inventory (File System, System Settings, and Context-family
-surfaces) until runtime inventory and UX contracts are re-aligned.
-
-Residual execution focus (outside sign-off closure):
-
-| Focus ID | Surface | Current focus | Completion signal |
-|---|---|---|---|
-| HX-005 | TUI-first completion gate | Keep TUI parity gates green while incremental runtime slices land. | `make -C /Projects/agentX hybrid-parity-gate` remains green after each slice. |
+Specific surface features and workflows that need additional testing or implementation refinement.
 
 ---
 
 ## 8. Keeping This Document Current
 
-### Agent responsibility
+### Developer responsibility
 
-When the AI agent makes any code change to `src/agentx/gui/`:
+When making any change to surface features or behavior:
 
-1. Search the Traceability Matrix for the affected affordance.
-2. Update the `Status` column if tests were added or removed.
-3. Add new rows for any new affordances introduced.
-4. Remove rows for any affordances deleted.
-5. Commit `docs/ux/UX_LIFECYCLE.md` as part of the same commit.
+1. Search the Traceability Matrix for the affected affordance
+2. Update the `Status` column if tests were added or modified
+3. Add new rows for any new affordances introduced
+4. Remove rows for any deleted affordances
+5. Commit `docs/ux/UX_LIFECYCLE.md` as part of the same commit
+6. If implementation diverges from spec, update the spec to match reality
 
 When the AI agent makes any change to the system applet suite or the UAT-visible
 startup mode:

@@ -19,7 +19,7 @@ _Last updated: 2026-05-23 (v0.83.1)_
 | Understand the full lifecycle process | [UX_LIFECYCLE.md §2](UX_LIFECYCLE.md#2-the-4-phase-lifecycle) |
 | Create or update a component cut-sheet | [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md) |
 | Find the affordance ID for a widget | [UX_LIFECYCLE.md §4 — Traceability Matrix](UX_LIFECYCLE.md#4-traceability-matrix-as-built) |
-| See a panel's widget details, state fields, diagrams | [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) |
+| See a surface's widget details, state fields, diagrams | [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) |
 | Understand the window layout and zone map | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) |
 | Follow a user interaction end-to-end | [02_USER_FLOWS.md](02_USER_FLOWS.md) |
 | Vibe coding (neovim + tmux integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
@@ -31,7 +31,7 @@ _Last updated: 2026-05-23 (v0.83.1)_
 | Run the UX review+enforce cycle (agent slash-command) | `/ux-review` in Copilot Chat |
 | See historical coverage notes and remaining-work synthesis | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-historical-coverage-gaps-resolved) |
 | Detect spec/code/test drift | [UX_LIFECYCLE.md §5.4](UX_LIFECYCLE.md#54-detecting-drift-without-a-planned-change) |
-| Add a new panel/affordance (checklist) | [UX_LIFECYCLE.md §5.1](UX_LIFECYCLE.md#51-adding-a-new-affordance) |
+| Add a new surface/affordance (checklist) | [UX_LIFECYCLE.md §5.1](UX_LIFECYCLE.md#51-adding-a-new-affordance) |
 | Modify an existing affordance (checklist) | [UX_LIFECYCLE.md §5.2](UX_LIFECYCLE.md#52-modifying-an-existing-affordance) |
 | Remove an affordance (checklist) | [UX_LIFECYCLE.md §5.3](UX_LIFECYCLE.md#53-removing-an-affordance) |
 
@@ -42,7 +42,7 @@ _Last updated: 2026-05-23 (v0.83.1)_
 > **Agent**: when starting a session, update this table from `UX_LIFECYCLE.md §4`.
 > Run the drift-detection commands in `UX_LIFECYCLE.md §5.4` and record the result here.
 
-| Panel | Fully Tested ✅ | Partial ⚠️ | Spec Only 📝 | Gap ❌ |
+| Surface | Fully Tested ✅ | Partial ⚠️ | Spec Only 📝 | Gap ❌ |
 |-------|:--------------:|:----------:|:------------:|:------:|
 | PD-01 ChatPanel | 9 | 1 | 0 | 0 |
 | PD-02 InputPanel | 9 | 3 | 0 | 0 |
@@ -83,8 +83,8 @@ _Last updated: 2026-05-23 (v0.83.1)_
 - [/] **PD-05-AF-004** — Re-synth button in synthesis block
 - [/] **PD-05-AF-005** — Export button in plan tab toolbar
 - [/] **PD-05-AF-006** — Node status icon reflects task state
-- [/] **PD-01-AF-010** — Output panel right-click copy context menu (Wayland-safe)
-- [/] **PD-02-AF-008..012** — Input panel right-click context menu: popup, Copy/Paste visibility, Copy action, Paste action
+- [/] **PD-01-AF-010** — Output surface right-click copy context menu (Wayland-safe)
+- [/] **PD-02-AF-008..012** — Input surface right-click context menu: popup, Copy/Paste visibility, Copy action, Paste action
 - [/] **PD-16 (TuiMirror)** — implemented: config + NullGUI path, bridge I/O, launcher lifecycle, and traceability/test reconciliation completed
 - [/] **PD-17-AF-004** — Split demo left workspace into story-browser top pane + prompt bottom pane ✓ completed 2026-05-22
 - [ ] **PD-16 migration (planned)** — invert launcher default to TUI-first, add `--gui` opt-in path, and reconcile docs/ux artifacts per `06_TUI_MIRROR.md §12.6`
@@ -165,7 +165,7 @@ docs/ux/
 ├── UX_LIFECYCLE.md                    ← Lifecycle rules, affordance IDs, traceability matrix
 ├── 01_MAIN_LAYOUT.md                  ← Window zones, geometry
 ├── 02_USER_FLOWS.md                   ← End-to-end user interaction flows (Mermaid)
-├── 03_PANEL_DETAILS.md                ← Per-panel: affordance tables, state fields, diagrams
+├── 03_PANEL_DETAILS.md                ← Per-surface: affordance tables, state fields, diagrams
 ├── 04_COMPONENT_CUT_SHEET_TEMPLATE.md ← Blank template for new component cut-sheets
 ├── 07_DEMO_MODE.md                    ← Demo mode UX contract and implementation plan
 └── UX_ISSUES.md                       ← Bug-tracking log for user-reported UX defects

@@ -4,26 +4,26 @@ _Last updated: 2026-05-28 (v1.0.1)_
 
 ## Purpose
 
-The **Channel Registry** is the authoritative mapping and policy layer for all event-driven communication channels in AgentX. It defines, documents, and governs the set of named channels (event types), their schemas, pub/sub wiring, and delivery policies. This registry is the single source of truth for channel semantics, ensuring architectural traceability and parity across GUI, TUI, and logging surfaces.
+The **Channel Registry** is the authoritative mapping and policy layer for all event-driven communication channels in AgentX. It defines, documents, and governs the set of named channels (event types), their schemas, pub/sub wiring, and delivery policies. This registry is the single source of truth for channel semantics, ensuring architectural traceability across all runtime surfaces.
 
 ## Channel Table
 
-| Channel Name         | EventType Enum         | Schema (data keys)         | Publisher(s)                | Subscriber(s)                | Delivery Policy                | Code Link |
+| Channel Name         | Event Type             | Schema (data keys)         | Publisher(s)                | Subscriber(s)                | Delivery Policy                |
 |---------------------|-----------------------|----------------------------|-----------------------------|------------------------------|-------------------------------|-----------|
-| stream_start        | STREAM_START          | -                          | StreamingController         | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| stream_end          | STREAM_END            | -                          | StreamingController         | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| thinking_start      | THINKING_START        | model_name                 | StreamingController         | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| thinking_content    | THINKING_CONTENT      | text                       | StreamingController         | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| agent_header        | AGENT_HEADER          | model_name                 | StreamingController         | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| agent_content       | AGENT_CONTENT         | text, is_raw_tui?          | StreamingController, Session| GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| tool_call           | TOOL_CALL             | tool_name, tool_input, ... | StreamingController, Bridge | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| tool_result         | TOOL_RESULT           | tool_name, output, ...     | StreamingController, Bridge | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| bootstrap_message   | BOOTSTRAP_MESSAGE     | message                    | Session                     | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| system_message      | SYSTEM_MESSAGE        | message                    | Session                     | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| user_message        | USER_MESSAGE          | text, timestamp            | Session                     | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| error               | ERROR                 | message                    | Any                         | GUI, TUI, logging            | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| log_message         | LOG_MESSAGE           | message, level, ...        | Any                         | Logging                      | Ordered, atomic, all receive  | [event_broker.py](../../src/agentx/event_broker.py) |
-| activity_state      | ACTIVITY_STATE        | session_id, state, phase, prompt_cycle | Go Core (`/activity`) | Input widget, context visualizer, future applets | Session-scoped, read-mostly, low-frequency updates | [core.go](../../cmd/agentx-core/core.go) |
+| stream_start        | STREAM_START          | -                          | Response stream coordinator | All runtime surfaces         | Ordered, atomic, all receive  |
+| stream_end          | STREAM_END            | -                          | Response stream coordinator | All runtime surfaces         | Ordered, atomic, all receive  |
+| thinking_start      | THINKING_START        | model_name                 | Response stream coordinator | All runtime surfaces         | Ordered, atomic, all receive  |
+| thinking_content    | THINKING_CONTENT      | text                       | Response stream coordinator | All runtime surfaces         | Ordered, atomic, all receive  |
+| agent_header        | AGENT_HEADER          | model_name                 | Response stream coordinator | All runtime surfaces         | Ordered, atomic, all receive  |
+| agent_content       | AGENT_CONTENT         | text                       | Response stream coordinator, Session | All runtime surfaces         | Ordered, atomic, all receive  |
+| tool_call           | TOOL_CALL             | tool_name, tool_input, ... | Response stream coordinator | All runtime surfaces         | Ordered, atomic, all receive  |
+| tool_result         | TOOL_RESULT           | tool_name, output, ...     | Response stream coordinator | All runtime surfaces         | Ordered, atomic, all receive  |
+| bootstrap_message   | BOOTSTRAP_MESSAGE     | message                    | Session                     | All runtime surfaces         | Ordered, atomic, all receive  |
+| system_message      | SYSTEM_MESSAGE        | message                    | Session                     | All runtime surfaces         | Ordered, atomic, all receive  |
+| user_message        | USER_MESSAGE          | text, timestamp            | Session                     | All runtime surfaces         | Ordered, atomic, all receive  |
+| error               | ERROR                 | message                    | Any                         | All runtime surfaces         | Ordered, atomic, all receive  |
+| log_message         | LOG_MESSAGE           | message, level, ...        | Any                         | Logging                      | Ordered, atomic, all receive  |
+| processing_state    | PROCESSING_STATE      | session_id, state, phase, prompt_cycle | Runtime orchestrator | All runtime surfaces         | Session-scoped, read-mostly, low-frequency updates |
 
 ## Channel Schema and Policy
 
@@ -31,14 +31,11 @@ The **Channel Registry** is the authoritative mapping and policy layer for all e
 - **Policy**: All channels are delivered to all registered subscribers, in order, with atomic delivery. Slow or blocked subscribers do not affect others (per-subscriber queues).
 - **Extensibility**: New channels must be registered here, with schema, publisher, subscriber, and policy documented before implementation.
 
-### Hybrid Activity State Contract (Authoritative)
+### Processing State Contract (Authoritative)
 
-The hybrid runtime must expose a shared activity-state contract so all applets can render consistent "agent is working" affordances without owning independent orchestration logic.
+The runtime must expose a shared processing-state contract so all surfaces can render consistent "working" indicators without owning independent orchestration logic.
 
-- Primary transport (current): HTTP `GET /activity` on core health endpoint.
-- Secondary mirror: `/context.prompt_cycle` must remain semantically consistent with `/activity.prompt_cycle`.
-
-Activity schema requirements:
+Processing state schema requirements:
 
 - `session_id`: active runtime session id.
 - `state`: one of `idle`, `working`, `completed`, `failed`.
@@ -47,24 +44,21 @@ Activity schema requirements:
 
 Traffic policy requirements:
 
-- Avoid per-applet bespoke streams for basic activity indication.
-- Prefer one session-level feed/snapshot consumed by multiple applets/widgets.
-- Keep update frequency low and payload compact to minimize terminal/UI overhead.
+- Avoid per-surface bespoke state streams for basic processing indication.
+- Prefer one session-level feed consumed by multiple surfaces and components.
+- Keep update frequency low and payload compact to minimize surface overhead.
 
 ## Pub/Sub Wiring
 
-- **Publishers**: Components that emit events (StreamingController, Session, Bridge, etc.)
-- **Subscribers**: GUI, TUI (TUIEventSubscriber), logging, and any future consumers.
-- **Wiring**: Subscribers register callbacks for specific EventTypes via EventBroker.subscribe().
+- **Publishers**: Components that emit events (response coordinator, session, etc.)
+- **Subscribers**: All runtime surfaces (output, input, system, logs, etc.), logging, and any future consumers.
+- **Wiring**: Subscribers register callbacks for specific event types.
 
-## Code Links
+## Implementation References
 
-- EventType enum and broker: [src/agentx/event_broker.py](../../src/agentx/event_broker.py)
-- Hybrid core activity/status endpoint: [cmd/agentx-core/core.go](../../cmd/agentx-core/core.go)
-- TUI subscriber: [src/agentx/integration/tui_event_subscriber.py](../../src/agentx/integration/tui_event_subscriber.py)
-- StreamingController: [src/agentx/streaming_controller.py](../../src/agentx/streaming_controller.py)
+For implementation details, see the dedicated implementation documentation folder.
 
 ## Change Policy
 
-- All changes to channel definitions, schemas, or policies must be reflected in this document and in the EventType enum.
-- This doc is the single source of truth for channel registry and must be kept in sync with code and tests.
+- All changes to channel definitions, schemas, or policies must be reflected in this document.
+- This doc is the single source of truth for channel registry and must be kept in sync with runtime implementation.
