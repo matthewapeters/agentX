@@ -19,4 +19,3 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Aligned reason-code and determinism contract documentation language across planning, execution, and validation references.
 - Clarified event-broker gate criteria documentation so promotion/acceptance checks are explicit and testable.
 - Clarified consistency-audit historical disposition language to distinguish prior findings from currently active remediation items.
-
