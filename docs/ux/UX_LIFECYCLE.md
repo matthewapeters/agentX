@@ -347,7 +347,7 @@ implements it and the test that validates it.  Status legend:
 | TUI files applet supports arrow-key row navigation | PD-11-AF-015 | `normalizeFilesystemWidgetCommand()` maps `Up`/`Down` to row navigation | `filesystem_widget_test.go` | `TestNormalizeFilesystemWidgetCommand` | ✅ |
 | TUI files applet supports `Space` soft-select semantics with visible state | PD-11-AF-016 | `filesystemWidgetState.toggleSoftSelection()` + soft-select rendering + multi-action compatibility | `filesystem_widget_test.go` | `TestFilesystemWidgetHandleCommand_SoftSelectToggleVisibleInRender`, `TestFilesystemWidgetHandleCommand_AttachUsesSoftSelectedSetStatus`, `TestFilesystemWidgetHandleCommand_EditUsesSoftSelectedSetInViewOrder` | ✅ |
 | TUI files applet supports `Return` hard-select primary action semantics | PD-11-AF-017 | `filesystemWidgetState.activateSelection()` via `enter` command path | `filesystem_widget_test.go` | `TestFilesystemWidgetHandleCommand_ReturnHardSelectActivates` | ✅ |
-| No-obvious-path affordances require explicit user case-by-case decision before closure | PD-11-AF-018 | Path-A decision log + applet-governance escalation contract | `docs/architecture/applets/README.md`, `docs/hybrid_remaining_work.md` | decision-log governance evidence | ✅ |
+| No-obvious-path affordances require explicit user case-by-case decision before closure | PD-11-AF-018 | Path-A decision log + applet-governance escalation contract | `docs/architecture/applets/README.md`, `00_START_HERE.md` | decision-log governance evidence | ✅ |
 
 ### PD-12 — StatusTab
 

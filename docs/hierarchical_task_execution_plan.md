@@ -506,7 +506,7 @@ Sub-tasks indent by `depth × 20px` and draw a branch line back up to their pare
 - [✓] Add `[Export Task Tree]` button in the Task Tree tab toolbar — writes `task_tree_export.md` to session folder in human-readable form (plan → sub-tasks → tool calls → synthesis → assertions)
 - [✓] Add `[Replay Sub-task]` button per node — re-runs the child loop from scratch (new tool calls), appends new synthesis attempt alongside old
 - [✓] Add `open_task_tree(session_path)` to `HistoryLoader` — allows loading and inspecting task trees from prior sessions
-- [✓] Document the `task_node.json` / `task_tree.json` schema in `docs/architecture.md`
+- [✓] Document the `task_node.json` / `task_tree.json` schema in `docs/architecture/design/00_INDEX.md`
 
 ---
 
@@ -593,7 +593,7 @@ scratch_dir           = "scratch"  # relative to session folder
 | `src/agentx/session.py` | Handle new chunk types (`PLAN_START`, `TASK_NODE_*`, `ASSERTION_RESULT`); add `retrigger_synthesis()` |
 | `system_prompts/planner_prompt.md` | Add `plan_name`, `tbd`, `depends_on` fields to step schema; add TBD resolution instructions |
 | `agentx.toml` | Add `max_task_depth`, `max_synthesis_retries`, `scratch_dir` |
-| `docs/architecture.md` | Document `PlanRecord`, `TaskNodeRecord`, new chunk types, `task_tree.json` schema, plan tab pattern |
+| `docs/architecture/design/00_INDEX.md` | Document `PlanRecord`, `TaskNodeRecord`, new chunk types, `task_tree.json` schema, plan tab pattern |
 | `pyproject.toml` | Version bump to `0.12.0` (new minor — backward-compatible feature) |
 
 ---

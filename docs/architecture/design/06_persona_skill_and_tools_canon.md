@@ -47,7 +47,7 @@ All runtime configuration and metadata for expertise and capabilities lives unde
 
 **Loading Contract:**
 
-1. Runtime persona identification happens via routing rules in `.github/instructions/subutai-orchestrator.instructions.md` (orchestration persona selection policy).
+1. Runtime persona identification happens via routing rules in `../../../.github/instructions/subutai-orchestrator.instructions.md` (orchestration persona selection policy).
 2. Selected persona ID is validated against `.agentx/agents/` file existence before invocation.
 3. If persona does not exist, routing fails with deterministic reason code and fallback path.
 
@@ -156,8 +156,8 @@ All runtime configuration and metadata for expertise and capabilities lives unde
 
 **Flow:**
 
-1. Orchestrator reads [`.github/instructions/subutai-orchestrator.instructions.md`](.github/instructions/subutai-orchestrator.instructions.md) routing rules.
-2. Request is triaged as trivial/moderate/complex per [`.github/instructions/orchestrator-triage.instructions.md`](.github/instructions/orchestrator-triage.instructions.md).
+1. Orchestrator reads [`.github/instructions/subutai-orchestrator.instructions.md`](../../../.github/instructions/subutai-orchestrator.instructions.md) routing rules.
+2. Request is triaged as trivial/moderate/complex per [`.github/instructions/orchestrator-triage.instructions.md`](../../../.github/instructions/orchestrator-triage.instructions.md).
 3. Triage determines which expert persona(s) could handle the request.
 4. Expert ID is resolved against `.agentx/agents/` directory.
 5. If expert file exists, persona is loaded; if not, fallback/clarification path is invoked.
@@ -239,7 +239,7 @@ All runtime configuration and metadata for expertise and capabilities lives unde
 
 **Input:** Expert persona + prepared context + selected skill/task
 
-**Output:** Task packet return per [`.github/instructions/expert-contract.instructions.md`](.github/instructions/expert-contract.instructions.md)
+**Output:** Task packet return per [`.github/instructions/expert-contract.instructions.md`](../../../.github/instructions/expert-contract.instructions.md)
 
 **Contract Enforcement Points:**
 
@@ -363,7 +363,7 @@ Where:
   
    MessageHash = SHA256(
       Concatenate(
-         [SHA256(msg.role + "|" + msg.content) for msg in enabledMessages sorted by msg.id],
+         [SHA256(msg.id + "|" + msg.role + "|" + msg.content) for msg in enabledMessages sorted by msg.id],
          separator="|"
       )
    )
@@ -390,17 +390,19 @@ func ComputeContextFingerprint(
       instrContent := strings.Join(instructions, "\n---\n")
       instrHash := sha256.Sum256([]byte(instrContent))
     
-      // Step 2: Message hashes (sort by ID, then join)
+      // Step 2: Message hashes (sort by ID, then hash in that canonical order)
+      sort.Slice(enabledMessages, func(i, j int) bool {
+         return enabledMessages[i].ID < enabledMessages[j].ID
+      })
       var msgHashes []string
       for _, msg := range enabledMessages {
             if !msg.Enabled {
                   continue
             }
-            msgText := msg.Role + "|" + msg.Content
+         msgText := msg.ID + "|" + msg.Role + "|" + msg.Content
             h := sha256.Sum256([]byte(msgText))
             msgHashes = append(msgHashes, hex.EncodeToString(h[:]))
       }
-      sort.Strings(msgHashes) // Ensure deterministic order
       msgContent := strings.Join(msgHashes, "|")
       msgHash := sha256.Sum256([]byte(msgContent))
     
@@ -427,6 +429,24 @@ func ComputeContextFingerprint(
       return sha256.Sum256([]byte(combined))
 }
 ```
+
+### Fingerprint Conformance Fixture
+
+Use this fixture to validate cross-language parity:
+
+- instructions:
+  - `alpha`
+  - `beta`
+- enabledMessages (sorted by `id` before hashing):
+  - `{id: "m1", role: "user", content: "hello"}`
+  - `{id: "m2", role: "assistant", content: "world"}`
+- workingMemory (enabled=true):
+  - `cwd=/tmp`
+  - `project=agentx`
+
+Expected final fingerprint (SHA-256 hex):
+
+- `e724d1bd7bdcd84fa8ad14dad86f1b1c3ba447839aea8f471e879bfcbd60c363`
 
    ```go
    personaFile := filepath.Join(".agentx", "agents", personaID + ".agent.md")

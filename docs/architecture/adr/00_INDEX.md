@@ -1,13 +1,13 @@
 # AgentX ADR Index
 
-Last updated: 2026-06-14
+Last updated: 2026-06-23
 Owner: Architecture
 
 This folder captures architecture decisions for orchestration design, rollout sequencing, and quality governance. These ADRs are implementation-oriented and aligned with:
 
-- docs/architecture/runtime_split.md
+- docs/architecture/design/00_INDEX.md
 - docs/architecture/channel_registry.md
-- docs/architecture.md
+- docs/implementation/00_index.md
 
 ## ADRs
 
@@ -16,6 +16,7 @@ This folder captures architecture decisions for orchestration design, rollout se
 - [0003 - LLM Dispatcher Priority Heap and Fairness](0003-llm-dispatcher-priority-heap-and-fairness.md)
 - [0004 - Persona, Skill Policy, and Security Boundaries](0004-persona-skill-policy-and-security-boundaries.md)
 - [0005 - Traceability, Replay, and Quality Gates](0005-traceability-replay-and-quality-gates.md)
+- [0006 - Persona Identification and Context Loading](0006-persona-identification-and-context-loading.md)
 
 ## Reading Order
 
@@ -24,6 +25,7 @@ This folder captures architecture decisions for orchestration design, rollout se
 3. Read ADR 0003 for dispatch scheduling and fairness.
 4. Read ADR 0004 for policy and security controls.
 5. Read ADR 0005 for evidence, replay, and release gates.
+6. Read ADR 0006 for persona routing and deterministic context assembly.
 
 ## Implementation Companions
 

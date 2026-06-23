@@ -1,6 +1,6 @@
 # Event-Broker Pub-Sub Architecture
 
-_Last updated: 2026-05-10 (v0.39.3)_
+_Last updated: 2026-06-23 (v0.39.4)_
 
 ## Overview
 
@@ -93,11 +93,6 @@ Standardized event types for streaming communication:
 
 See [Channel Registry](architecture/channel_registry.md) for complete event schema definitions.
 
-    # Content streaming
-    THINKING_START = "thinking_start"
-    THINKING_CONTENT = "thinking_content"
-    AGENT_HEADER = "agent_header"
-
 ## Event Flow
 
 ### Publish Path
@@ -146,6 +141,32 @@ Event coordination layer should support:
 - Multi-publisher concurrent access
 - Delivery guarantee verification
 - Backoff/retry behavior
+
+### Canonical Gate (Release Criterion)
+
+Use this as the single release-gate command for this document's delivery guarantees:
+
+```bash
+uv run pytest tests/test_event_broker_pubsub.py -q
+```
+
+Expected pass criteria:
+
+- Exit code is `0`.
+- Artifact evidence is a `passed` result for `tests/test_event_broker_pubsub.py` in pytest output.
+- Any non-zero exit code or failed test in that file fails the gate.
+
+### Runnable Verification Map
+
+| Guarantee / Claim | Runnable Check | Expected Evidence |
+|---|---|---|
+| Ordered delivery for a subscriber | `uv run pytest tests/test_event_broker_pubsub.py -k preserves_order_for_single_subscriber -q` | Test passes; received event indices are monotonic and complete |
+| No dropped events when subscriber is busy | `uv run pytest tests/test_event_broker_pubsub.py -k no_drop_when_subscriber_is_busy -q` | Test passes; published count equals consumed count |
+| Slow subscriber does not block publisher path | `uv run pytest tests/test_event_broker_pubsub.py -k slow_subscriber -q` | Test passes; publish path completes while handler sleeps |
+| Canonical streaming event sequence survives broker path | `uv run pytest tests/test_event_broker_pubsub.py -k canonical_order -q` | Test passes; sequence ordering matches expected stream protocol |
+| Event types and channel definitions stay aligned | `rg -n "STREAM_START|THINKING_START|agent_content|processing_state" docs/architecture/channel_registry.md tests/test_event_broker_pubsub.py` | Matching event names appear in both architecture contract and tests |
+
+Threshold for this doc's reliability claims: all mapped checks above pass in the same change set before release.
 
 ## Migration from Old Architecture
 

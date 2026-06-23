@@ -1,19 +1,23 @@
 # AgentX — Implementation Documentation
 
-This folder contains implementation-specific documentation for the AgentX TUI application runtime.
+This folder contains implementation-specific documentation that reconciles UX and architecture contracts into build guidance.
 
 > **Note**: Distinction from [../](../) architecture documentation:
+>
 > - [../](../) contains **implementation-agnostic** UX and system specifications
 > - This folder (`implementation/`) contains **implementation-specific** guidance for Go runtime, HTTP backend, deployment, and technology choices
 
+## Start Here
+
+- [00_index.md](00_index.md) is the authoritative entry point for implementation planning.
+
 ## Folder Contents
 
-### Go Runtime Implementation
+### Runtime Implementation
 
-- **Go core runtime** — Terminal multiplexer setup, session lifecycle, event loop
-- **Multiplexer drivers** — tmux vs. zellij backend selection and configuration
+- **Go core runtime** — orchestrator lifecycle, session lifecycle, event loop
 - **HTTP backend** — REST API design, endpoint patterns, server startup
-- **Channel/event routing** — Go implementation of event coordination layer
+- **Channel/event routing** — event coordination and processing-state distribution
 
 ### Frontend Implementation
 
@@ -30,13 +34,15 @@ This folder contains implementation-specific documentation for the AgentX TUI ap
 ## How to Use This Documentation
 
 **When to reference this folder:**
+
 - Building/compiling the runtime
 - Debugging runtime failures
 - Understanding Go-specific idioms or tech choices
 - Setting up deployment environments
-- Configuring multiplexer backend
+- Implementing surface orchestration and transport contracts
 
 **When to reference parent `docs/`:**
+
 - Understanding UX requirements and surface behaviors
 - Designing new features
 - Writing tests that validate acceptance criteria
@@ -47,7 +53,6 @@ This folder contains implementation-specific documentation for the AgentX TUI ap
 When you implement a feature or fix, place **implementation-specific** details here:
 
 - Go code patterns and project structure
-- Multiplexer backend-specific configuration
 - HTTP endpoint definitions
 - Deployment procedures
 - Docker/build tooling
@@ -59,5 +64,5 @@ Keep **architecture and UX specifications** in the parent `docs/` folder.
 ## See Also
 
 - [Parent Documentation](../README.md) — Architecture, UX, and system design
-- [AGENTS.md](../../AGENTS.md) — Runtime configuration and multiplexer backend selection
+- [AGENTS.md](../../AGENTS.md) — Runtime configuration and launch notes
 - [Makefile](../../Makefile) — Build and test commands

@@ -56,7 +56,7 @@ Scenario: Policy boundary is enforced before expert context is prepared
   Given a destructive action proposed for expert invocation
   And confirmation artifact is missing
   When policy boundary checks execute
-  Then decision is deny with reason code confirmation_missing
+  Then decision is deny with reason code destructive_confirmation_missing
   And expert is never invoked
   And no context is prepared (fail-closed)
 

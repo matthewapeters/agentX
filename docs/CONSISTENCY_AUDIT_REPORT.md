@@ -1,23 +1,30 @@
 # AgentX Documentation Consistency Audit Report
 
 **Date**: 2026-06-23  
-**Audit Scope**: All documents in `./docs/` for consistency with branch direction:
+**Audit Scope**: All documents in `./docs/` for consistency with branch direction.
 
-- ✅ No reference to Python implementation or agentix
-- ✅ No reference to TMUX
-- ✅ No conflicting UX behaviors
+- Baseline expectation: documentation should avoid stale implementation references and avoid broken navigation paths.
 
-**Status**: ⚠️ **SIGNIFICANT INCONSISTENCIES FOUND** — 14 files require remediation
+**Status at audit time (historical snapshot)**: ⚠️ Significant inconsistencies were identified; findings below capture the 2026-06-23 state.
+
+## Current Disposition
+
+This report is a **historical baseline artifact** and is not the current gate decision document.
+
+For current gate decisions, use the triad remediation brief at:
+`.subutai/runs/2026-06-23-doc-review-triad/documentation-improvement-brief.md`.
+
+Any architecture decisions, including Agentix references, must align to the **active branch architecture contract** as documented in `AGENTS.md` and related branch-contract sources.
 
 ---
 
 ## Executive Summary
 
-The documentation set contains **pervasive references** to three forbidden implementation details:
+At audit time, the documentation set contained **pervasive references** to three implementation-specific detail categories that were flagged for review:
 
 1. **TMUX references** (11+ files) — Should be abstracted to generic multiplexer/presentation concepts
 2. **Python implementation details** (9+ files) — Should describe behavior, not code structure
-3. **Agentix middleware** (2+ files) — Should be removed entirely
+3. **Agentix middleware references** (2+ files) — Should be aligned with the active architecture contract
 4. **Conflicting UX behaviors** — Implementation-specific concepts presented as architecture-neutral
 
 **Recommended approach**:
@@ -35,7 +42,7 @@ These files reference TMUX explicitly and should be abstracted to generic multip
 
 ### 🔴 **CRITICAL** — Full documents about TMUX
 
-#### 1. `docs/backend-migration-guide.md` ⚠️
+#### 1. `back-end migration guide (historical reference)` ⚠️
 
 **Issue**: Entire document is a TMUX↔Zellij migration guide.  
 **Current content**: "Switch backends: tmux vs zellij", keybindings, daemon config  
@@ -123,7 +130,7 @@ These files reference TMUX explicitly and should be abstracted to generic multip
 - Make pane-naming independent of TMUX (e.g., "Pane role: output, system, input, logs")
 - Document contract as "logical" not "TMUX-specific"
 
-#### 7. `docs/hybrid_remaining_work.md`
+#### 7. `hybrid remaining work (historical reference)`
 
 **Issues**:
 
@@ -184,7 +191,7 @@ These files expose Python code structure, class names, and file paths that shoul
 
 ### 🔴 **CRITICAL** — Heavy Python code references
 
-#### 1. `docs/architecture.md`
+#### 1. `architecture module doc (historical reference)`
 
 **Issues** (Lines):
 
@@ -204,7 +211,7 @@ These files expose Python code structure, class names, and file paths that shoul
   - `ChatPanel` → "Chat/output surface"
   - `AgentXSession` → "Session orchestrator"
   - `StreamingController` → "Event streaming coordinator"
-  - `AgentixBridgeAdapter` → Remove entirely (agentix is being removed)
+  - `AgentixBridgeAdapter` → Align wording with the active architecture contract
 - Remove Ollama as a "service dependency"; replace with "Language model backend"
 - Describe startup flow using logical concepts, not Python entry points
 
@@ -277,7 +284,7 @@ These files expose Python code structure, class names, and file paths that shoul
 - This document should be **DEPRECATED** if it's about Python GUI rendering
 - If markdown rendering is still needed, document it as a feature, not a Python implementation detail
 
-#### 6. `docs/tool_usage_plan.md`
+#### 6. `tool usage plan (historical reference)`
 
 **Issue**: Entire document is about "agentix middleware layer"  
 
@@ -288,7 +295,7 @@ These files expose Python code structure, class names, and file paths that shoul
 
 **Recommendation**:
 
-- **DELETE or ARCHIVE** — Agentix is being removed from this branch
+- **DELETE or ARCHIVE** — If no longer part of the active architecture contract
 - If tool execution is still needed, document the desired **user-facing behavior**, not the Python middleware
 
 #### 7. `docs/AGENT_README.md`
@@ -343,16 +350,16 @@ These files expose Python code structure, class names, and file paths that shoul
 
 ## Category 3: Agentix References (2+ files)
 
-These files reference the Agentix middleware which is being removed.
+These files reference Agentix middleware and should be reconciled with the active architecture contract.
 
 ### 🔴 **CRITICAL**
 
-#### 1. `docs/tool_usage_plan.md`
+#### 1. `tool usage plan (historical reference)`
 
 **Status**: Already marked for removal in Category 2  
-**Action**: **DELETE** — Entire document is about agentix tool integration pipeline
+**Action**: Reconcile with the active branch architecture contract; archive or refactor if out of scope
 
-#### 2. `docs/architecture.md`
+#### 2. `architecture module doc (historical reference)`
 
 **Issue**: Line ~60: "Agentix (optional)" listed as external service  
 **Recommendation**: Remove entirely; replace with "Tool execution layer" if needed
@@ -397,7 +404,7 @@ This row conflates:
 
 #### 2. **Startup Modes: Logical vs. Multiplexer-Specific**
 
-**Files affected**: `docs/architecture/startup_modes.md`, `docs/architecture/runtime_split.md`, `docs/hybrid_remaining_work.md`
+**Files affected**: `docs/architecture/startup_modes.md`, `docs/architecture/runtime_split.md`, `docs/hybrid remaining work (historical reference)`
 
 **Issue**:
 
@@ -443,17 +450,17 @@ This row conflates:
 
 #### 4. **GUI/TUI Parity Claims vs. Actual Status**
 
-**Files affected**: Multiple (architecture.md, hybrid_remaining_work.md, UX_LIFECYCLE.md)
+**Files affected**: Multiple (docs/architecture/runtime_split.md, docs/architecture/startup_modes.md, docs/ux/UX_LIFECYCLE.md)
 
 **Issue**:
 
 - Documents claim "GUI and TUI are peers" with parity matrices
-- BUT: hybrid_remaining_work.md says "GUI remains secondary/back-burnered"
-- AND: architecture.md says "GUI is secondary and back-burnered until TUI parity completion gates are met"
+- BUT: docs/architecture/runtime_split.md says GUI remains on a secondary rollout track
+- AND: docs/architecture/startup_modes.md and related architecture guidance still include implementation-first framing in places
 
 **Conflict Examples**:
 
-- architecture.md table shows both GUI and TUI columns with similar status
+- runtime and UX docs can still present mixed signals about parity versus staged rollout priority
 - But text says "Keep GUI on secondary track"
 - This sends conflicting signals about priority
 
@@ -493,7 +500,7 @@ Core owns conversation data and tmux pane geometry; the applet owns pane-local v
 
 ---
 
-## Category 5: Ambiguities (Require Clarification)
+## Category 5: Ambiguities (Clarification Needed at Audit Time)
 
 These are unclear points that need explicit resolution:
 
@@ -529,17 +536,17 @@ These are unclear points that need explicit resolution:
 
 ---
 
-## Remediation Priority & Checklist
+## Historical Remediation Tracking State (At Audit Time)
 
 ### Phase 1: Remove/Delete (Highest Priority)
 
-- [ ] `docs/backend-migration-guide.md` — DELETE entire file
-- [ ] `docs/tool_usage_plan.md` — DELETE entire file (agentix removal)
+- [ ] historical back-end migration guide doc — DELETE entire file
+- [ ] historical tool usage plan doc — evaluate against active branch architecture contract; archive or refactor if out of scope
 - [ ] `docs/AGENT_README.md` — DELETE or move to DEVELOPMENT.md (not in docs/)
 
 ### Phase 2: Refactor Architecture Files
 
-- [ ] `docs/architecture.md` — Remove Python classes, Tkinter, file paths; describe logically
+- [ ] historical architecture module doc — Remove Python classes, Tkinter, file paths; describe logically
 - [ ] `docs/architecture/startup_modes.md` — Abstract to presentation topology, remove TMUX terms
 - [ ] `docs/architecture/runtime_split.md` — Replace TMUX/pane terminology with generic concepts
 - [ ] `docs/architecture/channel_registry.md` — Remove Python file links, generalize EventType naming
@@ -556,7 +563,7 @@ These are unclear points that need explicit resolution:
 ### Phase 4: Fix Remaining References
 
 - [ ] `docs/troubleshooting.md` — Remove backend-specific troubleshooting
-- [ ] `docs/hybrid_remaining_work.md` — Remove TMUX keybinding references (C-b n)
+- [ ] historical hybrid remaining-work doc — Remove TMUX keybinding references (C-b n)
 - [ ] `docs/architecture/applets/output_applet.md` — Replace "tmux pane geometry" with generic "surface geometry"
 - [ ] `docs/architecture/applets/*.md` — Audit all applet docs for TMUX/Python leakage
 - [ ] `docs/markdown_rendering_plan.md` — Archive or DELETE (Python GUI rendering detail)
@@ -574,29 +581,29 @@ These are unclear points that need explicit resolution:
 
 | File | Category | Severity | Action |
 |------|----------|----------|--------|
-| `docs/backend-migration-guide.md` | TMUX | 🔴 CRITICAL | DELETE |
+| historical back-end migration guide doc | TMUX | 🔴 CRITICAL | DELETE |
 | `docs/troubleshooting.md` | TMUX | 🟠 HIGH | REFACTOR |
 | `docs/architecture/startup_modes.md` | TMUX | 🟠 HIGH | REFACTOR |
 | `docs/architecture/runtime_split.md` | TMUX | 🟠 HIGH | REFACTOR |
 | `docs/architecture/agentx_tui_hybrid_architecture.md` | TMUX | 🟠 HIGH | REFACTOR |
 | `docs/ux/06_TUI_MIRROR.md` | TMUX | 🟠 HIGH | REFACTOR |
-| `docs/hybrid_remaining_work.md` | TMUX | 🟠 HIGH | REFACTOR |
+| historical hybrid remaining-work doc | TMUX | 🟠 HIGH | REFACTOR |
 | `docs/architecture/applets/output_applet.md` | TMUX | 🟠 HIGH | REFACTOR |
 | `docs/ux/00_INDEX.md` | TMUX + Python | 🟠 HIGH | REFACTOR |
 | `docs/ux/UX_LIFECYCLE.md` | Python | 🟠 HIGH | REFACTOR |
-| `docs/architecture.md` | Python | 🔴 CRITICAL | REFACTOR |
+| historical architecture module doc | Python | 🔴 CRITICAL | REFACTOR |
 | `docs/TUI_INTEGRATION_COMPLETION_PLAN.md` | Python | 🔴 CRITICAL | REFACTOR |
 | `docs/event_broker_pubsub.md` | Python | 🟠 HIGH | REFACTOR |
 | `docs/architecture/channel_registry.md` | Python | 🟠 HIGH | REFACTOR |
 | `docs/markdown_rendering_plan.md` | Python | 🟠 HIGH | DELETE/ARCHIVE |
-| `docs/tool_usage_plan.md` | Agentix | 🔴 CRITICAL | DELETE |
+| historical tool usage plan doc | Agentix | 🔴 CRITICAL | ALIGN/ARCHIVE |
 | `docs/AGENT_README.md` | Mixed | 🟠 HIGH | DELETE/MOVE |
 | **UX Behavior Conflicts** | Multiple | 🟠 HIGH | CLARIFY & ALIGN |
 | **Ambiguities** | Multiple | 🟡 MEDIUM | CLARIFY |
 
 ---
 
-## Recommended Next Steps
+## Recommended Next Steps (Captured at Audit Time)
 
 1. **Agree on terminology** — Define authoritative terms (pane, surface, widget, applet, etc.)
 2. **Decide on scope** — Clarify if GUI is truly secondary or if it's equal
@@ -608,9 +615,9 @@ These are unclear points that need explicit resolution:
 
 ---
 
-## Questions for User Clarification
+## Open Clarification Questions (Captured at Audit Time)
 
-Before proceeding with remediation, please provide direction on:
+Before the original remediation pass, the following clarification prompts were captured:
 
 1. **What is the primary user interface?** (GUI, TUI, neovim, hybrid, or user-selectable?)
 2. **Is GUI truly secondary?** (Can we remove from feature parity tables if so?)

@@ -11,4 +11,4 @@ planning source for hybrid Go-core/TUI completion work.
 
 For active remaining work, see:
 
-- `docs/hybrid_remaining_work.md`
+- `00_START_HERE.md`

@@ -1,11 +1,11 @@
 # Orchestration Behavior Spec Index
 
-Last updated: 2026-06-15
+Last updated: 2026-06-23
 Owner: SDET + Architecture
 
 ## Purpose
 
-Detailed behavior use cases for orchestration components aligned with ADR 0001-0005.
+Detailed behavior use cases for orchestration components aligned with ADR 0001-0006.
 
 ## Schema Authority
 

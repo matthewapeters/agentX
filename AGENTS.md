@@ -10,6 +10,10 @@ uv run python main.py                      # launch GUI
 
 Runtime config is `agentx.toml` at the repo root. Edit it before any run.
 
+## Branch Path Reality Check
+
+This document describes the expected Go-core layout and contracts for the active branch intent. In this workspace snapshot, `cmd/agentx-core` is not present even though `Makefile` declares `GO_CORE_DIR := cmd/agentx-core`. Use this doc as contract guidance and verify path existence (`test -d cmd/agentx-core`) before running direct path commands.
+
 ## Architecture at a glance
 
 - **Python GUI**: `src/agentx/` (Tkinter), entry `main.py`
@@ -76,11 +80,20 @@ type MultiplexerDriver interface {
 
 ## Go core
 
+Preflight gate for this snapshot:
+
 ```bash
+test -d cmd/agentx-core
+```
+
+If the command above returns non-zero, treat all Go-core commands below as branch-contract references and do not run them in this snapshot.
+
+```bash
+# Run only if preflight passes
 make build-core                              # compile Go binary to bin/agentx
 make run                                     # build + run Go core
 make run-attached                            # build + run + attach tmux client
-cd cmd/agentx-core && go test ./...          # Go tests (no Make)
+test -d cmd/agentx-core && (cd cmd/agentx-core && go test ./...)  # Go tests (no Make)
 ```
 
 ## Python tests
@@ -108,6 +121,7 @@ pyproject.toml: `[tool.pytest]` adds `--cov=src --cov-report=term-missing` by de
 ## Go + Python combined
 
 ```bash
+# Run only if preflight passes
 make test-all                                # go-test + python-test
 make demo-smoke                              # headless DemoMode smoke gate (builds Go core first)
 ```
@@ -137,7 +151,7 @@ multiplexer_backend = "zellij"    # or "tmux"
 Then run tests normally:
 
 ```bash
-make go-test
+test -d cmd/agentx-core && make go-test || echo "Skipped: cmd/agentx-core missing in this snapshot"
 uv run pytest
 ```
 
@@ -150,7 +164,7 @@ Note: Python/pytest tests read config from `agentx.toml`; environment override i
 Check startup log message:
 
 ```bash
-./bin/agentx --project-dir . --user "$USER" 2>&1 | grep "session initialized"
+test -d cmd/agentx-core && ./bin/agentx --project-dir . --user "$USER" 2>&1 | grep "session initialized" || echo "Skipped: cmd/agentx-core missing in this snapshot"
 ```
 
 Expected:
@@ -168,8 +182,7 @@ Both tmux and zellij have separate layout files auto-generated at startup:
 To regenerate:
 
 ```bash
-rm .agentx/layouts/*
-./bin/agentx --project-dir . --user "$USER" --attach
+test -d cmd/agentx-core && (rm .agentx/layouts/* && ./bin/agentx --project-dir . --user "$USER" --attach) || echo "Skipped: cmd/agentx-core missing in this snapshot"
 ```
 
 To inspect generated layouts:

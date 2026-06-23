@@ -125,7 +125,7 @@ Modern Rust-based multiplexer with improved UX and mouse support.
 - Navigate panes: `Alt+arrow` (instead of `Ctrl+b arrow`)
 - Zoom pane: `Alt+z`
 - Detach session: `Alt+q`
-- See [Backend Migration Guide](./docs/backend-migration-guide.md) for full reference
+- See [AGENTS.md](./AGENTS.md) for current backend notes and known branch path caveats
 
 ---
 
@@ -169,7 +169,7 @@ show_next_step = true
 - `multiplexer_backend = "tmux"` (default if unset)
 - `multiplexer_backend = "zellij"` (modern alternative)
 
-For detailed migration steps, see [Backend Migration Guide](./docs/backend-migration-guide.md).
+For detailed backend guidance, see [AGENTS.md](./AGENTS.md).
 
 ---
 
@@ -227,11 +227,21 @@ AGENTIX_BENCH_RUN=1 uv run pytest -m live tests/integration/
 
 ### Go Core (Hybrid) Build and Test
 
-The Go components currently live under `cmd/agentx-core` and are managed from the repository root with `make`.
+This branch currently has Go-core make targets in `Makefile`, but `cmd/agentx-core` is not present in this workspace snapshot.
+
+Do not run Go-core commands in this snapshot unless the preflight check passes.
+
+```bash
+# Preflight gate for this snapshot
+test -d cmd/agentx-core
+```
+
+Treat Go-core paths below as branch-contract references only when preflight fails.
 
 #### Build the Go core
 
 ```bash
+# Run only if preflight passes: test -d cmd/agentx-core
 # Build Go core binary to bin/agentx
 make build-core
 
@@ -245,6 +255,7 @@ make python-build
 #### Run Go tests
 
 ```bash
+# Run only if preflight passes: test -d cmd/agentx-core
 # Run all Go tests (including all GoDog suites)
 make go-test
 
@@ -267,13 +278,14 @@ make demo-smoke
 #### Run directly with Go commands (without Make)
 
 ```bash
-# Run from module directory
-cd cmd/agentx-core && go test ./...
+# Branch-truthful direct command pattern
+test -d cmd/agentx-core && (cd cmd/agentx-core && go test ./...) || echo "Skipped: cmd/agentx-core missing in this snapshot"
 ```
 
 #### Run the Go core
 
 ```bash
+# Run only if preflight passes: test -d cmd/agentx-core
 # Build and run core
 make run
 
@@ -287,12 +299,14 @@ make run-with-applets
 To launch manually with attach enabled:
 
 ```bash
+# Run only if preflight passes: test -d cmd/agentx-core
 ./bin/agentx --project-dir . --user "$USER" --attach
 ```
 
 Layout options:
 
 ```bash
+# Run only if preflight passes: test -d cmd/agentx-core
 # Use an explicit tmuxp layout composition
 ./bin/agentx --project-dir . --layout ./my-layout.yaml --attach
 
@@ -357,7 +371,7 @@ agentX/
 ├── tests/                         # Pytest test suite
 └── docs/                          # Architecture and integration documentation
     ├── architecture.md
-    ├── tool_usage_plan.md
+   ├── architecture/
     └── integration/               # Phased integration plan and design docs
 ```
 
@@ -397,10 +411,10 @@ Conversations are stored under `sessions/<session_id>/context/` as JSON. The `Co
 
 | Document | Description |
 |----------|-------------|
-| [`docs/architecture.md`](docs/architecture.md) | Module index and architecture overview |
-| [`docs/tool_usage_plan.md`](docs/tool_usage_plan.md) | Phased implementation plan for the tool pipeline |
-| [`docs/backend-migration-guide.md`](docs/backend-migration-guide.md) | Switching between tmux and zellij backends |
-| [`docs/troubleshooting.md`](docs/troubleshooting.md) | Backend setup and troubleshooting |
+| [`00_START_HERE.md`](00_START_HERE.md) | Current start point for tool and workflow analysis |
+| [`docs/architecture/`](docs/architecture/) | Architecture decisions, behavior specs, and design contracts |
+| [`AGENTS.md`](AGENTS.md) | Runtime/backend guidance and command caveats for this branch |
+| [`docs/implementation/README.md`](docs/implementation/README.md) | Runtime implementation notes and troubleshooting context |
 | [`docs/integration/`](docs/integration/) | AgentX ↔ Agentix integration design and decisions |
 
 ---

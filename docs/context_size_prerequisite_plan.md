@@ -236,7 +236,7 @@ are backend-agnostic (Ollama now, extensible later).
 ## Phase 8 - Docs and Release Readiness
 
 - [/] **8.1** ~~Update `docs/ux/context_visualizer.md` to mark PRE-02 complete.~~ `context_visualizer.md` deleted; content absorbed into `03_PANEL_DETAILS.md §PD-10` (REQ-08 marked ✅).
-- [/] **8.2** Update `docs/architecture.md` with provider abstraction + metadata store.
+- [/] **8.2** Update `docs/architecture/design/00_INDEX.md` with provider abstraction + metadata store.
 - [/] **8.3** Update `CHANGELOG.md` with PRE-02 changes.
 - [/] **8.4** Bump version in `pyproject.toml`: `0.18.26 -> 0.19.0`.
 - [/] **8.5** Commit all changes to working branch.
