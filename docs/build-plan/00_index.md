@@ -53,6 +53,8 @@ This plan is additive. It does not replace existing contracts in:
 
 1. [01_comprehensive_build_plan.md](01_comprehensive_build_plan.md)
 2. [02_phase_reference_matrix.md](02_phase_reference_matrix.md)
+3. [03_chat_surface_backlog.md](03_chat_surface_backlog.md) — task-level backlog for
+   the first vertical slice (the `agentx` chat surface), spanning M1 → chat-M2 → M3a.
 
 ## Cadence And Governance
 
