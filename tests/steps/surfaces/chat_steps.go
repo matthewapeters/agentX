@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/cucumber/godog"
 
+	"agentx/internal/state"
 	"agentx/internal/surfaces/chat"
 )
 
@@ -38,6 +39,20 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a new chat surface sized (\d+) by (\d+)$`, w.newSurfaceSized)
 	sc.Step(`^the user types "([^"]*)" and submits$`, w.typesAndSubmits)
 	sc.Step(`^the chat output contains "([^"]*)"$`, w.chatOutputContains)
+	sc.Step(`^the processing state becomes working in phase "([^"]*)"$`, w.processingWorking)
+	sc.Step(`^the chat status shows "([^"]*)"$`, w.statusShows)
+}
+
+func (w *chatWorld) processingWorking(phase string) error {
+	w.update(chat.ProcessingStateMsg{State: state.StateWorking, Phase: state.Phase(phase)})
+	return nil
+}
+
+func (w *chatWorld) statusShows(want string) error {
+	if !strings.Contains(w.model.View().Content, want) {
+		return fmt.Errorf("chat status does not show %q", want)
+	}
+	return nil
 }
 
 func (w *chatWorld) newSurfaceSized(width, height int) error {
