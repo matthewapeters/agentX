@@ -6,14 +6,19 @@
 // launched as separate client processes from other terminals and attach to the
 // server over the HTTP/SSE transport. See docs/implementation/ for contracts.
 //
-// This is a minimal bootstrap stub. The real server + 2-panel chat surface is
-// delivered in milestone M1/M2; see docs/build-plan/ and the runtime contracts
-// under docs/architecture/runtime_contracts/.
+// The serving loop currently runs a headless orchestrator (CHT-A1..A6); the
+// two-panel chat surface attaches at CHT-B5. See docs/build-plan/.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"agentx/internal/app"
+	"agentx/internal/cli"
 )
 
 // version is the build-time version of the agentx runtime. It is overridable
@@ -27,16 +32,21 @@ func main() {
 	}
 }
 
-// run is the testable entrypoint body. It currently reports version and exits
-// cleanly; surface/server bootstrap lands in M1.
+// run is the testable entrypoint body: parse args, then either report version or
+// launch the runtime until interrupted.
 func run(args []string) error {
-	for _, a := range args {
-		switch a {
-		case "--version", "-v":
-			fmt.Println("agentx", version)
-			return nil
-		}
+	cmd, err := cli.Parse(args)
+	if err != nil {
+		return err
 	}
-	fmt.Println("agentx", version, "- runtime bootstrap not yet implemented (see docs/build-plan/)")
-	return nil
+	if cmd.ShowVersion {
+		fmt.Println("agentx", version)
+		return nil
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	fmt.Println("agentx", version, "- starting runtime (Ctrl+C to stop)")
+	return app.Run(ctx, app.Options{})
 }

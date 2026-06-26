@@ -42,6 +42,12 @@ type Paths struct {
 	Project string
 }
 
+// SessionRoot returns the session storage root alongside the deployment config
+// (conventionally ~/.config/agentx/sessions).
+func (p Paths) SessionRoot() string {
+	return filepath.Join(filepath.Dir(p.Deployment), "sessions")
+}
+
 // DefaultPaths derives the conventional configuration locations, honoring
 // XDG_CONFIG_HOME for the deployment config.
 func DefaultPaths() (Paths, error) {

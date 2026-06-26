@@ -109,6 +109,9 @@ func (o *Orchestrator) Accepting() bool {
 	return o.accepting
 }
 
+// Settings returns the settings the orchestrator was built with.
+func (o *Orchestrator) Settings() Settings { return o.settings }
+
 // Bus returns the canonical event bus (for surfaces and the prompt cycle).
 func (o *Orchestrator) Bus() *state.Bus { return o.bus }
 
