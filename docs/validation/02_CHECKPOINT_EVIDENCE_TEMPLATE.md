@@ -37,11 +37,11 @@ Source-doc mapping:
 | --- | --- | --- | --- |
 |  |  |  |  |
 
-## 4) Preflight Result (Mandatory For M1-M4)
+## 4) Entrypoint Verification (Mandatory For M1-M4)
 
-Command:
+Confirm the active Go entrypoint is present before milestone kickoff:
 
-- `test -d cmd/agentx-core`
+- `test -d cmd/agentx`
 
 Execution record (required):
 
@@ -49,13 +49,7 @@ Execution record (required):
 - timestamp_utc: <YYYY-MM-DDTHH:MM:SSZ>
 - exit_code: <0|non-zero>
 
-Result:
-
-- Pass (path exists) -> execution mode: executable-validation
-- Fail (path absent) -> execution mode: contract-validation-only
-
-Normalized proof table (required for each preflight/gate command, including
-silent commands such as `test -d`):
+Normalized proof table (required for each gate command):
 
 | command | exit_code | timestamp_utc | operator | artifact_link |
 | --- | --- | --- | --- | --- |

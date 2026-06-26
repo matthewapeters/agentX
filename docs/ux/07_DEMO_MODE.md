@@ -1,5 +1,11 @@
 # AgentX — Demo Mode Testing Contract
 
+> **⚠️ Architecture migration (2026-06-26).** This demo contract targets the prior
+> single-window split-pane GUI (including the system-panel tour). AgentX is now a
+> **client-server** app with a two-panel chat surface and multiple independent system
+> surfaces; the demo harness is being migrated during M2. See
+> [`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md).
+
 _Last updated: 2026-06-23_
 
 Demo mode is an interactive validation surface for end-to-end behavior testing.
@@ -228,10 +234,6 @@ The following acceptance criteria define key test scenarios for validating appli
   - `e2e-greet-001`: startup greeting contract passes and input remains command-entry only.
   - `e2e-cycle-001`: user interaction lifecycle and turn contract passes.
   - `e2e-system-001`: system-surface context validation contract passes.
-- Required test harness commands:
-  - `tests/test_demo_system_panel_tour_headless.sh`
-  - `tests/test_demo_ux_use_cases_headless.sh`
-  - `tests/test_demo_ux_use_cases_layout_headless.sh`
 - Readiness gate:
   - "Ready for acceptance" is valid only when selected test cases pass and no failure artifact path is produced.
 
@@ -240,8 +242,6 @@ The following acceptance criteria define key test scenarios for validating appli
 ## Implementation Plan
 
 ### Phase D1 — Contract Scaffolding
-
-Status: COMPLETE in `cmd/agentx-core`.
 
 1. Add CLI flags in Go core entry:
    - `--demo`
@@ -257,8 +257,6 @@ Exit criteria:
 
 ### Phase D2 — Interactive Execution Loop
 
-Status: COMPLETE.
-
 1. Execute selected sequence starting at chosen test.
 2. For each test:
    - run E2E action(s)
@@ -273,8 +271,6 @@ Exit criteria:
 
 ### Phase D3 — Failure Diagnostics
 
-Status: COMPLETE.
-
 1. On `X`, capture complete application state bundle:
    - Surface snapshots and metadata for all active application surfaces.
 2. Persist artifacts under `logs/demo/<session-id>/<test-id>/`.
@@ -286,23 +282,15 @@ Exit criteria:
 
 ### Phase D4 — Test and Gate Integration
 
-Status: COMPLETE.
-
 1. Add unit tests for manifest parsing, start-selection logic, and test state machine.
 2. Add integration tests for diagnostics artifact creation.
 3. Add E2E tests for demo interaction semantics where feasible.
-4. Add a dedicated make target:
-   - `make demo-smoke` (non-interactive subset via `--demo-headless`)
+4. Add a dedicated non-interactive smoke gate using `--demo-headless`.
 
 Exit criteria:
 
 - demo-mode control logic covered by automated tests.
 - docs and matrix status updated from `📝` to `✅` as implementations land.
-
-## D4 Smoke Gate
-
-- `make demo-smoke` runs the headless artifact-capture smoke test path.
-- the script launches `agentx --demo-headless`, sends `X` at the first test, and verifies the bundle under `logs/demo/<session>/<test>/`.
 
 ---
 

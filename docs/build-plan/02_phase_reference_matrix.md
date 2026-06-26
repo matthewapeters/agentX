@@ -66,9 +66,6 @@ Builder use:
 
 Mandatory gate requirements:
 
-- Start-of-milestone preflight: `test -d cmd/agentx-core`.
-- If preflight fails, switch to contract-validation-only mode and prohibit
-  executable Go-core claims.
 - AC-to-test-case traceability table and regression control evidence required.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched functions.
 - Checkpoint evidence package must use
@@ -99,7 +96,6 @@ Builder use:
 
 Mandatory gate requirements:
 
-- Start-of-milestone preflight: `test -d cmd/agentx-core`.
 - AC-to-test-case traceability table and regression control evidence required.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched flows.
 - Checkpoint evidence package must use
@@ -130,7 +126,6 @@ Builder use:
 
 Mandatory gate requirements:
 
-- Start-of-milestone preflight: `test -d cmd/agentx-core`.
 - AC-to-test-case traceability table and regression control evidence required.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched functions.
 - Checkpoint evidence package must use
@@ -162,7 +157,6 @@ Builder use:
 
 Mandatory gate requirements:
 
-- Start-of-milestone preflight: `test -d cmd/agentx-core`.
 - AC-to-test-case traceability table and regression control evidence required.
 - Negative-path matrix is mandatory.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched functions.
@@ -195,7 +189,6 @@ Builder use:
 
 Mandatory gate requirements:
 
-- Start-of-milestone preflight: `test -d cmd/agentx-core`.
 - AC-to-test-case traceability table and regression control evidence required.
 - Negative-path matrix is mandatory.
 - Documentation-first GIVEN/WHEN/THEN gate required for touched functions.
@@ -215,11 +208,11 @@ Mandatory gate requirements:
 | Milestone | Gate commands (minimum set) | Mandatory evidence |
 | --- | --- | --- |
 | M0 | `rg -n "^Milestone owner:|^Gate owners:" docs/build-plan/01_comprehensive_build_plan.md` plus `rg -n "^\| AC ID \|" docs/build-plan/01_comprehensive_build_plan.md docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md` plus `rg -n "^\| Decision/AC ID \|" docs/validation/02_CHECKPOINT_EVIDENCE_TEMPLATE.md` | AC table, owner assignments, defer metadata fields (owner/due/tracking reference), conflict/defer list, runtime compatibility delta |
-| M1 | `test -d cmd/agentx-core` plus milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | preflight result, AC table, regression evidence, GIVEN/WHEN/THEN links |
-| M2 | `test -d cmd/agentx-core` plus milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, UX lifecycle reconciliation, GIVEN/WHEN/THEN links |
-| M3a | `test -d cmd/agentx-core` plus milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, prompt/model determinism evidence, GIVEN/WHEN/THEN links |
-| M3b | `test -d cmd/agentx-core` plus milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, negative-path matrix, policy deny/allow evidence, GIVEN/WHEN/THEN links |
-| M4 | `test -d cmd/agentx-core` plus milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, negative-path matrix, replay determinism evidence, GIVEN/WHEN/THEN links |
+| M1 | milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, GIVEN/WHEN/THEN links |
+| M2 | milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, UX lifecycle reconciliation, GIVEN/WHEN/THEN links |
+| M3a | milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, prompt/model determinism evidence, GIVEN/WHEN/THEN links |
+| M3b | milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, negative-path matrix, policy deny/allow evidence, GIVEN/WHEN/THEN links |
+| M4 | milestone gate commands from docs/implementation/09_makefile_and_quality_gate_contract.md | AC table, regression evidence, negative-path matrix, replay determinism evidence, GIVEN/WHEN/THEN links |
 
 M0 evidence normalization requirements (applies to each listed command, including silent commands such as `test -d` when used):
 

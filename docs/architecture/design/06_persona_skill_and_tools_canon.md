@@ -137,7 +137,7 @@ All runtime configuration and metadata for expertise and capabilities lives unde
 **Authority:**
 
 - This is the **reference guide** for adding new skills and extending capabilities.
-- It is not the source of truth for tool *implementation*; implementations live in `src/agentix/tools/` (Python), `cmd/agentx-core/tools/` (Go), or external services.
+- It is not the source of truth for tool *implementation*; implementations live in `internal/tools/` (Go) or external services.
 - This directory helps skill authors understand what tools exist and how to use them.
 
 **Loading Contract:**

@@ -1,12 +1,21 @@
 # AgentX UX — Working Index
 
+> **⚠️ Architecture migration (2026-06-26).** These UX specs describe the prior
+> single-window split-pane GUI (OutputSurface left / SystemSurface right /
+> InputSurface bottom, PD-01…PD-17). AgentX is now a **client-server** app: the chat
+> surface has **two panels (output + input)** and the former "system" panel is now
+> **multiple independent, separately launchable surfaces** (files, config, context,
+> context-history, context-visualizer), arranged by the user via a multiplexer. These
+> docs are being migrated during M2 — treat the surface geometry below as legacy. See
+> [`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md).
+
 _Last updated: 2026-05-23 (v0.83.1)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
 **Last updated**: 2026-05-23 (v0.83.1 — Pane-title alignment pass reviewed and UX gap chart refreshed)
-**Current version**: see `pyproject.toml`
+**Current version**: see `CHANGELOG.md`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
 
@@ -22,7 +31,7 @@ _Last updated: 2026-05-23 (v0.83.1)_
 | See a surface's widget details, state fields, diagrams | [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) |
 | Understand the window layout and zone map | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) |
 | Follow a user interaction end-to-end | [02_USER_FLOWS.md](02_USER_FLOWS.md) |
-| Vibe coding (neovim + tmux integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
+| Vibe coding (editor + terminal integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
 | TUI mirror / hybrid pane contract (spec + plan) | [06_TUI_MIRROR.md](06_TUI_MIRROR.md) |
 | Demo mode contract and harness plan | [07_DEMO_MODE.md](07_DEMO_MODE.md) |
 | Startup modes and launch switches (authoritative) | [../architecture/startup_modes.md](../architecture/startup_modes.md) |
@@ -44,22 +53,22 @@ _Last updated: 2026-05-23 (v0.83.1)_
 
 | Surface | Fully Tested ✅ | Partial ⚠️ | Spec Only 📝 | Gap ❌ |
 |-------|:--------------:|:----------:|:------------:|:------:|
-| PD-01 ChatPanel | 9 | 1 | 0 | 0 |
-| PD-02 InputPanel | 9 | 3 | 0 | 0 |
-| PD-03 SidePanel — Context | 7 | 0 | 0 | 0 |
-| PD-03 SidePanel — Working Memory | 4 | 1 | 0 | 0 |
+| PD-01 OutputSurface | 9 | 1 | 0 | 0 |
+| PD-02 InputSurface | 9 | 3 | 0 | 0 |
+| PD-03 SystemSurface — Context | 7 | 0 | 0 | 0 |
+| PD-03 SystemSurface — Working Memory | 4 | 1 | 0 | 0 |
 | PD-04 ModelSelector | 4 | 0 | 0 | 0 |
-| PD-05 PlanTreeWidget | 6 | 0 | 0 | 0 |
+| PD-05 PlanView | 6 | 0 | 0 | 0 |
 | PD-06 ResynthesisDialog | 5 | 0 | 0 | 0 |
-| PD-07 SettingsTab | 2 | 1 | 0 | 0 |
+| PD-07 SettingsSurface | 2 | 1 | 0 | 0 |
 | PD-08 ContextRenderer | 4 | 0 | 0 | 0 |
 | PD-09 CollapsibleSection | 4 | 0 | 0 | 0 |
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
-| PD-11 FileExplorer | 10 | 0 | 0 | 0 |
+| PD-11 FileBrowser | 10 | 0 | 0 | 0 |
 | PD-12 StatusTab | 11 | 0 | 0 | 0 |
 | PD-13 ToolPanel | 0 | 0 | 2 | 0 |
-| PD-14 VimBridge GUI | 3 | 0 | 6 | 0 |
-| PD-15 TerminalPane GUI | 8 | 0 | 0 | 0 |
+| PD-14 Editor Integration | 3 | 0 | 6 | 0 |
+| PD-15 Terminal Integration | 8 | 0 | 0 | 0 |
 | PD-16 TuiMirror | 8 | 0 | 0 | 0 |
 | PD-17 DemoMode | 10 | 0 | 3 | 0 |
 
@@ -77,7 +86,7 @@ _Last updated: 2026-05-23 (v0.83.1)_
 - [/] **PD-03-AF-011..014** — Working Memory callbacks (toggle, delete, promote, add)
 - [/] **PD-07-AF-002..003** — Settings collapse state + restart-required icon
 - [/] **PD-02-AF-002** — Shift+Enter inserts newline
-- [/] **PD-12: StatusTab** — implemented: `status_tab.py`, donut + break button relocated, `StreamingController` phase events wired (11 affordances ✅)
+- [/] **PD-12: StatusTab** — implemented: donut + break button relocated, `StreamingController` phase events wired (11 affordances ✅)
 - [/] **PD-15-AF-003..004** — active terminal indicator and kill-pane action wiring in GUI/tool-result rows
 - [/] **PD-04-AF-004** — ModelSelector refresh button
 - [/] **PD-05-AF-004** — Re-synth button in synthesis block

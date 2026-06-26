@@ -73,3 +73,19 @@ Add accepted decisions below with date and rationale.
 - 2026-06-23: Added canonical Go module folder layout standard to reduce repository-structure ambiguity.
 - 2026-06-23: Added make all baseline contract and mandatory failing-test ownership policy.
 - 2026-06-23: Locked dependency hygiene, semver/changelog coupling, gate severity handling, and ownership model.
+- 2026-06-26: Locked surface model — the chat (human-agent) surface has exactly two
+  panels (output + input). The former single "system" panel is retired in favor of
+  multiple independent, separately launchable surfaces (files, config, context,
+  context-history, context-visualizer). Surface registry is open-ended for future
+  surface kinds. "applet" terminology (decision #9) is retired in favor of "surface".
+- 2026-06-26: Locked launch model — `agentx` boots the core server and the chat
+  surface together; a server-only launch mode is deferred (out of scope, relevant to a
+  future web client).
+- 2026-06-26: Recorded A-now / B-later architecture split (see
+  docs/architecture/00_ARCHITECTURE_RECONCILIATION.md). Near-term build is the Family A
+  client-server runtime; the multi-expert DAG orchestrator (Family B,
+  docs/architecture/design/ + docs/architecture/schemas/) is the server's future
+  orchestration brain behind the surface/transport boundary.
+- 2026-06-26: Froze Family A Phase 0 contracts under
+  docs/architecture/runtime_contracts/ (index + event-envelope, processing-state, and
+  surface-registration JSON schemas).

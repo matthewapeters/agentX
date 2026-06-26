@@ -1,220 +1,87 @@
 # AgentX repository Makefile
+#
+# Canonical contract (docs/implementation/09_makefile_and_quality_gate_contract.md):
+#   make all = make clean && make build
+#   - if clean fails, build must not run
+#   - any failure exits non-zero
+#
+# Single runtime command is anchored at cmd/agentx
+# (docs/implementation/08_go_module_layout.md).
 
-GO_CORE_DIR := cmd/agentx-core
-GO_CORE_BIN := bin/agentx
-LOGO_SOURCE_FILE := logo/agentx.logo
-LOGO_GENERATED_GO := $(GO_CORE_DIR)/startup_logo_generated.go
-UV ?= uv
-PYTHON_TEST_ARGS ?= -q
-UV_PROJECT_ENV ?= $(CURDIR)/.venv
+GO       ?= go
+CMD_DIR  := ./cmd/agentx
+BIN_DIR  := bin
+BIN      := $(BIN_DIR)/agentx
 
-.PHONY: help all \
-	generate-startup-logo \
-	build build-core build-applets clean python-build python-test test-all \
-	test go-test go-test-unit go-test-integration go-test-functional go-test-e2e go-test-pane-layout \
-	go-test-multiplexer-contract go-test-multiplexer-boundary-leak \
-	test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-ux-flow-what-is-2-plus-2-headless test-tmux-attached-runtime-headless test-tmux-attached-runtime-layout-headless test-startup-ollama-bootstrap-headless test-applet-resize-api-headless demo-smoke test-demo-ux-use-cases-headless test-demo-ux-use-cases-layout-headless test-demo-system-panel-tour-headless test-layout-file-fallback-headless layout-path-tests verify-tmux-layout hybrid-merge-gate hybrid-parity-gate \
-	hybrid-parity-gate-inner \
-	run run-attached run-with-applets
+.PHONY: help all build clean test go-test \
+	go-test-unit go-test-integration go-test-functional go-test-e2e \
+	vendor-check run
 
 help:
 	@echo "AgentX Make Targets"
 	@echo ""
 	@echo "Baseline:"
-	@echo "  all                 Canonical baseline alias for clean then build"
+	@echo "  all                 Canonical gate: clean then build (required before merge)"
 	@echo ""
 	@echo "Build:"
-	@echo "  build               Build Go core and prepare applets"
-	@echo "  build-core          Build Go core binary only"
-	@echo "  build-applets       Copy Python applets into bin/applets"
-	@echo "  python-build        Build Python package with uv"
+	@echo "  build               Compile the agentx runtime into $(BIN)"
 	@echo "  clean               Remove build artifacts"
 	@echo ""
 	@echo "Test:"
-	@echo "  test                Alias for go-test"
-	@echo "  python-test         Run Python tests via uv (override with PYTHON_TEST_ARGS=...)"
-	@echo "  test-all            Run go-test + python-test"
-	@echo "  go-test             Run all Go tests in cmd/agentx-core"
-	@echo "  go-test-unit        Run GoDog @unit suite"
-	@echo "  go-test-integration Run GoDog @integration suite"
-	@echo "  go-test-functional  Run GoDog @functional suite"
-	@echo "  go-test-e2e         Run GoDog @e2e suite"
-	@echo "  go-test-pane-layout Run pane-layout unit tests"
-	@echo "  go-test-multiplexer-contract Run multiplexer contract scaffold tests"
-	@echo "  go-test-multiplexer-boundary-leak Run structural gate for direct tmux exec boundaries"
-	@echo "  test-tmux-layout-headless Run headless tmux UX layout validation script"
-	@echo "  test-demo-split-layout-headless Run headless DemoMode split-layout validation script"
-	@echo "  test-tmux-pane-affordances-headless Run headless pane-affordance UX contract script"
-	@echo "  test-tmux-ux-flow-what-is-2-plus-2-headless Run headless e2e UX flow script for prompt 'what is 2+2?'"
-	@echo "  test-tmux-attached-runtime-headless Run attached-runtime focus and shutdown E2E script"
-	@echo "  test-tmux-attached-runtime-layout-headless Run attached-runtime focus/shutdown via --layout-file path"
-	@echo "  test-startup-ollama-bootstrap-headless Run startup E2E that verifies ollama backend bootstrap response"
-	@echo "  test-applet-resize-api-headless Run resize applet API contract check against seeded pane dimensions"
-	@echo "  demo-smoke          Run headless DemoMode smoke test"
-	@echo "  test-demo-ux-use-cases-headless Run five basic DemoMode UX use-cases (greet/cycle/input/logs/system)"
-	@echo "  test-demo-ux-use-cases-layout-headless Run UX use-cases through --layout-file overlay path"
-	@echo "  test-demo-system-panel-tour-headless Run DemoMode system-panel tab-tour parity check"
-	@echo "  test-layout-file-fallback-headless Run malformed --layout-file fallback resiliency check"
-	@echo "  layout-path-tests   Run all layout-file path tests (fallback + attached + demo)"
-	@echo "  verify-tmux-layout  Run pane-layout unit tests + headless tmux layout validation"
-	@echo "  hybrid-merge-gate   Run required B4 checks for hybrid default-branch readiness"
-	@echo "  hybrid-parity-gate  Run required TUI parity blocker gate bundle"
+	@echo "  test                Run all Go + Godog tests"
+	@echo "  go-test             Alias for test"
+	@echo "  go-test-unit        Run Godog @unit suite"
+	@echo "  go-test-integration Run Godog @integration suite"
+	@echo "  go-test-functional  Run Godog @functional suite"
+	@echo "  go-test-e2e         Run Godog @e2e suite"
+	@echo ""
+	@echo "Hygiene:"
+	@echo "  vendor-check        Verify go.mod/vendor are consistent"
 	@echo ""
 	@echo "Run:"
-	@echo "  run                 Build and run Go core"
-	@echo "  run-attached        Build, run, and attach to tmux session"
-	@echo "  run-with-applets    Build and run Go core with applets prepared"
-
+	@echo "  run                 Build and run the agentx runtime"
 
 all:
 	@$(MAKE) clean && $(MAKE) build
 	@echo "Baseline verification complete"
 
-build: build-core build-applets
-	@echo "Build complete"
-
-generate-startup-logo:
-	@if [ ! -f $(LOGO_SOURCE_FILE) ]; then \
-		echo "Missing startup logo source: $(LOGO_SOURCE_FILE)" >&2; \
-		exit 1; \
-	fi
-	@echo "Generating startup logo artifact from $(LOGO_SOURCE_FILE)..."
-	@tmp_file="$$(mktemp)"; \
-	logo_b64="$$(base64 < $(LOGO_SOURCE_FILE) | tr -d '\n')"; \
-	printf '%s\n' '// Code generated by make generate-startup-logo; DO NOT EDIT.' 'package main' '' "const startupLogoBase64 = \"$$logo_b64\"" > "$$tmp_file"; \
-	if [ -f $(LOGO_GENERATED_GO) ] && cmp -s "$$tmp_file" "$(LOGO_GENERATED_GO)"; then \
-		rm -f "$$tmp_file"; \
-		echo "Startup logo artifact unchanged: $(LOGO_GENERATED_GO)"; \
-	else \
-		mv "$$tmp_file" "$(LOGO_GENERATED_GO)"; \
-		echo "Startup logo artifact generated: $(LOGO_GENERATED_GO)"; \
-	fi
-
-build-core: generate-startup-logo
-	@echo "Building Go core..."
-	@mkdir -p bin
-	cd $(GO_CORE_DIR) && go mod tidy
-	cd $(GO_CORE_DIR) && go mod download
-	cd $(GO_CORE_DIR) && go test ./...
-	cd $(GO_CORE_DIR) && go build -o ../../$(GO_CORE_BIN)
-	@chmod +x $(GO_CORE_BIN)
-	@echo "Go core built at $(GO_CORE_BIN)"
-
-build-applets:
-	@echo "Preparing Python applets..."
-	@mkdir -p bin/applets
-	@cp -v applets/*.py bin/applets/ 2>/dev/null || true
-	@echo "Applets prepared"
+build:
+	@echo "Validating (vet + tests)..."
+	$(GO) vet ./...
+	$(GO) test ./...
+	@echo "Building agentx..."
+	@mkdir -p $(BIN_DIR)
+	$(GO) build -o $(BIN) $(CMD_DIR)
+	@echo "agentx built at $(BIN)"
 
 clean:
 	@echo "Cleaning artifacts..."
-	@rm -rf bin/
-	@cd $(GO_CORE_DIR) && go clean
+	@rm -rf $(BIN_DIR)
+	@$(GO) clean
 	@echo "Clean complete"
-
-python-build:
-	VIRTUAL_ENV=$(UV_PROJECT_ENV) UV_PROJECT_ENVIRONMENT=$(UV_PROJECT_ENV) $(UV) build
-
-python-test:
-	VIRTUAL_ENV=$(UV_PROJECT_ENV) UV_PROJECT_ENVIRONMENT=$(UV_PROJECT_ENV) $(UV) run --no-sync pytest $(PYTHON_TEST_ARGS)
-
-test-all: go-test python-test
 
 test: go-test
 
 go-test:
-	cd $(GO_CORE_DIR) && go test -v ./...
+	$(GO) test ./...
 
+# Godog suites are tag-scoped (docs/implementation/07_test_and_documentation_contract.md).
+# Suite runners live under tests/suites and select scenarios by tag.
 go-test-unit:
-	cd $(GO_CORE_DIR) && go test -v -run TestGoDogUnit ./...
+	$(GO) test -run 'TestUnit' ./tests/...
 
 go-test-integration:
-	cd $(GO_CORE_DIR) && go test -v -run TestGoDogIntegration ./...
+	$(GO) test -run 'TestIntegration' ./tests/...
 
 go-test-functional:
-	cd $(GO_CORE_DIR) && go test -v -run TestGoDogFunctional ./...
+	$(GO) test -run 'TestFunctional' ./tests/...
 
 go-test-e2e:
-	cd $(GO_CORE_DIR) && go test -v -run TestGoDogE2E ./...
+	$(GO) test -run 'TestE2E' ./tests/...
 
-go-test-pane-layout:
-	cd $(GO_CORE_DIR) && go test -v -run 'TestBuildNewSessionCommand|TestSplitCommandsUsePaneIDCapture|TestPaneTargets_MapsAllPanesCorrectly' ./...
+vendor-check:
+	$(GO) mod verify
+	$(GO) build -mod=vendor ./...
 
-go-test-multiplexer-contract:
-	cd $(GO_CORE_DIR) && go test -v -run 'TestMultiplexerContract_' ./...
-
-go-test-multiplexer-boundary-leak:
-	cd $(GO_CORE_DIR) && go test -v -run 'TestMultiplexerBoundaryLeak_' ./...
-
-test-tmux-layout-headless:
-	./tests/test_tmux_layout_headless.sh
-
-test-demo-split-layout-headless:
-	./tests/test_demo_split_layout_headless.sh
-
-test-tmux-pane-affordances-headless: build-core
-	./tests/test_tmux_pane_affordances_headless.sh
-
-test-tmux-ux-flow-what-is-2-plus-2-headless: build-core
-	./tests/test_tmux_ux_flow_what_is_2_plus_2_headless.sh
-
-test-tmux-attached-runtime-headless: build-core
-	./tests/test_tmux_attached_runtime_headless.sh
-
-test-tmux-attached-runtime-layout-headless: build-core
-	./tests/test_tmux_attached_runtime_layout_headless.sh
-
-test-startup-ollama-bootstrap-headless: build-core
-	./tests/test_startup_ollama_bootstrap_headless.sh
-
-test-applet-resize-api-headless: build-core
-	./tests/test_applet_resize_api_headless.sh
-
-demo-smoke: build-core
-	./tests/test_demo_smoke_headless.sh
-
-test-demo-ux-use-cases-headless: build-core
-	./tests/test_demo_ux_use_cases_headless.sh
-
-test-demo-ux-use-cases-layout-headless: build-core
-	./tests/test_demo_ux_use_cases_layout_headless.sh
-
-test-demo-system-panel-tour-headless: build-core
-	./tests/test_demo_system_panel_tour_headless.sh
-
-test-layout-file-fallback-headless: build-core
-	./tests/test_layout_file_fallback_headless.sh
-
-layout-path-tests: test-layout-file-fallback-headless test-tmux-attached-runtime-layout-headless test-demo-ux-use-cases-layout-headless
-	@echo "layout path test bundle complete"
-
-verify-tmux-layout: go-test-pane-layout test-tmux-layout-headless test-demo-split-layout-headless test-tmux-pane-affordances-headless test-tmux-ux-flow-what-is-2-plus-2-headless
-	@echo "tmux layout verification complete"
-
-hybrid-merge-gate: build-core go-test go-test-multiplexer-contract go-test-multiplexer-boundary-leak verify-tmux-layout demo-smoke test-tmux-attached-runtime-headless test-startup-ollama-bootstrap-headless
-	@echo "hybrid merge-readiness gate complete"
-
-hybrid-parity-gate:
-	@lock_dir="/tmp/agentx_hybrid_parity_gate.lock"; \
-	if mkdir "$$lock_dir" 2>/dev/null; then \
-		trap 'rmdir "$$lock_dir"' EXIT INT TERM; \
-		$(MAKE) --no-print-directory hybrid-parity-gate-inner; \
-	else \
-		echo "hybrid-parity-gate already running (lock: $$lock_dir)"; \
-		exit 1; \
-	fi
-
-hybrid-parity-gate-inner: go-test-functional go-test-integration go-test-e2e demo-smoke test-demo-ux-use-cases-headless test-demo-system-panel-tour-headless
-	@echo "hybrid parity blocker gate complete"
-
-run: build-core
-	@echo "Running Go core..."
-	./$(GO_CORE_BIN) --project-dir . --user $$USER
-
-run-attached: build-core
-	@echo "Running Go core and attaching to tmux..."
-	./$(GO_CORE_BIN) --project-dir . --user $$USER --attach
-
-run-with-applets: build
-	@echo "Running Go core with applets prepared..."
-	./$(GO_CORE_BIN) --project-dir . --user $$USER
+run: build
+	./$(BIN)

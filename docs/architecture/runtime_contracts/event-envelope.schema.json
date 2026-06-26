@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/runtime/event-envelope.schema.json",
+  "title": "EventEnvelope",
+  "description": "Canonical persisted session-event envelope (Family A v1). Source: docs/implementation/03_configuration_and_storage.md (JSON Event Envelope).",
+  "type": "object",
+  "required": ["epoch", "session_id", "event_type", "content_type", "payload"],
+  "properties": {
+    "epoch": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Millisecond epoch used for stable chronological ordering and filename prefixing."
+    },
+    "session_id": { "type": "string", "minLength": 1 },
+    "event_type": { "type": "string", "minLength": 1 },
+    "content_type": {
+      "type": "string",
+      "enum": [
+        "user_prompt",
+        "system_prompt",
+        "thinking",
+        "agent_response",
+        "attachments",
+        "tool_call",
+        "tool_result",
+        "processing_state"
+      ]
+    },
+    "payload": {
+      "description": "Event body; shape varies by content_type."
+    },
+    "correlation_id": { "type": "string" },
+    "parent_event_id": { "type": "string" },
+    "surface_id": { "type": "string" },
+    "tool_name": { "type": "string" },
+    "model_name": { "type": "string" }
+  },
+  "additionalProperties": false
+}

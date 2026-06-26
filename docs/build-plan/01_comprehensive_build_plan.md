@@ -22,24 +22,6 @@ Scope: Repository-wide implementation planning (no code changes)
 
 ## 3. Cross-Milestone Mandatory Controls
 
-### 3.1 Go-Core Preflight Decision Gate (M1-M4 Start)
-
-Mandatory start gate for M1-M4:
-
-- Execute `test -d cmd/agentx-core` before milestone kickoff.
-- If path exists: execution mode is `executable-validation` and executable
-  claims are allowed after milestone gates pass.
-- If path is absent: execution mode is `contract-validation-only`.
-
-Contract-validation-only rules:
-
-- No claims that Go-core binaries, Go tests, or runtime attach behavior were
-  executed.
-- Alternative evidence criteria must be used:
-  - contract traceability proof for touched behavior
-  - static path and reference validation
-  - documented risk and defer decision for runtime-verification items
-
 ### 3.2 Mandatory AC-To-Test-Case Traceability
 
 Every milestone checkpoint must include an AC coverage table with this format:
@@ -84,43 +66,7 @@ Every milestone checkpoint must publish an evidence package containing:
 - Ownership assignment timing: no later than milestone kickoff.
 - Missing owner assignment is fail-close.
 
-## 4. Boundary Contract: Python GUI/Agentix To Go Core
-
-This subsection defines explicit cross-runtime ownership and compatibility
-obligations.
-
-Startup authority:
-
-- Authority owner: Delivery Lead
-- Python GUI/Agentix owns user-initiated startup intent and configuration
-  request assembly.
-- Go core owns runtime session bootstrap execution semantics.
-
-Surface registration transport:
-
-- Authority owner: Architecture Reviewer
-- Registration request/response transport contract and validation semantics are
-  owned by architecture contracts and implemented by runtime surfaces.
-
-Attach-token lifecycle:
-
-- Authority owner: Security Reviewer
-- Token issuance, validation, expiry, and revoke semantics are owned by policy
-  and security contracts.
-
-Event schema compatibility:
-
-- Authority owner: Architecture Reviewer
-- Channel/event schema version compatibility, change control, and drift
-  detection are jointly owned by architecture and implementation contract
-  maintainers.
-
-Compatibility rule:
-
-- Any cross-runtime schema or transport change requires explicit compatibility
-  impact note in the checkpoint evidence package runtime compatibility delta.
-
-## 5. Milestone Plan
+## 4. Milestone Plan
 
 ### M0: Contract Alignment Baseline
 
@@ -143,8 +89,7 @@ Activities:
   - docs/implementation/07_test_and_documentation_contract.md
   - docs/implementation/09_makefile_and_quality_gate_contract.md
 - Reconfirm unresolved decisions from docs/implementation/90_open_questions.md.
-- Confirm current branch constraints from AGENTS.md (including path reality
-  check for cmd/agentx-core).
+- Confirm current branch constraints from CLAUDE.md.
 
 Milestone deliverables:
 
@@ -520,7 +465,7 @@ Quality gate:
 - Documentation and traceability gates pass (including GIVEN/WHEN/THEN contract
   checks and linked scenarios).
 
-## 6. Sequencing And Dependency Graph
+## 5. Sequencing And Dependency Graph
 
 Sequential dependencies:
 
@@ -544,7 +489,7 @@ Critical path:
 - Contract freeze -> runtime skeleton -> UX parity baseline -> LLM/prompt
   behavior -> tool runtime/policy -> persistence/hardening.
 
-## 7. Suggested Execution Cadence And Checkpoints
+## 6. Suggested Execution Cadence And Checkpoints
 
 Suggested cadence:
 
@@ -578,7 +523,7 @@ Review checkpoints:
 - UX checkpoint: affordance parity and lifecycle matrix reconciliation.
 - QA checkpoint: Gherkin coverage, make/CI gate outcomes, regression status.
 
-## 8. Risks And Mitigations
+## 7. Risks And Mitigations
 
 Risk: Contract drift between implementation, UX, and architecture docs.
 
@@ -603,7 +548,7 @@ Risk: Snapshot mismatch between expected Go-core paths and current workspace.
 - Mitigation: run branch preflight checks from AGENTS.md before Go-core-specific
   execution and document exceptions in checkpoint notes.
 
-## 9. Artifact Inputs And Outputs By Milestone
+## 8. Artifact Inputs And Outputs By Milestone
 
 M0:
 
@@ -635,7 +580,7 @@ M4:
 - Produced: replay/hardening evidence, negative-path matrix, release gate report.
 - Consumed: M3b policy/runtime baseline, persistence/replay contracts.
 
-## 10. Additional Suggestions
+## 9. Additional Suggestions
 
 - Add a lightweight `docs/build-plan/CHANGELOG.md` only if this folder begins to
   change independently across multiple delivery cycles.
@@ -651,7 +596,7 @@ M4:
 - Consider adding a machine-readable milestone manifest (YAML/JSON) after the
   first full execution cycle if automation/reporting is needed.
 
-## 11. Completion Definition
+## 10. Completion Definition
 
 This build plan is considered complete when:
 

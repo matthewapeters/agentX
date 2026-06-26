@@ -57,14 +57,14 @@ Adopt Charmbracelet packages for rich TUI implementation.
 
 Recommended dependencies:
 
-- github.com/charmbracelet/bubbletea
+- charm.land/bubbletea/v2
 - github.com/charmbracelet/lipgloss
 - github.com/charmbracelet/bubbles
 - github.com/charmbracelet/glamour (optional markdown rendering)
 
 Integration pattern:
 
-- Bubble Tea program is one first-class surface endpoint in the orchestrator
+- Bubbletea program is one first-class surface endpoint in the orchestrator
 - surface updates consume canonical processing state and event channels
 - no business logic lives exclusively in UI components
 

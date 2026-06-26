@@ -1,5 +1,11 @@
 # AgentX — User Flows
 
+> **⚠️ Architecture migration (2026-06-26).** These flows assume the prior
+> single-window split-pane GUI. AgentX is now a **client-server** app with a
+> two-panel chat surface and multiple independent system surfaces; flows that cross
+> the old tabbed "system" panel are being migrated during M2. See
+> [`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md).
+
 _Last updated: 2026-05-22 (v0.74.4.post2)_
 
 Each section contains a Mermaid sequence or flowchart diagram documenting how
@@ -14,14 +20,14 @@ user actions map to system behaviour.
 ```mermaid
 sequenceDiagram
     participant User
-    participant InputPanel
-    participant Session as AgentXSession
-    participant Bridge as AgentixBridgeAdapter
+    participant InputSurface
+    participant Session as Orchestrator
+    participant Bridge as LLMBridge
     participant LLM as Ollama
-    participant Chat as ChatPanel
+    participant Chat as OutputSurface
 
-    User->>InputPanel: types message, presses Enter
-    InputPanel->>Session: on_submit()
+    User->>InputSurface: types message, presses Enter
+    InputSurface->>Session: on_submit()
     Session->>Chat: display_user_message(content, attachments, timestamp)
     Session->>Bridge: process_prompt_generator(prompt, context)
     Bridge->>LLM: POST /v1/chat/completions (classify)
@@ -52,12 +58,12 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User
-    participant Session as AgentXSession
-    participant Bridge as AgentixBridgeAdapter
+    participant Session as Orchestrator
+    participant Bridge as LLMBridge
     participant ToolLoop as ToolLoopRunner
     participant ToolDisp as ToolDispatcher
     participant LLM as Ollama
-    participant Chat as ChatPanel
+    participant Chat as OutputSurface
 
     User->>Session: submit prompt
     Session->>Bridge: process_prompt_generator()
@@ -92,11 +98,11 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User
-    participant Session as AgentXSession
-    participant Bridge as AgentixBridge
+    participant Session as Orchestrator
+    participant Bridge as LLMBridge
     participant LLM as Ollama
-    participant Chat as ChatPanel
-    participant Tree as PlanTreeWidget
+    participant Chat as OutputSurface
+    participant Tree as PlanView
 
     User->>Session: submit prompt
     Session->>Bridge: process_prompt_generator()
@@ -139,11 +145,11 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User
-    participant Tree as PlanTreeWidget
+    participant Tree as PlanView
     participant Dialog as ResynthesisDialog
-    participant Session as AgentXSession
-    participant Bridge as AgentixBridge
-    participant Chat as ChatPanel
+    participant Session as Orchestrator
+    participant Bridge as LLMBridge
+    participant Chat as OutputSurface
 
     User->>Tree: clicks [Re-synth] on a step node
     Tree->>Dialog: open ResynthesisDialog(task_id)
@@ -164,22 +170,22 @@ sequenceDiagram
 
 ## UF-05: File Attachment
 
-**Trigger**: User clicks a file in the `FileExplorer` or drags one to the input area.
+**Trigger**: User clicks a file in the `FileBrowser` or drags one to the input area.
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Explorer as FileExplorer
-    participant Session as AgentXSession
-    participant InputPanel
+    participant Explorer as FileBrowser
+    participant Session as Orchestrator
+    participant InputSurface
     participant Context
 
     User->>Explorer: clicks a file in Files tab
     Explorer->>Session: on_file_open(path)
     Session->>Session: add AttachmentInfo to pending_attachments
-    Session->>InputPanel: update_attachment_bar(current, history)
-    InputPanel->>InputPanel: render chip: 📎 filename.py [×]
-    User->>InputPanel: submits message
+    Session->>InputSurface: update_attachment_bar(current, history)
+    InputSurface->>InputSurface: render chip: 📎 filename.py [×]
+    User->>InputSurface: submits message
     Session->>Context: add_message(role=USER, attachments=[…])
     Context->>Context: persist to disk
     Note right of Context: file content injected\ninto LLM context as\nsystem attachment block
@@ -201,7 +207,7 @@ sequenceDiagram
 sequenceDiagram
     participant User
     participant Selector as ModelSelector
-    participant Session as AgentXSession
+    participant Session as Orchestrator
     participant State as SessionState
     participant WM as WorkingMemory
 
@@ -222,8 +228,8 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User
-    participant Settings as SettingsTab
-    participant Session as AgentXSession
+    participant Settings as SettingsSurface
+    participant Session as Orchestrator
     participant Config as AgentXConfig
 
     User->>Settings: changes a setting (e.g. theme_mode → light)
@@ -246,13 +252,13 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User
-    participant SidePanel
-    participant Session as AgentXSession
+    participant SystemSurface
+    participant Session as Orchestrator
     participant History
-    participant Chat as ChatPanel
+    participant Chat as OutputSurface
 
-    User->>SidePanel: clicks prior session entry in Session tab
-    SidePanel->>Session: on_session_select(session_id)
+    User->>SystemSurface: clicks prior session entry in Session tab
+    SystemSurface->>Session: on_session_select(session_id)
     Session->>History: load_context(session_id)
     History-->>Session: Context object
     Session->>Chat: render_history_widget(context)
@@ -293,13 +299,13 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant User
-    participant InputPanel
-    participant Session as AgentXSession
+    participant InputSurface
+    participant Session as Orchestrator
     participant Controller as StreamingController
-    participant Chat as ChatPanel
+    participant Chat as OutputSurface
 
-    User->>InputPanel: clicks Stop button
-    InputPanel->>Session: on_interrupt()
+    User->>InputSurface: clicks Stop button
+    InputSurface->>Session: on_interrupt()
     Session->>Controller: interrupt()
     Controller->>Controller: set interrupt flag = True
     Controller->>Controller: clear is_streaming event
@@ -312,41 +318,41 @@ sequenceDiagram
 
 ## UF-11: File Explorer Navigation
 
-**Trigger**: User opens the `Files` tab in the SidePanel and browses the local filesystem.
+**Trigger**: User opens the `Files` tab in the SystemSurface and browses the local filesystem.
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant SidePanel
-    participant FileExplorer
-    participant Session as AgentXSession
-    participant InputPanel
+    participant SystemSurface
+    participant FileBrowser
+    participant Session as Orchestrator
+    participant InputSurface
 
-    User->>SidePanel: selects Files tab
-    SidePanel->>FileExplorer: to_gui() renders tree at current_path
-    User->>FileExplorer: double-clicks a directory
-    FileExplorer->>FileExplorer: change_directory(path)
-    FileExplorer->>FileExplorer: update history stack
-    FileExplorer->>FileExplorer: refresh tree listing
-    FileExplorer->>FileExplorer: update path label
+    User->>SystemSurface: selects Files tab
+    SystemSurface->>FileBrowser: render file tree at current path
+    User->>FileBrowser: double-clicks a directory
+    FileBrowser->>FileBrowser: change_directory(path)
+    FileBrowser->>FileBrowser: update history stack
+    FileBrowser->>FileBrowser: refresh tree listing
+    FileBrowser->>FileBrowser: update path label
 
     alt User attaches a file
-        User->>FileExplorer: right-clicks file, selects Attach
-        FileExplorer->>Session: on_attach(path)
-        Session->>InputPanel: add attachment chip
+        User->>FileBrowser: right-clicks file, selects Attach
+        FileBrowser->>Session: on_attach(path)
+        Session->>InputSurface: add attachment chip
     else User edits a file
-        User->>FileExplorer: right-clicks file, selects Edit
-        FileExplorer->>Session: on_edit(path)
+        User->>FileBrowser: right-clicks file, selects Edit
+        FileBrowser->>Session: on_edit(path)
         Session->>Session: load file into chat context
     else User pins a folder to Working Memory
-        User->>FileExplorer: right-clicks directory
-        User->>FileExplorer: selects Add full path to memory
-        FileExplorer->>Session: on_add_folder_to_memory(key, path)
+        User->>FileBrowser: right-clicks directory
+        User->>FileBrowser: selects Add full path to memory
+        FileBrowser->>Session: on_add_folder_to_memory(key, path)
         Session->>Session: store fact in working_memory
     else User navigates history
-        User->>FileExplorer: clicks Back or Forward
-        FileExplorer->>FileExplorer: navigate_back() or navigate_forward()
-        FileExplorer->>FileExplorer: refresh tree listing
+        User->>FileBrowser: clicks Back or Forward
+        FileBrowser->>FileBrowser: navigate_back() or navigate_forward()
+        FileBrowser->>FileBrowser: refresh tree listing
     end
 ```
 
@@ -359,27 +365,21 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User
-    participant Explorer as FileExplorer
-    participant Popup as WaylandFallbackPopup
-    participant Main as MainWindow
+    participant Explorer as FileBrowser
+    participant Popup as ContextPopup
+    participant Surface as SurfaceManager
 
     User->>Explorer: right-click row
-    Explorer->>Explorer: compute safe root coords (winfo_root + event offsets)
-    alt Wayland fallback active
-        Explorer->>Popup: create themed top-level surface
-        Popup->>Popup: apply current panel palette before first map
-        Popup->>Main: map popup at target coordinates
-    else Native menu path
-        Explorer->>Main: post native Tk context menu
-    end
+    Explorer->>Explorer: compute safe coordinates
+    Explorer->>Popup: create themed context popup
+    Popup->>Surface: render popup at target coordinates
     Popup-->>User: visible context actions (Attach/Edit or folder actions)
 ```
 
 **Main-window UX invariants**:
 
 - Right-click context actions must be visually present before they are actionable.
-- In Wayland fallback mode, the popup top-level first visible frame must use the
-  selected theme palette (no default light flash before dark-theme controls render).
+- The context popup must use the selected theme palette on first render (no flash before theme applies).
 - Popup rendering behavior must remain consistent across repeated right-click cycles.
 
 ---
@@ -391,9 +391,9 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User
-    participant Session as AgentXSession
+    participant Session as Orchestrator
     participant Config as agentx.toml
-    participant Chat as ChatPanel
+    participant Chat as OutputSurface
 
     Session->>Config: read agentx.show_log_locations_on_startup
     alt config is true or absent
@@ -423,7 +423,7 @@ sequenceDiagram
     participant CLI as agentx --demo
     participant Harness as DemoHarness
     participant E2E as E2E Runner
-    participant Tmux as tmux Session
+    participant App as ApplicationSession
     participant Logs as logs/demo/<session>
 
     User->>CLI: starts demo mode
@@ -432,13 +432,13 @@ sequenceDiagram
     User->>Harness: choose start test (id/index)
     loop for each selected test
         Harness->>E2E: execute test scenario in visible terminal
-        E2E->>Tmux: interact with panes (input/read/capture)
+        E2E->>App: interact with application surfaces
         E2E-->>Harness: pass/fail result
         Harness-->>User: prompt [N] next or [X] fail
         alt user enters N
             Harness->>Harness: record accepted test
         else user enters X
-            Harness->>Tmux: capture all panes + pane metadata
+            Harness->>App: capture surface snapshots and metadata
             Harness->>Logs: write artifact bundle
             Harness-->>User: print failure summary and artifact paths
             break
@@ -451,4 +451,4 @@ sequenceDiagram
 
 - feedback is collected after each test, not after the full sequence.
 - operator can start from any test to review newly added scenarios quickly.
-- failure path always produces full pane-capture artifacts for agent analysis.
+- failure path always produces full surface-capture artifacts for agent analysis.

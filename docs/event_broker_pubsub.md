@@ -142,31 +142,15 @@ Event coordination layer should support:
 - Delivery guarantee verification
 - Backoff/retry behavior
 
-### Canonical Gate (Release Criterion)
+Verification claims:
 
-Use this as the single release-gate command for this document's delivery guarantees:
-
-```bash
-uv run pytest tests/test_event_broker_pubsub.py -q
-```
-
-Expected pass criteria:
-
-- Exit code is `0`.
-- Artifact evidence is a `passed` result for `tests/test_event_broker_pubsub.py` in pytest output.
-- Any non-zero exit code or failed test in that file fails the gate.
-
-### Runnable Verification Map
-
-| Guarantee / Claim | Runnable Check | Expected Evidence |
-|---|---|---|
-| Ordered delivery for a subscriber | `uv run pytest tests/test_event_broker_pubsub.py -k preserves_order_for_single_subscriber -q` | Test passes; received event indices are monotonic and complete |
-| No dropped events when subscriber is busy | `uv run pytest tests/test_event_broker_pubsub.py -k no_drop_when_subscriber_is_busy -q` | Test passes; published count equals consumed count |
-| Slow subscriber does not block publisher path | `uv run pytest tests/test_event_broker_pubsub.py -k slow_subscriber -q` | Test passes; publish path completes while handler sleeps |
-| Canonical streaming event sequence survives broker path | `uv run pytest tests/test_event_broker_pubsub.py -k canonical_order -q` | Test passes; sequence ordering matches expected stream protocol |
-| Event types and channel definitions stay aligned | `rg -n "STREAM_START|THINKING_START|agent_content|processing_state" docs/architecture/channel_registry.md tests/test_event_broker_pubsub.py` | Matching event names appear in both architecture contract and tests |
-
-Threshold for this doc's reliability claims: all mapped checks above pass in the same change set before release.
+| Guarantee / Claim | Expected Evidence |
+|---|---|
+| Ordered delivery for a subscriber | Received event indices are monotonic and complete |
+| No dropped events when subscriber is busy | Published count equals consumed count |
+| Slow subscriber does not block publisher path | Publish path completes while handler is delayed |
+| Canonical streaming event sequence survives broker path | Sequence ordering matches expected stream protocol |
+| Event types and channel definitions stay aligned | Event names match architecture contract in `docs/architecture/channel_registry.md` |
 
 ## Migration from Old Architecture
 

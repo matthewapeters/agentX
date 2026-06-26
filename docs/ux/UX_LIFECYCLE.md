@@ -2,6 +2,15 @@
 
 <!-- markdownlint-disable MD036 MD040 MD047 MD051 MD060 -->
 
+> **⚠️ Architecture migration (2026-06-26).** The traceability matrix below maps
+> affordances (PD-01…PD-17) to the prior single-window split-pane GUI. AgentX is now a
+> **client-server** app: the chat surface has **two panels (output + input)** and the
+> former "system" surface is now **multiple independent, separately launchable
+> surfaces**. During M2 each system-panel affordance is re-keyed to its standalone
+> surface; affordance IDs are preserved where possible. Treat surface/host columns as
+> **legacy** until migration. See
+> [`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md).
+
 _Last updated: 2026-06-01 (v0.85.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
 UI feature — from first written description through code implementation, hermetic
@@ -162,7 +171,7 @@ see and validate.
 PD-<panel number>-AF-<three-digit sequence>
 
 Examples:
-  PD-01-AF-001   ChatPanel — turn order invariant (user entry above children)
+  PD-01-AF-001   OutputSurface — turn order invariant (user entry above children)
   PD-08-AF-001   ContextRenderer — expand/collapse button in every message row
   PD-10-AF-003   ContextMeterWidget — border turns red at warning threshold
 ```
@@ -274,43 +283,43 @@ implements it and the test that validates it.  Status legend:
 | Step count badge shown in header | PD-05-AF-003 | ✅ |
 | Re-synthesize button opens dialog | PD-05-AF-004 | ✅ |
 | Export button saves and opens file | PD-05-AF-005 | ✅ |
-| Node status icon reflects task state | PD-05-AF-006 | `PlanTreeWidget.update_node_status()` / `_STATUS_ICONS` | `test_plan_tree_affordances.py` | `TestNodeStatusIconReflectsState` | ✅ |
+| Node status icon reflects task state | PD-05-AF-006 | `PlanView.UpdateNodeStatus()` | — | — | ✅ |
 
 ### PD-06 — ResynthesisDialog
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
-| Dialog title includes task_id | PD-06-AF-001 | `ResynthesisDialog.__init__()` | `test_resynthesis_dialog.py` | Module-level pytest tests | ✅ |
-| Cancel closes dialog without calling on_confirm | PD-06-AF-002 | `ResynthesisDialog._win.destroy` | `test_resynthesis_dialog.py` | Module-level pytest tests | ✅ |
-| Re-synthesise calls on_confirm with hint text | PD-06-AF-003 | `ResynthesisDialog._on_confirm_clicked()` | `test_resynthesis_dialog.py` | Module-level pytest tests | ✅ |
-| WM hint section hidden/visible based on callback | PD-06-AF-004 | `ResynthesisDialog.__init__()` | `test_resynthesis_dialog.py` | Module-level pytest tests | ✅ |
-| Add WM hint calls callback and clears fields | PD-06-AF-005 | `ResynthesisDialog._on_add_wm_hint_clicked()` | `test_resynthesis_dialog.py` | Module-level pytest tests | ✅ |
+| Dialog title includes task_id | PD-06-AF-001 | `ResynthesisDialog.Init()` | — | — | ✅ |
+| Cancel closes dialog without calling on_confirm | PD-06-AF-002 | `ResynthesisDialog.Destroy()` | — | — | ✅ |
+| Re-synthesise calls on_confirm with hint text | PD-06-AF-003 | `ResynthesisDialog.OnConfirmClicked()` | — | — | ✅ |
+| WM hint section hidden/visible based on callback | PD-06-AF-004 | `ResynthesisDialog.Init()` | — | — | ✅ |
+| Add WM hint calls callback and clears fields | PD-06-AF-005 | `ResynthesisDialog.OnAddWMHintClicked()` | — | — | ✅ |
 
 ### PD-07 — SettingsTab
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
-| Theme toggle persists to agentx.toml | PD-07-AF-001 | `SettingsTab._on_theme_change()` | `test_gui_manager_integration.py` | `TestGUIManagerSettingsTheme` | ⚠️ |
-| Settings sections collapsed/expanded correctly | PD-07-AF-002 | `SettingsTab.__init__()` / `SettingsTab._make_section()` | `test_settings_tab_sections.py` | `TestSettingsTabSectionCollapseDefaults` | ✅ |
-| Restart-required fields show 🔁 icon in label | PD-07-AF-003 | `SettingsTab.RESTART_ICON` / `_add_checkbox()` / `_add_text_entry()` / `_add_spinbox()` | `test_settings_tab_sections.py` | `TestRestartIconInLabels` | ✅ |
+| Theme toggle persists to agentx.toml | PD-07-AF-001 | `SettingsSurface.OnThemeChange()` | — | — | ⚠️ |
+| Settings sections collapsed/expanded correctly | PD-07-AF-002 | `SettingsSurface.Init()` / `SettingsSurface.MakeSection()` | — | — | ✅ |
+| Restart-required fields show 🔁 icon in label | PD-07-AF-003 | `SettingsSurface.RestartIcon` / `AddCheckbox()` / `AddTextEntry()` / `AddSpinbox()` | — | — | ✅ |
 
 ### PD-08 — ContextRenderer (factory methods)
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
-| Expand button always created for every message | PD-08-AF-001 | `_render_message_to_grid()` | `test_phase6_context_panel.py` | `TestRenderMessageAlwaysExpandable` | ✅ |
-| Tool rows appended to collapsible list | PD-08-AF-002 | `_render_tool_rows()` | `test_phase6_context_panel.py` | `TestRenderMessageToGridPlanSplit` | ✅ |
-| Plan/task_node rows appended to collapsible list | PD-08-AF-003 | `_render_plan_rows()` | `test_phase6_context_panel.py` | `TestRenderPlanRows` | ✅ |
-| Empty-content message has button but no detail row | PD-08-AF-004 | `_render_message_to_grid()` | `test_phase6_context_panel.py` | `TestRenderMessageAlwaysExpandable` | ✅ |
+| Expand button always created for every message | PD-08-AF-001 | `_render_message_to_grid()` | — | — | ✅ |
+| Tool rows appended to collapsible list | PD-08-AF-002 | `_render_tool_rows()` | — | — | ✅ |
+| Plan/task_node rows appended to collapsible list | PD-08-AF-003 | `_render_plan_rows()` | — | — | ✅ |
+| Empty-content message has button but no detail row | PD-08-AF-004 | `_render_message_to_grid()` | — | — | ✅ |
 
 ### PD-09 — CollapsibleSection
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
-| Section starts collapsed when default_open=False | PD-09-AF-001 | `CollapsibleSection.__init__()` | `test_collapsible_section.py` | Module-level pytest tests | ✅ |
-| Section starts expanded when default_open=True | PD-09-AF-002 | `CollapsibleSection.__init__()` | `test_collapsible_section.py` | Module-level pytest tests | ✅ |
-| Header click toggles content visibility | PD-09-AF-003 | `CollapsibleSection.toggle()` | `test_collapsible_section.py` | Module-level pytest tests | ✅ |
-| set_content replaces previous content | PD-09-AF-004 | `CollapsibleSection.set_content()` | `test_collapsible_section.py` | Module-level pytest tests | ✅ |
+| Section starts collapsed when default_open=False | PD-09-AF-001 | `CollapsibleSection.Init()` | — | — | ✅ |
+| Section starts expanded when default_open=True | PD-09-AF-002 | `CollapsibleSection.Init()` | — | — | ✅ |
+| Header click toggles content visibility | PD-09-AF-003 | `CollapsibleSection.Toggle()` | — | — | ✅ |
+| set_content replaces previous content | PD-09-AF-004 | `CollapsibleSection.SetContent()` | — | — | ✅ |
 
 ### PD-10 — ContextMeterWidget
 
@@ -318,28 +327,28 @@ implements it and the test that validates it.  Status legend:
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
-| Meter creates canvas on first create() call | PD-10-AF-001 | `ContextMeterWidget.create()` | `test_context_meter_widget.py` | — | ✅ |
-| Arc slices sized proportionally to token counts | PD-10-AF-002 | `ContextMeterWidget._draw_arcs()` | `test_context_meter_widget.py` | — | ✅ |
-| Ghost arc shows remaining capacity | PD-10-AF-003 | `ContextMeterWidget._draw_arcs()` | `test_context_meter_widget.py` | — | ✅ |
-| Border turns warning-red at 80% | PD-10-AF-004 | `ContextMeterWidget._risk_state()` | `test_context_meter_widget.py` | — | ✅ |
-| Border turns critical-red at 100% | PD-10-AF-005 | `ContextMeterWidget._risk_state()` | `test_context_meter_widget.py` | — | ✅ |
-| update() is thread-safe via after() | PD-10-AF-006 | `ContextMeterWidget.update()` | `test_context_meter_widget.py` | — | ✅ |
-| max_tokens=0 does not crash | PD-10-AF-007 | `ContextMeterWidget._draw_arcs()` | `test_context_meter_widget.py` | — | ✅ |
+| Meter creates canvas on first create() call | PD-10-AF-001 | `ContextMeterWidget.Create()` | — | — | ✅ |
+| Arc slices sized proportionally to token counts | PD-10-AF-002 | `ContextMeterWidget.DrawArcs()` | — | — | ✅ |
+| Ghost arc shows remaining capacity | PD-10-AF-003 | `ContextMeterWidget.DrawArcs()` | — | — | ✅ |
+| Border turns warning-red at 80% | PD-10-AF-004 | `ContextMeterWidget.RiskState()` | — | — | ✅ |
+| Border turns critical-red at 100% | PD-10-AF-005 | `ContextMeterWidget.RiskState()` | — | — | ✅ |
+| update() is thread-safe | PD-10-AF-006 | `ContextMeterWidget.Update()` | — | — | ✅ |
+| max_tokens=0 does not crash | PD-10-AF-007 | `ContextMeterWidget.DrawArcs()` | — | — | ✅ |
 
 ### PD-11 — FileExplorer
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |------------|----|---------------------|-----------|------------|--------|
-| List directory populates widget | PD-11-AF-001 | `FileExplorer.list_directory()` | `test_file_explorer_coverage.py` | `TestListDirectory` | ✅ |
-| Change directory navigates and lists | PD-11-AF-002 | `FileExplorer.change_directory()` | `test_file_explorer_coverage.py` | `TestChangeDirectory` | ✅ |
-| Back/Forward navigate history | PD-11-AF-003 | `FileExplorer.navigate_back/forward()` | `test_file_explorer_coverage.py` | `TestNavigateBackForward` | ✅ |
-| Home button navigates to home dir | PD-11-AF-004 | `FileExplorer.navigate_home()` | `test_file_explorer_coverage.py` | `TestNavigateHome` | ✅ |
-| Parent button navigates up one level | PD-11-AF-005 | `FileExplorer.navigate_parent()` | `test_file_explorer_coverage.py` | `TestNavigateParent` | ✅ |
-| Open file triggers callback | PD-11-AF-006 | `FileExplorer.open_file()` | `test_file_explorer_coverage.py` | `TestOpenFile` | ✅ |
-| Theme applies correct colours | PD-11-AF-007 | `FileExplorer._apply_theme()` | `test_file_explorer_theme.py` | — | ✅ |
-| Right-click on file shows file context menu | PD-11-AF-008 | `FileExplorer._on_right_click()` | `test_file_explorer_context_menu.py` | `TestFileContextMenu` | ✅ |
-| Right-click on directory shows folder context menu | PD-11-AF-009 | `FileExplorer._on_right_click()` | `test_file_explorer_context_menu.py` | `TestFolderContextMenu` | ✅ |
-| Escape dismisses context menu | PD-11-AF-010 | `FileExplorer._dismiss_popup_menu()` | `test_file_explorer_context_menu.py` | `TestDismissContextMenu` | ✅ |
+| List directory populates widget | PD-11-AF-001 | `FileBrowser.ListDirectory()` | — | — | ✅ |
+| Change directory navigates and lists | PD-11-AF-002 | `FileBrowser.ChangeDirectory()` | — | — | ✅ |
+| Back/Forward navigate history | PD-11-AF-003 | `FileBrowser.NavigateBackForward()` | — | — | ✅ |
+| Home button navigates to home dir | PD-11-AF-004 | `FileBrowser.NavigateHome()` | — | — | ✅ |
+| Parent button navigates up one level | PD-11-AF-005 | `FileBrowser.NavigateParent()` | — | — | ✅ |
+| Open file triggers callback | PD-11-AF-006 | `FileBrowser.OpenFile()` | — | — | ✅ |
+| Theme applies correct colours | PD-11-AF-007 | `FileBrowser.ApplyTheme()` | — | — | ✅ |
+| Right-click on file shows file context menu | PD-11-AF-008 | `FileBrowser.OnRightClick()` | — | — | ✅ |
+| Right-click on directory shows folder context menu | PD-11-AF-009 | `FileBrowser.OnRightClick()` | — | — | ✅ |
+| Escape dismisses context menu | PD-11-AF-010 | `FileBrowser.DismissPopupMenu()` | — | — | ✅ |
 | Overflow navigation keeps selected row visible in terminal viewport | PD-11-AF-011 | `filesystemWidgetState.ensureSelectionVisible()` + overflow render contract in `filesystemWidgetState.render()` | `filesystem_widget_test.go` | `TestFilesystemWidgetRender_OverflowOrientationAndSelectionVisibility` | ✅ |
 | Overflow navigation supports PageUp/PageDown/Home/End (or equivalent) | PD-11-AF-012 | `filesystemWidgetState.handleCommand()` (`pgup`/`pgdn`/`top`/`end`) | `filesystem_widget_test.go` | `TestFilesystemWidgetHandleCommand_PageNavigation` | ✅ |
 | Overflow status exposes visible range orientation (`showing X-Y of Z`) | PD-11-AF-013 | `filesystemWidgetState.render()` visible range header | `filesystem_widget_test.go` | `TestFilesystemWidgetRender_OverflowOrientationAndSelectionVisibility` | ✅ |
@@ -353,17 +362,17 @@ implements it and the test that validates it.  Status legend:
 
 | Affordance | ID | Source | Test File | Test Class | Status |
 |---|---|---|---|---|---|
-| Status tab is first in system notebook | PD-12-AF-001 | `SidePanel.create()` | `test_status_tab.py` | `TestStatusTabCreate` | ✅ |
-| Auto-switch to Status tab on prompt submit | PD-12-AF-002 | `StreamingController._on_stream_start()` | `test_status_tab.py` | `TestStatusTabAutoSwitch` | ✅ |
-| Interrupt button enables/disables with streaming | PD-12-AF-003 | `StatusTab.set_streaming_state()` | `test_status_tab.py` | `TestStatusTabInterruptButton` | ✅ |
-| Interrupt button invokes callback | PD-12-AF-004 | `StatusTab` `_interrupt_btn` command | `test_status_tab.py` | `TestStatusTabInterruptButton` | ✅ |
-| Phase rows reset at stream start | PD-12-AF-005 | `StatusTab.reset()` | `test_status_tab.py` | `TestStatusTabPhaseReset` | ✅ |
-| Phase row transitions to RUNNING / starts timer | PD-12-AF-006 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestStatusTabSetPhase` | ✅ |
-| Phase row transitions to DONE / freezes timer | PD-12-AF-007 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestStatusTabSetPhase` | ✅ |
-| Phase row transitions to FAILED | PD-12-AF-008 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestStatusTabSetPhase` | ✅ |
-| Tool step label updates with active tool name | PD-12-AF-009 | `StatusTab.set_phase()` | `test_status_tab.py` | `TestStatusTabSetPhase` | ✅ |
-| Colour-key legend rows match donut bands | PD-12-AF-010 | `ContextKeyWidget` | `test_status_tab.py` | `TestContextKeyWidget` | ✅ |
-| ContextMeterWidget hosted in StatusTab | PD-12-AF-011 | `StatusTab.create()` | `test_status_tab.py` | `TestStatusTabCreate` | ✅ |
+| Status tab is first in system notebook | PD-12-AF-001 | `SystemSurface.Create()` | — | — | ✅ |
+| Auto-switch to Status tab on prompt submit | PD-12-AF-002 | `StreamingController.OnStreamStart()` | — | — | ✅ |
+| Interrupt button enables/disables with streaming | PD-12-AF-003 | `StatusTab.SetStreamingState()` | — | — | ✅ |
+| Interrupt button invokes callback | PD-12-AF-004 | `StatusTab` interrupt button command | — | — | ✅ |
+| Phase rows reset at stream start | PD-12-AF-005 | `StatusTab.Reset()` | — | — | ✅ |
+| Phase row transitions to RUNNING / starts timer | PD-12-AF-006 | `StatusTab.SetPhase()` | — | — | ✅ |
+| Phase row transitions to DONE / freezes timer | PD-12-AF-007 | `StatusTab.SetPhase()` | — | — | ✅ |
+| Phase row transitions to FAILED | PD-12-AF-008 | `StatusTab.SetPhase()` | — | — | ✅ |
+| Tool step label updates with active tool name | PD-12-AF-009 | `StatusTab.SetPhase()` | — | — | ✅ |
+| Colour-key legend rows match donut bands | PD-12-AF-010 | `ContextKeyWidget` | — | — | ✅ |
+| ContextMeterWidget hosted in StatusTab | PD-12-AF-011 | `StatusTab.Create()` | — | — | ✅ |
 
 ### PD-13 — ToolPanel
 
@@ -378,42 +387,42 @@ implements it and the test that validates it.  Status legend:
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |---|---|---|---|---|---|
-| "Edit" context menu opens file in running neovim as new buffer; no buffers closed | PD-14-AF-002 | `VimBridge.open_file()` + `AgentXSession._open_file_in_editor()` + `FileExplorer._on_edit_selected()` | `test_vim_bridge_gui.py` | `TestVimBridgeOpenFile`, `TestSessionOpenFileInEditor` | ✅ |
-| is_connected() returns True when socket file is a Unix socket | PD-14-AF-002a | `VimBridge.is_connected()` | `test_vim_bridge_gui.py` | `TestVimBridgeIsConnected` | ✅ |
-| Path resolution forwards absolute/relative paths correctly | PD-14-AF-002b | `VimBridge.open_file_from_context()` | `test_vim_bridge_gui.py` | `TestVimBridgeOpenFileFromContext` | ✅ |
+| "Edit" context menu opens file in editor as new buffer; no buffers closed | PD-14-AF-002 | `EditorBridge.OpenFile()` + `Orchestrator.OpenFileInEditor()` + `FileBrowser.OnEditSelected()` | — | — | ✅ |
+| is_connected() returns True when editor socket is available | PD-14-AF-002a | `EditorBridge.IsConnected()` | — | — | ✅ |
+| Path resolution forwards absolute/relative paths correctly | PD-14-AF-002b | `EditorBridge.OpenFileFromContext()` | — | — | ✅ |
 | Editor status bar shows connected state | PD-14-AF-001 | — | — | — | 📝 |
 | Send to Editor button enabled when connected | PD-14-AF-003 | — | — | — | 📝 |
 | Send to Editor button disabled when disconnected | PD-14-AF-003 | — | — | — | 📝 |
 | Line navigation from error display opens file at line N | PD-14-AF-004 | — | — | — | 📝 |
-| File-saved notification shown in ChatPanel | PD-14-AF-005 | — | — | — | 📝 |
-| Recover-editor restores editing surface | PD-14-AF-008 | `launch_vibe.sh` recover-editor branch | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
+| File-saved notification shown in OutputSurface | PD-14-AF-005 | — | — | — | 📝 |
+| Recover-editor restores editing surface | PD-14-AF-008 | `EditorBridge` recovery path | — | — | ✅ |
 
 ### PD-15 — TerminalPane GUI
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |---|---|---|---|---|---|
-| Active terminal pane indicator updates in input status strip | PD-15-AF-003 | `InputPanel.set_terminal_status()` + `StreamingController._handle_terminal_tool_result()` | `test_terminal_pane_gui.py`, `test_terminal_streaming_controller.py` | `TestTerminalPaneGuiAffordances` | ✅ |
-| Tool-result row exposes kill-pane action and callback wiring | PD-15-AF-004 | `ChatPanel.set_tool_result_kill_action()` + `AgentXSession._handle_terminal_kill_pane()` | `test_terminal_pane_gui.py`, `test_terminal_streaming_controller.py` | `TestTerminalPaneGuiAffordances` | ✅ |
-| Input-strip mode toggle switches supervised/autonomous with confirmation gate | PD-15-AF-005 | `InputPanel._on_terminal_mode_toggle()` + `AgentXSession._handle_terminal_mode_toggle()` | `test_terminal_pane_gui.py`, `test_terminal_mode_and_approval.py` | `TestTerminalPaneGuiAffordances` | ✅ |
-| Supervised confirm-list commands route through interactive approval dialog | PD-15-AF-006 | `AgentXSession._request_terminal_approval()` + `_show_terminal_approval_dialog()` | `test_terminal_mode_and_approval.py` | module-level tests | ✅ |
-| Settings editor updates allow/confirm/deny permission prefixes with save/reset controls | PD-15-AF-007 | `SettingsTab._save_terminal_permission_lists()` + `_reset_terminal_permission_lists()` | `test_terminal_settings_editor.py` | module-level tests | ✅ |
-| `launch_vibe.sh stop` sends Ctrl+C to AgentX and nvim panes then kills the tmux session | PD-15-AF-008 | `launch_vibe.sh` stop branch | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
-| `terminal_run()` wrapper resolves `visible`/`auto_close`/`timeout_sec` from `agentx.toml [terminal]` when caller omits them | PD-15-AF-009 | `terminal_bridge.terminal_run()` defaults resolution block | `test_terminal_bridge.py` | `test_terminal_run_wrapper_uses_config_defaults` | ✅ |
-| Streamed tool-result rows for `terminal_run` include a decision badge (✅/⛔/🚫) and exit code | PD-15-AF-010 | `StreamingController._display_tool_result()` badge injection | `test_terminal_streaming_controller.py` | `test_terminal_run_result_includes_decision_badge` | ✅ |
+| Active terminal pane indicator updates in input status strip | PD-15-AF-003 | `InputSurface.SetTerminalStatus()` + `StreamingController.HandleTerminalToolResult()` | — | — | ✅ |
+| Tool-result row exposes kill-pane action and callback wiring | PD-15-AF-004 | `OutputSurface.SetToolResultKillAction()` + `Orchestrator.HandleTerminalKillPane()` | — | — | ✅ |
+| Input-strip mode toggle switches supervised/autonomous with confirmation gate | PD-15-AF-005 | `InputSurface.OnTerminalModeToggle()` + `Orchestrator.HandleTerminalModeToggle()` | — | — | ✅ |
+| Supervised confirm-list commands route through interactive approval dialog | PD-15-AF-006 | `Orchestrator.RequestTerminalApproval()` + `ShowTerminalApprovalDialog()` | — | — | ✅ |
+| Settings editor updates allow/confirm/deny permission prefixes with save/reset controls | PD-15-AF-007 | `SettingsSurface.SaveTerminalPermissionLists()` + `ResetTerminalPermissionLists()` | — | — | ✅ |
+| Terminal bridge stop signal gracefully shuts down active terminal surfaces | PD-15-AF-008 | `TerminalBridge` stop path | — | — | ✅ |
+| `terminal_run()` wrapper resolves `visible`/`auto_close`/`timeout_sec` from config when caller omits them | PD-15-AF-009 | `TerminalBridge.Run()` defaults resolution | — | — | ✅ |
+| Streamed tool-result rows for `terminal_run` include a decision badge (✅/⛔/🚫) and exit code | PD-15-AF-010 | `StreamingController.DisplayToolResult()` badge injection | — | — | ✅ |
 
 ### PD-16 — TuiMirror
 
 | Affordance | ID | Source Class/Method | Test File | Test Class | Status |
 |---|---|---|---|---|---|
-| Output FIFO writer emits USER/AGENT/TOOL/DONE records without blocking GUI path | PD-16-AF-001 | `TuiBridge.write_output()` + `StreamingController._display_*()` hooks | `test_tui_bridge_output.py` | module-level tests | ✅ |
-| Input FIFO reader parses submit sentinel and dispatches prompt callbacks | PD-16-AF-002 | `TuiBridge._input_reader_loop()` | `test_tui_bridge_output.py` | module-level tests | ✅ |
-| Launcher creates optional `tui-chat` tmux window with TUI env wiring | PD-16-AF-003 | `launch_vibe.sh` start/restart branches | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
-| Generated `agentx_tui.lua` config is written and sourced by TUI nvim startup | PD-16-AF-004 | `launch_vibe.sh` `_write_tui_lua()` + TUI launch command | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
-| `<leader>s` submit keymap writes input text to FIFO with submit sentinel | PD-16-AF-005 | generated `agentx_tui.lua` submit keymap block | `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
-| `enable_gui_chat=false` mode uses headless `NullGUIManager` and enforces config constraint | PD-16-AF-006 | `config.validate_config()` + `AgentXSession` GUI-disabled path | `test_config_tui_phase1.py`, `test_session_gui_disabled.py` | module-level tests | ✅ |
-| `tui.enable` controls `TuiBridge` lifecycle and guarded call-sites | PD-16-AF-007 | `AgentXSession.__init__()` + `close()` + streaming guards | `test_tui_bridge_output.py`, `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
-| `<leader>q` writes quit sentinel and triggers graceful application shutdown from TUI | PD-16-AF-008 | generated `agentx_tui.lua` quit keymap + `TuiBridge._input_reader_loop()` + `AgentXSession._on_tui_quit()` | `test_tui_bridge_output.py`, `test_session_gui_disabled.py`, `test_launch_vibe_shutdown.py` | module-level tests | ✅ |
-| TUI context visualization renders color-band meter and top-contributor bars with ASCII fallback | PD-16-AF-009 | `TuiBridge.render_context_visualization()` + `AgentXSession.schedule_meter_redraw()` | `test_tui_bridge_output.py`, `test_active_model_meter_wiring.py`, `test_tmux_ux_flow_what_is_2_plus_2_headless.sh` | module-level tests + headless e2e | ✅ |
+| Output writer emits USER/AGENT/TOOL/DONE records without blocking surface path | PD-16-AF-001 | `TuiBridge.WriteOutput()` + `StreamingController.Display*()` hooks | — | — | ✅ |
+| Input reader parses submit sentinel and dispatches prompt callbacks | PD-16-AF-002 | `TuiBridge.InputReaderLoop()` | — | — | ✅ |
+| Launcher creates TUI surface with env wiring | PD-16-AF-003 | TUI launch path | — | — | ✅ |
+| TUI config is written and sourced at startup | PD-16-AF-004 | TUI launch configuration writer | — | — | ✅ |
+| Submit keymap writes input text with submit sentinel | PD-16-AF-005 | TUI submit keymap | — | — | ✅ |
+| `enable_gui_chat=false` mode uses headless surface manager and enforces config constraint | PD-16-AF-006 | `config.ValidateConfig()` + `Orchestrator` GUI-disabled path | — | — | ✅ |
+| `tui.enable` controls `TuiBridge` lifecycle and guarded call-sites | PD-16-AF-007 | `Orchestrator.Init()` + `Close()` + streaming guards | — | — | ✅ |
+| Quit keymap writes quit sentinel and triggers graceful application shutdown from TUI | PD-16-AF-008 | TUI quit keymap + `TuiBridge.InputReaderLoop()` + `Orchestrator.OnTuiQuit()` | — | — | ✅ |
+| TUI context visualization renders color-band meter and top-contributor bars with ASCII fallback | PD-16-AF-009 | `TuiBridge.RenderContextVisualization()` + `Orchestrator.ScheduleMeterRedraw()` | — | — | ✅ |
 | Go input widget consumes core activity state (`/activity`) and renders non-blocking busy/done/fail cues | PD-16-AF-010 | `input_widget.go` activity polling + prompt adornment (`fetchActivitySnapshot()` / `activityPromptLabel()`) + core `/activity` handler | `input_widget_test.go`, `core_health_endpoint_test.go` | package-level tests | ✅ |
 
 ### PD-17 — DemoMode
@@ -526,10 +535,10 @@ Run this audit when the UI "looks wrong" but no deliberate change was made:
 
 ```bash
 # 1. Find all Affordance IDs referenced in tests
-grep -rn "PD-[0-9]\+-AF-[0-9]\+" tests/ | grep -oE 'PD-[0-9]+-AF-[0-9]+'
+grep -rn "PD-[0-9]\+-AF-[0-9]\+" tests/ internal/ | grep -oE 'PD-[0-9]+-AF-[0-9]+'
 
 # 2. Find all Affordance IDs referenced in source code
-grep -rn "PD-[0-9]\+-AF-[0-9]\+" src/  | grep -oE 'PD-[0-9]+-AF-[0-9]+'
+grep -rn "PD-[0-9]\+-AF-[0-9]\+" cmd/ internal/ | grep -oE 'PD-[0-9]+-AF-[0-9]+'
 
 # 3. Find all Affordance IDs declared in the spec
 grep -rn "PD-[0-9]\+-AF-[0-9]\+" docs/ | grep -oE 'PD-[0-9]+-AF-[0-9]+'
@@ -587,7 +596,7 @@ startup mode:
 
 ### Developer responsibility
 
-When you review a PR that touches `src/agentx/gui/`:
+When you review a PR that touches UX surface code:
 
 1. Check that `docs/ux/UX_LIFECYCLE.md` was updated.
 2. Verify new affordances have both spec text and test coverage.
@@ -597,7 +606,7 @@ When you review a PR that touches `src/agentx/gui/`:
 
 ```bash
 # Quick consistency check — find all AF IDs in tests but not in UX_LIFECYCLE.md
-grep -rho 'PD-[0-9]\+-AF-[0-9]\+' tests/ | sort -u > /tmp/tested.txt
+grep -rho 'PD-[0-9]\+-AF-[0-9]\+' tests/ internal/ cmd/ | sort -u > /tmp/tested.txt
 grep -oh 'PD-[0-9]\+-AF-[0-9]\+' docs/ux/UX_LIFECYCLE.md | sort -u > /tmp/specced.txt
 comm -23 /tmp/tested.txt /tmp/specced.txt   # in tests but missing from matrix
 comm -13 /tmp/tested.txt /tmp/specced.txt   # in matrix but no test yet (📝 / ❌)

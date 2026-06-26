@@ -2,7 +2,7 @@
 
 ## Goal
 
-Deliver a production-capable Go runtime with Bubble Tea TUI and HTTP surface transport that implements UX and architecture contracts.
+Deliver a production-capable Go runtime with charm.land Bubbletea TUI and HTTP surface transport that implements UX and architecture contracts.
 
 ## Phase 0: Contracts Freeze
 

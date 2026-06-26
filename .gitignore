@@ -155,3 +155,10 @@ apm_modules/
 # Local runtime and agent artifacts
 .agentx/
 .subutai/
+
+# Go build artifact from `go build ./...` at repo root (canonical build is bin/agentx)
+/agentx
+
+# Local developer MCP/tooling launchers (not project artifacts)
+/gopls.mcp
+/open-websearch

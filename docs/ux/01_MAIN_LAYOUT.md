@@ -1,41 +1,47 @@
 # AgentX — Main Window Layout
 
+> **⚠️ Architecture migration (2026-06-26).** This layout describes the prior
+> single-window split-pane GUI. AgentX is now a **client-server** app: the chat
+> surface (launched by `agentx`) has **two panels — output + input** — and the
+> former right-hand "system" surface is now **multiple independent, separately
+> launchable surfaces** the user arranges via tmux/screen/zellij. The split-pane
+> geometry below is **legacy**, pending M2 migration. See
+> [`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md).
+
 _Last updated: 2026-05-06 (v0.22.20.post3)_
 
 ---
 
 ## 1. Window Layout Mockup
 
-Proportions: ChatPanel occupies the **left ~66%** of the PanedWindow; SidePanel
-occupies the **right ~34%**.  The InputPanel spans the **full width** at the
-bottom.  The `screen_side` setting (⚙️ Settings tab) controls which side of the
-**monitor** the window is placed on — it does **not** affect the internal panel
+Proportions: the OutputSurface occupies the **left ~66%** of the split-pane layout; the
+SystemSurface occupies the **right ~34%**. The InputSurface spans the **full width** at
+the bottom. The `screen_side` setting (SettingsSurface) controls which side of the
+**monitor** the window is placed on — it does **not** affect the internal surface
 arrangement.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────┐
 │  AgentX — the Ollama Agent                            (OS window title bar)        │
-├────────────────────────────────────────────────────────────┬───────────────────────┤
-│  CHAT AREA  (output notebook)              [→ PD-01]       │  SIDE PANEL [→ PD-03] │
-│  (~66% width, height rely 0.00–0.77)                       │  (~34% width, 0–0.77) │
-│ ┌──────────────────────────────────────────────────────┐   │                       │
-│ │ Chat │ Plan: Step 1 │ Plan: Step 2 │                  │   │  [phi4-mini:3.8b ▾]   │
-│ ├──────────────────────────────────────────────────────┤   │         [→ PD-04]     │
-│ │ 👤 alice  12:04:01                                   │   │ ┌─────────────────────┐│
-│ │ > write a function to parse JSON                     │   │ │Session │ Files │ ⚙️ ││
-│ │                                                      │   │ ├─────────────────────┤│
-│ │ ⚙️ Classification: complex_action → invoke_planner   │   │ │ 🧠 Working Memory   ││
-│ │                                                      │   │ │        ▶            ││
-│ │ 🤖 AgentX                                            │   │ ├─────────────────────┤│
-│ │ > I'll break this into steps.                        │   │ │ 💬 Context          ││
-│ │                                                      │   │ │        ▶            ││
-│ │ 🔧 read_file  /src/parser.py                         │   │ └─────────────────────┘│
-│ │   ▶ [expand result]                                  │   │                       │
-│ │ Step 1 complete.                                     │   │                       │
-│ └──────────────────────────────────────────────────────┘   │                       │
-├────────────────────────────────────────────────────────────┴───────────────────────┤
+├────────────────────────────────────────────────────────┬───────────────────────────┤
+│  OUTPUT SURFACE  (tabbed view)          [→ PD-01]      │  SYSTEM SURFACE [→ PD-03] │
+│  (~66% width)                                          │  (~34% width)             │
+│ ┌──────────────────────────────────────────────────┐   │                           │
+│ │ Chat │ Plan: Step 1 │ Plan: Step 2 │              │   │  [phi4-mini:3.8b ▾]       │
+│ ├──────────────────────────────────────────────────┤   │         [→ PD-04]         │
+│ │ 👤 alice  12:04:01                               │   │ ┌─────────────────────────┐│
+│ │ > write a function to parse JSON                 │   │ │Session │ Files │ ⚙️      ││
+│ │                                                  │   │ ├─────────────────────────┤│
+│ │ 🤖 AgentX                                        │   │ │ 🧠 Working Memory       ││
+│ │ > I'll break this into steps.                    │   │ │        ▶                ││
+│ │                                                  │   │ ├─────────────────────────┤│
+│ │ 🔧 read_file  /src/parser.py                     │   │ │ 💬 Context              ││
+│ │   ▶ [expand result]                              │   │ │        ▶                ││
+│ │ Step 1 complete.                                 │   │ └─────────────────────────┘│
+│ └──────────────────────────────────────────────────┘   │                           │
+├────────────────────────────────────────────────────────┴───────────────────────────┤
 │ 📎 README.md [×]   📎 parser.py [×]                             [✕ clear all]      │
-│ (Attachment Bar — full width, rely=0.77)                             [→ PD-02]     │
+│ (Attachment Bar — full width)                                        [→ PD-02]     │
 ├────────────────────────────────────────────────────────────────────────────────────┤
 │ ┌──────────────────────────────────────────────────────────────────────┐  [Send]   │
 │ │  Type your message here… (Enter to send, Shift+Enter = newline)     │  [Stop]   │
@@ -47,67 +53,65 @@ arrangement.
 
 | Generalised Component | Detail Diagram | Detail File |
 |-----------------------|---------------|-------------|
-| Chat Area (output notebook) | [§5 / PD-01](#5-layout-detail-chatpanel) | [03_PANEL_DETAILS.md — PD-01](03_PANEL_DETAILS.md#pd-01-chatpanel) |
-| Side Panel | [§4 / PD-03](#4-layout-detail-sidepanel) | [03_PANEL_DETAILS.md — PD-03](03_PANEL_DETAILS.md#pd-03-sidepanel) |
-| Model Selector | [§4 excerpt / PD-04](#4-layout-detail-sidepanel) | [03_PANEL_DETAILS.md — PD-04](03_PANEL_DETAILS.md#pd-04-modelselector) |
-| Attachment Bar + Input Panel | [§6 / PD-02](#6-layout-detail-inputpanel) | [03_PANEL_DETAILS.md — PD-02](03_PANEL_DETAILS.md#pd-02-inputpanel) |
-| Files Tab (FileExplorer) | — | [03_PANEL_DETAILS.md — PD-11](03_PANEL_DETAILS.md#pd-11-fileexplorer) |
-| Settings Tab (SettingsTab) | — | [03_PANEL_DETAILS.md — PD-07](03_PANEL_DETAILS.md#pd-07-settingstab-detail) |
+| Output Surface (tabbed view) | [§5 / PD-01](#5-layout-detail-outputsurface) | [03_PANEL_DETAILS.md — PD-01](03_PANEL_DETAILS.md#pd-01-outputsurface) |
+| System Surface | [§4 / PD-03](#4-layout-detail-systemsurface) | [03_PANEL_DETAILS.md — PD-03](03_PANEL_DETAILS.md#pd-03-systemsurface) |
+| Model Selector | [§4 excerpt / PD-04](#4-layout-detail-systemsurface) | [03_PANEL_DETAILS.md — PD-04](03_PANEL_DETAILS.md#pd-04-modelselector) |
+| Attachment Bar + Input Surface | [§6 / PD-02](#6-layout-detail-inputsurface) | [03_PANEL_DETAILS.md — PD-02](03_PANEL_DETAILS.md#pd-02-inputsurface) |
+| Files tab (FileBrowser) | — | [03_PANEL_DETAILS.md — PD-11](03_PANEL_DETAILS.md#pd-11-filebrowser) |
+| Settings tab (SettingsSurface) | — | [03_PANEL_DETAILS.md — PD-07](03_PANEL_DETAILS.md#pd-07-settingssurface-detail) |
 
 ---
 
 ## 2. Zone Map
 
-AgentX uses absolute placement (`.place(relx=…, rely=…)`) within the root window.
+The window is divided into three zones. The main split-pane area occupies roughly the
+upper 77% of height and is divided into a left OutputSurface (~66% width) and a right
+SystemSurface (~34% width). Below the main area sits a narrow attachment bar for file
+chips (full width), followed by a text input row with Send/Stop controls (full width,
+remaining height).
 
-| Zone | `rely` | `relheight` | Class | Purpose |
-|------|--------|-------------|-------|---------|
-| Main paned area | 0.00 | 0.77 | `PanedWindow` | ChatPanel (left) + SidePanel (right) |
-| Attachment bar | 0.77 | 0.03 | `InputPanel` | File attachment chips (full width) |
-| Text input area | 0.80 | 0.20 | `InputPanel` | Message text + buttons (full width) |
+The main split-pane is divided horizontally at approximately the 66% mark:
 
-The main paned area is split horizontally (sash at `output_panel_ratio` = 0.66):
-
-| Pane | Side | Width | Widgets | Module | Detail |
-|------|------|-------|---------|--------|--------|
-| Left pane (~66%) | Left | 66% | Output notebook (`Chat` tab + plan tabs) | `ChatPanel` | [PD-01](03_PANEL_DETAILS.md#pd-01-chatpanel) |
-| Right pane (~34%) | Right | 34% | Model selector + Session/Files/Settings tabs | `SidePanel` | [PD-03](03_PANEL_DETAILS.md#pd-03-sidepanel) |
+| Pane | Side | Width | Contents | Detail |
+|------|------|-------|----------|--------|
+| Left pane (~66%) | Left | 66% | Tabbed output view (Chat tab + plan tabs) | [PD-01](03_PANEL_DETAILS.md#pd-01-outputsurface) |
+| Right pane (~34%) | Right | 34% | Model selector + Session/Files/Settings tabs | [PD-03](03_PANEL_DETAILS.md#pd-03-systemsurface) |
 
 ---
 
 ## 3. Component Index
 
-| Screen Region | Component Class | Source File |
-|---------------|----------------|-------------|
-| Window root | `AgentXSession` + `GUIManager` | `session.py`, `gui/gui_manager.py` |
-| Left pane (~66%) | `ChatPanel` | `gui/chat_panel.py` |
-| Right pane (~34%) | `SidePanel` | `gui/side_panel.py` |
-| Model dropdown | `ModelSelector` | `gui/model_selector.py` |
-| Session/Files/Settings tabs | `SidePanel._notebook` | `gui/side_panel.py` |
-| Session tab: Working Memory | `ContextRenderer.render_working_memory_widget()` | `gui/context_renderer.py` |
-| Session tab: Context messages | `ContextRenderer.render_context_widget()` | `gui/context_renderer.py` |
-| Files tab | `FileExplorer` | `file_explorer.py` [→ PD-11](03_PANEL_DETAILS.md#pd-11-fileexplorer) |
-| Settings tab | `SettingsTab` | `gui/settings_tab.py` [→ PD-07](03_PANEL_DETAILS.md#pd-07-settingstab-detail) |
-| Left output area | `ChatPanel._notebook` | `gui/chat_panel.py` |
-| Chat tab | `ChatPanel` streaming entries | `gui/chat_panel.py` |
-| Plan tabs | `PlanTreeWidget` | `gui/plan_tree_widget.py` |
-| Attachment bar | `InputPanel.attachments_frame` | `gui/input_panel.py` |
-| Text input | `InputPanel._user_input` | `gui/input_panel.py` |
-| Send / Stop buttons | `InputPanel._btn_submit`, `_btn_interrupt` | `gui/input_panel.py` |
-| Tool toggles | `ToolPanel` (inside SidePanel Settings) | `gui/tool_panel.py` |
-| Re-synthesis dialog | `ResynthesisDialog` (modal) | `gui/resynthesis_dialog.py` |
+| Screen Region | Component |
+|---------------|-----------|
+| Window root | Orchestrator + SurfaceManager |
+| Left pane (~66%) | OutputSurface |
+| Right pane (~34%) | SystemSurface |
+| Model dropdown | ModelSelector |
+| Session/Files/Settings tabs | SystemSurface tabbed view |
+| Session tab: Working Memory | ContextRenderer (working memory section) |
+| Session tab: Context messages | ContextRenderer (context section) |
+| Files tab | FileBrowser [→ PD-11](03_PANEL_DETAILS.md#pd-11-filebrowser) |
+| Settings tab | SettingsSurface [→ PD-07](03_PANEL_DETAILS.md#pd-07-settingssurface-detail) |
+| Left output area | OutputSurface tabbed view |
+| Chat tab | OutputSurface streaming entries |
+| Plan tabs | PlanView |
+| Attachment bar | InputSurface attachment row |
+| Text input | InputSurface message field |
+| Send / Stop buttons | InputSurface submit/interrupt controls |
+| Tool toggles | ToolPanel (inside SettingsSurface) |
+| Re-synthesis dialog | ResynthesisDialog (modal) |
 
 ---
 
-## 4. Layout Detail: SidePanel
+## 4. Layout Detail: SystemSurface
 
 ```
-SidePanel (right ~34% of window, height rely 0.00–0.77) [→ PD-03]
+SystemSurface (right ~34% of window) [→ PD-03]
 │
 ├── ModelSelector                 top of pane
 │     [phi4-mini:3.8b          ▾]
 │
-└── ttk.Notebook (fills remaining height)
+└── tabbed view (fills remaining height)
       ├── "Session" tab
       │     ┌── CollapsibleSection: 🧠 Working Memory (N facts)
       │     │     [👤 cwd: /Projects/myapp]
@@ -120,44 +124,35 @@ SidePanel (right ~34% of window, height rely 0.00–0.77) [→ PD-03]
       │           [🤖] AgentX 12:04  > I'll break this…   [▶]
       │
       ├── "Files" tab
-      │     FileExplorer widget
+      │     FileBrowser widget
       │     (directory tree with click-to-open)
       │
       └── "⚙️ Settings" tab
-            SettingsTab widget
-            ├── [agentx] section
+            SettingsSurface widget
+            ├── Ollama section
             │     ollama_host    [ localhost:11434 ]
             │     ollama_model   [ phi4-mini:3.8b ▾]
-            │     theme_mode     ( dark ) ( light )
-            │     screen_side    ( right ) ( left )  ← window placement on monitor
-            │                                        (not internal panel arrangement)
             │
-            ├── [agentix] section
-            │     host           [ localhost:8000 ]
-            │     classification_model  [ phi4-mini:3.8b ▾]
-            │
-            └── Tool toggles (ToolPanel)
-                  ▼ Available Tools
-                  [✓] cst   Concrete Syntax Tree
-                  [✓] ast   Abstract Syntax Tree
+            └── Appearance section
+                  theme_mode     ( dark ) ( light )
+                  screen_side    ( right ) ( left )  ← window placement on monitor
+                                                     (not internal surface arrangement)
 ```
 
 ---
 
-## 5. Layout Detail: ChatPanel
+## 5. Layout Detail: OutputSurface
 
 ```
-ChatPanel (left ~66% of window, height rely 0.00–0.77) [→ PD-01]
+OutputSurface (left ~66% of window) [→ PD-01]
 │
-└── ttk.Notebook
+└── tabbed view
       ├── "Chat" tab            (always present)
-      │     Scrollable canvas of entries:
+      │     Scrollable list of entries:
       │       ┌─────────────────────────────────────────┐
       │       │ 👤 alice                       12:04:01 │
       │       │ write a function to parse JSON          │
       │       │  📎 README.md                           │
-      │       ├─────────────────────────────────────────┤
-      │       │ ⚙️  complex_action → invoke_planner      │
       │       ├─────────────────────────────────────────┤
       │       │ 💭  [thinking block — click to expand]  │
       │       ├─────────────────────────────────────────┤
@@ -167,7 +162,7 @@ ChatPanel (left ~66% of window, height rely 0.00–0.77) [→ PD-01]
       │       └─────────────────────────────────────────┘
       │
       ├── "Plan: Parse JSON" tab  (added when a plan is created)
-      │     PlanTreeWidget:
+      │     PlanView:
       │       ┌─────────────────────────────────────────┐
       │       │ ● Plan: Parse JSON  [Re-synth] [Export] │
       │       │   ○ Step 1: Read existing parser        │
@@ -181,16 +176,16 @@ ChatPanel (left ~66% of window, height rely 0.00–0.77) [→ PD-01]
 
 ---
 
-## 6. Layout Detail: InputPanel
+## 6. Layout Detail: InputSurface
 
 ```
-InputPanel (bottom of window, full width, rely 0.77–1.0) [→ PD-02]
+InputSurface (bottom of window, full width) [→ PD-02]
 │
-├── Attachment bar (rely 0.77, relheight 0.03)
+├── Attachment bar (top sub-row, full width)
 │     📎 README.md [×]    📎 parser.py [×]         [✕ clear all]
 │     (history attachments shown greyed out)
 │
-└── Input row (rely 0.80, relheight 0.20)
+└── Input row (fills remaining height)
       ┌──────────────────────────────────────┐  [Send]
       │  Type your message here…             │  [Stop]
       │  (Enter = send, Shift+Enter = newline)│

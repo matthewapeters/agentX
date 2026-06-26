@@ -8,7 +8,7 @@ Define how runtime surfaces are created, addressed, and synchronized using an in
 
 Surface means a user-facing runtime area such as:
 
-- Primary TUI (Bubble Tea)
+- Primary TUI (Bubbletea)
 - Optional system surfaces (files, context, settings, logs)
 - Future browser-based surfaces
 
@@ -17,7 +17,7 @@ Implementation guidance:
 - Treat each surface as a client of canonical runtime state
 - Keep one shared event coordination layer and processing state source
 - Avoid per-surface private orchestration logic
-- Run surfaces as separate child processes managed by orchestrator
+- Run surfaces as separate processes managed by orchestrator (orchestrator provides startup script with orchestrator and surface endpoint and session info)
 - Support external terminal-session launch and runtime registration for child surfaces
 
 ## Port Allocation
