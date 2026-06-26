@@ -22,6 +22,7 @@ type harnessWorld struct {
 func InitializeScenario(sc *godog.ScenarioContext) {
 	registerHarnessSteps(sc)
 	registerConfigSteps(sc)
+	registerStateSteps(sc)
 }
 
 // registerHarnessSteps wires the harness smoke steps.
