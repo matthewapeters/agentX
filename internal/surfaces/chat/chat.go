@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"agentx/internal/state"
 	"agentx/internal/surfaces/input"
 	"agentx/internal/surfaces/output"
 )
@@ -49,6 +50,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		switch m.input.Update(msg) {
+		case input.ActionSubmit:
+			// Local echo for now; CHT-B5 routes the prompt to the orchestrator
+			// and streams the real response back.
+			m.output.Apply(state.Event{
+				ContentType: state.ContentUserPrompt,
+				Payload:     map[string]any{"text": m.input.Value()},
+			})
+			m.input.Reset()
+		case input.ActionStop:
+			m.input.SetStreaming(false)
 		}
 	}
 	return m, nil

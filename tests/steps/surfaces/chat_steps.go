@@ -20,6 +20,7 @@ type chatWorld struct {
 func InitializeScenario(sc *godog.ScenarioContext) {
 	registerChatSteps(sc)
 	registerOutputSteps(sc)
+	registerInputSteps(sc)
 }
 
 // registerChatSteps wires the chat-surface layout steps (CHT-B1).
@@ -34,6 +35,30 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the input panel is focused$`, w.inputFocused)
 	sc.Step(`^the user presses ctrl\+c$`, w.pressCtrlC)
 	sc.Step(`^the surface requests quit$`, w.requestsQuit)
+	sc.Step(`^a new chat surface sized (\d+) by (\d+)$`, w.newSurfaceSized)
+	sc.Step(`^the user types "([^"]*)" and submits$`, w.typesAndSubmits)
+	sc.Step(`^the chat output contains "([^"]*)"$`, w.chatOutputContains)
+}
+
+func (w *chatWorld) newSurfaceSized(width, height int) error {
+	w.model = chat.New()
+	w.update(tea.WindowSizeMsg{Width: width, Height: height})
+	return nil
+}
+
+func (w *chatWorld) typesAndSubmits(text string) error {
+	for _, r := range text {
+		w.update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	w.update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	return nil
+}
+
+func (w *chatWorld) chatOutputContains(want string) error {
+	if !strings.Contains(w.model.Output().View(), want) {
+		return fmt.Errorf("chat output does not contain %q", want)
+	}
+	return nil
 }
 
 func (w *chatWorld) newSurface() error {
