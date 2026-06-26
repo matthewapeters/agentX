@@ -27,6 +27,7 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^(\d+) numbered user events are applied$`, w.applyNumbered)
 	sc.Step(`^entry (\d+) is toggled$`, w.toggleEntry)
 	sc.Step(`^the panel scrolls up by (\d+)$`, w.scrollUp)
+	sc.Step(`^the panel pages up$`, w.pageUp)
 	sc.Step(`^the output view contains "([^"]*)"$`, w.viewContains)
 	sc.Step(`^the output view does not contain "([^"]*)"$`, w.viewNotContains)
 	sc.Step(`^the output has (\d+) assistant entry$`, w.assistantEntries)
@@ -76,6 +77,11 @@ func (w *outputWorld) toggleEntry(i int) error {
 
 func (w *outputWorld) scrollUp(n int) error {
 	w.panel.ScrollUp(n)
+	return nil
+}
+
+func (w *outputWorld) pageUp() error {
+	w.panel.PageUp()
 	return nil
 }
 

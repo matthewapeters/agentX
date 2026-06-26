@@ -105,9 +105,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case EventMsg:
 		m.output.Apply(state.Event(msg))
 		return m, m.listenEvents()
+	case tea.MouseWheelMsg:
+		// Forwarded to the output viewport; only delivered when the program
+		// enables the mouse (off by default to preserve native text selection).
+		return m, m.output.Update(msg)
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		// Scrollback keys drive the output viewport rather than the input,
+		// which the textarea ignores anyway.
+		switch msg.String() {
+		case "pgup":
+			m.output.PageUp()
+			return m, nil
+		case "pgdown":
+			m.output.PageDown()
+			return m, nil
+		case "ctrl+u":
+			m.output.ScrollUp(1)
+			return m, nil
+		case "ctrl+d":
+			m.output.ScrollDown(1)
+			return m, nil
 		}
 		switch m.input.Update(msg) {
 		case input.ActionSubmit:

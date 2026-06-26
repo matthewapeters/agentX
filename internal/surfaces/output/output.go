@@ -3,6 +3,10 @@
 // system, error) with streaming assistant text, collapsible thinking/tool
 // blocks, and bottom-anchored scrolling.
 //
+// The panel hosts its content in a charm.land/bubbles/v2/viewport: the entry
+// model produces word-wrapped display lines and the viewport owns scrolling,
+// height padding, and (when the program enables the mouse) wheel handling.
+//
 // Source contract: docs/ux/03_PANEL_DETAILS.md PD-01 (re-authored for the TUI).
 // Backlog task: CHT-B2.
 package output
@@ -11,6 +15,8 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"agentx/internal/state"
@@ -38,31 +44,47 @@ type entry struct {
 
 // Model is the output panel state.
 type Model struct {
+	vp      viewport.Model
 	width   int
 	height  int
 	entries []entry
-	scroll  int // rows scrolled up from the bottom
 }
 
-// New returns an empty output panel.
-func New() *Model { return &Model{} }
+// New returns an empty output panel backed by a viewport.
+func New() *Model {
+	vp := viewport.New()
+	vp.FillHeight = true
+	return &Model{vp: vp}
+}
 
-// SetSize sets the panel's render dimensions.
+// SetSize sets the panel's render dimensions and reflows content to the new
+// width.
 func (m *Model) SetSize(width, height int) {
 	m.width = max(width, 0)
 	m.height = max(height, 0)
-	m.clampScroll()
+	m.vp.SetWidth(m.width)
+	m.vp.SetHeight(m.height)
+	m.refresh(false)
 }
 
 // Height returns the panel's row count.
 func (m *Model) Height() int { return m.height }
 
+// Update forwards scrolling messages (viewport keys, mouse wheel) to the
+// embedded viewport and returns any resulting command.
+func (m *Model) Update(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	m.vp, cmd = m.vp.Update(msg)
+	return cmd
+}
+
 // Apply folds a bus event into the panel. Assistant responses stream into a
-// single entry; thinking and tool-result blocks start collapsed.
+// single entry; thinking and tool-result blocks start collapsed. New content
+// pins the view to the bottom so the stream stays in sight.
 func (m *Model) Apply(ev state.Event) {
 	if ev.EventType == "ERROR" {
 		m.entries = append(m.entries, entry{kind: kindError, header: "⚠ " + eventText(ev)})
-		m.scroll = 0
+		m.refresh(true)
 		return
 	}
 
@@ -83,7 +105,7 @@ func (m *Model) Apply(ev state.Event) {
 		// Ignored in the output panel (e.g. processing_state, attachments).
 		return
 	}
-	m.scroll = 0
+	m.refresh(true)
 }
 
 func (m *Model) appendAssistant(text string) {
@@ -113,25 +135,27 @@ func (m *Model) ToggleCollapse(i int) {
 		return
 	}
 	m.entries[i].collapsed = !m.entries[i].collapsed
-	m.clampScroll()
+	m.refresh(false)
 }
 
 // ScrollUp scrolls toward older content.
-func (m *Model) ScrollUp(n int) { m.scroll += n; m.clampScroll() }
+func (m *Model) ScrollUp(n int) { m.vp.ScrollUp(n) }
 
 // ScrollDown scrolls toward newer content.
-func (m *Model) ScrollDown(n int) { m.scroll -= n; m.clampScroll() }
+func (m *Model) ScrollDown(n int) { m.vp.ScrollDown(n) }
 
-func (m *Model) clampScroll() {
-	maxScroll := len(m.renderLines()) - m.height
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if m.scroll > maxScroll {
-		m.scroll = maxScroll
-	}
-	if m.scroll < 0 {
-		m.scroll = 0
+// PageUp and PageDown scroll by a panel height.
+func (m *Model) PageUp()   { m.vp.ScrollUp(m.height) }
+func (m *Model) PageDown() { m.vp.ScrollDown(m.height) }
+
+// refresh re-renders the entry list into the viewport. When pinBottom is set (or
+// the view was already at the bottom) it follows the newest content; otherwise
+// it preserves the current scroll position across the content change.
+func (m *Model) refresh(pinBottom bool) {
+	atBottom := m.vp.AtBottom()
+	m.vp.SetContent(strings.Join(m.renderLines(), "\n"))
+	if pinBottom || atBottom {
+		m.vp.GotoBottom()
 	}
 }
 
@@ -165,34 +189,13 @@ func (m *Model) wrap(s string, limit int) []string {
 	return out
 }
 
-// View renders exactly Height rows, bottom-anchored and offset by the scroll
-// position, padding with blanks so the panel always fills its region.
+// View renders the viewport: exactly Height rows, bottom-anchored, padded to the
+// panel region.
 func (m *Model) View() string {
 	if m.height == 0 {
 		return ""
 	}
-	all := m.renderLines()
-	end := len(all) - m.scroll
-	if end > len(all) {
-		end = len(all)
-	}
-	if end < 0 {
-		end = 0
-	}
-	start := end - m.height
-	if start < 0 {
-		start = 0
-	}
-
-	rows := make([]string, 0, m.height)
-	rows = append(rows, all[start:end]...)
-	for len(rows) < m.height {
-		rows = append(rows, "")
-	}
-	if len(rows) > m.height {
-		rows = rows[len(rows)-m.height:]
-	}
-	return strings.Join(rows, "\n")
+	return m.vp.View()
 }
 
 func eventText(ev state.Event) string {
