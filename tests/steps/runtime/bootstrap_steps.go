@@ -20,6 +20,12 @@ type harnessWorld struct {
 // InitializeScenario registers the runtime-domain steps onto a Godog scenario
 // context. Suite runners pass this to godog.TestSuite.ScenarioInitializer.
 func InitializeScenario(sc *godog.ScenarioContext) {
+	registerHarnessSteps(sc)
+	registerConfigSteps(sc)
+}
+
+// registerHarnessSteps wires the harness smoke steps.
+func registerHarnessSteps(sc *godog.ScenarioContext) {
 	w := &harnessWorld{}
 
 	sc.Step(`^the Godog harness is wired$`, w.harnessIsWired)

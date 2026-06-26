@@ -2,7 +2,10 @@ module agentx
 
 go 1.26.4
 
-require github.com/cucumber/godog v0.15.1
+require (
+	github.com/BurntSushi/toml v1.6.0
+	github.com/cucumber/godog v0.15.1
+)
 
 require (
 	github.com/cucumber/gherkin/go/v26 v26.2.0 // indirect
