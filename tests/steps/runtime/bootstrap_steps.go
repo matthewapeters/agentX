@@ -26,6 +26,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerLifecycleSteps(sc)
 	registerEntrypointSteps(sc)
 	registerOllamaSteps(sc)
+	registerPromptSteps(sc)
 }
 
 // registerHarnessSteps wires the harness smoke steps.
