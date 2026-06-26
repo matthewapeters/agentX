@@ -6,8 +6,8 @@
 // launched as separate client processes from other terminals and attach to the
 // server over the HTTP/SSE transport. See docs/implementation/ for contracts.
 //
-// The serving loop currently runs a headless orchestrator (CHT-A1..A6); the
-// two-panel chat surface attaches at CHT-B5. See docs/build-plan/.
+// The default launch boots the orchestrator and the two-panel chat surface
+// together in one process (the first vertical slice; see docs/build-plan/).
 package main
 
 import (
@@ -47,6 +47,5 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	fmt.Println("agentx", version, "- starting runtime (Ctrl+C to stop)")
-	return app.Run(ctx, app.Options{})
+	return app.RunChat(ctx, app.Options{})
 }

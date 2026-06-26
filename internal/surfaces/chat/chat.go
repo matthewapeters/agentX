@@ -173,7 +173,9 @@ func (m Model) View() tea.View {
 		statusBar(m.proc, m.width),
 		m.input.View(),
 	}, "\n")
-	return tea.NewView(content)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 // statusBar renders the processing-state indicator as a single full-width row

@@ -143,6 +143,23 @@ func (o *Orchestrator) Processing() *state.ProcessingPublisher { return o.proc }
 // Session returns the active session identity.
 func (o *Orchestrator) Session() session.Identity { return o.id }
 
+// CheckModel verifies the configured model is available (CHT-C4). It is called
+// after Start, before prompts are accepted, so an unavailable model is reported
+// clearly rather than surfacing as a per-prompt failure. ctx bounds the probe.
+func (o *Orchestrator) CheckModel(ctx context.Context) error {
+	o.mu.Lock()
+	model := o.model
+	name := o.settings.OllamaModel
+	o.mu.Unlock()
+	if model == nil {
+		return fmt.Errorf("orchestrator not started: no model")
+	}
+	if err := model.Ready(ctx, name); err != nil {
+		return fmt.Errorf("model %q is not available: %w", name, err)
+	}
+	return nil
+}
+
 // Submit runs one prompt cycle (CHT-C3): it records the user prompt, drives the
 // model through the respond phase streaming agent_response deltas onto the bus,
 // and transitions processing-state idle→working→completed. A model error routes
