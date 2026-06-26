@@ -19,6 +19,7 @@ type chatWorld struct {
 // InitializeScenario registers the surfaces-domain steps.
 func InitializeScenario(sc *godog.ScenarioContext) {
 	registerChatSteps(sc)
+	registerOutputSteps(sc)
 }
 
 // registerChatSteps wires the chat-surface layout steps (CHT-B1).
