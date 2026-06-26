@@ -24,3 +24,10 @@ Feature: Chat processing-state indicator
     When the processing state becomes working in phase "respond"
     Then the chat status shows "working"
     And the chat status shows "respond"
+
+  # use-case: UC-CHAT-STATUS
+  # variant: spinner
+  Scenario: Spinner animates while awaiting the response
+    Given a new chat surface sized 40 by 10
+    When the processing state becomes working in phase "respond"
+    Then a spinner tick advances the indicator

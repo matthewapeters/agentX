@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
 	"agentx/internal/state"
@@ -33,21 +34,23 @@ type Bridge struct {
 // input panel separated by a status bar that doubles as the processing-state
 // indicator.
 type Model struct {
-	width  int
-	height int
-	output *output.Model
-	input  *input.Model
-	proc   state.ProcessingState
-	bridge *Bridge
+	width   int
+	height  int
+	output  *output.Model
+	input   *input.Model
+	proc    state.ProcessingState
+	spinner spinner.Model
+	bridge  *Bridge
 }
 
 // New returns an unwired chat surface model (input focused, idle status). Submit
 // echoes locally; used by unit tests.
 func New() Model {
 	return Model{
-		output: output.New(),
-		input:  input.New(),
-		proc:   state.ProcessingState{State: state.StateIdle, Phase: state.PhaseNone},
+		output:  output.New(),
+		input:   input.New(),
+		proc:    state.ProcessingState{State: state.StateIdle, Phase: state.PhaseNone},
+		spinner: spinner.New(spinner.WithSpinner(spinner.Dot)),
 	}
 }
 
@@ -83,9 +86,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.relayout()
 	case ProcessingStateMsg:
+		prev := m.proc.State
 		m.proc = state.ProcessingState(msg)
 		m.input.SetStreaming(m.proc.State == state.StateWorking)
-		return m, m.listenProcessing()
+		cmds := []tea.Cmd{m.listenProcessing()}
+		// Start the spinner when work begins; the TickMsg loop sustains it.
+		if m.proc.State == state.StateWorking && prev != state.StateWorking {
+			cmds = append(cmds, m.spinner.Tick)
+		}
+		return m, tea.Batch(cmds...)
+	case spinner.TickMsg:
+		if m.proc.State != state.StateWorking {
+			return m, nil // stop ticking once work finishes
+		}
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case EventMsg:
 		m.output.Apply(state.Event(msg))
 		return m, m.listenEvents()
@@ -170,7 +186,7 @@ func (m *Model) relayout() {
 func (m Model) View() tea.View {
 	content := strings.Join([]string{
 		m.output.View(),
-		statusBar(m.proc, m.width),
+		statusBar(m.proc, m.spinner.View(), m.width),
 		m.input.View(),
 	}, "\n")
 	v := tea.NewView(content)
@@ -179,10 +195,18 @@ func (m Model) View() tea.View {
 }
 
 // statusBar renders the processing-state indicator as a single full-width row
-// that also separates the output and input panels.
-func statusBar(ps state.ProcessingState, width int) string {
+// that also separates the output and input panels. While working it shows the
+// animated spinner frame in place of the static marker.
+func statusBar(ps state.ProcessingState, spin string, width int) string {
 	marker := "○"
-	if ps.State != state.StateIdle {
+	switch ps.State {
+	case state.StateWorking:
+		if marker = strings.TrimSpace(spin); marker == "" {
+			marker = "●"
+		}
+	case state.StateIdle:
+		marker = "○"
+	default:
 		marker = "●"
 	}
 	label := string(ps.State)

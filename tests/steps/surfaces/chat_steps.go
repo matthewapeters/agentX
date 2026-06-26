@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/cucumber/godog"
 
@@ -42,6 +43,18 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the chat output contains "([^"]*)"$`, w.chatOutputContains)
 	sc.Step(`^the processing state becomes working in phase "([^"]*)"$`, w.processingWorking)
 	sc.Step(`^the chat status shows "([^"]*)"$`, w.statusShows)
+	sc.Step(`^a spinner tick advances the indicator$`, w.spinnerTickAdvances)
+}
+
+// spinnerTickAdvances verifies the working spinner animates: a tick changes the
+// rendered frame (only the spinner glyph differs between renders).
+func (w *chatWorld) spinnerTickAdvances() error {
+	before := w.model.View().Content
+	w.update(spinner.TickMsg{})
+	if after := w.model.View().Content; after == before {
+		return fmt.Errorf("spinner did not advance on tick")
+	}
+	return nil
 }
 
 func (w *chatWorld) processingWorking(phase string) error {
