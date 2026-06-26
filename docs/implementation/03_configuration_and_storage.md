@@ -50,6 +50,9 @@ Session folder organization:
 
 - one folder per session id, derived from epoch or timestamp
 - include explicit epoch in each JSON document for stable sorting
+- name each event file `<epoch>_<arrival-seq>_<content_type>.json`; the
+  zero-padded per-recorder arrival sequence breaks ties so events sharing a
+  millisecond epoch still load back in write order
 - persist both session_id and session_name in session metadata
 
 Example layout:
@@ -57,12 +60,12 @@ Example layout:
 - ~/.config/agentx/sessions/1719090012000/
   - session.json
   - events/
-    - 1719090012450_user_prompt.json
-    - 1719090012670_system_prompt.json
-    - 1719090013300_thinking.json
-    - 1719090014100_tool_call.json
-    - 1719090014700_tool_result.json
-    - 1719090015200_agent_response.json
+    - 1719090012450_000000_user_prompt.json
+    - 1719090012670_000001_system_prompt.json
+    - 1719090013300_000002_thinking.json
+    - 1719090014100_000003_tool_call.json
+    - 1719090014700_000004_tool_result.json
+    - 1719090015200_000005_agent_response.json
 
   Session metadata requirements (session.json):
 

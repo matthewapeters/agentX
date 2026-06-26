@@ -5,15 +5,17 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync/atomic"
 
 	"agentx/internal/state"
 )
 
 // Recorder persists a session's events to its events/ directory, append-only and
-// ordered by epoch. Source contract:
+// ordered by epoch then arrival. Source contract:
 // docs/implementation/03_configuration_and_storage.md (Persistence Behavior).
 type Recorder struct {
 	eventsDir string
+	seq       atomic.Uint64
 }
 
 // Recorder returns a Recorder for the given session id.
@@ -21,9 +23,11 @@ func (s *Store) Recorder(id string) *Recorder {
 	return &Recorder{eventsDir: filepath.Join(s.Dir(id), "events")}
 }
 
-// Write persists one event as <zero-padded-epoch>_<content_type>.json. Writes are
-// append-only: an existing file for the same epoch+content type is never
-// overwritten; a numeric suffix is added instead.
+// Write persists one event as
+// <zero-padded-epoch>_<zero-padded-seq>_<content_type>.json. The arrival
+// sequence is a per-recorder monotonic counter so events sharing a millisecond
+// epoch still load back in the order they were written. Writes are append-only:
+// an existing file is never overwritten; a numeric suffix is added instead.
 func (r *Recorder) Write(ev state.Event) error {
 	if err := ev.Validate(); err != nil {
 		return fmt.Errorf("refusing to persist invalid event: %w", err)
@@ -31,7 +35,8 @@ func (r *Recorder) Write(ev state.Event) error {
 	if err := os.MkdirAll(r.eventsDir, 0o755); err != nil {
 		return fmt.Errorf("create events dir: %w", err)
 	}
-	base := fmt.Sprintf("%013d_%s", ev.Epoch, ev.ContentType)
+	seq := r.seq.Add(1) - 1
+	base := fmt.Sprintf("%013d_%06d_%s", ev.Epoch, seq, ev.ContentType)
 	path := filepath.Join(r.eventsDir, base+".json")
 	for i := 1; fileExists(path); i++ {
 		path = filepath.Join(r.eventsDir, fmt.Sprintf("%s_%d.json", base, i))

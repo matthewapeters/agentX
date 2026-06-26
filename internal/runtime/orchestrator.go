@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"agentx/internal/prompting"
 	"agentx/internal/session"
 	"agentx/internal/state"
 )
@@ -25,20 +26,37 @@ type Settings struct {
 type Orchestrator struct {
 	settings Settings
 
-	store   *session.Store
-	id      session.Identity
-	bus     *state.Bus
-	proc    *state.ProcessingPublisher
-	recDone chan error
-	recSub  *state.Subscription
+	store     *session.Store
+	id        session.Identity
+	bus       *state.Bus
+	proc      *state.ProcessingPublisher
+	model     Model
+	assembler *prompting.Assembler
+	recDone   chan error
+	recSub    *state.Subscription
 
 	mu        sync.Mutex
 	started   bool
 	accepting bool
 }
 
+// Option configures an Orchestrator at construction time.
+type Option func(*Orchestrator)
+
+// WithModel overrides the LLM the prompt cycle drives. Without it the
+// orchestrator builds a live Ollama adapter from its settings at Start.
+func WithModel(m Model) Option {
+	return func(o *Orchestrator) { o.model = m }
+}
+
 // New returns an unstarted Orchestrator for the given settings.
-func New(s Settings) *Orchestrator { return &Orchestrator{settings: s} }
+func New(s Settings, opts ...Option) *Orchestrator {
+	o := &Orchestrator{settings: s}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
+}
 
 // Start runs the startup sequence: create the session, start the bus and
 // processing-state feed (idle), and begin draining events to disk.
@@ -58,6 +76,10 @@ func (o *Orchestrator) Start() error {
 
 	o.bus = state.NewBus()
 	o.proc = state.NewProcessingPublisher(id.ID)
+	if o.model == nil {
+		o.model = newOllamaModel(o.settings.OllamaHost)
+	}
+	o.assembler = prompting.New(prompting.DefaultSystemPrompt)
 
 	recorder := o.store.Recorder(id.ID)
 	sub := o.bus.Subscribe()
@@ -120,3 +142,61 @@ func (o *Orchestrator) Processing() *state.ProcessingPublisher { return o.proc }
 
 // Session returns the active session identity.
 func (o *Orchestrator) Session() session.Identity { return o.id }
+
+// Submit runs one prompt cycle (CHT-C3): it records the user prompt, drives the
+// model through the respond phase streaming agent_response deltas onto the bus,
+// and transitions processing-state idle→working→completed. A model error routes
+// an error event and transitions to failed. Event ordering is deterministic:
+// user_prompt, then agent_response deltas in stream order, then the terminal
+// processing-state. ctx cancellation terminates the in-flight model call.
+func (o *Orchestrator) Submit(ctx context.Context, text string) error {
+	o.mu.Lock()
+	ready := o.started && o.accepting
+	model := o.model
+	assembler := o.assembler
+	o.mu.Unlock()
+	if !ready {
+		return fmt.Errorf("orchestrator not accepting prompts")
+	}
+
+	o.setProcessing(state.StateWorking, state.PhaseRespond)
+	o.publish("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text})
+
+	messages := assembler.Assemble(text)
+	_, err := model.Chat(ctx, o.settings.OllamaModel, messages, func(delta string) {
+		o.publish("AGENT_CONTENT", state.ContentAgentResponse, map[string]any{"text": delta})
+	})
+	if err != nil {
+		o.publish("ERROR", state.ContentAgentResponse, map[string]any{"text": err.Error()})
+		o.setProcessing(state.StateFailed, state.PhaseNone)
+		return err
+	}
+
+	o.setProcessing(state.StateCompleted, state.PhaseNone)
+	return nil
+}
+
+// publish stamps and fans an event out over the bus.
+func (o *Orchestrator) publish(eventType string, ct state.ContentType, payload any) {
+	o.bus.Publish(state.Event{
+		Epoch:       time.Now().UnixMilli(),
+		SessionID:   o.id.ID,
+		EventType:   eventType,
+		ContentType: ct,
+		Payload:     payload,
+		ModelName:   o.settings.OllamaModel,
+	})
+}
+
+// setProcessing updates the live processing-state feed and persists a snapshot
+// onto the bus so the transition is recoverable from the event log.
+func (o *Orchestrator) setProcessing(s state.RunState, ph state.Phase) {
+	o.proc.Set(s, ph)
+	o.bus.Publish(state.Event{
+		Epoch:       time.Now().UnixMilli(),
+		SessionID:   o.id.ID,
+		EventType:   "PROCESSING_STATE",
+		ContentType: state.ContentProcessingState,
+		Payload:     o.proc.Current(),
+	})
+}
