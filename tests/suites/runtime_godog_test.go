@@ -11,10 +11,19 @@ import (
 	"github.com/cucumber/godog"
 
 	runtimesteps "agentx/tests/steps/runtime"
+	sessionsteps "agentx/tests/steps/session"
 )
 
 // featurePaths points at the shared feature corpus relative to tests/suites.
 var featurePaths = []string{"../features"}
+
+// initializeAll aggregates every behavior domain's step registrations into one
+// scenario initializer. Add a line here when a new tests/steps/<domain> package
+// is introduced.
+func initializeAll(sc *godog.ScenarioContext) {
+	runtimesteps.InitializeScenario(sc)
+	sessionsteps.InitializeScenario(sc)
+}
 
 // runTagged runs every registered scenario initializer against the feature
 // corpus, filtered to the given tag expression, and fails the test on a
@@ -24,7 +33,7 @@ func runTagged(t *testing.T, tags string) {
 
 	suite := godog.TestSuite{
 		Name:                "agentx",
-		ScenarioInitializer: runtimesteps.InitializeScenario,
+		ScenarioInitializer: initializeAll,
 		Options: &godog.Options{
 			Format:   "pretty",
 			Paths:    featurePaths,
