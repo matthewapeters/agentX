@@ -8,19 +8,47 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Config is the effective AgentX runtime configuration. Fields mirror the keys in
-// agentx.toml (docs/implementation/03_configuration_and_storage.md).
+// Config is the effective AgentX runtime configuration. It mirrors the nested
+// table layout of agentx.toml (docs/implementation/03_configuration_and_storage.md):
+//
+//	[agentx.ollama]
+//	host  = "localhost:11434"
+//	model = "phi4-mini:3.8b"
+//
+// Only the keys the Go runtime consumes are bound; unknown keys in the file
+// (timeouts, theme, applet ports, the [tui] section, ...) are ignored by the
+// decoder so the config can carry settings for other tools without error.
 type Config struct {
-	OllamaHost  string `toml:"ollama_host"`
-	OllamaModel string `toml:"ollama_model"`
+	Agentx Agentx `toml:"agentx"`
 }
+
+// Agentx is the [agentx] table.
+type Agentx struct {
+	Ollama Ollama `toml:"ollama"`
+}
+
+// Ollama is the [agentx.ollama] table: which local model the runtime drives.
+type Ollama struct {
+	Host  string `toml:"host"`
+	Model string `toml:"model"`
+}
+
+// OllamaHost returns the configured Ollama host.
+func (c Config) OllamaHost() string { return c.Agentx.Ollama.Host }
+
+// OllamaModel returns the configured active model.
+func (c Config) OllamaModel() string { return c.Agentx.Ollama.Model }
 
 // Default returns the built-in default configuration used to seed a deployment
 // config on first launch.
 func Default() Config {
 	return Config{
-		OllamaHost:  "localhost:11434",
-		OllamaModel: "phi4-mini:3.8b",
+		Agentx: Agentx{
+			Ollama: Ollama{
+				Host:  "localhost:11434",
+				Model: "phi4-mini:3.8b",
+			},
+		},
 	}
 }
 

@@ -92,14 +92,14 @@ func (w *configWorld) resolve() error {
 }
 
 func (w *configWorld) effectiveModelIs(want string) error {
-	if w.cfg.OllamaModel != want {
-		return fmt.Errorf("effective ollama_model = %q, want %q", w.cfg.OllamaModel, want)
+	if w.cfg.OllamaModel() != want {
+		return fmt.Errorf("effective ollama_model = %q, want %q", w.cfg.OllamaModel(), want)
 	}
 	return nil
 }
 
 func (w *configWorld) effectiveModelIsDefault() error {
-	return w.effectiveModelIs(config.Default().OllamaModel)
+	return w.effectiveModelIs(config.Default().OllamaModel())
 }
 
 func (w *configWorld) sourceIs(want string) error {
@@ -121,18 +121,20 @@ func (w *configWorld) seededDeploymentContainsModel(want string) error {
 	if _, err := toml.DecodeFile(w.paths.Deployment, &got); err != nil {
 		return fmt.Errorf("read seeded deployment config: %w", err)
 	}
-	if got.OllamaModel != want {
-		return fmt.Errorf("seeded ollama_model = %q, want %q", got.OllamaModel, want)
+	if got.OllamaModel() != want {
+		return fmt.Errorf("seeded ollama_model = %q, want %q", got.OllamaModel(), want)
 	}
 	return nil
 }
 
-// writeModelConfig writes a minimal agentx.toml containing only ollama_model.
+// writeModelConfig writes a minimal agentx.toml setting only the active model
+// under the [agentx.ollama] table.
 func writeModelConfig(path, model string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(fmt.Sprintf("ollama_model = %q\n", model)), 0o644)
+	body := fmt.Sprintf("[agentx.ollama]\nmodel = %q\n", model)
+	return os.WriteFile(path, []byte(body), 0o644)
 }
 
 // fileExists reports whether path is an existing regular file. Local helper so the

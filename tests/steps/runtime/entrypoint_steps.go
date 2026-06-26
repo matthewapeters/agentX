@@ -68,7 +68,7 @@ func (w *entrypointWorld) appOptions(model string) error {
 	if err := os.MkdirAll(filepath.Dir(deployment), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(deployment, []byte(fmt.Sprintf("ollama_model = %q\n", model)), 0o644); err != nil {
+	if err := os.WriteFile(deployment, []byte(fmt.Sprintf("[agentx.ollama]\nmodel = %q\n", model)), 0o644); err != nil {
 		return err
 	}
 	w.opts = app.Options{

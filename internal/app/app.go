@@ -51,8 +51,8 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 
 	orc := runtime.New(runtime.Settings{
 		SessionRoot: root,
-		OllamaHost:  cfg.OllamaHost,
-		OllamaModel: cfg.OllamaModel,
+		OllamaHost:  cfg.OllamaHost(),
+		OllamaModel: cfg.OllamaModel(),
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err
