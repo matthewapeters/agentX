@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"agentx/internal/state"
 )
 
@@ -133,19 +135,34 @@ func (m *Model) clampScroll() {
 	}
 }
 
-// renderLines flattens entries to display lines, including bodies of expanded
-// collapsible entries.
+// renderLines flattens entries to display lines, word-wrapping each entry to the
+// panel width so long responses reflow instead of being truncated. Bodies of
+// expanded collapsible entries are wrapped to a narrower width and indented.
 func (m *Model) renderLines() []string {
 	var lines []string
 	for _, e := range m.entries {
-		lines = append(lines, e.header)
+		lines = append(lines, m.wrap(e.header, m.width)...)
 		if e.collapsible && !e.collapsed && e.body != "" {
-			for _, bl := range strings.Split(e.body, "\n") {
+			for _, bl := range m.wrap(e.body, m.width-2) {
 				lines = append(lines, "  "+bl)
 			}
 		}
 	}
 	return lines
+}
+
+// wrap word-wraps s to limit display cells, preserving existing newlines and
+// hard-breaking words longer than the limit. A non-positive limit disables
+// wrapping (the raw lines are returned).
+func (m *Model) wrap(s string, limit int) []string {
+	if limit <= 0 {
+		return strings.Split(s, "\n")
+	}
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		out = append(out, strings.Split(ansi.Wrap(line, limit, " -"), "\n")...)
+	}
+	return out
 }
 
 // View renders exactly Height rows, bottom-anchored and offset by the scroll
@@ -168,9 +185,7 @@ func (m *Model) View() string {
 	}
 
 	rows := make([]string, 0, m.height)
-	for _, l := range all[start:end] {
-		rows = append(rows, fitWidth(l, m.width))
-	}
+	rows = append(rows, all[start:end]...)
 	for len(rows) < m.height {
 		rows = append(rows, "")
 	}
@@ -190,15 +205,4 @@ func eventText(ev state.Event) string {
 		return p
 	}
 	return fmt.Sprintf("%v", ev.Payload)
-}
-
-func fitWidth(s string, width int) string {
-	if width <= 0 {
-		return s
-	}
-	r := []rune(s)
-	if len(r) <= width {
-		return s
-	}
-	return string(r[:width])
 }

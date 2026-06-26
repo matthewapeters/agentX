@@ -42,6 +42,13 @@ Feature: Output panel event rendering
     When a tool_call event for "read_file" is applied
     Then the output view contains "read_file"
 
+  # use-case: UC-OUTPUT-WRAP
+  Scenario: Long responses wrap to the panel width instead of truncating
+    Given an output panel sized 20 by 10
+    When an agent_response event "the quick brown fox jumps over the lazy dog" is applied
+    Then no output line is wider than 20
+    And the output view contains "lazy dog"
+
   # use-case: UC-OUTPUT-SCROLL
   Scenario: Scrolling reveals earlier lines
     Given an output panel sized 20 by 3

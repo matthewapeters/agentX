@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/cucumber/godog"
 
 	"agentx/internal/state"
@@ -29,6 +30,7 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the output view contains "([^"]*)"$`, w.viewContains)
 	sc.Step(`^the output view does not contain "([^"]*)"$`, w.viewNotContains)
 	sc.Step(`^the output has (\d+) assistant entry$`, w.assistantEntries)
+	sc.Step(`^no output line is wider than (\d+)$`, w.noLineWiderThan)
 }
 
 func (w *outputWorld) panelSized(width, height int) error {
@@ -87,6 +89,15 @@ func (w *outputWorld) viewContains(want string) error {
 func (w *outputWorld) viewNotContains(unwanted string) error {
 	if strings.Contains(w.panel.View(), unwanted) {
 		return fmt.Errorf("output view unexpectedly contains %q", unwanted)
+	}
+	return nil
+}
+
+func (w *outputWorld) noLineWiderThan(limit int) error {
+	for _, line := range strings.Split(w.panel.View(), "\n") {
+		if width := ansi.StringWidth(line); width > limit {
+			return fmt.Errorf("line %q has display width %d, exceeds %d", line, width, limit)
+		}
 	}
 	return nil
 }
