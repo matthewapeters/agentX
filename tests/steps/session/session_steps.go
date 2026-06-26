@@ -23,6 +23,12 @@ type sessionWorld struct {
 
 // InitializeScenario registers the session-domain steps.
 func InitializeScenario(sc *godog.ScenarioContext) {
+	registerIdentitySteps(sc)
+	registerPersistenceSteps(sc)
+}
+
+// registerIdentitySteps wires the session-identity steps (CHT-A2).
+func registerIdentitySteps(sc *godog.ScenarioContext) {
 	w := &sessionWorld{}
 
 	sc.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
