@@ -16,7 +16,7 @@ Feature: Vi-style command mode
   # use-case: UC-CHAT-COMMAND
   Scenario: ESC opens the command line
     Given a new chat surface sized 40 by 10
-    Then the chat hint shows "esc → command"
+    Then the chat hint shows "esc → command options"
     When ESC is pressed
     Then the chat hint shows ":q quit"
 
@@ -26,7 +26,7 @@ Feature: Vi-style command mode
     Given a new chat surface sized 40 by 10
     When ESC is pressed
     And ESC is pressed
-    Then the chat hint shows "esc → command"
+    Then the chat hint shows "esc → command options"
 
   # use-case: UC-CHAT-COMMAND
   # variant: quit

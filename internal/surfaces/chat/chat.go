@@ -332,7 +332,7 @@ func (m Model) hintStrip() string {
 	case m.mode == modeCommand:
 		text = ":q quit · :exit · (esc to cancel)"
 	default:
-		text = "esc → command"
+		text = "esc → command options"
 	}
 	return padLine(text, m.width)
 }
