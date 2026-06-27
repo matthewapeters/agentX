@@ -28,6 +28,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerOllamaSteps(sc)
 	registerPromptSteps(sc)
 	registerPromptCycleSteps(sc)
+	registerPromptCancelSteps(sc)
 	registerModelReadinessSteps(sc)
 }
 

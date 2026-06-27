@@ -21,11 +21,13 @@ type ProcessingStateMsg state.ProcessingState
 // EventMsg delivers a bus event to the chat surface for rendering.
 type EventMsg state.Event
 
-// Bridge connects the chat surface to the runtime: a Submit function for prompts
-// and the channels the surface listens on for events and processing-state. A
-// zero Bridge (nil fields) leaves the surface in local-echo mode for unit tests.
+// Bridge connects the chat surface to the runtime: a Submit function for prompts,
+// a Stop function that interrupts the in-flight prompt, and the channels the
+// surface listens on for events and processing-state. A zero Bridge (nil fields)
+// leaves the surface in local-echo mode for unit tests.
 type Bridge struct {
 	Submit     func(text string)
+	Stop       func()
 	Events     <-chan state.Event
 	Processing <-chan state.ProcessingState
 }

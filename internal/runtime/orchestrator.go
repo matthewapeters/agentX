@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -165,7 +166,8 @@ func (o *Orchestrator) CheckModel(ctx context.Context) error {
 // and transitions processing-state idle→working→completed. A model error routes
 // an error event and transitions to failed. Event ordering is deterministic:
 // user_prompt, then agent_response deltas in stream order, then the terminal
-// processing-state. ctx cancellation terminates the in-flight model call.
+// processing-state. Canceling ctx interrupts the in-flight model call: any
+// partial response is kept, no error is recorded, and the cycle ends completed.
 func (o *Orchestrator) Submit(ctx context.Context, text string) error {
 	o.mu.Lock()
 	ready := o.started && o.accepting
@@ -183,14 +185,20 @@ func (o *Orchestrator) Submit(ctx context.Context, text string) error {
 	_, err := model.Chat(ctx, o.settings.OllamaModel, messages, func(delta string) {
 		o.publish("AGENT_CONTENT", state.ContentAgentResponse, map[string]any{"text": delta})
 	})
-	if err != nil {
+	switch {
+	case err == nil:
+		o.setProcessing(state.StateCompleted, state.PhaseNone)
+		return nil
+	case errors.Is(err, context.Canceled):
+		// Interrupted by the user: not a failure. Keep the partial response and
+		// end the cycle cleanly.
+		o.setProcessing(state.StateCompleted, state.PhaseNone)
+		return nil
+	default:
 		o.publish("ERROR", state.ContentAgentResponse, map[string]any{"text": err.Error()})
 		o.setProcessing(state.StateFailed, state.PhaseNone)
 		return err
 	}
-
-	o.setProcessing(state.StateCompleted, state.PhaseNone)
-	return nil
 }
 
 // publish stamps and fans an event out over the bus.

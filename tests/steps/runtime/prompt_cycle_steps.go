@@ -15,19 +15,25 @@ import (
 	"agentx/internal/state"
 )
 
-// stubModel is a deterministic Model: it emits a fixed set of deltas, or fails
-// with a fixed error, so the prompt cycle can be exercised without a live Ollama.
+// stubModel is a deterministic Model: it emits a fixed set of deltas, fails with
+// a fixed error, or (when block is set) streams nothing and waits for ctx
+// cancellation — so the prompt cycle can be exercised without a live Ollama.
 type stubModel struct {
 	deltas []string
 	err    error
+	block  bool
 }
 
-func (s stubModel) Chat(_ context.Context, _ string, _ []prompting.Message, onDelta func(string)) (string, error) {
+func (s stubModel) Chat(ctx context.Context, _ string, _ []prompting.Message, onDelta func(string)) (string, error) {
 	if s.err != nil {
 		return "", s.err
 	}
 	for _, d := range s.deltas {
 		onDelta(d)
+	}
+	if s.block {
+		<-ctx.Done()
+		return "", ctx.Err()
 	}
 	return strings.Join(s.deltas, ""), nil
 }

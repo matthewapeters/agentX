@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -105,10 +106,29 @@ func RunChat(ctx context.Context, opts Options) error {
 	procCh, procCancel := orc.Processing().Subscribe()
 	defer procCancel()
 
+	// Each prompt runs under its own cancelable context so the surface can
+	// interrupt the in-flight cycle via Stop without tearing down the program.
+	var promptMu sync.Mutex
+	var cancelPrompt context.CancelFunc
 	bridge := chat.Bridge{
 		Submit: func(text string) {
+			promptCtx, cancel := context.WithCancel(ctx)
+			promptMu.Lock()
+			cancelPrompt = cancel
+			promptMu.Unlock()
 			// Submit streams a full prompt cycle; run it off the UI goroutine.
-			go func() { _ = orc.Submit(ctx, text) }()
+			go func() {
+				defer cancel()
+				_ = orc.Submit(promptCtx, text)
+			}()
+		},
+		Stop: func() {
+			promptMu.Lock()
+			cancel := cancelPrompt
+			promptMu.Unlock()
+			if cancel != nil {
+				cancel()
+			}
 		},
 		Events:     sub.C,
 		Processing: procCh,
