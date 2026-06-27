@@ -17,14 +17,19 @@ import (
 
 // stubModel is a deterministic Model: it emits a fixed set of deltas, fails with
 // a fixed error, or (when block is set) streams nothing and waits for ctx
-// cancellation — so the prompt cycle can be exercised without a live Ollama.
+// cancellation — so the prompt cycle can be exercised without a live Ollama. When
+// captured is non-nil it records the assembled messages it was called with.
 type stubModel struct {
-	deltas []string
-	err    error
-	block  bool
+	deltas   []string
+	err      error
+	block    bool
+	captured *[]prompting.Message
 }
 
-func (s stubModel) Chat(ctx context.Context, _ string, _ []prompting.Message, onDelta func(string)) (string, error) {
+func (s stubModel) Chat(ctx context.Context, _ string, messages []prompting.Message, onDelta func(string)) (string, error) {
+	if s.captured != nil {
+		*s.captured = messages
+	}
 	if s.err != nil {
 		return "", s.err
 	}

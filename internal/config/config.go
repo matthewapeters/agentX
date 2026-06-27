@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -74,6 +76,36 @@ type Paths struct {
 // (conventionally ~/.config/agentx/sessions).
 func (p Paths) SessionRoot() string {
 	return filepath.Join(filepath.Dir(p.Deployment), "sessions")
+}
+
+// configDir is the deployment config directory that holds the user prompt files.
+func (p Paths) configDir() string { return filepath.Dir(p.Deployment) }
+
+// InstructionsPath is the standing user-instructions file prefixed to every LLM
+// context (~/.config/agentx/agentx-instructions.md).
+func (p Paths) InstructionsPath() string {
+	return filepath.Join(p.configDir(), "agentx-instructions.md")
+}
+
+// BootstrapPath is the startup auto-submit prompt file
+// (~/.config/agentx/bootstrap-prompt.md).
+func (p Paths) BootstrapPath() string {
+	return filepath.Join(p.configDir(), "bootstrap-prompt.md")
+}
+
+// ReadPromptFile reads an optional Markdown prompt file, returning its trimmed
+// contents, or "" when the file does not exist. See
+// docs/implementation/04_llm_prompt_tooling_runtime.md (Instructions and
+// Bootstrap Prompts).
+func ReadPromptFile(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read prompt file %s: %w", path, err)
+	}
+	return strings.TrimSpace(string(b)), nil
 }
 
 // DefaultPaths derives the conventional configuration locations, honoring

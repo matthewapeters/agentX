@@ -50,10 +50,23 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		root = paths.SessionRoot()
 	}
 
+	// Optional user prompt files (see docs/implementation/04, Instructions and
+	// Bootstrap Prompts). Absent files load as empty.
+	instructions, err := config.ReadPromptFile(paths.InstructionsPath())
+	if err != nil {
+		return nil, err
+	}
+	bootstrap, err := config.ReadPromptFile(paths.BootstrapPath())
+	if err != nil {
+		return nil, err
+	}
+
 	orc := runtime.New(runtime.Settings{
-		SessionRoot: root,
-		OllamaHost:  cfg.OllamaHost(),
-		OllamaModel: cfg.OllamaModel(),
+		SessionRoot:     root,
+		OllamaHost:      cfg.OllamaHost(),
+		OllamaModel:     cfg.OllamaModel(),
+		Instructions:    instructions,
+		BootstrapPrompt: bootstrap,
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err
@@ -133,6 +146,11 @@ func RunChat(ctx context.Context, opts Options) error {
 		Events:     sub.C,
 		Processing: procCh,
 	}
+
+	// Auto-submit the bootstrap prompt (if configured) once the surface is
+	// subscribed; its events buffer on the subscription until the program drains
+	// them, so the response opens the session.
+	go func() { _ = orc.SubmitBootstrap(ctx) }()
 
 	p := tea.NewProgram(chat.NewWithBridge(bridge), tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {

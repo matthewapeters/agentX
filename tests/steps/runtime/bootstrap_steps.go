@@ -30,6 +30,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerPromptCycleSteps(sc)
 	registerPromptCancelSteps(sc)
 	registerModelReadinessSteps(sc)
+	registerPromptFilesSteps(sc)
 }
 
 // registerHarnessSteps wires the harness smoke steps.

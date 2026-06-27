@@ -40,6 +40,14 @@ Prompt catalog configuration:
   - enabled always-on prompt files
   - one-time selection behavior metadata
 
+User prompt files (Markdown, optional):
+
+- ~/.config/agentx/agentx-instructions.md
+  - standing user instructions prefixed to every LLM context
+- ~/.config/agentx/bootstrap-prompt.md
+  - prompt submitted automatically at startup; the response opens the session
+  - see `04_llm_prompt_tooling_runtime.md` (Instructions and Bootstrap Prompts)
+
 ## Session Storage Root
 
 All user/agent activity is persisted under:

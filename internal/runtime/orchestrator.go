@@ -20,6 +20,13 @@ type Settings struct {
 	// cycle in CHT-C*).
 	OllamaHost  string
 	OllamaModel string
+	// Instructions is the standing user-instructions text prefixed to every LLM
+	// context (from ~/.config/agentx/agentx-instructions.md). Empty falls back to
+	// the built-in default system prompt.
+	Instructions string
+	// BootstrapPrompt, when non-empty, is submitted automatically at startup
+	// (from ~/.config/agentx/bootstrap-prompt.md).
+	BootstrapPrompt string
 }
 
 // Orchestrator owns the per-process runtime: session, event bus, processing
@@ -80,7 +87,11 @@ func (o *Orchestrator) Start() error {
 	if o.model == nil {
 		o.model = newOllamaModel(o.settings.OllamaHost)
 	}
-	o.assembler = prompting.New(prompting.DefaultSystemPrompt)
+	instructions := o.settings.Instructions
+	if instructions == "" {
+		instructions = prompting.DefaultSystemPrompt
+	}
+	o.assembler = prompting.New(instructions)
 
 	recorder := o.store.Recorder(id.ID)
 	sub := o.bus.Subscribe()
@@ -169,6 +180,27 @@ func (o *Orchestrator) CheckModel(ctx context.Context) error {
 // processing-state. Canceling ctx interrupts the in-flight model call: any
 // partial response is kept, no error is recorded, and the cycle ends completed.
 func (o *Orchestrator) Submit(ctx context.Context, text string) error {
+	return o.runPrompt(ctx, text, true)
+}
+
+// SubmitBootstrap submits the configured bootstrap prompt at startup (story:
+// bootstrap prompt). It runs the normal cycle with instructions prefixed but
+// does not record a user-prompt entry, so the model response is the first thing
+// shown. It is a no-op when no bootstrap prompt is configured.
+func (o *Orchestrator) SubmitBootstrap(ctx context.Context) error {
+	o.mu.Lock()
+	text := o.settings.BootstrapPrompt
+	o.mu.Unlock()
+	if text == "" {
+		return nil
+	}
+	return o.runPrompt(ctx, text, false)
+}
+
+// runPrompt drives one prompt cycle. When recordUserPrompt is false the user
+// message is still sent to the model (so instructions + prompt reach the LLM) but
+// no user_prompt event is published — used for the bootstrap prompt.
+func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPrompt bool) error {
 	o.mu.Lock()
 	ready := o.started && o.accepting
 	model := o.model
@@ -179,7 +211,9 @@ func (o *Orchestrator) Submit(ctx context.Context, text string) error {
 	}
 
 	o.setProcessing(state.StateWorking, state.PhaseRespond)
-	o.publish("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text})
+	if recordUserPrompt {
+		o.publish("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text})
+	}
 
 	messages := assembler.Assemble(text)
 	_, err := model.Chat(ctx, o.settings.OllamaModel, messages, func(delta string) {
