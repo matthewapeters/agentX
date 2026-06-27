@@ -14,8 +14,9 @@ import (
 )
 
 type chatWorld struct {
-	model chat.Model
-	cmd   tea.Cmd
+	model   chat.Model
+	cmd     tea.Cmd
+	stopped *bool
 }
 
 // InitializeScenario registers the surfaces-domain steps.
@@ -44,6 +45,50 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the processing state becomes working in phase "([^"]*)"$`, w.processingWorking)
 	sc.Step(`^the chat status shows "([^"]*)"$`, w.statusShows)
 	sc.Step(`^a spinner tick advances the indicator$`, w.spinnerTickAdvances)
+	sc.Step(`^ESC is pressed$`, w.pressEsc)
+	sc.Step(`^the chat hint shows "([^"]*)"$`, w.statusShows)
+	sc.Step(`^the user enters the command "([^"]*)"$`, w.entersCommand)
+	sc.Step(`^a chat surface that records interrupts sized (\d+) by (\d+)$`, w.recordingSurfaceSized)
+	sc.Step(`^the interrupt is confirmed$`, w.confirmInterrupt)
+	sc.Step(`^the runtime is interrupted$`, w.runtimeInterrupted)
+}
+
+func (w *chatWorld) pressEsc() error {
+	w.update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	return nil
+}
+
+// entersCommand opens the command line (esc), types the verb, and submits it.
+func (w *chatWorld) entersCommand(verb string) error {
+	w.update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	for _, r := range verb {
+		w.update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	w.update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	return nil
+}
+
+func (w *chatWorld) recordingSurfaceSized(width, height int) error {
+	stopped := false
+	w.stopped = &stopped
+	bridge := chat.Bridge{Stop: func() { stopped = true }}
+	w.model = chat.NewWithBridge(bridge)
+	w.update(tea.WindowSizeMsg{Width: width, Height: height})
+	return nil
+}
+
+func (w *chatWorld) confirmInterrupt() error {
+	if w.cmd != nil {
+		w.cmd()
+	}
+	return nil
+}
+
+func (w *chatWorld) runtimeInterrupted() error {
+	if w.stopped == nil || !*w.stopped {
+		return fmt.Errorf("runtime was not interrupted")
+	}
+	return nil
 }
 
 // spinnerTickAdvances verifies the working spinner animates: a tick changes the

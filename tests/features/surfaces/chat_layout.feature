@@ -14,11 +14,12 @@ Feature: Chat surface two-panel layout
   So that I can read responses and type prompts in one view
 
   # use-case: UC-CHAT-LAYOUT
-  Scenario: Surface fills the terminal with output, separator, and input
+  # Layout rows: output (flex) + status (1) + hint (1) + input (3).
+  Scenario: Surface fills the terminal with output, status, hint, and input
     Given a new chat surface
     When the terminal size is 80 by 24
     Then the rendered view has 24 rows
-    And the output region is 20 rows
+    And the output region is 19 rows
     And the input region is 3 rows
 
   # use-case: UC-CHAT-FOCUS
