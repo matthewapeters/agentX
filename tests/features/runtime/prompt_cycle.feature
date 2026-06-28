@@ -20,10 +20,11 @@ Feature: Prompt cycle orchestration
     When the prompt "hi" is submitted
     And the orchestrator is shut down
     Then the recorded content events are, in order:
-      | content_type   | text |
-      | user_prompt    | hi   |
-      | agent_response | Hel  |
-      | agent_response | lo   |
+      | content_type   | text              |
+      | user_prompt    | hi                |
+      | classification | → respond_directly |
+      | agent_response | Hel               |
+      | agent_response | lo                |
     And the final processing state is "completed"
 
   # use-case: UC-PROMPT-CYCLE

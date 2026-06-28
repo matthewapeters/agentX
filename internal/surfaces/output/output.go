@@ -26,6 +26,7 @@ type entryKind int
 
 const (
 	kindUser entryKind = iota
+	kindClassification
 	kindAssistant
 	kindThinking
 	kindToolCall
@@ -91,6 +92,8 @@ func (m *Model) Apply(ev state.Event) {
 	switch ev.ContentType {
 	case state.ContentUserPrompt:
 		m.entries = append(m.entries, entry{kind: kindUser, header: "👤 " + eventText(ev)})
+	case state.ContentClassification:
+		m.entries = append(m.entries, entry{kind: kindClassification, header: "⚙️ " + eventText(ev)})
 	case state.ContentAgentResponse:
 		m.appendAssistant(eventText(ev))
 	case state.ContentThinking:
@@ -100,7 +103,7 @@ func (m *Model) Apply(ev state.Event) {
 	case state.ContentToolResult:
 		m.entries = append(m.entries, entry{kind: kindToolResult, header: "📋 result", body: eventText(ev), collapsible: true, collapsed: true})
 	case state.ContentSystemPrompt:
-		m.entries = append(m.entries, entry{kind: kindSystem, header: "⚙ " + eventText(ev)})
+		m.entries = append(m.entries, entry{kind: kindSystem, header: "📜 " + eventText(ev)})
 	default:
 		// Ignored in the output panel (e.g. processing_state, attachments).
 		return

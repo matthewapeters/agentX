@@ -18,6 +18,7 @@
       "enum": [
         "user_prompt",
         "system_prompt",
+        "classification",
         "thinking",
         "agent_response",
         "attachments",

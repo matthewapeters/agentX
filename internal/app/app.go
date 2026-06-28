@@ -60,13 +60,19 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 	if err != nil {
 		return nil, err
 	}
+	classification, err := config.ReadPromptFile(paths.ClassificationPath())
+	if err != nil {
+		return nil, err
+	}
 
 	orc := runtime.New(runtime.Settings{
-		SessionRoot:     root,
-		OllamaHost:      cfg.OllamaHost(),
-		OllamaModel:     cfg.OllamaModel(),
-		Instructions:    instructions,
-		BootstrapPrompt: bootstrap,
+		SessionRoot:           root,
+		OllamaHost:            cfg.OllamaHost(),
+		OllamaModel:           cfg.OllamaModel(),
+		Instructions:          instructions,
+		BootstrapPrompt:       bootstrap,
+		ClassificationPrompt:  classification,
+		ClassificationRetries: cfg.ClassificationRetries(),
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"agentx/internal/classify"
 	"agentx/internal/prompting"
 	"agentx/internal/session"
 	"agentx/internal/state"
@@ -27,6 +28,11 @@ type Settings struct {
 	// BootstrapPrompt, when non-empty, is submitted automatically at startup
 	// (from ~/.config/agentx/bootstrap-prompt.md).
 	BootstrapPrompt string
+	// ClassificationPrompt is the system prompt for the classify step (from
+	// ~/.config/agentx/agentx-classification.md). Empty uses the built-in default.
+	ClassificationPrompt string
+	// ClassificationRetries is the classify-cycle retry budget.
+	ClassificationRetries int
 }
 
 // Orchestrator owns the per-process runtime: session, event bus, processing
@@ -34,14 +40,15 @@ type Settings struct {
 type Orchestrator struct {
 	settings Settings
 
-	store     *session.Store
-	id        session.Identity
-	bus       *state.Bus
-	proc      *state.ProcessingPublisher
-	model     Model
-	assembler *prompting.Assembler
-	recDone   chan error
-	recSub    *state.Subscription
+	store      *session.Store
+	id         session.Identity
+	bus        *state.Bus
+	proc       *state.ProcessingPublisher
+	model      Model
+	assembler  *prompting.Assembler
+	classifier *classify.Classifier
+	recDone    chan error
+	recSub     *state.Subscription
 
 	mu        sync.Mutex
 	started   bool
@@ -55,6 +62,12 @@ type Option func(*Orchestrator)
 // orchestrator builds a live Ollama adapter from its settings at Start.
 func WithModel(m Model) Option {
 	return func(o *Orchestrator) { o.model = m }
+}
+
+// WithClassifier overrides the prompt classifier. Without it the orchestrator
+// builds one from its settings (using the model) at Start.
+func WithClassifier(c *classify.Classifier) Option {
+	return func(o *Orchestrator) { o.classifier = c }
 }
 
 // New returns an unstarted Orchestrator for the given settings.
@@ -92,6 +105,12 @@ func (o *Orchestrator) Start() error {
 		instructions = prompting.DefaultSystemPrompt
 	}
 	o.assembler = prompting.New(instructions)
+	if o.classifier == nil {
+		chat := func(ctx context.Context, msgs []prompting.Message) (string, error) {
+			return o.model.Chat(ctx, o.settings.OllamaModel, msgs, func(string) {})
+		}
+		o.classifier = classify.New(o.settings.ClassificationPrompt, o.settings.ClassificationRetries, chat)
+	}
 
 	recorder := o.store.Recorder(id.ID)
 	sub := o.bus.Subscribe()
@@ -180,7 +199,7 @@ func (o *Orchestrator) CheckModel(ctx context.Context) error {
 // processing-state. Canceling ctx interrupts the in-flight model call: any
 // partial response is kept, no error is recorded, and the cycle ends completed.
 func (o *Orchestrator) Submit(ctx context.Context, text string) error {
-	return o.runPrompt(ctx, text, true)
+	return o.runPrompt(ctx, text, true, true)
 }
 
 // SubmitBootstrap submits the configured bootstrap prompt at startup (story:
@@ -194,25 +213,44 @@ func (o *Orchestrator) SubmitBootstrap(ctx context.Context) error {
 	if text == "" {
 		return nil
 	}
-	return o.runPrompt(ctx, text, false)
+	// Bootstrap skips classification so the response is the first thing shown.
+	return o.runPrompt(ctx, text, false, false)
 }
 
 // runPrompt drives one prompt cycle. When recordUserPrompt is false the user
 // message is still sent to the model (so instructions + prompt reach the LLM) but
-// no user_prompt event is published — used for the bootstrap prompt.
-func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPrompt bool) error {
+// no user_prompt event is published — used for the bootstrap prompt. When
+// classifyPrompt is true the prompt is classified (and a classification event
+// published) before the respond phase.
+func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPrompt, classifyPrompt bool) error {
 	o.mu.Lock()
 	ready := o.started && o.accepting
 	model := o.model
 	assembler := o.assembler
+	classifier := o.classifier
 	o.mu.Unlock()
 	if !ready {
 		return fmt.Errorf("orchestrator not accepting prompts")
 	}
 
-	o.setProcessing(state.StateWorking, state.PhaseRespond)
+	if classifyPrompt {
+		o.setProcessing(state.StateWorking, state.PhaseClassify)
+	} else {
+		o.setProcessing(state.StateWorking, state.PhaseRespond)
+	}
 	if recordUserPrompt {
 		o.publish("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text})
+	}
+
+	if classifyPrompt && classifier != nil {
+		verdict := classifier.Classify(ctx, text)
+		o.publish("CLASSIFICATION", state.ContentClassification, map[string]any{
+			"route":     string(verdict.Route),
+			"rationale": verdict.Rationale,
+			"text":      classificationText(verdict),
+		})
+		// v1: only respond_directly executes; reserved routes fall back to respond.
+		o.setProcessing(state.StateWorking, state.PhaseRespond)
 	}
 
 	messages := assembler.Assemble(text)
@@ -233,6 +271,15 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		o.setProcessing(state.StateFailed, state.PhaseNone)
 		return err
 	}
+}
+
+// classificationText renders the greyed "intent → route" line for the output
+// panel (see ux/06_OUTPUT_WIDGET.md).
+func classificationText(v classify.Verdict) string {
+	if v.Rationale != "" {
+		return fmt.Sprintf("%s → %s", v.Rationale, v.Route)
+	}
+	return fmt.Sprintf("→ %s", v.Route)
 }
 
 // publish stamps and fans an event out over the bus.

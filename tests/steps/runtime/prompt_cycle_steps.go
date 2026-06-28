@@ -9,6 +9,7 @@ import (
 
 	"github.com/cucumber/godog"
 
+	"agentx/internal/classify"
 	"agentx/internal/prompting"
 	"agentx/internal/runtime"
 	"agentx/internal/session"
@@ -77,7 +78,16 @@ func (w *promptCycleWorld) startWith(model runtime.Model) error {
 		return err
 	}
 	w.dir = dir
-	w.orc = runtime.New(runtime.Settings{SessionRoot: dir, OllamaModel: "stub"}, runtime.WithModel(model))
+	// A deterministic classifier keeps these respond-cycle assertions focused on
+	// the respond stream (classification is exercised separately in CHT-D3/D4).
+	classifierChat := func(context.Context, []prompting.Message) (string, error) {
+		return `{"route": "respond_directly"}`, nil
+	}
+	w.orc = runtime.New(
+		runtime.Settings{SessionRoot: dir, OllamaModel: "stub"},
+		runtime.WithModel(model),
+		runtime.WithClassifier(classify.New("", 0, classifierChat)),
+	)
 	return w.orc.Start()
 }
 

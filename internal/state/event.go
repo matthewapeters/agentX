@@ -9,6 +9,7 @@ type ContentType string
 const (
 	ContentUserPrompt      ContentType = "user_prompt"
 	ContentSystemPrompt    ContentType = "system_prompt"
+	ContentClassification  ContentType = "classification"
 	ContentThinking        ContentType = "thinking"
 	ContentAgentResponse   ContentType = "agent_response"
 	ContentAttachments     ContentType = "attachments"
@@ -18,9 +19,9 @@ const (
 )
 
 var validContentTypes = map[ContentType]bool{
-	ContentUserPrompt: true, ContentSystemPrompt: true, ContentThinking: true,
-	ContentAgentResponse: true, ContentAttachments: true, ContentToolCall: true,
-	ContentToolResult: true, ContentProcessingState: true,
+	ContentUserPrompt: true, ContentSystemPrompt: true, ContentClassification: true,
+	ContentThinking: true, ContentAgentResponse: true, ContentAttachments: true,
+	ContentToolCall: true, ContentToolResult: true, ContentProcessingState: true,
 }
 
 // Event is the canonical session-event envelope fanned out over the Bus and
