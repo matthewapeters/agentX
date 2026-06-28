@@ -208,6 +208,52 @@ traceability (`01_comprehensive_build_plan.md` §3).
 
 ---
 
+## Phase D — Classification cycle (M3a)
+
+Un-defers the `classify` phase. Specs: `../implementation/04_llm_prompt_tooling_runtime.md`
+(Classification Cycle) and `../ux/06_OUTPUT_WIDGET.md` (collapsible output widget).
+
+### CHT-D1 · Collapsible output widget (TUI) · L
+- **Target**: `internal/surfaces/output/`
+- **Source**: `ux/06_OUTPUT_WIDGET.md` (re-authors PD-01/PD-09 for the TUI)
+- **Behavior**: per-entry widget — always-visible word-break-truncated header, collapse/
+  expand, `[agentx.output] max_widget_lines` cap, inner viewport scroll with a
+  proportional scrollbar thumb, `lipgloss.NormalBorder` box, focus/selection model.
+- **Feature**: `tests/features/surfaces/output_widget.feature` (`@functional @ux:PD-01`)
+- **Done**: header/cap/inner-scroll/scrollbar/border behave per spec; existing render
+  scenarios still pass.
+
+### CHT-D2 · Classification prompt + config · S
+- **Target**: `internal/config/`, `internal/prompting/`
+- **Source**: `04` (Classification Cycle), `03` (User prompt files / runtime tables)
+- **Behavior**: seed `agentx-classification.md`; load it; add `[agentx.classification]`
+  (`retries`, `clarification_options`).
+- **Feature**: `tests/features/runtime/classification_config.feature` (`@integration`)
+- **Done**: prompt + retry/clarification settings resolve with defaults.
+
+### CHT-D3 · Classifier (classify → route) · M
+- **Target**: `internal/classify/` (new)
+- **Deps**: CHT-C1, CHT-C3, CHT-D2
+- **Source**: `04` (routable taxonomy, strict-JSON contract, retry/fallback)
+- **Behavior**: run the classification call, extract+validate JSON, retry up to N,
+  fall back to `respond_directly`; emit the `classification` event.
+- **Feature**: `tests/features/runtime/classification.feature` (`@functional`)
+- **Done**: deterministic route from a parseable verdict; malformed → retry → fallback.
+
+### CHT-D4 · Prompt cycle integration · M
+- **Target**: `internal/runtime/`
+- **Deps**: CHT-D3
+- **Behavior**: insert `PhaseClassify` before `PhaseRespond`; route `respond_directly`
+  (reserved routes fall back); render the greyed `⚙️ intent → route` line.
+- **Feature**: `tests/features/runtime/classify_respond_cycle.feature` (`@functional`)
+- **Done**: `idle → classify → respond → completed` with deterministic event ordering.
+
+> Stage 2 (ambiguity + user clarification: K interpretations, number-select, append &
+> resubmit; `clarification` content type; `awaiting_input` state) is a separate backlog
+> increment once Stage 1 lands.
+
+---
+
 ## Sequencing
 
 ```
@@ -234,7 +280,9 @@ C2 ─ C1 ─ C3 ─ C4 ──────────────────�
 | Right-click copy/paste context menus (PD-01-AF-010, PD-02-AF-008..012) | later (TUI redesign) |
 | Plan tabs / PlanView (PD-05), context-meter donut (PD-10) | later feature / separate surface |
 | Tool runtime + policy enforcement (tool execution) | M3b |
-| Classification / thinking / procedural prompt stages | later M3a (renderable now, not driven) |
+| Classification cycle (classify → route → respond) | **Phase D (this doc)** |
+| Classification Stage 2: ambiguity + user clarification flow | later M3a (Stage 2) |
+| `think`/procedural prompt stages; tool/planner routes | later M3a/M3b (reserved, fall back now) |
 | Live model-switch workflow | later M3a |
 | Persistence replay & operational hardening | M4 |
 

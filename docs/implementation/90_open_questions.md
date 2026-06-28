@@ -52,6 +52,15 @@ Purpose: collect implementation decisions required to finalize execution plannin
 1. Procedural prompts shipped as compiled assets or versioned files.
 2. Namespaced user prompt packs by profile/persona.
 3. Internal prompt integrity checks (hash or signature).
+4. Classification Stage 2 — user clarification on ambiguity (open). The classifier
+   offers K interpretations (`agentx.classification.clarification_options`); the user
+   selects one (number-press), which is appended to the prompt and resubmitted.
+   Undecided: (a) the new `clarification` event content type + whether a
+   `awaiting_input` processing state is added (both touch frozen contracts +
+   CHANGELOG); (b) how the number-select affordance coexists with the input/command
+   modes; (c) whether ambiguity is a first-class classifier outcome or only a
+   post-retry fallback. See `04_llm_prompt_tooling_runtime.md` (Classification Cycle)
+   and `../build-plan/03_chat_surface_backlog.md` (Phase D / Stage 2).
 
 ### E. Persistence and Replay
 

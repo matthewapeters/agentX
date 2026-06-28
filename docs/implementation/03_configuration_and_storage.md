@@ -43,10 +43,30 @@ Prompt catalog configuration:
 User prompt files (Markdown, optional):
 
 - ~/.config/agentx/agentx-instructions.md
-  - standing user instructions prefixed to every LLM context
+  - standing user instructions prefixed to every LLM context (respond step)
 - ~/.config/agentx/bootstrap-prompt.md
   - prompt submitted automatically at startup; the response opens the session
   - see `04_llm_prompt_tooling_runtime.md` (Instructions and Bootstrap Prompts)
+- ~/.config/agentx/agentx-classification.md
+  - system prompt for the classification step; describes the agentic-workflow
+    taxonomy used to route prompts (seeded with a default; tunable)
+  - see `04_llm_prompt_tooling_runtime.md` (Classification Cycle)
+
+### Runtime tables (`agentx.toml`)
+
+In addition to `[agentx.ollama]`, the following nested tables tune v1 behaviour:
+
+```toml
+[agentx.classification]
+retries = 2               # re-attempts when a classification verdict won't parse
+clarification_options = 3 # Stage-2: candidate interpretations offered on ambiguity
+
+[agentx.output]
+max_widget_lines = 20     # max body rows before an output widget scrolls in place
+```
+
+- Unknown keys are ignored by the decoder; absent values fall back to the defaults
+  shown above.
 
 ## Session Storage Root
 
