@@ -50,17 +50,17 @@ Feature: Output panel event rendering
     And the output view contains "lazy dog"
 
   # use-case: UC-OUTPUT-SCROLL
-  Scenario: Scrolling reveals earlier lines
+  Scenario: Scrolling to the top reveals the earliest widget
     Given an output panel sized 20 by 3
     When 10 numbered user events are applied
     Then the output view does not contain "msg-01"
-    When the panel scrolls up by 8
+    When the panel scrolls up by 100
     Then the output view contains "msg-01"
 
   # use-case: UC-OUTPUT-SCROLL
   # variant: page
   Scenario: Paging up reveals the previous page
-    Given an output panel sized 20 by 3
+    Given an output panel sized 20 by 9
     When 10 numbered user events are applied
     Then the output view does not contain "msg-07"
     When the panel pages up

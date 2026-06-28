@@ -1,14 +1,12 @@
-// Package output is the chat surface's output panel: a fixed-height region that
-// renders conversation events (user, thinking, assistant, tool call/result,
-// system, error) with streaming assistant text, collapsible thinking/tool
-// blocks, and bottom-anchored scrolling.
+// Package output is the chat surface's output panel: a vertical stack of
+// collapsible widgets (one per conversation event) hosted in a scrollable
+// viewport. Each widget is an IBM-style box with an always-visible, word-break
+// truncated header; a body that collapses/expands; a configurable height cap with
+// in-place scrolling and a proportional scrollbar; and a selection cursor that
+// drives collapse and inner scroll.
 //
-// The panel hosts its content in a charm.land/bubbles/v2/viewport: the entry
-// model produces word-wrapped display lines and the viewport owns scrolling,
-// height padding, and (when the program enables the mouse) wheel handling.
-//
-// Source contract: docs/ux/03_PANEL_DETAILS.md PD-01 (re-authored for the TUI).
-// Backlog task: CHT-B2.
+// Source contract: docs/ux/06_OUTPUT_WIDGET.md (re-authors PD-01/PD-09 for the
+// TUI). Backlog task: CHT-D1.
 package output
 
 import (
@@ -21,6 +19,9 @@ import (
 
 	"agentx/internal/state"
 )
+
+// defaultMaxBody is the fallback body-row cap before a widget scrolls in place.
+const defaultMaxBody = 20
 
 type entryKind int
 
@@ -35,31 +36,42 @@ const (
 	kindError
 )
 
-type entry struct {
+// widget is one renderable output entry.
+type widget struct {
 	kind        entryKind
-	header      string
-	body        string
+	header      string // emoji + label, always shown (one line)
+	body        string // optional detail, collapsible
 	collapsible bool
 	collapsed   bool
+	offset      int // inner scroll offset (wrapped body-line index)
 }
 
 // Model is the output panel state.
 type Model struct {
-	vp      viewport.Model
-	width   int
-	height  int
-	entries []entry
+	vp       viewport.Model
+	width    int
+	height   int
+	maxBody  int
+	widgets  []*widget
+	selected int // index of the selected widget, or -1 when empty
 }
 
 // New returns an empty output panel backed by a viewport.
 func New() *Model {
 	vp := viewport.New()
 	vp.FillHeight = true
-	return &Model{vp: vp}
+	return &Model{vp: vp, maxBody: defaultMaxBody, selected: -1}
 }
 
-// SetSize sets the panel's render dimensions and reflows content to the new
-// width.
+// SetMaxBody sets the per-widget body-row cap (max_widget_lines).
+func (m *Model) SetMaxBody(n int) {
+	if n > 0 {
+		m.maxBody = n
+	}
+	m.refresh(false)
+}
+
+// SetSize sets the panel's render dimensions and reflows content.
 func (m *Model) SetSize(width, height int) {
 	m.width = max(width, 0)
 	m.height = max(height, 0)
@@ -71,134 +83,321 @@ func (m *Model) SetSize(width, height int) {
 // Height returns the panel's row count.
 func (m *Model) Height() int { return m.height }
 
-// Update forwards scrolling messages (viewport keys, mouse wheel) to the
-// embedded viewport and returns any resulting command.
+// Update forwards scrolling messages (mouse wheel) to the transcript viewport.
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	m.vp, cmd = m.vp.Update(msg)
 	return cmd
 }
 
-// Apply folds a bus event into the panel. Assistant responses stream into a
-// single entry; thinking and tool-result blocks start collapsed. New content
-// pins the view to the bottom so the stream stays in sight.
+// Apply folds a bus event into the panel as a widget and selects it.
 func (m *Model) Apply(ev state.Event) {
 	if ev.EventType == "ERROR" {
-		m.entries = append(m.entries, entry{kind: kindError, header: "⚠ " + eventText(ev)})
-		m.refresh(true)
+		m.add(&widget{kind: kindError, header: "⚠ " + oneLine(eventText(ev)), body: detail(eventText(ev))})
 		return
 	}
-
 	switch ev.ContentType {
 	case state.ContentUserPrompt:
-		m.entries = append(m.entries, entry{kind: kindUser, header: "👤 " + eventText(ev)})
+		m.add(&widget{kind: kindUser, header: "👤 " + oneLine(eventText(ev)), body: detail(eventText(ev))})
 	case state.ContentClassification:
-		m.entries = append(m.entries, entry{kind: kindClassification, header: "⚙️ " + eventText(ev)})
+		m.add(&widget{kind: kindClassification, header: "⚙️ " + oneLine(eventText(ev))})
 	case state.ContentAgentResponse:
 		m.appendAssistant(eventText(ev))
+		return
 	case state.ContentThinking:
-		m.entries = append(m.entries, entry{kind: kindThinking, header: "💭 thinking", body: eventText(ev), collapsible: true, collapsed: true})
+		m.add(&widget{kind: kindThinking, header: "💭 thinking", body: eventText(ev), collapsible: true, collapsed: true})
 	case state.ContentToolCall:
-		m.entries = append(m.entries, entry{kind: kindToolCall, header: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true})
+		m.add(&widget{kind: kindToolCall, header: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true})
 	case state.ContentToolResult:
-		m.entries = append(m.entries, entry{kind: kindToolResult, header: "📋 result", body: eventText(ev), collapsible: true, collapsed: true})
+		m.add(&widget{kind: kindToolResult, header: "📋 result", body: eventText(ev), collapsible: true, collapsed: true})
 	case state.ContentSystemPrompt:
-		m.entries = append(m.entries, entry{kind: kindSystem, header: "📜 " + eventText(ev)})
+		m.add(&widget{kind: kindSystem, header: "📜 " + oneLine(eventText(ev)), body: detail(eventText(ev))})
 	default:
-		// Ignored in the output panel (e.g. processing_state, attachments).
 		return
 	}
+}
+
+// add appends a widget, makes it the selection, and pins the view to the bottom.
+func (m *Model) add(w *widget) {
+	if w.body != "" {
+		w.collapsible = w.collapsible || w.kind == kindUser || w.kind == kindError || w.kind == kindSystem
+	}
+	m.widgets = append(m.widgets, w)
+	m.selected = len(m.widgets) - 1
 	m.refresh(true)
 }
 
+// appendAssistant streams text into a single assistant widget (its body).
 func (m *Model) appendAssistant(text string) {
-	if n := len(m.entries); n > 0 && m.entries[n-1].kind == kindAssistant {
-		m.entries[n-1].header += text
+	if n := len(m.widgets); n > 0 && m.widgets[n-1].kind == kindAssistant {
+		m.widgets[n-1].body += text
+		m.refresh(true)
 		return
 	}
-	m.entries = append(m.entries, entry{kind: kindAssistant, header: "🤖 " + text})
+	m.add(&widget{kind: kindAssistant, header: "🤖 AgentX", body: text})
 }
 
-// AssistantEntries returns the number of distinct assistant entries (one per
-// streamed response).
+// AssistantEntries returns the number of distinct assistant widgets.
 func (m *Model) AssistantEntries() int {
 	n := 0
-	for _, e := range m.entries {
-		if e.kind == kindAssistant {
+	for _, w := range m.widgets {
+		if w.kind == kindAssistant {
 			n++
 		}
 	}
 	return n
 }
 
-// ToggleCollapse flips the collapsed state of the i-th entry if it is
-// collapsible.
+// ToggleCollapse flips the collapsed state of the i-th widget if collapsible.
 func (m *Model) ToggleCollapse(i int) {
-	if i < 0 || i >= len(m.entries) || !m.entries[i].collapsible {
+	if i < 0 || i >= len(m.widgets) || !m.widgets[i].collapsible {
 		return
 	}
-	m.entries[i].collapsed = !m.entries[i].collapsed
+	m.widgets[i].collapsed = !m.widgets[i].collapsed
 	m.refresh(false)
 }
 
-// ScrollUp scrolls toward older content.
-func (m *Model) ScrollUp(n int) { m.vp.ScrollUp(n) }
+// SelectUp moves the selection to the previous widget.
+func (m *Model) SelectUp() { m.moveSelection(-1) }
 
-// ScrollDown scrolls toward newer content.
+// SelectDown moves the selection to the next widget.
+func (m *Model) SelectDown() { m.moveSelection(1) }
+
+func (m *Model) moveSelection(delta int) {
+	if len(m.widgets) == 0 {
+		return
+	}
+	m.selected = clampInt(m.selected+delta, 0, len(m.widgets)-1)
+	m.refresh(false)
+	m.scrollSelectedIntoView()
+}
+
+// ToggleSelected flips the collapsed state of the selected widget.
+func (m *Model) ToggleSelected() {
+	if m.selected >= 0 {
+		m.ToggleCollapse(m.selected)
+		m.scrollSelectedIntoView()
+	}
+}
+
+// ScrollSelected scrolls the selected widget's body by n rows (positive = down).
+func (m *Model) ScrollSelected(n int) {
+	if m.selected < 0 {
+		return
+	}
+	m.widgets[m.selected].offset += n
+	m.refresh(false) // refresh clamps the offset against the body length
+}
+
+// ScrollUp/ScrollDown/PageUp/PageDown scroll the transcript as a whole.
+func (m *Model) ScrollUp(n int)   { m.vp.ScrollUp(n) }
 func (m *Model) ScrollDown(n int) { m.vp.ScrollDown(n) }
+func (m *Model) PageUp()          { m.vp.ScrollUp(m.height) }
+func (m *Model) PageDown()        { m.vp.ScrollDown(m.height) }
 
-// PageUp and PageDown scroll by a panel height.
-func (m *Model) PageUp()   { m.vp.ScrollUp(m.height) }
-func (m *Model) PageDown() { m.vp.ScrollDown(m.height) }
-
-// refresh re-renders the entry list into the viewport. When pinBottom is set (or
-// the view was already at the bottom) it follows the newest content; otherwise
-// it preserves the current scroll position across the content change.
-func (m *Model) refresh(pinBottom bool) {
-	atBottom := m.vp.AtBottom()
-	m.vp.SetContent(strings.Join(m.renderLines(), "\n"))
-	if pinBottom || atBottom {
-		m.vp.GotoBottom()
-	}
-}
-
-// renderLines flattens entries to display lines, word-wrapping each entry to the
-// panel width so long responses reflow instead of being truncated. Bodies of
-// expanded collapsible entries are wrapped to a narrower width and indented.
-func (m *Model) renderLines() []string {
-	var lines []string
-	for _, e := range m.entries {
-		lines = append(lines, m.wrap(e.header, m.width)...)
-		if e.collapsible && !e.collapsed && e.body != "" {
-			for _, bl := range m.wrap(e.body, m.width-2) {
-				lines = append(lines, "  "+bl)
-			}
-		}
-	}
-	return lines
-}
-
-// wrap word-wraps s to limit display cells, preserving existing newlines and
-// hard-breaking words longer than the limit. A non-positive limit disables
-// wrapping (the raw lines are returned).
-func (m *Model) wrap(s string, limit int) []string {
-	if limit <= 0 {
-		return strings.Split(s, "\n")
-	}
-	var out []string
-	for _, line := range strings.Split(s, "\n") {
-		out = append(out, strings.Split(ansi.Wrap(line, limit, " -"), "\n")...)
-	}
-	return out
-}
-
-// View renders the viewport: exactly Height rows, bottom-anchored, padded to the
-// panel region.
+// View renders the transcript viewport.
 func (m *Model) View() string {
 	if m.height == 0 {
 		return ""
 	}
 	return m.vp.View()
+}
+
+// blocks holds, per widget, its rendered lines and starting row in the transcript.
+type blocks struct {
+	lines  []string
+	starts []int
+	totals []int
+}
+
+// render builds every widget block and the flattened transcript.
+func (m *Model) render() blocks {
+	var b blocks
+	row := 0
+	for i, w := range m.widgets {
+		lines := m.renderWidget(w, i == m.selected)
+		b.starts = append(b.starts, row)
+		b.totals = append(b.totals, len(lines))
+		b.lines = append(b.lines, lines...)
+		row += len(lines)
+	}
+	return b
+}
+
+// refresh re-renders the widgets into the viewport, optionally pinning the bottom.
+func (m *Model) refresh(pinBottom bool) {
+	atBottom := m.vp.AtBottom()
+	b := m.render()
+	m.vp.SetContent(strings.Join(b.lines, "\n"))
+	if pinBottom || atBottom {
+		m.vp.GotoBottom()
+	}
+}
+
+// scrollSelectedIntoView scrolls the transcript so the selected widget is visible.
+func (m *Model) scrollSelectedIntoView() {
+	if m.selected < 0 {
+		return
+	}
+	b := m.render()
+	if m.selected >= len(b.starts) {
+		return
+	}
+	top := b.starts[m.selected]
+	bottom := top + b.totals[m.selected] - 1
+	y := m.vp.YOffset()
+	switch {
+	case top < y:
+		m.vp.SetYOffset(top)
+	case bottom >= y+m.height:
+		m.vp.SetYOffset(bottom - m.height + 1)
+	}
+}
+
+// renderWidget renders one widget to its boxed lines.
+func (m *Model) renderWidget(w *widget, selected bool) []string {
+	innerW := m.width - 2
+	if innerW < 1 {
+		return []string{truncateWord(w.header, max(m.width, 0))}
+	}
+
+	rows := []string{padTo(truncateWord(w.header, innerW), innerW)}
+
+	if !w.collapsed && w.body != "" {
+		rows = append(rows, m.renderBody(w, innerW)...)
+	}
+	return boxify(rows, innerW, selected)
+}
+
+// renderBody wraps and windows a widget body, adding a proportional scrollbar
+// column when the body exceeds the cap.
+func (m *Model) renderBody(w *widget, innerW int) []string {
+	lines := wrapLines(w.body, innerW)
+	if len(lines) <= m.maxBody {
+		w.offset = 0
+		out := make([]string, len(lines))
+		for i, l := range lines {
+			out[i] = padTo(l, innerW)
+		}
+		return out
+	}
+
+	// Over the cap: reserve a scrollbar column and window the body.
+	bodyW := innerW - 1
+	lines = wrapLines(w.body, bodyW)
+	total := len(lines)
+	w.offset = clampInt(w.offset, 0, total-m.maxBody)
+	window := lines[w.offset : w.offset+m.maxBody]
+
+	out := make([]string, m.maxBody)
+	for i, l := range window {
+		out[i] = padTo(l, bodyW) + scrollbarCell(i, w.offset, total, m.maxBody)
+	}
+	return out
+}
+
+// scrollbarCell returns the scrollbar glyph for visible row i (thumb vs track),
+// sized proportionally to the visible fraction of the content.
+func scrollbarCell(i, offset, total, track int) string {
+	thumb := track * track / total
+	if thumb < 1 {
+		thumb = 1
+	}
+	span := total - track // max offset
+	top := 0
+	if span > 0 {
+		top = (track - thumb) * offset / span
+	}
+	if i >= top && i < top+thumb {
+		return "█"
+	}
+	return "░"
+}
+
+// boxify frames content rows (each already padded to innerW) in a box border;
+// the selected widget gets a heavy border.
+func boxify(rows []string, innerW int, selected bool) []string {
+	tl, tr, bl, br, h, v := "┌", "┐", "└", "┘", "─", "│"
+	if selected {
+		tl, tr, bl, br, h, v = "┏", "┓", "┗", "┛", "━", "┃"
+	}
+	bar := strings.Repeat(h, innerW)
+	out := make([]string, 0, len(rows)+2)
+	out = append(out, tl+bar+tr)
+	for _, r := range rows {
+		out = append(out, v+r+v)
+	}
+	out = append(out, bl+bar+br)
+	return out
+}
+
+// --- text helpers ---
+
+// oneLine returns the first line of s.
+func oneLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// detail returns s when it spans multiple lines (so it is worth expanding),
+// otherwise "" (the header already shows it).
+func detail(s string) string {
+	if strings.Contains(s, "\n") {
+		return s
+	}
+	return ""
+}
+
+// truncateWord fits s to w display columns, breaking at a word boundary and
+// marking truncation with an ellipsis.
+func truncateWord(s string, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	if ansi.StringWidth(s) <= w {
+		return s
+	}
+	first := oneLine(ansi.Wrap(s, w, " -"))
+	if ansi.StringWidth(first) <= w {
+		return first
+	}
+	return ansi.Truncate(first, w, "…")
+}
+
+// wrapLines word-wraps s to w columns, preserving existing newlines.
+func wrapLines(s string, w int) []string {
+	if w <= 0 {
+		return strings.Split(s, "\n")
+	}
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		out = append(out, strings.Split(ansi.Wrap(line, w, " -"), "\n")...)
+	}
+	return out
+}
+
+// padTo right-pads (or clips) s to exactly w display columns.
+func padTo(s string, w int) string {
+	width := ansi.StringWidth(s)
+	if width == w {
+		return s
+	}
+	if width > w {
+		return ansi.Truncate(s, w, "")
+	}
+	return s + strings.Repeat(" ", w-width)
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 func eventText(ev state.Event) string {

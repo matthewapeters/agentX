@@ -94,6 +94,9 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.listenEvents(), m.listenProcessing())
 }
 
+// SetMaxWidgetLines configures the output widgets' body-row cap.
+func (m Model) SetMaxWidgetLines(n int) { m.output.SetMaxBody(n) }
+
 // Output returns the output panel.
 func (m Model) Output() *output.Model { return m.output }
 
@@ -151,19 +154,23 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	// Scrollback keys drive the output viewport in any mode.
+	// Output navigation (selection cursor) drives the widgets in any mode; these
+	// keys are free while the textarea is focused.
 	switch key {
 	case "pgup":
-		m.output.PageUp()
+		m.output.SelectUp()
 		return m, nil
 	case "pgdown":
-		m.output.PageDown()
+		m.output.SelectDown()
+		return m, nil
+	case "ctrl+o":
+		m.output.ToggleSelected()
 		return m, nil
 	case "ctrl+u":
-		m.output.ScrollUp(1)
+		m.output.ScrollSelected(-1)
 		return m, nil
 	case "ctrl+d":
-		m.output.ScrollDown(1)
+		m.output.ScrollSelected(1)
 		return m, nil
 	}
 

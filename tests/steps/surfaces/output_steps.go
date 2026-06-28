@@ -28,6 +28,13 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^entry (\d+) is toggled$`, w.toggleEntry)
 	sc.Step(`^the panel scrolls up by (\d+)$`, w.scrollUp)
 	sc.Step(`^the panel pages up$`, w.pageUp)
+	sc.Step(`^the max widget lines is (\d+)$`, w.setMaxBody)
+	sc.Step(`^a thinking event with (\d+) body lines is applied$`, w.applyThinkingLines)
+	sc.Step(`^the selected widget is toggled$`, w.toggleSelected)
+	sc.Step(`^the selected widget scrolls down by (\d+)$`, w.scrollSelected)
+	sc.Step(`^the output view contains an unselected widget border$`, w.hasUnselectedBorder)
+	sc.Step(`^the output view contains a selected widget border$`, w.hasSelectedBorder)
+	sc.Step(`^the output view contains a scrollbar$`, w.hasScrollbar)
 	sc.Step(`^the output view contains "([^"]*)"$`, w.viewContains)
 	sc.Step(`^the output view does not contain "([^"]*)"$`, w.viewNotContains)
 	sc.Step(`^the output has (\d+) assistant entry$`, w.assistantEntries)
@@ -82,6 +89,51 @@ func (w *outputWorld) scrollUp(n int) error {
 
 func (w *outputWorld) pageUp() error {
 	w.panel.PageUp()
+	return nil
+}
+
+func (w *outputWorld) setMaxBody(n int) error {
+	w.panel.SetMaxBody(n)
+	return nil
+}
+
+func (w *outputWorld) applyThinkingLines(n int) error {
+	lines := make([]string, n)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line-%02d", i)
+	}
+	w.panel.Apply(state.Event{ContentType: state.ContentThinking, Payload: map[string]any{"text": strings.Join(lines, "\n")}})
+	return nil
+}
+
+func (w *outputWorld) toggleSelected() error {
+	w.panel.ToggleSelected()
+	return nil
+}
+
+func (w *outputWorld) scrollSelected(n int) error {
+	w.panel.ScrollSelected(n)
+	return nil
+}
+
+func (w *outputWorld) hasUnselectedBorder() error {
+	if !strings.Contains(w.panel.View(), "┌") {
+		return fmt.Errorf("output view has no unselected (normal) widget border")
+	}
+	return nil
+}
+
+func (w *outputWorld) hasSelectedBorder() error {
+	if !strings.Contains(w.panel.View(), "┏") {
+		return fmt.Errorf("output view has no selected (heavy) widget border")
+	}
+	return nil
+}
+
+func (w *outputWorld) hasScrollbar() error {
+	if !strings.Contains(w.panel.View(), "█") {
+		return fmt.Errorf("output view has no scrollbar thumb")
+	}
 	return nil
 }
 

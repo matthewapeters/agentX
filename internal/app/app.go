@@ -73,6 +73,7 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		BootstrapPrompt:       bootstrap,
 		ClassificationPrompt:  classification,
 		ClassificationRetries: cfg.ClassificationRetries(),
+		MaxWidgetLines:        cfg.MaxWidgetLines(),
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err
@@ -158,7 +159,9 @@ func RunChat(ctx context.Context, opts Options) error {
 	// them, so the response opens the session.
 	go func() { _ = orc.SubmitBootstrap(ctx) }()
 
-	p := tea.NewProgram(chat.NewWithBridge(bridge), tea.WithContext(ctx))
+	surface := chat.NewWithBridge(bridge)
+	surface.SetMaxWidgetLines(orc.Settings().MaxWidgetLines)
+	p := tea.NewProgram(surface, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		return err
 	}

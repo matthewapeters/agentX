@@ -33,6 +33,8 @@ type Settings struct {
 	ClassificationPrompt string
 	// ClassificationRetries is the classify-cycle retry budget.
 	ClassificationRetries int
+	// MaxWidgetLines is the output-widget body-row cap surfaced to the chat UI.
+	MaxWidgetLines int
 }
 
 // Orchestrator owns the per-process runtime: session, event bus, processing
