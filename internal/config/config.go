@@ -26,7 +26,9 @@ type Config struct {
 
 // Agentx is the [agentx] table.
 type Agentx struct {
-	Ollama Ollama `toml:"ollama"`
+	Ollama         Ollama         `toml:"ollama"`
+	Classification Classification `toml:"classification"`
+	Output         Output         `toml:"output"`
 }
 
 // Ollama is the [agentx.ollama] table: which local model the runtime drives.
@@ -35,11 +37,53 @@ type Ollama struct {
 	Model string `toml:"model"`
 }
 
+// Classification is the [agentx.classification] table tuning the classify cycle.
+type Classification struct {
+	Retries              int `toml:"retries"`
+	ClarificationOptions int `toml:"clarification_options"`
+}
+
+// Output is the [agentx.output] table tuning the output panel widgets.
+type Output struct {
+	MaxWidgetLines int `toml:"max_widget_lines"`
+}
+
 // OllamaHost returns the configured Ollama host.
 func (c Config) OllamaHost() string { return c.Agentx.Ollama.Host }
 
 // OllamaModel returns the configured active model.
 func (c Config) OllamaModel() string { return c.Agentx.Ollama.Model }
+
+// ClassificationRetries returns the classify-cycle retry budget (>= 0).
+func (c Config) ClassificationRetries() int {
+	if c.Agentx.Classification.Retries < 0 {
+		return defaultClassificationRetries
+	}
+	return c.Agentx.Classification.Retries
+}
+
+// ClarificationOptions returns the number of interpretations offered on ambiguity.
+func (c Config) ClarificationOptions() int {
+	if c.Agentx.Classification.ClarificationOptions <= 0 {
+		return defaultClarificationOptions
+	}
+	return c.Agentx.Classification.ClarificationOptions
+}
+
+// MaxWidgetLines returns the max body rows before an output widget scrolls.
+func (c Config) MaxWidgetLines() int {
+	if c.Agentx.Output.MaxWidgetLines <= 0 {
+		return defaultMaxWidgetLines
+	}
+	return c.Agentx.Output.MaxWidgetLines
+}
+
+// Built-in defaults for the tuning tables.
+const (
+	defaultClassificationRetries = 2
+	defaultClarificationOptions  = 3
+	defaultMaxWidgetLines        = 20
+)
 
 // Default returns the built-in default configuration used to seed a deployment
 // config on first launch.
@@ -50,6 +94,11 @@ func Default() Config {
 				Host:  "localhost:11434",
 				Model: "phi4-mini:3.8b",
 			},
+			Classification: Classification{
+				Retries:              defaultClassificationRetries,
+				ClarificationOptions: defaultClarificationOptions,
+			},
+			Output: Output{MaxWidgetLines: defaultMaxWidgetLines},
 		},
 	}
 }
@@ -91,6 +140,12 @@ func (p Paths) InstructionsPath() string {
 // (~/.config/agentx/bootstrap-prompt.md).
 func (p Paths) BootstrapPath() string {
 	return filepath.Join(p.configDir(), "bootstrap-prompt.md")
+}
+
+// ClassificationPath is the classification system-prompt file
+// (~/.config/agentx/agentx-classification.md).
+func (p Paths) ClassificationPath() string {
+	return filepath.Join(p.configDir(), "agentx-classification.md")
 }
 
 // ReadPromptFile reads an optional Markdown prompt file, returning its trimmed
