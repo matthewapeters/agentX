@@ -28,6 +28,24 @@ Feature: Collapsible output widgets
     When the selected widget is toggled
     Then the output view contains "secret reasoning"
 
+  # use-case: UC-WIDGET-COLLAPSE
+  # variant: assistant-widget-collapses-too
+  Scenario: The assistant widget toggles collapse like any other
+    Given an output panel sized 30 by 12
+    When an agent_response event "the full answer" is applied
+    Then the output view contains "the full answer"
+    When the selected widget is toggled
+    Then the output view does not contain "the full answer"
+
+  # use-case: UC-WIDGET-COLLAPSE
+  # variant: user-widget-collapses-too
+  Scenario: The user widget toggles collapse like any other
+    Given an output panel sized 30 by 12
+    When a user_prompt event "my question" is applied
+    Then the output view contains "my question"
+    When the selected widget is toggled
+    Then the output view does not contain "my question"
+
   # use-case: UC-WIDGET-SCROLL
   Scenario: A long body is capped, shows a scrollbar, and scrolls in place
     Given an output panel sized 30 by 40

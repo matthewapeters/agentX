@@ -118,19 +118,28 @@ THEN the header occupies exactly one row
   AND the leading emoji is always preserved.
 ```
 
-### Collapse / expand
+### Collapse / expand (uniform across widget kinds)
+
+Every widget that carries a body — **user, thinking, tool, and assistant** alike —
+is collapsible with identical mechanics: `Enter` (or `^o`) toggles the selected
+widget, and the expanded body is bounded by `max_widget_lines` regardless of kind.
+The label header (`👤 You`, `💭 thinking`, `🔧 <tool>`, `🤖 AgentX`) stays visible
+when collapsed. Defaults differ only in noise level: thinking and tool *results*
+start collapsed; user, tool calls, and the assistant answer start expanded.
 
 ```gherkin
-GIVEN a thinking widget (collapsed by default)
-WHEN the widget first renders
-THEN only its header row is visible inside the border
-  AND the body is not rendered.
+GIVEN any widget with a body (user, thinking, tool, or assistant)
+WHEN the widget is selected and the user presses Enter (or ^o)
+THEN the widget toggles between showing only its header and showing its body
+  AND an expanded body is bounded by max_widget_lines (scrolling within the cap).
 
-GIVEN a collapsed widget is focused
-WHEN the user presses Enter (or Space)
-THEN the widget expands and its body becomes visible (bounded by max_widget_lines)
-WHEN the user presses Enter again
-THEN the widget collapses to its header row.
+GIVEN a thinking or tool-result widget
+WHEN it first renders
+THEN only its header row is visible (collapsed by default).
+
+GIVEN a user or assistant widget
+WHEN it first renders
+THEN its body is visible (expanded by default), bounded by max_widget_lines.
 ```
 
 ### Height cap and inner scroll

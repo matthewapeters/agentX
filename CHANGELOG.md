@@ -21,6 +21,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   a tunable `agentx-thinking.md` guidance prompt, and a wall-clock
   `time_budget_seconds` (default 180) that falls back to a direct answer on expiry
   (CHT-D7).
+
+### Changed
+
+- Made output-widget collapse uniform: user, thinking, tool, and assistant widgets
+  are all collapsible (Enter/^o toggles the selection) with bodies bounded by
+  `max_widget_lines`; the assistant answer and user prompts gained label headers.
 - Added a synthesized remediation brief artifact capturing the documentation triad review outcomes under `.subutai/runs/2026-06-23-doc-review-triad/`.
 - Added ADR-0006 and indexed it in the ADR navigation so architecture decisions referenced by implementation docs are discoverable.
 

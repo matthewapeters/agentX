@@ -130,7 +130,7 @@ func (m *Model) Apply(ev state.Event) {
 	}
 	switch ev.ContentType {
 	case state.ContentUserPrompt:
-		m.add(&widget{kind: kindUser, header: "👤 " + oneLine(eventText(ev)), body: detail(eventText(ev))})
+		m.add(&widget{kind: kindUser, header: "👤 You", body: eventText(ev)})
 	case state.ContentClassification:
 		m.add(&widget{kind: kindClassification, header: "⚙️ " + oneLine(eventText(ev))})
 	case state.ContentAgentResponse:
@@ -151,9 +151,12 @@ func (m *Model) Apply(ev state.Event) {
 }
 
 // add appends a widget, makes it the selection, and pins the view to the bottom.
+// Every widget that carries a body is collapsible, so Enter toggles expand/
+// collapse uniformly across user, thinking, tool, and assistant widgets; the
+// body is capped at max_widget_lines (SetMaxBody) regardless of kind.
 func (m *Model) add(w *widget) {
 	if w.body != "" {
-		w.collapsible = w.collapsible || w.kind == kindUser || w.kind == kindError || w.kind == kindSystem
+		w.collapsible = true
 	}
 	m.widgets = append(m.widgets, w)
 	m.selected = len(m.widgets) - 1
