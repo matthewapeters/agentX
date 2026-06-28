@@ -93,10 +93,16 @@ classification, but the current code uses `⚙` for system notices):
 ```toml
 [agentx.output]
 max_widget_lines = 20   # max body rows before a widget scrolls internally
+
+[agentx.theme]
+active_border_color   = "cyan"        # focused panel + selected widget
+inactive_border_color = "dark gray"   # unfocused panel + other widgets
 ```
 
-- Absent/zero → default `20`.
-- The cap bounds the *visible* body; longer bodies scroll within the cap.
+- Absent/zero `max_widget_lines` → default `20`. The cap bounds the *visible*
+  body; longer bodies scroll within the cap.
+- Border colors accept a name (`cyan`, `dark gray`, …), an ANSI-256 index
+  (`"240"`), or a hex value (`"#00afaf"`). Absent → cyan / dark gray.
 
 ## Behaviour
 
@@ -154,19 +160,50 @@ THEN the thumb height is proportional to visible/total (≈ 8 of 20 rows)
   AND intermediate scroll positions place the thumb proportionally between.
 ```
 
-### Focus and scrolling
+### Focus & keymap (CHT-D5)
+
+The chat surface tracks which **panel** holds focus (input or output). ESC is a
+**leader/chord** key, not a persistent mode:
+
+| Gesture | Effect |
+|---------|--------|
+| `ESC,q` | quit |
+| `ESC,↑` | move focus to the OUTPUT panel |
+| `ESC,↓` | move focus to the INPUT panel |
+| `ESC,ESC` | interrupt the in-flight response (only while working) |
+| `PgUp` / `PgDn` | auto-focus OUTPUT and move the widget selection |
+| `j` / `↓`, `k` / `↑` | scroll the selected widget (OUTPUT focus only) |
+| `^o` / `Enter` | collapse/expand the selected widget (OUTPUT focus only) |
+
+A pending chord is advertised in the hint strip; an unrecognized follow-up key
+cancels it.
+
+**Border hierarchy.** The focused panel renders a **bold** border in
+`active_border_color`; the unfocused panel renders an un-bold border in
+`inactive_border_color`. Inside the OUTPUT panel the *selected* widget keeps its
+heavy border and lights up in the active color **only while OUTPUT is focused**;
+every other widget (and the selection when OUTPUT is unfocused) uses the inactive
+color.
 
 ```gherkin
-GIVEN multiple widgets in the output transcript
-WHEN the user moves the selection (up/down) to a widget
-THEN that widget is the focused widget (a subtle focus affordance on its border).
+GIVEN the input panel has focus
+WHEN the surface renders
+THEN the input border is bold in the active color
+  AND the output border is un-bold in the inactive color.
 
-GIVEN a focused, expanded widget whose body exceeds max_widget_lines
-WHEN the user scrolls (PgUp/PgDn or j/k)
+GIVEN the input panel has focus
+WHEN the user presses ESC then ↑
+THEN focus moves to the output panel
+  AND the output border becomes bold in the active color.
+
+GIVEN the output panel has focus and a selected, expanded widget over the cap
+WHEN the user presses j (or ↓)
 THEN only that widget's inner viewport scrolls
-  AND the surrounding transcript does not move
-WHEN the body is at its last line and the user scrolls down
-THEN scrolling passes back to the transcript.
+  AND the surrounding transcript does not move.
+
+GIVEN the output panel has focus
+WHEN the user presses ESC then ↓
+THEN focus returns to the input panel.
 ```
 
 ### Box border

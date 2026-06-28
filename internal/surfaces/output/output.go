@@ -46,6 +46,13 @@ type widget struct {
 	offset      int // inner scroll offset (wrapped body-line index)
 }
 
+// defaultActive and defaultInactive are the built-in border SGR colors used
+// until SetTheme overrides them (cyan / dark gray, matching config defaults).
+const (
+	defaultActive   = "38;5;6"
+	defaultInactive = "38;5;240"
+)
+
 // Model is the output panel state.
 type Model struct {
 	vp       viewport.Model
@@ -53,15 +60,40 @@ type Model struct {
 	height   int
 	maxBody  int
 	widgets  []*widget
-	selected int // index of the selected widget, or -1 when empty
+	selected int    // index of the selected widget, or -1 when empty
+	focused  bool   // whether the output panel currently holds focus
+	active   string // SGR color for the selected widget when focused
+	inactive string // SGR color for unselected widgets / unfocused panel
 }
 
 // New returns an empty output panel backed by a viewport.
 func New() *Model {
 	vp := viewport.New()
 	vp.FillHeight = true
-	return &Model{vp: vp, maxBody: defaultMaxBody, selected: -1}
+	return &Model{vp: vp, maxBody: defaultMaxBody, selected: -1, active: defaultActive, inactive: defaultInactive}
 }
+
+// SetTheme sets the border SGR colors for selected (active) and other (inactive)
+// widgets. Empty values keep the current colors.
+func (m *Model) SetTheme(active, inactive string) {
+	if active != "" {
+		m.active = active
+	}
+	if inactive != "" {
+		m.inactive = inactive
+	}
+	m.refresh(false)
+}
+
+// SetFocus marks the panel focused or not; the selected widget only renders in
+// the active color while the panel has focus.
+func (m *Model) SetFocus(focused bool) {
+	m.focused = focused
+	m.refresh(false)
+}
+
+// Focused reports whether the output panel holds focus.
+func (m *Model) Focused() bool { return m.focused }
 
 // SetMaxBody sets the per-widget body-row cap (max_widget_lines).
 func (m *Model) SetMaxBody(n int) {
@@ -266,7 +298,7 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 	if !w.collapsed && w.body != "" {
 		rows = append(rows, m.renderBody(w, innerW)...)
 	}
-	return boxify(rows, innerW, selected)
+	return m.boxify(rows, innerW, selected)
 }
 
 // renderBody wraps and windows a widget body, adding a proportional scrollbar
@@ -315,19 +347,31 @@ func scrollbarCell(i, offset, total, track int) string {
 }
 
 // boxify frames content rows (each already padded to innerW) in a box border;
-// the selected widget gets a heavy border.
-func boxify(rows []string, innerW int, selected bool) []string {
+// the selected widget gets a heavy border. Borders are colored: the selected
+// widget uses the active color while the panel is focused, every other widget
+// (and the selected one when the panel is unfocused) uses the inactive color.
+func (m *Model) boxify(rows []string, innerW int, selected bool) []string {
 	tl, tr, bl, br, h, v := "┌", "┐", "└", "┘", "─", "│"
 	if selected {
 		tl, tr, bl, br, h, v = "┏", "┓", "┗", "┛", "━", "┃"
 	}
+	code := m.inactive
+	if selected && m.focused {
+		code = m.active
+	}
+	paint := func(s string) string {
+		if code == "" {
+			return s
+		}
+		return "\x1b[" + code + "m" + s + "\x1b[0m"
+	}
 	bar := strings.Repeat(h, innerW)
 	out := make([]string, 0, len(rows)+2)
-	out = append(out, tl+bar+tr)
+	out = append(out, paint(tl+bar+tr))
 	for _, r := range rows {
-		out = append(out, v+r+v)
+		out = append(out, paint(v)+r+paint(v))
 	}
-	out = append(out, bl+bar+br)
+	out = append(out, paint(bl+bar+br))
 	return out
 }
 

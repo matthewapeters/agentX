@@ -252,6 +252,20 @@ Un-defers the `classify` phase. Specs: `../implementation/04_llm_prompt_tooling_
 > resubmit; `clarification` content type; `awaiting_input` state) is a separate backlog
 > increment once Stage 1 lands.
 
+### CHT-D5 · Panel focus model + ESC chord + theming · M
+- **Target**: `internal/surfaces/chat/`, `internal/surfaces/output/`, `internal/config/`
+- **Deps**: CHT-D1
+- **Behavior**: track input/output panel focus; ESC is a leader chord
+  (`ESC,q` quit · `ESC,↑` focus output · `ESC,↓` focus input · `ESC,ESC` interrupt);
+  PgUp/PgDn auto-focus output; `j/k` + arrows scroll the selected widget while output
+  is focused. Focused panel renders a bold `active_border_color` border, the other an
+  `inactive_border_color` border; the selected widget lights up only while output is
+  focused. New `[agentx.theme]` config (name/ANSI-256/hex colors).
+- **Feature**: `tests/features/surfaces/focus_navigation.feature`,
+  `tests/features/surfaces/command_mode.feature` (`@functional`)
+- **Done**: focus toggle + chord + scroll keys behave per spec; themed borders render;
+  `make all` green.
+
 ---
 
 ## Sequencing

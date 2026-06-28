@@ -29,6 +29,7 @@ type Agentx struct {
 	Ollama         Ollama         `toml:"ollama"`
 	Classification Classification `toml:"classification"`
 	Output         Output         `toml:"output"`
+	Theme          Theme          `toml:"theme"`
 }
 
 // Ollama is the [agentx.ollama] table: which local model the runtime drives.
@@ -46,6 +47,15 @@ type Classification struct {
 // Output is the [agentx.output] table tuning the output panel widgets.
 type Output struct {
 	MaxWidgetLines int `toml:"max_widget_lines"`
+}
+
+// Theme is the [agentx.theme] table styling the chat surface. Colors accept a
+// CSS-ish name ("cyan", "dark gray"), an ANSI 256 index ("240"), or a hex value
+// ("#00afaf"). The active color marks the focused panel (rendered bold) and the
+// selected output widget; the inactive color marks everything else.
+type Theme struct {
+	ActiveBorder   string `toml:"active_border_color"`
+	InactiveBorder string `toml:"inactive_border_color"`
 }
 
 // OllamaHost returns the configured Ollama host.
@@ -78,11 +88,79 @@ func (c Config) MaxWidgetLines() int {
 	return c.Agentx.Output.MaxWidgetLines
 }
 
+// ActiveBorderColor returns the SGR foreground parameters for the focused-panel
+// and selected-widget borders (e.g. "38;5;6"). Empty config falls back to cyan.
+func (c Config) ActiveBorderColor() string {
+	return resolveColor(c.Agentx.Theme.ActiveBorder, defaultActiveBorder)
+}
+
+// InactiveBorderColor returns the SGR foreground parameters for unfocused panels
+// and unselected widgets. Empty config falls back to dark gray.
+func (c Config) InactiveBorderColor() string {
+	return resolveColor(c.Agentx.Theme.InactiveBorder, defaultInactiveBorder)
+}
+
+// resolveColor maps a configured color (name, ANSI index, or hex) to its SGR
+// foreground parameter string. Unrecognized values fall back to def.
+func resolveColor(name, def string) string {
+	n := strings.ToLower(strings.TrimSpace(name))
+	if n == "" {
+		return namedColors[def]
+	}
+	if sgr, ok := namedColors[n]; ok {
+		return sgr
+	}
+	if strings.HasPrefix(n, "#") && len(n) == 7 {
+		var r, g, b int
+		if _, err := fmt.Sscanf(n, "#%02x%02x%02x", &r, &g, &b); err == nil {
+			return fmt.Sprintf("38;2;%d;%d;%d", r, g, b)
+		}
+	}
+	if isAllDigits(n) {
+		return "38;5;" + n
+	}
+	return namedColors[def]
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// namedColors maps friendly color names to SGR foreground parameters (ANSI 256).
+var namedColors = map[string]string{
+	"black":        "38;5;0",
+	"red":          "38;5;1",
+	"green":        "38;5;2",
+	"yellow":       "38;5;3",
+	"blue":         "38;5;4",
+	"magenta":      "38;5;5",
+	"cyan":         "38;5;6",
+	"white":        "38;5;7",
+	"bright cyan":  "38;5;14",
+	"brightcyan":   "38;5;14",
+	"gray":         "38;5;245",
+	"grey":         "38;5;245",
+	"dark gray":    "38;5;240",
+	"darkgray":     "38;5;240",
+	"dark grey":    "38;5;240",
+	"darkgrey":     "38;5;240",
+}
+
 // Built-in defaults for the tuning tables.
 const (
 	defaultClassificationRetries = 2
 	defaultClarificationOptions  = 3
 	defaultMaxWidgetLines        = 20
+	defaultActiveBorder          = "cyan"
+	defaultInactiveBorder        = "dark gray"
 )
 
 // Default returns the built-in default configuration used to seed a deployment
@@ -99,6 +177,10 @@ func Default() Config {
 				ClarificationOptions: defaultClarificationOptions,
 			},
 			Output: Output{MaxWidgetLines: defaultMaxWidgetLines},
+			Theme: Theme{
+				ActiveBorder:   defaultActiveBorder,
+				InactiveBorder: defaultInactiveBorder,
+			},
 		},
 	}
 }

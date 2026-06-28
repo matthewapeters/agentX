@@ -69,7 +69,7 @@ func (w *roundTripWorld) wiredSurface() error {
 		Processing: w.procCh,
 	}
 	w.model = chat.NewWithBridge(bridge)
-	w.updateModel(tea.WindowSizeMsg{Width: 40, Height: 10})
+	w.updateModel(tea.WindowSizeMsg{Width: 40, Height: 16})
 	return nil
 }
 

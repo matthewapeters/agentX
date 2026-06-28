@@ -57,6 +57,6 @@ Feature: Input panel controls
 
   # use-case: UC-CHAT-ECHO
   Scenario: Submitting a prompt echoes it into the output
-    Given a new chat surface sized 40 by 10
+    Given a new chat surface sized 40 by 16
     When the user types "hi there" and submits
     Then the chat output contains "hi there"

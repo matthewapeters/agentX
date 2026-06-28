@@ -46,8 +46,11 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the chat status shows "([^"]*)"$`, w.statusShows)
 	sc.Step(`^a spinner tick advances the indicator$`, w.spinnerTickAdvances)
 	sc.Step(`^ESC is pressed$`, w.pressEsc)
+	sc.Step(`^the "([^"]*)" key is pressed$`, w.pressKey)
 	sc.Step(`^the chat hint shows "([^"]*)"$`, w.statusShows)
-	sc.Step(`^the user enters the command "([^"]*)"$`, w.entersCommand)
+	sc.Step(`^the output panel has focus$`, w.outputFocused)
+	sc.Step(`^the chat view shows the active border color$`, w.viewHasActiveColor)
+	sc.Step(`^the chat view shows the inactive border color$`, w.viewHasInactiveColor)
 	sc.Step(`^a chat surface that records interrupts sized (\d+) by (\d+)$`, w.recordingSurfaceSized)
 	sc.Step(`^the interrupt is confirmed$`, w.confirmInterrupt)
 	sc.Step(`^the runtime is interrupted$`, w.runtimeInterrupted)
@@ -58,13 +61,46 @@ func (w *chatWorld) pressEsc() error {
 	return nil
 }
 
-// entersCommand opens the command line (esc), types the verb, and submits it.
-func (w *chatWorld) entersCommand(verb string) error {
-	w.update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	for _, r := range verb {
-		w.update(tea.KeyPressMsg{Code: r, Text: string(r)})
+// pressKey sends a named key (arrows, pgup/pgdown, enter, or a single rune).
+func (w *chatWorld) pressKey(name string) error {
+	var msg tea.KeyPressMsg
+	switch name {
+	case "up":
+		msg = tea.KeyPressMsg{Code: tea.KeyUp}
+	case "down":
+		msg = tea.KeyPressMsg{Code: tea.KeyDown}
+	case "pgup":
+		msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
+	case "pgdown":
+		msg = tea.KeyPressMsg{Code: tea.KeyPgDown}
+	case "enter":
+		msg = tea.KeyPressMsg{Code: tea.KeyEnter}
+	default:
+		r := []rune(name)[0]
+		msg = tea.KeyPressMsg{Code: r, Text: name}
 	}
-	w.update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	w.update(msg)
+	return nil
+}
+
+func (w *chatWorld) outputFocused() error {
+	if !w.model.Output().Focused() {
+		return fmt.Errorf("output panel does not have focus")
+	}
+	return nil
+}
+
+func (w *chatWorld) viewHasActiveColor() error {
+	if !strings.Contains(w.model.View().Content, "38;5;6") {
+		return fmt.Errorf("chat view does not show the active border color")
+	}
+	return nil
+}
+
+func (w *chatWorld) viewHasInactiveColor() error {
+	if !strings.Contains(w.model.View().Content, "38;5;240") {
+		return fmt.Errorf("chat view does not show the inactive border color")
+	}
 	return nil
 }
 

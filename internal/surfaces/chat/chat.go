@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"agentx/internal/state"
 	"agentx/internal/surfaces/input"
@@ -19,19 +20,22 @@ const (
 	hintHeight  = 1
 )
 
-// mode is the chat surface's vi-style input mode.
-type mode int
+// focus identifies which panel currently receives navigation/edit keys.
+type focus int
 
 const (
-	// modeInsert is the default: keystrokes edit the prompt.
-	modeInsert mode = iota
-	// modeCommand is the ESC-triggered command line: keystrokes build a ":"
-	// command (e.g. :q) executed on Enter, canceled on ESC.
-	modeCommand
+	// focusInput is the default: keystrokes edit the prompt.
+	focusInput focus = iota
+	// focusOutput: keystrokes navigate and scroll the output widgets.
+	focusOutput
 )
 
-// quitCommands are the command-line verbs that exit the application.
-var quitCommands = map[string]bool{"q": true, "quit": true, "exit": true, "x": true}
+// defaultActive and defaultInactive are the built-in panel-border SGR colors
+// used until SetTheme overrides them (cyan / dark gray, matching config).
+const (
+	defaultActive   = "38;5;6"
+	defaultInactive = "38;5;240"
+)
 
 // ProcessingStateMsg delivers a processing-state update to the chat surface.
 type ProcessingStateMsg state.ProcessingState
@@ -54,26 +58,33 @@ type Bridge struct {
 // input panel separated by a status bar that doubles as the processing-state
 // indicator.
 type Model struct {
-	width          int
-	height         int
-	output         *output.Model
-	input          *input.Model
-	proc           state.ProcessingState
-	spinner        spinner.Model
-	mode           mode
-	command        string
-	interruptArmed bool // first ESC while working arms; second confirms interrupt
-	bridge         *Bridge
+	width        int
+	height       int
+	output       *output.Model
+	input        *input.Model
+	proc         state.ProcessingState
+	spinner      spinner.Model
+	focus        focus
+	chordPending bool // an ESC was pressed; the next key resolves the chord
+	active       string
+	inactive     string
+	bridge       *Bridge
 }
 
 // New returns an unwired chat surface model (input focused, idle status). Submit
 // echoes locally; used by unit tests.
 func New() Model {
+	out := output.New()
+	out.SetTheme(defaultActive, defaultInactive)
+	out.SetFocus(false)
 	return Model{
-		output:  output.New(),
-		input:   input.New(),
-		proc:    state.ProcessingState{State: state.StateIdle, Phase: state.PhaseNone},
-		spinner: spinner.New(spinner.WithSpinner(spinner.Dot)),
+		output:   out,
+		input:    input.New(),
+		proc:     state.ProcessingState{State: state.StateIdle, Phase: state.PhaseNone},
+		spinner:  spinner.New(spinner.WithSpinner(spinner.Dot)),
+		focus:    focusInput,
+		active:   defaultActive,
+		inactive: defaultInactive,
 	}
 }
 
@@ -96,6 +107,31 @@ func (m Model) Init() tea.Cmd {
 
 // SetMaxWidgetLines configures the output widgets' body-row cap.
 func (m Model) SetMaxWidgetLines(n int) { m.output.SetMaxBody(n) }
+
+// SetTheme sets the focus-border SGR colors for the panels and output widgets.
+// Empty values keep the built-in defaults.
+func (m *Model) SetTheme(active, inactive string) {
+	if active != "" {
+		m.active = active
+	}
+	if inactive != "" {
+		m.inactive = inactive
+	}
+	m.output.SetTheme(m.active, m.inactive)
+}
+
+// setFocus moves focus between the input and output panels, keeping the panels'
+// own focus flags in sync so borders and key routing agree.
+func (m *Model) setFocus(f focus) {
+	m.focus = f
+	if f == focusOutput {
+		m.input.Blur()
+		m.output.SetFocus(true)
+	} else {
+		m.input.Focus()
+		m.output.SetFocus(false)
+	}
+}
 
 // Output returns the output panel.
 func (m Model) Output() *output.Model { return m.output }
@@ -120,9 +156,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.proc.State == state.StateWorking && prev != state.StateWorking {
 			cmds = append(cmds, m.spinner.Tick)
 		}
-		// Disarm a pending interrupt once work ends.
+		// Cancel a pending chord once work ends.
 		if m.proc.State != state.StateWorking {
-			m.interruptArmed = false
+			m.chordPending = false
 		}
 		return m, tea.Batch(cmds...)
 	case spinner.TickMsg:
@@ -145,76 +181,76 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleKey routes a key press according to the current mode: global quit and
-// scrollback first, then command mode, the working interrupt flow, and finally
-// insert-mode prompt editing.
+// handleKey routes a key press: global quit first, then a pending ESC chord,
+// then the focus-aware navigation/edit keys. ESC is a leader key — ESC,q quits;
+// ESC,↑ focuses the output; ESC,↓ focuses the input; ESC,ESC interrupts an
+// in-flight response.
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
 		return m, tea.Quit
 	}
 
-	// Output navigation (selection cursor) drives the widgets in any mode; these
-	// keys are free while the textarea is focused.
+	// Resolve a pending ESC chord with the follow-up key.
+	if m.chordPending {
+		m.chordPending = false
+		switch key {
+		case "q":
+			return m, tea.Quit
+		case "up":
+			m.setFocus(focusOutput)
+			return m, nil
+		case "down":
+			m.setFocus(focusInput)
+			return m, nil
+		case "esc", "escape":
+			// ESC,ESC interrupts while working; otherwise it cancels the chord.
+			if m.proc.State == state.StateWorking {
+				return m, m.stopCmd()
+			}
+			return m, nil
+		default:
+			return m, nil // unknown chord: cancel
+		}
+	}
+
+	// PgUp/PgDn always jump focus into the output and move the selection.
 	switch key {
 	case "pgup":
+		m.setFocus(focusOutput)
 		m.output.SelectUp()
 		return m, nil
 	case "pgdown":
+		m.setFocus(focusOutput)
 		m.output.SelectDown()
 		return m, nil
-	case "ctrl+o":
-		m.output.ToggleSelected()
-		return m, nil
-	case "ctrl+u":
-		m.output.ScrollSelected(-1)
-		return m, nil
-	case "ctrl+d":
-		m.output.ScrollSelected(1)
-		return m, nil
 	}
 
-	// Command mode: build, execute, or cancel the ":" command line.
-	if m.mode == modeCommand {
-		switch key {
-		case "esc", "escape":
-			m.mode = modeInsert
-			m.command = ""
-		case "enter":
-			cmd := m.runCommand(m.command)
-			m.mode = modeInsert
-			m.command = ""
-			return m, cmd
-		case "backspace":
-			if m.command != "" {
-				r := []rune(m.command)
-				m.command = string(r[:len(r)-1])
-			}
-		default:
-			if msg.Text != "" {
-				m.command += msg.Text
-			}
-		}
-		return m, nil
-	}
-
-	// While working, ESC arms then confirms an interrupt; other keys disarm.
-	if m.proc.State == state.StateWorking {
-		if key == "esc" || key == "escape" {
-			if m.interruptArmed {
-				m.interruptArmed = false
-				return m, m.stopCmd()
-			}
-			m.interruptArmed = true
-		}
-		return m, nil
-	}
-
-	// Insert mode: ESC opens the command line; otherwise edit the prompt.
+	// ESC opens a chord in any state.
 	if key == "esc" || key == "escape" {
-		m.mode = modeCommand
+		m.chordPending = true
 		return m, nil
 	}
+
+	// While working, the input is disabled; only the chord above acts.
+	if m.proc.State == state.StateWorking {
+		return m, nil
+	}
+
+	// Output focus: navigate and scroll the selected widget.
+	if m.focus == focusOutput {
+		switch key {
+		case "up", "k":
+			m.output.ScrollSelected(-1)
+		case "down", "j":
+			m.output.ScrollSelected(1)
+		case "ctrl+o", "enter":
+			m.output.ToggleSelected()
+		}
+		return m, nil
+	}
+
+	// Input focus: edit the prompt.
 	if m.input.Update(msg) == input.ActionSubmit {
 		text := m.input.Value()
 		m.input.Reset()
@@ -230,16 +266,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		})
 	}
 	return m, nil
-}
-
-// runCommand executes a command-line verb. Quit verbs request program exit;
-// unknown commands are ignored. The leading ":" is optional.
-func (m Model) runCommand(cmd string) tea.Cmd {
-	verb := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(cmd), ":"))
-	if quitCommands[verb] {
-		return tea.Quit
-	}
-	return nil
 }
 
 // stopCmd asks the runtime to interrupt the in-flight prompt.
@@ -293,65 +319,97 @@ func (m Model) listenProcessing() tea.Cmd {
 	}
 }
 
-// relayout sizes the panels to the current terminal: the input panel takes a
-// fixed height at the bottom, a status row and a hint row sit above it, and the
-// output panel fills the rest.
+// relayout sizes the panels to the current terminal. Each panel is wrapped in a
+// focus border (2 rows, 2 columns); a status row and a hint row sit between the
+// bordered output (which fills the rest) and the bordered, fixed-height input.
 func (m *Model) relayout() {
-	outputHeight := m.height - inputHeight - 1 - hintHeight
+	innerW := m.width - 2
+	if innerW < 0 {
+		innerW = 0
+	}
+	// Chrome: output border (2) + status (1) + hint (1) + input border (2).
+	outputHeight := m.height - 2 - 1 - hintHeight - 2 - inputHeight
 	if outputHeight < 0 {
 		outputHeight = 0
 	}
-	m.output.SetSize(m.width, outputHeight)
-	m.input.SetSize(m.width, inputHeight)
+	m.output.SetSize(innerW, outputHeight)
+	m.input.SetSize(innerW, inputHeight)
 }
 
-// View implements tea.Model: output panel, status bar (processing-state
-// indicator), a context-sensitive hint row, and the input panel — or, in command
-// mode, the ":" command line in place of the input.
+// View implements tea.Model: a focus-bordered output panel, a status bar
+// (processing-state indicator), a context-sensitive hint row, and a
+// focus-bordered input panel.
 func (m Model) View() tea.View {
-	bottom := m.input.View()
-	if m.mode == modeCommand {
-		bottom = m.commandLine()
-	}
-	content := strings.Join([]string{
-		m.output.View(),
-		statusBar(m.proc, m.spinner.View(), m.width),
-		m.hintStrip(),
-		bottom,
-	}, "\n")
-	v := tea.NewView(content)
+	rows := make([]string, 0, m.height)
+	rows = append(rows, m.frame(m.output.View(), m.focus == focusOutput)...)
+	rows = append(rows, statusBar(m.proc, m.spinner.View(), m.width))
+	rows = append(rows, m.hintStrip())
+	rows = append(rows, m.frame(m.input.View(), m.focus == focusInput)...)
+	v := tea.NewView(strings.Join(rows, "\n"))
 	v.AltScreen = true
 	return v
 }
 
+// frame wraps a panel's rendered content in a box border colored by focus: the
+// active panel uses a bold active color, the inactive panel the inactive color.
+func (m Model) frame(content string, active bool) []string {
+	innerW := m.width - 2
+	if innerW < 0 {
+		innerW = 0
+	}
+	code := m.inactive
+	if active {
+		code = "1;" + m.active
+	}
+	paint := func(s string) string {
+		if code == "" {
+			return s
+		}
+		return "\x1b[" + code + "m" + s + "\x1b[0m"
+	}
+	bar := strings.Repeat("─", innerW)
+	out := []string{paint("┌" + bar + "┐")}
+	for _, line := range strings.Split(content, "\n") {
+		out = append(out, paint("│")+padCells(line, innerW)+paint("│"))
+	}
+	out = append(out, paint("└"+bar+"┘"))
+	return out
+}
+
 // hintStrip renders the single context-sensitive hint row: interrupt guidance
-// while working, command-line help in command mode, and the ESC discoverability
-// hint while editing a prompt.
+// while working, the ESC-chord menu when a chord is pending, output-navigation
+// keys when the output is focused, and the ESC discoverability hint otherwise.
 func (m Model) hintStrip() string {
 	var text string
 	switch {
 	case m.proc.State == state.StateWorking:
-		if m.interruptArmed {
+		if m.chordPending {
 			text = "esc again to confirm interrupt"
 		} else {
 			text = "esc → interrupt"
 		}
-	case m.mode == modeCommand:
-		text = ":q quit · :exit · (esc to cancel)"
+	case m.chordPending:
+		text = "q quit · ↑ output · ↓ input · esc cancel"
+	case m.focus == focusOutput:
+		text = "j/k scroll · pgup/pgdn select · ^o expand · esc → input"
 	default:
-		text = "esc → command options"
+		text = "esc → options"
 	}
 	return padLine(text, m.width)
 }
 
-// commandLine renders the vi-style command entry occupying the input region.
-func (m Model) commandLine() string {
-	rows := make([]string, 0, inputHeight)
-	rows = append(rows, padLine(":"+m.command, m.width))
-	for len(rows) < inputHeight {
-		rows = append(rows, padLine("", m.width))
+// padCells clips or right-pads s to exactly w display columns, ignoring ANSI
+// styling when measuring (used to fit panel content inside the focus border).
+func padCells(s string, w int) string {
+	width := ansi.StringWidth(s)
+	switch {
+	case width == w:
+		return s
+	case width > w:
+		return ansi.Truncate(s, w, "")
+	default:
+		return s + strings.Repeat(" ", w-width)
 	}
-	return strings.Join(rows, "\n")
 }
 
 // padLine clips or right-pads s to exactly width display columns.

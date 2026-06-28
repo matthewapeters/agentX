@@ -35,6 +35,10 @@ type Settings struct {
 	ClassificationRetries int
 	// MaxWidgetLines is the output-widget body-row cap surfaced to the chat UI.
 	MaxWidgetLines int
+	// ActiveBorderColor and InactiveBorderColor are SGR foreground parameters for
+	// the chat surface's focus-aware panel and widget borders (from [agentx.theme]).
+	ActiveBorderColor   string
+	InactiveBorderColor string
 }
 
 // Orchestrator owns the per-process runtime: session, event bus, processing

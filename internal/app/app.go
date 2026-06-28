@@ -74,6 +74,8 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ClassificationPrompt:  classification,
 		ClassificationRetries: cfg.ClassificationRetries(),
 		MaxWidgetLines:        cfg.MaxWidgetLines(),
+		ActiveBorderColor:     cfg.ActiveBorderColor(),
+		InactiveBorderColor:   cfg.InactiveBorderColor(),
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err
@@ -161,6 +163,7 @@ func RunChat(ctx context.Context, opts Options) error {
 
 	surface := chat.NewWithBridge(bridge)
 	surface.SetMaxWidgetLines(orc.Settings().MaxWidgetLines)
+	surface.SetTheme(orc.Settings().ActiveBorderColor, orc.Settings().InactiveBorderColor)
 	p := tea.NewProgram(surface, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		return err
