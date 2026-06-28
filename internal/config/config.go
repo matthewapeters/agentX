@@ -34,9 +34,21 @@ type Agentx struct {
 }
 
 // Thinking is the [agentx.thinking] table. Enabled requests model reasoning
-// during the respond phase; it is a pointer so an absent key defaults to on.
+// during the respond phase (pointer so an absent key defaults to on);
+// TimeBudgetSeconds bounds the thinking phase before the runtime falls back to a
+// direct answer; Routes enables thinking per classification route.
 type Thinking struct {
-	Enabled *bool `toml:"enabled"`
+	Enabled           *bool          `toml:"enabled"`
+	TimeBudgetSeconds int            `toml:"time_budget_seconds"`
+	Routes            ThinkingRoutes `toml:"routes"`
+}
+
+// ThinkingRoutes enables/disables thinking per classification route (pointers so
+// absent keys take the per-route defaults: respond_directly off, others on).
+type ThinkingRoutes struct {
+	RespondDirectly *bool `toml:"respond_directly"`
+	SingleTool      *bool `toml:"single_tool"`
+	InvokePlanner   *bool `toml:"invoke_planner"`
 }
 
 // Ollama is the [agentx.ollama] table: which local model the runtime drives.
@@ -102,6 +114,33 @@ func (c Config) ThinkingEnabled() bool {
 		return true
 	}
 	return *c.Agentx.Thinking.Enabled
+}
+
+// ThinkingTimeBudgetSeconds returns the wall-clock cap on the thinking phase
+// before the runtime falls back to a direct answer (default 180s; <=0 disables).
+func (c Config) ThinkingTimeBudgetSeconds() int {
+	if c.Agentx.Thinking.TimeBudgetSeconds == 0 {
+		return defaultThinkingBudgetSeconds
+	}
+	return c.Agentx.Thinking.TimeBudgetSeconds
+}
+
+// ThinkingRoutes returns the per-route thinking enables, resolved against the
+// defaults (respond_directly off; single_tool and invoke_planner on).
+func (c Config) ThinkingRoutes() map[string]bool {
+	r := c.Agentx.Thinking.Routes
+	return map[string]bool{
+		"respond_directly": boolOr(r.RespondDirectly, false),
+		"single_tool":      boolOr(r.SingleTool, true),
+		"invoke_planner":   boolOr(r.InvokePlanner, true),
+	}
+}
+
+func boolOr(p *bool, def bool) bool {
+	if p == nil {
+		return def
+	}
+	return *p
 }
 
 // ActiveBorderColor returns the SGR foreground parameters for the focused-panel
@@ -179,6 +218,7 @@ const (
 	defaultMaxWidgetLines        = 20
 	defaultActiveBorder          = "cyan"
 	defaultInactiveBorder        = "dark gray"
+	defaultThinkingBudgetSeconds = 180
 )
 
 // Default returns the built-in default configuration used to seed a deployment
@@ -194,8 +234,16 @@ func Default() Config {
 				Retries:              defaultClassificationRetries,
 				ClarificationOptions: defaultClarificationOptions,
 			},
-			Output:   Output{MaxWidgetLines: defaultMaxWidgetLines},
-			Thinking: Thinking{Enabled: boolPtr(true)},
+			Output: Output{MaxWidgetLines: defaultMaxWidgetLines},
+			Thinking: Thinking{
+				Enabled:           boolPtr(true),
+				TimeBudgetSeconds: defaultThinkingBudgetSeconds,
+				Routes: ThinkingRoutes{
+					RespondDirectly: boolPtr(false),
+					SingleTool:      boolPtr(true),
+					InvokePlanner:   boolPtr(true),
+				},
+			},
 			Theme: Theme{
 				ActiveBorder:   defaultActiveBorder,
 				InactiveBorder: defaultInactiveBorder,
@@ -247,6 +295,12 @@ func (p Paths) BootstrapPath() string {
 // (~/.config/agentx/agentx-classification.md).
 func (p Paths) ClassificationPath() string {
 	return filepath.Join(p.configDir(), "agentx-classification.md")
+}
+
+// ThinkingPath is the thinking-guidance system-prompt file
+// (~/.config/agentx/agentx-thinking.md).
+func (p Paths) ThinkingPath() string {
+	return filepath.Join(p.configDir(), "agentx-thinking.md")
 }
 
 // ReadPromptFile reads an optional Markdown prompt file, returning its trimmed

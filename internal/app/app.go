@@ -64,6 +64,10 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 	if err != nil {
 		return nil, err
 	}
+	thinkingPrompt, err := config.ReadPromptFile(paths.ThinkingPath())
+	if err != nil {
+		return nil, err
+	}
 
 	orc := runtime.New(runtime.Settings{
 		SessionRoot:           root,
@@ -75,6 +79,9 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ClassificationRetries: cfg.ClassificationRetries(),
 		MaxWidgetLines:        cfg.MaxWidgetLines(),
 		ThinkingEnabled:       cfg.ThinkingEnabled(),
+		ThinkingPrompt:        thinkingPrompt,
+		ThinkingBudget:        time.Duration(cfg.ThinkingTimeBudgetSeconds()) * time.Second,
+		ThinkingRoutes:        cfg.ThinkingRoutes(),
 		ActiveBorderColor:     cfg.ActiveBorderColor(),
 		InactiveBorderColor:   cfg.InactiveBorderColor(),
 	})

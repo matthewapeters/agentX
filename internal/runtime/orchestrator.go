@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"agentx/internal/classify"
@@ -35,9 +37,18 @@ type Settings struct {
 	ClassificationRetries int
 	// MaxWidgetLines is the output-widget body-row cap surfaced to the chat UI.
 	MaxWidgetLines int
-	// ThinkingEnabled requests model reasoning during the respond phase, streamed
-	// as thinking events ahead of the answer.
+	// ThinkingEnabled is the master switch for model reasoning during the respond
+	// phase, streamed as thinking events ahead of the answer.
 	ThinkingEnabled bool
+	// ThinkingPrompt is the guidance folded into the respond system prompt when
+	// thinking (from ~/.config/agentx/agentx-thinking.md). Empty uses the default.
+	ThinkingPrompt string
+	// ThinkingBudget bounds the thinking phase; when it elapses before any content
+	// arrives the runtime falls back to a direct (non-thinking) answer. <=0 disables.
+	ThinkingBudget time.Duration
+	// ThinkingRoutes enables thinking per classification route. A route absent from
+	// the map (or an unclassified prompt) does not think.
+	ThinkingRoutes map[string]bool
 	// ActiveBorderColor and InactiveBorderColor are SGR foreground parameters for
 	// the chat surface's focus-aware panel and widget borders (from [agentx.theme]).
 	ActiveBorderColor   string
@@ -243,51 +254,76 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		return fmt.Errorf("orchestrator not accepting prompts")
 	}
 
-	// When thinking is enabled the cycle dwells in PhaseThinking until the first
-	// content delta arrives, then flips to PhaseRespond.
-	thinking := o.settings.ThinkingEnabled
-	prePhase := state.PhaseRespond
-	if thinking {
-		prePhase = state.PhaseThinking
-	}
-
 	if classifyPrompt {
 		o.setProcessing(state.StateWorking, state.PhaseClassify)
-	} else {
-		o.setProcessing(state.StateWorking, prePhase)
 	}
 	if recordUserPrompt {
 		o.publish("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text})
 	}
 
+	route := ""
 	if classifyPrompt && classifier != nil {
 		verdict := classifier.Classify(ctx, text)
+		route = string(verdict.Route)
 		o.publish("CLASSIFICATION", state.ContentClassification, map[string]any{
-			"route":     string(verdict.Route),
+			"route":     route,
 			"rationale": verdict.Rationale,
 			"text":      classificationText(verdict),
 		})
 		// v1: only respond_directly executes; reserved routes fall back to respond.
-		o.setProcessing(state.StateWorking, prePhase)
 	}
 
+	// Route-aware thinking: the verdict decides whether this turn reasons before
+	// answering. While thinking the cycle dwells in PhaseThinking until the first
+	// content delta arrives, then flips to PhaseRespond.
+	doThink := o.thinkForRoute(route)
+	prePhase := state.PhaseRespond
+	if doThink {
+		prePhase = state.PhaseThinking
+	}
+	o.setProcessing(state.StateWorking, prePhase)
+
 	var onThink func(string)
-	if thinking {
+	if doThink {
 		onThink = func(t string) {
 			o.publish("THINKING", state.ContentThinking, map[string]any{"text": t})
 		}
 	}
-	respondStarted := false
+	var respondStarted atomic.Bool
 	onDelta := func(delta string) {
-		if thinking && !respondStarted {
-			respondStarted = true
+		if doThink && respondStarted.CompareAndSwap(false, true) {
 			o.setProcessing(state.StateWorking, state.PhaseRespond)
 		}
 		o.publish("AGENT_CONTENT", state.ContentAgentResponse, map[string]any{"text": delta})
 	}
 
-	messages := assembler.Assemble(text)
-	_, err := model.Chat(ctx, o.settings.OllamaModel, messages, onDelta, onThink)
+	// Bound the thinking phase: if the budget elapses before any content arrives,
+	// cancel this stream (keeping the partial reasoning) and fall back to a direct,
+	// non-thinking answer so the turn still completes.
+	respondCtx := ctx
+	if doThink && o.settings.ThinkingBudget > 0 {
+		var cancel context.CancelFunc
+		respondCtx, cancel = context.WithCancel(ctx)
+		timer := time.AfterFunc(o.settings.ThinkingBudget, func() {
+			if !respondStarted.Load() {
+				cancel()
+			}
+		})
+		defer timer.Stop()
+		defer cancel()
+	}
+
+	messages := assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route)
+	_, err := model.Chat(respondCtx, o.settings.OllamaModel, messages, onDelta, onThink)
+
+	// Thinking budget exceeded (our child ctx canceled, parent still live, no
+	// content yet): answer directly without thinking.
+	if errors.Is(err, context.Canceled) && ctx.Err() == nil && !respondStarted.Load() {
+		o.publish("THINKING", state.ContentThinking, map[string]any{"text": "\n…(thinking budget reached — answering directly)"})
+		o.setProcessing(state.StateWorking, state.PhaseRespond)
+		_, err = model.Chat(ctx, o.settings.OllamaModel, assembler.Assemble(text), onDelta, nil)
+	}
+
 	switch {
 	case err == nil:
 		o.setProcessing(state.StateCompleted, state.PhaseNone)
@@ -302,6 +338,28 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		o.setProcessing(state.StateFailed, state.PhaseNone)
 		return err
 	}
+}
+
+// thinkForRoute reports whether this turn should reason before answering: the
+// master switch is on and the classified route opts into thinking. An empty
+// route (unclassified, e.g. bootstrap) never thinks.
+func (o *Orchestrator) thinkForRoute(route string) bool {
+	if !o.settings.ThinkingEnabled || route == "" {
+		return false
+	}
+	return o.settings.ThinkingRoutes[route]
+}
+
+// thinkingPrompt returns the thinking guidance to fold into the respond system
+// prompt, or "" when not thinking. Empty configured guidance uses the default.
+func (o *Orchestrator) thinkingPrompt(doThink bool) string {
+	if !doThink {
+		return ""
+	}
+	if p := strings.TrimSpace(o.settings.ThinkingPrompt); p != "" {
+		return p
+	}
+	return prompting.DefaultThinkingPrompt
 }
 
 // classificationText renders the greyed "intent → route" line for the output

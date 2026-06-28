@@ -206,10 +206,27 @@ requests model reasoning and streams it ahead of the answer:
   agent_response`. Models without thinking support simply emit no `thinking`
   field and the cycle proceeds straight to the answer.
 
-> **Open (next increment):** thinking is currently uncapped — long chains read as
-> an endless internal monologue. The tuning lever is a dedicated, tunable thinking
-> system-prompt file (sibling to the classification prompt) plus a length/turn
-> budget to find the "useful but bounded" sweet spot. Tracked as a follow-up.
+### Tuning thinking toward the sweet spot
+
+Three composing levers keep thinking *useful but bounded*:
+
+- **Route-aware depth.** The classification verdict decides whether a turn reasons
+  at all. `[agentx.thinking.routes]` enables thinking per route (defaults:
+  `respond_directly` off, `single_tool`/`invoke_planner` on). The classified route
+  is also injected into the thinking prompt as a calibration hint, so the model
+  scales its reasoning to the task.
+- **Tunable guidance.** `~/.config/agentx/agentx-thinking.md` (built-in default in
+  `prompting.DefaultThinkingPrompt`) is folded into the respond system prompt; it
+  steers brevity and goal-direction without recompiling.
+- **Hard wall-clock budget.** `[agentx.thinking] time_budget_seconds` (default
+  `180`) caps the thinking phase. If it elapses before any content delta, the
+  runtime cancels the stream (keeping the partial reasoning), records a
+  `…(thinking budget reached — answering directly)` note, and re-asks **without**
+  thinking so the turn still completes.
+
+> **Open (future):** model-native effort levels (`think: "low"|"medium"|"high"` on
+> models that support them) and feeding partial reasoning into the budget-fallback
+> answer are deferred; current wire format is boolean `think`.
 
 ## Procedural Prompts
 

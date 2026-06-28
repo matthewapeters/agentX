@@ -34,6 +34,8 @@ func registerClassifyCycleSteps(sc *godog.ScenarioContext) {
 
 	sc.Step(`^a started orchestrator that classifies as "([^"]*)" and replies "([^"]*)"$`, w.started)
 	sc.Step(`^a started orchestrator that thinks "([^"]*)" then replies "([^"]*)"$`, w.startedThinking)
+	sc.Step(`^a started orchestrator whose thinking stalls past the budget then replies "([^"]*)"$`, w.startedThinkingStall)
+	sc.Step(`^the recorded answer is "([^"]*)"$`, w.recordedAnswer)
 	sc.Step(`^the prompt "([^"]*)" runs the full cycle$`, w.runCycle)
 	sc.Step(`^the cycle's content events are, in order:$`, w.contentEvents)
 	sc.Step(`^the recorded classification route is "([^"]*)"$`, w.classificationRoute)
@@ -68,11 +70,61 @@ func (w *classifyCycleWorld) startedThinking(think, reply string) error {
 		return `{"route": "respond_directly"}`, nil
 	}
 	w.orc = runtime.New(
-		runtime.Settings{SessionRoot: dir, OllamaModel: "stub", ThinkingEnabled: true},
+		runtime.Settings{
+			SessionRoot:     dir,
+			OllamaModel:     "stub",
+			ThinkingEnabled: true,
+			ThinkingRoutes:  map[string]bool{"respond_directly": true},
+		},
 		runtime.WithModel(stubModel{thinks: []string{think}, deltas: []string{reply}}),
 		runtime.WithClassifier(classify.New("", 0, classifierChat)),
 	)
 	return w.orc.Start()
+}
+
+func (w *classifyCycleWorld) startedThinkingStall(reply string) error {
+	dir, err := os.MkdirTemp("", "agentx-budget-")
+	if err != nil {
+		return err
+	}
+	w.dir = dir
+	classifierChat := func(context.Context, []prompting.Message) (string, error) {
+		return `{"route": "respond_directly"}`, nil
+	}
+	w.orc = runtime.New(
+		runtime.Settings{
+			SessionRoot:     dir,
+			OllamaModel:     "stub",
+			ThinkingEnabled: true,
+			ThinkingBudget:  20 * time.Millisecond,
+			ThinkingRoutes:  map[string]bool{"respond_directly": true},
+		},
+		runtime.WithModel(stubModel{thinks: []string{"stalling"}, thinkBlocks: true, deltas: []string{reply}}),
+		runtime.WithClassifier(classify.New("", 0, classifierChat)),
+	)
+	return w.orc.Start()
+}
+
+func (w *classifyCycleWorld) recordedAnswer(want string) error {
+	events, err := w.timeline()
+	if err != nil {
+		return err
+	}
+	var answer string
+	for _, ev := range events {
+		if ev.ContentType != state.ContentAgentResponse {
+			continue
+		}
+		if p, ok := ev.Payload.(map[string]any); ok {
+			if t, ok := p["text"].(string); ok {
+				answer += t
+			}
+		}
+	}
+	if answer != want {
+		return fmt.Errorf("recorded answer = %q, want %q", answer, want)
+	}
+	return nil
 }
 
 func (w *classifyCycleWorld) runCycle(text string) error {

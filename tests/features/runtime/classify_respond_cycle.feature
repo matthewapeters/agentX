@@ -45,3 +45,11 @@ Feature: Classify-respond prompt cycle
       | thinking       |
       | agent_response |
     And the cycle's final state is "completed"
+
+  # use-case: UC-CLASSIFY-CYCLE
+  # variant: thinking-budget-falls-back-to-direct
+  Scenario: Thinking that exceeds the budget falls back to a direct answer
+    Given a started orchestrator whose thinking stalls past the budget then replies "fallback answer"
+    When the prompt "hi" runs the full cycle
+    Then the recorded answer is "fallback answer"
+    And the cycle's final state is "completed"

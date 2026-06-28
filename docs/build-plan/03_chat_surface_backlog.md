@@ -279,8 +279,20 @@ Un-defers the `classify` phase. Specs: `../implementation/04_llm_prompt_tooling_
   (thinking-streams-before-response variant) (`@functional`)
 - **Done**: thinking widget renders; ordering `user_prompt → classification → thinking
   → agent_response`; `make all` green.
-- **Follow-up**: tunable thinking system-prompt file + length/turn budget (sweet-spot
-  tuning) — separate increment.
+
+### CHT-D7 · Thinking sweet-spot tuning · M
+- **Target**: `internal/runtime/`, `internal/config/`, `internal/prompting/`
+- **Deps**: CHT-D6
+- **Behavior**: route-aware thinking depth via `[agentx.thinking.routes]` (the
+  classification verdict gates thinking and is injected as a calibration hint);
+  tunable `agentx-thinking.md` guidance folded into the respond system prompt; a
+  wall-clock `time_budget_seconds` (default 180) that, on expiry before any content,
+  cancels the stream and falls back to a direct non-thinking answer.
+- **Feature**: `tests/features/runtime/classify_respond_cycle.feature`
+  (thinking-streams + budget-fallback variants) (`@functional`)
+- **Done**: route gating, prompt injection, and budget fallback behave per spec;
+  `make all` green.
+- **Follow-up**: model-native effort levels; feed partial reasoning into the fallback.
 
 ---
 

@@ -17,6 +17,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Added thinking pass-through: the respond phase streams model reasoning as
   `thinking` events into a collapsed `💭` widget, gated by new `[agentx.thinking]`
   config (default on) (CHT-D6).
+- Added thinking sweet-spot tuning: route-aware depth (`[agentx.thinking.routes]`),
+  a tunable `agentx-thinking.md` guidance prompt, and a wall-clock
+  `time_budget_seconds` (default 180) that falls back to a direct answer on expiry
+  (CHT-D7).
 - Added a synthesized remediation brief artifact capturing the documentation triad review outcomes under `.subutai/runs/2026-06-23-doc-review-triad/`.
 - Added ADR-0006 and indexed it in the ADR navigation so architecture decisions referenced by implementation docs are discoverable.
 

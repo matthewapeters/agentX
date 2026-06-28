@@ -51,6 +51,10 @@ User prompt files (Markdown, optional):
   - system prompt for the classification step; describes the agentic-workflow
     taxonomy used to route prompts (seeded with a default; tunable)
   - see `04_llm_prompt_tooling_runtime.md` (Classification Cycle)
+- ~/.config/agentx/agentx-thinking.md
+  - thinking guidance folded into the respond system prompt when thinking; steers
+    reasoning toward the bounded "sweet spot" (built-in default; tunable)
+  - see `04_llm_prompt_tooling_runtime.md` (Thinking Pass-through)
 
 ### Runtime tables (`agentx.toml`)
 
@@ -65,7 +69,13 @@ clarification_options = 3 # Stage-2: candidate interpretations offered on ambigu
 max_widget_lines = 20     # max body rows before an output widget scrolls in place
 
 [agentx.thinking]
-enabled = true            # request model reasoning during respond (💭 widget); absent → on
+enabled = true              # master switch for reasoning during respond (💭 widget); absent → on
+time_budget_seconds = 180   # wall-clock cap on thinking; on expiry, fall back to a direct answer
+
+[agentx.thinking.routes]    # route-aware depth (which classification routes reason)
+respond_directly = false    # plain conversation answers without thinking
+single_tool = true
+invoke_planner = true
 
 [agentx.theme]
 active_border_color   = "cyan"        # focused panel + selected output widget (bold)
