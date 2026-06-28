@@ -266,6 +266,22 @@ Un-defers the `classify` phase. Specs: `../implementation/04_llm_prompt_tooling_
 - **Done**: focus toggle + chord + scroll keys behave per spec; themed borders render;
   `make all` green.
 
+### CHT-D6 · Thinking pass-through · S
+- **Target**: `internal/llm/ollama/`, `internal/runtime/`, `internal/surfaces/output/`,
+  `internal/config/`
+- **Deps**: CHT-D1, CHT-D4
+- **Behavior**: `Model.Chat` gains an `onThink` callback (non-nil ⇒ request thinking).
+  The respond phase streams reasoning as `thinking` events ahead of the answer
+  (`working/thinking → working/respond` on first content delta); classification never
+  thinks. Output coalesces reasoning into one collapsed `💭` widget. New
+  `[agentx.thinking] enabled` config (default on).
+- **Feature**: `tests/features/runtime/classify_respond_cycle.feature`
+  (thinking-streams-before-response variant) (`@functional`)
+- **Done**: thinking widget renders; ordering `user_prompt → classification → thinking
+  → agent_response`; `make all` green.
+- **Follow-up**: tunable thinking system-prompt file + length/turn budget (sweet-spot
+  tuning) — separate increment.
+
 ---
 
 ## Sequencing

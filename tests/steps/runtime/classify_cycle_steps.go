@@ -33,6 +33,7 @@ func registerClassifyCycleSteps(sc *godog.ScenarioContext) {
 	})
 
 	sc.Step(`^a started orchestrator that classifies as "([^"]*)" and replies "([^"]*)"$`, w.started)
+	sc.Step(`^a started orchestrator that thinks "([^"]*)" then replies "([^"]*)"$`, w.startedThinking)
 	sc.Step(`^the prompt "([^"]*)" runs the full cycle$`, w.runCycle)
 	sc.Step(`^the cycle's content events are, in order:$`, w.contentEvents)
 	sc.Step(`^the recorded classification route is "([^"]*)"$`, w.classificationRoute)
@@ -52,6 +53,23 @@ func (w *classifyCycleWorld) started(route, reply string) error {
 	w.orc = runtime.New(
 		runtime.Settings{SessionRoot: dir, OllamaModel: "stub"},
 		runtime.WithModel(stubModel{deltas: []string{reply}}),
+		runtime.WithClassifier(classify.New("", 0, classifierChat)),
+	)
+	return w.orc.Start()
+}
+
+func (w *classifyCycleWorld) startedThinking(think, reply string) error {
+	dir, err := os.MkdirTemp("", "agentx-think-")
+	if err != nil {
+		return err
+	}
+	w.dir = dir
+	classifierChat := func(context.Context, []prompting.Message) (string, error) {
+		return `{"route": "respond_directly"}`, nil
+	}
+	w.orc = runtime.New(
+		runtime.Settings{SessionRoot: dir, OllamaModel: "stub", ThinkingEnabled: true},
+		runtime.WithModel(stubModel{thinks: []string{think}, deltas: []string{reply}}),
 		runtime.WithClassifier(classify.New("", 0, classifierChat)),
 	)
 	return w.orc.Start()

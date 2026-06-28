@@ -30,6 +30,13 @@ type Agentx struct {
 	Classification Classification `toml:"classification"`
 	Output         Output         `toml:"output"`
 	Theme          Theme          `toml:"theme"`
+	Thinking       Thinking       `toml:"thinking"`
+}
+
+// Thinking is the [agentx.thinking] table. Enabled requests model reasoning
+// during the respond phase; it is a pointer so an absent key defaults to on.
+type Thinking struct {
+	Enabled *bool `toml:"enabled"`
 }
 
 // Ollama is the [agentx.ollama] table: which local model the runtime drives.
@@ -88,6 +95,15 @@ func (c Config) MaxWidgetLines() int {
 	return c.Agentx.Output.MaxWidgetLines
 }
 
+// ThinkingEnabled reports whether the respond phase requests model reasoning.
+// Absent config defaults to true.
+func (c Config) ThinkingEnabled() bool {
+	if c.Agentx.Thinking.Enabled == nil {
+		return true
+	}
+	return *c.Agentx.Thinking.Enabled
+}
+
 // ActiveBorderColor returns the SGR foreground parameters for the focused-panel
 // and selected-widget borders (e.g. "38;5;6"). Empty config falls back to cyan.
 func (c Config) ActiveBorderColor() string {
@@ -121,6 +137,8 @@ func resolveColor(name, def string) string {
 	}
 	return namedColors[def]
 }
+
+func boolPtr(b bool) *bool { return &b }
 
 func isAllDigits(s string) bool {
 	if s == "" {
@@ -176,7 +194,8 @@ func Default() Config {
 				Retries:              defaultClassificationRetries,
 				ClarificationOptions: defaultClarificationOptions,
 			},
-			Output: Output{MaxWidgetLines: defaultMaxWidgetLines},
+			Output:   Output{MaxWidgetLines: defaultMaxWidgetLines},
+			Thinking: Thinking{Enabled: boolPtr(true)},
 			Theme: Theme{
 				ActiveBorder:   defaultActiveBorder,
 				InactiveBorder: defaultInactiveBorder,

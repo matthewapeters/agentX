@@ -35,6 +35,9 @@ type Settings struct {
 	ClassificationRetries int
 	// MaxWidgetLines is the output-widget body-row cap surfaced to the chat UI.
 	MaxWidgetLines int
+	// ThinkingEnabled requests model reasoning during the respond phase, streamed
+	// as thinking events ahead of the answer.
+	ThinkingEnabled bool
 	// ActiveBorderColor and InactiveBorderColor are SGR foreground parameters for
 	// the chat surface's focus-aware panel and widget borders (from [agentx.theme]).
 	ActiveBorderColor   string
@@ -113,7 +116,8 @@ func (o *Orchestrator) Start() error {
 	o.assembler = prompting.New(instructions)
 	if o.classifier == nil {
 		chat := func(ctx context.Context, msgs []prompting.Message) (string, error) {
-			return o.model.Chat(ctx, o.settings.OllamaModel, msgs, func(string) {})
+			// Classification never thinks (nil onThink): a fast strict-JSON verdict.
+			return o.model.Chat(ctx, o.settings.OllamaModel, msgs, func(string) {}, nil)
 		}
 		o.classifier = classify.New(o.settings.ClassificationPrompt, o.settings.ClassificationRetries, chat)
 	}
@@ -239,10 +243,18 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		return fmt.Errorf("orchestrator not accepting prompts")
 	}
 
+	// When thinking is enabled the cycle dwells in PhaseThinking until the first
+	// content delta arrives, then flips to PhaseRespond.
+	thinking := o.settings.ThinkingEnabled
+	prePhase := state.PhaseRespond
+	if thinking {
+		prePhase = state.PhaseThinking
+	}
+
 	if classifyPrompt {
 		o.setProcessing(state.StateWorking, state.PhaseClassify)
 	} else {
-		o.setProcessing(state.StateWorking, state.PhaseRespond)
+		o.setProcessing(state.StateWorking, prePhase)
 	}
 	if recordUserPrompt {
 		o.publish("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text})
@@ -256,13 +268,26 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 			"text":      classificationText(verdict),
 		})
 		// v1: only respond_directly executes; reserved routes fall back to respond.
-		o.setProcessing(state.StateWorking, state.PhaseRespond)
+		o.setProcessing(state.StateWorking, prePhase)
+	}
+
+	var onThink func(string)
+	if thinking {
+		onThink = func(t string) {
+			o.publish("THINKING", state.ContentThinking, map[string]any{"text": t})
+		}
+	}
+	respondStarted := false
+	onDelta := func(delta string) {
+		if thinking && !respondStarted {
+			respondStarted = true
+			o.setProcessing(state.StateWorking, state.PhaseRespond)
+		}
+		o.publish("AGENT_CONTENT", state.ContentAgentResponse, map[string]any{"text": delta})
 	}
 
 	messages := assembler.Assemble(text)
-	_, err := model.Chat(ctx, o.settings.OllamaModel, messages, func(delta string) {
-		o.publish("AGENT_CONTENT", state.ContentAgentResponse, map[string]any{"text": delta})
-	})
+	_, err := model.Chat(ctx, o.settings.OllamaModel, messages, onDelta, onThink)
 	switch {
 	case err == nil:
 		o.setProcessing(state.StateCompleted, state.PhaseNone)

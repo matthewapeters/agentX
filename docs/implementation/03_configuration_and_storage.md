@@ -64,6 +64,9 @@ clarification_options = 3 # Stage-2: candidate interpretations offered on ambigu
 [agentx.output]
 max_widget_lines = 20     # max body rows before an output widget scrolls in place
 
+[agentx.thinking]
+enabled = true            # request model reasoning during respond (💭 widget); absent → on
+
 [agentx.theme]
 active_border_color   = "cyan"        # focused panel + selected output widget (bold)
 inactive_border_color = "dark gray"   # unfocused panel + other widgets

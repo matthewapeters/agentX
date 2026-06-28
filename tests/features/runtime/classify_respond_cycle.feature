@@ -32,3 +32,16 @@ Feature: Classify-respond prompt cycle
     When the prompt "edit the file" runs the full cycle
     Then the recorded classification route is "single_tool"
     And the cycle's final state is "completed"
+
+  # use-case: UC-CLASSIFY-CYCLE
+  # variant: thinking-streams-before-response
+  Scenario: Thinking streams before the response when enabled
+    Given a started orchestrator that thinks "let me check" then replies "the answer"
+    When the prompt "hi" runs the full cycle
+    Then the cycle's content events are, in order:
+      | content_type   |
+      | user_prompt    |
+      | classification |
+      | thinking       |
+      | agent_response |
+    And the cycle's final state is "completed"

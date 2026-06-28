@@ -22,17 +22,23 @@ import (
 // captured is non-nil it records the assembled messages it was called with.
 type stubModel struct {
 	deltas   []string
+	thinks   []string
 	err      error
 	block    bool
 	captured *[]prompting.Message
 }
 
-func (s stubModel) Chat(ctx context.Context, _ string, messages []prompting.Message, onDelta func(string)) (string, error) {
+func (s stubModel) Chat(ctx context.Context, _ string, messages []prompting.Message, onDelta, onThink func(string)) (string, error) {
 	if s.captured != nil {
 		*s.captured = messages
 	}
 	if s.err != nil {
 		return "", s.err
+	}
+	if onThink != nil {
+		for _, t := range s.thinks {
+			onThink(t)
+		}
 	}
 	for _, d := range s.deltas {
 		onDelta(d)

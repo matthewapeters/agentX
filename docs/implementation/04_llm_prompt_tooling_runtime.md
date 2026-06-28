@@ -189,6 +189,28 @@ Routes:
 Prefer respond_directly when unsure. Output only the JSON object.
 ```
 
+## Thinking Pass-through (v1)
+
+When `[agentx.thinking] enabled` is true (the default), the **respond** phase
+requests model reasoning and streams it ahead of the answer:
+
+- The Ollama adapter sets `"think": true` on the chat request and reads the
+  separate `message.thinking` field from each stream chunk (distinct from
+  `message.content`). Classification never thinks (it needs a fast strict-JSON
+  verdict).
+- The orchestrator publishes reasoning chunks as `thinking` content events, then
+  switches `working/thinking → working/respond` on the first content delta.
+- The output panel coalesces the reasoning into a single, collapsed `💭 thinking`
+  widget rendered above the `🤖` answer (see `ux/06_OUTPUT_WIDGET.md`).
+- Per-turn ordering becomes: `user_prompt → classification → thinking →
+  agent_response`. Models without thinking support simply emit no `thinking`
+  field and the cycle proceeds straight to the answer.
+
+> **Open (next increment):** thinking is currently uncapped — long chains read as
+> an endless internal monologue. The tuning lever is a dedicated, tunable thinking
+> system-prompt file (sibling to the classification prompt) plus a length/turn
+> budget to find the "useful but bounded" sweet spot. Tracked as a follow-up.
+
 ## Procedural Prompts
 
 Procedural prompts are internal orchestration instructions and should be versioned with application code.

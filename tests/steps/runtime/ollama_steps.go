@@ -88,7 +88,7 @@ func (w *ollamaWorld) sendChat(model, prompt string) error {
 	w.response, w.err = w.client.Chat(ctx, ollama.ChatRequest{
 		Model:    model,
 		Messages: []ollama.Message{{Role: "user", Content: prompt}},
-	}, func(d string) { w.deltas = append(w.deltas, d) })
+	}, func(d string) { w.deltas = append(w.deltas, d) }, nil)
 	return nil
 }
 

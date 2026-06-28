@@ -35,29 +35,37 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// ChatRequest is a streaming chat completion request.
+// ChatRequest is a streaming chat completion request. When Think is set the
+// request asks the model to emit reasoning, delivered separately from content.
 type ChatRequest struct {
 	Model    string
 	Messages []Message
+	Think    bool
 }
 
 type chatChunk struct {
 	Message struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role     string `json:"role"`
+		Content  string `json:"content"`
+		Thinking string `json:"thinking"`
 	} `json:"message"`
 	Done  bool   `json:"done"`
 	Error string `json:"error,omitempty"`
 }
 
-// Chat streams a chat completion, invoking onDelta for each content chunk, and
-// returns the assembled response. It honors ctx cancellation.
-func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta func(string)) (string, error) {
-	body, err := json.Marshal(map[string]any{
+// Chat streams a chat completion, invoking onDelta for each content chunk and
+// onThink (when non-nil and Think is set) for each reasoning chunk, and returns
+// the assembled content. It honors ctx cancellation.
+func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink func(string)) (string, error) {
+	payload := map[string]any{
 		"model":    req.Model,
 		"messages": req.Messages,
 		"stream":   true,
-	})
+	}
+	if req.Think {
+		payload["think"] = true
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("encode chat request: %w", err)
 	}
@@ -92,6 +100,9 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta func(string)
 		}
 		if chunk.Error != "" {
 			return assembled.String(), fmt.Errorf("ollama error: %s", chunk.Error)
+		}
+		if chunk.Message.Thinking != "" && onThink != nil {
+			onThink(chunk.Message.Thinking)
 		}
 		if chunk.Message.Content != "" {
 			assembled.WriteString(chunk.Message.Content)

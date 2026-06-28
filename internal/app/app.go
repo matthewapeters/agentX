@@ -74,6 +74,7 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ClassificationPrompt:  classification,
 		ClassificationRetries: cfg.ClassificationRetries(),
 		MaxWidgetLines:        cfg.MaxWidgetLines(),
+		ThinkingEnabled:       cfg.ThinkingEnabled(),
 		ActiveBorderColor:     cfg.ActiveBorderColor(),
 		InactiveBorderColor:   cfg.InactiveBorderColor(),
 	})

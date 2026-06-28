@@ -12,6 +12,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Added the `classification` event content type to the frozen event-envelope
   contract (`docs/architecture/runtime_contracts/event-envelope.schema.json` and
   `internal/state`) for the Stage-1 prompt classification cycle (CHT-D4).
+- Added panel focus model, ESC chord keymap, and themed focus borders to the chat
+  surface, with new `[agentx.theme]` config (CHT-D5).
+- Added thinking pass-through: the respond phase streams model reasoning as
+  `thinking` events into a collapsed `💭` widget, gated by new `[agentx.thinking]`
+  config (default on) (CHT-D6).
 - Added a synthesized remediation brief artifact capturing the documentation triad review outcomes under `.subutai/runs/2026-06-23-doc-review-triad/`.
 - Added ADR-0006 and indexed it in the ADR navigation so architecture decisions referenced by implementation docs are discoverable.
 

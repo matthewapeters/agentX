@@ -137,7 +137,8 @@ func (m *Model) Apply(ev state.Event) {
 		m.appendAssistant(eventText(ev))
 		return
 	case state.ContentThinking:
-		m.add(&widget{kind: kindThinking, header: "💭 thinking", body: eventText(ev), collapsible: true, collapsed: true})
+		m.appendThinking(eventText(ev))
+		return
 	case state.ContentToolCall:
 		m.add(&widget{kind: kindToolCall, header: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true})
 	case state.ContentToolResult:
@@ -167,6 +168,17 @@ func (m *Model) appendAssistant(text string) {
 		return
 	}
 	m.add(&widget{kind: kindAssistant, header: "🤖 AgentX", body: text})
+}
+
+// appendThinking streams reasoning text into a single collapsed thinking widget
+// (collapsed by default per the canonical output spec), creating it on first use.
+func (m *Model) appendThinking(text string) {
+	if n := len(m.widgets); n > 0 && m.widgets[n-1].kind == kindThinking {
+		m.widgets[n-1].body += text
+		m.refresh(true)
+		return
+	}
+	m.add(&widget{kind: kindThinking, header: "💭 thinking", body: text, collapsible: true, collapsed: true})
 }
 
 // AssistantEntries returns the number of distinct assistant widgets.
