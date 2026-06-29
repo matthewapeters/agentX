@@ -12,6 +12,7 @@ import (
 	"agentx/internal/prompting"
 	"agentx/internal/session"
 	"agentx/internal/state"
+	"agentx/internal/surfaces"
 	"agentx/internal/tools"
 )
 
@@ -78,6 +79,8 @@ type Orchestrator struct {
 	id         session.Identity
 	bus        *state.Bus
 	proc       *state.ProcessingPublisher
+	token      surfaces.AttachToken
+	surfaceReg *surfaces.Registry
 	model      Model
 	assembler  *prompting.Assembler
 	classifier *classify.Classifier
@@ -134,6 +137,15 @@ func (o *Orchestrator) Start() error {
 		return fmt.Errorf("create session: %w", err)
 	}
 	o.id = id
+
+	// Mint the per-session ephemeral attach token and the surface registry that
+	// external surfaces register against (TRN-1). The raw token stays in memory.
+	tok, err := surfaces.MintToken()
+	if err != nil {
+		return fmt.Errorf("mint attach token: %w", err)
+	}
+	o.token = tok
+	o.surfaceReg = surfaces.NewRegistry(tok, id.ID, id.Name)
 
 	if err := o.seedWorkingMemory(); err != nil {
 		return fmt.Errorf("seed working memory: %w", err)
@@ -223,6 +235,13 @@ func (o *Orchestrator) Processing() *state.ProcessingPublisher { return o.proc }
 
 // Session returns the active session identity.
 func (o *Orchestrator) Session() session.Identity { return o.id }
+
+// Registry returns the surface registry external surfaces attach to (TRN-1).
+func (o *Orchestrator) Registry() *surfaces.Registry { return o.surfaceReg }
+
+// AttachToken returns the session's ephemeral attach token. The raw value is
+// used to build launch command strings; only its fingerprint is ever persisted.
+func (o *Orchestrator) AttachToken() surfaces.AttachToken { return o.token }
 
 // CheckModel verifies the configured model is available (CHT-C4). It is called
 // after Start, before prompts are accepted, so an unavailable model is reported

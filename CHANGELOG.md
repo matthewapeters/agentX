@@ -9,6 +9,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added the surface registry and ephemeral attach token (TRN-1, first slice of the
+  M1 external-surface enablement backlog): the orchestrator mints one per-session
+  attach token at startup (raw value held in memory only) and owns an
+  `internal/surfaces` registry that validates the token at registration, records the
+  frozen `surface-registration` payload, manages surface lifecycle (ready/stopped),
+  rejects bad tokens (`auth`) and id conflicts (`conflict`), and exposes only the
+  non-secret token fingerprint. Registration mechanics documented in
+  `docs/implementation/02_surface_orchestration_http.md`; backlog in
+  `docs/build-plan/05_transport_backlog.md`.
 - Added the `classification` event content type to the frozen event-envelope
   contract (`docs/architecture/runtime_contracts/event-envelope.schema.json` and
   `internal/state`) for the Stage-1 prompt classification cycle (CHT-D4).
