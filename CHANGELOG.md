@@ -25,6 +25,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Added `internal/tools` command policy and curated descriptors (TOOL-1): argument
   schema validation plus blacklist → global → session → approval evaluation with
   reason codes, and the built-in curated toolset registry.
+- Added the tool executor and session artifact store (TOOL-2): argv/no-shell
+  execution with stdin, timeout, stdout/stderr/exit capture and an output cap;
+  `read_file`/`write_file`/`read_output` built-ins; full output persisted to
+  `sessions/<id>/artifacts/` with a compact preview + ref and line-windowed read-back.
 - Captured the tool-runtime design (first built-in command-line tool) ahead of
   implementation: `docs/build-plan/04_tool_runtime_backlog.md` (TOOL-1…5 for M3b),
   the `single_tool` cycle + output-artifact/context-shaping notes in

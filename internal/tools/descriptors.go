@@ -13,28 +13,37 @@ type Registry struct {
 // executor (TOOL-2).
 func DefaultRegistry() *Registry {
 	descs := []Descriptor{
-		// Read & search (read-only).
-		{ID: "read_file", Command: "cat", Risk: RiskRead, TimeoutSeconds: 30,
+		// Read & search (read-only). "--" stops option parsing so a path value is
+		// never treated as a flag.
+		{ID: "read_file", Command: "cat", Argv: []string{"cat", "--", "{path}"},
+			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
-		{ID: "list_dir", Command: "ls", Risk: RiskRead, TimeoutSeconds: 30,
+		{ID: "list_dir", Command: "ls", Argv: []string{"ls", "-la", "--", "{path}"},
+			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
-		{ID: "find_path", Command: "find", Risk: RiskRead, TimeoutSeconds: 30,
+		{ID: "find_path", Command: "find", Argv: []string{"find", "{root}", "-name", "{name}"},
+			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "root", Kind: KindPath, Required: true}, {Name: "name", Kind: KindString, Required: true}}},
-		{ID: "read_output", Command: "", Risk: RiskRead, TimeoutSeconds: 30,
+		{ID: "read_output", Builtin: "read_output", Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "ref", Kind: KindString, Required: true}, {Name: "offset", Kind: KindInt}, {Name: "limit", Kind: KindInt}}},
 
-		// Write & modify (mutating; approval required).
-		{ID: "write_file", Command: "", Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
+		// Write & modify (mutating; approval required). write_file is a Go built-in;
+		// apply_patch feeds the diff via stdin (no shell).
+		{ID: "write_file", Builtin: "write_file", Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}, {Name: "content", Kind: KindString, Required: true}}},
-		{ID: "apply_patch", Command: "patch", Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
+		{ID: "apply_patch", Command: "patch", Argv: []string{"patch", "-p0"}, StdinArg: "patch",
+			Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "patch", Kind: KindString, Required: true}}},
-		{ID: "edit_file", Command: "sed", Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
+		{ID: "edit_file", Command: "sed", Argv: []string{"sed", "-i", "-e", "{script}", "--", "{path}"},
+			Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}, {Name: "script", Kind: KindString, Required: true}}},
 
 		// Network (egress; approval required).
-		{ID: "http_get", Command: "curl", Risk: RiskNetwork, RequiresApproval: true, TimeoutSeconds: 30,
+		{ID: "http_get", Command: "curl", Argv: []string{"curl", "-sSL", "--", "{url}"},
+			Risk: RiskNetwork, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "url", Kind: KindString, Required: true}}},
-		{ID: "download", Command: "wget", Risk: RiskNetwork, RequiresApproval: true, TimeoutSeconds: 30,
+		{ID: "download", Command: "wget", Argv: []string{"wget", "-O", "{output}", "--", "{url}"},
+			Risk: RiskNetwork, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "url", Kind: KindString, Required: true}, {Name: "output", Kind: KindPath, Required: true}}},
 	}
 	r := &Registry{byID: make(map[string]Descriptor, len(descs))}

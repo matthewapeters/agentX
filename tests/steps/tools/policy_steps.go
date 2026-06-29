@@ -18,6 +18,8 @@ type policyWorld struct {
 
 // InitializeScenario registers the tools-domain steps.
 func InitializeScenario(sc *godog.ScenarioContext) {
+	registerExecSteps(sc)
+
 	w := &policyWorld{}
 
 	sc.Step(`^a tool policy$`, w.newPolicy)

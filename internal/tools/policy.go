@@ -45,14 +45,44 @@ type ArgSpec struct {
 }
 
 // Descriptor is a curated tool the agent may invoke (the command descriptor of
-// docs/implementation/05). A descriptor with an empty Command is a Go built-in.
+// docs/implementation/05). A descriptor with a non-empty Builtin is handled in Go;
+// otherwise it executes Argv as a vector (no shell), with "{name}" tokens replaced
+// by validated argument values.
 type Descriptor struct {
 	ID               string
-	Command          string // backing argv[0]; "" => Go built-in
+	Command          string   // backing argv[0]; "" => Go built-in
+	Argv             []string // argv template; "{name}" tokens are arg placeholders
+	StdinArg         string   // arg whose value is piped to stdin ("" => none)
+	Builtin          string   // non-empty => Go built-in handler key
 	Args             []ArgSpec
 	Risk             RiskLevel
 	RequiresApproval bool
 	TimeoutSeconds   int
+}
+
+// BuildArgv renders the descriptor's argv template against args, substituting
+// "{name}" tokens with their (already validated) values.
+func (d Descriptor) BuildArgv(args map[string]string) ([]string, error) {
+	out := make([]string, 0, len(d.Argv))
+	for _, tok := range d.Argv {
+		if name, ok := placeholder(tok); ok {
+			v, present := args[name]
+			if !present {
+				return nil, fmt.Errorf("argv references missing argument %q", name)
+			}
+			out = append(out, v)
+			continue
+		}
+		out = append(out, tok)
+	}
+	return out, nil
+}
+
+func placeholder(tok string) (string, bool) {
+	if len(tok) >= 2 && tok[0] == '{' && tok[len(tok)-1] == '}' {
+		return tok[1 : len(tok)-1], true
+	}
+	return "", false
 }
 
 // Validate checks args against the descriptor schema, returning an error when an
