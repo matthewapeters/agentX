@@ -392,6 +392,11 @@ THEN  the input value is "first revised"
 > `Cursor()` for testing; it is rendered as a reverse-video cell (including a
 > virtual cell at end-of-line) and is shown only while the panel is focused.
 >
+> **Multiplexer-safe aliases.** zellij binds `Alt-f` to toggle floating panes and
+> intercepts it before the app sees it, so word motion is also bound to
+> `Ctrl+←`/`Ctrl+→`, which zellij does not grab by default. Both bindings invoke
+> the same back-word / forward-word movement.
+>
 > History seeding (PD-02-AF-013/AF-014) places the cursor at the end of the seeded
 > text so the user can keep typing immediately.
 
@@ -401,8 +406,8 @@ THEN  the input value is "first revised"
 | PD-02-AF-018 | Right moves the cursor forward one rune | `→` while input-focused, idle | Cursor index incremented, capped at the buffer length |
 | PD-02-AF-019 | Ctrl-A jumps to the start of the buffer | `Ctrl+A` | Cursor index set to 0 |
 | PD-02-AF-020 | Ctrl-E jumps to the end of the buffer | `Ctrl+E` | Cursor index set to the buffer length |
-| PD-02-AF-021 | Alt-B jumps to the start of the prior word | `Alt+B` | Cursor moves left over any spaces then over non-spaces, landing on the word start |
-| PD-02-AF-022 | Alt-F jumps to the start of the next word | `Alt+F` | Cursor moves right over the current word then over spaces, landing on the next word start |
+| PD-02-AF-021 | Jump to the start of the prior word | `Alt+B` or `Ctrl+←` | Cursor moves left over any spaces then over non-spaces, landing on the word start |
+| PD-02-AF-022 | Jump to the start of the next word | `Alt+F` or `Ctrl+→` | Cursor moves right over the current word then over spaces, landing on the next word start |
 | PD-02-AF-023 | Edits act at the cursor | typing / `Backspace` / `Shift+Enter` | Rune inserted at the cursor (cursor advances); Backspace deletes the rune before the cursor; newline inserted at the cursor |
 | PD-02-AF-024 | The cursor is rendered while focused | panel focused | A reverse-video cell marks the cursor position; absent when the panel is blurred |
 
@@ -450,6 +455,13 @@ WHEN  the user presses alt+f
 THEN  the cursor is at 4
 WHEN  the user presses alt+f
 THEN  the cursor is at 8
+
+# PD-02-AF-021 / AF-022 — Ctrl+arrow aliases move by word (multiplexer-safe)
+GIVEN a focused input panel containing "foo bar" with the cursor at 0
+WHEN  the user presses ctrl+right
+THEN  the cursor is at 4
+WHEN  the user presses ctrl+left
+THEN  the cursor is at 0
 
 # PD-02-AF-013 — seeding a prompt leaves the cursor at the end
 GIVEN the input has submitted prompt "hello"

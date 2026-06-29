@@ -150,12 +150,14 @@ func (m *Model) Update(msg tea.KeyPressMsg) Action {
 			m.cursor = m.runeLen()
 		}
 		return ActionNone
-	case "alt+b":
+	case "alt+b", "ctrl+left":
+		// Alt-B is the readline binding; Ctrl-Left is the multiplexer-safe
+		// alias (zellij grabs Alt-F for floating panes).
 		if !m.streaming {
 			m.cursor = prevWordStart([]rune(m.value), m.cursor)
 		}
 		return ActionNone
-	case "alt+f":
+	case "alt+f", "ctrl+right":
 		if !m.streaming {
 			m.cursor = nextWordStart([]rune(m.value), m.cursor)
 		}

@@ -45,7 +45,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Added a text cursor and readline-style line editing to the chat input panel:
   typing, Backspace, and Shift+Enter now act at the cursor, with Left/Right
   (char), Ctrl-A/Ctrl-E (buffer start/end), and Alt-B/Alt-F (word back/forward)
-  movement. History seeding leaves the cursor at the end of the seeded text. The
+  movement; word motion is also bound to Ctrl-←/Ctrl-→ as a multiplexer-safe
+  alias, since zellij intercepts Alt-F for its floating-pane toggle. History
+  seeding leaves the cursor at the end of the seeded text. The
   cursor renders as a reverse-video cell while the panel is focused. Documented as
   `docs/ux/03_PANEL_DETAILS.md` PD-02-AF-017…024.
 - Added readline-style prompt history seeding to the chat input panel: `↑`/`↓`

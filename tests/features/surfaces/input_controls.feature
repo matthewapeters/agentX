@@ -182,6 +182,15 @@ Feature: Input panel controls
     When the user presses alt+f
     Then the cursor is at 8
 
+  # use-case: UC-INPUT-CURSOR  (PD-02-AF-021 / AF-022)
+  # Ctrl+arrow aliases survive zellij's Alt-f floating-pane binding
+  Scenario: Ctrl-Right and Ctrl-Left move by word
+    Given a focused input panel containing "foo bar" with the cursor at 0
+    When the user presses ctrl+right
+    Then the cursor is at 4
+    When the user presses ctrl+left
+    Then the cursor is at 0
+
   # use-case: UC-INPUT-CURSOR  (PD-02-AF-013)
   # seeding a prompt leaves the cursor at the end of the seeded text
   Scenario: Seeding a prompt leaves the cursor at the end

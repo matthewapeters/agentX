@@ -34,6 +34,8 @@ func registerInputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the user presses ctrl\+e$`, w.pressCtrlE)
 	sc.Step(`^the user presses alt\+b$`, w.pressAltB)
 	sc.Step(`^the user presses alt\+f$`, w.pressAltF)
+	sc.Step(`^the user presses ctrl\+left$`, w.pressCtrlLeft)
+	sc.Step(`^the user presses ctrl\+right$`, w.pressCtrlRight)
 	sc.Step(`^the panel is blurred$`, w.blur)
 	sc.Step(`^the input has submitted prompt "([^"]*)"$`, w.submittedPrompt)
 	sc.Step(`^the input is set streaming$`, w.setStreaming)
@@ -127,6 +129,16 @@ func (w *inputWorld) pressAltB() error {
 
 func (w *inputWorld) pressAltF() error {
 	w.action = w.panel.Update(tea.KeyPressMsg{Mod: tea.ModAlt, Code: 'f'})
+	return nil
+}
+
+func (w *inputWorld) pressCtrlLeft() error {
+	w.action = w.panel.Update(tea.KeyPressMsg{Mod: tea.ModCtrl, Code: tea.KeyLeft})
+	return nil
+}
+
+func (w *inputWorld) pressCtrlRight() error {
+	w.action = w.panel.Update(tea.KeyPressMsg{Mod: tea.ModCtrl, Code: tea.KeyRight})
 	return nil
 }
 
