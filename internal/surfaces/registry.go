@@ -192,6 +192,10 @@ func (r *Registry) Shutdown(surfaceID string) error {
 	return nil
 }
 
+// ValidateToken reports whether raw matches this session's attach token. Used by
+// the transport to authorize write requests from already-attached surfaces.
+func (r *Registry) ValidateToken(raw string) bool { return r.token.Validate(raw) }
+
 // Get returns the registration for an id.
 func (r *Registry) Get(surfaceID string) (Registration, bool) {
 	r.mu.Lock()

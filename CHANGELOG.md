@@ -9,6 +9,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added the HTTP transport write endpoints (TRN-3): `POST /surface/register`
+  (authorized by the attach token in the body; reason category maps to status —
+  auth→401, validation→400, conflict→409), `POST /prompt` (bearer-authorized,
+  gated by the orchestrator accepting state, runs the cycle async with events
+  flowing back over SSE), `POST /tool/approval` (forwards the decision to the
+  approval gate), `POST /surface/{id}/shutdown`, plus `POST /surface/{id}/command`
+  and `POST /model/switch` reserved as `501 not_implemented` in v1. Non-register
+  writes require an `Authorization: Bearer <attach-token>` header validated against
+  the session token (`Registry.ValidateToken`). The `Provider` seam widened with
+  `Submit`/`Resolve`/`Accepting`. Documented in
+  `docs/implementation/02_surface_orchestration_http.md`.
 - Added the loopback HTTP/SSE transport read + streaming endpoints (TRN-2): a new
   `internal/transport/http` server adapts the orchestrator's canonical state behind a
   local `Provider` interface (so transport never imports runtime). `GET /health`,

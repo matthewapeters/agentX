@@ -10,6 +10,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -27,6 +28,11 @@ type Provider interface {
 	Processing() *state.ProcessingPublisher
 	Session() session.Identity
 	Registry() *surfaces.Registry
+
+	// Write surface (TRN-3).
+	Submit(ctx context.Context, text string) error
+	Resolve(decision string)
+	Accepting() bool
 }
 
 // Server is the loopback HTTP/SSE transport for external surfaces.
@@ -50,6 +56,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /surfaces", s.handleSurfaces)
 	s.mux.HandleFunc("GET /sessions/current", s.handleCurrentSession)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
+
+	s.mux.HandleFunc("POST /surface/register", s.handleRegister)
+	s.mux.HandleFunc("POST /prompt", s.handlePrompt)
+	s.mux.HandleFunc("POST /tool/approval", s.handleApproval)
+	s.mux.HandleFunc("POST /surface/{id}/shutdown", s.handleShutdown)
+	s.mux.HandleFunc("POST /surface/{id}/command", s.handleCommand)
+	s.mux.HandleFunc("POST /model/switch", s.handleModelSwitch)
 }
 
 // Handler exposes the routes for in-process testing (httptest).

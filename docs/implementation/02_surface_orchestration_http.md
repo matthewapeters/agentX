@@ -390,6 +390,90 @@ Use-case: Concurrent streams both receive an event
 - WHEN an event is published
 - THEN both streams deliver it (no consumer blocks another)
 
+## Write Server (TRN-3)
+
+This section refines the HTTP API Baseline (write endpoints) with the implementation
+mechanics for surface-to-orchestrator commands. It adds detail; it does not change
+the endpoint contract.
+
+### Authorization
+
+- `POST /surface/register` authorizes via the **attach token in the request body**
+  (it is the attach handshake) — see Registration Mechanics (TRN-1).
+- Every other write authorizes via an `Authorization: Bearer <attach-token>` header,
+  validated against the session token (`Registry.ValidateToken`). A missing/invalid
+  bearer token is rejected `401` with category `auth`.
+
+### Endpoints
+
+- `POST /surface/register` → `201` with the stored `Registration` JSON on success;
+  on rejection, the registry's reason category maps to status: `auth → 401`,
+  `validation → 400`, `conflict → 409`. The error body is
+  `{"error":"<msg>","category":"<category>"}`.
+- `POST /prompt` (`{"text":"…"}`) → `202 {"status":"accepted"}` after handing the
+  prompt to the orchestrator. The cycle runs asynchronously; its events and
+  processing-state transitions flow back over `GET /events` and
+  `GET /processing-state`. Empty text → `400 validation`. When the orchestrator is
+  not accepting (`Accepting()` false) → `409 conflict`. (v1: an external surface
+  cannot cancel an in-flight cycle; Stop remains an in-process chat affordance.)
+- `POST /tool/approval` (`{"decision":"approve_session|approve_global|deny"}`) →
+  `200 {"status":"resolved"}`; the decision is forwarded to the orchestrator's
+  approval gate (`Resolve`). Empty decision → `400 validation`.
+- `POST /surface/{id}/shutdown` → `200 {"status":"stopped"}`; unknown id → `404`.
+- `POST /surface/{id}/command` → reserved; validates the surface is registered then
+  returns `501 not_implemented` in v1 (there is no inbound channel to an external
+  surface process yet).
+- `POST /model/switch` → `501 not_implemented` in v1 (live model-switch is deferred).
+
+### Provider seam (extended)
+
+TRN-3 widens the `Provider` interface the transport depends on with the
+orchestrator's write surface:
+
+```
+Submit(ctx, text) error   // POST /prompt (run async)
+Resolve(decision)         // POST /tool/approval
+Accepting() bool          // gate POST /prompt
+```
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: Register over HTTP with a valid token
+
+- GIVEN a running transport server
+- WHEN a surface POSTs `/surface/register` with the valid attach token
+- THEN the response is `201` and the body reports `lifecycle_state: ready`
+
+Use-case: Reject an unauthorized write
+
+- GIVEN a running transport server
+- WHEN a client POSTs `/prompt` without a valid bearer token
+- THEN the response is `401` with category `auth`
+
+Use-case: Prompt over HTTP drives a cycle
+
+- GIVEN an authorized surface with an open `/events` stream
+- WHEN it POSTs `/prompt` with text
+- THEN the response is `202` and the resulting events arrive over the stream
+
+Use-case: Reject a prompt when not accepting
+
+- GIVEN an authorized surface and an orchestrator not accepting prompts
+- WHEN it POSTs `/prompt`
+- THEN the response is `409` with category `conflict`
+
+Use-case: Approval over HTTP resolves the gate
+
+- GIVEN an authorized surface
+- WHEN it POSTs `/tool/approval` with a decision
+- THEN the response is `200` and the orchestrator receives that decision
+
+Use-case: Shut a surface down over HTTP
+
+- GIVEN an authorized surface and a registered surface id
+- WHEN it POSTs `/surface/{id}/shutdown`
+- THEN the response is `200` and that surface's lifecycle becomes `stopped`
+
 ## Non-Goals for v1
 
 - Public remote access over internet
