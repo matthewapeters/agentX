@@ -1,6 +1,6 @@
 # AgentX Build Plan Index
 
-Last updated: 2026-06-23
+Last updated: 2026-06-29
 Status: Active planning baseline
 Owner: Delivery
 
@@ -57,6 +57,9 @@ This plan is additive. It does not replace existing contracts in:
    the first vertical slice (the `agentx` chat surface), spanning M1 → chat-M2 → M3a.
 4. [04_tool_runtime_backlog.md](04_tool_runtime_backlog.md) — task-level backlog for
    the first built-in tool family (policy-gated command line), implementing M3b.
+5. [05_transport_backlog.md](05_transport_backlog.md) — task-level backlog for the
+   external-surface enablement half of M1 (HTTP/SSE transport, surface registry,
+   ephemeral attach tokens, port allocation, `agentx surface launch` CLI).
 
 ## Cadence And Governance
 
