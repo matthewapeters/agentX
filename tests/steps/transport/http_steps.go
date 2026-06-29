@@ -94,6 +94,8 @@ type sseStream struct {
 
 // InitializeScenario registers the transport steps.
 func InitializeScenario(sc *godog.ScenarioContext) {
+	registerPortSteps(sc)
+
 	w := &transportWorld{}
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {

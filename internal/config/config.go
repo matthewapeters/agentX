@@ -32,6 +32,18 @@ type Agentx struct {
 	Theme          Theme          `toml:"theme"`
 	Thinking       Thinking       `toml:"thinking"`
 	Tools          Tools          `toml:"tools"`
+	Transport      Transport      `toml:"transport"`
+}
+
+// Transport is the [agentx.transport] table configuring the HTTP/SSE endpoint
+// external surfaces attach to. Enabled is a pointer so an absent key defaults on.
+// Host is loopback-only in v1; [PortStart, PortEnd] is the inclusive candidate
+// range the allocator binds the first free port from.
+type Transport struct {
+	Enabled   *bool  `toml:"enabled"`
+	Host      string `toml:"host"`
+	PortStart int    `toml:"port_start"`
+	PortEnd   int    `toml:"port_end"`
 }
 
 // Tools is the [agentx.tools] table gating the single_tool execution cycle.
@@ -161,6 +173,28 @@ func (c Config) ThinkingRoutes() map[string]bool {
 	}
 }
 
+// TransportEnabled reports whether the HTTP/SSE transport server is served
+// alongside the in-process chat surface (default on).
+func (c Config) TransportEnabled() bool { return boolOr(c.Agentx.Transport.Enabled, true) }
+
+// TransportHost returns the loopback host the transport binds (default 127.0.0.1).
+func (c Config) TransportHost() string {
+	if h := strings.TrimSpace(c.Agentx.Transport.Host); h != "" {
+		return h
+	}
+	return defaultTransportHost
+}
+
+// TransportPortRange returns the inclusive [start, end] candidate port range,
+// falling back to the built-in range when unset or invalid.
+func (c Config) TransportPortRange() (int, int) {
+	start, end := c.Agentx.Transport.PortStart, c.Agentx.Transport.PortEnd
+	if start <= 0 || end <= 0 || end < start {
+		return defaultTransportPortStart, defaultTransportPortEnd
+	}
+	return start, end
+}
+
 func boolOr(p *bool, def bool) bool {
 	if p == nil {
 		return def
@@ -244,6 +278,9 @@ const (
 	defaultActiveBorder          = "cyan"
 	defaultInactiveBorder        = "dark gray"
 	defaultThinkingBudgetSeconds = 180
+	defaultTransportHost         = "127.0.0.1"
+	defaultTransportPortStart    = 8420
+	defaultTransportPortEnd      = 8460
 )
 
 // Default returns the built-in default configuration used to seed a deployment
@@ -278,6 +315,12 @@ func Default() Config {
 				ReadOnly:       boolPtr(true),
 				TimeoutSeconds: 30,
 				OutputMaxBytes: 65536,
+			},
+			Transport: Transport{
+				Enabled:   boolPtr(true),
+				Host:      defaultTransportHost,
+				PortStart: defaultTransportPortStart,
+				PortEnd:   defaultTransportPortEnd,
 			},
 		},
 	}

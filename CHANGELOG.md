@@ -9,6 +9,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added transport port allocation and endpoint publication (TRN-4): a new
+  `[agentx.transport]` config table (`enabled`, `host`, `port_start`, `port_end`,
+  default loopback `127.0.0.1:8420-8460`); `transport/http.Allocate` binds the
+  lowest free TCP port in the range ascending (the bind is the availability check,
+  so concurrent agentx instances fall through and there is no TOCTOU gap) and
+  returns the bound listener, failing with a range-exhausted error when the range
+  is occupied; the resolved endpoint is published to session metadata as
+  `sessions/<id>/transport.json` (`session.Store.WriteTransport`/`ReadTransport`),
+  never carrying the raw attach token. Documented in
+  `docs/implementation/02_surface_orchestration_http.md`.
 - Added the HTTP transport write endpoints (TRN-3): `POST /surface/register`
   (authorized by the attach token in the body; reason category maps to status —
   auth→401, validation→400, conflict→409), `POST /prompt` (bearer-authorized,

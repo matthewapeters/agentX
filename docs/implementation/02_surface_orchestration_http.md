@@ -474,6 +474,75 @@ Use-case: Shut a surface down over HTTP
 - WHEN it POSTs `/surface/{id}/shutdown`
 - THEN the response is `200` and that surface's lifecycle becomes `stopped`
 
+## Port Allocation & Endpoint Publication (TRN-4)
+
+This section refines the Port Allocation policy above with the implementation
+mechanics for the orchestrator's transport endpoint. In the reconciled Family A
+model the orchestrator exposes **one** HTTP/SSE endpoint that external surfaces
+attach to as clients (it does not allocate a port per surface).
+
+### Configuration
+
+A `[agentx.transport]` table controls the endpoint:
+
+```toml
+[agentx.transport]
+enabled    = true
+host       = "127.0.0.1"   # loopback only in v1
+port_start = 8420
+port_end   = 8460
+```
+
+- `enabled = false` keeps the pure in-process mode (no server bound); the escape
+  hatch referenced by TRN-6.
+- `host` is a local-safe address (loopback) in v1 (Non-Goals: no public access).
+- `[port_start, port_end]` is the inclusive candidate range.
+
+### Allocation
+
+- Allocation **binds** the first available TCP port in the range ascending
+  (deterministic preference = lowest free port), returning the bound listener. The
+  bind itself is the availability check, so there is no time-of-check/time-of-use gap
+  and concurrent `agentx` instances on the same host naturally fall through to the
+  next free port.
+- If every port in the range is occupied, allocation fails with a range-exhausted
+  error; on a **required** transport this blocks startup with a clean error (TRN-6).
+- The returned listener is handed to the server's `Serve` (TRN-6); nothing rebinds.
+
+### Endpoint publication
+
+- The resolved endpoint (`http://<host>:<port>`) is published to the session
+  metadata as `sessions/<id>/transport.json` so tooling and launch flows can
+  discover where to attach. The file carries the endpoint and session id only — the
+  raw attach token is **never** written to metadata (it is printed to the operator's
+  terminal by TRN-6).
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: Allocate the lowest free port
+
+- GIVEN a free port and a range whose only member is that port
+- WHEN the allocator runs
+- THEN it binds a listener on that port
+
+Use-case: Fall back past an occupied port
+
+- GIVEN an occupied port and a range starting at it
+- WHEN the allocator runs
+- THEN it binds a listener on a different free port within the range
+
+Use-case: Range exhausted
+
+- GIVEN an occupied port and a single-port range at it
+- WHEN the allocator runs
+- THEN allocation fails with a range-exhausted error
+
+Use-case: Publish the endpoint
+
+- GIVEN a created session
+- WHEN the transport endpoint is published
+- THEN the session transport metadata reports that endpoint
+
 ## Non-Goals for v1
 
 - Public remote access over internet
