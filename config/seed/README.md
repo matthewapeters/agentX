@@ -11,6 +11,7 @@ identical to the runtime fallbacks, giving a common baseline from which to tune.
 | `agentx-thinking.md` | `~/.config/agentx/agentx-thinking.md` | `prompting.DefaultThinkingPrompt` | uses the constant |
 | `agentx-classification.md` | `~/.config/agentx/agentx-classification.md` | `classify.DefaultPrompt` | uses the constant |
 | `bootstrap-prompt.md` | `~/.config/agentx/bootstrap-prompt.md` | none — seed *is* the baseline | startup auto-submit is skipped |
+| `agentx-shell-commands.md` | `~/.config/agentx/agentx-shell-commands.md` | `tools.DefaultCatalog` (planned, M3b) | uses the constant |
 | `agentx.toml` | `~/.config/agentx/agentx.toml` | `config.Default()` | seeded on first run |
 
 `bootstrap-prompt.md` is the one prompt with no built-in constant: when absent the
@@ -19,9 +20,16 @@ than a 1:1 mirror of code. It is read verbatim like the other prompt files.
 
 ## Important: prompt files are read verbatim
 
-The four `*.md` files are loaded raw (trimmed) and used **directly** as the
-LLM prompt — so they contain only the prompt text, with no markdown headings or
-comments. Anything added to them becomes part of the prompt sent to the model.
+Every `*.md` file is loaded raw (trimmed) and becomes part of the model's context
+verbatim — there is no out-of-band commentary. So:
+
+- `agentx-instructions.md`, `agentx-thinking.md`, `agentx-classification.md`, and
+  `bootstrap-prompt.md` contain **only the prompt text** (no markdown headings or
+  comments) — anything added becomes part of the prompt sent to the model.
+- `agentx-shell-commands.md` is the exception by design: it is a **tool catalog**
+  written *for* the model, so its markdown structure (headings, the JSON call
+  contract) is intentional context, injected only when a turn routes to `single_tool`.
+
 Only `agentx.toml` (parsed as TOML) carries explanatory comments.
 
 If you change a default in code, update the matching seed file here so they stay 1:1.
