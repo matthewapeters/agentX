@@ -42,6 +42,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `agentx-tool-blacklist.toml` and global approvals are written to / reloaded from
   `agentx-tool-approvals.toml` under `~/.config/agentx/`; executor output cap now
   honors `[agentx.tools] output_max_bytes`. New blacklist seed template.
+- Added a text cursor and readline-style line editing to the chat input panel:
+  typing, Backspace, and Shift+Enter now act at the cursor, with Left/Right
+  (char), Ctrl-A/Ctrl-E (buffer start/end), and Alt-B/Alt-F (word back/forward)
+  movement. History seeding leaves the cursor at the end of the seeded text. The
+  cursor renders as a reverse-video cell while the panel is focused. Documented as
+  `docs/ux/03_PANEL_DETAILS.md` PD-02-AF-017…024.
 - Added readline-style prompt history seeding to the chat input panel: `↑`/`↓`
   seed the editable buffer with prior prompts submitted during the current run
   (the in-progress draft is stashed and restored at the present line), hitting a

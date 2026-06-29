@@ -379,6 +379,91 @@ WHEN  the user presses up
 THEN  the input value is "first revised"
 ```
 
+### Cursor & line editing (TUI-native)
+
+> **TUI-native affordances** (no Tkinter precedent). When the input panel is
+> focused it shows a text cursor and edits relative to it: typing inserts at the
+> cursor, Backspace deletes the rune before it, and Shift+Enter inserts a newline
+> at it. Movement keys follow readline. The buffer is treated as one logical line
+> (embedded newlines are ordinary characters), so Ctrl-A/Ctrl-E address the whole
+> buffer. A *word* is a maximal run of non-space runes; Alt-B lands on the start of
+> the prior word and Alt-F on the start of the next word. Source:
+> `internal/surfaces/input`. The cursor position is exposed as a rune index via
+> `Cursor()` for testing; it is rendered as a reverse-video cell (including a
+> virtual cell at end-of-line) and is shown only while the panel is focused.
+>
+> History seeding (PD-02-AF-013/AF-014) places the cursor at the end of the seeded
+> text so the user can keep typing immediately.
+
+| ID | Affordance | Trigger | Outcome |
+|----|-----------|---------|---------|
+| PD-02-AF-017 | Left moves the cursor back one rune | `←` while input-focused, idle | Cursor index decremented, floored at 0 |
+| PD-02-AF-018 | Right moves the cursor forward one rune | `→` while input-focused, idle | Cursor index incremented, capped at the buffer length |
+| PD-02-AF-019 | Ctrl-A jumps to the start of the buffer | `Ctrl+A` | Cursor index set to 0 |
+| PD-02-AF-020 | Ctrl-E jumps to the end of the buffer | `Ctrl+E` | Cursor index set to the buffer length |
+| PD-02-AF-021 | Alt-B jumps to the start of the prior word | `Alt+B` | Cursor moves left over any spaces then over non-spaces, landing on the word start |
+| PD-02-AF-022 | Alt-F jumps to the start of the next word | `Alt+F` | Cursor moves right over the current word then over spaces, landing on the next word start |
+| PD-02-AF-023 | Edits act at the cursor | typing / `Backspace` / `Shift+Enter` | Rune inserted at the cursor (cursor advances); Backspace deletes the rune before the cursor; newline inserted at the cursor |
+| PD-02-AF-024 | The cursor is rendered while focused | panel focused | A reverse-video cell marks the cursor position; absent when the panel is blurred |
+
+```gherkin
+# PD-02-AF-023 — typing inserts at the cursor
+GIVEN a focused input panel containing "ac" with the cursor at 1
+WHEN  the user types "b"
+THEN  the input value is "abc"
+  AND the cursor is at 2
+
+# PD-02-AF-023 — backspace deletes the rune before the cursor
+GIVEN a focused input panel containing "abc" with the cursor at 2
+WHEN  the user presses backspace
+THEN  the input value is "ac"
+  AND the cursor is at 1
+
+# PD-02-AF-017 / AF-018 — left and right move one rune and clamp at the edges
+GIVEN a focused input panel containing "ab" with the cursor at 2
+WHEN  the user presses left
+THEN  the cursor is at 1
+WHEN  the user presses left
+THEN  the cursor is at 0
+WHEN  the user presses left
+THEN  the cursor is at 0
+WHEN  the user presses right
+THEN  the cursor is at 1
+
+# PD-02-AF-019 / AF-020 — Ctrl-A and Ctrl-E jump to the buffer ends
+GIVEN a focused input panel containing "hello world" with the cursor at 5
+WHEN  the user presses ctrl+a
+THEN  the cursor is at 0
+WHEN  the user presses ctrl+e
+THEN  the cursor is at 11
+
+# PD-02-AF-021 — Alt-B jumps to the start of the prior word
+GIVEN a focused input panel containing "foo bar baz" with the cursor at 11
+WHEN  the user presses alt+b
+THEN  the cursor is at 8
+WHEN  the user presses alt+b
+THEN  the cursor is at 4
+
+# PD-02-AF-022 — Alt-F jumps to the start of the next word
+GIVEN a focused input panel containing "foo bar baz" with the cursor at 0
+WHEN  the user presses alt+f
+THEN  the cursor is at 4
+WHEN  the user presses alt+f
+THEN  the cursor is at 8
+
+# PD-02-AF-013 — seeding a prompt leaves the cursor at the end
+GIVEN the input has submitted prompt "hello"
+WHEN  the user presses up
+THEN  the input value is "hello"
+  AND the cursor is at 5
+
+# PD-02-AF-024 — the cursor is rendered only while focused
+GIVEN a focused input panel containing "hi"
+THEN  the rendered input shows a cursor cell
+WHEN  the panel is blurred
+THEN  the rendered input shows no cursor cell
+```
+
 ### Keyboard Shortcuts
 
 | Key | Behaviour |

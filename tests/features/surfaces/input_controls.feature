@@ -131,3 +131,69 @@ Feature: Input panel controls
     And the "up" key is pressed
     And the "up" key is pressed
     Then the chat view shows the flash border color
+
+  # use-case: UC-INPUT-CURSOR  (PD-02-AF-023)
+  Scenario: Typing inserts at the cursor
+    Given a focused input panel containing "ac" with the cursor at 1
+    When the user types "b"
+    Then the input value is "abc"
+    And the cursor is at 2
+
+  # use-case: UC-INPUT-CURSOR  (PD-02-AF-023)
+  Scenario: Backspace deletes the rune before the cursor
+    Given a focused input panel containing "abc" with the cursor at 2
+    When the user presses backspace
+    Then the input value is "ac"
+    And the cursor is at 1
+
+  # use-case: UC-INPUT-CURSOR  (PD-02-AF-017 / AF-018)
+  Scenario: Left and Right move one rune and clamp at the edges
+    Given a focused input panel containing "ab" with the cursor at 2
+    When the user presses left
+    Then the cursor is at 1
+    When the user presses left
+    Then the cursor is at 0
+    When the user presses left
+    Then the cursor is at 0
+    When the user presses right
+    Then the cursor is at 1
+
+  # use-case: UC-INPUT-CURSOR  (PD-02-AF-019 / AF-020)
+  Scenario: Ctrl-A and Ctrl-E jump to the buffer ends
+    Given a focused input panel containing "hello world" with the cursor at 5
+    When the user presses ctrl+a
+    Then the cursor is at 0
+    When the user presses ctrl+e
+    Then the cursor is at 11
+
+  # use-case: UC-INPUT-CURSOR  (PD-02-AF-021)
+  Scenario: Alt-B jumps to the start of the prior word
+    Given a focused input panel containing "foo bar baz" with the cursor at 11
+    When the user presses alt+b
+    Then the cursor is at 8
+    When the user presses alt+b
+    Then the cursor is at 4
+
+  # use-case: UC-INPUT-CURSOR  (PD-02-AF-022)
+  Scenario: Alt-F jumps to the start of the next word
+    Given a focused input panel containing "foo bar baz" with the cursor at 0
+    When the user presses alt+f
+    Then the cursor is at 4
+    When the user presses alt+f
+    Then the cursor is at 8
+
+  # use-case: UC-INPUT-CURSOR  (PD-02-AF-013)
+  # seeding a prompt leaves the cursor at the end of the seeded text
+  Scenario: Seeding a prompt leaves the cursor at the end
+    Given a focused input panel
+    And the input has submitted prompt "hello"
+    When the user presses up
+    Then the input value is "hello"
+    And the cursor is at 5
+
+  # use-case: UC-INPUT-CURSOR  (PD-02-AF-024)
+  Scenario: The cursor is rendered only while focused
+    Given a focused input panel containing "hi" with the cursor at 2
+    Then the rendered input shows a cursor cell
+    When the panel is blurred
+    Then the rendered input shows no cursor cell
