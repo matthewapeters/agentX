@@ -14,7 +14,7 @@ behaviour. This includes panels, reusable widgets, dialogs, and nested controls.
 - Source class/module: `<module path + class>`
 - Parent component(s): `<where this lives>`
 - Child components: `<named sub-components>`
-- Owner tab/panel: `<Chat / Session / Files / Settings / Dialog>`
+- Owner surface/tab: `<Chat / Session / Files / Settings / Dialog>`
 
 ---
 

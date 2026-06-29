@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/runtime/surface-registration.schema.json",
+  "title": "SurfaceRegistration",
+  "description": "Payload a surface publishes when registering with the orchestrator (Family A v1). Source: docs/implementation/02_surface_orchestration_http.md (Surface Registration Contract).",
+  "type": "object",
+  "required": [
+    "surface_id",
+    "surface_kind",
+    "transport_address",
+    "capabilities",
+    "lifecycle_state",
+    "session_id",
+    "session_name",
+    "attach_token_fingerprint"
+  ],
+  "properties": {
+    "surface_id": { "type": "string", "minLength": 1 },
+    "surface_kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Registered surface type (e.g. chat, files, config, context, context-history, context-visualizer). The registry is open-ended; new kinds attach without changing existing surfaces."
+    },
+    "transport_address": { "type": "string", "minLength": 1 },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "lifecycle_state": {
+      "type": "string",
+      "enum": ["provisioning", "ready", "degraded", "stopped"]
+    },
+    "session_id": { "type": "string", "minLength": 1 },
+    "session_name": { "type": "string", "minLength": 1 },
+    "attach_token_fingerprint": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Non-secret fingerprint of the ephemeral attach token; raw token is never persisted."
+    }
+  },
+  "additionalProperties": false
+}

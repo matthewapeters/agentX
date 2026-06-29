@@ -1,9 +1,9 @@
 # AgentX — UX Documentation
 
-_Last updated: 2026-05-06 (v0.22.20.post3)_
+_Last updated: 2026-05-22 (v0.74.4.post2)_
 
 This directory documents the AgentX user interface — layout, affordances,
-user flows, and per-panel detail.
+user flows, and per-surface detail.
 
 ---
 
@@ -16,7 +16,8 @@ user flows, and per-panel detail.
 | [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md) | Component cut-sheet template (identity, diagrams, Gherkin, test mapping) |
 | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) | Window geometry, zone map, layout diagram |
 | [02_USER_FLOWS.md](02_USER_FLOWS.md) | Mermaid flow diagrams for all major user interactions |
-| [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) | Per-panel affordances, widgets, and interactions (PD-01 through PD-14) |
+| [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) | Per-surface affordances, widgets, and interactions (PD-01 through PD-17) |
+| [07_DEMO_MODE.md](07_DEMO_MODE.md) | Demo mode UX contract, affordance IDs (PD-17), and implementation phases |
 
 ---
 

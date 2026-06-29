@@ -1,0 +1,221 @@
+package tools
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Artifacts persists full tool output and reads it back by ref. It is satisfied
+// by internal/session.Artifacts.
+type Artifacts interface {
+	Write(data []byte) (ref string, err error)
+	Read(ref string, offset, limit int) ([]byte, error)
+}
+
+// Result is the structured outcome of a tool execution. The projection returned
+// to the model is Preview + Ref + metadata; the full output lives in the artifact.
+type Result struct {
+	ToolID    string
+	Command   string // rendered argv (for audit/display)
+	Exit      int
+	Status    string // "ok" | "error" | "timeout"
+	Stderr    string
+	Bytes     int
+	Lines     int
+	Preview   string
+	Ref       string
+	Truncated bool
+}
+
+// Executor runs approved descriptors with argv/no-shell execution and persists
+// full output as session artifacts.
+type Executor struct {
+	art          Artifacts
+	previewLines int
+	maxBytes     int
+}
+
+const (
+	defaultPreviewLines = 20
+	defaultMaxBytes     = 65536
+)
+
+// NewExecutor returns an executor writing artifacts to art. Non-positive limits
+// fall back to defaults.
+func NewExecutor(art Artifacts, previewLines, maxBytes int) *Executor {
+	if previewLines <= 0 {
+		previewLines = defaultPreviewLines
+	}
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxBytes
+	}
+	return &Executor{art: art, previewLines: previewLines, maxBytes: maxBytes}
+}
+
+// Run executes a descriptor with the given (already policy-approved) args. A
+// non-zero exit or a timeout is reported in the Result, not as an error; only
+// infrastructure failures (bad argv template, unknown builtin) return an error.
+func (e *Executor) Run(ctx context.Context, d Descriptor, args map[string]string) (Result, error) {
+	if d.Builtin != "" {
+		return e.runBuiltin(d, args)
+	}
+
+	argv, err := d.BuildArgv(args)
+	if err != nil {
+		return Result{}, err
+	}
+	if len(argv) == 0 {
+		return Result{}, fmt.Errorf("tool %q has no argv", d.ID)
+	}
+	if d.TimeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(d.TimeoutSeconds)*time.Second)
+		defer cancel()
+	}
+
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	if d.StdinArg != "" {
+		cmd.Stdin = strings.NewReader(args[d.StdinArg])
+	}
+	out := &cappedBuffer{limit: e.maxBytes}
+	var errBuf bytes.Buffer
+	cmd.Stdout = out
+	cmd.Stderr = &errBuf
+	runErr := cmd.Run()
+
+	res := Result{
+		ToolID:    d.ID,
+		Command:   strings.Join(argv, " "),
+		Stderr:    capString(errBuf.String(), 2048),
+		Bytes:     out.written,
+		Truncated: out.truncated,
+	}
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		res.Status, res.Exit = "timeout", -1
+	case runErr != nil:
+		res.Status, res.Exit = "error", exitCode(runErr)
+	default:
+		res.Status, res.Exit = "ok", 0
+	}
+
+	data := out.buf.Bytes()
+	res.Lines = countLines(data)
+	res.Preview = previewOf(data, e.previewLines)
+	if ref, werr := e.art.Write(data); werr == nil {
+		res.Ref = ref
+	}
+	return res, nil
+}
+
+// runBuiltin handles Go-native tools (no subprocess).
+func (e *Executor) runBuiltin(d Descriptor, args map[string]string) (Result, error) {
+	res := Result{ToolID: d.ID, Status: "ok"}
+	switch d.Builtin {
+	case "write_file":
+		path, content := args["path"], args["content"]
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return failed(res, err), nil
+		}
+		msg := fmt.Sprintf("wrote %d bytes to %s", len(content), path)
+		res.Command = "write_file " + path
+		res.Bytes, res.Lines, res.Preview = len(content), countLines([]byte(content)), msg
+		if ref, err := e.art.Write([]byte(msg)); err == nil {
+			res.Ref = ref
+		}
+		return res, nil
+	case "read_output":
+		ref := args["ref"]
+		data, err := e.art.Read(ref, atoiOr(args["offset"]), atoiOr(args["limit"]))
+		if err != nil {
+			return failed(res, err), nil
+		}
+		res.Command = "read_output " + ref
+		res.Bytes, res.Lines = len(data), countLines(data)
+		res.Preview = previewOf(data, e.previewLines)
+		res.Ref = ref // references the existing artifact; no new one is created
+		return res, nil
+	default:
+		return Result{}, fmt.Errorf("unknown builtin %q", d.Builtin)
+	}
+}
+
+func failed(res Result, err error) Result {
+	res.Status, res.Exit = "error", 1
+	res.Stderr, res.Preview = err.Error(), err.Error()
+	return res
+}
+
+// cappedBuffer accumulates output up to limit bytes, flagging truncation past it.
+type cappedBuffer struct {
+	buf       bytes.Buffer
+	limit     int
+	written   int
+	truncated bool
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if c.limit > 0 && c.written+len(p) > c.limit {
+		if allow := c.limit - c.written; allow > 0 {
+			c.buf.Write(p[:allow])
+			c.written += allow
+		}
+		c.truncated = true
+		return len(p), nil // report consumed so the process is not blocked
+	}
+	n, err := c.buf.Write(p)
+	c.written += n
+	return n, err
+}
+
+func exitCode(err error) int {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return ee.ExitCode()
+	}
+	return -1
+}
+
+func countLines(b []byte) int {
+	if len(b) == 0 {
+		return 0
+	}
+	n := bytes.Count(b, []byte("\n"))
+	if b[len(b)-1] != '\n' {
+		n++
+	}
+	return n
+}
+
+func previewOf(b []byte, maxLines int) string {
+	if len(b) == 0 {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+	if len(lines) > maxLines {
+		return strings.Join(lines[:maxLines], "\n") + "\n…"
+	}
+	return strings.Join(lines, "\n")
+}
+
+func capString(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
+func atoiOr(s string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return 0
+	}
+	return n
+}

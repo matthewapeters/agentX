@@ -1,0 +1,151 @@
+# Tool Runtime Backlog — First Built-in Tool (Command Line)
+
+Last updated: 2026-06-28
+Status: Execution-ready backlog
+Owner: Delivery Lead
+Scope: The minimal end-to-end slice that lets the agent run **curated, policy-gated
+command-line tools** — turning the reserved `single_tool` route into real execution.
+
+## Context
+
+`docs/build-plan/01_comprehensive_build_plan.md` defines milestone **M3b (Tool Runtime
+And Policy Enforcement)** at the capability level (AC-M3b-1…4) but has no task-level
+backlog. This document is that missing tier for the first built-in tool family.
+
+It builds on the chat slice (`03_chat_surface_backlog.md`) and the classify cycle
+(CHT-D4) and implements the contracts in:
+
+- `docs/implementation/04_llm_prompt_tooling_runtime.md` (Tool Runtime Overview, the
+  `single_tool` cycle, tool catalog injection)
+- `docs/implementation/05_security_approvals_and_command_policy.md` (policy layers,
+  evaluation order, descriptor contract, execution safety, auditing, output artifacts)
+
+## Locked design decisions
+
+1. **Curated descriptor set** (not a generic `run_command`). Initial tools: read/search
+   (`read_file`, `list_dir`, `find_path`, `read_output`), write/modify (`write_file`,
+   `apply_patch`, `edit_file`), network (`http_get`, `download`).
+2. **Strict-JSON proposal, one tool call per turn** — reuse the `internal/classify`
+   pattern (strict JSON → tolerant extraction → retry → fallback). The model replies
+   with `{"tool": "<id>", "args": {...}}` or `{"tool": "none"}`.
+3. **argv, no shell** — commands execute as an argv vector via `os/exec` (never
+   `sh -c`); no pipes/redirects/globs/expansion. File content and patches are passed
+   inline (JSON) and delivered to the process via **stdin** or a Go built-in — no shell
+   interpolation of untrusted arguments (per doc 05).
+4. **Read-only tier ships first**; write/modify and network tiers are enabled
+   progressively by configuration.
+5. **Output persisted as session artifacts.** Full stdout/stderr is written to the
+   session; the model receives a compact `tool_result` (preview + size + `ref`) and
+   pages through the full output on demand via `read_output`. (Doc 05 audit already
+   specifies "output_digest or size metadata," not full output.)
+6. **Approval round-trip** — the documented deny / approve_session / approve_global
+   flow needs a new processing state and a surface affordance (see TOOL-3). This is the
+   same machinery as the deferred Stage-2 clarification flow.
+
+## Architecture of the slice
+
+```
+classify ──route=single_tool──▶ PhaseTool
+   propose   (TOOL-4)  model → {"tool","args"}  [catalog injected from agentx-shell-commands.md]
+   evaluate  (TOOL-1)  policy: blacklist → global wl → session wl → approval
+   approve   (TOOL-3)  awaiting_input → user: session | global | deny
+   execute   (TOOL-2)  argv/no-shell (+stdin) → capture → session artifact (ref)
+   publish              🔧 tool_call,  📋 tool_result (preview + ref + audit)
+   respond   (TOOL-4)  feed preview+ref to model → 🤖 final answer
+```
+
+New package `internal/tools` (reserved in `08_go_module_layout.md`): descriptors,
+policy, executor, artifact store.
+
+---
+
+## TOOL-1 · Descriptors + command policy · M
+- **Target**: `internal/tools/`
+- **Deps**: CHT-D4
+- **Behavior**: descriptor contract (`id, command, allowed_args schema, risk_level,
+  requires_approval, timeout_seconds, working_directory_policy, output_capture_policy`);
+  policy store with blacklist (static + config), global whitelist (persisted), session
+  whitelist (in-memory). `Evaluate(id, args) → allow | deny(reason) | needsApproval` in
+  the documented order (blacklist always wins); approvals keyed by command + validated
+  args; arg-schema validation rejecting shell-escaping/destructive flags
+  (`find -exec`/`-delete`, recursive force-delete, …).
+- **Feature**: `tests/features/tools/command_policy.feature` (`@unit`)
+- **Done**: eval order + precedence + deny reason codes + arg-schema rejection covered.
+- **Maps to**: AC-M3b-1.
+
+## TOOL-2 · Executor + session artifact store · M
+- **Target**: `internal/tools/`, `internal/session/`
+- **Deps**: TOOL-1
+- **Behavior**: execute an approved descriptor as an argv vector (no shell), optional
+  stdin payload (content/patch), context timeout, capture stdout/stderr/exit, truncate
+  to an output cap. Write full output to a session **artifact** (`sessions/<id>/
+  artifacts/<seq>.txt`) and return `{exit, status, bytes, line_count, preview, ref}`.
+  Artifact store supports read-back by `ref` with offset/limit (backs `read_output`).
+- **Feature**: `tests/features/tools/executor.feature` (`@integration`, safe commands
+  e.g. `echo`/`ls` only); `tests/features/tools/artifacts.feature` (`@unit`)
+- **Done**: timeout, output cap, exit/stderr capture, no-shell argv, artifact write +
+  ranged read verified.
+- **Maps to**: AC-M3b-2, AC-M3b-3.
+
+## TOOL-3 · Approval round-trip · M
+- **Target**: `internal/state/`, `internal/runtime/`, `internal/surfaces/chat/`
+- **Deps**: TOOL-1
+- **Behavior**: add `RunState = awaiting_input` (**versioned** change to
+  `processing-state.schema.json` → `CHANGELOG.md`). The cycle pauses on a decision
+  channel; `Bridge.Approve(decision)` + an approval affordance on the 🔧 widget
+  (`[a] session · [g] global · [d] deny`). Decision persists per scope (TOOL-1) and
+  resumes or aborts the cycle.
+- **Feature**: `tests/features/tools/approval.feature` (`@functional`)
+- **Done**: pending→approve(session/global)→execute and pending→deny→aborted, with
+  persisted scope; interrupt while awaiting handled cleanly.
+- **Maps to**: AC-M3b-1, AC-M3b-2.
+
+## TOOL-4 · Proposal + cycle integration + respond shaping · M
+- **Target**: `internal/runtime/`, `internal/prompting/`, `internal/tools/`
+- **Deps**: TOOL-2, TOOL-3
+- **Behavior**: on `route == single_tool`, enter `PhaseTool`; inject the tool catalog
+  (`agentx-shell-commands.md`, default `tools.DefaultCatalog`) and parse one strict-JSON
+  tool call (reuse classify parse + retry; `{"tool":"none"}` or parse failure → fall
+  back to respond). Run TOOL-1→3→2, publish `tool_call`/`tool_result`, then a respond
+  turn whose context carries the **preview + ref** (never the full artifact).
+  `read_output` is exposed as a read-tier descriptor so the model can page the artifact.
+- **Feature**: `tests/features/tools/tool_cycle.feature` (`@e2e`, stub executor)
+- **Done**: `classify → tool → respond` with deterministic event ordering
+  (`user_prompt → classification → tool_call → tool_result → agent_response`); preview+
+  ref injected; oversized output not buffered into context.
+- **Maps to**: AC-M3b-2, AC-M3b-4.
+
+## TOOL-5 · Config, persisted policy, seeds · S
+- **Target**: `internal/config/`, `config/seed/`
+- **Deps**: TOOL-1
+- **Behavior**: `[agentx.tools]` config (enable, tier enablement, default
+  `timeout_seconds`, `output_max_bytes`); persisted blacklist + global whitelist under
+  `~/.config/agentx/`; load the tool catalog from `agentx-shell-commands.md` (already
+  seeded). Add policy seed templates to `config/seed/`.
+- **Feature**: covered via TOOL-1/TOOL-4 config-driven scenarios (`@unit`)
+- **Done**: tiers gate availability; policy persists across sessions; seeds mirror
+  built-in defaults 1:1.
+- **Maps to**: AC-M3b-1.
+
+---
+
+## Sequencing
+
+```
+CHT-D4 ─ TOOL-1 ─┬─ TOOL-2 ─┐
+                 ├─ TOOL-3 ─┼─ TOOL-4 ── INTEGRATION (single_tool live)
+                 └─ TOOL-5 ─┘
+```
+
+- TOOL-1 (pure policy) and TOOL-5 (config/seeds) can proceed first and in parallel.
+- TOOL-2 (executor+artifacts) and TOOL-3 (approval round-trip) are independent; both
+  converge at TOOL-4 for the end-to-end `single_tool` cycle.
+- Read-only tier is the first thing wired end-to-end; write/modify and network tiers
+  follow behind configuration once the loop is proven.
+
+## Security gate (M3b)
+
+Per `02_phase_reference_matrix.md`, M3b requires a Security Reviewer gate: deny/allow
+evidence, the negative-path matrix (denied, malformed, timed-out, interrupted), and
+policy reason-code logging. No shell interpolation; every mutating/network call is
+approval-gated; all invocations and outputs are persisted to the session for audit.

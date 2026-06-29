@@ -1,29 +1,16 @@
 [agentx]
-ollama_host = "localhost:11434"
-ollama_model = "qwen3.6:latest"
-ollama_initial_load_timeout_seconds = 120
-screen_side = "left"
+chat_bridge_response_timeout_seconds = 120
+submit_execution_timeout_seconds = 120
+submit_timeout_seconds = 120
+chat_backend = "ollama"
 theme_mode = "Dark Mode"
+context_history_session_sort = "Ascending"
 show_log_locations_on_startup = true
-enable_gui_chat = true
-auto_stop_tmux_on_gui_exit = true
+applet_api_port_range_start = 19100   # First port in the range assigned to applet render APIs
+applet_api_port_range_end   = 19199   # Last port (inclusive); must be >= start + number of applets
 
-[agentix]
-system_prompts_dir = "system_prompts"
-agentix_bench_classification_model = "phi4-mini:3.8b"
+[agentx.ollama]
+host = "localhost:11434"
+model = "nemotron-cascade-2:latest"
+ollama_initial_load_timeout_seconds = 120
 
-[tui]
-enable = true
-socket = "/tmp/agentx_agentx.tui.nvim.sock"
-output_fifo = "/tmp/agentx_agentx.tui_output.fifo"
-input_fifo = "/tmp/agentx_agentx.tui_input.fifo"
-output_split_ratio = 0.7
-write_timeout_sec = 1.0
-show_thinking = true
-lua = [ "output_win", "input_win",]
-
-[terminal]
-exec_mode = "autonomous"
-
-[tool_registry]
-search_paths = [ "./agentx_tools.toml", "~/.agentx/agentx_tools.toml",]

@@ -1,0 +1,54 @@
+# Makefile for AgentX hybrid Go/Python build
+
+.PHONY: help build build-core build-applets clean test run
+
+help:
+	@echo "AgentX Hybrid Build System"
+	@echo ""
+	@echo "Targets:"
+	@echo "  build           - Build Go core and prepare applets"
+	@echo "  build-core      - Build Go core binary only"
+	@echo "  build-applets   - Prepare Python applets (copy to bin/)"
+	@echo "  clean           - Remove build artifacts"
+	@echo "  test            - Run tests (Go + Python)"
+	@echo "  run             - Build and run Go core"
+	@echo "  run-with-applets - Build and run with Python applets"
+
+build: build-core build-applets
+	@echo "✓ Build complete"
+
+build-core:
+	@echo "Building Go core..."
+	@mkdir -p bin
+	cd cmd/agentx-core && \
+	go mod tidy && \
+	go mod download && \
+	go build -o ../../bin/agentx
+	@chmod +x bin/agentx
+	@echo "✓ Go core built: bin/agentx"
+
+build-applets:
+	@echo "Preparing Python applets..."
+	@mkdir -p bin/applets
+	@cp -v applets/*.py bin/applets/ 2>/dev/null || true
+	@echo "✓ Applets prepared"
+
+clean:
+	@echo "Cleaning build artifacts..."
+	@rm -rf bin/
+	@cd cmd/agentx-core && go clean
+	@echo "✓ Clean complete"
+
+test:
+	@echo "Running tests..."
+	@echo "Go tests:"
+	cd cmd/agentx-core && go test -v ./...
+	@echo "✓ Tests complete"
+
+run: build
+	@echo "Running Go core..."
+	./bin/agentx --project-dir . --user $$USER
+
+run-with-applets: build
+	@echo "Running Go core with applets..."
+	./bin/agentx --project-dir . --user $$USER

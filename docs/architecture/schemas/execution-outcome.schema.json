@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/orchestration/execution-outcome.schema.json",
+  "title": "ExecutionOutcome",
+  "type": "object",
+  "required": [
+    "correlation_id",
+    "task_id",
+    "node_id",
+    "run_id",
+    "attempt",
+    "status"
+  ],
+  "properties": {
+    "correlation_id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "node_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "retriable_failure",
+        "terminal_failure",
+        "timeout",
+        "canceled"
+      ]
+    },
+    "result": { "type": "object" },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "completed_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "success" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["result", "completed_at"],
+        "not": {
+          "required": ["error"]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": ["retriable_failure", "terminal_failure", "timeout"]
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["error", "completed_at"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "canceled" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["completed_at"]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

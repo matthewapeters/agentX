@@ -40,50 +40,20 @@ This backlog is organized by dependency order. Complete items in sequence to min
 
 **[/] Phase 1: Dynamic Tool Registry (FOUNDATION)**
 
-- [/] **P1-001**: AgentX needs a dynamic tool registry. Implement a file-backed registry of available tools (local scripts, local system tools, and built-ins) so the registry can be updated by AgentX and consumed by the UX tools enable/disable widget. This is the prerequisite for all downstream tool discovery and exposure.
-  - **Implementation**: `src/agentx/tool_registry.py` — ToolRegistry class loads from `agentx_tools.toml`
-  - **Manager**: `src/agentx/integration/tool_registry_manager.py` — ToolRegistryManager integrates registry with bridge and UI
-  - **Built-in tools**: `reload_tools()` and `register_tool()` for dynamic tool management
-  - **Integration**: Wired into `AgentixBridgeAdapter._register_registry_tools()` and session layout
-  - **UI wiring**: `ToolPanel` now receives registry tools with enable/disable state
-  - **Tests**: 39 unit tests + integration tests (all passing)
-  - **Config**: `agentx_tools.toml` defines built-in tools (cst, ast, read_file, write_file, list_directory, get_file_info, search_files)
+- [/] **P1-001**: AgentX needs a dynamic tool registry. Implement a file-backed registry of available tools (local scripts, local system tools, and built-ins) so the registry can be updated by AgentX and consumed by the UX tools enable/disable widget. This is the prerequisite for all downstream tool discovery and exposure. Built-in tools include: `read_file`, `write_file`, `list_directory`, `get_file_info`, `search_files`. Config drives which tools are enabled at runtime.
 
 **[/] Phase 2: Tool Execution Diagnostics**
 
-- [/] **P2-001**: Agent does not seem able to create or edit files. Verify end-to-end tool wiring from tool discovery (in registry) to execution. Add explicit diagnostics for missing tool exposure. Use `read_file`, `write_file` as test cases. Ensure agent can invoke them end-to-end.
-  - **Implementation**: `src/agentx/tool_diagnostics.py` — ToolDiagnostics class with 4-phase suite (registry, bridge, availability, execution)
-  - **Built-in tool wiring**: `diagnose_tools()` added to ToolRegistryManager and registered in bridge schemas
-  - **Integration**: ToolRegistryManager now receives bridge reference for runtime diagnostics
-  - **Verification**: targeted tests pass for manager + integration + diagnostics suites
-  - **Status**: Ready for UAT (agent can self-diagnose tool pipeline health)
+- [/] **P2-001**: Agent does not seem able to create or edit files. Verify end-to-end tool wiring from tool discovery (in registry) to execution. Add explicit diagnostics for missing tool exposure. Use `read_file`, `write_file` as test cases. Ensure agent can invoke them end-to-end. Agent must be able to self-diagnose tool pipeline health.
 
 **[/] Phase 3: Vibe-Editor Intent Routing**
 
-- [/] **P3-001**: AgentX needs explicit awareness of vibe-editor intents (neovim in tmux pane 0): "open file", "open <file> in vibe editor", "edit file", and similar phrasings should reliably route to the editor-open capability. Update prompt classification or prompt router to map these intents to the tool set.
-  - **Implementation**: `src/agentix/bridge/classify_prompt.py` — added deterministic pattern-based override for explicit vibe-editor phrasing.
-  - **Routing behavior**: explicit editor intent short-circuits to `intent=simple_action`, `next_step=single_tool` for reliable tool-route selection.
-  - **Tests**: `tests/test_classify_prompt_bridge.py` verifies short-circuit routing and confirms non-editor prompts still flow through normal LLM classification.
+- [/] **P3-001**: AgentX needs explicit awareness of vibe-editor intents: "open file", "open <file> in vibe editor", "edit file", and similar phrasings should reliably route to the editor-open capability. Update the prompt router to map these intents to the editor tool set using deterministic pattern-based override before falling back to LLM classification.
 
 **[ ] Phase 4–6: Editor Tools (Vibe-Coding Integration)**
 
-- [/] **P4-001**: AgentX needs a tool that opens a file in the vibe editor. Expose `VimBridge.open_file()` as an agent tool schema. Register in the tool registry (P1-001). Wire into session and bridge executors.
-  - **Implementation**: `src/agentx/integration/tool_registry_manager.py` — added `builtin_open_file_in_editor(file_path, line)` wired through `VimBridge.open_file_from_context()`.
-  - **Bridge registration**: `src/agentx/integration/agentix_bridge_adapter.py` now exposes `open_file_in_editor` schema and registers implementation with the built-in registry tools.
-  - **Registry metadata**: `src/agentx/tool_registry.py` default `system_tools` now includes `open_file_in_editor = true`.
-  - **Tests**: `tests/test_tool_registry_manager.py` covers required-arg validation, success path, and editor-unavailable failure path.
+- [/] **P4-001**: AgentX needs a tool that opens a file in the editor integration. Register `open_file_in_editor` in the tool registry and wire into the LLM bridge executor. Required-arg validation, success path, and editor-unavailable failure path must be covered.
 
-- [/] **P5-001**: AgentX needs a tool that diffs files in the vibe editor. Implement `VimBridge.diff_files()` to invoke `nvim --server` with vimdiff semantics. Register in tool registry. Wire into executor.
-  - **Implementation**: `src/agentx/integration/vim_bridge.py` — added `diff_files()` and `diff_files_from_context()` with `--server`/`--remote-tab-silent`/`--remote-send` vimdiff flow.
-  - **Built-in tool wiring**: `src/agentx/integration/tool_registry_manager.py` — added `builtin_diff_files_in_editor(left_file, right_file)`.
-  - **Bridge registration**: `src/agentx/integration/agentix_bridge_adapter.py` — added `diff_files_in_editor` schema.
-  - **Registry metadata**: `src/agentx/tool_registry.py` default `system_tools` now includes `diff_files_in_editor = true`.
-  - **Tests**: `tests/test_tool_registry_manager.py` covers validation, success, and failure paths.
+- [/] **P5-001**: AgentX needs a tool that diffs files in the editor. Implement `diff_files_in_editor` with vimdiff semantics (or equivalent). Register in tool registry. Wire into executor. Cover validation, success, and failure paths.
 
-- [/] **P6-001**: AgentX needs a tool that performs editor-assist actions in vibe editor (for example: propose edits, show symbol help, and autocomplete-style assist) while preserving terminal safety controls. Implement `VimBridge.editor_action()` with sandboxed key-injection and output capture. Integrate with command approval UI (PD-15-AF-006).
-  - **Implementation**: `src/agentx/integration/vim_bridge.py` — added `editor_action()` with supported-action allowlist (`show_symbol_help`, `autocomplete_assist`, `propose_edit`), payload sanitization, and subprocess output capture.
-  - **Safety integration**: `src/agentx/integration/terminal_bridge.py` — added `evaluate_terminal_policy()` so editor actions route through terminal policy and supervised approval callback (`PD-15-AF-006`).
-  - **Built-in tool wiring**: `src/agentx/integration/tool_registry_manager.py` — added `builtin_editor_action()`.
-  - **Bridge registration**: `src/agentx/integration/agentix_bridge_adapter.py` — added `editor_action` schema.
-  - **Registry metadata**: `src/agentx/tool_registry.py` default `system_tools` now includes `editor_action = true`.
-  - **Tests**: `tests/test_tool_registry_manager.py` and `tests/test_vim_bridge_gui.py` cover argument validation, policy rejection, sandbox validation, and success path.
+- [/] **P6-001**: AgentX needs a tool that performs editor-assist actions (propose edits, show symbol help, autocomplete-style assist) while preserving terminal safety controls. Editor actions must route through terminal policy and supervised approval (PD-15-AF-006). Supported action allowlist, payload sanitization, and subprocess output capture are required.

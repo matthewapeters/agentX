@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/orchestration/compiled-dag.schema.json",
+  "title": "CompiledDAG",
+  "type": "object",
+  "required": ["dag_id", "correlation_id", "task_id", "graph_hash", "nodes", "edges", "metadata"],
+  "properties": {
+    "dag_id": { "type": "string", "minLength": 1 },
+    "correlation_id": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "graph_hash": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$",
+      "description": "Canonical SHA-256 hash over semantic DAG fields only. Producers MUST exclude graph_hash itself and metadata.compiled_at from hash input."
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "node_id",
+          "kind",
+          "retry_class",
+          "timeout_class"
+        ],
+        "properties": {
+          "node_id": { "type": "string", "minLength": 1 },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "input",
+              "classify",
+              "plan",
+              "llm",
+              "tool",
+              "reduce",
+              "guard",
+              "persist",
+              "respond"
+            ]
+          },
+          "retry_class": {
+            "type": "string",
+            "enum": ["none", "light", "standard", "aggressive"]
+          },
+          "timeout_class": {
+            "type": "string",
+            "enum": ["xs", "s", "m", "l", "xl"]
+          },
+          "policy_profile": { "type": "string" },
+          "reduce_contract": {
+            "type": "object",
+            "required": [
+              "strategy",
+              "tie_breaker",
+              "conflict_keys",
+              "unresolved_policy",
+              "emit_conflict_trace"
+            ],
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "enum": ["priority_order", "majority_vote", "latest_wins", "custom"]
+              },
+              "tie_breaker": {
+                "type": "string",
+                "enum": ["stable_input_order", "priority_order", "latest_timestamp", "deterministic_hash"]
+              },
+              "conflict_keys": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "unresolved_policy": {
+                "type": "string",
+                "enum": ["fail_node", "escalate_guard", "fallback_branch"]
+              },
+              "emit_conflict_trace": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          },
+          "inputs": { "type": "array", "items": { "type": "string" } },
+          "outputs": { "type": "array", "items": { "type": "string" } }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": { "const": "reduce" }
+              },
+              "required": ["kind"]
+            },
+            "then": {
+              "required": ["reduce_contract"]
+            }
+          }
+        ],
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to"],
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "condition": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["compiler_version", "seed"],
+      "properties": {
+        "compiler_version": { "type": "string" },
+        "seed": { "type": "string" },
+        "compiled_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Optional wall-clock emission timestamp. Must be excluded from determinism hash comparison."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

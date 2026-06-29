@@ -1,0 +1,15 @@
+---
+description: Artifact lifecycle and file organization rules for Subutai orchestration.
+---
+- Use `.subutai/runs/<run-id>/` for ephemeral orchestration artifacts such as plans, routing notes, specialist task packets, specialist return packets, and final run summaries.
+- Treat `.subutai/runs/` as non-durable working state. Do not assume run artifacts remain valid for future prompts without re-evaluation.
+- Use `.subutai/knowledge/` for curated reusable artifacts that reduce rediscovery across prompts.
+- Promote an artifact from `.subutai/runs/` to `.subutai/knowledge/` only when it captures durable knowledge such as architecture, conventions, service inventory, deployment topology, or testing strategy.
+- Do not promote temporary reasoning, stale plans, transient bug analysis, or task-specific decisions as durable knowledge.
+- Any artifact intended for reuse should record:
+  - created_at
+  - source scope
+  - files examined
+  - confidence
+  - last validated
+- Reuse durable artifacts selectively. Re-check them when the repository, dependencies, architecture, or user goal may have changed.

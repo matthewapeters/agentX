@@ -1,0 +1,11 @@
+---
+description: Triage and routing rules for Subutai orchestration.
+---
+- Perform a phase-0 triage before choosing orchestration depth. Classify the request as `trivial`, `moderate`, or `complex`.
+- Treat a request as `trivial` when it is direct, low-risk, and unlikely to benefit from specialist review or a multi-step plan. Execute directly when safe.
+- Treat a request as `moderate` when it benefits from brief planning or one specialist's judgment, but does not require broad coordination.
+- Treat a request as `complex` when it involves ambiguity, multiple domains, significant risk, sequential dependencies, parallelizable work, or meaningful delivery coordination.
+- Route work to specialists only when their judgment is likely to materially change the plan, implementation, risk, or user outcome.
+- Start with the minimum sufficient expert set. Add specialists only when their expertise is load-bearing.
+- Identify only the ambiguities that materially affect scope, architecture, sequencing, security, testing, delivery risk, or implementation choice.
+- Do not ask experts to rediscover the same facts unless the earlier facts are stale, low-confidence, or clearly insufficient.

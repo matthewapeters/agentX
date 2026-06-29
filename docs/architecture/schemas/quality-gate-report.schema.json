@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/orchestration/quality-gate-report.schema.json",
+  "title": "QualityGateReport",
+  "type": "object",
+  "required": ["run_id", "overall_pass", "gates"],
+  "properties": {
+    "run_id": { "type": "string" },
+    "overall_pass": { "type": "boolean" },
+    "gates": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["gate_id", "name", "pass", "thresholds", "observed", "evidence_ref"],
+        "properties": {
+          "gate_id": { "type": "string", "enum": ["A", "B", "C", "D", "E"] },
+          "name": { "type": "string" },
+          "pass": { "type": "boolean" },
+          "thresholds": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": true,
+            "properties": {
+              "latency_p95_ms": { "type": "number" },
+              "success_rate_min": { "type": "number" },
+              "max_wait_ms_p95": {
+                "type": "object",
+                "required": ["interactive", "orchestration", "maintenance"],
+                "properties": {
+                  "interactive": { "type": "number" },
+                  "orchestration": { "type": "number" },
+                  "maintenance": { "type": "number" }
+                },
+                "additionalProperties": false
+              },
+              "min_service_share": {
+                "type": "object",
+                "required": ["interactive", "orchestration", "maintenance"],
+                "properties": {
+                  "interactive": { "type": "number" },
+                  "orchestration": { "type": "number" },
+                  "maintenance": { "type": "number" }
+                },
+                "additionalProperties": false
+              },
+              "starvation_max_consecutive_misses": { "type": "integer", "minimum": 0 },
+              "retry_jitter_ratio_max": { "type": "number", "minimum": 0 },
+              "deny_rate_max": { "type": "number" },
+              "constraint_coverage_min": { "type": "number" },
+              "parity_rate_min": { "type": "number" },
+              "divergence_count_max": { "type": "integer", "minimum": 0 },
+              "required_linkage_fields": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "max_missing_linkage": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "observed": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": true,
+            "properties": {
+              "latency_p95_ms": { "type": "number" },
+              "success_rate": { "type": "number" },
+              "max_wait_ms_p95": {
+                "type": "object",
+                "required": ["interactive", "orchestration", "maintenance"],
+                "properties": {
+                  "interactive": { "type": "number" },
+                  "orchestration": { "type": "number" },
+                  "maintenance": { "type": "number" }
+                },
+                "additionalProperties": false
+              },
+              "service_share": {
+                "type": "object",
+                "required": ["interactive", "orchestration", "maintenance"],
+                "properties": {
+                  "interactive": { "type": "number" },
+                  "orchestration": { "type": "number" },
+                  "maintenance": { "type": "number" }
+                },
+                "additionalProperties": false
+              },
+              "starvation": {
+                "type": "object",
+                "required": ["max_consecutive_misses"],
+                "properties": {
+                  "max_consecutive_misses": { "type": "integer", "minimum": 0 }
+                },
+                "additionalProperties": true
+              },
+              "retry": {
+                "type": "object",
+                "required": ["jitter_ratio"],
+                "properties": {
+                  "jitter_ratio": { "type": "number", "minimum": 0 }
+                },
+                "additionalProperties": true
+              },
+              "deny_rate": { "type": "number" },
+              "constraint_coverage": { "type": "number" },
+              "parity_rate": { "type": "number" },
+              "divergence_count": { "type": "integer", "minimum": 0 },
+              "linkage_coverage": {
+                "type": "object",
+                "required": ["correlation_id", "task_id", "node_id", "run_id", "attempt", "stage", "status"],
+                "properties": {
+                  "correlation_id": { "type": "number" },
+                  "task_id": { "type": "number" },
+                  "node_id": { "type": "number" },
+                  "run_id": { "type": "number" },
+                  "attempt": { "type": "number" },
+                  "stage": { "type": "number" },
+                  "status": { "type": "number" }
+                },
+                "additionalProperties": false
+              },
+              "missing_linkage_count": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "evidence_ref": { "type": "string" }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "gate_id": { "const": "A" } },
+              "required": ["gate_id"]
+            },
+            "then": {
+              "properties": {
+                "thresholds": { "required": ["latency_p95_ms", "success_rate_min"] },
+                "observed": { "required": ["latency_p95_ms", "success_rate"] }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "gate_id": { "const": "B" } },
+              "required": ["gate_id"]
+            },
+            "then": {
+              "properties": {
+                "thresholds": {
+                  "required": [
+                    "max_wait_ms_p95",
+                    "min_service_share",
+                    "starvation_max_consecutive_misses",
+                    "retry_jitter_ratio_max"
+                  ]
+                },
+                "observed": {
+                  "required": ["max_wait_ms_p95", "service_share", "starvation", "retry"]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "gate_id": { "const": "C" } },
+              "required": ["gate_id"]
+            },
+            "then": {
+              "properties": {
+                "thresholds": { "required": ["deny_rate_max", "constraint_coverage_min"] },
+                "observed": { "required": ["deny_rate", "constraint_coverage"] }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "gate_id": { "const": "D" } },
+              "required": ["gate_id"]
+            },
+            "then": {
+              "properties": {
+                "thresholds": { "required": ["parity_rate_min", "divergence_count_max"] },
+                "observed": { "required": ["parity_rate", "divergence_count"] }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "gate_id": { "const": "E" } },
+              "required": ["gate_id"]
+            },
+            "then": {
+              "properties": {
+                "thresholds": { "required": ["required_linkage_fields", "max_missing_linkage"] },
+                "observed": { "required": ["linkage_coverage", "missing_linkage_count"] }
+              }
+            }
+          }
+        ],
+        "additionalProperties": false
+      },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": ["gate_id"],
+            "properties": {
+              "gate_id": { "const": "A" }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["gate_id"],
+            "properties": {
+              "gate_id": { "const": "B" }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["gate_id"],
+            "properties": {
+              "gate_id": { "const": "C" }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["gate_id"],
+            "properties": {
+              "gate_id": { "const": "D" }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["gate_id"],
+            "properties": {
+              "gate_id": { "const": "E" }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

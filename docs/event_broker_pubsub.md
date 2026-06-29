@@ -1,285 +1,196 @@
 # Event-Broker Pub-Sub Architecture
 
-_Last updated: 2026-05-10 (v0.39.3)_
+_Last updated: 2026-06-23 (v0.39.4)_
 
 ## Overview
 
-AgentX now uses a **centralized event broker** for streaming data distribution. This replaces the previous brittle point-to-point FIFO approach with a robust pub-sub pattern that guarantees delivery to all subscribers.
+AgentX uses a **centralized event coordination layer** for streaming data distribution. This replaces point-to-point coupling with a robust pub-sub pattern that guarantees delivery to all subscribers.
 
 ### Problem Solved
 
-**Previous Architecture (Broken):**
+**Previous Architecture (Issues):**
 
-- StreamingController called `tui_bridge.write_output()` directly → non-blocking FIFO writes
-- If FIFO reader was unavailable, writes were silently dropped
-- TUI output was fragile and unreliable
-- No way to buffer data if TUI wasn't ready
+- Response streaming directly called individual surface writers (non-blocking FIFO writes)
+- If a surface reader was unavailable, writes were silently dropped
+- Surface output was fragile and unreliable
+- No buffering if a surface wasn't ready
 
 **New Architecture (Robust):**
 
-- StreamingController publishes events to EventBroker
-- Each subscriber (GUI, TUI, logging) gets its own queue
+- Response stream coordinator publishes events to the coordination layer
+- Each subscriber (output surface, input surface, system surface, etc.) gets its own queue
 - Events are buffered and retried with backoff
 - Guaranteed delivery: no data is dropped
-- Slow subscribers don't block publishers
+- Slow subscribers don't block the response stream
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                   AgentXSession                             │
+│                   Session Orchestrator                      │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │         EventBroker (central pub-sub hub)           │   │
+│  │   Event Coordination Layer (central pub-sub hub)     │   │
 │  │  - Maintains subscriber lists per event type        │   │
 │  │  - Publishes events to all subscribers              │   │
-│  │  - Thread-safe with RLock                           │   │
+│  │  - Thread-safe with concurrent access control       │   │
 │  └──────────────┬─────────────────────────────────────┬┘   │
 │                 │                                     │     │
-│   ┌─────────────▼────────────┐     ┌────────────────┬┴─────┴──┐
-│   │ StreamingController      │     │  GUI display   │ TUI     │
-│   │                          │     │  calls still   │ Event   │
-│   │ - _write_tui_output()    │     │  work as-is    │ Sub.    │
-│   │ - publish() to broker    │     └────────────────┘ │       │
-│   │ - background thread      │                        │       │
-│   └──────────────────────────┘                        │       │
-│                                                       │       │
-│   ┌──────────────────────────┐     ┌─────────────────┴─────┐ │
-│   │ Session                  │     │ TUIEventSubscriber    │ │
-│   │                          │     │                       │ │
-│   │ - create EventBroker     │     │ - Buffers events      │ │
-│   │ - wire subscribers       │     │ - Background writer   │ │
-│   │ - manage TUI/GUI         │     │ - Formats for TUI     │ │
-│   └──────────────────────────┘     │ - Writes FIFO with    │ │
-│                                    │   retry/backoff       │ │
-│                                    └───────────────────────┘ │
+│   ┌─────────────▼────────────┐     ┌────────────────┬┴────┐
+│   │ Response Stream          │     │  Output        │ Logging │
+│   │ Coordinator              │     │  Surface       │ Consumer │
+│   │                          │     │                │        │
+│   │ - publish() to layer     │     │  - Buffers     │        │
+│   │ - background thread      │     │  - Processes   │        │
+│   │ - manages flow control   │     │  - Displays    │        │
+│   └──────────────────────────┘     └────────────────┘        │
+│                                                             │
+│   ┌──────────────────────────┐     ┌─────────────────────┐ │
+│   │ Session Manager          │     │ Input Surface       │ │
+│   │                          │     │ Subscriber          │ │
+│   │ - create coord. layer    │     │                     │ │
+│   │ - wire subscribers       │     │ - Buffers events    │ │
+│   │ - manage all surfaces    │     │ - Processes input   │ │
+│   └──────────────────────────┘     │ - Handles backoff   │ │
+│                                    └─────────────────────┘ │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Components
 
-### 1. EventBroker (`src/agentx/event_broker.py`)
+### 1. Event Coordination Layer
 
 **Purpose:** Centralized pub-sub hub for all streaming events
 
-**Key Methods:**
+**Key Capabilities:**
 
-```python
-def subscribe(
-    event_type: EventType,
-    callback: Callable[[Event], None],
-    queue_size: int = 100
-) -> Callable[[], None]:
-    """Register a callback for an event type. Returns unsubscribe function."""
-
-def publish(
-    event_type: EventType,
-    data: dict[str, Any]
-) -> None:
-    """Publish an event to all registered subscribers."""
-```
+- Register callbacks for event types
+- Publish events to all registered subscribers
+- Maintain per-subscriber event queues
+- Guarantee ordered delivery
+- Handle backoff and retry on subscriber saturation
 
 **Guarantees:**
 
 - **Ordered delivery:** Events dispatched in publish order
 - **No dropped events:** Each subscriber has its own queue
-- **Thread-safe:** Uses RLock for concurrent access
-- **Non-blocking publishers:** Enqueue-only publish path with per-subscriber workers
+- **Thread-safe:** Concurrent access control
+- **Non-blocking publishers:** Publish returns immediately after enqueueing
 
-### 2. EventType (`src/agentx/event_broker.py`)
+### 2. Event Types
 
-Enum of all streaming event types:
+Standardized event types for streaming communication:
 
-```python
-class EventType(str, Enum):
-    # Lifecycle
-    STREAM_START = "stream_start"
-    STREAM_END = "stream_end"
-    
-    # Content streaming
-    THINKING_START = "thinking_start"
-    THINKING_CONTENT = "thinking_content"
-    AGENT_HEADER = "agent_header"
-    AGENT_CONTENT = "agent_content"
-    
-    # Tool interactions
-    TOOL_CALL = "tool_call"
-    TOOL_RESULT = "tool_result"
-    
-    # Bootstrap and system
-    BOOTSTRAP_MESSAGE = "bootstrap_message"
-    SYSTEM_MESSAGE = "system_message"
-    USER_MESSAGE = "user_message"
-    
-    # Errors and logging
-    ERROR = "error"
-    LOG_MESSAGE = "log_message"
-```
+- Response stream start/end
+- Response thinking markers
+- Response content (agent messages, tool calls/results)
+- Session markers (bootstrap, user input, system messages)
+- Error events
+- Logging events
+- Processing state updates
 
-### 3. TUIEventSubscriber (`src/agentx/integration/tui_event_subscriber.py`)
+See [Channel Registry](architecture/channel_registry.md) for complete event schema definitions.
 
-**Purpose:** Reliable TUI output handling via event broker
+## Event Flow
 
-**Key Features:**
+### Publish Path
 
-- Maintains an unbounded in-process queue (no maxlen truncation)
-- Background writer thread for FIFO writes
-- Retries with backoff if FIFO unavailable
-- Formats events into TUI protocol (###THINKING, ###AGENT, ###TOOL_CALL, etc.)
+1. Response coordinator generates events
+2. Publishes to event coordination layer
+3. Coordination layer enqueues per-subscriber worker
+4. Returns immediately (non-blocking)
+5. Per-subscriber workers dequeue and invoke callbacks
 
-**Data Flow:**
+### Subscriber Path
 
-1. StreamingController publishes event
-2. EventBroker enqueues per subscriber worker
-3. TUIEventSubscriber receives event in background
-4. Event added to internal queue
-5. Writer thread:
-   - Pops event from queue
-   - Formats for TUI protocol
-   - Writes to output FIFO
-   - Retries with backoff if write fails
+1. Subscriber callback is invoked by coordination layer
+2. Processes and buffers event
+3. Returns immediately
+4. Background consumer thread pops from queue
+5. Formats and delivers to target surface with retry/backoff on failure
 
-### 4. StreamingController Updates (`src/agentx/streaming_controller.py`)
+## Integration Patterns
 
-**Changed Method:**
+### Event Publisher
 
-```python
-def _write_tui_output(self, record: str) -> None:
-    """Publish an output record to TUI subscribers via event broker.
-    
-    Guaranteed delivery via pub-sub; no data is dropped.
-    """
-    broker = getattr(self._s, "event_broker", None)
-    if broker is None:
-        return
-    broker.publish(EventType.AGENT_CONTENT, {
-        "text": record, 
-        "is_raw_tui": True
-    })
-```
+- Generate events and publish to coordination layer
+- Publisher never blocks waiting for subscriber delivery
+- Coordination layer handles buffering and retry logic
 
-This method now:
+### Event Subscriber
 
-- Publishes to event broker instead of direct FIFO writes
-- Ensures all TUI subscribers receive the event
-- Never drops data due to slow or unavailable readers
+- Register callback for specific event types
+- Callback invoked immediately when event is published
+- Subscriber processes event and returns quickly
+- Optional: Use background worker for I/O-heavy processing (e.g., FIFO writes)
 
-### 5. Session Integration (`src/agentx/session.py`)
+### Error Handling
 
-**New in AgentXSession.**init**:**
+- If subscriber callback throws error: log and skip (don't block publisher)
+- If background worker fails: retry with exponential backoff
+- Slow subscribers don't affect other subscribers or publishers
 
-```python
-# Create event broker
-self.event_broker = EventBroker()
+## Testing and Validation
 
-# Create and wire TUI event subscriber
-if tui_enabled:
-    self.tui_event_subscriber = TUIEventSubscriber(tui_bridge=self.tui_bridge)
-    self.tui_event_subscriber.start()
-    
-    # Subscribe to all event types
-    for event_type in EventType:
-        self.event_broker.subscribe(
-            event_type, 
-            self.tui_event_subscriber.handle_event,
-            queue_size=1000
-        )
-```
+Event coordination layer should support:
 
-**Cleanup:**
+- Unit tests for pub-sub ordering
+- Subscriber buffer overflow scenarios
+- Multi-publisher concurrent access
+- Delivery guarantee verification
+- Backoff/retry behavior
 
-- TUI subscriber stopped in session cleanup
-- Event broker automatically cleared when session destroyed
+Verification claims:
 
-## Event Flow Example
-
-### User submits message → TUI output appears
-
-```
-1. User presses <leader>s in Neovim
-2. Input FIFO receives text
-3. TUIBridge._input_reader_loop() reads from FIFO
-4. Calls session._on_tui_submit(text)
-5. Session schedules stream_ollama_response()
-6. StreamingController._handle_stream_content() called with text
-7. Publishes: broker.publish(EventType.AGENT_CONTENT, {"text": "..."})
-8. EventBroker queues event for TUIEventSubscriber
-9. TUIEventSubscriber._writer_loop() dequeues event
-10. Formats and writes to output FIFO
-11. Neovim jobstart reads from FIFO
-12. Appends to output buffer
-13. User sees response in output pane
-```
-
-## Testing
-
-Focused pub-sub and TUI tests pass:
-
-```bash
-python -m pytest tests/test_event_broker_pubsub.py -v
-```
-
-### Test Coverage
-
-- **EventBroker:** Basic pub-sub, multiple subscribers, unsubscribe, slow subscribers
-- **TUIEventSubscriber:** Event formatting, buffering, queue behavior, writer thread
-- **StreamingController:** Publishing events, graceful handling of missing broker
-- **End-to-end:** Full chain from StreamingController → EventBroker → TUI Subscriber
+| Guarantee / Claim | Expected Evidence |
+|---|---|
+| Ordered delivery for a subscriber | Received event indices are monotonic and complete |
+| No dropped events when subscriber is busy | Published count equals consumed count |
+| Slow subscriber does not block publisher path | Publish path completes while handler is delayed |
+| Canonical streaming event sequence survives broker path | Sequence ordering matches expected stream protocol |
+| Event types and channel definitions stay aligned | Event names match architecture contract in `docs/architecture/channel_registry.md` |
 
 ## Migration from Old Architecture
 
-### Old Way (Broken)
+### Previous Approach (Issues)
 
-```python
-# Old: Direct FIFO write, data dropped if no reader
-def _write_tui_output(self, record: str) -> None:
-    bridge = getattr(self._s, "tui_bridge", None)
-    if bridge is None:
-        return
-    try:
-        bridge.write_output(record)  # Non-blocking, drops if unavailable
-    except Exception:
-        pass
-```
+- Response coordinator directly called surface writers (non-blocking, data could be dropped)
+- If a surface reader was unavailable or slow, messages were lost
+- No buffering or retry logic
+- Tight coupling between coordinator and surfaces
+- Poor scalability for new subscribers
 
-### New Way (Robust)
+### Improved Approach (Pub-Sub)
 
-```python
-# New: Publish to broker, guaranteed delivery
-def _write_tui_output(self, record: str) -> None:
-    broker = getattr(self._s, "event_broker", None)
-    if broker is None:
-        return
-    broker.publish(EventType.AGENT_CONTENT, {
-        "text": record, 
-        "is_raw_tui": True
-    })
-```
+- Response coordinator publishes events to coordination layer
+- Coordination layer manages all subscriber queues
+- Guaranteed delivery with buffering and retry
+- Loose coupling: new subscribers can be added without changing publisher
+- Scalable to many subscribers
 
 ## Benefits
 
 ✅ **No data loss:** Events queued per subscriber, never dropped
-✅ **Scalable:** Easy to add new subscribers (logging, monitoring, etc.)
+✅ **Scalable:** Easy to add new subscribers (logging, monitoring, metrics, etc.)
 ✅ **Decoupled:** Publishers don't know about subscribers
-✅ **Thread-safe:** RLock on broker, per-subscriber queues
-✅ **Backpressure:** Slow FIFO doesn't block streaming
-✅ **Buffering:** Events buffered if TUI temporarily unavailable
-✅ **Retry logic:** Writes retry with bounded backoff loop
-✅ **Testable:** All components unit-tested with 66%+ coverage
+✅ **Thread-safe:** Concurrent access control on all shared state
+✅ **Backpressure:** Slow surfaces don't block the response stream
+✅ **Buffering:** Events buffered if a surface temporarily unavailable
+✅ **Retry logic:** Writes retry with exponential backoff
+✅ **Testable:** All components unit-tested for ordering, buffering, error handling
 
 ## Future Enhancements
 
-1. **Logging Subscriber:** Wire OutputLogger as subscriber to EventType.LOG_MESSAGE
-2. **GUI Subscriber:** Optionally migrate GUI display to subscriber pattern
-3. **Event Persistence:** Persist all events to session log for replay
-4. **Metrics:** Track subscriber throughput, queue depth, retry counts
-5. **Event Filtering:** Allow subscribers to filter by event subtype or source
-6. **Bidirectional:** Support events flowing both GUI↔TUI (e.g., UI state sync)
+1. **Logging Subscriber:** Wire logging system as subscriber for audit trail
+2. **Metrics Subscriber:** Collect throughput and latency metrics
+3. **Event Persistence:** Persist all events for session replay
+4. **Event Filtering:** Allow subscribers to filter by event type or source
+5. **Bidirectional Communication:** Support events flowing in both directions
+6. **Priority Queues:** Support high-priority events (errors, critical updates)
 
 ## See Also
 
-- [docs/architecture.md](architecture.md) — Module index
-- [docs/ux/UX_LIFECYCLE.md](ux/UX_LIFECYCLE.md) — User interface documentation
-- [tests/test_event_broker_pubsub.py](../tests/test_event_broker_pubsub.py) — Comprehensive test suite
+- [Channel Registry](architecture/channel_registry.md) — Event schema and registry
+- [UX Lifecycle](ux/UX_LIFECYCLE.md) — User interface specifications

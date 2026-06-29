@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/runtime/processing-state.schema.json",
+  "title": "ProcessingState",
+  "description": "Shared session-level processing-state contract consumed by all surfaces (Family A v1). Source: docs/architecture/channel_registry.md (Processing State Contract) and docs/implementation/02_surface_orchestration_http.md.",
+  "type": "object",
+  "required": ["session_id", "state", "phase", "prompt_cycle"],
+  "properties": {
+    "session_id": { "type": "string", "minLength": 1 },
+    "state": {
+      "type": "string",
+      "enum": ["idle", "working", "completed", "failed", "awaiting_input"]
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["classify", "thinking", "tool", "respond", "none"]
+    },
+    "prompt_cycle": {
+      "type": "object",
+      "description": "Full phase object for deterministic consumers (structured phase details)."
+    }
+  },
+  "additionalProperties": false
+}

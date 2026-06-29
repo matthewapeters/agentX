@@ -1,12 +1,21 @@
 # AgentX UX — Working Index
 
-_Last updated: 2026-05-15 (v0.48.13.post1)_
+> **⚠️ Architecture migration (2026-06-26).** These UX specs describe the prior
+> single-window split-pane GUI (OutputSurface left / SystemSurface right /
+> InputSurface bottom, PD-01…PD-17). AgentX is now a **client-server** app: the chat
+> surface has **two panels (output + input)** and the former "system" panel is now
+> **multiple independent, separately launchable surfaces** (files, config, context,
+> context-history, context-visualizer), arranged by the user via a multiplexer. These
+> docs are being migrated during M2 — treat the surface geometry below as legacy. See
+> [`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md).
+
+_Last updated: 2026-05-23 (v0.83.1)_
 
 > **This is the entry point for every UX work session — human or agent.**
 > Open this file first. It tells you exactly where things stand and what to do next.
 
-**Last updated**: 2026-05-15 (v0.48.13.post1 — TUI-first migration planning documented)
-**Current version**: see `pyproject.toml`
+**Last updated**: 2026-05-23 (v0.83.1 — Pane-title alignment pass reviewed and UX gap chart refreshed)
+**Current version**: see `CHANGELOG.md`
 
 > **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
 
@@ -19,17 +28,19 @@ _Last updated: 2026-05-15 (v0.48.13.post1)_
 | Understand the full lifecycle process | [UX_LIFECYCLE.md §2](UX_LIFECYCLE.md#2-the-4-phase-lifecycle) |
 | Create or update a component cut-sheet | [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md) |
 | Find the affordance ID for a widget | [UX_LIFECYCLE.md §4 — Traceability Matrix](UX_LIFECYCLE.md#4-traceability-matrix-as-built) |
-| See a panel's widget details, state fields, diagrams | [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) |
+| See a surface's widget details, state fields, diagrams | [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) |
 | Understand the window layout and zone map | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) |
 | Follow a user interaction end-to-end | [02_USER_FLOWS.md](02_USER_FLOWS.md) |
-| Vibe coding (neovim + tmux integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
-| TUI mirror chat pane (spec + plan) | [06_TUI_MIRROR.md](06_TUI_MIRROR.md) |
+| Vibe coding (editor + terminal integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
+| TUI mirror / hybrid pane contract (spec + plan) | [06_TUI_MIRROR.md](06_TUI_MIRROR.md) |
+| Demo mode contract and harness plan | [07_DEMO_MODE.md](07_DEMO_MODE.md) |
+| Startup modes and launch switches (authoritative) | [../architecture/startup_modes.md](../architecture/startup_modes.md) |
 | TUI-default migration plan and docs impact list | [06_TUI_MIRROR.md §12](06_TUI_MIRROR.md#12-tui-first-migration-plan-planned) |
 | Tool/tooling backlog (non-UX) | [../tools/tools_issues.md](../tools/tools_issues.md) |
 | Run the UX review+enforce cycle (agent slash-command) | `/ux-review` in Copilot Chat |
-| See test coverage gaps | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-known-coverage-gaps) |
+| See historical coverage notes and remaining-work synthesis | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-historical-coverage-gaps-resolved) |
 | Detect spec/code/test drift | [UX_LIFECYCLE.md §5.4](UX_LIFECYCLE.md#54-detecting-drift-without-a-planned-change) |
-| Add a new panel/affordance (checklist) | [UX_LIFECYCLE.md §5.1](UX_LIFECYCLE.md#51-adding-a-new-affordance) |
+| Add a new surface/affordance (checklist) | [UX_LIFECYCLE.md §5.1](UX_LIFECYCLE.md#51-adding-a-new-affordance) |
 | Modify an existing affordance (checklist) | [UX_LIFECYCLE.md §5.2](UX_LIFECYCLE.md#52-modifying-an-existing-affordance) |
 | Remove an affordance (checklist) | [UX_LIFECYCLE.md §5.3](UX_LIFECYCLE.md#53-removing-an-affordance) |
 
@@ -40,27 +51,28 @@ _Last updated: 2026-05-15 (v0.48.13.post1)_
 > **Agent**: when starting a session, update this table from `UX_LIFECYCLE.md §4`.
 > Run the drift-detection commands in `UX_LIFECYCLE.md §5.4` and record the result here.
 
-| Panel | Fully Tested ✅ | Partial ⚠️ | Spec Only 📝 | Gap ❌ |
+| Surface | Fully Tested ✅ | Partial ⚠️ | Spec Only 📝 | Gap ❌ |
 |-------|:--------------:|:----------:|:------------:|:------:|
-| PD-01 ChatPanel | 9 | 1 | 0 | 0 |
-| PD-02 InputPanel | 9 | 3 | 0 | 0 |
-| PD-03 SidePanel — Context | 7 | 0 | 0 | 0 |
-| PD-03 SidePanel — Working Memory | 4 | 1 | 0 | 0 |
+| PD-01 OutputSurface | 9 | 1 | 0 | 0 |
+| PD-02 InputSurface | 9 | 3 | 0 | 0 |
+| PD-03 SystemSurface — Context | 7 | 0 | 0 | 0 |
+| PD-03 SystemSurface — Working Memory | 4 | 1 | 0 | 0 |
 | PD-04 ModelSelector | 4 | 0 | 0 | 0 |
-| PD-05 PlanTreeWidget | 6 | 0 | 0 | 0 |
+| PD-05 PlanView | 6 | 0 | 0 | 0 |
 | PD-06 ResynthesisDialog | 5 | 0 | 0 | 0 |
-| PD-07 SettingsTab | 2 | 1 | 0 | 0 |
+| PD-07 SettingsSurface | 2 | 1 | 0 | 0 |
 | PD-08 ContextRenderer | 4 | 0 | 0 | 0 |
 | PD-09 CollapsibleSection | 4 | 0 | 0 | 0 |
 | PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
-| PD-11 FileExplorer | 10 | 0 | 0 | 0 |
+| PD-11 FileBrowser | 10 | 0 | 0 | 0 |
 | PD-12 StatusTab | 11 | 0 | 0 | 0 |
 | PD-13 ToolPanel | 0 | 0 | 2 | 0 |
-| PD-14 VimBridge GUI | 3 | 0 | 6 | 0 |
-| PD-15 TerminalPane GUI | 8 | 0 | 0 | 0 |
+| PD-14 Editor Integration | 3 | 0 | 6 | 0 |
+| PD-15 Terminal Integration | 8 | 0 | 0 | 0 |
 | PD-16 TuiMirror | 8 | 0 | 0 | 0 |
+| PD-17 DemoMode | 10 | 0 | 3 | 0 |
 
-**Totals**: 104 ✅ · 6 ⚠️ · 8 📝 · 0 ❌
+**Totals**: 112 ✅ · 6 ⚠️ · 11 📝 · 0 ❌
 
 ---
 
@@ -74,15 +86,16 @@ _Last updated: 2026-05-15 (v0.48.13.post1)_
 - [/] **PD-03-AF-011..014** — Working Memory callbacks (toggle, delete, promote, add)
 - [/] **PD-07-AF-002..003** — Settings collapse state + restart-required icon
 - [/] **PD-02-AF-002** — Shift+Enter inserts newline
-- [/] **PD-12: StatusTab** — implemented: `status_tab.py`, donut + break button relocated, `StreamingController` phase events wired (11 affordances ✅)
+- [/] **PD-12: StatusTab** — implemented: donut + break button relocated, `StreamingController` phase events wired (11 affordances ✅)
 - [/] **PD-15-AF-003..004** — active terminal indicator and kill-pane action wiring in GUI/tool-result rows
 - [/] **PD-04-AF-004** — ModelSelector refresh button
 - [/] **PD-05-AF-004** — Re-synth button in synthesis block
 - [/] **PD-05-AF-005** — Export button in plan tab toolbar
 - [/] **PD-05-AF-006** — Node status icon reflects task state
-- [/] **PD-01-AF-010** — Output panel right-click copy context menu (Wayland-safe)
-- [/] **PD-02-AF-008..012** — Input panel right-click context menu: popup, Copy/Paste visibility, Copy action, Paste action
+- [/] **PD-01-AF-010** — Output surface right-click copy context menu (Wayland-safe)
+- [/] **PD-02-AF-008..012** — Input surface right-click context menu: popup, Copy/Paste visibility, Copy action, Paste action
 - [/] **PD-16 (TuiMirror)** — implemented: config + NullGUI path, bridge I/O, launcher lifecycle, and traceability/test reconciliation completed
+- [/] **PD-17-AF-004** — Split demo left workspace into story-browser top pane + prompt bottom pane ✓ completed 2026-05-22
 - [ ] **PD-16 migration (planned)** — invert launcher default to TUI-first, add `--gui` opt-in path, and reconcile docs/ux artifacts per `06_TUI_MIRROR.md §12.6`
 
 ---
@@ -161,8 +174,9 @@ docs/ux/
 ├── UX_LIFECYCLE.md                    ← Lifecycle rules, affordance IDs, traceability matrix
 ├── 01_MAIN_LAYOUT.md                  ← Window zones, geometry
 ├── 02_USER_FLOWS.md                   ← End-to-end user interaction flows (Mermaid)
-├── 03_PANEL_DETAILS.md                ← Per-panel: affordance tables, state fields, diagrams
+├── 03_PANEL_DETAILS.md                ← Per-surface: affordance tables, state fields, diagrams
 ├── 04_COMPONENT_CUT_SHEET_TEMPLATE.md ← Blank template for new component cut-sheets
+├── 07_DEMO_MODE.md                    ← Demo mode UX contract and implementation plan
 └── UX_ISSUES.md                       ← Bug-tracking log for user-reported UX defects
 
 .github/prompts/

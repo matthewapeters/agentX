@@ -1,0 +1,35 @@
+# AgentX deployment configuration — baseline seed.
+#
+# These values mirror the built-in defaults (internal/config.Default()). They are
+# the 1:1 baseline from which to tune; unknown keys are ignored by the decoder and
+# absent keys fall back to these same defaults.
+
+[agentx.ollama]
+host  = "localhost:11434"   # Ollama API host:port
+model = "nemotron-cascade-2:latest"    # must match an installed Ollama model
+
+[agentx.classification]
+retries               = 2   # re-attempts when a classification verdict won't parse
+clarification_options = 3   # Stage-2: candidate interpretations offered on ambiguity
+
+[agentx.output]
+max_widget_lines = 20       # max body rows before an output widget scrolls in place
+
+[agentx.thinking]
+enabled             = true  # master switch for reasoning during respond (💭 widget)
+time_budget_seconds = 180   # wall-clock cap on thinking; on expiry, answer directly
+
+[agentx.thinking.routes]    # route-aware depth: which classification routes reason
+respond_directly = false    # plain conversation answers without thinking
+single_tool      = true
+invoke_planner   = true
+
+[agentx.theme]
+active_border_color   = "cyan"        # focused panel + selected widget (bold)
+inactive_border_color = "dark gray"   # unfocused panel + other widgets
+
+[agentx.tools]
+enabled          = true     # master switch for the single_tool execution cycle
+read_only        = true     # only read-risk tools run; writes/network need approval
+timeout_seconds  = 30       # per-command execution timeout
+output_max_bytes = 65536    # output cap before truncation (full output → artifact)

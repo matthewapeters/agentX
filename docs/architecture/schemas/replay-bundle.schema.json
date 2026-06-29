@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/orchestration/replay-bundle.schema.json",
+  "title": "ReplayBundle",
+  "type": "object",
+  "required": [
+    "bundle_id",
+    "config_fingerprint",
+    "seed",
+    "events",
+    "expected_final_state",
+    "divergence_report_ref"
+  ],
+  "properties": {
+    "bundle_id": { "type": "string" },
+    "config_fingerprint": { "type": "string" },
+    "seed": { "type": "string" },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "trace-event.schema.json" }
+    },
+    "expected_final_state": { "type": "object" },
+    "divergence_report_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Canonical repository-relative location of replay divergence report for this bundle."
+    },
+    "drift_allowlist": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Provisional list of non-functional fields ignored during parity compare."
+    }
+  },
+  "additionalProperties": false
+}

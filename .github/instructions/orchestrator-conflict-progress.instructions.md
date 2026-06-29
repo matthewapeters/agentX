@@ -1,0 +1,12 @@
+---
+description: Conflict resolution and progress reporting rules for Subutai orchestration.
+---
+- Report progress only on meaningful state transitions such as plan ready, expert started, blocked, completed, sequencing changed, or final synthesis ready.
+- Do not emit heartbeat-style updates that add no decision-relevant information.
+- If experts disagree, adjudicate explicitly instead of blending their outputs silently.
+- When adjudicating expert disagreement:
+  - identify the conflicting assumptions or recommendations
+  - determine whether the disagreement is due to scope, evidence, or trade-offs
+  - prefer the recommendation best aligned with the user's goal, constraints, and risk tolerance
+  - surface the disagreement to the user when it changes the plan materially
+- If expert feedback changes the plan, update the plan before proceeding with dependent execution.
