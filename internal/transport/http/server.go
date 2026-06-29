@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 
 	"agentx/internal/session"
 	"agentx/internal/state"
@@ -37,15 +38,17 @@ type Provider interface {
 
 // Server is the loopback HTTP/SSE transport for external surfaces.
 type Server struct {
-	prov Provider
-	mux  *http.ServeMux
-	srv  *http.Server
+	prov     Provider
+	mux      *http.ServeMux
+	srv      *http.Server
+	done     chan struct{}
+	doneOnce sync.Once
 }
 
 // NewServer returns a transport server adapting prov. Call Handler for in-process
 // testing, or Serve to bind a listener.
 func NewServer(prov Provider) *Server {
-	s := &Server{prov: prov, mux: http.NewServeMux()}
+	s := &Server{prov: prov, mux: http.NewServeMux(), done: make(chan struct{})}
 	s.routes()
 	return s
 }
@@ -73,6 +76,17 @@ func (s *Server) Handler() http.Handler { return s.mux }
 func (s *Server) Serve(ln net.Listener) error {
 	s.srv = &http.Server{Handler: s.mux}
 	return s.srv.Serve(ln)
+}
+
+// Shutdown gracefully stops the server. It first signals open SSE handlers to
+// return (so they do not block the graceful drain), then shuts the server down.
+// It is a no-op before Serve.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.doneOnce.Do(func() { close(s.done) })
+	if s.srv == nil {
+		return nil
+	}
+	return s.srv.Shutdown(ctx)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -120,6 +134,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-s.done:
 			return
 		case ev, ok := <-sub.C:
 			if !ok {

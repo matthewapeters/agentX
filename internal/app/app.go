@@ -11,7 +11,9 @@ import (
 
 	"agentx/internal/config"
 	"agentx/internal/runtime"
+	"agentx/internal/surfaces"
 	"agentx/internal/surfaces/chat"
+	transporthttp "agentx/internal/transport/http"
 )
 
 // Options configures composition. The zero value uses the conventional config
@@ -76,6 +78,8 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		return nil, err
 	}
 
+	transportStart, transportEnd := cfg.TransportPortRange()
+
 	orc := runtime.New(runtime.Settings{
 		SessionRoot:           root,
 		OllamaHost:            cfg.OllamaHost(),
@@ -97,6 +101,10 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ToolBlacklistPath:     paths.ToolBlacklistPath(),
 		ToolApprovalsPath:     paths.ToolApprovalsPath(),
 		ToolOutputMaxBytes:    cfg.ToolOutputMaxBytes(),
+		TransportEnabled:      cfg.TransportEnabled(),
+		TransportHost:         cfg.TransportHost(),
+		TransportPortStart:    transportStart,
+		TransportPortEnd:      transportEnd,
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err
@@ -182,6 +190,12 @@ func RunChat(ctx context.Context, opts Options) error {
 	// subscribed; its events buffer on the subscription until the program drains
 	// them, so the response opens the session.
 	go func() { _ = orc.SubmitBootstrap(ctx) }()
+
+	// When the transport is served, print the attach hint (endpoint + token) so the
+	// user can launch external surfaces in other terminals.
+	if ep := orc.Endpoint(); ep != "" {
+		fmt.Println(transporthttp.LaunchHint(orc.Session().Name, ep, orc.AttachToken().Raw(), surfaces.ExternalKinds()))
+	}
 
 	surface := chat.NewWithBridge(bridge)
 	surface.SetMaxWidgetLines(orc.Settings().MaxWidgetLines)

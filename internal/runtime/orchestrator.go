@@ -14,7 +14,11 @@ import (
 	"agentx/internal/state"
 	"agentx/internal/surfaces"
 	"agentx/internal/tools"
+	transporthttp "agentx/internal/transport/http"
 )
+
+// Orchestrator satisfies the transport's Provider seam (read + write surface).
+var _ transporthttp.Provider = (*Orchestrator)(nil)
 
 // Settings are the runtime inputs the composition root derives from configuration.
 type Settings struct {
@@ -68,6 +72,15 @@ type Settings struct {
 	// ToolOutputMaxBytes caps captured tool output before truncation (full output
 	// still persists to the artifact). <=0 uses the executor default.
 	ToolOutputMaxBytes int
+	// TransportEnabled serves the HTTP/SSE transport alongside the in-process chat
+	// so external surfaces can attach. When false, the runtime stays in-process.
+	TransportEnabled bool
+	// TransportHost is the loopback host the transport binds (e.g. 127.0.0.1).
+	TransportHost string
+	// TransportPortStart and TransportPortEnd bound the candidate port range the
+	// transport binds the first free port from.
+	TransportPortStart int
+	TransportPortEnd   int
 }
 
 // Orchestrator owns the per-process runtime: session, event bus, processing
@@ -81,6 +94,9 @@ type Orchestrator struct {
 	proc       *state.ProcessingPublisher
 	token      surfaces.AttachToken
 	surfaceReg *surfaces.Registry
+	server     *transporthttp.Server
+	endpoint   string
+	serveDone  chan error
 	model      Model
 	assembler  *prompting.Assembler
 	classifier *classify.Classifier
@@ -180,8 +196,34 @@ func (o *Orchestrator) Start() error {
 	o.recDone = make(chan error, 1)
 	go func() { o.recDone <- recorder.Run(sub) }()
 
+	// Serve the HTTP/SSE transport for external surfaces (TRN-6). A bind failure
+	// on the required transport blocks startup with a clean error.
+	if o.settings.TransportEnabled {
+		if err := o.startTransport(); err != nil {
+			return err
+		}
+	}
+
 	o.started = true
 	o.accepting = true
+	return nil
+}
+
+// startTransport allocates a loopback port, publishes the endpoint to session
+// metadata, and serves the HTTP transport. The caller holds o.mu.
+func (o *Orchestrator) startTransport() error {
+	ln, err := transporthttp.Allocate(o.settings.TransportHost, o.settings.TransportPortStart, o.settings.TransportPortEnd)
+	if err != nil {
+		return fmt.Errorf("allocate transport port: %w", err)
+	}
+	o.endpoint = transporthttp.Endpoint(ln.Addr())
+	if err := o.store.WriteTransport(o.id.ID, session.TransportInfo{SessionID: o.id.ID, Endpoint: o.endpoint}); err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("publish transport endpoint: %w", err)
+	}
+	o.server = transporthttp.NewServer(o)
+	o.serveDone = make(chan error, 1)
+	go func() { o.serveDone <- o.server.Serve(ln) }()
 	return nil
 }
 
@@ -197,7 +239,15 @@ func (o *Orchestrator) Shutdown(ctx context.Context) error {
 	o.accepting = false
 	sub := o.recSub
 	done := o.recDone
+	server := o.server
 	o.mu.Unlock()
+
+	// Stop the transport first so no new external requests arrive mid-drain, and
+	// mark attached surfaces stopped.
+	if server != nil {
+		_ = server.Shutdown(ctx)
+		o.surfaceReg.StopAll()
+	}
 
 	// Persist a final processing-state snapshot before draining.
 	o.bus.Publish(state.Event{
@@ -242,6 +292,10 @@ func (o *Orchestrator) Registry() *surfaces.Registry { return o.surfaceReg }
 // AttachToken returns the session's ephemeral attach token. The raw value is
 // used to build launch command strings; only its fingerprint is ever persisted.
 func (o *Orchestrator) AttachToken() surfaces.AttachToken { return o.token }
+
+// Endpoint returns the transport endpoint external surfaces attach to, or "" when
+// the transport is disabled.
+func (o *Orchestrator) Endpoint() string { return o.endpoint }
 
 // CheckModel verifies the configured model is available (CHT-C4). It is called
 // after Start, before prompts are accepted, so an unavailable model is reported

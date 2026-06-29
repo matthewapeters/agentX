@@ -585,6 +585,54 @@ On success `cli.Launch` returns the `surface_id`, resolved `session_id` /
 `session_name`, and connected endpoint, which the command prints (exit 0). On failure
 the error carries the category and a remediation hint (exit non-zero).
 
+## Serve-Alongside Lifecycle (TRN-6)
+
+This section refines the Surface Model ("run surfaces as separate processes managed
+by orchestrator") and Launch behavior ("main session prints launch command strings")
+with the runtime wiring that makes `agentx` serve the transport.
+
+### Lifecycle integration
+
+- When `[agentx.transport] enabled` (the default), the orchestrator allocates a
+  loopback port (TRN-4) and serves the HTTP/SSE server (TRN-2/3) as part of `Start`,
+  **after** the event bus, processing-state publisher, registry, and recorder are
+  live and before prompts are accepted. A bind failure blocks startup with a clean
+  error.
+- On `Shutdown` the server is stopped **first** (so no new external request arrives
+  mid-drain), every attached surface is marked `stopped`, and then the normal
+  recorder drain proceeds.
+- `enabled = false` keeps the pure in-process mode: no port is bound, no endpoint is
+  published, and the default chat surface still works over the in-process bridge.
+
+### Launch-command emission
+
+The chat boot path prints the operator hint (`transport/http.LaunchHint`) — the
+resolved endpoint, a copy-pasteable `agentx surface launch <kind> …` template
+carrying the endpoint and **raw attach token**, and the list of launchable external
+kinds (`surfaces.ExternalKinds`) — so the user can attach surfaces from other
+terminals. The raw token appears only in this terminal output, never in persisted
+metadata.
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: Serve the transport alongside the chat surface
+
+- GIVEN an orchestrator started with the transport enabled
+- WHEN a client requests `/health` on the published endpoint
+- THEN it responds ok
+
+Use-case: A launched surface round-trips a prompt
+
+- GIVEN a running orchestrator serving the transport
+- WHEN a surface attaches with the launch CLI and submits a prompt over the transport
+- THEN the response streams back over the surface's event stream
+
+Use-case: Shutdown stops the transport
+
+- GIVEN a running orchestrator serving the transport with an attached surface
+- WHEN the orchestrator shuts down
+- THEN the endpoint becomes unreachable and the attached surface is marked stopped
+
 ## Non-Goals for v1
 
 - Public remote access over internet

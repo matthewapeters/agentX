@@ -55,6 +55,20 @@ var knownKinds = map[string]bool{
 // KnownKind reports whether kind is a launchable surface type.
 func KnownKind(kind string) bool { return knownKinds[kind] }
 
+// ExternalKinds returns the surface kinds a user launches as separate processes
+// (every known kind except the in-process chat surface), sorted for stable output.
+func ExternalKinds() []string {
+	out := make([]string, 0, len(knownKinds))
+	for k := range knownKinds {
+		if k == "chat" {
+			continue
+		}
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Registration is the record a surface publishes when attaching. The JSON shape
 // mirrors the frozen surface-registration.schema.json.
 type Registration struct {
@@ -209,6 +223,16 @@ func (r *Registry) Shutdown(surfaceID string) error {
 // ValidateToken reports whether raw matches this session's attach token. Used by
 // the transport to authorize write requests from already-attached surfaces.
 func (r *Registry) ValidateToken(raw string) bool { return r.token.Validate(raw) }
+
+// StopAll transitions every registered surface to stopped (orchestrator shutdown).
+func (r *Registry) StopAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, reg := range r.surfaces {
+		reg.LifecycleState = LifecycleStopped
+		r.surfaces[id] = reg
+	}
+}
 
 // Get returns the registration for an id.
 func (r *Registry) Get(surfaceID string) (Registration, bool) {

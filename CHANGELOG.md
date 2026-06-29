@@ -9,6 +9,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Wired the transport into the live runtime, completing M1 external-surface
+  enablement (TRN-6): when `[agentx.transport] enabled` (default), the orchestrator
+  allocates a loopback port and serves the HTTP/SSE server as part of `Start` (after
+  the bus/processing/registry/recorder are live, before accepting prompts) and stops
+  it on `Shutdown` (server first, then attached surfaces marked `stopped`, then the
+  recorder drains); `enabled = false` keeps the pure in-process mode. The chat boot
+  path prints the attach hint (endpoint + raw token + launchable kinds) for use in
+  other terminals. The SSE handler now also returns on server shutdown so a
+  long-lived stream cannot block the graceful drain. `*runtime.Orchestrator` carries
+  a compile-time assertion that it satisfies the transport `Provider`. Documented in
+  `docs/implementation/02_surface_orchestration_http.md`.
 - Added the `agentx surface launch` CLI (TRN-5): the canonical
   `agentx surface launch <kind> --session <s> --connect <ep> --token <t>` plus the
   `-l/--launch -s/--session -p/--port` compatibility alias (port mapped to a
