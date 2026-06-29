@@ -108,6 +108,10 @@ func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, 
 			return tools.Verdict{Decision: tools.Allow}, nil
 		case DecisionGlobal:
 			pol.Approve(tools.ScopeGlobal, d, args)
+			// Persist the global whitelist so the approval survives restarts.
+			if err := tools.SaveApprovals(o.settings.ToolApprovalsPath, pol.GlobalApprovals()); err != nil {
+				return tools.Verdict{}, err
+			}
 			return tools.Verdict{Decision: tools.Allow}, nil
 		default:
 			return tools.Verdict{Decision: tools.Deny, Reason: "user_denied"}, nil

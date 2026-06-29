@@ -11,8 +11,13 @@ identical to the runtime fallbacks, giving a common baseline from which to tune.
 | `agentx-thinking.md` | `~/.config/agentx/agentx-thinking.md` | `prompting.DefaultThinkingPrompt` | uses the constant |
 | `agentx-classification.md` | `~/.config/agentx/agentx-classification.md` | `classify.DefaultPrompt` | uses the constant |
 | `bootstrap-prompt.md` | `~/.config/agentx/bootstrap-prompt.md` | none — seed *is* the baseline | startup auto-submit is skipped |
-| `agentx-shell-commands.md` | `~/.config/agentx/agentx-shell-commands.md` | `tools.DefaultCatalog` (planned, M3b) | uses the constant |
+| `agentx-shell-commands.md` | `~/.config/agentx/agentx-shell-commands.md` | `tools.DefaultCatalog` | uses the constant |
+| `agentx-tool-blacklist.toml` | `~/.config/agentx/agentx-tool-blacklist.toml` | none — seed *is* the baseline | no blacklist rules |
 | `agentx.toml` | `~/.config/agentx/agentx.toml` | `config.Default()` | seeded on first run |
+
+The command-policy **global approvals** file
+(`~/.config/agentx/agentx-tool-approvals.toml`) is runtime-managed — written when you
+approve a command "globally" and reloaded next session — so it has no seed template.
 
 `bootstrap-prompt.md` is the one prompt with no built-in constant: when absent the
 startup auto-submit is simply skipped, so this seed file *is* its baseline rather

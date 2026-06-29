@@ -171,11 +171,19 @@ const (
 	ScopeGlobal
 )
 
+// ApprovalEntry is a persisted global approval: a tool id and the validated args
+// it was approved for.
+type ApprovalEntry struct {
+	Tool string            `toml:"tool"`
+	Args map[string]string `toml:"args"`
+}
+
 // Policy holds the three documented policy sets and evaluates in order:
-// blacklist → global whitelist → session whitelist → approval.
+// blacklist → global whitelist → session whitelist → approval. The global
+// whitelist persists across sessions (TOOL-5); the session set is in-memory.
 type Policy struct {
 	blacklist []Rule
-	global    map[string]bool
+	global    map[string]ApprovalEntry
 	session   map[string]bool
 }
 
@@ -183,7 +191,7 @@ type Policy struct {
 func NewPolicy(blacklist ...Rule) *Policy {
 	return &Policy{
 		blacklist: blacklist,
-		global:    map[string]bool{},
+		global:    map[string]ApprovalEntry{},
 		session:   map[string]bool{},
 	}
 }
@@ -193,13 +201,34 @@ func (p *Policy) AddRule(r Rule) { p.blacklist = append(p.blacklist, r) }
 
 // Approve records an approval for the given scope, keyed by tool + validated args.
 func (p *Policy) Approve(scope Scope, d Descriptor, args map[string]string) {
-	key := approvalKey(d, args)
-	switch scope {
-	case ScopeGlobal:
-		p.global[key] = true
-	default:
-		p.session[key] = true
+	key := approvalKey(d.ID, args)
+	if scope == ScopeGlobal {
+		p.global[key] = ApprovalEntry{Tool: d.ID, Args: cloneArgs(args)}
+		return
 	}
+	p.session[key] = true
+}
+
+// LoadGlobal seeds the global whitelist from persisted entries.
+func (p *Policy) LoadGlobal(entries []ApprovalEntry) {
+	for _, e := range entries {
+		p.global[approvalKey(e.Tool, e.Args)] = ApprovalEntry{Tool: e.Tool, Args: cloneArgs(e.Args)}
+	}
+}
+
+// GlobalApprovals returns the persisted global approvals, sorted by key for
+// stable on-disk output.
+func (p *Policy) GlobalApprovals() []ApprovalEntry {
+	keys := make([]string, 0, len(p.global))
+	for k := range p.global {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]ApprovalEntry, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, p.global[k])
+	}
+	return out
 }
 
 // Evaluate applies schema validation, then the documented policy order:
@@ -220,8 +249,8 @@ func (p *Policy) Evaluate(d Descriptor, args map[string]string) Verdict {
 			return Verdict{Deny, reason}
 		}
 	}
-	key := approvalKey(d, args)
-	if p.global[key] || p.session[key] {
+	key := approvalKey(d.ID, args)
+	if _, ok := p.global[key]; ok || p.session[key] {
 		return Verdict{Allow, ""}
 	}
 	if d.RequiresApproval {
@@ -231,15 +260,15 @@ func (p *Policy) Evaluate(d Descriptor, args map[string]string) Verdict {
 }
 
 // approvalKey identifies an approval by tool id plus canonical (sorted) args, so
-// "rm path=x" can be approved while a different argument set is not.
-func approvalKey(d Descriptor, args map[string]string) string {
+// a tool can be approved for one argument set while a different one is not.
+func approvalKey(id string, args map[string]string) string {
 	names := make([]string, 0, len(args))
 	for n := range args {
 		names = append(names, n)
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	b.WriteString(d.ID)
+	b.WriteString(id)
 	for _, n := range names {
 		b.WriteByte(0)
 		b.WriteString(n)
@@ -247,6 +276,14 @@ func approvalKey(d Descriptor, args map[string]string) string {
 		b.WriteString(args[n])
 	}
 	return b.String()
+}
+
+func cloneArgs(args map[string]string) map[string]string {
+	out := make(map[string]string, len(args))
+	for k, v := range args {
+		out[k] = v
+	}
+	return out
 }
 
 func matchesAny(re *regexp.Regexp, args map[string]string) bool {

@@ -91,6 +91,9 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ToolsEnabled:          cfg.ToolsEnabled(),
 		ToolReadOnly:          cfg.ToolReadOnly(),
 		ToolCatalog:           toolCatalog,
+		ToolBlacklistPath:     paths.ToolBlacklistPath(),
+		ToolApprovalsPath:     paths.ToolApprovalsPath(),
+		ToolOutputMaxBytes:    cfg.ToolOutputMaxBytes(),
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err

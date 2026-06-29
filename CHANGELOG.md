@@ -38,6 +38,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   with policy/approval and read-only gating, `tool_call`/`tool_result` events, and a
   respond turn that carries the result preview + ref (not the full artifact). New
   `[agentx.tools]` config and `agentx-shell-commands.md` catalog loading.
+- Persisted the command policy across sessions (TOOL-5): the blacklist loads from
+  `agentx-tool-blacklist.toml` and global approvals are written to / reloaded from
+  `agentx-tool-approvals.toml` under `~/.config/agentx/`; executor output cap now
+  honors `[agentx.tools] output_max_bytes`. New blacklist seed template.
 - Captured the tool-runtime design (first built-in command-line tool) ahead of
   implementation: `docs/build-plan/04_tool_runtime_backlog.md` (TOOL-1…5 for M3b),
   the `single_tool` cycle + output-artifact/context-shaping notes in

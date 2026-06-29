@@ -124,6 +124,14 @@ func (c Config) ToolsEnabled() bool { return boolOr(c.Agentx.Tools.Enabled, true
 // (default on — the rollout default).
 func (c Config) ToolReadOnly() bool { return boolOr(c.Agentx.Tools.ReadOnly, true) }
 
+// ToolOutputMaxBytes is the captured-output cap before truncation (default 65536).
+func (c Config) ToolOutputMaxBytes() int {
+	if c.Agentx.Tools.OutputMaxBytes > 0 {
+		return c.Agentx.Tools.OutputMaxBytes
+	}
+	return 65536
+}
+
 // ThinkingEnabled reports whether the respond phase requests model reasoning.
 // Absent config defaults to true.
 func (c Config) ThinkingEnabled() bool {
@@ -330,6 +338,18 @@ func (p Paths) ThinkingPath() string {
 // (~/.config/agentx/agentx-shell-commands.md).
 func (p Paths) ShellCommandsPath() string {
 	return filepath.Join(p.configDir(), "agentx-shell-commands.md")
+}
+
+// ToolBlacklistPath is the persisted command-policy blacklist
+// (~/.config/agentx/agentx-tool-blacklist.toml).
+func (p Paths) ToolBlacklistPath() string {
+	return filepath.Join(p.configDir(), "agentx-tool-blacklist.toml")
+}
+
+// ToolApprovalsPath is the persisted global approval whitelist, written when a
+// command is approved globally (~/.config/agentx/agentx-tool-approvals.toml).
+func (p Paths) ToolApprovalsPath() string {
+	return filepath.Join(p.configDir(), "agentx-tool-approvals.toml")
 }
 
 // ReadPromptFile reads an optional Markdown prompt file, returning its trimmed

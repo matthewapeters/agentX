@@ -66,6 +66,19 @@ pauses rather than blocks the UI:
   executes or aborts
 - the same `awaiting_input` mechanism backs Stage-2 classification clarification
 
+## Policy Persistence
+
+The policy survives restarts (TOOL-5), under `~/.config/agentx/`:
+
+- **blacklist** — loaded from `agentx-tool-blacklist.toml` (`[[rule]]` of
+  `tool`/`pattern`/`reason`, RE2 patterns); a missing file means no rules. Seeded
+  from `config/seed/agentx-tool-blacklist.toml`. This is the user's to edit.
+- **global whitelist** — `agentx-tool-approvals.toml` (`[[approval]]` of `tool` +
+  `args`). Runtime-managed: an "approve global" decision appends the entry and
+  rewrites the file; it is reloaded into the policy at the next session's start. Keyed
+  by tool id + canonical args, so the approval is scoped to that exact argument set.
+- **session whitelist** — in-memory only, never persisted.
+
 ## Output Artifacts and Context Shaping
 
 Full tool output is persisted but **not** fed wholesale to the model:

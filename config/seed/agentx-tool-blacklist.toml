@@ -1,0 +1,18 @@
+# AgentX command-policy blacklist
+#
+# Seeded to ~/.config/agentx/agentx-tool-blacklist.toml. The blacklist always wins:
+# a matching rule denies a command before any whitelist or approval is considered
+# (docs/implementation/05_security_approvals_and_command_policy.md).
+#
+# Each rule applies to a tool by id (or "*" for any tool). A rule with no pattern
+# denies the tool unconditionally; otherwise it denies when ANY argument value
+# matches the RE2 pattern. Patterns are Go regexp (RE2) — escape backslashes for TOML.
+#
+# Edit freely: this file is yours to tune. Approvals you grant "globally" are written
+# separately to agentx-tool-approvals.toml.
+
+# Refuse to touch credential and secret stores with any tool.
+[[rule]]
+tool    = "*"
+pattern = "/\\.ssh/|/\\.aws/|/\\.gnupg/|/etc/shadow"
+reason  = "sensitive_path"

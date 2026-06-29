@@ -20,14 +20,23 @@ func (o *Orchestrator) buildTools() error {
 		o.registry = tools.DefaultRegistry()
 	}
 	if o.policy == nil {
-		o.policy = tools.NewPolicy()
+		blacklist, err := tools.LoadBlacklist(o.settings.ToolBlacklistPath)
+		if err != nil {
+			return err
+		}
+		o.policy = tools.NewPolicy(blacklist...)
+		approvals, err := tools.LoadApprovals(o.settings.ToolApprovalsPath)
+		if err != nil {
+			return err
+		}
+		o.policy.LoadGlobal(approvals)
 	}
 	if o.runner == nil {
 		art, err := o.store.Artifacts(o.id.ID)
 		if err != nil {
 			return fmt.Errorf("tool artifacts: %w", err)
 		}
-		o.runner = tools.NewExecutor(art, 0, 0)
+		o.runner = tools.NewExecutor(art, 0, o.settings.ToolOutputMaxBytes)
 	}
 	if o.proposer == nil {
 		chat := func(ctx context.Context, msgs []prompting.Message) (string, error) {

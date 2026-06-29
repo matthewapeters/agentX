@@ -59,6 +59,13 @@ type Settings struct {
 	// ToolCatalog is the LLM-facing tool catalog injected into the proposal prompt
 	// (from agentx-shell-commands.md). Empty uses tools.DefaultCatalog.
 	ToolCatalog string
+	// ToolBlacklistPath and ToolApprovalsPath persist the command policy across
+	// sessions (blacklist rules in, global approvals in/out). Empty disables I/O.
+	ToolBlacklistPath string
+	ToolApprovalsPath string
+	// ToolOutputMaxBytes caps captured tool output before truncation (full output
+	// still persists to the artifact). <=0 uses the executor default.
+	ToolOutputMaxBytes int
 }
 
 // Orchestrator owns the per-process runtime: session, event bus, processing
