@@ -47,5 +47,16 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if cmd.Launch != nil {
+		res, err := cli.Launch(ctx, *cmd.Launch)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("surface attached: %s (%s)\n", res.SurfaceID, res.SurfaceKind)
+		fmt.Printf("session: %s / %s\n", res.SessionName, res.SessionID)
+		fmt.Printf("endpoint: %s\n", res.Endpoint)
+		return nil
+	}
+
 	return app.RunChat(ctx, app.Options{Logo: logo})
 }

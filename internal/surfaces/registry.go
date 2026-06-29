@@ -41,6 +41,20 @@ const (
 // fingerprintLen is the hex-character width of a published token fingerprint.
 const fingerprintLen = 16
 
+// knownKinds are the surface types the launch CLI accepts (validation rule 1).
+// The registry itself is open-ended; this is the set a user can launch in v1.
+var knownKinds = map[string]bool{
+	"chat":               true,
+	"files":              true,
+	"config":             true,
+	"context":            true,
+	"context-history":    true,
+	"context-visualizer": true,
+}
+
+// KnownKind reports whether kind is a launchable surface type.
+func KnownKind(kind string) bool { return knownKinds[kind] }
+
 // Registration is the record a surface publishes when attaching. The JSON shape
 // mirrors the frozen surface-registration.schema.json.
 type Registration struct {

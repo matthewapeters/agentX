@@ -9,6 +9,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added the `agentx surface launch` CLI (TRN-5): the canonical
+  `agentx surface launch <kind> --session <s> --connect <ep> --token <t>` plus the
+  `-l/--launch -s/--session -p/--port` compatibility alias (port mapped to a
+  loopback endpoint; alias also accepts `-t/--token` since v1 requires one). It
+  validates in order — known surface kind, non-empty session selector, local-safe
+  (loopback) endpoint, endpoint reachability, session-selector match, then token —
+  mapping each failure to a deterministic category (validation | auth | transport |
+  conflict) and a non-zero exit. A new `transport/http.Client` performs the attach
+  (`GET /sessions/current` + `POST /surface/register`), and `surfaces.KnownKind`
+  gates the launchable surface set. Documented in
+  `docs/implementation/02_surface_orchestration_http.md`.
 - Added transport port allocation and endpoint publication (TRN-4): a new
   `[agentx.transport]` config table (`enabled`, `host`, `port_start`, `port_end`,
   default loopback `127.0.0.1:8420-8460`); `transport/http.Allocate` binds the

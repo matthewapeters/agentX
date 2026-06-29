@@ -8,16 +8,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/cucumber/godog"
 
+	"agentx/internal/cli"
 	"agentx/internal/session"
 	"agentx/internal/state"
 	"agentx/internal/surfaces"
@@ -83,6 +86,9 @@ type transportWorld struct {
 	respBody   []byte
 
 	streams []*sseStream
+
+	launchResult cli.LaunchResult
+	launchErr    error
 }
 
 // sseStream reads SSE data lines from an open /events connection on a goroutine.
@@ -137,6 +143,16 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^a client POSTs "/model/switch"$`, w.postModelSwitch)
 	sc.Step(`^the orchestrator received decision "([^"]*)"$`, w.receivedDecision)
 	sc.Step(`^the surface "([^"]*)" on the transport has lifecycle "([^"]*)"$`, w.lifecycleOf)
+
+	// surface launch CLI (TRN-5).
+	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" with the valid token$`, w.launchValid)
+	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" with token "([^"]*)"$`, w.launchToken)
+	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" against an unreachable endpoint$`, w.launchUnreachable)
+	sc.Step(`^I launch via the compatibility alias for the running server$`, w.launchAlias)
+	sc.Step(`^the launch succeeds$`, w.launchSucceeds)
+	sc.Step(`^the launched surface kind is "([^"]*)"$`, w.launchedKind)
+	sc.Step(`^the launched surface appears in the registry$`, w.launchedInRegistry)
+	sc.Step(`^the launch fails with category "([^"]*)"$`, w.launchFailsCategory)
 }
 
 func (w *transportWorld) serverNamed(name string) func() error {
@@ -412,6 +428,91 @@ func (w *transportWorld) lifecycleOf(id, lifecycle string) error {
 	}
 	if reg.LifecycleState != lifecycle {
 		return fmt.Errorf("surface %q lifecycle = %q, want %q", id, reg.LifecycleState, lifecycle)
+	}
+	return nil
+}
+
+func (w *transportWorld) launch(args cli.LaunchArgs) error {
+	w.launchResult, w.launchErr = cli.Launch(context.Background(), args)
+	return nil
+}
+
+func (w *transportWorld) launchValid(kind, sessionSel string) error {
+	return w.launch(cli.LaunchArgs{
+		SurfaceKind: kind,
+		Session:     sessionSel,
+		Connect:     w.httptst.URL,
+		Token:       w.token.Raw(),
+	})
+}
+
+func (w *transportWorld) launchToken(kind, sessionSel, token string) error {
+	return w.launch(cli.LaunchArgs{
+		SurfaceKind: kind,
+		Session:     sessionSel,
+		Connect:     w.httptst.URL,
+		Token:       token,
+	})
+}
+
+func (w *transportWorld) launchUnreachable(kind, sessionSel string) error {
+	return w.launch(cli.LaunchArgs{
+		SurfaceKind: kind,
+		Session:     sessionSel,
+		Connect:     "http://127.0.0.1:1",
+		Token:       w.token.Raw(),
+	})
+}
+
+func (w *transportWorld) launchAlias() error {
+	u, err := url.Parse(w.httptst.URL)
+	if err != nil {
+		return err
+	}
+	cmd, err := cli.Parse([]string{"-l", "files", "-s", "calm-otter", "-p", u.Port(), "-t", w.token.Raw()})
+	if err != nil {
+		w.launchErr = err
+		return nil
+	}
+	if cmd.Launch == nil {
+		return fmt.Errorf("alias did not parse to a launch command")
+	}
+	return w.launch(*cmd.Launch)
+}
+
+func (w *transportWorld) launchSucceeds() error {
+	if w.launchErr != nil {
+		return fmt.Errorf("launch failed: %v", w.launchErr)
+	}
+	return nil
+}
+
+func (w *transportWorld) launchedKind(want string) error {
+	if w.launchResult.SurfaceKind != want {
+		return fmt.Errorf("launched kind = %q, want %q", w.launchResult.SurfaceKind, want)
+	}
+	return nil
+}
+
+func (w *transportWorld) launchedInRegistry() error {
+	for _, reg := range w.prov.reg.List() {
+		if reg.SurfaceID == w.launchResult.SurfaceID {
+			return nil
+		}
+	}
+	return fmt.Errorf("launched surface %q not found in registry", w.launchResult.SurfaceID)
+}
+
+func (w *transportWorld) launchFailsCategory(category string) error {
+	if w.launchErr == nil {
+		return fmt.Errorf("launch succeeded, expected failure with category %q", category)
+	}
+	var ae *transporthttp.AttachError
+	if !errors.As(w.launchErr, &ae) {
+		return fmt.Errorf("error %v is not an *AttachError", w.launchErr)
+	}
+	if ae.Category != category {
+		return fmt.Errorf("category = %q, want %q", ae.Category, category)
 	}
 	return nil
 }

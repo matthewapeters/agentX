@@ -543,6 +543,48 @@ Use-case: Publish the endpoint
 - WHEN the transport endpoint is published
 - THEN the session transport metadata reports that endpoint
 
+## Launch Implementation (TRN-5)
+
+This section refines the Normative CLI Specification above with the implementation
+mechanics. It adds detail; it does not change the CLI contract.
+
+### Command parsing
+
+- Canonical: `agentx surface launch <surface-name> --session <s> --connect <ep>
+  --token <t>` (positional kind after `launch`, then flags).
+- Compatibility alias: `agentx -l|--launch <kind> -s|--session <session>
+  -p|--port <port>`; the alias maps `port` → `http://127.0.0.1:<port>` **before**
+  registration (validation rule 5). Because v1 registration requires an attach
+  token, the alias also accepts `-t|--token <token>` (an extension to the historical
+  alias, which predates the attach-token contract).
+
+### Validation order and reason categories
+
+`cli.Launch` validates in this order, mapping each failure to a deterministic
+category (and a non-zero exit):
+
+1. `surface-name` is a known surface kind (`surfaces.KnownKind`) → else `validation`.
+2. `session` selector is non-empty → else `validation`.
+3. `connect` endpoint is a local-safe (loopback) address → else `validation`.
+4. Reach the endpoint (`GET /sessions/current`) → unreachable → `transport`; then the
+   selector must equal the running session's id or name → mismatch → `validation`
+   (rule 2: resolve to exactly one active session).
+5. Register (`POST /surface/register` with the token). The orchestrator's registry
+   decides: invalid/empty token → `auth`; duplicate id → `conflict`.
+
+### Attach client
+
+A small HTTP client (`transport/http.Client`) performs `GET /sessions/current` and
+`POST /surface/register`, decoding `{error,category}` bodies into a typed
+`AttachError{Category,Message}`; connection failures become category `transport`. A
+headless launch sets `transport_address` to the endpoint it attached through.
+
+### Operator output
+
+On success `cli.Launch` returns the `surface_id`, resolved `session_id` /
+`session_name`, and connected endpoint, which the command prints (exit 0). On failure
+the error carries the category and a remediation hint (exit non-zero).
+
 ## Non-Goals for v1
 
 - Public remote access over internet
