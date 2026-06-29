@@ -2,17 +2,16 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"agentx/internal/classify"
 	"agentx/internal/prompting"
 	"agentx/internal/session"
 	"agentx/internal/state"
+	"agentx/internal/tools"
 )
 
 // Settings are the runtime inputs the composition root derives from configuration.
@@ -53,6 +52,13 @@ type Settings struct {
 	// the chat surface's focus-aware panel and widget borders (from [agentx.theme]).
 	ActiveBorderColor   string
 	InactiveBorderColor string
+	// ToolsEnabled turns on the single_tool execution cycle.
+	ToolsEnabled bool
+	// ToolReadOnly restricts execution to read-risk tools (the rollout default).
+	ToolReadOnly bool
+	// ToolCatalog is the LLM-facing tool catalog injected into the proposal prompt
+	// (from agentx-shell-commands.md). Empty uses tools.DefaultCatalog.
+	ToolCatalog string
 }
 
 // Orchestrator owns the per-process runtime: session, event bus, processing
@@ -70,6 +76,10 @@ type Orchestrator struct {
 	recDone    chan error
 	recSub     *state.Subscription
 	gate       approvalGate
+	registry   *tools.Registry
+	policy     *tools.Policy
+	proposer   *tools.Proposer
+	runner     ToolRunner
 
 	mu        sync.Mutex
 	started   bool
@@ -132,6 +142,11 @@ func (o *Orchestrator) Start() error {
 			return o.model.Chat(ctx, o.settings.OllamaModel, msgs, func(string) {}, nil)
 		}
 		o.classifier = classify.New(o.settings.ClassificationPrompt, o.settings.ClassificationRetries, chat)
+	}
+	if o.settings.ToolsEnabled {
+		if err := o.buildTools(); err != nil {
+			return err
+		}
 	}
 
 	recorder := o.store.Recorder(id.ID)
@@ -247,8 +262,6 @@ func (o *Orchestrator) SubmitBootstrap(ctx context.Context) error {
 func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPrompt, classifyPrompt bool) error {
 	o.mu.Lock()
 	ready := o.started && o.accepting
-	model := o.model
-	assembler := o.assembler
 	classifier := o.classifier
 	o.mu.Unlock()
 	if !ready {
@@ -274,71 +287,28 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		// v1: only respond_directly executes; reserved routes fall back to respond.
 	}
 
+	// Single-tool execution cycle: propose → policy/approval → execute → answer
+	// with the result folded in. A reserved route, disabled tools, or a no-tool
+	// proposal fall through to a normal answer.
+	if route == string(classify.SingleTool) && o.toolsReady() {
+		toolCtx, handled, terr := o.runToolPhase(ctx, text)
+		if terr != nil {
+			// Interrupted while awaiting approval: end the cycle cleanly.
+			o.setProcessing(state.StateCompleted, state.PhaseNone)
+			return nil
+		}
+		if handled {
+			msgs := o.assembler.Assemble(text + toolCtx)
+			return o.finishCycle(o.streamResponse(ctx, msgs, nil, false))
+		}
+	}
+
 	// Route-aware thinking: the verdict decides whether this turn reasons before
-	// answering. While thinking the cycle dwells in PhaseThinking until the first
-	// content delta arrives, then flips to PhaseRespond.
+	// answering, with a wall-clock budget that falls back to a direct answer.
 	doThink := o.thinkForRoute(route)
-	prePhase := state.PhaseRespond
-	if doThink {
-		prePhase = state.PhaseThinking
-	}
-	o.setProcessing(state.StateWorking, prePhase)
-
-	var onThink func(string)
-	if doThink {
-		onThink = func(t string) {
-			o.publish("THINKING", state.ContentThinking, map[string]any{"text": t})
-		}
-	}
-	var respondStarted atomic.Bool
-	onDelta := func(delta string) {
-		if doThink && respondStarted.CompareAndSwap(false, true) {
-			o.setProcessing(state.StateWorking, state.PhaseRespond)
-		}
-		o.publish("AGENT_CONTENT", state.ContentAgentResponse, map[string]any{"text": delta})
-	}
-
-	// Bound the thinking phase: if the budget elapses before any content arrives,
-	// cancel this stream (keeping the partial reasoning) and fall back to a direct,
-	// non-thinking answer so the turn still completes.
-	respondCtx := ctx
-	if doThink && o.settings.ThinkingBudget > 0 {
-		var cancel context.CancelFunc
-		respondCtx, cancel = context.WithCancel(ctx)
-		timer := time.AfterFunc(o.settings.ThinkingBudget, func() {
-			if !respondStarted.Load() {
-				cancel()
-			}
-		})
-		defer timer.Stop()
-		defer cancel()
-	}
-
-	messages := assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route)
-	_, err := model.Chat(respondCtx, o.settings.OllamaModel, messages, onDelta, onThink)
-
-	// Thinking budget exceeded (our child ctx canceled, parent still live, no
-	// content yet): answer directly without thinking.
-	if errors.Is(err, context.Canceled) && ctx.Err() == nil && !respondStarted.Load() {
-		o.publish("THINKING", state.ContentThinking, map[string]any{"text": "\n…(thinking budget reached — answering directly)"})
-		o.setProcessing(state.StateWorking, state.PhaseRespond)
-		_, err = model.Chat(ctx, o.settings.OllamaModel, assembler.Assemble(text), onDelta, nil)
-	}
-
-	switch {
-	case err == nil:
-		o.setProcessing(state.StateCompleted, state.PhaseNone)
-		return nil
-	case errors.Is(err, context.Canceled):
-		// Interrupted by the user: not a failure. Keep the partial response and
-		// end the cycle cleanly.
-		o.setProcessing(state.StateCompleted, state.PhaseNone)
-		return nil
-	default:
-		o.publish("ERROR", state.ContentAgentResponse, map[string]any{"text": err.Error()})
-		o.setProcessing(state.StateFailed, state.PhaseNone)
-		return err
-	}
+	messages := o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route)
+	fallback := o.assembler.Assemble(text)
+	return o.finishCycle(o.streamResponse(ctx, messages, fallback, doThink))
 }
 
 // thinkForRoute reports whether this turn should reason before answering: the

@@ -31,6 +31,16 @@ type Agentx struct {
 	Output         Output         `toml:"output"`
 	Theme          Theme          `toml:"theme"`
 	Thinking       Thinking       `toml:"thinking"`
+	Tools          Tools          `toml:"tools"`
+}
+
+// Tools is the [agentx.tools] table gating the single_tool execution cycle.
+// Enabled and ReadOnly are pointers so absent keys take their defaults.
+type Tools struct {
+	Enabled        *bool `toml:"enabled"`
+	ReadOnly       *bool `toml:"read_only"`
+	TimeoutSeconds int   `toml:"timeout_seconds"`
+	OutputMaxBytes int   `toml:"output_max_bytes"`
 }
 
 // Thinking is the [agentx.thinking] table. Enabled requests model reasoning
@@ -106,6 +116,13 @@ func (c Config) MaxWidgetLines() int {
 	}
 	return c.Agentx.Output.MaxWidgetLines
 }
+
+// ToolsEnabled reports whether the single_tool execution cycle is on (default on).
+func (c Config) ToolsEnabled() bool { return boolOr(c.Agentx.Tools.Enabled, true) }
+
+// ToolReadOnly reports whether execution is restricted to read-risk tools
+// (default on — the rollout default).
+func (c Config) ToolReadOnly() bool { return boolOr(c.Agentx.Tools.ReadOnly, true) }
 
 // ThinkingEnabled reports whether the respond phase requests model reasoning.
 // Absent config defaults to true.
@@ -248,6 +265,12 @@ func Default() Config {
 				ActiveBorder:   defaultActiveBorder,
 				InactiveBorder: defaultInactiveBorder,
 			},
+			Tools: Tools{
+				Enabled:        boolPtr(true),
+				ReadOnly:       boolPtr(true),
+				TimeoutSeconds: 30,
+				OutputMaxBytes: 65536,
+			},
 		},
 	}
 }
@@ -301,6 +324,12 @@ func (p Paths) ClassificationPath() string {
 // (~/.config/agentx/agentx-thinking.md).
 func (p Paths) ThinkingPath() string {
 	return filepath.Join(p.configDir(), "agentx-thinking.md")
+}
+
+// ShellCommandsPath is the LLM-facing tool catalog file
+// (~/.config/agentx/agentx-shell-commands.md).
+func (p Paths) ShellCommandsPath() string {
+	return filepath.Join(p.configDir(), "agentx-shell-commands.md")
 }
 
 // ReadPromptFile reads an optional Markdown prompt file, returning its trimmed

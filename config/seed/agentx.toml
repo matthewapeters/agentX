@@ -27,3 +27,9 @@ invoke_planner   = true
 [agentx.theme]
 active_border_color   = "cyan"        # focused panel + selected widget (bold)
 inactive_border_color = "dark gray"   # unfocused panel + other widgets
+
+[agentx.tools]
+enabled          = true     # master switch for the single_tool execution cycle
+read_only        = true     # only read-risk tools run; writes/network need approval
+timeout_seconds  = 30       # per-command execution timeout
+output_max_bytes = 65536    # output cap before truncation (full output → artifact)

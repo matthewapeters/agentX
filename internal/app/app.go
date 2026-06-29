@@ -68,6 +68,10 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 	if err != nil {
 		return nil, err
 	}
+	toolCatalog, err := config.ReadPromptFile(paths.ShellCommandsPath())
+	if err != nil {
+		return nil, err
+	}
 
 	orc := runtime.New(runtime.Settings{
 		SessionRoot:           root,
@@ -84,6 +88,9 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ThinkingRoutes:        cfg.ThinkingRoutes(),
 		ActiveBorderColor:     cfg.ActiveBorderColor(),
 		InactiveBorderColor:   cfg.InactiveBorderColor(),
+		ToolsEnabled:          cfg.ToolsEnabled(),
+		ToolReadOnly:          cfg.ToolReadOnly(),
+		ToolCatalog:           toolCatalog,
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err

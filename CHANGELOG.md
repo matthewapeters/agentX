@@ -33,6 +33,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   state, an orchestrator approval gate (`RequestApproval`/`Resolve`) that pauses the
   cycle and persists the approved scope, and a chat affordance mapping a/g/d to
   approve-session / approve-global / deny.
+- Wired the end-to-end `single_tool` cycle (TOOL-4): a strict-JSON tool proposer
+  (`tools.Proposer` + `DefaultCatalog`), `classify → tool → respond` integration
+  with policy/approval and read-only gating, `tool_call`/`tool_result` events, and a
+  respond turn that carries the result preview + ref (not the full artifact). New
+  `[agentx.tools]` config and `agentx-shell-commands.md` catalog loading.
 - Captured the tool-runtime design (first built-in command-line tool) ahead of
   implementation: `docs/build-plan/04_tool_runtime_backlog.md` (TOOL-1…5 for M3b),
   the `single_tool` cycle + output-artifact/context-shaping notes in
