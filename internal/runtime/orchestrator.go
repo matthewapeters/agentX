@@ -297,6 +297,13 @@ func (o *Orchestrator) AttachToken() surfaces.AttachToken { return o.token }
 // the transport is disabled.
 func (o *Orchestrator) Endpoint() string { return o.endpoint }
 
+// History returns the session's persisted event log (the durable source of truth,
+// including each event's enabled state and ordinal) for seeding an attaching
+// surface. Read from disk so it survives independent of in-memory fan-out.
+func (o *Orchestrator) History() ([]state.Event, error) {
+	return o.store.Recorder(o.id.ID).Load()
+}
+
 // CheckModel verifies the configured model is available (CHT-C4). It is called
 // after Start, before prompts are accepted, so an unavailable model is reported
 // clearly rather than surfacing as a per-prompt failure. ctx bounds the probe.

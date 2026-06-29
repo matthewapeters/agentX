@@ -1,14 +1,18 @@
 package http
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"agentx/internal/session"
+	"agentx/internal/state"
 	"agentx/internal/surfaces"
 )
 
@@ -83,6 +87,72 @@ func (c *Client) Register(ctx context.Context, kind, transportAddr, token string
 		return surfaces.Registration{}, &AttachError{Category: "transport", Message: "malformed registration response"}
 	}
 	return reg, nil
+}
+
+// Seed fetches the persisted session event log — the durable snapshot a surface
+// renders before resuming the live stream (SS-1).
+func (c *Client) Seed(ctx context.Context) ([]state.Event, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+"/sessions/current/events", nil)
+	if err != nil {
+		return nil, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, attachErrorFrom(resp)
+	}
+	var events []state.Event
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		return nil, &AttachError{Category: "transport", Message: "malformed seed response"}
+	}
+	return events, nil
+}
+
+// Subscribe opens the live event stream after the given cursor and delivers events
+// on the returned channel until ctx is canceled or the stream ends (SS-1). Pass the
+// last ordinal from Seed to resume with no gap or duplicate; pass 0 for the full
+// stream.
+func (c *Client) Subscribe(ctx context.Context, after uint64) (<-chan state.Event, error) {
+	url := fmt.Sprintf("%s/events?after=%s", c.endpoint, strconv.FormatUint(after, 10))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		return nil, attachErrorFrom(resp)
+	}
+
+	ch := make(chan state.Event, 64)
+	go func() {
+		defer close(ch)
+		defer resp.Body.Close()
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			data, ok := strings.CutPrefix(scanner.Text(), "data:")
+			if !ok {
+				continue
+			}
+			var ev state.Event
+			if json.Unmarshal([]byte(strings.TrimSpace(data)), &ev) != nil {
+				continue
+			}
+			select {
+			case ch <- ev:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return ch, nil
 }
 
 // attachErrorFrom decodes a {error,category} body into an AttachError, defaulting

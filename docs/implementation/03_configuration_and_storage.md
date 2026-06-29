@@ -151,6 +151,9 @@ Minimum required fields:
 
 Suggested optional fields:
 
+- ordinal — per-session monotonic sequence stamped by the event bus at publish
+  time; the canonical total order and the resume cursor for surface attach
+  (seed-then-subscribe). Carried on both the live event and its persisted copy.
 - correlation_id
 - parent_event_id
 - surface_id

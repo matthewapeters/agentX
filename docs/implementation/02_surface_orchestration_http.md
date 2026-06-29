@@ -585,6 +585,63 @@ On success `cli.Launch` returns the `surface_id`, resolved `session_id` /
 `session_name`, and connected endpoint, which the command prints (exit 0). On failure
 the error carries the category and a remediation hint (exit non-zero).
 
+## Seed + Resume (SS-1)
+
+This section refines the Read/Streaming endpoints with the attach protocol a
+rendering surface uses to mirror a session: seed from the durable log, then resume
+the live stream by cursor. It adds detail; it does not change the endpoint contract.
+
+### Event ordinal
+
+Every event carries a per-session monotonic `ordinal`, stamped by the bus at publish
+time (not at disk write), so the live event and its persisted copy share one
+identity. The ordinal is the canonical total order and the resume cursor. (See the
+`ordinal` field in `event-envelope.schema.json`.)
+
+### Endpoints
+
+- `GET /sessions/current/events` → the persisted session event log
+  (`Provider.History`), the **seed**: authoritative and durable, carrying each
+  event's `enabled` and `ordinal`.
+- `GET /events?after=<ordinal>` (SSE) → the live stream **after** the cursor. The
+  handler:
+  1. subscribes to the bus, then captures a `boundary = Bus.CurrentOrdinal()`;
+  2. serves `(after, boundary]` from the durable log (polling briefly for the
+     recorder to persist up to the boundary, so there is no gap);
+  3. serves `(boundary, ∞)` from the subscription.
+
+  Because the boundary partitions history vs. live by ordinal, the handover has **no
+  gap and no duplicate** and needs no client-side de-duplication. `after=0` yields the
+  full stream (seed + live) in one connection.
+
+### Client attach sequence
+
+`transport/http.Client` exposes `Seed(ctx)` and `Subscribe(ctx, after)`. A surface:
+seeds → renders the snapshot → notes the last ordinal → `Subscribe(ctx, last)` →
+applies live events thereafter.
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: Seed returns the durable log
+
+- GIVEN a session with recorded events
+- WHEN a surface GETs `/sessions/current/events`
+- THEN it receives the events in ordinal order, each carrying its `enabled` and
+  `ordinal`
+
+Use-case: Resume after the seed delivers only newer events
+
+- GIVEN a surface that seeded through ordinal N
+- WHEN it subscribes with `after=N` and new events are published
+- THEN it receives exactly the events with ordinal > N, in order, with no gap or
+  duplicate
+
+Use-case: Full stream from zero
+
+- GIVEN a session with recorded events and a live publisher
+- WHEN a surface subscribes with `after=0`
+- THEN it receives the seed events followed by live events, each exactly once
+
 ## Serve-Alongside Lifecycle (TRN-6)
 
 This section refines the Surface Model ("run surfaces as separate processes managed

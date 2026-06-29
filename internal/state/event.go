@@ -46,6 +46,12 @@ type Event struct {
 	ContentType   ContentType `json:"content_type"`
 	Payload       any         `json:"payload"`
 	Enabled       bool        `json:"enabled"`
+	// Ordinal is a per-session monotonic sequence stamped by the Bus at publish
+	// time (1-based; 0 means unstamped). It is the canonical total order and the
+	// resume cursor for surface attach (seed-then-subscribe). Unlike the recorder's
+	// filename seq, it travels on the envelope so live bus events and their
+	// persisted files share one identity.
+	Ordinal       uint64      `json:"ordinal,omitempty"`
 	CorrelationID string      `json:"correlation_id,omitempty"`
 	ParentEventID string      `json:"parent_event_id,omitempty"`
 	SurfaceID     string      `json:"surface_id,omitempty"`

@@ -1,18 +1,27 @@
 package state
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // Bus fans Events out to every active Subscription. Each subscription has its
 // own ordered, unbounded queue drained by a dedicated goroutine, so a slow
 // consumer never blocks the publisher or other subscribers.
 type Bus struct {
-	mu   sync.Mutex
-	subs map[int]*Subscription
-	next int
+	mu      sync.Mutex
+	subs    map[int]*Subscription
+	next    int
+	ordinal atomic.Uint64
 }
 
 // NewBus returns an empty Bus.
 func NewBus() *Bus { return &Bus{subs: make(map[int]*Subscription)} }
+
+// CurrentOrdinal returns the highest ordinal assigned so far (0 before any
+// publish). A surface captures this at subscribe time as the boundary between the
+// disk-seeded history (ordinal <= boundary) and the live stream (ordinal > boundary).
+func (b *Bus) CurrentOrdinal() uint64 { return b.ordinal.Load() }
 
 // Subscribe attaches a new subscriber and returns its Subscription. Callers read
 // from Subscription.C and must call Close when done.
@@ -31,8 +40,11 @@ func (b *Bus) Subscribe() *Subscription {
 	return s
 }
 
-// Publish enqueues ev to every current subscriber in subscription order.
+// Publish stamps ev with the next monotonic ordinal and enqueues it to every
+// current subscriber in subscription order. Stamping at publish (rather than at
+// disk write) means the live event and its persisted copy share one identity.
 func (b *Bus) Publish(ev Event) {
+	ev.Ordinal = b.ordinal.Add(1)
 	b.mu.Lock()
 	subs := make([]*Subscription, 0, len(b.subs))
 	for _, s := range b.subs {

@@ -9,6 +9,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added the disk-seeded, cursor-resumed event stream for attaching surfaces (SS-1,
+  first slice of M2): the event bus now stamps a per-session monotonic `ordinal` on
+  every event at publish time (carried on the envelope so the live event and its
+  persisted copy share one identity — a versioned addition to
+  `event-envelope.schema.json`). A new `GET /sessions/current/events` returns the
+  durable log as the seed (incl. each event's `enabled`), and `GET /events?after=<ordinal>`
+  resumes the live stream after a cursor: the handler captures a boundary ordinal at
+  subscribe time, serves `(after, boundary]` from the durable log and `(boundary, ∞)`
+  live, so the seed→live handover has no gap and no duplicate with no client-side
+  de-dup. `transport/http.Client` gained `Seed` and `Subscribe(after)`. Documented in
+  `docs/implementation/02_surface_orchestration_http.md`.
 - Wired the transport into the live runtime, completing M1 external-surface
   enablement (TRN-6): when `[agentx.transport] enabled` (default), the orchestrator
   allocates a loopback port and serves the HTTP/SSE server as part of `Start` (after

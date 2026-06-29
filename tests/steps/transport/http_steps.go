@@ -39,6 +39,7 @@ type fakeProvider struct {
 	mu           sync.Mutex
 	accepting    bool
 	lastDecision string
+	history      []state.Event
 }
 
 func (p *fakeProvider) Bus() *state.Bus                        { return p.bus }
@@ -69,6 +70,26 @@ func (p *fakeProvider) Accepting() bool {
 	return p.accepting
 }
 
+func (p *fakeProvider) History() ([]state.Event, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]state.Event, len(p.history))
+	copy(out, p.history)
+	return out, nil
+}
+
+// publishRecorded publishes an event on the bus (stamping its ordinal) and mirrors
+// it into the fake durable history, simulating the recorder synchronously so seed
+// + resume can be tested deterministically.
+func (p *fakeProvider) publishRecorded(ev state.Event) {
+	p.bus.Publish(ev)
+	p.mu.Lock()
+	// Re-stamp from the bus so history carries the same ordinal as the live event.
+	ev.Ordinal = p.bus.CurrentOrdinal()
+	p.history = append(p.history, ev)
+	p.mu.Unlock()
+}
+
 func (p *fakeProvider) decision() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -89,6 +110,13 @@ type transportWorld struct {
 
 	launchResult cli.LaunchResult
 	launchErr    error
+
+	seed       []state.Event
+	cursor     uint64
+	liveCh     <-chan state.Event
+	liveCancel context.CancelFunc
+	received   []state.Event
+	recorded   int
 }
 
 // sseStream reads SSE data lines from an open /events connection on a goroutine.
@@ -108,6 +136,9 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 		for _, st := range w.streams {
 			st.cancel()
 			_ = st.body.Close()
+		}
+		if w.liveCancel != nil {
+			w.liveCancel()
 		}
 		if w.httptst != nil {
 			w.httptst.Close()
@@ -143,6 +174,19 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^a client POSTs "/model/switch"$`, w.postModelSwitch)
 	sc.Step(`^the orchestrator received decision "([^"]*)"$`, w.receivedDecision)
 	sc.Step(`^the surface "([^"]*)" on the transport has lifecycle "([^"]*)"$`, w.lifecycleOf)
+
+	// seed + resume (SS-1).
+	sc.Step(`^(\d+) events are recorded$`, w.recordEvents)
+	sc.Step(`^a recorded user_prompt event "([^"]*)"$`, w.recordPrompt)
+	sc.Step(`^(\d+) more events? (?:is|are) recorded$`, w.recordEvents)
+	sc.Step(`^a client seeds the session events$`, w.seedEvents)
+	sc.Step(`^the seed has (\d+) events with ordinals "([^"]*)"$`, w.seedOrdinals)
+	sc.Step(`^the seed contains "([^"]*)"$`, w.seedContains)
+	sc.Step(`^the seed event "([^"]*)" is enabled$`, w.seedEnabled)
+	sc.Step(`^the client subscribes after the seed cursor$`, w.subscribeAfterSeed)
+	sc.Step(`^the client subscribes from the beginning$`, w.subscribeFromZero)
+	sc.Step(`^the live stream delivers exactly (\d+) events$`, w.liveDeliversExactly)
+	sc.Step(`^the live stream delivers no event at or before the cursor$`, w.liveNoneBeforeCursor)
 
 	// surface launch CLI (TRN-5).
 	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" with the valid token$`, w.launchValid)
@@ -335,6 +379,147 @@ func (w *transportWorld) allStreamsDeliver(want string) error {
 		}
 	}
 	return nil
+}
+
+func (w *transportWorld) record(text string) {
+	w.prov.publishRecorded(state.Event{
+		Epoch:       time.Now().UnixMilli(),
+		SessionID:   w.prov.sess.ID,
+		EventType:   "USER_PROMPT",
+		ContentType: state.ContentUserPrompt,
+		Payload:     map[string]any{"text": text},
+		Enabled:     state.DefaultEnabled(state.ContentUserPrompt),
+	})
+}
+
+func (w *transportWorld) recordEvents(n int) error {
+	for range n {
+		w.recorded++
+		w.record(fmt.Sprintf("ev-%d", w.recorded))
+	}
+	return nil
+}
+
+func (w *transportWorld) recordPrompt(text string) error {
+	w.record(text)
+	return nil
+}
+
+func (w *transportWorld) seedEvents() error {
+	seed, err := transporthttp.NewClient(w.httptst.URL).Seed(context.Background())
+	if err != nil {
+		return err
+	}
+	w.seed = seed
+	return nil
+}
+
+func (w *transportWorld) seedOrdinals(n int, ords string) error {
+	if len(w.seed) != n {
+		return fmt.Errorf("seed has %d events, want %d", len(w.seed), n)
+	}
+	got := make([]string, len(w.seed))
+	for i, ev := range w.seed {
+		got[i] = fmt.Sprintf("%d", ev.Ordinal)
+	}
+	if j := strings.Join(got, ", "); j != ords {
+		return fmt.Errorf("seed ordinals = %q, want %q", j, ords)
+	}
+	return nil
+}
+
+func (w *transportWorld) seedContains(text string) error {
+	for _, ev := range w.seed {
+		if payloadText(ev) == text {
+			return nil
+		}
+	}
+	return fmt.Errorf("seed does not contain %q", text)
+}
+
+func (w *transportWorld) seedEnabled(text string) error {
+	for _, ev := range w.seed {
+		if payloadText(ev) == text {
+			if !ev.Enabled {
+				return fmt.Errorf("seed event %q is not enabled", text)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("seed event %q not found", text)
+}
+
+func (w *transportWorld) subscribeAfterSeed() error {
+	if len(w.seed) > 0 {
+		w.cursor = w.seed[len(w.seed)-1].Ordinal
+	}
+	return w.subscribe(w.cursor)
+}
+
+func (w *transportWorld) subscribeFromZero() error {
+	w.cursor = 0
+	return w.subscribe(0)
+}
+
+func (w *transportWorld) subscribe(after uint64) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	w.liveCancel = cancel
+	ch, err := transporthttp.NewClient(w.httptst.URL).Subscribe(ctx, after)
+	if err != nil {
+		cancel()
+		return err
+	}
+	w.liveCh = ch
+	return nil
+}
+
+func (w *transportWorld) liveDeliversExactly(n int) error {
+	got := readN(w.liveCh, n, 3*time.Second)
+	if len(got) != n {
+		return fmt.Errorf("live stream delivered %d events, want %d", len(got), n)
+	}
+	if extra := readN(w.liveCh, 1, 200*time.Millisecond); len(extra) > 0 {
+		return fmt.Errorf("live stream delivered more than %d events", n)
+	}
+	w.received = got
+	return nil
+}
+
+func (w *transportWorld) liveNoneBeforeCursor() error {
+	for _, ev := range w.received {
+		if ev.Ordinal <= w.cursor {
+			return fmt.Errorf("received event ordinal %d at or before cursor %d", ev.Ordinal, w.cursor)
+		}
+	}
+	return nil
+}
+
+// payloadText extracts the "text" field from an event payload (post JSON decode).
+func payloadText(ev state.Event) string {
+	m, ok := ev.Payload.(map[string]any)
+	if !ok {
+		return ""
+	}
+	s, _ := m["text"].(string)
+	return s
+}
+
+// readN reads up to n events from ch or returns early on timeout.
+func readN(ch <-chan state.Event, n int, timeout time.Duration) []state.Event {
+	out := make([]state.Event, 0, n)
+	deadline := time.After(timeout)
+	for len(out) < n {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return out
+			}
+			out = append(out, ev)
+		case <-deadline:
+			return out
+		}
+	}
+	return out
 }
 
 func (w *transportWorld) authorize() error {
