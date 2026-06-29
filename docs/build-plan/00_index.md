@@ -55,6 +55,8 @@ This plan is additive. It does not replace existing contracts in:
 2. [02_phase_reference_matrix.md](02_phase_reference_matrix.md)
 3. [03_chat_surface_backlog.md](03_chat_surface_backlog.md) — task-level backlog for
    the first vertical slice (the `agentx` chat surface), spanning M1 → chat-M2 → M3a.
+4. [04_tool_runtime_backlog.md](04_tool_runtime_backlog.md) — task-level backlog for
+   the first built-in tool family (policy-gated command line), implementing M3b.
 
 ## Cadence And Governance
 

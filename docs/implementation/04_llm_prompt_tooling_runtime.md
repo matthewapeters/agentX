@@ -261,3 +261,43 @@ Execution behavior:
 Design principle:
 
 - maximize utility of local CLI environment while preserving explicit user control and safety.
+
+### The `single_tool` cycle (v1)
+
+The `single_tool` classification route triggers one tool call before the answer
+(`classify → PhaseTool → respond`). Multi-step tool use belongs to `invoke_planner`,
+later.
+
+- **Curated descriptors, not a generic runner.** The runtime exposes a fixed set of
+  tools (read/search, write/modify, network) defined in `internal/tools`. The
+  LLM-facing catalog is `~/.config/agentx/agentx-shell-commands.md` (default
+  `tools.DefaultCatalog`), injected into the proposal context only when a turn routes
+  to `single_tool`.
+- **Strict-JSON proposal, one call per turn.** Reusing the classification pattern
+  (strict JSON → tolerant extraction → retry → fallback), the model replies with
+  `{"tool": "<id>", "args": {...}}` or `{"tool": "none"}`. Parse failure or `none`
+  falls back to a direct response.
+- **argv, no shell.** Commands run as an argv vector via `os/exec` — never `sh -c`. No
+  pipes, redirects, globs, or expansion. File content and patches are passed inline in
+  the JSON and delivered via process **stdin** or a Go built-in, so untrusted arguments
+  are never shell-interpolated (see `05_security_approvals_and_command_policy.md`).
+- **Events and ordering.** `user_prompt → classification → tool_call → tool_result →
+  agent_response`; processing-state moves `classify → tool → respond`. A call needing
+  approval inserts an `awaiting_input` pause (see doc 05).
+
+### Output artifacts and context shaping
+
+Tool output can be large; pasting it wholesale into the model context wastes tokens.
+So persistence and context-injection are **decoupled**:
+
+- The executor writes the **full** stdout/stderr to a **session artifact**
+  (`sessions/<id>/artifacts/<seq>.txt`) — persisted like any other session record.
+- The `tool_result` returned to the model is a **compact projection**: `exit`,
+  `status`, `bytes`, `line_count`, a short `preview`, and an opaque `ref`.
+- The respond turn injects only the preview + ref, never the full artifact.
+- The agent pulls more on demand via the `read_output` tool (`ref` + optional
+  offset/limit), paging the artifact instead of buffering it.
+
+The human sees the full output in the 📋 result widget (scrollable, capped by
+`max_widget_lines`); the model sees the preview + ref. One stored artifact, two
+projections. This generalizes to any bulky producer (planner, future experts).

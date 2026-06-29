@@ -22,6 +22,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `time_budget_seconds` (default 180) that falls back to a direct answer on expiry
   (CHT-D7).
 
+- Captured the tool-runtime design (first built-in command-line tool) ahead of
+  implementation: `docs/build-plan/04_tool_runtime_backlog.md` (TOOL-1…5 for M3b),
+  the `single_tool` cycle + output-artifact/context-shaping notes in
+  `docs/implementation/04`/`05`, `[agentx.tools]` config, and the
+  `config/seed/agentx-shell-commands.md` tool catalog seed.
+
 ### Changed
 
 - Made output-widget collapse uniform: user, thinking, tool, and assistant widgets

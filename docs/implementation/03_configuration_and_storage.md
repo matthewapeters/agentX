@@ -55,6 +55,11 @@ User prompt files (Markdown, optional):
   - thinking guidance folded into the respond system prompt when thinking; steers
     reasoning toward the bounded "sweet spot" (built-in default; tunable)
   - see `04_llm_prompt_tooling_runtime.md` (Thinking Pass-through)
+- ~/.config/agentx/agentx-shell-commands.md
+  - LLM-facing catalog of curated tools, injected into context when a turn routes to
+    `single_tool` (built-in default `tools.DefaultCatalog`; tunable)
+  - see `04_llm_prompt_tooling_runtime.md` (The single_tool cycle) and
+    `05_security_approvals_and_command_policy.md`
 
 ### Runtime tables (`agentx.toml`)
 
@@ -80,6 +85,12 @@ invoke_planner = true
 [agentx.theme]
 active_border_color   = "cyan"        # focused panel + selected output widget (bold)
 inactive_border_color = "dark gray"   # unfocused panel + other widgets
+
+[agentx.tools]                        # planned (M3b); see 04_/05_ and build-plan/04
+enabled          = true               # master switch for tool execution
+read_only        = true               # only read/search tools until the loop is proven
+timeout_seconds  = 30                 # per-command execution timeout
+output_max_bytes = 65536              # output cap before truncation (full output → artifact)
 ```
 
 - Unknown keys are ignored by the decoder; absent values fall back to the defaults
