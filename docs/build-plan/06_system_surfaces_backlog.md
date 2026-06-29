@@ -29,8 +29,8 @@ This document is the missing task tier for the first **rendering** peer surface.
 
 Running `agentx surface launch context --session <s> --connect <ep> --token <t>` in a
 second terminal attaches a **context viewer**: it registers with the orchestrator,
-hydrates the session's prior events from the persisted log, live-tails new events over
-SSE, renders them with the existing collapsible output widgets, and reflects
+seeds the session's prior events from the persisted log, resumes the live event stream
+by cursor, renders them with the existing collapsible output widgets, and reflects
 processing-state — a read-only mirror of the conversation, arranged by the user beside
 the chat surface in their multiplexer. Quitting marks the surface `stopped`. `make all`
 stays green throughout.
@@ -46,11 +46,23 @@ stays green throughout.
 3. **Thin slice: framework + one surface.** Files, config, context-history, and
    context-visualizer are future increments that reuse the framework (see Future
    surfaces).
-4. **Hydrate-then-tail.** The event bus has no replay, so a surface attaching
-   mid-session would otherwise miss prior events. A surface first fetches the
-   persisted event history (new read endpoint), renders it, then live-tails
-   `GET /events`. New events observed during hydration are de-duplicated by event
-   identity (epoch + content type + ordinal) so nothing is dropped or doubled.
+4. **Disk-seeded, then cursor-resumed live stream.** The durable append-only log —
+   not the in-memory bus — is the source of truth, including each event's `enabled`
+   state. A surface **seeds** from the persisted log (read server-side in a
+   goroutine via `session.Recorder.Load`), renders it, and tracks the last consumed
+   event **ordinal**; it then opens the live stream declaring that cursor, and the
+   server delivers only events after it. The handover is exact — no gap, no
+   duplicate — because the cursor is the stamped envelope ordinal (decision 8), not a
+   fuzzy identity match; this replaces the earlier "hydrate-then-tail with
+   client-side de-dup" idea, whose weakness was that bus events carry no `seq`.
+8. **Monotonic ordinal on the envelope.** The recorder's per-event `seq` currently
+   lives only in the persisted filename, so live bus events can't be reconciled
+   against the disk log. SS-1 stamps a monotonic `ordinal` onto the `state.Event`
+   envelope **at publish time**, so the same identity is carried by the live bus
+   event and its persisted file. The ordinal is both the canonical total order and
+   the resume cursor. This adds a field to
+   `docs/architecture/runtime_contracts/event-envelope.schema.json` (a versioned
+   contract change, coordinated per the freeze rules).
 5. **Reuse the chat output renderer.** The context surface renders the event stream
    with `internal/surfaces/output.Model` (collapsible boxed widgets, viewport scroll,
    `Apply(state.Event)`) — the same renderer the chat output panel uses — so rendering
@@ -67,12 +79,13 @@ stays green throughout.
 ```
 agentx (orchestrator + in-process chat)            second terminal
   internal/transport/http                            agentx surface launch context …
-    GET /sessions/current/events  (history, new)  ◀──┐
-    GET /events                   (SSE live tail) ◀──┤  internal/surfaces/client
-    POST /surface/register / shutdown             ◀──┤    attach (TRN-5 Launch)
-                                                      │    hydrate + tail → tea.Msg
+    GET /sessions/current/events  (disk seed)     ◀──┐
+    GET /events?after=<ordinal>   (live, cursor)  ◀──┤  internal/surfaces/client
+    POST /surface/register / shutdown             ◀──┤    seed (disk) → last ordinal
+                                                      │    → subscribe(after) → tea.Msg
   internal/runtime.Orchestrator                       │    SurfaceModel host loop
-    History() []state.Event  (reads persisted log)    │
+    History() []state.Event  (disk, goroutine)        │
+    publish() stamps ordinal on the envelope          │
                                                       └─ internal/surfaces/context
                                                             SurfaceModel: projects
                                                             events → output.Model
@@ -91,21 +104,34 @@ before implementation, a Godog feature + steps under the tag scheme (+ `@ux:<id>
 
 ## Phase F — First peer surface (M2 slice)
 
-### SS-1 · Event history endpoint + client hydrate-then-tail · M
-- **Target**: `internal/runtime/` (`Orchestrator.History`), `internal/transport/http`
-  (read endpoint + `Provider`), `internal/transport/http.Client` (history + events
-  stream)
+### SS-1 · Disk-seeded event stream with cursor resume · M
+- **Target**: `internal/state` (envelope `ordinal`), `internal/session` (recorder
+  orders by it), `internal/runtime` (`Orchestrator.History`, stamp ordinal at
+  publish), `internal/transport/http` (seed endpoint + cursor stream + `Provider`),
+  `internal/transport/http.Client` (seed + resume),
+  `docs/architecture/runtime_contracts/event-envelope.schema.json`
 - **Source**: `02_surface_orchestration_http.md` (Read/Streaming endpoints), `03`
   (persistence), `event-envelope.schema.json`
-- **Behavior**: add `GET /sessions/current/events` returning the persisted session
-  event log (orchestrator reads it via `session.Recorder.Load`, exposed as
-  `Provider.History`); extend `transport/http.Client` with `History(ctx)` and an
-  `Events(ctx) (<-chan state.Event, …)` SSE consumer. A client helper hydrates from
-  history then subscribes, de-duplicating the overlap by event identity.
-- **Feature**: `tests/features/transport/event_history.feature`
+- **Behavior**:
+  1. Stamp a monotonic `ordinal` on the `state.Event` envelope at publish time (so
+     the live bus event and its persisted file share one identity); the recorder
+     uses the envelope ordinal for naming/ordering.
+  2. `GET /sessions/current/events` returns the disk-persisted log
+     (`Orchestrator.History` via `session.Recorder.Load`, read off the hot path) —
+     the authoritative seed, carrying each event's `enabled` and `ordinal`.
+  3. `GET /events?after=<ordinal>` (SSE) streams only events after the cursor: the
+     server attaches to the live bus first, backfills from disk any
+     `(after, first-live]` gap, then continues live — spliced exactly by ordinal, so
+     the seed→live handover has no gap and no duplicate. `after=0` yields the full
+     stream (seed + live) for clients that prefer one connection.
+  4. `transport/http.Client` exposes `Seed(ctx)` and `Subscribe(ctx, after)`; the
+     client seeds, takes the last ordinal, then subscribes — no client-side de-dup.
+- **Feature**: `tests/features/transport/event_seed_stream.feature`
   (`@integration @arch:transport`)
-- **Done**: history endpoint returns the recorded events in order; the client yields
-  history-then-live with no gap or duplicate across the handover.
+- **Done**: the seed returns the recorded events ordered by ordinal, including
+  `enabled`; subscribing with the seed's last ordinal yields exactly the subsequent
+  events — verified with no gap or duplicate even when events are written during the
+  handover; `after=0` yields the full stream.
 
 ### SS-2 · Surface-client framework (host + lifecycle) · L
 - **Target**: `internal/surfaces/client/` (new), `internal/cli/` (launch-into-UI)
