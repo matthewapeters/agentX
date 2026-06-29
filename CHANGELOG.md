@@ -22,6 +22,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `time_budget_seconds` (default 180) that falls back to a direct answer on expiry
   (CHT-D7).
 
+- Added `internal/tools` command policy and curated descriptors (TOOL-1): argument
+  schema validation plus blacklist → global → session → approval evaluation with
+  reason codes, and the built-in curated toolset registry.
 - Captured the tool-runtime design (first built-in command-line tool) ahead of
   implementation: `docs/build-plan/04_tool_runtime_backlog.md` (TOOL-1…5 for M3b),
   the `single_tool` cycle + output-artifact/context-shaping notes in
