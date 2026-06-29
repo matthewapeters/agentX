@@ -15,6 +15,16 @@ Feature: Conversation context continuity
       | assistant | hi      |
       | user      | again   |
 
+  Scenario: The bootstrap exchange is excluded from later context
+    Given a started orchestrator with instructions "Sys." and bootstrap prompt "Are you there?" and a capturing model that replies "ready"
+    When the orchestrator runs its bootstrap prompt
+    And the user submits the prompt "real question"
+    Then the model context excludes "Are you there?"
+    And the model context excludes "ready"
+    And the model context includes in order:
+      | role | content       |
+      | user | real question |
+
   Scenario: User and agent turns persist as context-enabled
     Given a started orchestrator with no bootstrap prompt and a capturing model that replies "hi"
     When the user submits the prompt "hello"

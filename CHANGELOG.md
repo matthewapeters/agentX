@@ -46,7 +46,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   the prior enabled turns folded in (instructions → working memory → enabled
   history → current user prompt), giving the model multi-turn continuity instead of
   the previous single-turn context. User prompts and agent responses are enabled by
-  default; thinking and tool events are retained but disabled by default. Adds an
+  default; thinking and tool events are retained but disabled by default; the
+  bootstrap prompt and its response are excluded from context after processing. Adds an
   `enabled` field to the frozen event-envelope contract
   (`docs/architecture/runtime_contracts/event-envelope.schema.json`) with
   per-content-type defaults (`state.DefaultEnabled`) — a versioned schema change.

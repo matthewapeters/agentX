@@ -313,7 +313,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		if handled {
 			msgs := o.withContext(o.assembler.Assemble(text + toolCtx))
 			resp, err := o.streamResponse(ctx, msgs, nil, false)
-			o.recordTurn(err, text, resp)
+			o.recordTurn(err, recordUserPrompt, text, resp)
 			return o.finishCycle(err)
 		}
 	}
@@ -324,15 +324,19 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	messages := o.withContext(o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route))
 	fallback := o.withContext(o.assembler.Assemble(text))
 	resp, err := o.streamResponse(ctx, messages, fallback, doThink)
-	o.recordTurn(err, text, resp)
+	o.recordTurn(err, recordUserPrompt, text, resp)
 	return o.finishCycle(err)
 }
 
 // recordTurn appends the completed turn to the in-memory conversation history when
 // the cycle ended cleanly (success or user interrupt), so the next turn carries
-// the prior user prompt and agent response as enabled context. Hard failures are
-// not recorded.
-func (o *Orchestrator) recordTurn(err error, userText, response string) {
+// the prior user prompt and agent response as enabled context. The bootstrap turn
+// (recordTurn=false, like its user-prompt event) is excluded: it engages the
+// session but is irrelevant to the user's intent. Hard failures are not recorded.
+func (o *Orchestrator) recordTurn(err error, record bool, userText, response string) {
+	if !record {
+		return
+	}
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return
 	}

@@ -124,10 +124,17 @@ on the event envelope, defaulted by `content_type` (`internal/state.DefaultEnabl
   contract (`architecture/runtime_contracts/event-envelope.schema.json`); absent is
   treated as `false`.
 
+The **bootstrap exchange is excluded** from context. The bootstrap prompt and its
+response engage the session at startup but are irrelevant to the user's intent, so
+the bootstrap turn is not added to history (it already skips the `user_prompt`
+record). Live continuity therefore starts from the first real user turn.
+
 > v1 builds the live history in memory from completed turns (consolidating streamed
 > `agent_response` deltas into one assistant message). Reconstructing history from
-> the persisted event log on session reload — and deterministic token-budget
-> trimming (persona canon Layer 4) — are follow-ups.
+> the persisted event log on session reload — which must likewise exclude the
+> bootstrap exchange (its persisted `agent_response` is still flagged enabled on
+> disk) — and deterministic token-budget trimming (persona canon Layer 4) are
+> follow-ups.
 
 ## Classification Cycle (v1, Stage 1)
 

@@ -48,6 +48,7 @@ func registerPromptFilesSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^no agent response is recorded$`, w.noAgentResponseRecorded)
 	sc.Step(`^no user prompt is recorded$`, w.noUserPromptRecorded)
 	sc.Step(`^the model context includes in order:$`, w.contextInOrder)
+	sc.Step(`^the model context excludes "([^"]*)"$`, w.contextExcludes)
 	sc.Step(`^the persisted "([^"]*)" events are context-enabled$`, w.persistedEnabled)
 }
 
@@ -152,6 +153,16 @@ func (w *promptFilesWorld) contextInOrder(table *godog.Table) error {
 	}
 	if idx != len(rows) {
 		return fmt.Errorf("context did not contain the expected messages in order (matched %d/%d); got %+v", idx, len(rows), w.captured)
+	}
+	return nil
+}
+
+// contextExcludes asserts no captured message has the given exact content.
+func (w *promptFilesWorld) contextExcludes(content string) error {
+	for _, m := range w.captured {
+		if m.Content == content {
+			return fmt.Errorf("context unexpectedly contains a message %q", content)
+		}
 	}
 	return nil
 }
