@@ -58,6 +58,22 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the processing state becomes awaiting input$`, w.processingAwaiting)
 	sc.Step(`^a chat surface that records approvals sized (\d+) by (\d+)$`, w.recordingApprovalsSized)
 	sc.Step(`^the approval decision is "([^"]*)"$`, w.approvalDecisionIs)
+	sc.Step(`^the chat input value is "([^"]*)"$`, w.chatInputValueIs)
+	sc.Step(`^the chat view shows the flash border color$`, w.viewHasFlashColor)
+}
+
+func (w *chatWorld) chatInputValueIs(want string) error {
+	if got := w.model.Input().Value(); got != want {
+		return fmt.Errorf("chat input value = %q, want %q", got, want)
+	}
+	return nil
+}
+
+func (w *chatWorld) viewHasFlashColor() error {
+	if !strings.Contains(w.model.View().Content, "7;38;5;6") {
+		return fmt.Errorf("chat view does not show the flash border color")
+	}
+	return nil
 }
 
 func (w *chatWorld) pressEsc() error {

@@ -3,6 +3,7 @@ package chat
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
@@ -19,6 +20,10 @@ const (
 	inputHeight = 3
 	hintHeight  = 1
 )
+
+// flashDuration is how long the input border stays highlighted after a history
+// navigation hits a boundary (PD-02-AF-015).
+const flashDuration = 150 * time.Millisecond
 
 // focus identifies which panel currently receives navigation/edit keys.
 type focus int
@@ -42,6 +47,9 @@ type ProcessingStateMsg state.ProcessingState
 
 // EventMsg delivers a bus event to the chat surface for rendering.
 type EventMsg state.Event
+
+// flashOffMsg ends an input-border flash; scheduled by flashCmd.
+type flashOffMsg struct{}
 
 // Bridge connects the chat surface to the runtime: a Submit function for prompts,
 // a Stop function that interrupts the in-flight prompt, and the channels the
@@ -67,6 +75,7 @@ type Model struct {
 	spinner      spinner.Model
 	focus        focus
 	chordPending bool // an ESC was pressed; the next key resolves the chord
+	flashing     bool // the input border is flashing a history boundary
 	active       string
 	inactive     string
 	bridge       *Bridge
@@ -172,6 +181,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case EventMsg:
 		m.output.Apply(state.Event(msg))
 		return m, m.listenEvents()
+	case flashOffMsg:
+		m.flashing = false
+		return m, nil
 	case tea.MouseWheelMsg:
 		// Forwarded to the output viewport; only delivered when the program
 		// enables the mouse (off by default to preserve native text selection).
@@ -205,9 +217,13 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.setFocus(focusInput)
 			return m, nil
 		case "esc", "escape":
-			// ESC,ESC interrupts while working; otherwise it cancels the chord.
+			// ESC,ESC interrupts while working; idle, it clears an active
+			// history seed; otherwise it cancels the chord.
 			if m.proc.State == state.StateWorking {
 				return m, m.stopCmd()
+			}
+			if m.focus == focusInput && m.input.Seeded() {
+				m.input.ClearSeed()
 			}
 			return m, nil
 		default:
@@ -264,8 +280,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Input focus: edit the prompt.
-	if m.input.Update(msg) == input.ActionSubmit {
+	// Input focus: edit the prompt or navigate prompt history.
+	switch m.input.Update(msg) {
+	case input.ActionSubmit:
 		text := m.input.Value()
 		m.input.Reset()
 		if m.bridge != nil && m.bridge.Submit != nil {
@@ -278,8 +295,17 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			ContentType: state.ContentUserPrompt,
 			Payload:     map[string]any{"text": text},
 		})
+	case input.ActionHistoryBoundary:
+		// History navigation hit an edge; flash the input border.
+		m.flashing = true
+		return m, m.flashCmd()
 	}
 	return m, nil
+}
+
+// flashCmd schedules the end of an input-border flash.
+func (m Model) flashCmd() tea.Cmd {
+	return tea.Tick(flashDuration, func(time.Time) tea.Msg { return flashOffMsg{} })
 }
 
 // approveCmd sends a tool-approval decision ("session"/"global"/"deny") to the
@@ -368,10 +394,10 @@ func (m *Model) relayout() {
 // focus-bordered input panel.
 func (m Model) View() tea.View {
 	rows := make([]string, 0, m.height)
-	rows = append(rows, m.frame(m.output.View(), m.focus == focusOutput)...)
+	rows = append(rows, m.frame(m.output.View(), m.focus == focusOutput, false)...)
 	rows = append(rows, statusBar(m.proc, m.spinner.View(), m.width))
 	rows = append(rows, m.hintStrip())
-	rows = append(rows, m.frame(m.input.View(), m.focus == focusInput)...)
+	rows = append(rows, m.frame(m.input.View(), m.focus == focusInput, m.flashing)...)
 	v := tea.NewView(strings.Join(rows, "\n"))
 	v.AltScreen = true
 	return v
@@ -379,7 +405,7 @@ func (m Model) View() tea.View {
 
 // frame wraps a panel's rendered content in a box border colored by focus: the
 // active panel uses a bold active color, the inactive panel the inactive color.
-func (m Model) frame(content string, active bool) []string {
+func (m Model) frame(content string, active, flash bool) []string {
 	innerW := m.width - 2
 	if innerW < 0 {
 		innerW = 0
@@ -387,6 +413,10 @@ func (m Model) frame(content string, active bool) []string {
 	code := m.inactive
 	if active {
 		code = "1;" + m.active
+	}
+	// A history-boundary flash inverts the border in the active color.
+	if flash {
+		code = "7;" + m.active
 	}
 	paint := func(s string) string {
 		if code == "" {
@@ -422,7 +452,7 @@ func (m Model) hintStrip() string {
 	case m.focus == focusOutput:
 		text = "j/k scroll · pgup/pgdn select · ^o expand · esc → input"
 	default:
-		text = "esc → options"
+		text = "↑/↓ history · esc → options"
 	}
 	return padLine(text, m.width)
 }

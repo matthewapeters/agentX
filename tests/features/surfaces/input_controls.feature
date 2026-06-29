@@ -60,3 +60,74 @@ Feature: Input panel controls
     Given a new chat surface sized 40 by 16
     When the user types "hi there" and submits
     Then the chat output contains "hi there"
+
+  # use-case: UC-INPUT-HISTORY  (PD-02-AF-013)
+  Scenario: Up seeds the previous submitted prompt
+    Given a focused input panel
+    And the input has submitted prompt "first"
+    And the input has submitted prompt "second"
+    When the user presses up
+    Then the input value is "second"
+    When the user presses up
+    Then the input value is "first"
+
+  # use-case: UC-INPUT-HISTORY  (PD-02-AF-013 / AF-014)
+  # variant: draft stashed on step back, restored on return
+  Scenario: Navigating history preserves and restores the in-progress draft
+    Given a focused input panel
+    And the input has submitted prompt "first"
+    And the user types "draft"
+    When the user presses up
+    Then the input value is "first"
+    When the user presses down
+    Then the input value is "draft"
+
+  # use-case: UC-INPUT-HISTORY  (PD-02-AF-015)
+  # variant: boundary at the oldest prompt
+  Scenario: Up past the oldest prompt flashes and holds the value
+    Given a focused input panel
+    And the input has submitted prompt "first"
+    When the user presses up
+    Then the input value is "first"
+    When the user presses up
+    Then the input value is "first"
+    And the input reports a history boundary
+
+  # use-case: UC-INPUT-HISTORY  (PD-02-AF-015)
+  # variant: boundary at the present draft
+  Scenario: Down at the present line flashes and holds the value
+    Given a focused input panel
+    And the input has submitted prompt "first"
+    When the user presses down
+    Then the input value is ""
+    And the input reports a history boundary
+
+  # use-case: UC-INPUT-HISTORY  (PD-02-AF-013)
+  # variant: an edited seed is appended to history on submit
+  Scenario: Submitting an edited seed adds the new text to history
+    Given a focused input panel
+    And the input has submitted prompt "first"
+    When the user presses up
+    And the user types " revised"
+    And the user presses enter
+    And the user presses up
+    Then the input value is "first revised"
+
+  # use-case: UC-INPUT-HISTORY  (PD-02-AF-016)
+  # Esc,Esc clears an active seed back to an empty prompt (chord owned by chat)
+  Scenario: Esc,Esc clears a history seed
+    Given a new chat surface sized 40 by 16
+    When the user types "first" and submits
+    And the "up" key is pressed
+    And ESC is pressed
+    And ESC is pressed
+    Then the chat input value is ""
+
+  # use-case: UC-INPUT-HISTORY  (PD-02-AF-015)
+  # the boundary flash highlights the input border (chord owned by chat)
+  Scenario: Hitting a history boundary flashes the input border
+    Given a new chat surface sized 40 by 16
+    When the user types "first" and submits
+    And the "up" key is pressed
+    And the "up" key is pressed
+    Then the chat view shows the flash border color

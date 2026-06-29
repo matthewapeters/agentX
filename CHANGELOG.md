@@ -42,6 +42,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `agentx-tool-blacklist.toml` and global approvals are written to / reloaded from
   `agentx-tool-approvals.toml` under `~/.config/agentx/`; executor output cap now
   honors `[agentx.tools] output_max_bytes`. New blacklist seed template.
+- Added readline-style prompt history seeding to the chat input panel: `↑`/`↓`
+  seed the editable buffer with prior prompts submitted during the current run
+  (the in-progress draft is stashed and restored at the present line), hitting a
+  boundary flashes the input border instead of moving, and the idle Esc,Esc chord
+  clears an active seed back to an empty prompt. Seeding copies a prompt for reuse —
+  submitting (as-is or edited) always creates a new prompt. History is in-memory and
+  current-run only; persisting across session reload is a follow-up. Documented as
+  `docs/ux/03_PANEL_DETAILS.md` PD-02-AF-013…016.
 - Added conversation context continuity (CTX-1): each turn is now assembled with
   the prior enabled turns folded in (instructions → working memory → enabled
   history → current user prompt), giving the model multi-turn continuity instead of

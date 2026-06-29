@@ -22,15 +22,27 @@ const (
 	ActionSubmit
 	// ActionStop means the user requested interruption of a streaming response.
 	ActionStop
+	// ActionHistoryBoundary means a history-navigation key hit an edge (older
+	// than the oldest prompt, or newer than the in-progress draft); the buffer
+	// did not change and the host should signal the boundary (e.g. a flash).
+	ActionHistoryBoundary
 )
 
 // Model is the input panel state.
+//
+// It also keeps a readline-style history of prompts submitted during this run:
+// ↑/↓ seed the editable buffer with a prior prompt (PD-02-AF-013…016). histIdx
+// addresses history; histIdx == len(history) is the "present" line, whose
+// in-progress text is stashed in draft while navigating older entries.
 type Model struct {
 	width     int
 	height    int
 	value     string
 	focused   bool
 	streaming bool
+	history   []string
+	histIdx   int
+	draft     string
 }
 
 // New returns an input panel, focused, with a default height of 3 rows.
@@ -59,8 +71,24 @@ func (m *Model) Blur() { m.focused = false }
 // Value returns the current input text.
 func (m *Model) Value() string { return m.value }
 
-// Reset clears the input text.
-func (m *Model) Reset() { m.value = "" }
+// Reset clears the input text and returns history navigation to the present.
+func (m *Model) Reset() {
+	m.value = ""
+	m.draft = ""
+	m.histIdx = len(m.history)
+}
+
+// Seeded reports whether the buffer is currently showing a history entry (a
+// prompt was seeded via ↑/↓ and not yet cleared or submitted).
+func (m *Model) Seeded() bool { return m.histIdx < len(m.history) }
+
+// ClearSeed abandons a history seed: the buffer returns to empty and navigation
+// resets to the present. Bound to the idle Esc,Esc chord by the host surface.
+func (m *Model) ClearSeed() {
+	m.value = ""
+	m.draft = ""
+	m.histIdx = len(m.history)
+}
 
 // SetStreaming toggles streaming mode (submit disabled, stop enabled).
 func (m *Model) SetStreaming(streaming bool) { m.streaming = streaming }
@@ -75,12 +103,25 @@ func (m *Model) Update(msg tea.KeyPressMsg) Action {
 		if m.streaming || strings.TrimSpace(m.value) == "" {
 			return ActionNone
 		}
+		m.history = append(m.history, m.value)
+		m.histIdx = len(m.history)
+		m.draft = ""
 		return ActionSubmit
 	case "shift+enter":
 		if !m.streaming {
 			m.value += "\n"
 		}
 		return ActionNone
+	case "up":
+		if m.streaming {
+			return ActionNone
+		}
+		return m.historyPrev()
+	case "down":
+		if m.streaming {
+			return ActionNone
+		}
+		return m.historyNext()
 	case "esc", "escape":
 		if m.streaming {
 			return ActionStop
@@ -97,6 +138,37 @@ func (m *Model) Update(msg tea.KeyPressMsg) Action {
 		}
 		return ActionNone
 	}
+}
+
+// historyPrev seeds the buffer with the previous (older) submitted prompt. On
+// the first step back it stashes the in-progress draft. Returns
+// ActionHistoryBoundary when already at the oldest prompt (or history is empty).
+func (m *Model) historyPrev() Action {
+	if m.histIdx == 0 {
+		return ActionHistoryBoundary
+	}
+	if m.histIdx == len(m.history) {
+		m.draft = m.value
+	}
+	m.histIdx--
+	m.value = m.history[m.histIdx]
+	return ActionNone
+}
+
+// historyNext walks back toward the present, restoring the stashed draft when it
+// steps past the newest prompt. Returns ActionHistoryBoundary when already at the
+// present (draft) line.
+func (m *Model) historyNext() Action {
+	if m.histIdx >= len(m.history) {
+		return ActionHistoryBoundary
+	}
+	m.histIdx++
+	if m.histIdx == len(m.history) {
+		m.value = m.draft
+	} else {
+		m.value = m.history[m.histIdx]
+	}
+	return ActionNone
 }
 
 func (m *Model) backspace() {

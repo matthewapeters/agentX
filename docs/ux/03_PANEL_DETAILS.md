@@ -310,6 +310,75 @@ THEN  the input widget contains "hello world"
  AND  the popup is dismissed
 ```
 
+### Prompt history seeding (TUI-native)
+
+> **TUI-native affordances** (no Tkinter precedent). The input panel keeps a
+> readline-style history of prompts submitted during the current run. `↑`/`↓`
+> *seed* the editable buffer with a prior prompt — they copy it in for reuse, they
+> do not edit the original. The user may submit the seed as-is with Enter or edit it
+> first; either way a **new** prompt is created. Source: `internal/surfaces/input`,
+> wired through `internal/surfaces/chat`. Scope is the current process run only
+> (in-memory, captured at submit time); persisting history across a session reload
+> is a follow-up.
+
+| ID | Affordance | Trigger | Outcome |
+|----|-----------|---------|---------|
+| PD-02-AF-013 | History prev seeds the input | `↑` while input-focused, idle | Buffer is replaced with the previous (older) submitted prompt; the in-progress draft is stashed on first step back |
+| PD-02-AF-014 | History next walks toward the present | `↓` while input-focused, idle | Buffer is replaced with the next (newer) prompt; stepping past the newest restores the stashed draft |
+| PD-02-AF-015 | Boundary flash | `↑` past the oldest prompt, or `↓` past the restored draft | The buffer does not change; the input frame flashes briefly to signal the boundary |
+| PD-02-AF-016 | Esc,Esc clears a seed | `Esc` then `Esc` while idle with a seed active | The buffer returns to empty (unseeded) and history navigation resets to the present |
+
+```gherkin
+# PD-02-AF-013 — up seeds the previous prompt
+GIVEN the input has submitted prompts "first" then "second"
+  AND the input buffer is empty
+WHEN  the user presses up
+THEN  the input value is "second"
+WHEN  the user presses up
+THEN  the input value is "first"
+
+# PD-02-AF-013 — the in-progress draft is stashed on the first step back
+GIVEN the input has submitted prompt "first"
+  AND the user has typed "draft" without submitting
+WHEN  the user presses up
+THEN  the input value is "first"
+
+# PD-02-AF-014 — down walks back toward the present and restores the draft
+GIVEN the input has submitted prompts "first" then "second"
+  AND the user has typed "draft" without submitting
+  AND the user presses up twice
+WHEN  the user presses down
+THEN  the input value is "second"
+WHEN  the user presses down
+THEN  the input value is "draft"
+
+# PD-02-AF-015 — up at the oldest prompt flashes and does not change the buffer
+GIVEN the input has submitted prompt "first"
+  AND the user has pressed up once so the value is "first"
+WHEN  the user presses up
+THEN  the input value is "first"
+  AND the input reports a history boundary
+
+# PD-02-AF-015 — down past the draft flashes and does not change the buffer
+GIVEN the input has submitted prompt "first"
+  AND the input buffer is empty
+WHEN  the user presses down
+THEN  the input value is ""
+  AND the input reports a history boundary
+
+# PD-02-AF-016 — Esc,Esc returns to an empty, unseeded prompt
+GIVEN the input has submitted prompt "first"
+  AND the user has pressed up so the value is "first"
+WHEN  the user presses esc then esc
+THEN  the input value is ""
+
+# PD-02-AF-013 — submitting appends the submitted text to history
+GIVEN the input has submitted prompt "first"
+  AND the user seeds "first" and edits it to "first revised" and submits
+WHEN  the user presses up
+THEN  the input value is "first revised"
+```
+
 ### Keyboard Shortcuts
 
 | Key | Behaviour |
