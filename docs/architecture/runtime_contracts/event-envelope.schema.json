@@ -30,6 +30,10 @@
     "payload": {
       "description": "Event body; shape varies by content_type."
     },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether this event participates in assembled LLM context (continuity). Defaults by content_type: user_prompt/agent_response/attachments on; thinking/tool_call/tool_result retained but off; control/meta events not context. Absent is treated as false."
+    },
     "correlation_id": { "type": "string" },
     "parent_event_id": { "type": "string" },
     "surface_id": { "type": "string" },

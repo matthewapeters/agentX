@@ -24,6 +24,19 @@ var validContentTypes = map[ContentType]bool{
 	ContentToolCall: true, ContentToolResult: true, ContentProcessingState: true,
 }
 
+// DefaultEnabled reports whether an event of the given content type participates
+// in assembled LLM context by default. User and agent turns (and attachments) are
+// on; thinking and tool events are retained but off (a later context surface may
+// toggle them on); classification/system/processing-state events are not context.
+func DefaultEnabled(ct ContentType) bool {
+	switch ct {
+	case ContentUserPrompt, ContentAgentResponse, ContentAttachments:
+		return true
+	default:
+		return false
+	}
+}
+
 // Event is the canonical session-event envelope fanned out over the Bus and
 // persisted to disk. Field names/json tags mirror the frozen event-envelope schema.
 type Event struct {
@@ -32,6 +45,7 @@ type Event struct {
 	EventType     string      `json:"event_type"`
 	ContentType   ContentType `json:"content_type"`
 	Payload       any         `json:"payload"`
+	Enabled       bool        `json:"enabled"`
 	CorrelationID string      `json:"correlation_id,omitempty"`
 	ParentEventID string      `json:"parent_event_id,omitempty"`
 	SurfaceID     string      `json:"surface_id,omitempty"`

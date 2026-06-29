@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -91,6 +92,7 @@ type Orchestrator struct {
 	mu        sync.Mutex
 	started   bool
 	accepting bool
+	history   []prompting.Message
 }
 
 // Option configures an Orchestrator at construction time.
@@ -309,17 +311,48 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 			return nil
 		}
 		if handled {
-			msgs := o.withWorkingMemory(o.assembler.Assemble(text + toolCtx))
-			return o.finishCycle(o.streamResponse(ctx, msgs, nil, false))
+			msgs := o.withContext(o.assembler.Assemble(text + toolCtx))
+			resp, err := o.streamResponse(ctx, msgs, nil, false)
+			o.recordTurn(err, text, resp)
+			return o.finishCycle(err)
 		}
 	}
 
 	// Route-aware thinking: the verdict decides whether this turn reasons before
 	// answering, with a wall-clock budget that falls back to a direct answer.
 	doThink := o.thinkForRoute(route)
-	messages := o.withWorkingMemory(o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route))
-	fallback := o.withWorkingMemory(o.assembler.Assemble(text))
-	return o.finishCycle(o.streamResponse(ctx, messages, fallback, doThink))
+	messages := o.withContext(o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route))
+	fallback := o.withContext(o.assembler.Assemble(text))
+	resp, err := o.streamResponse(ctx, messages, fallback, doThink)
+	o.recordTurn(err, text, resp)
+	return o.finishCycle(err)
+}
+
+// recordTurn appends the completed turn to the in-memory conversation history when
+// the cycle ended cleanly (success or user interrupt), so the next turn carries
+// the prior user prompt and agent response as enabled context. Hard failures are
+// not recorded.
+func (o *Orchestrator) recordTurn(err error, userText, response string) {
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if userText != "" {
+		o.history = append(o.history, prompting.Message{Role: "user", Content: userText})
+	}
+	if response != "" {
+		o.history = append(o.history, prompting.Message{Role: "assistant", Content: response})
+	}
+}
+
+// historyMessages returns a copy of the enabled prior-turn conversation history.
+func (o *Orchestrator) historyMessages() []prompting.Message {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]prompting.Message, len(o.history))
+	copy(out, o.history)
+	return out
 }
 
 // seedWorkingMemory writes the bootstrap facts (userid, cwd) into the session's
@@ -336,34 +369,40 @@ func (o *Orchestrator) seedWorkingMemory() error {
 	return nil
 }
 
-// withWorkingMemory inserts a system message carrying the enabled working-memory
-// facts after any leading instruction system message(s) (Layer 0) and before the
-// user turn (Layer 3). The file is the source of truth and is re-read fresh each
-// turn, so user edits take effect on the next post. A read error or an empty fact
-// set leaves the assembled messages unchanged.
-func (o *Orchestrator) withWorkingMemory(msgs []prompting.Message) []prompting.Message {
+// withContext folds working memory and enabled prior-turn history into an
+// assembled [system?, user] message list, in layer order: instructions (Layer 0)
+// → working memory (band 0) → enabled conversation history → the current user
+// turn. Both are re-read fresh each turn so edits/new turns take effect on the
+// next post.
+func (o *Orchestrator) withContext(msgs []prompting.Message) []prompting.Message {
+	at := 0
+	for at < len(msgs) && msgs[at].Role == "system" {
+		at++
+	}
+	out := make([]prompting.Message, 0, len(msgs)+len(o.history)+1)
+	out = append(out, msgs[:at]...)
+	if wmMsg, ok := o.workingMemoryMessage(); ok {
+		out = append(out, wmMsg)
+	}
+	out = append(out, o.historyMessages()...)
+	out = append(out, msgs[at:]...)
+	return out
+}
+
+// workingMemoryMessage renders the session's enabled working-memory facts into a
+// system message (band 0). The file is the source of truth, re-read fresh each
+// turn. ok is false on a read error or an empty fact set.
+func (o *Orchestrator) workingMemoryMessage() (prompting.Message, bool) {
 	wm, err := o.store.LoadWorkingMemory(o.id.ID)
 	if err != nil {
-		return msgs
+		return prompting.Message{}, false
 	}
 	enabled := wm.Enabled()
 	facts := make([]prompting.Fact, 0, len(enabled))
 	for _, f := range enabled {
 		facts = append(facts, prompting.Fact{Key: f.Key, Value: f.Value})
 	}
-	wmMsg, ok := prompting.WorkingMemoryMessage(facts)
-	if !ok {
-		return msgs
-	}
-	at := 0
-	for at < len(msgs) && msgs[at].Role == "system" {
-		at++
-	}
-	out := make([]prompting.Message, 0, len(msgs)+1)
-	out = append(out, msgs[:at]...)
-	out = append(out, wmMsg)
-	out = append(out, msgs[at:]...)
-	return out
+	return prompting.WorkingMemoryMessage(facts)
 }
 
 // thinkForRoute reports whether this turn should reason before answering: the
@@ -405,6 +444,7 @@ func (o *Orchestrator) publish(eventType string, ct state.ContentType, payload a
 		EventType:   eventType,
 		ContentType: ct,
 		Payload:     payload,
+		Enabled:     state.DefaultEnabled(ct),
 		ModelName:   o.settings.OllamaModel,
 	})
 }

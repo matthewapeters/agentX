@@ -42,6 +42,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `agentx-tool-blacklist.toml` and global approvals are written to / reloaded from
   `agentx-tool-approvals.toml` under `~/.config/agentx/`; executor output cap now
   honors `[agentx.tools] output_max_bytes`. New blacklist seed template.
+- Added conversation context continuity (CTX-1): each turn is now assembled with
+  the prior enabled turns folded in (instructions → working memory → enabled
+  history → current user prompt), giving the model multi-turn continuity instead of
+  the previous single-turn context. User prompts and agent responses are enabled by
+  default; thinking and tool events are retained but disabled by default. Adds an
+  `enabled` field to the frozen event-envelope contract
+  (`docs/architecture/runtime_contracts/event-envelope.schema.json`) with
+  per-content-type defaults (`state.DefaultEnabled`) — a versioned schema change.
 - Added session working memory (WM-1): a per-session `working_memory.json` of
   user-controlled facts (`internal/session` `WorkingMemory`/`Fact`), bootstrap
   seeding of stable environment facts (`userid`, `cwd`, `project`, `home`, `os`,

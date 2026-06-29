@@ -47,6 +47,8 @@ func registerPromptFilesSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^an agent response is recorded$`, w.agentResponseRecorded)
 	sc.Step(`^no agent response is recorded$`, w.noAgentResponseRecorded)
 	sc.Step(`^no user prompt is recorded$`, w.noUserPromptRecorded)
+	sc.Step(`^the model context includes in order:$`, w.contextInOrder)
+	sc.Step(`^the persisted "([^"]*)" events are context-enabled$`, w.persistedEnabled)
 }
 
 func (w *promptFilesWorld) start(s runtime.Settings, model runtime.Model) error {
@@ -133,6 +135,46 @@ func (w *promptFilesWorld) systemPrecedesUser() error {
 	}
 	if si >= ui {
 		return fmt.Errorf("system message at %d does not precede user message at %d", si, ui)
+	}
+	return nil
+}
+
+// contextInOrder asserts the captured context contains each role/content row as
+// an ordered subsequence (other messages, e.g. system/working-memory, may appear
+// between them).
+func (w *promptFilesWorld) contextInOrder(table *godog.Table) error {
+	rows := table.Rows[1:]
+	idx := 0
+	for _, m := range w.captured {
+		if idx < len(rows) && m.Role == rows[idx].Cells[0].Value && m.Content == rows[idx].Cells[1].Value {
+			idx++
+		}
+	}
+	if idx != len(rows) {
+		return fmt.Errorf("context did not contain the expected messages in order (matched %d/%d); got %+v", idx, len(rows), w.captured)
+	}
+	return nil
+}
+
+// persistedEnabled asserts every persisted event of the given content type is
+// flagged context-enabled.
+func (w *promptFilesWorld) persistedEnabled(ct string) error {
+	events, err := w.events()
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, ev := range events {
+		if string(ev.ContentType) != ct {
+			continue
+		}
+		found = true
+		if !ev.Enabled {
+			return fmt.Errorf("%s event is not context-enabled", ct)
+		}
+	}
+	if !found {
+		return fmt.Errorf("no %s event was persisted", ct)
 	}
 	return nil
 }
