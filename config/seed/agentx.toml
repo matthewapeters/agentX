@@ -6,7 +6,7 @@
 
 [agentx.ollama]
 host  = "localhost:11434"   # Ollama API host:port
-model = "phi4-mini:3.8b"    # must match an installed Ollama model
+model = "nemotron-cascade-2:latest"    # must match an installed Ollama model
 
 [agentx.classification]
 retries               = 2   # re-attempts when a classification verdict won't parse
