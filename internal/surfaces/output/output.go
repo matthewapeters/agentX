@@ -59,6 +59,7 @@ type Model struct {
 	width    int
 	height   int
 	maxBody  int
+	banner   string // optional logo banner pinned above all widgets (bootstrap)
 	widgets  []*widget
 	selected int    // index of the selected widget, or -1 when empty
 	focused  bool   // whether the output panel currently holds focus
@@ -94,6 +95,15 @@ func (m *Model) SetFocus(focused bool) {
 
 // Focused reports whether the output panel holds focus.
 func (m *Model) Focused() bool { return m.focused }
+
+// SetBanner sets a pre-rendered (ANSI-colored) logo banner pinned above all
+// widgets as the first transcript element. It is a bootstrap-time "running"
+// signal; see docs/ux/06_OUTPUT_WIDGET.md ("Logo banner"). An empty string clears
+// it. The banner is rendered verbatim, clipped per line to the panel width.
+func (m *Model) SetBanner(s string) {
+	m.banner = s
+	m.refresh(false)
+}
 
 // SetMaxBody sets the per-widget body-row cap (max_widget_lines).
 func (m *Model) SetMaxBody(n int) {
@@ -257,10 +267,17 @@ type blocks struct {
 	totals []int
 }
 
-// render builds every widget block and the flattened transcript.
+// render builds every widget block and the flattened transcript. The logo
+// banner, when set, is rendered first (above all widgets) and is not selectable;
+// widget start rows are offset past it so selection/scroll math stays correct.
 func (m *Model) render() blocks {
 	var b blocks
 	row := 0
+	if m.banner != "" {
+		bl := m.bannerLines()
+		b.lines = append(b.lines, bl...)
+		row += len(bl)
+	}
 	for i, w := range m.widgets {
 		lines := m.renderWidget(w, i == m.selected)
 		b.starts = append(b.starts, row)
@@ -269,6 +286,23 @@ func (m *Model) render() blocks {
 		row += len(lines)
 	}
 	return b
+}
+
+// bannerLines splits the banner and clips each line (ANSI-aware) to the panel
+// width so embedded color is preserved without soft-wrapping the art.
+func (m *Model) bannerLines() []string {
+	lines := strings.Split(m.banner, "\n")
+	if m.width <= 0 {
+		return lines
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		if ansi.StringWidth(l) > m.width {
+			l = ansi.Truncate(l, m.width, "")
+		}
+		out[i] = l
+	}
+	return out
 }
 
 // refresh re-renders the widgets into the viewport, optionally pinning the bottom.

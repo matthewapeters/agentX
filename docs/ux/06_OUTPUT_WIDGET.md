@@ -225,6 +225,39 @@ THEN it is framed by a single-line box border (lipgloss NormalBorder)
   AND the border reflows to the current panel width on resize.
 ```
 
+## Logo banner (bootstrap)
+
+The output panel renders an optional **logo banner** as the very first element of
+the transcript, above every widget. It is a pre-rendered, ANSI-colored block of
+text (the application logo) supplied at startup. Its purpose is a bootstrap-time
+visual signal that the application is running while the bootstrap prompt is being
+processed — it appears on the first render, before any response arrives, and then
+remains pinned at the top of the transcript for the session.
+
+The banner is rendered verbatim except that each line is clipped (ANSI-aware) to
+the current panel width, so its embedded color sequences are preserved while the
+art never soft-wraps into garbage on a narrow terminal. The banner is not a
+widget: it has no border, header, selection, or collapse, and it does not shift
+the widget selection or scroll-pinning behavior.
+
+The banner content is the build artifact embedded from `logo/agentx.logo` (see
+`docs/implementation/09_makefile_and_quality_gate_contract.md` for the build-time
+sync); the surface is given the content at startup via `SetBanner`.
+
+```gherkin
+GIVEN an output panel with a logo banner set
+WHEN the panel renders before any event is applied
+THEN the rendered transcript begins with the banner content
+
+GIVEN an output panel with a logo banner set
+WHEN a user_prompt widget is applied
+THEN the banner still precedes the widget in the rendered transcript
+
+GIVEN an output panel sized narrower than the banner's widest line
+WHEN the panel renders the banner
+THEN no rendered line is wider than the panel width
+```
+
 ## Ordering (inherited from PD-01)
 
 Within one turn the widgets always render top-to-bottom in this order, below the

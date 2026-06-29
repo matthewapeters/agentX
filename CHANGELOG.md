@@ -42,6 +42,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `agentx-tool-blacklist.toml` and global approvals are written to / reloaded from
   `agentx-tool-approvals.toml` under `~/.config/agentx/`; executor output cap now
   honors `[agentx.tools] output_max_bytes`. New blacklist seed template.
+- Added a bootstrap logo banner to the chat output surface: the application logo
+  (`logo/agentx.logo`, ANSI-colored text) is embedded into the binary and rendered
+  as the first element of the output transcript, pinned above all widgets, as a
+  "running" signal while the bootstrap prompt is processed. Each banner line is
+  clipped to the panel width so the art survives narrow terminals. The Makefile
+  re-syncs the embedded copy (`cmd/agentx/assets/agentx.logo`) from the authored
+  source whenever it changes. Documented in `docs/ux/06_OUTPUT_WIDGET.md` and
+  `docs/implementation/09_makefile_and_quality_gate_contract.md`.
 - Added a text cursor and readline-style line editing to the chat input panel:
   typing, Backspace, and Shift+Enter now act at the cursor, with Left/Right
   (char), Ctrl-A/Ctrl-E (buffer start/end), and Alt-B/Alt-F (word back/forward)

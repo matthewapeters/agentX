@@ -47,5 +47,5 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return app.RunChat(ctx, app.Options{})
+	return app.RunChat(ctx, app.Options{Logo: logo})
 }

@@ -118,6 +118,10 @@ func (m Model) Init() tea.Cmd {
 // SetMaxWidgetLines configures the output widgets' body-row cap.
 func (m Model) SetMaxWidgetLines(n int) { m.output.SetMaxBody(n) }
 
+// SetBanner sets the output panel's bootstrap logo banner (pinned above all
+// widgets); empty clears it.
+func (m Model) SetBanner(s string) { m.output.SetBanner(s) }
+
 // SetTheme sets the focus-border SGR colors for the panels and output widgets.
 // Empty values keep the built-in defaults.
 func (m *Model) SetTheme(active, inactive string) {

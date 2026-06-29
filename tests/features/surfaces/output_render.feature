@@ -49,6 +49,27 @@ Feature: Output panel event rendering
     Then no output line is wider than 20
     And the output view contains "lazy dog"
 
+  # use-case: UC-OUTPUT-BANNER  (docs/ux/06_OUTPUT_WIDGET.md "Logo banner")
+  Scenario: The logo banner renders as the first element before any event
+    Given an output panel sized 40 by 10
+    And the logo banner "AGENTX-LOGO" is set
+    Then the output view contains "AGENTX-LOGO"
+
+  # use-case: UC-OUTPUT-BANNER
+  # the banner stays above the first widget
+  Scenario: The logo banner precedes applied widgets
+    Given an output panel sized 40 by 10
+    And the logo banner "AGENTX-LOGO" is set
+    When a user_prompt event "hello there" is applied
+    Then the logo banner precedes "hello there" in the output
+
+  # use-case: UC-OUTPUT-BANNER
+  # variant: clipped to width, never wider than the panel
+  Scenario: A wide banner line is clipped to the panel width
+    Given an output panel sized 12 by 10
+    And the logo banner "0123456789ABCDEFGHIJ" is set
+    Then no output line is wider than 12
+
   # use-case: UC-OUTPUT-SCROLL
   Scenario: Scrolling to the top reveals the earliest widget
     Given an output panel sized 20 by 3

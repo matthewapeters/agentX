@@ -35,6 +35,8 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the output view contains an unselected widget border$`, w.hasUnselectedBorder)
 	sc.Step(`^the output view contains a selected widget border$`, w.hasSelectedBorder)
 	sc.Step(`^the output view contains a scrollbar$`, w.hasScrollbar)
+	sc.Step(`^the logo banner "([^"]*)" is set$`, w.setBanner)
+	sc.Step(`^the logo banner precedes "([^"]*)" in the output$`, w.bannerPrecedes)
 	sc.Step(`^the output view contains "([^"]*)"$`, w.viewContains)
 	sc.Step(`^the output view does not contain "([^"]*)"$`, w.viewNotContains)
 	sc.Step(`^the output has (\d+) assistant entry$`, w.assistantEntries)
@@ -133,6 +135,27 @@ func (w *outputWorld) hasSelectedBorder() error {
 func (w *outputWorld) hasScrollbar() error {
 	if !strings.Contains(w.panel.View(), "█") {
 		return fmt.Errorf("output view has no scrollbar thumb")
+	}
+	return nil
+}
+
+func (w *outputWorld) setBanner(s string) error {
+	w.panel.SetBanner(s)
+	return nil
+}
+
+func (w *outputWorld) bannerPrecedes(widgetText string) error {
+	view := w.panel.View()
+	bi := strings.Index(view, "AGENTX-LOGO")
+	wi := strings.Index(view, widgetText)
+	if bi < 0 {
+		return fmt.Errorf("banner not found in output view")
+	}
+	if wi < 0 {
+		return fmt.Errorf("widget text %q not found in output view", widgetText)
+	}
+	if bi >= wi {
+		return fmt.Errorf("banner at %d does not precede widget %q at %d", bi, widgetText, wi)
 	}
 	return nil
 }

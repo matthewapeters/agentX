@@ -21,6 +21,9 @@ type Options struct {
 	Paths *config.Paths
 	// SessionRoot overrides the session storage root. Empty derives it from Paths.
 	SessionRoot string
+	// Logo is the bootstrap banner shown as the first element of the output
+	// surface. Empty shows no banner.
+	Logo string
 }
 
 // shutdownTimeout bounds graceful shutdown.
@@ -183,6 +186,7 @@ func RunChat(ctx context.Context, opts Options) error {
 	surface := chat.NewWithBridge(bridge)
 	surface.SetMaxWidgetLines(orc.Settings().MaxWidgetLines)
 	surface.SetTheme(orc.Settings().ActiveBorderColor, orc.Settings().InactiveBorderColor)
+	surface.SetBanner(opts.Logo)
 	p := tea.NewProgram(surface, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		return err
