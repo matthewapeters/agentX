@@ -312,6 +312,84 @@ Use-case: Raw token is never exposed by the registry
 - WHEN the registry record is read back (e.g. via `GET /surfaces`)
 - THEN it carries only the non-secret fingerprint, never the raw token
 
+## Read & Streaming Server (TRN-2)
+
+This section refines the HTTP API Baseline (read + streaming endpoints) and
+Transport directionality above with the implementation mechanics for the loopback
+server. It adds detail; it does not change the endpoint contract.
+
+### Provider seam
+
+The HTTP transport (`internal/transport/http`) must not import `internal/runtime`
+(Import Direction Matrix). It depends on a local `Provider` interface describing the
+orchestrator surface it adapts; the concrete `*runtime.Orchestrator` satisfies it and
+is injected by `internal/app`:
+
+```
+Provider:
+  Bus() *state.Bus                         // event fan-out for /events
+  Processing() *state.ProcessingPublisher  // snapshot for /processing-state
+  Session() session.Identity               // /sessions/current
+  Registry() *surfaces.Registry            // /surfaces
+```
+
+The server owns no orchestration logic; every handler is a read/stream adapter over
+the canonical state the orchestrator already publishes.
+
+### Read endpoints
+
+- `GET /health` → `200` with `{"status":"ok","session_id":"<id>"}`.
+- `GET /processing-state` → JSON of `Processing().Current()` (conforms to
+  `processing-state.schema.json`).
+- `GET /surfaces` → JSON array of `Registry().List()` (each conforms to
+  `surface-registration.schema.json`), deterministically ordered by `surface_id`.
+- `GET /sessions/current` → JSON of the active `session.Identity`.
+
+All read responses are `application/json`.
+
+### Streaming endpoint (`GET /events`, SSE)
+
+- Response is `text/event-stream` (`Cache-Control: no-cache`). The handler obtains a
+  fresh bus subscription per connection, streams each event as an SSE frame
+  (`event: <content_type>` + `data: <event-envelope JSON>`), and flushes after each.
+- The connection ends when the client disconnects (`r.Context().Done()`) or the bus
+  subscription closes; the subscription is always closed on return.
+- **Fan-out guarantee:** each SSE connection is an independent bus subscriber with its
+  own ordered queue, so a slow or stalled SSE consumer never blocks the publisher or
+  other surfaces (the per-subscriber queue semantics in `internal/state`).
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: Health check
+
+- GIVEN a running transport server for a session
+- WHEN a client GETs `/health`
+- THEN the response is `200` with `status: ok` and the session id
+
+Use-case: Read current processing state
+
+- GIVEN a running transport server whose session is `working`/`respond`
+- WHEN a client GETs `/processing-state`
+- THEN the JSON reports `state: working` and `phase: respond`
+
+Use-case: List attached surfaces
+
+- GIVEN a running transport server with a registered surface
+- WHEN a client GETs `/surfaces`
+- THEN the JSON array includes that surface's `surface_id`
+
+Use-case: Stream events over SSE
+
+- GIVEN a running transport server with an open `/events` stream
+- WHEN an event is published on the bus
+- THEN the stream delivers that event as an SSE frame
+
+Use-case: Concurrent streams both receive an event
+
+- GIVEN two open `/events` streams on the same server
+- WHEN an event is published
+- THEN both streams deliver it (no consumer blocks another)
+
 ## Non-Goals for v1
 
 - Public remote access over internet

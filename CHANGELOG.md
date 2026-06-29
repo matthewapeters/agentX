@@ -9,6 +9,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added the loopback HTTP/SSE transport read + streaming endpoints (TRN-2): a new
+  `internal/transport/http` server adapts the orchestrator's canonical state behind a
+  local `Provider` interface (so transport never imports runtime). `GET /health`,
+  `GET /processing-state`, `GET /surfaces`, and `GET /sessions/current` return JSON
+  snapshots; `GET /events` streams the event bus as Server-Sent Events, one
+  independent bus subscription per connection so a slow surface never blocks others.
+  Mechanics + GIVEN/WHEN/THEN contracts in
+  `docs/implementation/02_surface_orchestration_http.md`.
 - Added the surface registry and ephemeral attach token (TRN-1, first slice of the
   M1 external-surface enablement backlog): the orchestrator mints one per-session
   attach token at startup (raw value held in memory only) and owns an

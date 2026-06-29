@@ -14,6 +14,7 @@ import (
 	sessionsteps "agentx/tests/steps/session"
 	surfacesteps "agentx/tests/steps/surfaces"
 	toolsteps "agentx/tests/steps/tools"
+	transportsteps "agentx/tests/steps/transport"
 )
 
 // featurePaths points at the shared feature corpus relative to tests/suites.
@@ -27,6 +28,7 @@ func initializeAll(sc *godog.ScenarioContext) {
 	sessionsteps.InitializeScenario(sc)
 	surfacesteps.InitializeScenario(sc)
 	toolsteps.InitializeScenario(sc)
+	transportsteps.InitializeScenario(sc)
 }
 
 // runTagged runs every registered scenario initializer against the feature
