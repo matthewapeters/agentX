@@ -69,6 +69,7 @@ type Orchestrator struct {
 	classifier *classify.Classifier
 	recDone    chan error
 	recSub     *state.Subscription
+	gate       approvalGate
 
 	mu        sync.Mutex
 	started   bool

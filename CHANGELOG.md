@@ -29,6 +29,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   execution with stdin, timeout, stdout/stderr/exit capture and an output cap;
   `read_file`/`write_file`/`read_output` built-ins; full output persisted to
   `sessions/<id>/artifacts/` with a compact preview + ref and line-windowed read-back.
+- Added the tool approval round-trip (TOOL-3): new `awaiting_input` processing
+  state, an orchestrator approval gate (`RequestApproval`/`Resolve`) that pauses the
+  cycle and persists the approved scope, and a chat affordance mapping a/g/d to
+  approve-session / approve-global / deny.
 - Captured the tool-runtime design (first built-in command-line tool) ahead of
   implementation: `docs/build-plan/04_tool_runtime_backlog.md` (TOOL-1…5 for M3b),
   the `single_tool` cycle + output-artifact/context-shaping notes in

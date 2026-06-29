@@ -9,7 +9,7 @@
     "session_id": { "type": "string", "minLength": 1 },
     "state": {
       "type": "string",
-      "enum": ["idle", "working", "completed", "failed"]
+      "enum": ["idle", "working", "completed", "failed", "awaiting_input"]
     },
     "phase": {
       "type": "string",

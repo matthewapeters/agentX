@@ -50,6 +50,7 @@ type EventMsg state.Event
 type Bridge struct {
 	Submit     func(text string)
 	Stop       func()
+	Approve    func(decision string)
 	Events     <-chan state.Event
 	Processing <-chan state.ProcessingState
 }
@@ -232,6 +233,19 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Awaiting a tool-approval decision: a/g/d resolve it; other keys are ignored.
+	if m.proc.State == state.StateAwaitingInput {
+		switch key {
+		case "a":
+			return m, m.approveCmd("session")
+		case "g":
+			return m, m.approveCmd("global")
+		case "d":
+			return m, m.approveCmd("deny")
+		}
+		return m, nil
+	}
+
 	// While working, the input is disabled; only the chord above acts.
 	if m.proc.State == state.StateWorking {
 		return m, nil
@@ -266,6 +280,19 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		})
 	}
 	return m, nil
+}
+
+// approveCmd sends a tool-approval decision ("session"/"global"/"deny") to the
+// runtime, resolving the awaiting_input pause.
+func (m Model) approveCmd(decision string) tea.Cmd {
+	if m.bridge == nil || m.bridge.Approve == nil {
+		return nil
+	}
+	approve := m.bridge.Approve
+	return func() tea.Msg {
+		approve(decision)
+		return nil
+	}
 }
 
 // stopCmd asks the runtime to interrupt the in-flight prompt.
@@ -382,6 +409,8 @@ func (m Model) frame(content string, active bool) []string {
 func (m Model) hintStrip() string {
 	var text string
 	switch {
+	case m.proc.State == state.StateAwaitingInput:
+		text = "approve: a session · g global · d deny"
 	case m.proc.State == state.StateWorking:
 		if m.chordPending {
 			text = "esc again to confirm interrupt"

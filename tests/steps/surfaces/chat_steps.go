@@ -14,9 +14,10 @@ import (
 )
 
 type chatWorld struct {
-	model   chat.Model
-	cmd     tea.Cmd
-	stopped *bool
+	model    chat.Model
+	cmd      tea.Cmd
+	stopped  *bool
+	approval *string
 }
 
 // InitializeScenario registers the surfaces-domain steps.
@@ -54,6 +55,9 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a chat surface that records interrupts sized (\d+) by (\d+)$`, w.recordingSurfaceSized)
 	sc.Step(`^the interrupt is confirmed$`, w.confirmInterrupt)
 	sc.Step(`^the runtime is interrupted$`, w.runtimeInterrupted)
+	sc.Step(`^the processing state becomes awaiting input$`, w.processingAwaiting)
+	sc.Step(`^a chat surface that records approvals sized (\d+) by (\d+)$`, w.recordingApprovalsSized)
+	sc.Step(`^the approval decision is "([^"]*)"$`, w.approvalDecisionIs)
 }
 
 func (w *chatWorld) pressEsc() error {
@@ -110,6 +114,34 @@ func (w *chatWorld) recordingSurfaceSized(width, height int) error {
 	bridge := chat.Bridge{Stop: func() { stopped = true }}
 	w.model = chat.NewWithBridge(bridge)
 	w.update(tea.WindowSizeMsg{Width: width, Height: height})
+	return nil
+}
+
+func (w *chatWorld) processingAwaiting() error {
+	w.update(chat.ProcessingStateMsg{State: state.StateAwaitingInput, Phase: state.PhaseTool})
+	return nil
+}
+
+func (w *chatWorld) recordingApprovalsSized(width, height int) error {
+	var decision string
+	w.approval = &decision
+	bridge := chat.Bridge{Approve: func(d string) { decision = d }}
+	w.model = chat.NewWithBridge(bridge)
+	w.update(tea.WindowSizeMsg{Width: width, Height: height})
+	return nil
+}
+
+func (w *chatWorld) approvalDecisionIs(want string) error {
+	if w.cmd != nil {
+		w.cmd() // run the pending approveCmd so the bridge records the decision
+	}
+	if w.approval == nil || *w.approval != want {
+		got := ""
+		if w.approval != nil {
+			got = *w.approval
+		}
+		return fmt.Errorf("approval decision = %q, want %q", got, want)
+	}
 	return nil
 }
 

@@ -160,6 +160,7 @@ func RunChat(ctx context.Context, opts Options) error {
 				cancel()
 			}
 		},
+		Approve:    func(decision string) { orc.Resolve(decision) },
 		Events:     sub.C,
 		Processing: procCh,
 	}

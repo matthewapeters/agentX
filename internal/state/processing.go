@@ -13,6 +13,9 @@ const (
 	StateWorking   RunState = "working"
 	StateCompleted RunState = "completed"
 	StateFailed    RunState = "failed"
+	// StateAwaitingInput pauses the cycle for a user decision (e.g. tool approval
+	// or Stage-2 clarification). The runtime blocks until the surface resolves it.
+	StateAwaitingInput RunState = "awaiting_input"
 )
 
 // Phase is the fine-grained prompt-cycle phase.
@@ -27,7 +30,7 @@ const (
 )
 
 var (
-	validStates = map[RunState]bool{StateIdle: true, StateWorking: true, StateCompleted: true, StateFailed: true}
+	validStates = map[RunState]bool{StateIdle: true, StateWorking: true, StateCompleted: true, StateFailed: true, StateAwaitingInput: true}
 	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhaseNone: true}
 )
 
