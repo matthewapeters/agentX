@@ -133,6 +133,10 @@ func (o *Orchestrator) Start() error {
 	}
 	o.id = id
 
+	if err := o.seedWorkingMemory(); err != nil {
+		return fmt.Errorf("seed working memory: %w", err)
+	}
+
 	o.bus = state.NewBus()
 	o.proc = state.NewProcessingPublisher(id.ID)
 	if o.model == nil {
@@ -305,7 +309,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 			return nil
 		}
 		if handled {
-			msgs := o.assembler.Assemble(text + toolCtx)
+			msgs := o.withWorkingMemory(o.assembler.Assemble(text + toolCtx))
 			return o.finishCycle(o.streamResponse(ctx, msgs, nil, false))
 		}
 	}
@@ -313,9 +317,53 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	// Route-aware thinking: the verdict decides whether this turn reasons before
 	// answering, with a wall-clock budget that falls back to a direct answer.
 	doThink := o.thinkForRoute(route)
-	messages := o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route)
-	fallback := o.assembler.Assemble(text)
+	messages := o.withWorkingMemory(o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route))
+	fallback := o.withWorkingMemory(o.assembler.Assemble(text))
 	return o.finishCycle(o.streamResponse(ctx, messages, fallback, doThink))
+}
+
+// seedWorkingMemory writes the bootstrap facts (userid, cwd) into the session's
+// working_memory.json when absent, leaving any existing user-managed facts
+// (including edits and disabled state) intact.
+func (o *Orchestrator) seedWorkingMemory() error {
+	wm, err := o.store.LoadWorkingMemory(o.id.ID)
+	if err != nil {
+		return err
+	}
+	if wm.SeedIfAbsent(session.BootstrapFacts()...) {
+		return o.store.SaveWorkingMemory(o.id.ID, wm)
+	}
+	return nil
+}
+
+// withWorkingMemory inserts a system message carrying the enabled working-memory
+// facts after any leading instruction system message(s) (Layer 0) and before the
+// user turn (Layer 3). The file is the source of truth and is re-read fresh each
+// turn, so user edits take effect on the next post. A read error or an empty fact
+// set leaves the assembled messages unchanged.
+func (o *Orchestrator) withWorkingMemory(msgs []prompting.Message) []prompting.Message {
+	wm, err := o.store.LoadWorkingMemory(o.id.ID)
+	if err != nil {
+		return msgs
+	}
+	enabled := wm.Enabled()
+	facts := make([]prompting.Fact, 0, len(enabled))
+	for _, f := range enabled {
+		facts = append(facts, prompting.Fact{Key: f.Key, Value: f.Value})
+	}
+	wmMsg, ok := prompting.WorkingMemoryMessage(facts)
+	if !ok {
+		return msgs
+	}
+	at := 0
+	for at < len(msgs) && msgs[at].Role == "system" {
+		at++
+	}
+	out := make([]prompting.Message, 0, len(msgs)+1)
+	out = append(out, msgs[:at]...)
+	out = append(out, wmMsg)
+	out = append(out, msgs[at:]...)
+	return out
 }
 
 // thinkForRoute reports whether this turn should reason before answering: the

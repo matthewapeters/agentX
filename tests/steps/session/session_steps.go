@@ -25,6 +25,7 @@ type sessionWorld struct {
 func InitializeScenario(sc *godog.ScenarioContext) {
 	registerIdentitySteps(sc)
 	registerPersistenceSteps(sc)
+	registerWorkingMemorySteps(sc)
 }
 
 // registerIdentitySteps wires the session-identity steps (CHT-A2).

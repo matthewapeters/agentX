@@ -42,6 +42,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `agentx-tool-blacklist.toml` and global approvals are written to / reloaded from
   `agentx-tool-approvals.toml` under `~/.config/agentx/`; executor output cap now
   honors `[agentx.tools] output_max_bytes`. New blacklist seed template.
+- Added session working memory (WM-1): a per-session `working_memory.json` of
+  user-controlled facts (`internal/session` `WorkingMemory`/`Fact`), bootstrap
+  seeding of stable environment facts (`userid`, `cwd`, `project`, `home`, `os`,
+  `arch`, and `repo_root` when in a git work tree) as user-owned facts when absent,
+  and re-read-each-turn injection of enabled facts as a system message after the
+  instruction layer. The TUI management surface is deferred.
 - Captured the tool-runtime design (first built-in command-line tool) ahead of
   implementation: `docs/build-plan/04_tool_runtime_backlog.md` (TOOL-1…5 for M3b),
   the `single_tool` cycle + output-artifact/context-shaping notes in
