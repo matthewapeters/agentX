@@ -690,6 +690,49 @@ Use-case: Shutdown stops the transport
 - WHEN the orchestrator shuts down
 - THEN the endpoint becomes unreachable and the attached surface is marked stopped
 
+## Surface Host (SS-2)
+
+This section documents the shared client-side host that turns an attach into a
+running TUI surface. It is the reusable framework every rendering surface (context,
+files, config, …) builds on.
+
+### SurfaceModel contract
+
+A concrete surface implements a small contract; the host owns everything else:
+
+```
+SurfaceModel:
+  Apply(ev state.Event)          // fold one session event into the projection
+  SetSize(width, height int)     // inner render area (inside the host title strip)
+  Key(msg tea.KeyPressMsg)       // surface-specific keys (scroll, …)
+  View() string                  // render the body
+```
+
+### Host lifecycle
+
+`internal/surfaces/client.Host` is the Bubble Tea model wrapping a `SurfaceModel`:
+
+1. **Seed**: `Init` applies the durable seed snapshot (decision SS-1) before any live
+   event, so the surface renders the full session immediately.
+2. **Live**: it then listens on the resumed stream (`Subscribe(after: lastOrdinal)`),
+   applying each `EventMsg` and re-arming the listen command — the same channel-read
+   idiom the chat surface uses.
+3. **Resize**: `WindowSizeMsg` sets the surface's inner size.
+4. **Quit**: a quit key (`Ctrl-C`/`q`) invokes the shutdown hook
+   (`POST /surface/{id}/shutdown`, lifecycle → `stopped`) then quits; a closed stream
+   (orchestrator gone) also quits.
+
+`client.Run` wires the attach: it seeds, subscribes after the seed cursor, and runs
+the program. Non-quit keys are forwarded to the surface.
+
+### Launch dispatch
+
+`agentx surface launch <kind>` (`cli.RunSurface`) registers via `cli.Launch` (TRN-5),
+then dispatches by kind: a kind with a registered `SurfaceModel` runs its TUI;
+a kind without one yet attaches headless and prints the registration. Surfaces
+register in `surfaceModelFor` as they land (the context viewer in SS-3). The
+dispatch lives in `internal/cli` (not `cmd/agentx`) to honor the import matrix.
+
 ## Non-Goals for v1
 
 - Public remote access over internet

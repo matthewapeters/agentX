@@ -155,6 +155,25 @@ func (c *Client) Subscribe(ctx context.Context, after uint64) (<-chan state.Even
 	return ch, nil
 }
 
+// Shutdown marks the surface stopped on the orchestrator (lifecycle → stopped),
+// authorized by the attach token. Called when a surface quits (SS-2).
+func (c *Client) Shutdown(ctx context.Context, surfaceID, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/surface/"+surfaceID+"/shutdown", nil)
+	if err != nil {
+		return &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return attachErrorFrom(resp)
+	}
+	return nil
+}
+
 // attachErrorFrom decodes a {error,category} body into an AttachError, defaulting
 // the category from the status when the body is unhelpful.
 func attachErrorFrom(resp *http.Response) *AttachError {

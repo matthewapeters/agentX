@@ -9,6 +9,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added the shared surface-client framework (SS-2, M2): a new
+  `internal/surfaces/client` package with a `SurfaceModel` contract
+  (`Apply`/`SetSize`/`Key`/`View`) and a Bubble Tea `Host` that drives the attach
+  lifecycle — apply the durable seed before any live event, listen on the
+  cursor-resumed stream, resize, and quit (invoking `POST /surface/{id}/shutdown`)
+  on a quit key or a closed stream; non-quit keys forward to the surface.
+  `client.Run` wires seed→subscribe→program, and `cli.RunSurface` makes
+  `agentx surface launch <kind>` dispatch by kind to a TUI (or attach headless when
+  a kind has no surface yet), kept in `internal/cli` to honor the import matrix.
+  `transport/http.Client` gained `Shutdown`. Documented in
+  `docs/implementation/02_surface_orchestration_http.md`.
 - Added the disk-seeded, cursor-resumed event stream for attaching surfaces (SS-1,
   first slice of M2): the event bus now stamps a per-session monotonic `ordinal` on
   every event at publish time (carried on the envelope so the live event and its

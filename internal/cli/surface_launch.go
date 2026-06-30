@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"agentx/internal/surfaces"
+	"agentx/internal/surfaces/client"
 	transporthttp "agentx/internal/transport/http"
 )
 
@@ -66,6 +67,41 @@ func Launch(ctx context.Context, args LaunchArgs) (LaunchResult, error) {
 		SessionName: reg.SessionName,
 		Endpoint:    args.Connect,
 	}, nil
+}
+
+// RunSurface launches a surface: it attaches (Launch), then — if the kind has a
+// TUI — runs the surface program until the user quits; otherwise it reports the
+// headless attach (the surface registered but has no UI yet). This is the
+// `agentx surface launch` entry point used by cmd/agentx, keeping the
+// surface-client dependency out of the command package.
+func RunSurface(ctx context.Context, args LaunchArgs) error {
+	res, err := Launch(ctx, args)
+	if err != nil {
+		return err
+	}
+	if surface, title, ok := surfaceModelFor(args.SurfaceKind); ok {
+		return client.Run(ctx, client.Options{
+			Endpoint:  args.Connect,
+			Token:     args.Token,
+			SurfaceID: res.SurfaceID,
+			Title:     title,
+			Surface:   surface,
+		})
+	}
+	fmt.Printf("surface attached headless: %s (%s) — no TUI for this kind yet\n", res.SurfaceID, res.SurfaceKind)
+	fmt.Printf("session: %s / %s\n", res.SessionName, res.SessionID)
+	fmt.Printf("endpoint: %s\n", res.Endpoint)
+	return nil
+}
+
+// surfaceModelFor returns the SurfaceModel + title for a launchable kind, or
+// false when the kind has no TUI yet. Concrete surfaces register here as they land
+// (the context viewer in SS-3).
+func surfaceModelFor(kind string) (client.SurfaceModel, string, bool) {
+	switch kind {
+	default:
+		return nil, "", false
+	}
 }
 
 // checkLocalSafe enforces a loopback connect endpoint (v1 policy, rule 3).
