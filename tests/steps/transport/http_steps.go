@@ -25,6 +25,7 @@ import (
 	"agentx/internal/session"
 	"agentx/internal/state"
 	"agentx/internal/surfaces"
+	"agentx/internal/surfaces/client"
 	transporthttp "agentx/internal/transport/http"
 )
 
@@ -144,8 +145,9 @@ type transportWorld struct {
 
 	launchResult cli.LaunchResult
 	launchErr    error
-	tmpRoot      string // temp session root for auto-discovery launch (SS-5)
-	wmErr        error  // last working-memory mutation error (SS-6)
+	tmpRoot        string             // temp session root for auto-discovery launch (SS-5)
+	wmErr          error              // last working-memory mutation error (SS-6)
+	presenceCancel context.CancelFunc // held presence stream (SS-4 / SS-6)
 
 	seed       []state.Event
 	cursor     uint64
@@ -181,6 +183,9 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 		}
 		if w.tmpRoot != "" {
 			_ = os.RemoveAll(w.tmpRoot)
+		}
+		if w.presenceCancel != nil {
+			w.presenceCancel()
 		}
 		*w = transportWorld{}
 		return ctx, err
@@ -232,6 +237,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^surface "([^"]*)" disconnects its events stream$`, w.disconnectEventsStream)
 	sc.Step(`^the transport reports connected kinds "([^"]*)"$`, w.transportConnectedKinds)
 	sc.Step(`^the transport connected kinds become "([^"]*)"$`, w.transportConnectedBecome)
+	sc.Step(`^surface "([^"]*)" holds a presence stream$`, w.holdPresence)
+	sc.Step(`^surface "([^"]*)" drops its presence stream$`, w.dropPresence)
 
 	// surface launch CLI (TRN-5).
 	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" with the valid token$`, w.launchValid)
@@ -351,6 +358,19 @@ func (w *transportWorld) disconnectEventsStream(id string) error {
 	st.cancel()
 	_ = st.body.Close()
 	delete(w.connStreams, id)
+	return nil
+}
+
+func (w *transportWorld) holdPresence(id string) error {
+	w.presenceCancel = client.Presence(context.Background(), w.httptst.URL, id)
+	return nil
+}
+
+func (w *transportWorld) dropPresence(string) error {
+	if w.presenceCancel != nil {
+		w.presenceCancel()
+		w.presenceCancel = nil
+	}
 	return nil
 }
 

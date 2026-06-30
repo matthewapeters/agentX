@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"agentx/internal/session"
+	"agentx/internal/surfaces/client"
 	transporthttp "agentx/internal/transport/http"
 )
 
@@ -32,6 +33,12 @@ type Options struct {
 // Run launches the working-memory editor against a running orchestrator and blocks
 // until the user quits.
 func Run(ctx context.Context, opts Options) error {
+	// Hold an event stream purely for connection presence (SS-4): the orchestrator
+	// reports a surface connected while it has an open stream. WM is document-based
+	// (it polls), so it consumes no events — but it still holds a stream so the
+	// launch widget shows it as 🟢. The stream closes on exit.
+	defer client.Presence(ctx, opts.Endpoint, opts.SurfaceID)()
+
 	m := New(transporthttp.NewClient(opts.Endpoint), opts)
 	_, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
 	return err

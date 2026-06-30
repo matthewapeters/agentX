@@ -16,6 +16,23 @@ import (
 	transporthttp "agentx/internal/transport/http"
 )
 
+// Presence opens an event stream tagged with surfaceID purely so the orchestrator
+// marks the surface connected (SS-4), draining and discarding its events. It is for
+// document-based surfaces (e.g. the working-memory editor) that don't consume the
+// event stream but still need to report liveness. The returned cancel closes the
+// stream — call it on program exit so the surface is marked disconnected. A failed
+// subscribe is non-fatal: the surface simply shows as not-connected.
+func Presence(ctx context.Context, endpoint, surfaceID string) context.CancelFunc {
+	streamCtx, cancel := context.WithCancel(ctx)
+	if ch, err := transporthttp.NewClient(endpoint).Subscribe(streamCtx, 0, surfaceID); err == nil {
+		go func() {
+			for range ch {
+			}
+		}()
+	}
+	return cancel
+}
+
 // SurfaceModel is the per-surface contract the host drives.
 type SurfaceModel interface {
 	// Apply folds one session event into the surface's projection.
