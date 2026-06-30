@@ -154,7 +154,7 @@ func (m *Model) SetLaunchInfo(header string, names, commands []string) {
 // surfaces, each `<digit> <status> <name>` (🟢 attached / 🔴 not), plus a copy hint
 // and a confirmation after a copy. Commands (and thus the token) are never included.
 func (m *Model) launchBody() string {
-	lines := []string{fmt.Sprintf("press 1-%d to copy a launch command to the clipboard:", len(m.launchItems)), ""}
+	lines := []string{fmt.Sprintf("press 1-%d to copy a launch command (clipboard support varies):", len(m.launchItems)), ""}
 	for i, it := range m.launchItems {
 		status := "🔴"
 		if m.connected[it.name] {
@@ -162,6 +162,9 @@ func (m *Model) launchBody() string {
 		}
 		lines = append(lines, fmt.Sprintf("  %d  %s %s", i+1, status, it.name))
 	}
+	// Manual fallback: the launch is flagless (SS-5), so a user whose terminal drops
+	// OSC 52 can just type this in another pane, substituting a name above.
+	lines = append(lines, "", "or run in another pane:  agentx surface launch <name>")
 	if m.copied != "" {
 		lines = append(lines, "", "✓ copied "+m.copied+" — paste in another terminal")
 	}

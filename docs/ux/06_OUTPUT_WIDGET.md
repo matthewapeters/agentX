@@ -309,7 +309,11 @@ pressing a **digit `1..N`** also copies that surface's command to the system cli
 via the terminal's **OSC 52** sequence (`tea.SetClipboard`), and the widget body
 confirms by name. OSC 52 is terminal-dependent (VTE-based terminals such as GNOME
 Terminal/Terminator ignore clipboard writes), which is why the short, selectable
-command — not the clipboard — is the load-bearing path. The widget reuses the standard
+command — not the clipboard — is the load-bearing path. For exactly that reason the
+expanded body ends with a **manual-invocation footer**
+(`or run in another pane:  agentx surface launch <name>`) so a user whose terminal
+drops the clipboard write can just type the flagless command, substituting a listed
+name. The widget reuses the standard
 collapsible-widget machinery (selectable, Enter toggles, body capped/scrolled), so it
 shifts selection/scroll exactly as a normal widget.
 

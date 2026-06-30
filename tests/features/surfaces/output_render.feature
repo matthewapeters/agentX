@@ -85,8 +85,8 @@ Feature: Output panel event rendering
     When launch widget 0 is expanded
     Then the output view contains "kind-1"
     And the output view contains "kind-2"
-    And the output view does not contain "surface launch"
     And the output view does not contain "token"
+    And the output view contains "agentx surface launch <name>"
 
   # use-case: UC-OUTPUT-LAUNCH
   # variant: every surface is disconnected (red) until one attaches
@@ -116,7 +116,7 @@ Feature: Output panel event rendering
     And the launch info widget is selected
     When launch command 1 is copied
     Then the output view contains "copied kind-1"
-    And the output view does not contain "surface launch"
+    And the output view does not contain "token"
 
   # use-case: UC-OUTPUT-LAUNCH
   # variant: copy is rejected unless the launch widget is selected
