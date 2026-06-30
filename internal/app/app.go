@@ -202,10 +202,12 @@ func RunChat(ctx context.Context, opts Options) error {
 	if ep := orc.Endpoint(); ep != "" {
 		kinds := surfaces.ExternalKinds()
 		header := fmt.Sprintf("🔌 Attach surfaces (%d) · %s · enter to expand", len(kinds), ep)
-		lines := []string{"run in another terminal (token is for this session only):", ""}
+		lines := []string{"run in another terminal (token is for this session only):"}
 		session, token := orc.Session().Name, orc.AttachToken().Raw()
+		// A blank line before each command keeps adjacent commands from bleeding
+		// together and makes a single triple-click/select copy one clean command.
 		for _, k := range kinds {
-			lines = append(lines, transporthttp.LaunchCommand(k, session, ep, token))
+			lines = append(lines, "", transporthttp.LaunchCommand(k, session, ep, token))
 		}
 		surface.SetLaunchInfo(header, lines)
 	}
