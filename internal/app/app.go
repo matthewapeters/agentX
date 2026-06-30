@@ -191,16 +191,24 @@ func RunChat(ctx context.Context, opts Options) error {
 	// them, so the response opens the session.
 	go func() { _ = orc.SubmitBootstrap(ctx) }()
 
-	// When the transport is served, print the attach hint (endpoint + token) so the
-	// user can launch external surfaces in other terminals.
-	if ep := orc.Endpoint(); ep != "" {
-		fmt.Println(transporthttp.LaunchHint(orc.Session().Name, ep, orc.AttachToken().Raw(), surfaces.ExternalKinds()))
-	}
-
 	surface := chat.NewWithBridge(bridge)
 	surface.SetMaxWidgetLines(orc.Settings().MaxWidgetLines)
 	surface.SetTheme(orc.Settings().ActiveBorderColor, orc.Settings().InactiveBorderColor)
 	surface.SetBanner(opts.Logo)
+
+	// When the transport is served, surface the attach commands as a collapsed
+	// launch-info widget (the chat runs in the alternate screen, so a printed hint
+	// would be wiped). The user scrolls to the top and expands it to copy a command.
+	if ep := orc.Endpoint(); ep != "" {
+		kinds := surfaces.ExternalKinds()
+		header := fmt.Sprintf("🔌 Attach surfaces (%d) · %s · enter to expand", len(kinds), ep)
+		lines := []string{"run in another terminal (token is for this session only):", ""}
+		session, token := orc.Session().Name, orc.AttachToken().Raw()
+		for _, k := range kinds {
+			lines = append(lines, transporthttp.LaunchCommand(k, session, ep, token))
+		}
+		surface.SetLaunchInfo(header, lines)
+	}
 	p := tea.NewProgram(surface, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		return err

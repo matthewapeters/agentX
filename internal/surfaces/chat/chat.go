@@ -122,6 +122,10 @@ func (m Model) SetMaxWidgetLines(n int) { m.output.SetMaxBody(n) }
 // widgets); empty clears it.
 func (m Model) SetBanner(s string) { m.output.SetBanner(s) }
 
+// SetLaunchInfo installs the collapsed launch-info widget (attach commands for peer
+// surfaces) as the first output widget. See docs/ux/06_OUTPUT_WIDGET.md.
+func (m Model) SetLaunchInfo(header string, lines []string) { m.output.SetLaunchInfo(header, lines) }
+
 // SetTheme sets the focus-border SGR colors for the panels and output widgets.
 // Empty values keep the built-in defaults.
 func (m *Model) SetTheme(active, inactive string) {

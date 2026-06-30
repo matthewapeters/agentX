@@ -258,6 +258,49 @@ WHEN the panel renders the banner
 THEN no rendered line is wider than the panel width
 ```
 
+## Launch-info widget (attach surfaces)
+
+The chat surface boots the server with an HTTP/SSE transport that external surfaces
+attach to (M1). The attach endpoint and the session's ephemeral attach token are
+needed to launch a peer surface — but the chat surface runs in the alternate screen,
+so anything printed to stdout before the program starts is wiped and not scrollable.
+To make the attach information durably available during the session, the output panel
+renders a **launch-info widget**.
+
+Placement and lifecycle:
+
+- It is the **first widget** of the transcript — rendered after the logo banner and
+  before the bootstrap response — so a user can always scroll to the top to find it.
+- It is **collapsed by default** to keep the bootstrap view clean (and to avoid
+  casually exposing the token); the header shows the endpoint and an expand hint, and
+  expanding reveals one **full, copy-pasteable** `agentx surface launch <kind> …`
+  command per launchable surface kind.
+- It is **surface-local**, injected via `SetLaunchInfo` at startup — it is *not* a
+  session event: it is never persisted to the event log and never appears on attached
+  peer surfaces (which render only bus events). It exists solely on the hub chat
+  surface that knows how to launch peers.
+- It is omitted entirely when the transport is disabled (no endpoint).
+
+The widget reuses the standard collapsible-widget machinery (selectable, Enter
+toggles, body capped/scrolled like any other), so it shifts selection/scroll exactly
+as a normal widget. The displayed token is the session's raw attach token; this is
+local and loopback-only, and collapsed-by-default limits incidental exposure (e.g. a
+screen-share).
+
+```gherkin
+GIVEN an output panel with launch info set for 2 surface kinds
+WHEN the panel renders before any event is applied
+THEN the launch-info widget is the first widget and is collapsed
+
+GIVEN an output panel with launch info set
+WHEN the launch-info widget is expanded
+THEN it shows a full "agentx surface launch <kind>" command for each kind
+
+GIVEN an output panel with launch info set
+WHEN a user_prompt widget is applied
+THEN the launch-info widget still precedes it in the transcript
+```
+
 ## Ordering (inherited from PD-01)
 
 Within one turn the widgets always render top-to-bottom in this order, below the

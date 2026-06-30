@@ -37,6 +37,9 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the output view contains a scrollbar$`, w.hasScrollbar)
 	sc.Step(`^the logo banner "([^"]*)" is set$`, w.setBanner)
 	sc.Step(`^the logo banner precedes "([^"]*)" in the output$`, w.bannerPrecedes)
+	sc.Step(`^the launch info is set for (\d+) surface kinds$`, w.setLaunchInfo)
+	sc.Step(`^launch widget 0 is expanded$`, w.expandLaunch)
+	sc.Step(`^the launch info precedes "([^"]*)" in the output$`, w.launchPrecedes)
 	sc.Step(`^the output view contains "([^"]*)"$`, w.viewContains)
 	sc.Step(`^the output view does not contain "([^"]*)"$`, w.viewNotContains)
 	sc.Step(`^the output has (\d+) assistant entry$`, w.assistantEntries)
@@ -141,6 +144,40 @@ func (w *outputWorld) hasScrollbar() error {
 
 func (w *outputWorld) setBanner(s string) error {
 	w.panel.SetBanner(s)
+	return nil
+}
+
+// launchMarker identifies the launch-info widget header in the rendered view.
+const launchMarker = "Attach surfaces"
+
+func (w *outputWorld) setLaunchInfo(n int) error {
+	header := fmt.Sprintf("🔌 %s (%d) · http://127.0.0.1:8420 · enter to expand", launchMarker, n)
+	lines := []string{"run in another terminal (token is for this session only):", ""}
+	for i := 1; i <= n; i++ {
+		lines = append(lines, fmt.Sprintf("agentx surface launch kind-%d --session s --connect http://127.0.0.1:8420 --token tkn", i))
+	}
+	w.panel.SetLaunchInfo(header, lines)
+	return nil
+}
+
+func (w *outputWorld) expandLaunch() error {
+	w.panel.ToggleCollapse(0)
+	return nil
+}
+
+func (w *outputWorld) launchPrecedes(widgetText string) error {
+	view := w.panel.View()
+	li := strings.Index(view, launchMarker)
+	wi := strings.Index(view, widgetText)
+	if li < 0 {
+		return fmt.Errorf("launch-info widget not found in output view")
+	}
+	if wi < 0 {
+		return fmt.Errorf("widget text %q not found in output view", widgetText)
+	}
+	if li >= wi {
+		return fmt.Errorf("launch info at %d does not precede widget %q at %d", li, widgetText, wi)
+	}
 	return nil
 }
 

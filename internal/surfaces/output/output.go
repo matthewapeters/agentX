@@ -34,6 +34,7 @@ const (
 	kindToolResult
 	kindSystem
 	kindError
+	kindLaunch
 )
 
 // widget is one renderable output entry.
@@ -103,6 +104,27 @@ func (m *Model) Focused() bool { return m.focused }
 func (m *Model) SetBanner(s string) {
 	m.banner = s
 	m.refresh(false)
+}
+
+// SetLaunchInfo installs a collapsed launch-info widget as the first widget of the
+// transcript (after the banner, before any event). It is surface-local — never a
+// session event — so it is not persisted and never appears on attached peer
+// surfaces. header is shown collapsed; lines form the body revealed on expand
+// (one full `agentx surface launch …` command per kind). See
+// docs/ux/06_OUTPUT_WIDGET.md (Launch-info widget).
+func (m *Model) SetLaunchInfo(header string, lines []string) {
+	w := &widget{
+		kind:        kindLaunch,
+		header:      header,
+		body:        strings.Join(lines, "\n"),
+		collapsible: true,
+		collapsed:   true,
+	}
+	m.widgets = append([]*widget{w}, m.widgets...)
+	if m.selected >= 0 {
+		m.selected++ // keep the selection pointing at the same widget
+	}
+	m.refresh(true)
 }
 
 // SetMaxBody sets the per-widget body-row cap (max_widget_lines).

@@ -9,6 +9,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added an in-session launch-info widget so the surface-attach commands survive the
+  alternate screen: the chat boot path now installs a collapsed, scrollable
+  launch-info widget as the first output widget (after the banner, before the
+  bootstrap response) instead of printing a startup hint that the alt-screen wiped.
+  Expanding it reveals one full, copy-pasteable `agentx surface launch <kind>`
+  command per launchable surface kind (endpoint + token inline). The widget is
+  surface-local — never a session event — so it is not persisted and never appears
+  on attached peer surfaces; it is omitted when the transport is disabled. New
+  `output.Model.SetLaunchInfo`; documented in `docs/ux/06_OUTPUT_WIDGET.md`
+  (Launch-info widget). Replaces the dead `LaunchHint` stdout print.
 - Added the context viewer surface (SS-3, completing M2's first peer surface): a new
   read-only `internal/surfaces/context` surface launched with
   `agentx surface launch context`. It projects the session event stream into the

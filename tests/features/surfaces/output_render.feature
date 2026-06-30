@@ -70,6 +70,30 @@ Feature: Output panel event rendering
     And the logo banner "0123456789ABCDEFGHIJ" is set
     Then no output line is wider than 12
 
+  # use-case: UC-OUTPUT-LAUNCH  (docs/ux/06_OUTPUT_WIDGET.md "Launch-info widget")
+  Scenario: Launch info renders collapsed as the first widget
+    Given an output panel sized 60 by 12
+    And the launch info is set for 2 surface kinds
+    Then the output view contains "Attach surfaces"
+    And the output view does not contain "surface launch kind-1"
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: expand reveals a command per kind
+  Scenario: Expanding launch info shows a command per kind
+    Given an output panel sized 100 by 16
+    And the launch info is set for 2 surface kinds
+    When launch widget 0 is expanded
+    Then the output view contains "surface launch kind-1"
+    And the output view contains "surface launch kind-2"
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: stays above applied widgets
+  Scenario: Launch info precedes applied widgets
+    Given an output panel sized 60 by 12
+    And the launch info is set for 1 surface kinds
+    When a user_prompt event "hello there" is applied
+    Then the launch info precedes "hello there" in the output
+
   # use-case: UC-OUTPUT-SCROLL
   Scenario: Scrolling to the top reveals the earliest widget
     Given an output panel sized 20 by 3
