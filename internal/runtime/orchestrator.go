@@ -337,7 +337,7 @@ func (o *Orchestrator) CheckModel(ctx context.Context) error {
 // processing-state. Canceling ctx interrupts the in-flight model call: any
 // partial response is kept, no error is recorded, and the cycle ends completed.
 func (o *Orchestrator) Submit(ctx context.Context, text string) error {
-	return o.runPrompt(ctx, text, true, true)
+	return o.runPrompt(ctx, text, true, true, false)
 }
 
 // SubmitBootstrap submits the configured bootstrap prompt at startup (story:
@@ -351,8 +351,9 @@ func (o *Orchestrator) SubmitBootstrap(ctx context.Context) error {
 	if text == "" {
 		return nil
 	}
-	// Bootstrap skips classification so the response is the first thing shown.
-	return o.runPrompt(ctx, text, false, false)
+	// Bootstrap skips classification so the response is the first thing shown, and
+	// its events are marked ephemeral so the context viewer omits them.
+	return o.runPrompt(ctx, text, false, false, true)
 }
 
 // runPrompt drives one prompt cycle. When recordUserPrompt is false the user
@@ -360,7 +361,7 @@ func (o *Orchestrator) SubmitBootstrap(ctx context.Context) error {
 // no user_prompt event is published — used for the bootstrap prompt. When
 // classifyPrompt is true the prompt is classified (and a classification event
 // published) before the respond phase.
-func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPrompt, classifyPrompt bool) error {
+func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPrompt, classifyPrompt, ephemeral bool) error {
 	o.mu.Lock()
 	ready := o.started && o.accepting
 	classifier := o.classifier
@@ -373,18 +374,18 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		o.setProcessing(state.StateWorking, state.PhaseClassify)
 	}
 	if recordUserPrompt {
-		o.publish("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text})
+		o.publishEv("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text}, ephemeral)
 	}
 
 	route := ""
 	if classifyPrompt && classifier != nil {
 		verdict := classifier.Classify(ctx, text)
 		route = string(verdict.Route)
-		o.publish("CLASSIFICATION", state.ContentClassification, map[string]any{
+		o.publishEv("CLASSIFICATION", state.ContentClassification, map[string]any{
 			"route":     route,
 			"rationale": verdict.Rationale,
 			"text":      classificationText(verdict),
-		})
+		}, ephemeral)
 		// v1: only respond_directly executes; reserved routes fall back to respond.
 	}
 
@@ -400,7 +401,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		}
 		if handled {
 			msgs := o.withContext(o.assembler.Assemble(text + toolCtx))
-			resp, err := o.streamResponse(ctx, msgs, nil, false)
+			resp, err := o.streamResponse(ctx, msgs, nil, false, ephemeral)
 			o.recordTurn(err, recordUserPrompt, text, resp)
 			return o.finishCycle(err)
 		}
@@ -411,7 +412,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	doThink := o.thinkForRoute(route)
 	messages := o.withContext(o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route))
 	fallback := o.withContext(o.assembler.Assemble(text))
-	resp, err := o.streamResponse(ctx, messages, fallback, doThink)
+	resp, err := o.streamResponse(ctx, messages, fallback, doThink, ephemeral)
 	o.recordTurn(err, recordUserPrompt, text, resp)
 	return o.finishCycle(err)
 }
@@ -530,6 +531,13 @@ func classificationText(v classify.Verdict) string {
 
 // publish stamps and fans an event out over the bus.
 func (o *Orchestrator) publish(eventType string, ct state.ContentType, payload any) {
+	o.publishEv(eventType, ct, payload, false)
+}
+
+// publishEv publishes an event, marking it ephemeral when it engages the session but
+// is not part of the user's conversation (the bootstrap exchange). Ephemeral events
+// still reach the chat surface; read-only observers like the context viewer omit them.
+func (o *Orchestrator) publishEv(eventType string, ct state.ContentType, payload any, ephemeral bool) {
 	o.bus.Publish(state.Event{
 		Epoch:       time.Now().UnixMilli(),
 		SessionID:   o.id.ID,
@@ -538,6 +546,7 @@ func (o *Orchestrator) publish(eventType string, ct state.ContentType, payload a
 		Payload:     payload,
 		Enabled:     state.DefaultEnabled(ct),
 		ModelName:   o.settings.OllamaModel,
+		Ephemeral:   ephemeral,
 	})
 }
 

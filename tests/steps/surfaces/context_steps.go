@@ -21,6 +21,7 @@ func registerContextSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a context surface sized (\d+) by (\d+)$`, w.sized)
 	sc.Step(`^the context surface applies a user_prompt "([^"]*)"$`, w.applyUserPrompt)
 	sc.Step(`^the context surface applies an agent_response "([^"]*)"$`, w.applyAgentResponse)
+	sc.Step(`^the context surface applies an ephemeral agent_response "([^"]*)"$`, w.applyEphemeral)
 	sc.Step(`^the context surface applies a thinking "([^"]*)"$`, w.applyThinking)
 	sc.Step(`^the context surface applies processing-state "([^"]*)" "([^"]*)"$`, w.applyProcessing)
 	sc.Step(`^the context view contains "([^"]*)"$`, w.viewContains)
@@ -53,6 +54,16 @@ func (w *contextWorld) applyUserPrompt(text string) error {
 
 func (w *contextWorld) applyAgentResponse(text string) error {
 	return w.applyContent("AGENT_RESPONSE", state.ContentAgentResponse, text)
+}
+
+func (w *contextWorld) applyEphemeral(text string) error {
+	w.model.Apply(state.Event{
+		EventType:   "AGENT_RESPONSE",
+		ContentType: state.ContentAgentResponse,
+		Payload:     map[string]any{"text": text},
+		Ephemeral:   true,
+	})
+	return nil
 }
 
 func (w *contextWorld) applyThinking(text string) error {

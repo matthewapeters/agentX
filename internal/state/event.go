@@ -52,6 +52,10 @@ type Event struct {
 	// filename seq, it travels on the envelope so live bus events and their
 	// persisted files share one identity.
 	Ordinal       uint64      `json:"ordinal,omitempty"`
+	// Ephemeral marks an event that engages the session but is not part of the
+	// user's conversation (e.g. the startup bootstrap exchange). The chat surface
+	// still shows it; read-only observers like the context viewer omit it.
+	Ephemeral     bool        `json:"ephemeral,omitempty"`
 	CorrelationID string      `json:"correlation_id,omitempty"`
 	ParentEventID string      `json:"parent_event_id,omitempty"`
 	SurfaceID     string      `json:"surface_id,omitempty"`

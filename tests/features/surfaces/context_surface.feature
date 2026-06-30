@@ -33,6 +33,15 @@ Feature: Context viewer surface
     Given a context surface sized 40 by 12
     Then the context status line shows "idle"
 
+  # use-case: PD-CTX-AF-001  (TC-M2-context-007)
+  # the startup bootstrap exchange engages the session but is not user conversation
+  Scenario: Ephemeral (bootstrap) events are omitted
+    Given a context surface sized 40 by 12
+    When the context surface applies an ephemeral agent_response "boot greeting"
+    And the context surface applies an agent_response "real answer"
+    Then the context view contains "real answer"
+    And the context view does not contain "boot greeting"
+
   # use-case: PD-CTX-AF-004  (TC-M2-context-006)
   # the viewer is focused, so the selected object is highlighted for navigation
   Scenario: The selected object is highlighted

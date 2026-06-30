@@ -9,6 +9,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The context viewer now omits the startup **bootstrap exchange**, which engages the
+  session but is not part of the user's conversation. Events from the bootstrap cycle
+  are marked `ephemeral` on the envelope (`state.Event.Ephemeral`); the chat surface
+  still shows them, the read-only context viewer skips them (on both seed and live).
 - Output widgets now render the kind label (emoji + type) **in the top border**
   (`┌─ 🤖 AgentX ───┐`) instead of on the first inner row, so every visible row is
   content. Collapse behaviour is now kind-aware: narrative boxes (user, assistant,

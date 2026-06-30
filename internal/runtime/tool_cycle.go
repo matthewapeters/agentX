@@ -106,7 +106,7 @@ func (o *Orchestrator) runToolPhase(ctx context.Context, text string) (string, b
 // and, if the thinking budget elapses before any content, cancels and re-asks with
 // fallback (no thinking). It returns the full assembled answer (for conversation
 // history) and the model error for finishCycle to map.
-func (o *Orchestrator) streamResponse(ctx context.Context, messages, fallback []prompting.Message, doThink bool) (string, error) {
+func (o *Orchestrator) streamResponse(ctx context.Context, messages, fallback []prompting.Message, doThink, ephemeral bool) (string, error) {
 	prePhase := state.PhaseRespond
 	if doThink {
 		prePhase = state.PhaseThinking
@@ -116,7 +116,7 @@ func (o *Orchestrator) streamResponse(ctx context.Context, messages, fallback []
 	var onThink func(string)
 	if doThink {
 		onThink = func(t string) {
-			o.publish("THINKING", state.ContentThinking, map[string]any{"text": t})
+			o.publishEv("THINKING", state.ContentThinking, map[string]any{"text": t}, ephemeral)
 		}
 	}
 	var respondStarted atomic.Bool
@@ -124,7 +124,7 @@ func (o *Orchestrator) streamResponse(ctx context.Context, messages, fallback []
 		if doThink && respondStarted.CompareAndSwap(false, true) {
 			o.setProcessing(state.StateWorking, state.PhaseRespond)
 		}
-		o.publish("AGENT_CONTENT", state.ContentAgentResponse, map[string]any{"text": delta})
+		o.publishEv("AGENT_CONTENT", state.ContentAgentResponse, map[string]any{"text": delta}, ephemeral)
 	}
 
 	respondCtx := ctx
@@ -145,7 +145,7 @@ func (o *Orchestrator) streamResponse(ctx context.Context, messages, fallback []
 	// Thinking budget exceeded (child ctx canceled, parent live, no content yet):
 	// answer directly without thinking.
 	if errors.Is(err, context.Canceled) && ctx.Err() == nil && !respondStarted.Load() && fallback != nil {
-		o.publish("THINKING", state.ContentThinking, map[string]any{"text": "\n…(thinking budget reached — answering directly)"})
+		o.publishEv("THINKING", state.ContentThinking, map[string]any{"text": "\n…(thinking budget reached — answering directly)"}, ephemeral)
 		o.setProcessing(state.StateWorking, state.PhaseRespond)
 		resp, err = o.model.Chat(ctx, o.settings.OllamaModel, fallback, onDelta, nil)
 	}

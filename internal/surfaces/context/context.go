@@ -32,6 +32,11 @@ func New() *Model {
 // Apply folds one event into the projection. Processing-state events update the
 // status line; everything else renders as an output widget.
 func (m *Model) Apply(ev state.Event) {
+	// Ephemeral events (the startup bootstrap exchange) engage the session but are
+	// not part of the user's conversation, so the read-only viewer omits them.
+	if ev.Ephemeral {
+		return
+	}
 	if ev.ContentType == state.ContentProcessingState {
 		m.proc = decodeProcessing(ev.Payload)
 		return
