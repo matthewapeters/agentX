@@ -38,3 +38,25 @@ Feature: Transport port allocation and endpoint publication
     Given a session store with a created session
     When the endpoint "http://127.0.0.1:8420" is published
     Then reading the session transport metadata returns endpoint "http://127.0.0.1:8420"
+
+  # use-case: UC-TOKEN-PUBLISH  (TC-M2-ss5-001)
+  # source: docs/implementation/02_surface_orchestration_http.md (Flagless launch SS-5)
+  Scenario: Publishes the attach token at 0600 for same-machine discovery
+    Given a session store with a created session
+    And the endpoint "http://127.0.0.1:8420" is published
+    When the attach token "tok-abc" is published
+    Then reading the session attach token returns "tok-abc"
+    And the attach token file mode is 0600
+
+  # use-case: UC-TOKEN-DISCOVER  (TC-M2-ss5-002)
+  Scenario: Discovery returns sessions that published an endpoint and a token
+    Given a session store with a created session
+    And the endpoint "http://127.0.0.1:8420" is published
+    And the attach token "tok-abc" is published
+    Then discovering transports finds endpoint "http://127.0.0.1:8420" with token "tok-abc"
+
+  # use-case: UC-TOKEN-DISCOVER  (variant: no token → not discoverable)
+  Scenario: A session that published no token is not discoverable
+    Given a session store with a created session
+    And the endpoint "http://127.0.0.1:8420" is published
+    Then discovering transports finds nothing

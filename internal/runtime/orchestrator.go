@@ -221,6 +221,12 @@ func (o *Orchestrator) startTransport() error {
 		_ = ln.Close()
 		return fmt.Errorf("publish transport endpoint: %w", err)
 	}
+	// Publish the raw attach token (0600) so same-machine peer launches resolve it
+	// from disk without the user copying it (SS-5).
+	if err := o.store.WriteAttachToken(o.id.ID, o.token.Raw()); err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("publish attach token: %w", err)
+	}
 	o.server = transporthttp.NewServer(o)
 	o.serveDone = make(chan error, 1)
 	go func() { o.serveDone <- o.server.Serve(ln) }()
@@ -243,10 +249,12 @@ func (o *Orchestrator) Shutdown(ctx context.Context) error {
 	o.mu.Unlock()
 
 	// Stop the transport first so no new external requests arrive mid-drain, and
-	// mark attached surfaces stopped.
+	// mark attached surfaces stopped. The published attach token is no longer valid
+	// once the server stops, so remove it from disk (SS-5).
 	if server != nil {
 		_ = server.Shutdown(ctx)
 		o.surfaceReg.StopAll()
+		_ = o.store.RemoveAttachToken(o.id.ID)
 	}
 
 	// Persist a final processing-state snapshot before draining.

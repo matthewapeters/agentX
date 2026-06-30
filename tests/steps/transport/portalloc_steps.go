@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 
 	"github.com/cucumber/godog"
 
@@ -56,6 +57,13 @@ func registerPortSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a session store with a created session$`, w.createdSession)
 	sc.Step(`^the endpoint "([^"]*)" is published$`, w.publishEndpoint)
 	sc.Step(`^reading the session transport metadata returns endpoint "([^"]*)"$`, w.readEndpoint)
+
+	// attach-token persistence + discovery (SS-5).
+	sc.Step(`^the attach token "([^"]*)" is published$`, w.publishToken)
+	sc.Step(`^reading the session attach token returns "([^"]*)"$`, w.readToken)
+	sc.Step(`^the attach token file mode is 0600$`, w.tokenMode)
+	sc.Step(`^discovering transports finds endpoint "([^"]*)" with token "([^"]*)"$`, w.discoverFinds)
+	sc.Step(`^discovering transports finds nothing$`, w.discoverEmpty)
 }
 
 func (w *portWorld) discoverPort() error {
@@ -145,6 +153,56 @@ func (w *portWorld) readEndpoint(want string) error {
 	}
 	if info.Endpoint != want {
 		return fmt.Errorf("endpoint = %q, want %q", info.Endpoint, want)
+	}
+	return nil
+}
+
+func (w *portWorld) publishToken(token string) error {
+	return w.store.WriteAttachToken(w.id.ID, token)
+}
+
+func (w *portWorld) readToken(want string) error {
+	got, err := w.store.ReadAttachToken(w.id.ID)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf("attach token = %q, want %q", got, want)
+	}
+	return nil
+}
+
+func (w *portWorld) tokenMode() error {
+	fi, err := os.Stat(filepath.Join(w.store.Dir(w.id.ID), "attach-token"))
+	if err != nil {
+		return err
+	}
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		return fmt.Errorf("attach token file mode = %o, want 600", perm)
+	}
+	return nil
+}
+
+func (w *portWorld) discoverFinds(endpoint, token string) error {
+	cands, err := w.store.DiscoverTransports()
+	if err != nil {
+		return err
+	}
+	for _, c := range cands {
+		if c.Endpoint == endpoint && c.Token == token {
+			return nil
+		}
+	}
+	return fmt.Errorf("no discovered transport with endpoint %q token %q (got %d)", endpoint, token, len(cands))
+}
+
+func (w *portWorld) discoverEmpty() error {
+	cands, err := w.store.DiscoverTransports()
+	if err != nil {
+		return err
+	}
+	if len(cands) != 0 {
+		return fmt.Errorf("expected no discoverable transports, got %d", len(cands))
 	}
 	return nil
 }

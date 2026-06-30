@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
+	"agentx/internal/config"
+	"agentx/internal/session"
 	"agentx/internal/surfaces"
 	"agentx/internal/surfaces/client"
 	contextsurface "agentx/internal/surfaces/context"
@@ -15,9 +18,10 @@ import (
 // LaunchArgs are the resolved inputs to a `surface launch` (canonical or alias).
 type LaunchArgs struct {
 	SurfaceKind string
-	Session     string // selector: session name or id
-	Connect     string // orchestrator endpoint (alias port is mapped to this)
-	Token       string // ephemeral attach token
+	Session     string // selector: session name or id (optional; auto-resolved if empty)
+	Connect     string // orchestrator endpoint; empty auto-resolves from disk (SS-5)
+	Token       string // ephemeral attach token; empty auto-resolves from disk (SS-5)
+	SessionRoot string // session storage root for auto-resolution; empty uses config default
 }
 
 // LaunchResult is the outcome of a successful attach, for operator output.
@@ -27,6 +31,7 @@ type LaunchResult struct {
 	SessionID   string
 	SessionName string
 	Endpoint    string
+	Token       string // resolved attach token, for the surface client to reuse
 }
 
 // Launch validates the launch arguments, attaches the surface to the running
@@ -38,26 +43,30 @@ func Launch(ctx context.Context, args LaunchArgs) (LaunchResult, error) {
 	if !surfaces.KnownKind(args.SurfaceKind) {
 		return LaunchResult{}, validation("unknown surface kind %q; run a known surface (e.g. files, config, context)", args.SurfaceKind)
 	}
-	if strings.TrimSpace(args.Session) == "" {
-		return LaunchResult{}, validation("a --session selector is required")
-	}
-	if err := checkLocalSafe(args.Connect); err != nil {
-		return LaunchResult{}, err
-	}
 
-	client := transporthttp.NewClient(args.Connect)
-
-	// Resolve the session: the endpoint must be reachable and its active session
-	// must match the selector (rule 2: exactly one active session).
-	id, err := client.CurrentSession(ctx)
+	// Resolve the endpoint + token: explicit flags win; otherwise discover the active
+	// session from disk (SS-5) so a same-machine peer needs no copied token.
+	endpoint, token, err := resolveConnection(ctx, args)
 	if err != nil {
 		return LaunchResult{}, err
 	}
-	if args.Session != id.ID && args.Session != id.Name {
-		return LaunchResult{}, validation("session %q does not match the running session (%s / %s)", args.Session, id.Name, id.ID)
+	if err := checkLocalSafe(endpoint); err != nil {
+		return LaunchResult{}, err
 	}
 
-	reg, err := client.Register(ctx, args.SurfaceKind, args.Connect, args.Token, nil)
+	cl := transporthttp.NewClient(endpoint)
+
+	// Resolve the session: the endpoint must be reachable and, when a selector is
+	// given, its active session must match it (rule 2: exactly one active session).
+	id, err := cl.CurrentSession(ctx)
+	if err != nil {
+		return LaunchResult{}, err
+	}
+	if sel := strings.TrimSpace(args.Session); sel != "" && sel != id.ID && sel != id.Name {
+		return LaunchResult{}, validation("session %q does not match the running session (%s / %s)", sel, id.Name, id.ID)
+	}
+
+	reg, err := cl.Register(ctx, args.SurfaceKind, endpoint, token, nil)
 	if err != nil {
 		return LaunchResult{}, err
 	}
@@ -66,8 +75,53 @@ func Launch(ctx context.Context, args LaunchArgs) (LaunchResult, error) {
 		SurfaceKind: reg.SurfaceKind,
 		SessionID:   reg.SessionID,
 		SessionName: reg.SessionName,
-		Endpoint:    args.Connect,
+		Endpoint:    endpoint,
+		Token:       token,
 	}, nil
+}
+
+// resolveConnection returns the endpoint + attach token to attach with. Explicit
+// --connect uses the provided values; otherwise it discovers the active session's
+// published endpoint and 0600 token from the session root on disk and returns the
+// newest reachable one (SS-5).
+func resolveConnection(ctx context.Context, args LaunchArgs) (endpoint, token string, err error) {
+	if strings.TrimSpace(args.Connect) != "" {
+		return args.Connect, args.Token, nil
+	}
+
+	root := args.SessionRoot
+	if root == "" {
+		paths, perr := config.DefaultPaths()
+		if perr != nil {
+			return "", "", validation("cannot resolve session root: %v", perr)
+		}
+		root = paths.SessionRoot()
+	}
+
+	cands, derr := session.NewStore(root).DiscoverTransports()
+	if derr != nil {
+		return "", "", validation("cannot read published sessions: %v", derr)
+	}
+	if len(cands) == 0 {
+		return "", "", validation("no running session found; start agentx, or pass --connect and --token")
+	}
+	for _, c := range cands {
+		if reachable(ctx, c.Endpoint) {
+			return c.Endpoint, c.Token, nil
+		}
+	}
+	return "", "", &transporthttp.AttachError{
+		Category: "transport",
+		Message:  "found published session(s) but none are reachable; pass --connect",
+	}
+}
+
+// reachable probes whether an orchestrator is answering at endpoint.
+func reachable(ctx context.Context, endpoint string) bool {
+	rctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	_, err := transporthttp.NewClient(endpoint).CurrentSession(rctx)
+	return err == nil
 }
 
 // RunSurface launches a surface: it attaches (Launch), then — if the kind has a
@@ -82,8 +136,8 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 	}
 	if surface, title, ok := surfaceModelFor(args.SurfaceKind, res); ok {
 		return client.Run(ctx, client.Options{
-			Endpoint:  args.Connect,
-			Token:     args.Token,
+			Endpoint:  res.Endpoint,
+			Token:     res.Token,
 			SurfaceID: res.SurfaceID,
 			Title:     title,
 			Surface:   surface,

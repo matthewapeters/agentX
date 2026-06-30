@@ -29,6 +29,16 @@ Feature: Launch a child surface
     Then the launch succeeds
     And the launched surface kind is "files"
 
+  # use-case: UC-LAUNCH-AUTO  (TC-M2-ss5-003)
+  # source: docs/implementation/02_surface_orchestration_http.md (Flagless launch SS-5)
+  Scenario: Launch auto-resolves the endpoint and token from disk
+    Given a running transport server
+    And the session's transport is published to a temp session root
+    When I launch a "files" surface with auto-discovery
+    Then the launch succeeds
+    And the launched surface kind is "files"
+    And the launched surface appears in the registry
+
   # use-case: UC-LAUNCH-AUTH  (TC-M1-launch-003)
   Scenario: Reject attach without a valid token
     Given a running transport server

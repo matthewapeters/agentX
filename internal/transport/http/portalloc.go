@@ -30,9 +30,17 @@ func Endpoint(addr net.Addr) string {
 	return "http://" + addr.String()
 }
 
-// LaunchCommand formats the canonical `agentx surface launch` command a user runs
-// in another terminal to attach a surface of the given kind to this session.
+// LaunchCommand formats the explicit `agentx surface launch` command with all
+// connection flags. Used when a caller cannot rely on disk auto-resolution.
 func LaunchCommand(kind, session, endpoint, token string) string {
 	return fmt.Sprintf("agentx surface launch %s --session %s --connect %s --token %s",
 		kind, session, endpoint, token)
+}
+
+// ShortLaunchCommand formats the flagless `agentx surface launch <kind>` command;
+// the peer auto-resolves the endpoint and token from the session dir on disk (SS-5).
+// This is the form the launch-info widget advertises — short enough to type or to
+// cleanly select over SSH.
+func ShortLaunchCommand(kind string) string {
+	return "agentx surface launch " + kind
 }

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -111,6 +112,7 @@ type transportWorld struct {
 
 	launchResult cli.LaunchResult
 	launchErr    error
+	tmpRoot      string // temp session root for auto-discovery launch (SS-5)
 
 	seed       []state.Event
 	cursor     uint64
@@ -143,6 +145,9 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 		}
 		if w.httptst != nil {
 			w.httptst.Close()
+		}
+		if w.tmpRoot != "" {
+			_ = os.RemoveAll(w.tmpRoot)
 		}
 		*w = transportWorld{}
 		return ctx, err
@@ -200,6 +205,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" with token "([^"]*)"$`, w.launchToken)
 	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" against an unreachable endpoint$`, w.launchUnreachable)
 	sc.Step(`^I launch via the compatibility alias for the running server$`, w.launchAlias)
+	sc.Step(`^the session's transport is published to a temp session root$`, w.publishTransportToDisk)
+	sc.Step(`^I launch a "([^"]*)" surface with auto-discovery$`, w.launchAuto)
 	sc.Step(`^the launch succeeds$`, w.launchSucceeds)
 	sc.Step(`^the launched surface kind is "([^"]*)"$`, w.launchedKind)
 	sc.Step(`^the launched surface appears in the registry$`, w.launchedInRegistry)
@@ -689,6 +696,29 @@ func (w *transportWorld) lifecycleOf(id, lifecycle string) error {
 func (w *transportWorld) launch(args cli.LaunchArgs) error {
 	w.launchResult, w.launchErr = cli.Launch(context.Background(), args)
 	return nil
+}
+
+// publishTransportToDisk writes the running server's endpoint + attach token to a
+// temp session root, so an auto-discovery launch (no flags) can resolve them (SS-5).
+func (w *transportWorld) publishTransportToDisk() error {
+	root, err := os.MkdirTemp("", "agentx-ss5-*")
+	if err != nil {
+		return err
+	}
+	w.tmpRoot = root
+	store := session.NewStore(root)
+	id := w.prov.sess.ID
+	if err := os.MkdirAll(store.Dir(id), 0o700); err != nil {
+		return err
+	}
+	if err := store.WriteTransport(id, session.TransportInfo{SessionID: id, Endpoint: w.httptst.URL}); err != nil {
+		return err
+	}
+	return store.WriteAttachToken(id, w.token.Raw())
+}
+
+func (w *transportWorld) launchAuto(kind string) error {
+	return w.launch(cli.LaunchArgs{SurfaceKind: kind, SessionRoot: w.tmpRoot})
 }
 
 func (w *transportWorld) launchValid(kind, sessionSel string) error {

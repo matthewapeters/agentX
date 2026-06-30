@@ -9,6 +9,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added flagless surface launch with on-disk token discovery (SS-5), making
+  attach-over-SSH first-class without any clipboard. The orchestrator now publishes the
+  raw attach token to a `0600` `attach-token` file beside `transport.json` (removed on
+  shutdown); since loopback-only peers run on the same machine, `agentx surface launch
+  <kind>` with no `--connect/--token/--session` auto-resolves the endpoint and token
+  from the newest reachable session on disk (explicit flags still override). The
+  launch-info widget now advertises the short `agentx surface launch <kind>` command,
+  which is short enough to type or cleanly select over SSH in any terminal — fixing the
+  wrapped/bordered-command scrape problem; digit-copy via OSC 52 remains as
+  terminal-dependent convenience. New `session.Store` token/discovery methods
+  (`WriteAttachToken`/`ReadAttachToken`/`RemoveAttachToken`/`DiscoverTransports`) and
+  `transporthttp.ShortLaunchCommand`. Documented in
+  `docs/implementation/02_surface_orchestration_http.md` (Flagless launch & token
+  discovery) and `docs/ux/06_OUTPUT_WIDGET.md`.
 - Added live peer-connection status to the launch-info widget (SS-4): each surface row
   now shows 🟢 when at least one surface of that kind is attached and 🔴 otherwise.
   "Connected" is defined by an active event stream, not a registration — `GET

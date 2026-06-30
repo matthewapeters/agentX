@@ -211,10 +211,11 @@ func RunChat(ctx context.Context, opts Options) error {
 	if ep := orc.Endpoint(); ep != "" {
 		kinds := surfaces.ExternalKinds()
 		header := fmt.Sprintf("🔌 Attach surfaces (%d) · %s · enter to expand", len(kinds), ep)
-		session, token := orc.Session().Name, orc.AttachToken().Raw()
+		// Short, flagless commands: a same-machine peer auto-resolves the endpoint and
+		// token from disk (SS-5), so nothing here carries the token.
 		commands := make([]string, len(kinds))
 		for i, k := range kinds {
-			commands[i] = transporthttp.LaunchCommand(k, session, ep, token)
+			commands[i] = transporthttp.ShortLaunchCommand(k)
 		}
 		surface.SetLaunchInfo(header, kinds, commands)
 	}

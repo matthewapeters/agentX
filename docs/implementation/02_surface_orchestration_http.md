@@ -758,6 +758,29 @@ surface holds:
 isn't tracked for liveness. Loopback-only v1 does not authenticate the stream beyond
 this, so liveness is advisory, not a security boundary.
 
+## Flagless launch & token discovery (SS-5)
+
+Because v1 is loopback-only, a peer surface always runs on the same machine as the
+orchestrator, so both processes can read the session directory. The orchestrator
+therefore publishes everything a peer needs to attach, and the launch CLI discovers
+it — no copying a token between panes:
+
+- `transport.json` (0644 metadata): session id + endpoint.
+- `attach-token` (0600 secret): the raw ephemeral attach token, written beside it at
+  startup and removed on shutdown. This lives in the same trust domain as the
+  plaintext event log already in the session dir, so persisting the loopback token
+  does not lower the security boundary — a reader of this `0600` file inside the
+  `0700` session dir already has the user's UID.
+
+`agentx surface launch <kind>` with no `--connect/--token/--session` auto-resolves: it
+scans the session root for sessions that published an endpoint and a readable token,
+newest first, and attaches to the first reachable one (v1's "exactly one active
+session" rule normally makes this unambiguous). Explicit `--connect`/`--token` still
+override, and an explicit `--session` is still validated against the live session. The
+upshot: the attach command the launch-info widget advertises is just
+`agentx surface launch context` — short enough to type, or to cleanly select over SSH
+in any terminal, with no clipboard dependency.
+
 ## Non-Goals for v1
 
 - Public remote access over internet

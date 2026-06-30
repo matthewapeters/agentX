@@ -283,16 +283,19 @@ Placement and lifecycle:
   surface that knows how to launch peers.
 - It is omitted entirely when the transport is disabled (no endpoint).
 
-Copy-to-clipboard (no mouse). The launch commands carry the session's attach token,
-so they are **never rendered** — only surface names are shown. With the launch-info
-widget selected, pressing a **digit `1..N`** copies that surface's full
-`agentx surface launch <kind> …` command (token included) to the system clipboard via
-the terminal's **OSC 52** clipboard sequence (`tea.SetClipboard`), and the widget body
-confirms the copy by name. This keeps the token off-screen entirely (no screen-share
-exposure), needs no mouse capture (preserving native terminal text selection), and
-works through multiplexers/SSH wherever the terminal supports OSC 52. The widget
-otherwise reuses the standard collapsible-widget machinery (selectable, Enter toggles,
-body capped/scrolled), so it shifts selection/scroll exactly as a normal widget.
+Copying / typing the command. The attach command is the **short** form
+`agentx surface launch <kind>` — the peer resolves the endpoint and token from the
+session directory on disk (SS-5), so no token appears in the command or on screen.
+Because it is short and unwrapped, it can be **cleanly selected over SSH in any
+terminal** (the original motivation: a wrapped, bordered command scraped border
+characters). As a convenience where supported, with the launch-info widget selected,
+pressing a **digit `1..N`** also copies that surface's command to the system clipboard
+via the terminal's **OSC 52** sequence (`tea.SetClipboard`), and the widget body
+confirms by name. OSC 52 is terminal-dependent (VTE-based terminals such as GNOME
+Terminal/Terminator ignore clipboard writes), which is why the short, selectable
+command — not the clipboard — is the load-bearing path. The widget reuses the standard
+collapsible-widget machinery (selectable, Enter toggles, body capped/scrolled), so it
+shifts selection/scroll exactly as a normal widget.
 
 Connection status. Each row carries a presence indicator so the user can see, at a
 glance, which peer surfaces are live. "Connected" is defined by an **active event
