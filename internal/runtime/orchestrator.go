@@ -462,6 +462,63 @@ func (o *Orchestrator) seedWorkingMemory() error {
 	return nil
 }
 
+// WorkingMemory returns the session's working-memory facts for a surface to read.
+func (o *Orchestrator) WorkingMemory() ([]session.Fact, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	wm, err := o.store.LoadWorkingMemory(o.id.ID)
+	if err != nil {
+		return nil, err
+	}
+	return wm.Facts, nil
+}
+
+// SetFact upserts a working-memory fact: a new key is added (user-owned, enabled);
+// an existing key has its value updated. The change persists, so it takes effect on
+// the next prompt's assembled context.
+func (o *Orchestrator) SetFact(key, value string) error {
+	if strings.TrimSpace(key) == "" {
+		return fmt.Errorf("fact key is required")
+	}
+	return o.mutateWorkingMemory(func(wm *session.WorkingMemory) error {
+		wm.Set(key, value)
+		return nil
+	})
+}
+
+// DeleteFact removes a working-memory fact by key. An unknown key is not an error.
+func (o *Orchestrator) DeleteFact(key string) error {
+	return o.mutateWorkingMemory(func(wm *session.WorkingMemory) error {
+		wm.Delete(key)
+		return nil
+	})
+}
+
+// SetFactEnabled enables or disables a working-memory fact, controlling whether it
+// folds into the assembled context. An unknown key is a validation error.
+func (o *Orchestrator) SetFactEnabled(key string, enabled bool) error {
+	return o.mutateWorkingMemory(func(wm *session.WorkingMemory) error {
+		if !wm.SetEnabled(key, enabled) {
+			return fmt.Errorf("unknown fact %q", key)
+		}
+		return nil
+	})
+}
+
+// mutateWorkingMemory loads, mutates, and persists working memory under the lock.
+func (o *Orchestrator) mutateWorkingMemory(fn func(*session.WorkingMemory) error) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	wm, err := o.store.LoadWorkingMemory(o.id.ID)
+	if err != nil {
+		return err
+	}
+	if err := fn(wm); err != nil {
+		return err
+	}
+	return o.store.SaveWorkingMemory(o.id.ID, wm)
+}
+
 // withContext folds working memory and enabled prior-turn history into an
 // assembled [system?, user] message list, in layer order: instructions (Layer 0)
 // → working memory (band 0) → enabled conversation history → the current user

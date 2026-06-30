@@ -64,6 +64,42 @@ func (wm *WorkingMemory) SeedIfAbsent(facts ...Fact) bool {
 	return added
 }
 
+// Set upserts a fact value: a new key is appended (user-owned, enabled); an existing
+// key has its value updated, preserving its owner and enabled state. It reports
+// whether the fact was newly added.
+func (wm *WorkingMemory) Set(key, value string) bool {
+	for i := range wm.Facts {
+		if wm.Facts[i].Key == key {
+			wm.Facts[i].Value = value
+			return false
+		}
+	}
+	wm.Facts = append(wm.Facts, Fact{Key: key, Value: value, Owner: OwnerUser, Enabled: true})
+	return true
+}
+
+// Delete removes the fact with the given key. It reports whether a fact was removed.
+func (wm *WorkingMemory) Delete(key string) bool {
+	for i := range wm.Facts {
+		if wm.Facts[i].Key == key {
+			wm.Facts = append(wm.Facts[:i], wm.Facts[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// SetEnabled sets the enabled state of a fact. It reports whether the key existed.
+func (wm *WorkingMemory) SetEnabled(key string, enabled bool) bool {
+	for i := range wm.Facts {
+		if wm.Facts[i].Key == key {
+			wm.Facts[i].Enabled = enabled
+			return true
+		}
+	}
+	return false
+}
+
 // Enabled returns the enabled facts in their stored order.
 func (wm *WorkingMemory) Enabled() []Fact {
 	out := make([]Fact, 0, len(wm.Facts))

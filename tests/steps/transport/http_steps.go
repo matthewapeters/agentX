@@ -41,6 +41,7 @@ type fakeProvider struct {
 	accepting    bool
 	lastDecision string
 	history      []state.Event
+	wm           session.WorkingMemory
 }
 
 func (p *fakeProvider) Bus() *state.Bus                        { return p.bus }
@@ -91,6 +92,37 @@ func (p *fakeProvider) publishRecorded(ev state.Event) {
 	p.mu.Unlock()
 }
 
+func (p *fakeProvider) WorkingMemory() ([]session.Fact, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]session.Fact, len(p.wm.Facts))
+	copy(out, p.wm.Facts)
+	return out, nil
+}
+
+func (p *fakeProvider) SetFact(key, value string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.wm.Set(key, value)
+	return nil
+}
+
+func (p *fakeProvider) DeleteFact(key string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.wm.Delete(key)
+	return nil
+}
+
+func (p *fakeProvider) SetFactEnabled(key string, enabled bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.wm.SetEnabled(key, enabled) {
+		return fmt.Errorf("unknown fact %q", key)
+	}
+	return nil
+}
+
 func (p *fakeProvider) decision() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -113,6 +145,7 @@ type transportWorld struct {
 	launchResult cli.LaunchResult
 	launchErr    error
 	tmpRoot      string // temp session root for auto-discovery launch (SS-5)
+	wmErr        error  // last working-memory mutation error (SS-6)
 
 	seed       []state.Event
 	cursor     uint64
@@ -207,6 +240,18 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^I launch via the compatibility alias for the running server$`, w.launchAlias)
 	sc.Step(`^the session's transport is published to a temp session root$`, w.publishTransportToDisk)
 	sc.Step(`^I launch a "([^"]*)" surface with auto-discovery$`, w.launchAuto)
+
+	// working-memory CRUD (SS-6).
+	sc.Step(`^the client adds a fact "([^"]*)" valued "([^"]*)"$`, w.wmAdd)
+	sc.Step(`^the client edits fact "([^"]*)" to "([^"]*)"$`, w.wmAdd)
+	sc.Step(`^the client disables fact "([^"]*)"$`, w.wmDisable)
+	sc.Step(`^the client enables fact "([^"]*)"$`, w.wmEnable)
+	sc.Step(`^the client deletes fact "([^"]*)"$`, w.wmDelete)
+	sc.Step(`^an unauthorized client adds a fact "([^"]*)" valued "([^"]*)"$`, w.wmUnauthorizedAdd)
+	sc.Step(`^reading working memory includes "([^"]*)" valued "([^"]*)" enabled$`, w.wmIncludesEnabled)
+	sc.Step(`^reading working memory shows "([^"]*)" disabled$`, w.wmShowsDisabled)
+	sc.Step(`^reading working memory has no "([^"]*)" fact$`, w.wmHasNo)
+	sc.Step(`^the working-memory mutation is rejected as "([^"]*)"$`, w.wmRejected)
 	sc.Step(`^the launch succeeds$`, w.launchSucceeds)
 	sc.Step(`^the launched surface kind is "([^"]*)"$`, w.launchedKind)
 	sc.Step(`^the launched surface appears in the registry$`, w.launchedInRegistry)
@@ -719,6 +764,90 @@ func (w *transportWorld) publishTransportToDisk() error {
 
 func (w *transportWorld) launchAuto(kind string) error {
 	return w.launch(cli.LaunchArgs{SurfaceKind: kind, SessionRoot: w.tmpRoot})
+}
+
+func (w *transportWorld) wmClient() *transporthttp.Client {
+	return transporthttp.NewClient(w.httptst.URL)
+}
+
+func (w *transportWorld) wmAdd(key, value string) error {
+	return w.wmClient().SetFact(context.Background(), w.token.Raw(), key, value)
+}
+
+func (w *transportWorld) wmDisable(key string) error {
+	return w.wmClient().SetFactEnabled(context.Background(), w.token.Raw(), key, false)
+}
+
+func (w *transportWorld) wmEnable(key string) error {
+	return w.wmClient().SetFactEnabled(context.Background(), w.token.Raw(), key, true)
+}
+
+func (w *transportWorld) wmDelete(key string) error {
+	return w.wmClient().DeleteFact(context.Background(), w.token.Raw(), key)
+}
+
+func (w *transportWorld) wmUnauthorizedAdd(key, value string) error {
+	w.wmErr = w.wmClient().SetFact(context.Background(), "", key, value)
+	return nil
+}
+
+func (w *transportWorld) wmFind(key string) (session.Fact, error) {
+	facts, err := w.wmClient().WorkingMemory(context.Background())
+	if err != nil {
+		return session.Fact{}, err
+	}
+	for _, f := range facts {
+		if f.Key == key {
+			return f, nil
+		}
+	}
+	return session.Fact{}, fmt.Errorf("fact %q not found", key)
+}
+
+func (w *transportWorld) wmIncludesEnabled(key, value string) error {
+	f, err := w.wmFind(key)
+	if err != nil {
+		return err
+	}
+	if f.Value != value {
+		return fmt.Errorf("fact %q value = %q, want %q", key, f.Value, value)
+	}
+	if !f.Enabled {
+		return fmt.Errorf("fact %q is disabled, want enabled", key)
+	}
+	return nil
+}
+
+func (w *transportWorld) wmShowsDisabled(key string) error {
+	f, err := w.wmFind(key)
+	if err != nil {
+		return err
+	}
+	if f.Enabled {
+		return fmt.Errorf("fact %q is enabled, want disabled", key)
+	}
+	return nil
+}
+
+func (w *transportWorld) wmHasNo(key string) error {
+	if _, err := w.wmFind(key); err == nil {
+		return fmt.Errorf("fact %q is still present", key)
+	}
+	return nil
+}
+
+func (w *transportWorld) wmRejected(category string) error {
+	if w.wmErr == nil {
+		return fmt.Errorf("expected the mutation to be rejected, got success")
+	}
+	var ae *transporthttp.AttachError
+	if errors.As(w.wmErr, &ae) {
+		if ae.Category != category {
+			return fmt.Errorf("rejection category = %q, want %q", ae.Category, category)
+		}
+		return nil
+	}
+	return fmt.Errorf("error is not an AttachError: %v", w.wmErr)
 }
 
 func (w *transportWorld) launchValid(kind, sessionSel string) error {

@@ -781,6 +781,26 @@ upshot: the attach command the launch-info widget advertises is just
 `agentx surface launch context` — short enough to type, or to cleanly select over SSH
 in any terminal, with no clipboard dependency.
 
+## Working-Memory CRUD (WM surface, SS-6)
+
+The working-memory editor is the first **read-write** surface. It reads and mutates
+the session's `working_memory.json` through dedicated, typed endpoints (not the
+reserved generic command relay):
+
+- `GET /working-memory` → `{ "facts": [ {key, value, owner, enabled}, … ] }`. A
+  loopback read, not token-gated (consistent with the other GET endpoints).
+- `POST /working-memory/set` `{key, value}` — **upsert**: a new key is added
+  (user-owned, enabled); an existing key's value is updated, preserving owner/enabled.
+- `POST /working-memory/delete` `{key}` — remove (an unknown key is a no-op success).
+- `POST /working-memory/enabled` `{key, enabled}` — enable/disable (unknown key → 404).
+
+Mutations are token-gated (`Authorization: Bearer <attach-token>`) and persist to
+`working_memory.json`. Because the orchestrator re-reads working memory when it
+assembles each prompt (`withContext` → `workingMemoryMessage`), an edit or
+enable/disable takes effect on the **next** prompt — only enabled facts fold into the
+context. WM is a document, not an event stream, so the surface reads on attach and
+polls for live refresh rather than subscribing.
+
 ## Non-Goals for v1
 
 - Public remote access over internet

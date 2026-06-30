@@ -39,6 +39,13 @@ type Provider interface {
 
 	// History returns the persisted session event log for seeding a surface (SS-1).
 	History() ([]state.Event, error)
+
+	// Working memory (surface CRUD). Mutations persist and take effect on the next
+	// prompt's assembled context.
+	WorkingMemory() ([]session.Fact, error)
+	SetFact(key, value string) error
+	DeleteFact(key string) error
+	SetFactEnabled(key string, enabled bool) error
 }
 
 // Server is the loopback HTTP/SSE transport for external surfaces.
@@ -72,6 +79,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /surface/{id}/shutdown", s.handleShutdown)
 	s.mux.HandleFunc("POST /surface/{id}/command", s.handleCommand)
 	s.mux.HandleFunc("POST /model/switch", s.handleModelSwitch)
+
+	// Working-memory CRUD (surface read-write).
+	s.mux.HandleFunc("GET /working-memory", s.handleWorkingMemory)
+	s.mux.HandleFunc("POST /working-memory/set", s.handleWMSet)
+	s.mux.HandleFunc("POST /working-memory/delete", s.handleWMDelete)
+	s.mux.HandleFunc("POST /working-memory/enabled", s.handleWMEnabled)
 }
 
 // Handler exposes the routes for in-process testing (httptest).

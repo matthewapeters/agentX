@@ -181,6 +181,64 @@ func (c *Client) Shutdown(ctx context.Context, surfaceID, token string) error {
 	return nil
 }
 
+// WorkingMemory fetches the session's working-memory facts (GET /working-memory).
+func (c *Client) WorkingMemory(ctx context.Context) ([]session.Fact, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+"/working-memory", nil)
+	if err != nil {
+		return nil, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, attachErrorFrom(resp)
+	}
+	var body struct {
+		Facts []session.Fact `json:"facts"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, &AttachError{Category: "transport", Message: err.Error()}
+	}
+	return body.Facts, nil
+}
+
+// SetFact adds or edits a working-memory fact (POST /working-memory/set).
+func (c *Client) SetFact(ctx context.Context, token, key, value string) error {
+	return c.postWM(ctx, token, "/working-memory/set", map[string]any{"key": key, "value": value})
+}
+
+// DeleteFact removes a working-memory fact (POST /working-memory/delete).
+func (c *Client) DeleteFact(ctx context.Context, token, key string) error {
+	return c.postWM(ctx, token, "/working-memory/delete", map[string]any{"key": key})
+}
+
+// SetFactEnabled enables or disables a fact (POST /working-memory/enabled).
+func (c *Client) SetFactEnabled(ctx context.Context, token, key string, enabled bool) error {
+	return c.postWM(ctx, token, "/working-memory/enabled", map[string]any{"key": key, "enabled": enabled})
+}
+
+// postWM posts a token-authorized working-memory mutation.
+func (c *Client) postWM(ctx context.Context, token, path string, payload any) error {
+	data, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+path, bytes.NewReader(data))
+	if err != nil {
+		return &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return attachErrorFrom(resp)
+	}
+	return nil
+}
+
 // attachErrorFrom decodes a {error,category} body into an AttachError, defaulting
 // the category from the status when the body is unhelpful.
 func attachErrorFrom(resp *http.Response) *AttachError {

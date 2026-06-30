@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cucumber/godog"
@@ -49,6 +50,10 @@ func registerPromptFilesSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^no user prompt is recorded$`, w.noUserPromptRecorded)
 	sc.Step(`^the model context includes in order:$`, w.contextInOrder)
 	sc.Step(`^the model context excludes "([^"]*)"$`, w.contextExcludes)
+	sc.Step(`^the working memory has an enabled fact "([^"]*)" valued "([^"]*)"$`, w.wmSetEnabled)
+	sc.Step(`^the working memory fact "([^"]*)" is disabled$`, w.wmDisable)
+	sc.Step(`^the model context contains "([^"]*)"$`, w.contextContains)
+	sc.Step(`^the model context omits "([^"]*)"$`, w.contextOmits)
 	sc.Step(`^the persisted "([^"]*)" events are context-enabled$`, w.persistedEnabled)
 }
 
@@ -153,6 +158,35 @@ func (w *promptFilesWorld) contextInOrder(table *godog.Table) error {
 	}
 	if idx != len(rows) {
 		return fmt.Errorf("context did not contain the expected messages in order (matched %d/%d); got %+v", idx, len(rows), w.captured)
+	}
+	return nil
+}
+
+func (w *promptFilesWorld) wmSetEnabled(key, value string) error {
+	return w.orc.SetFact(key, value)
+}
+
+func (w *promptFilesWorld) wmDisable(key string) error {
+	return w.orc.SetFactEnabled(key, false)
+}
+
+// contextContains asserts some captured message contains the given substring (used
+// to confirm a working-memory fact folded into the assembled context).
+func (w *promptFilesWorld) contextContains(sub string) error {
+	for _, m := range w.captured {
+		if strings.Contains(m.Content, sub) {
+			return nil
+		}
+	}
+	return fmt.Errorf("no captured message contains %q; got %+v", sub, w.captured)
+}
+
+// contextOmits asserts no captured message contains the given substring.
+func (w *promptFilesWorld) contextOmits(sub string) error {
+	for _, m := range w.captured {
+		if strings.Contains(m.Content, sub) {
+			return fmt.Errorf("captured context unexpectedly contains %q", sub)
+		}
 	}
 	return nil
 }
