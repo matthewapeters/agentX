@@ -39,6 +39,9 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the logo banner precedes "([^"]*)" in the output$`, w.bannerPrecedes)
 	sc.Step(`^the launch info is set for (\d+) surface kinds$`, w.setLaunchInfo)
 	sc.Step(`^launch widget 0 is expanded$`, w.expandLaunch)
+	sc.Step(`^the launch info widget is selected$`, w.selectLaunch)
+	sc.Step(`^launch command (\d+) is copied$`, w.copyLaunch)
+	sc.Step(`^copying launch command (\d+) is rejected$`, w.copyLaunchRejected)
 	sc.Step(`^the launch info precedes "([^"]*)" in the output$`, w.launchPrecedes)
 	sc.Step(`^the output view contains "([^"]*)"$`, w.viewContains)
 	sc.Step(`^the output view does not contain "([^"]*)"$`, w.viewNotContains)
@@ -152,16 +155,37 @@ const launchMarker = "Attach surfaces"
 
 func (w *outputWorld) setLaunchInfo(n int) error {
 	header := fmt.Sprintf("🔌 %s (%d) · http://127.0.0.1:8420 · enter to expand", launchMarker, n)
-	lines := []string{"run in another terminal (token is for this session only):", ""}
-	for i := 1; i <= n; i++ {
-		lines = append(lines, fmt.Sprintf("agentx surface launch kind-%d --session s --connect http://127.0.0.1:8420 --token tkn", i))
+	names := make([]string, n)
+	commands := make([]string, n)
+	for i := range n {
+		names[i] = fmt.Sprintf("kind-%d", i+1)
+		commands[i] = fmt.Sprintf("agentx surface launch kind-%d --session s --connect http://127.0.0.1:8420 --token tkn", i+1)
 	}
-	w.panel.SetLaunchInfo(header, lines)
+	w.panel.SetLaunchInfo(header, names, commands)
 	return nil
 }
 
 func (w *outputWorld) expandLaunch() error {
 	w.panel.ToggleCollapse(0)
+	return nil
+}
+
+func (w *outputWorld) selectLaunch() error {
+	w.panel.SelectDown() // from no selection, lands on the first (launch) widget
+	return nil
+}
+
+func (w *outputWorld) copyLaunch(i int) error {
+	if _, ok := w.panel.CopyCommand(i); !ok {
+		return fmt.Errorf("CopyCommand(%d) was rejected", i)
+	}
+	return nil
+}
+
+func (w *outputWorld) copyLaunchRejected(i int) error {
+	if _, ok := w.panel.CopyCommand(i); ok {
+		return fmt.Errorf("CopyCommand(%d) unexpectedly succeeded", i)
+	}
 	return nil
 }
 

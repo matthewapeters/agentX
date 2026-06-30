@@ -37,6 +37,14 @@ const (
 	kindLaunch
 )
 
+// launchItem pairs a launchable surface kind with its full attach command. The
+// name is shown in the launch-info widget; the command (which carries the attach
+// token) is never rendered — it is only ever placed on the clipboard.
+type launchItem struct {
+	name    string
+	command string
+}
+
 // widget is one renderable output entry.
 type widget struct {
 	kind        entryKind
@@ -66,6 +74,9 @@ type Model struct {
 	focused  bool   // whether the output panel currently holds focus
 	active   string // SGR color for the selected widget when focused
 	inactive string // SGR color for unselected widgets / unfocused panel
+
+	launchItems []launchItem // attach commands behind the launch-info widget
+	copied      string       // name of the last surface whose command was copied
 }
 
 // New returns an empty output panel backed by a viewport.
@@ -109,14 +120,21 @@ func (m *Model) SetBanner(s string) {
 // SetLaunchInfo installs a collapsed launch-info widget as the first widget of the
 // transcript (after the banner, before any event). It is surface-local — never a
 // session event — so it is not persisted and never appears on attached peer
-// surfaces. header is shown collapsed; lines form the body revealed on expand
-// (one full `agentx surface launch …` command per kind). See
+// surfaces. names label the launchable surfaces (shown when expanded); commands are
+// the matching full attach commands, revealed only on the clipboard via CopyCommand
+// — never rendered, so the attach token stays off-screen. See
 // docs/ux/06_OUTPUT_WIDGET.md (Launch-info widget).
-func (m *Model) SetLaunchInfo(header string, lines []string) {
+func (m *Model) SetLaunchInfo(header string, names, commands []string) {
+	n := min(len(names), len(commands))
+	m.launchItems = make([]launchItem, n)
+	for i := range n {
+		m.launchItems[i] = launchItem{name: names[i], command: commands[i]}
+	}
+	m.copied = ""
 	w := &widget{
 		kind:        kindLaunch,
 		header:      header,
-		body:        strings.Join(lines, "\n"),
+		body:        m.launchBody(),
 		collapsible: true,
 		collapsed:   true,
 	}
@@ -125,6 +143,40 @@ func (m *Model) SetLaunchInfo(header string, lines []string) {
 		m.selected++ // keep the selection pointing at the same widget
 	}
 	m.refresh(true)
+}
+
+// launchBody renders the launch-info widget body: an expand-time list of numbered
+// surface names plus a copy hint, and a confirmation after a copy. Commands (and
+// thus the token) are never included.
+func (m *Model) launchBody() string {
+	lines := []string{fmt.Sprintf("press 1-%d to copy a launch command to the clipboard:", len(m.launchItems)), ""}
+	for i, it := range m.launchItems {
+		lines = append(lines, fmt.Sprintf("  %d  %s", i+1, it.name))
+	}
+	if m.copied != "" {
+		lines = append(lines, "", "✓ copied "+m.copied+" — paste in another terminal")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// launchSelected reports whether the launch-info widget is the current selection.
+func (m *Model) launchSelected() bool {
+	return m.selected >= 0 && m.selected < len(m.widgets) && m.widgets[m.selected].kind == kindLaunch
+}
+
+// CopyCommand returns a command that copies the i-th (1-based) attach command to the
+// system clipboard via OSC 52, when the launch-info widget is selected. ok is false
+// when the launch widget isn't selected or i is out of range. The copied surface is
+// confirmed in the widget body; the command itself is never displayed.
+func (m *Model) CopyCommand(i int) (tea.Cmd, bool) {
+	if !m.launchSelected() || i < 1 || i > len(m.launchItems) {
+		return nil, false
+	}
+	item := m.launchItems[i-1]
+	m.copied = item.name
+	m.widgets[m.selected].body = m.launchBody()
+	m.refresh(false)
+	return tea.SetClipboard(item.command), true
 }
 
 // SetMaxBody sets the per-widget body-row cap (max_widget_lines).

@@ -75,16 +75,36 @@ Feature: Output panel event rendering
     Given an output panel sized 60 by 12
     And the launch info is set for 2 surface kinds
     Then the output view contains "Attach surfaces"
-    And the output view does not contain "surface launch kind-1"
+    And the output view does not contain "kind-1"
 
   # use-case: UC-OUTPUT-LAUNCH
-  # variant: expand reveals a command per kind
-  Scenario: Expanding launch info shows a command per kind
+  # variant: expand lists surfaces by name, never the command or token
+  Scenario: Expanding launch info lists each surface by name
     Given an output panel sized 100 by 16
     And the launch info is set for 2 surface kinds
     When launch widget 0 is expanded
-    Then the output view contains "surface launch kind-1"
-    And the output view contains "surface launch kind-2"
+    Then the output view contains "kind-1"
+    And the output view contains "kind-2"
+    And the output view does not contain "surface launch"
+    And the output view does not contain "token"
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: digit copies the command and confirms by name
+  Scenario: Pressing a digit copies a surface's attach command
+    Given an output panel sized 100 by 16
+    And the launch info is set for 2 surface kinds
+    And launch widget 0 is expanded
+    And the launch info widget is selected
+    When launch command 1 is copied
+    Then the output view contains "copied kind-1"
+    And the output view does not contain "surface launch"
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: copy is rejected unless the launch widget is selected
+  Scenario: Copy requires the launch widget to be selected
+    Given an output panel sized 100 by 16
+    And the launch info is set for 2 surface kinds
+    Then copying launch command 1 is rejected
 
   # use-case: UC-OUTPUT-LAUNCH
   # variant: stays above applied widgets

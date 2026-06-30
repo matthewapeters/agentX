@@ -123,8 +123,12 @@ func (m Model) SetMaxWidgetLines(n int) { m.output.SetMaxBody(n) }
 func (m Model) SetBanner(s string) { m.output.SetBanner(s) }
 
 // SetLaunchInfo installs the collapsed launch-info widget (attach commands for peer
-// surfaces) as the first output widget. See docs/ux/06_OUTPUT_WIDGET.md.
-func (m Model) SetLaunchInfo(header string, lines []string) { m.output.SetLaunchInfo(header, lines) }
+// surfaces) as the first output widget. names label the surfaces; commands are the
+// matching attach commands, reachable only via digit-copy. See
+// docs/ux/06_OUTPUT_WIDGET.md.
+func (m Model) SetLaunchInfo(header string, names, commands []string) {
+	m.output.SetLaunchInfo(header, names, commands)
+}
 
 // SetTheme sets the focus-border SGR colors for the panels and output widgets.
 // Empty values keep the built-in defaults.
@@ -284,6 +288,14 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.output.ScrollSelected(1)
 		case "ctrl+o", "enter":
 			m.output.ToggleSelected()
+		default:
+			// A digit copies the matching attach command from the selected
+			// launch-info widget to the clipboard (no-op for any other widget).
+			if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+				if cmd, ok := m.output.CopyCommand(int(key[0] - '0')); ok {
+					return m, cmd
+				}
+			}
 		}
 		return m, nil
 	}

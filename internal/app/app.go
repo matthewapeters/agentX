@@ -198,18 +198,17 @@ func RunChat(ctx context.Context, opts Options) error {
 
 	// When the transport is served, surface the attach commands as a collapsed
 	// launch-info widget (the chat runs in the alternate screen, so a printed hint
-	// would be wiped). The user scrolls to the top and expands it to copy a command.
+	// would be wiped). The user expands it and presses a digit to copy a surface's
+	// full attach command to the clipboard; the command (and token) is never shown.
 	if ep := orc.Endpoint(); ep != "" {
 		kinds := surfaces.ExternalKinds()
 		header := fmt.Sprintf("🔌 Attach surfaces (%d) · %s · enter to expand", len(kinds), ep)
-		lines := []string{"run in another terminal (token is for this session only):"}
 		session, token := orc.Session().Name, orc.AttachToken().Raw()
-		// A blank line before each command keeps adjacent commands from bleeding
-		// together and makes a single triple-click/select copy one clean command.
-		for _, k := range kinds {
-			lines = append(lines, "", transporthttp.LaunchCommand(k, session, ep, token))
+		commands := make([]string, len(kinds))
+		for i, k := range kinds {
+			commands[i] = transporthttp.LaunchCommand(k, session, ep, token)
 		}
-		surface.SetLaunchInfo(header, lines)
+		surface.SetLaunchInfo(header, kinds, commands)
 	}
 	p := tea.NewProgram(surface, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {

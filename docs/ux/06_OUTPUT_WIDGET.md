@@ -271,21 +271,25 @@ Placement and lifecycle:
 
 - It is the **first widget** of the transcript — rendered after the logo banner and
   before the bootstrap response — so a user can always scroll to the top to find it.
-- It is **collapsed by default** to keep the bootstrap view clean (and to avoid
-  casually exposing the token); the header shows the endpoint and an expand hint, and
-  expanding reveals one **full, copy-pasteable** `agentx surface launch <kind> …`
-  command per launchable surface kind.
+- It is **collapsed by default** to keep the bootstrap view clean; the header shows
+  the endpoint and an expand hint, and expanding reveals a numbered list of the
+  launchable surface **kinds by name** (e.g. `1 context`, `2 files`) plus a copy hint.
 - It is **surface-local**, injected via `SetLaunchInfo` at startup — it is *not* a
   session event: it is never persisted to the event log and never appears on attached
   peer surfaces (which render only bus events). It exists solely on the hub chat
   surface that knows how to launch peers.
 - It is omitted entirely when the transport is disabled (no endpoint).
 
-The widget reuses the standard collapsible-widget machinery (selectable, Enter
-toggles, body capped/scrolled like any other), so it shifts selection/scroll exactly
-as a normal widget. The displayed token is the session's raw attach token; this is
-local and loopback-only, and collapsed-by-default limits incidental exposure (e.g. a
-screen-share).
+Copy-to-clipboard (no mouse). The launch commands carry the session's attach token,
+so they are **never rendered** — only surface names are shown. With the launch-info
+widget selected, pressing a **digit `1..N`** copies that surface's full
+`agentx surface launch <kind> …` command (token included) to the system clipboard via
+the terminal's **OSC 52** clipboard sequence (`tea.SetClipboard`), and the widget body
+confirms the copy by name. This keeps the token off-screen entirely (no screen-share
+exposure), needs no mouse capture (preserving native terminal text selection), and
+works through multiplexers/SSH wherever the terminal supports OSC 52. The widget
+otherwise reuses the standard collapsible-widget machinery (selectable, Enter toggles,
+body capped/scrolled), so it shifts selection/scroll exactly as a normal widget.
 
 ```gherkin
 GIVEN an output panel with launch info set for 2 surface kinds
@@ -294,7 +298,13 @@ THEN the launch-info widget is the first widget and is collapsed
 
 GIVEN an output panel with launch info set
 WHEN the launch-info widget is expanded
-THEN it shows a full "agentx surface launch <kind>" command for each kind
+THEN it lists each launchable surface by name
+AND it does not render any attach command or token
+
+GIVEN an output panel with launch info set and the widget selected
+WHEN the user presses a digit for a listed surface
+THEN that surface's attach command is copied to the clipboard
+AND the widget confirms the copied surface by name
 
 GIVEN an output panel with launch info set
 WHEN a user_prompt widget is applied
