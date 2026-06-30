@@ -39,8 +39,17 @@ func LaunchCommand(kind, session, endpoint, token string) string {
 
 // ShortLaunchCommand formats the flagless `agentx surface launch <kind>` command;
 // the peer auto-resolves the endpoint and token from the session dir on disk (SS-5).
-// This is the form the launch-info widget advertises — short enough to type or to
-// cleanly select over SSH.
 func ShortLaunchCommand(kind string) string {
 	return "agentx surface launch " + kind
+}
+
+// SessionLaunchCommand formats `agentx surface launch <kind> --session <session>` —
+// the form the launch-info widget advertises. It carries no token (resolved from
+// disk, SS-5) but names the session so it is unambiguous when more than one agentx
+// session is running. With a single session the bare ShortLaunchCommand also works.
+func SessionLaunchCommand(kind, session string) string {
+	if session == "" {
+		return ShortLaunchCommand(kind)
+	}
+	return fmt.Sprintf("agentx surface launch %s --session %s", kind, session)
 }

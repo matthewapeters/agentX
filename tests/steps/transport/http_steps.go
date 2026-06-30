@@ -143,11 +143,15 @@ type transportWorld struct {
 	streams     []*sseStream
 	connStreams map[string]*sseStream // events streams opened with a surface_id (SS-4)
 
-	launchResult cli.LaunchResult
-	launchErr    error
+	launchResult   cli.LaunchResult
+	launchErr      error
 	tmpRoot        string             // temp session root for auto-discovery launch (SS-5)
 	wmErr          error              // last working-memory mutation error (SS-6)
 	presenceCancel context.CancelFunc // held presence stream (SS-4 / SS-6)
+
+	prov2    *fakeProvider    // a second session, for multi-session resolution tests
+	httptst2 *httptest.Server //
+	token2   surfaces.AttachToken
 
 	seed       []state.Event
 	cursor     uint64
@@ -180,6 +184,9 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 		}
 		if w.httptst != nil {
 			w.httptst.Close()
+		}
+		if w.httptst2 != nil {
+			w.httptst2.Close()
 		}
 		if w.tmpRoot != "" {
 			_ = os.RemoveAll(w.tmpRoot)
@@ -247,6 +254,10 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^I launch via the compatibility alias for the running server$`, w.launchAlias)
 	sc.Step(`^the session's transport is published to a temp session root$`, w.publishTransportToDisk)
 	sc.Step(`^I launch a "([^"]*)" surface with auto-discovery$`, w.launchAuto)
+	sc.Step(`^a second running transport server for session "([^"]*)"$`, w.secondServer)
+	sc.Step(`^both sessions are published to a temp session root$`, w.publishBothToDisk)
+	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" with auto-discovery$`, w.launchBySession)
+	sc.Step(`^the launched session is "([^"]*)"$`, w.launchedSession)
 
 	// working-memory CRUD (SS-6).
 	sc.Step(`^the client adds a fact "([^"]*)" valued "([^"]*)"$`, w.wmAdd)
@@ -784,6 +795,58 @@ func (w *transportWorld) publishTransportToDisk() error {
 
 func (w *transportWorld) launchAuto(kind string) error {
 	return w.launch(cli.LaunchArgs{SurfaceKind: kind, SessionRoot: w.tmpRoot})
+}
+
+func (w *transportWorld) secondServer(name string) error {
+	tok, err := surfaces.MintToken()
+	if err != nil {
+		return err
+	}
+	w.token2 = tok
+	id := session.Identity{ID: "sess-2", Name: name, CreatedEpoch: 2}
+	w.prov2 = &fakeProvider{
+		bus:       state.NewBus(),
+		proc:      state.NewProcessingPublisher(id.ID),
+		sess:      id,
+		reg:       surfaces.NewRegistry(tok, id.ID, id.Name),
+		accepting: true,
+	}
+	w.httptst2 = httptest.NewServer(transporthttp.NewServer(w.prov2).Handler())
+	return nil
+}
+
+func writeSessionTransport(store *session.Store, id session.Identity, endpoint, token string) error {
+	if err := os.MkdirAll(store.Dir(id.ID), 0o700); err != nil {
+		return err
+	}
+	if err := store.WriteTransport(id.ID, session.TransportInfo{SessionID: id.ID, SessionName: id.Name, Endpoint: endpoint}); err != nil {
+		return err
+	}
+	return store.WriteAttachToken(id.ID, token)
+}
+
+func (w *transportWorld) publishBothToDisk() error {
+	root, err := os.MkdirTemp("", "agentx-multi-*")
+	if err != nil {
+		return err
+	}
+	w.tmpRoot = root
+	store := session.NewStore(root)
+	if err := writeSessionTransport(store, w.prov.sess, w.httptst.URL, w.token.Raw()); err != nil {
+		return err
+	}
+	return writeSessionTransport(store, w.prov2.sess, w.httptst2.URL, w.token2.Raw())
+}
+
+func (w *transportWorld) launchBySession(kind, sessionSel string) error {
+	return w.launch(cli.LaunchArgs{SurfaceKind: kind, Session: sessionSel, SessionRoot: w.tmpRoot})
+}
+
+func (w *transportWorld) launchedSession(want string) error {
+	if w.launchResult.SessionName != want {
+		return fmt.Errorf("launched session = %q, want %q", w.launchResult.SessionName, want)
+	}
+	return nil
 }
 
 func (w *transportWorld) wmClient() *transporthttp.Client {

@@ -106,15 +106,50 @@ func resolveConnection(ctx context.Context, args LaunchArgs) (endpoint, token st
 	if len(cands) == 0 {
 		return "", "", validation("no running session found; start agentx, or pass --connect and --token")
 	}
+
+	// Only consider sessions whose server is actually answering.
+	var live []session.ActiveTransport
 	for _, c := range cands {
 		if reachable(ctx, c.Endpoint) {
-			return c.Endpoint, c.Token, nil
+			live = append(live, c)
 		}
 	}
-	return "", "", &transporthttp.AttachError{
-		Category: "transport",
-		Message:  "found published session(s) but none are reachable; pass --connect",
+	if len(live) == 0 {
+		return "", "", &transporthttp.AttachError{
+			Category: "transport",
+			Message:  "found published session(s) but none are reachable; pass --connect",
+		}
 	}
+
+	// With a selector, attach to the matching session (by name or id). Without one,
+	// a single live session is unambiguous; multiple require disambiguation so a
+	// surface never silently attaches to the wrong session.
+	if sel := strings.TrimSpace(args.Session); sel != "" {
+		for _, c := range live {
+			if sel == c.SessionName || sel == c.SessionID {
+				return c.Endpoint, c.Token, nil
+			}
+		}
+		return "", "", validation("no running session matches %q; running: %s", sel, sessionNames(live))
+	}
+	if len(live) == 1 {
+		return live[0].Endpoint, live[0].Token, nil
+	}
+	return "", "", validation("multiple sessions are running (%s); pass --session <name>", sessionNames(live))
+}
+
+// sessionNames lists the discoverable session names (falling back to id) for an
+// ambiguity error.
+func sessionNames(live []session.ActiveTransport) string {
+	names := make([]string, len(live))
+	for i, c := range live {
+		if c.SessionName != "" {
+			names[i] = c.SessionName
+		} else {
+			names[i] = c.SessionID
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 // reachable probes whether an orchestrator is answering at endpoint.

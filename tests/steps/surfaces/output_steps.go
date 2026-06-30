@@ -162,7 +162,7 @@ func (w *outputWorld) setLaunchInfo(n int) error {
 		names[i] = fmt.Sprintf("kind-%d", i+1)
 		commands[i] = fmt.Sprintf("agentx surface launch kind-%d --session s --connect http://127.0.0.1:8420 --token tkn", i+1)
 	}
-	w.panel.SetLaunchInfo(header, names, commands)
+	w.panel.SetLaunchInfo(header, "calm-otter", names, commands)
 	return nil
 }
 

@@ -14,8 +14,9 @@ import (
 // as sessions/<id>/transport.json (TRN-4). It carries the endpoint external
 // surfaces attach to; the raw attach token is never written here.
 type TransportInfo struct {
-	SessionID string `json:"session_id"`
-	Endpoint  string `json:"endpoint"`
+	SessionID   string `json:"session_id"`
+	SessionName string `json:"session_name"`
+	Endpoint    string `json:"endpoint"`
 }
 
 // transportFile is the per-session transport metadata filename.
@@ -73,10 +74,11 @@ func (s *Store) RemoveAttachToken(id string) error {
 // ActiveTransport is a discovered session endpoint plus its attach token, used by a
 // peer launch to resolve connection details from disk (SS-5).
 type ActiveTransport struct {
-	SessionID string
-	Endpoint  string
-	Token     string
-	ModTime   time.Time
+	SessionID   string
+	SessionName string
+	Endpoint    string
+	Token       string
+	ModTime     time.Time
 }
 
 // DiscoverTransports returns every session that has published both a transport
@@ -108,7 +110,7 @@ func (s *Store) DiscoverTransports() ([]ActiveTransport, error) {
 		if fi, err := os.Stat(filepath.Join(s.Dir(id), transportFile)); err == nil {
 			mt = fi.ModTime()
 		}
-		out = append(out, ActiveTransport{SessionID: info.SessionID, Endpoint: info.Endpoint, Token: tok, ModTime: mt})
+		out = append(out, ActiveTransport{SessionID: info.SessionID, SessionName: info.SessionName, Endpoint: info.Endpoint, Token: tok, ModTime: mt})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ModTime.After(out[j].ModTime) })
 	return out, nil

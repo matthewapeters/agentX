@@ -87,6 +87,7 @@ Feature: Output panel event rendering
     And the output view contains "kind-2"
     And the output view does not contain "token"
     And the output view contains "agentx surface launch <name>"
+    And the output view contains "--session calm-otter"
 
   # use-case: UC-OUTPUT-LAUNCH
   # variant: every surface is disconnected (red) until one attaches

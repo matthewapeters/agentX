@@ -146,10 +146,10 @@ func (m Model) SetBanner(s string) { m.output.SetBanner(s) }
 
 // SetLaunchInfo installs the collapsed launch-info widget (attach commands for peer
 // surfaces) as the first output widget. names label the surfaces; commands are the
-// matching attach commands, reachable only via digit-copy. See
-// docs/ux/06_OUTPUT_WIDGET.md.
-func (m Model) SetLaunchInfo(header string, names, commands []string) {
-	m.output.SetLaunchInfo(header, names, commands)
+// matching attach commands, reachable only via digit-copy; session names this
+// session for the manual-launch footer. See docs/ux/06_OUTPUT_WIDGET.md.
+func (m Model) SetLaunchInfo(header, session string, names, commands []string) {
+	m.output.SetLaunchInfo(header, session, names, commands)
 }
 
 // SetTheme sets the focus-border SGR colors for the panels and output widgets.

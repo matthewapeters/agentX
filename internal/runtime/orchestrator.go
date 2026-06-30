@@ -217,7 +217,7 @@ func (o *Orchestrator) startTransport() error {
 		return fmt.Errorf("allocate transport port: %w", err)
 	}
 	o.endpoint = transporthttp.Endpoint(ln.Addr())
-	if err := o.store.WriteTransport(o.id.ID, session.TransportInfo{SessionID: o.id.ID, Endpoint: o.endpoint}); err != nil {
+	if err := o.store.WriteTransport(o.id.ID, session.TransportInfo{SessionID: o.id.ID, SessionName: o.id.Name, Endpoint: o.endpoint}); err != nil {
 		_ = ln.Close()
 		return fmt.Errorf("publish transport endpoint: %w", err)
 	}

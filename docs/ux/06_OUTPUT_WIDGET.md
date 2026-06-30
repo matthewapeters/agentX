@@ -311,9 +311,10 @@ confirms by name. OSC 52 is terminal-dependent (VTE-based terminals such as GNOM
 Terminal/Terminator ignore clipboard writes), which is why the short, selectable
 command — not the clipboard — is the load-bearing path. For exactly that reason the
 expanded body ends with a **manual-invocation footer**
-(`or run in another pane:  agentx surface launch <name>`) so a user whose terminal
-drops the clipboard write can just type the flagless command, substituting a listed
-name. The widget reuses the standard
+(`or run in another pane:  agentx surface launch <name> --session <this-session>`) so a
+user whose terminal drops the clipboard write can just type the command, substituting a
+listed name. The header and footer name the session because more than one agentx
+session may be running, and the launcher disambiguates on `--session` (SS-5). The widget reuses the standard
 collapsible-widget machinery (selectable, Enter toggles, body capped/scrolled), so it
 shifts selection/scroll exactly as a normal widget.
 

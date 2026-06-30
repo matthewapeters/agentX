@@ -79,9 +79,10 @@ type Model struct {
 	active   string // SGR color for the selected widget when focused
 	inactive string // SGR color for unselected widgets / unfocused panel
 
-	launchItems []launchItem    // attach commands behind the launch-info widget
-	copied      string          // name of the last surface whose command was copied
-	connected   map[string]bool // launch kinds with a live attached surface (SS-4)
+	launchItems   []launchItem    // attach commands behind the launch-info widget
+	launchSession string          // this session's name, for the manual-launch footer
+	copied        string          // name of the last surface whose command was copied
+	connected     map[string]bool // launch kinds with a live attached surface (SS-4)
 }
 
 // New returns an empty output panel backed by a viewport.
@@ -129,12 +130,13 @@ func (m *Model) SetBanner(s string) {
 // the matching full attach commands, revealed only on the clipboard via CopyCommand
 // — never rendered, so the attach token stays off-screen. See
 // docs/ux/06_OUTPUT_WIDGET.md (Launch-info widget).
-func (m *Model) SetLaunchInfo(header string, names, commands []string) {
+func (m *Model) SetLaunchInfo(header, session string, names, commands []string) {
 	n := min(len(names), len(commands))
 	m.launchItems = make([]launchItem, n)
 	for i := range n {
 		m.launchItems[i] = launchItem{name: names[i], command: commands[i]}
 	}
+	m.launchSession = session
 	m.copied = ""
 	w := &widget{
 		kind:        kindLaunch,
@@ -162,9 +164,14 @@ func (m *Model) launchBody() string {
 		}
 		lines = append(lines, fmt.Sprintf("  %d  %s %s", i+1, status, it.name))
 	}
-	// Manual fallback: the launch is flagless (SS-5), so a user whose terminal drops
-	// OSC 52 can just type this in another pane, substituting a name above.
-	lines = append(lines, "", "or run in another pane:  agentx surface launch <name>")
+	// Manual fallback: a user whose terminal drops OSC 52 can type this in another
+	// pane, substituting a name above. It names the session so it stays correct when
+	// more than one agentx session is running (SS-5).
+	manual := "agentx surface launch <name>"
+	if m.launchSession != "" {
+		manual += " --session " + m.launchSession
+	}
+	lines = append(lines, "", "or run in another pane:  "+manual)
 	if m.copied != "" {
 		lines = append(lines, "", "✓ copied "+m.copied+" — paste in another terminal")
 	}

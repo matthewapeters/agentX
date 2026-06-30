@@ -210,14 +210,16 @@ func RunChat(ctx context.Context, opts Options) error {
 	// full attach command to the clipboard; the command (and token) is never shown.
 	if ep := orc.Endpoint(); ep != "" {
 		kinds := surfaces.ExternalKinds()
-		header := fmt.Sprintf("🔌 Attach surfaces (%d) · %s · enter to expand", len(kinds), ep)
-		// Short, flagless commands: a same-machine peer auto-resolves the endpoint and
-		// token from disk (SS-5), so nothing here carries the token.
+		name := orc.Session().Name
+		header := fmt.Sprintf("🔌 Attach surfaces · session %s · %s · enter to expand", name, ep)
+		// Session-named, token-free commands: a same-machine peer auto-resolves the
+		// endpoint and token from disk (SS-5); naming the session keeps the command
+		// unambiguous when more than one agentx session is running.
 		commands := make([]string, len(kinds))
 		for i, k := range kinds {
-			commands[i] = transporthttp.ShortLaunchCommand(k)
+			commands[i] = transporthttp.SessionLaunchCommand(k, name)
 		}
-		surface.SetLaunchInfo(header, kinds, commands)
+		surface.SetLaunchInfo(header, name, kinds, commands)
 	}
 	p := tea.NewProgram(surface, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {

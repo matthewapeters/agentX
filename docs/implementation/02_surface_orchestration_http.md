@@ -772,14 +772,20 @@ it — no copying a token between panes:
   does not lower the security boundary — a reader of this `0600` file inside the
   `0700` session dir already has the user's UID.
 
-`agentx surface launch <kind>` with no `--connect/--token/--session` auto-resolves: it
-scans the session root for sessions that published an endpoint and a readable token,
-newest first, and attaches to the first reachable one (v1's "exactly one active
-session" rule normally makes this unambiguous). Explicit `--connect`/`--token` still
-override, and an explicit `--session` is still validated against the live session. The
-upshot: the attach command the launch-info widget advertises is just
-`agentx surface launch context` — short enough to type, or to cleanly select over SSH
-in any terminal, with no clipboard dependency.
+`agentx surface launch <kind>` with no `--connect/--token` auto-resolves from the
+session root on disk. Resolution considers only sessions whose server is reachable:
+
+- `--session <name|id>` attaches to the **matching** session (so it is correct with
+  several running); a non-match errors with the list of running sessions.
+- With **no** selector, a single reachable session is unambiguous and is used; with
+  **multiple**, resolution refuses to guess and errors (`pass --session <name>`) so a
+  surface never silently attaches to the wrong session.
+- Explicit `--connect`/`--token` still override everything.
+
+`transport.json` therefore carries `session_name` (alongside `session_id` + endpoint)
+so a launcher can match on the human-friendly name. The launch-info widget displays
+the session name and advertises `agentx surface launch <kind> --session <name>` — still
+token-free and SSH-typeable, but unambiguous when more than one agentx session runs.
 
 ## Working-Memory CRUD (WM surface, SS-6)
 

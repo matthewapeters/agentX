@@ -39,6 +39,25 @@ Feature: Launch a child surface
     And the launched surface kind is "files"
     And the launched surface appears in the registry
 
+  # use-case: UC-LAUNCH-MULTI  (TC-M2-ss5-004)
+  # source: docs/implementation/02_surface_orchestration_http.md (Flagless launch SS-5)
+  Scenario: Auto-discovery attaches to the session named by --session
+    Given a running transport server for session "calm-otter"
+    And a second running transport server for session "brave-fox"
+    And both sessions are published to a temp session root
+    When I launch a "files" surface for session "brave-fox" with auto-discovery
+    Then the launch succeeds
+    And the launched session is "brave-fox"
+
+  # use-case: UC-LAUNCH-MULTI  (TC-M2-ss5-005)
+  # variant: ambiguous without a selector
+  Scenario: Auto-discovery refuses to guess among multiple sessions
+    Given a running transport server for session "calm-otter"
+    And a second running transport server for session "brave-fox"
+    And both sessions are published to a temp session root
+    When I launch a "files" surface with auto-discovery
+    Then the launch fails with category "validation"
+
   # use-case: UC-LAUNCH-AUTH  (TC-M1-launch-003)
   Scenario: Reject attach without a valid token
     Given a running transport server
