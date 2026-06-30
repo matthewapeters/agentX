@@ -8,6 +8,7 @@ import (
 
 	"agentx/internal/surfaces"
 	"agentx/internal/surfaces/client"
+	contextsurface "agentx/internal/surfaces/context"
 	transporthttp "agentx/internal/transport/http"
 )
 
@@ -79,7 +80,7 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 	if err != nil {
 		return err
 	}
-	if surface, title, ok := surfaceModelFor(args.SurfaceKind); ok {
+	if surface, title, ok := surfaceModelFor(args.SurfaceKind, res); ok {
 		return client.Run(ctx, client.Options{
 			Endpoint:  args.Connect,
 			Token:     args.Token,
@@ -95,10 +96,11 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 }
 
 // surfaceModelFor returns the SurfaceModel + title for a launchable kind, or
-// false when the kind has no TUI yet. Concrete surfaces register here as they land
-// (the context viewer in SS-3).
-func surfaceModelFor(kind string) (client.SurfaceModel, string, bool) {
+// false when the kind has no TUI yet. Concrete surfaces register here as they land.
+func surfaceModelFor(kind string, res LaunchResult) (client.SurfaceModel, string, bool) {
 	switch kind {
+	case "context":
+		return contextsurface.New(), "context · " + res.SessionName, true
 	default:
 		return nil, "", false
 	}

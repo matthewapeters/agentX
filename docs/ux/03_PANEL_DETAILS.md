@@ -2022,3 +2022,54 @@ Requires ARCH-03 (tagging WM SYSTEM message with `metadata["is_working_memory"]`
 | Q-11 | Should synthesis (ENH-14) require a preview/approval step before originals are disabled? |
 | Q-12 | Where does a synthesised message appear in the list: (a) replace last source position, (b) bottom of selection range, or (c) dedicated Synthesis section? |
 | Q-13 | Should the synthesis compression instruction be a fixed internal prompt or user-editable per invocation? |
+
+---
+
+## PD-CTX — Context Surface (TUI)
+
+> **TUI surface (M2, SS-3).** A read-only peer surface launched as a separate
+> process (`agentx surface launch context`) that attaches over the transport and
+> mirrors the session. It supersedes, for the TUI, the legacy GUI context affordances
+> (PD-03 SystemSurface — Context, PD-08 ContextRenderer), which described the
+> retired single-window GUI. See `docs/build-plan/06_system_surfaces_backlog.md`.
+
+### Behaviour
+
+The surface seeds from the durable event log on attach (the full prior session),
+then resumes the live stream by cursor and appends new events (SS-1). It renders the
+event stream with the shared collapsible output widgets (`docs/ux/06_OUTPUT_WIDGET.md`)
+and shows a one-line processing-state indicator. It is **read-only** — there is no
+prompt input; keys drive scroll/selection only. Quitting (`Ctrl-C`/`q`) marks the
+surface stopped.
+
+### Affordance Inventory
+
+| Affordance | ID | Status |
+|-----------|-----|--------|
+| Seed render: durable history on attach | PD-CTX-AF-001 | ✅ |
+| Live tail: resumed events append after the seed cursor | PD-CTX-AF-002 | ✅ |
+| Collapsible widgets (thinking/tool collapsed by default) | PD-CTX-AF-003 | ✅ |
+| Read-only navigation keys (scroll, page, select, toggle) | PD-CTX-AF-004 | ✅ |
+| Processing-state line reflects state · phase | PD-CTX-AF-005 | ✅ |
+| Read-only: no prompt input affordance | PD-CTX-AF-006 | ✅ |
+| Title strip (`context · <session>`) via the surface host | PD-CTX-AF-007 | ✅ |
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: Seed then live (PD-CTX-AF-001 / PD-CTX-AF-002)
+
+- GIVEN a session with a recorded exchange
+- WHEN a context surface attaches
+- THEN it renders the prior exchange, and live events stream in thereafter
+
+Use-case: Processing-state line (PD-CTX-AF-005)
+
+- GIVEN a context surface
+- WHEN a processing-state event arrives
+- THEN the status line shows the state and phase (not a widget)
+
+Use-case: Collapsed reasoning (PD-CTX-AF-003)
+
+- GIVEN a context surface
+- WHEN a thinking event arrives
+- THEN its body is collapsed (not shown until expanded)

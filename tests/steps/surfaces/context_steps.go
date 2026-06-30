@@ -1,0 +1,97 @@
+package surfacesteps
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/cucumber/godog"
+
+	"agentx/internal/state"
+	contextsurface "agentx/internal/surfaces/context"
+)
+
+type contextWorld struct {
+	model *contextsurface.Model
+}
+
+// registerContextSteps wires the context-viewer surface steps (SS-3).
+func registerContextSteps(sc *godog.ScenarioContext) {
+	w := &contextWorld{}
+
+	sc.Step(`^a context surface sized (\d+) by (\d+)$`, w.sized)
+	sc.Step(`^the context surface applies a user_prompt "([^"]*)"$`, w.applyUserPrompt)
+	sc.Step(`^the context surface applies an agent_response "([^"]*)"$`, w.applyAgentResponse)
+	sc.Step(`^the context surface applies a thinking "([^"]*)"$`, w.applyThinking)
+	sc.Step(`^the context surface applies processing-state "([^"]*)" "([^"]*)"$`, w.applyProcessing)
+	sc.Step(`^the context view contains "([^"]*)"$`, w.viewContains)
+	sc.Step(`^the context view does not contain "([^"]*)"$`, w.viewNotContains)
+	sc.Step(`^the context status line shows "([^"]*)"$`, w.statusShows)
+}
+
+func (w *contextWorld) sized(width, height int) error {
+	w.model = contextsurface.New()
+	w.model.SetSize(width, height)
+	return nil
+}
+
+func (w *contextWorld) applyContent(et string, ct state.ContentType, text string) error {
+	w.model.Apply(state.Event{
+		Epoch:       1,
+		SessionID:   "s",
+		EventType:   et,
+		ContentType: ct,
+		Payload:     map[string]any{"text": text},
+		Enabled:     state.DefaultEnabled(ct),
+	})
+	return nil
+}
+
+func (w *contextWorld) applyUserPrompt(text string) error {
+	return w.applyContent("USER_PROMPT", state.ContentUserPrompt, text)
+}
+
+func (w *contextWorld) applyAgentResponse(text string) error {
+	return w.applyContent("AGENT_RESPONSE", state.ContentAgentResponse, text)
+}
+
+func (w *contextWorld) applyThinking(text string) error {
+	return w.applyContent("THINKING", state.ContentThinking, text)
+}
+
+func (w *contextWorld) applyProcessing(runState, phase string) error {
+	w.model.Apply(state.Event{
+		Epoch:       1,
+		SessionID:   "s",
+		EventType:   "PROCESSING_STATE",
+		ContentType: state.ContentProcessingState,
+		Payload:     map[string]any{"state": runState, "phase": phase},
+	})
+	return nil
+}
+
+// statusLine returns the last rendered line (the processing-state line).
+func (w *contextWorld) statusLine() string {
+	lines := strings.Split(w.model.View(), "\n")
+	return lines[len(lines)-1]
+}
+
+func (w *contextWorld) viewContains(want string) error {
+	if !strings.Contains(w.model.View(), want) {
+		return fmt.Errorf("context view does not contain %q", want)
+	}
+	return nil
+}
+
+func (w *contextWorld) viewNotContains(unwanted string) error {
+	if strings.Contains(w.model.View(), unwanted) {
+		return fmt.Errorf("context view unexpectedly contains %q", unwanted)
+	}
+	return nil
+}
+
+func (w *contextWorld) statusShows(want string) error {
+	if !strings.Contains(w.statusLine(), want) {
+		return fmt.Errorf("status line %q does not show %q", w.statusLine(), want)
+	}
+	return nil
+}

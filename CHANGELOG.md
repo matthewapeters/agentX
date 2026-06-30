@@ -9,6 +9,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added the context viewer surface (SS-3, completing M2's first peer surface): a new
+  read-only `internal/surfaces/context` surface launched with
+  `agentx surface launch context`. It projects the session event stream into the
+  shared collapsible output renderer (reused from the chat output), intercepts
+  processing-state events for a one-line status indicator, and exposes scroll/select
+  navigation only (no prompt input). Registered in the launch dispatch
+  (`surfaceModelFor`). Specced as `docs/ux/03_PANEL_DETAILS.md` PD-CTX (superseding
+  the legacy GUI PD-03/PD-08 context affordances for the TUI). An end-to-end test
+  attaches a context surface to a live orchestrator, seeds the prior exchange from
+  the durable log, and renders live events streamed thereafter.
 - Added the shared surface-client framework (SS-2, M2): a new
   `internal/surfaces/client` package with a `SurfaceModel` contract
   (`Apply`/`SetSize`/`Key`/`View`) and a Bubble Tea `Host` that drives the attach

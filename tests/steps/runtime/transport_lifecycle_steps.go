@@ -14,7 +14,10 @@ import (
 
 	"agentx/internal/cli"
 	"agentx/internal/runtime"
+	"agentx/internal/state"
 	"agentx/internal/surfaces"
+	contextsurface "agentx/internal/surfaces/context"
+	transporthttp "agentx/internal/transport/http"
 )
 
 type tlWorld struct {
@@ -25,6 +28,10 @@ type tlWorld struct {
 	launch    cli.LaunchResult
 	launchErr error
 	stream    *sseReader
+
+	ctxModel  *contextsurface.Model
+	ctxCh     <-chan state.Event
+	ctxCancel context.CancelFunc
 }
 
 // registerTransportLifecycleSteps wires the serve-alongside lifecycle steps (TRN-6).
@@ -34,6 +41,9 @@ func registerTransportLifecycleSteps(sc *godog.ScenarioContext) {
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
 		if w.stream != nil {
 			w.stream.close()
+		}
+		if w.ctxCancel != nil {
+			w.ctxCancel()
 		}
 		if w.orc != nil {
 			shutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -58,6 +68,95 @@ func registerTransportLifecycleSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the transport endpoint is unreachable$`, w.endpointUnreachable)
 	sc.Step(`^the attached surface is stopped$`, w.surfaceStopped)
 	sc.Step(`^the orchestrator publishes no transport endpoint$`, w.noEndpoint)
+
+	// Context surface attach over the real transport (SS-3).
+	sc.Step(`^a recorded exchange prompt "([^"]*)" response "([^"]*)"$`, w.recordExchange)
+	sc.Step(`^a context surface attaches over the transport$`, w.ctxAttach)
+	sc.Step(`^the attached context view contains "([^"]*)"$`, w.ctxContains)
+	sc.Step(`^a live response "([^"]*)" is recorded$`, w.recordResponse)
+	sc.Step(`^the attached context view renders "([^"]*)"$`, w.ctxRenders)
+}
+
+func (w *tlWorld) publishEvent(eventType string, ct state.ContentType, text string) {
+	w.orc.Bus().Publish(state.Event{
+		Epoch:       time.Now().UnixMilli(),
+		SessionID:   w.orc.Session().ID,
+		EventType:   eventType,
+		ContentType: ct,
+		Payload:     map[string]any{"text": text},
+		Enabled:     state.DefaultEnabled(ct),
+	})
+}
+
+func (w *tlWorld) recordExchange(prompt, response string) error {
+	w.publishEvent("USER_PROMPT", state.ContentUserPrompt, prompt)
+	w.publishEvent("AGENT_RESPONSE", state.ContentAgentResponse, response)
+	// Wait for the recorder to persist both before the surface seeds from disk.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if h, err := w.orc.History(); err == nil && len(h) >= 2 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("exchange not persisted in time")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func (w *tlWorld) recordResponse(text string) error {
+	w.publishEvent("AGENT_RESPONSE", state.ContentAgentResponse, text)
+	return nil
+}
+
+func (w *tlWorld) ctxAttach() error {
+	c := transporthttp.NewClient(w.orc.Endpoint())
+	seed, err := c.Seed(context.Background())
+	if err != nil {
+		return err
+	}
+	w.ctxModel = contextsurface.New()
+	w.ctxModel.SetSize(80, 24)
+	var last uint64
+	for _, ev := range seed {
+		w.ctxModel.Apply(ev)
+		last = ev.Ordinal
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	w.ctxCancel = cancel
+	ch, err := c.Subscribe(ctx, last)
+	if err != nil {
+		cancel()
+		return err
+	}
+	w.ctxCh = ch
+	return nil
+}
+
+func (w *tlWorld) ctxContains(want string) error {
+	if !strings.Contains(w.ctxModel.View(), want) {
+		return fmt.Errorf("context view does not contain %q", want)
+	}
+	return nil
+}
+
+// ctxRenders applies live events until the view shows want or the deadline passes.
+func (w *tlWorld) ctxRenders(want string) error {
+	deadline := time.After(3 * time.Second)
+	for {
+		if strings.Contains(w.ctxModel.View(), want) {
+			return nil
+		}
+		select {
+		case ev, ok := <-w.ctxCh:
+			if !ok {
+				return fmt.Errorf("stream closed before %q rendered", want)
+			}
+			w.ctxModel.Apply(ev)
+		case <-deadline:
+			return fmt.Errorf("timed out waiting for %q to render", want)
+		}
+	}
 }
 
 // freePort discovers a currently-free loopback port.
