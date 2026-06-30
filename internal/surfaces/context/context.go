@@ -20,8 +20,14 @@ type Model struct {
 	proc state.ProcessingState
 }
 
-// New returns an empty context viewer.
-func New() *Model { return &Model{out: output.New()} }
+// New returns an empty context viewer. Its output panel is always focused — it is
+// the sole panel in the surface process — so the selected object is highlighted as
+// the user navigates.
+func New() *Model {
+	out := output.New()
+	out.SetFocus(true)
+	return &Model{out: out}
+}
 
 // Apply folds one event into the projection. Processing-state events update the
 // status line; everything else renders as an output widget.
@@ -40,21 +46,20 @@ func (m *Model) SetSize(width, height int) {
 
 // Key handles read-only navigation: scroll and collapse/expand. There is no prompt
 // input — this surface only observes.
+// Key handles read-only navigation, mirroring the chat output panel so the keys are
+// consistent: PgUp/PgDn move the selection between objects, Up/Down (k/j) scroll
+// within the selected object, and Enter expands/collapses it.
 func (m *Model) Key(msg tea.KeyPressMsg) {
 	switch msg.String() {
-	case "up", "k":
-		m.out.ScrollUp(1)
-	case "down", "j":
-		m.out.ScrollDown(1)
 	case "pgup":
-		m.out.PageUp()
-	case "pgdown", " ":
-		m.out.PageDown()
-	case "shift+up":
 		m.out.SelectUp()
-	case "shift+down":
+	case "pgdown":
 		m.out.SelectDown()
-	case "enter":
+	case "up", "k":
+		m.out.ScrollSelected(-1)
+	case "down", "j":
+		m.out.ScrollSelected(1)
+	case "enter", "ctrl+o":
 		m.out.ToggleSelected()
 	}
 }

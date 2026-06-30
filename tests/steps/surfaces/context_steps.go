@@ -26,6 +26,7 @@ func registerContextSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the context view contains "([^"]*)"$`, w.viewContains)
 	sc.Step(`^the context view does not contain "([^"]*)"$`, w.viewNotContains)
 	sc.Step(`^the context status line shows "([^"]*)"$`, w.statusShows)
+	sc.Step(`^the context view shows a selected object border$`, w.selectedBorder)
 }
 
 func (w *contextWorld) sized(width, height int) error {
@@ -85,6 +86,13 @@ func (w *contextWorld) viewContains(want string) error {
 func (w *contextWorld) viewNotContains(unwanted string) error {
 	if strings.Contains(w.model.View(), unwanted) {
 		return fmt.Errorf("context view unexpectedly contains %q", unwanted)
+	}
+	return nil
+}
+
+func (w *contextWorld) selectedBorder() error {
+	if !strings.Contains(w.model.View(), "┏") {
+		return fmt.Errorf("context view has no selected (heavy) object border; output not focused?")
 	}
 	return nil
 }

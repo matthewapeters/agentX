@@ -33,6 +33,13 @@ Feature: Context viewer surface
     Given a context surface sized 40 by 12
     Then the context status line shows "idle"
 
+  # use-case: PD-CTX-AF-004  (TC-M2-context-006)
+  # the viewer is focused, so the selected object is highlighted for navigation
+  Scenario: The selected object is highlighted
+    Given a context surface sized 40 by 12
+    When the context surface applies a user_prompt "hello there"
+    Then the context view shows a selected object border
+
   # use-case: PD-CTX-AF-003  (TC-M2-context-004)
   Scenario: Thinking is collapsed by default
     Given a context surface sized 40 by 12
