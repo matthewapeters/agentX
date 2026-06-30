@@ -48,11 +48,15 @@ type launchItem struct {
 // widget is one renderable output entry.
 type widget struct {
 	kind        entryKind
-	header      string // emoji + label, always shown (one line)
-	body        string // optional detail, collapsible
+	title       string // emoji + type label, rendered in the top border
+	body        string // content, shown inside the box
 	collapsible bool
 	collapsed   bool
-	offset      int // inner scroll offset (wrapped body-line index)
+	// previewWhenCollapsed shows the first body line while collapsed (narrative
+	// boxes). When false, a collapsed box shows only its titled border (noise boxes
+	// such as thinking / tool result).
+	previewWhenCollapsed bool
+	offset               int // inner scroll offset (wrapped body-line index)
 }
 
 // defaultActive and defaultInactive are the built-in border SGR colors used
@@ -134,7 +138,7 @@ func (m *Model) SetLaunchInfo(header string, names, commands []string) {
 	m.copied = ""
 	w := &widget{
 		kind:        kindLaunch,
-		header:      header,
+		title:       header,
 		body:        m.launchBody(),
 		collapsible: true,
 		collapsed:   true,
@@ -255,14 +259,14 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 // Apply folds a bus event into the panel as a widget and selects it.
 func (m *Model) Apply(ev state.Event) {
 	if ev.EventType == "ERROR" {
-		m.add(&widget{kind: kindError, header: "⚠ " + oneLine(eventText(ev)), body: detail(eventText(ev))})
+		m.add(&widget{kind: kindError, title: "⚠ error", body: eventText(ev), previewWhenCollapsed: true})
 		return
 	}
 	switch ev.ContentType {
 	case state.ContentUserPrompt:
-		m.add(&widget{kind: kindUser, header: "👤 You", body: eventText(ev)})
+		m.add(&widget{kind: kindUser, title: "👤 You", body: eventText(ev), previewWhenCollapsed: true})
 	case state.ContentClassification:
-		m.add(&widget{kind: kindClassification, header: "⚙️ " + oneLine(eventText(ev))})
+		m.add(&widget{kind: kindClassification, title: "⚙️ classification", body: eventText(ev), previewWhenCollapsed: true})
 	case state.ContentAgentResponse:
 		m.appendAssistant(eventText(ev))
 		return
@@ -270,11 +274,11 @@ func (m *Model) Apply(ev state.Event) {
 		m.appendThinking(eventText(ev))
 		return
 	case state.ContentToolCall:
-		m.add(&widget{kind: kindToolCall, header: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true})
+		m.add(&widget{kind: kindToolCall, title: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true, previewWhenCollapsed: true})
 	case state.ContentToolResult:
-		m.add(&widget{kind: kindToolResult, header: "📋 result", body: eventText(ev), collapsible: true, collapsed: true})
+		m.add(&widget{kind: kindToolResult, title: "📋 result", body: eventText(ev), collapsible: true, collapsed: true})
 	case state.ContentSystemPrompt:
-		m.add(&widget{kind: kindSystem, header: "📜 " + oneLine(eventText(ev)), body: detail(eventText(ev))})
+		m.add(&widget{kind: kindSystem, title: "📜 system prompt", body: eventText(ev), previewWhenCollapsed: true})
 	default:
 		return
 	}
@@ -300,7 +304,7 @@ func (m *Model) appendAssistant(text string) {
 		m.refresh(true)
 		return
 	}
-	m.add(&widget{kind: kindAssistant, header: "🤖 AgentX", body: text})
+	m.add(&widget{kind: kindAssistant, title: "🤖 AgentX", body: text, previewWhenCollapsed: true})
 }
 
 // appendThinking streams reasoning text into a single collapsed thinking widget
@@ -311,7 +315,7 @@ func (m *Model) appendThinking(text string) {
 		m.refresh(true)
 		return
 	}
-	m.add(&widget{kind: kindThinking, header: "💭 thinking", body: text, collapsible: true, collapsed: true})
+	m.add(&widget{kind: kindThinking, title: "💭 thinking", body: text, collapsible: true, collapsed: true})
 }
 
 // AssistantEntries returns the number of distinct assistant widgets.
@@ -455,19 +459,39 @@ func (m *Model) scrollSelectedIntoView() {
 	}
 }
 
-// renderWidget renders one widget to its boxed lines.
+// renderWidget renders one widget to its boxed lines: the kind label lives in the
+// top border, and the inner rows are content. A collapsed box shows its first body
+// line (narrative kinds) or nothing (noise kinds); an expanded box shows the capped,
+// scrollable body.
 func (m *Model) renderWidget(w *widget, selected bool) []string {
 	innerW := m.width - 2
 	if innerW < 1 {
-		return []string{truncateWord(w.header, max(m.width, 0))}
+		return []string{truncateWord(w.title, max(m.width, 0))}
 	}
 
-	rows := []string{padTo(truncateWord(w.header, innerW), innerW)}
-
-	if !w.collapsed && w.body != "" {
-		rows = append(rows, m.renderBody(w, innerW)...)
+	var rows []string
+	switch {
+	case w.collapsed:
+		if w.previewWhenCollapsed && w.body != "" {
+			rows = []string{padTo(collapsedPreview(w.body, innerW), innerW)}
+		}
+	case w.body != "":
+		rows = m.renderBody(w, innerW)
 	}
-	return m.boxify(rows, innerW, selected)
+	return m.boxify(w.title, rows, innerW, selected)
+}
+
+// collapsedPreview returns the first wrapped body line, marked with an ellipsis when
+// more content follows.
+func collapsedPreview(body string, innerW int) string {
+	lines := wrapLines(body, innerW)
+	if len(lines) == 0 {
+		return ""
+	}
+	if len(lines) == 1 {
+		return lines[0]
+	}
+	return truncateWord(lines[0], max(innerW-1, 0)) + "…"
 }
 
 // renderBody wraps and windows a widget body, adding a proportional scrollbar
@@ -519,7 +543,7 @@ func scrollbarCell(i, offset, total, track int) string {
 // the selected widget gets a heavy border. Borders are colored: the selected
 // widget uses the active color while the panel is focused, every other widget
 // (and the selected one when the panel is unfocused) uses the inactive color.
-func (m *Model) boxify(rows []string, innerW int, selected bool) []string {
+func (m *Model) boxify(title string, rows []string, innerW int, selected bool) []string {
 	tl, tr, bl, br, h, v := "┌", "┐", "└", "┘", "─", "│"
 	if selected {
 		tl, tr, bl, br, h, v = "┏", "┓", "┗", "┛", "━", "┃"
@@ -534,14 +558,29 @@ func (m *Model) boxify(rows []string, innerW int, selected bool) []string {
 		}
 		return "\x1b[" + code + "m" + s + "\x1b[0m"
 	}
-	bar := strings.Repeat(h, innerW)
 	out := make([]string, 0, len(rows)+2)
-	out = append(out, paint(tl+bar+tr))
+	out = append(out, m.topBorder(title, innerW, tl, tr, h, paint))
 	for _, r := range rows {
 		out = append(out, paint(v)+r+paint(v))
 	}
-	out = append(out, paint(bl+bar+br))
+	out = append(out, paint(bl+strings.Repeat(h, innerW)+br))
 	return out
+}
+
+// topBorder draws the top border with the kind label embedded as `┌─ title ──┐`.
+// The border glyphs take the focus color; the title keeps the default text color so
+// it stays legible. A title that does not fit (very narrow box) is dropped.
+func (m *Model) topBorder(title string, innerW int, tl, tr, h string, paint func(string) string) string {
+	const lead = 3 // h + space before the title + space after it
+	if title == "" || innerW-lead <= 0 {
+		return paint(tl + strings.Repeat(h, innerW) + tr)
+	}
+	t := truncateWord(title, innerW-lead)
+	fill := innerW - lead - ansi.StringWidth(t)
+	if fill < 0 {
+		fill = 0
+	}
+	return paint(tl+h+" ") + t + paint(" "+strings.Repeat(h, fill)+tr)
 }
 
 // --- text helpers ---
@@ -552,15 +591,6 @@ func oneLine(s string) string {
 		return s[:i]
 	}
 	return s
-}
-
-// detail returns s when it spans multiple lines (so it is worth expanding),
-// otherwise "" (the header already shows it).
-func detail(s string) string {
-	if strings.Contains(s, "\n") {
-		return s
-	}
-	return ""
 }
 
 // truncateWord fits s to w display columns, breaking at a word boundary and

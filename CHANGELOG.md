@@ -7,6 +7,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] - 2026-06-23
 
+### Changed
+
+- Output widgets now render the kind label (emoji + type) **in the top border**
+  (`┌─ 🤖 AgentX ───┐`) instead of on the first inner row, so every visible row is
+  content. Collapse behaviour is now kind-aware: narrative boxes (user, assistant,
+  tool call) collapse to the titled border plus a one-line content preview (with `…`
+  when there is more), while noise boxes (thinking, tool result) collapse to the
+  titled border only. Both the chat and context surfaces inherit this. Documented in
+  `docs/ux/06_OUTPUT_WIDGET.md` (Anatomy, collapse behaviour).
+
 ### Added
 
 - Added flagless surface launch with on-disk token discovery (SS-5), making

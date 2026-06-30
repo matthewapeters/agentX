@@ -29,22 +29,24 @@ Feature: Collapsible output widgets
     Then the output view contains "secret reasoning"
 
   # use-case: UC-WIDGET-COLLAPSE
-  # variant: assistant-widget-collapses-too
-  Scenario: The assistant widget toggles collapse like any other
+  # variant: a narrative box (assistant) collapses to a first-line preview
+  Scenario: The assistant widget collapses to a first-line preview
     Given an output panel sized 30 by 12
-    When an agent_response event "the full answer" is applied
-    Then the output view contains "the full answer"
+    When an agent_response event "alpha bravo charlie delta echo foxtrot golf hotel" is applied
+    Then the output view contains "hotel"
     When the selected widget is toggled
-    Then the output view does not contain "the full answer"
+    Then the output view contains "alpha"
+    And the output view does not contain "hotel"
 
   # use-case: UC-WIDGET-COLLAPSE
-  # variant: user-widget-collapses-too
-  Scenario: The user widget toggles collapse like any other
+  # variant: a narrative box (user) collapses to a first-line preview
+  Scenario: The user widget collapses to a first-line preview
     Given an output panel sized 30 by 12
-    When a user_prompt event "my question" is applied
-    Then the output view contains "my question"
+    When a user_prompt event "uno dos tres cuatro cinco seis siete ocho nueve diez" is applied
+    Then the output view contains "diez"
     When the selected widget is toggled
-    Then the output view does not contain "my question"
+    Then the output view contains "uno"
+    And the output view does not contain "diez"
 
   # use-case: UC-WIDGET-SCROLL
   Scenario: A long body is capped, shows a scrollbar, and scrolls in place

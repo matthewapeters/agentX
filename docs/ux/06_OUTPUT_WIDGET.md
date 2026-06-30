@@ -46,8 +46,11 @@ track rows. The scrollbar is shown only when `total > visible`.
 
 ## Anatomy
 
+The widget kind (emoji + type label) is rendered **in the top border**, not as a body
+row, so every visible inner row is content:
+
 ```
- ┌─ 💭 thinking  ────────────────────────────────────────┐   ← header row (always visible)
+ ┌─ 💭 thinking ──────────────────────────────────────────┐   ← title in the border
  │ The user is asking about parser internals, so I    █ │   ← body (viewport), capped
  │ should inspect parser.go before answering. The     █ │     at max_widget_lines;
  │ relevant function is Parse(), which …              ░ │     right column = scrollbar
@@ -55,13 +58,26 @@ track rows. The scrollbar is shown only when `total > visible`.
  └────────────────────────────────────────────────────┘
 ```
 
-When collapsed, only the header row inside the top border is shown (no body, no
-scrollbar):
+Collapse behaviour depends on the kind, so collapsing a verbose box hides it while a
+narrative box still shows a one-line teaser:
 
-```
- ┌─ 💭 thinking  (expand: enter) ─────────────────────────┐
- └────────────────────────────────────────────────────┘
-```
+- **Narrative** boxes (user prompt, assistant response, tool call) collapse to the
+  titled border plus the **first content line** (with an `…` when there is more),
+  so the gist stays visible:
+
+  ```
+   ┌─ 🤖 AgentX ─────────────────────────────────────────┐
+   │ Here is the answer to your question about parser…   │
+   └────────────────────────────────────────────────────┘
+  ```
+
+- **Noise** boxes (thinking, tool result) collapse to the **titled border only** — the
+  label in the border says what it is, the content is hidden until expanded:
+
+  ```
+   ┌─ 💭 thinking ───────────────────────────────────────┐
+   └────────────────────────────────────────────────────┘
+  ```
 
 Streaming entries (assistant response) render expanded and auto-follow the bottom
 while tokens arrive.
