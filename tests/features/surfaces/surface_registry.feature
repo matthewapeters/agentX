@@ -69,3 +69,24 @@ Feature: Surface registry and attach tokens
     And a "files" surface "files-b" is registered with the valid token
     And a "config" surface "config-a" is registered with the valid token
     Then the registry lists surfaces in order "config-a, files-b"
+
+  # use-case: UC-REG-LIVENESS  (TC-M2-registry-008)
+  # source: docs/implementation/02_surface_orchestration_http.md (Connection liveness SS-4)
+  Scenario: A surface is connected only while its event stream is open
+    Given a session registry with a minted attach token
+    And a "context" surface "context-1" is registered with the valid token
+    Then the connected kinds are ""
+    When surface "context-1" opens an event stream
+    Then the connected kinds are "context"
+    When surface "context-1" closes an event stream
+    Then the connected kinds are ""
+
+  # use-case: UC-REG-LIVENESS  (TC-M2-registry-009)
+  # variant: deduplicated and sorted across surfaces
+  Scenario: Connected kinds are unique and sorted across surfaces
+    Given a session registry with a minted attach token
+    And a "files" surface "files-1" is registered with the valid token
+    And a "context" surface "context-1" is registered with the valid token
+    When surface "files-1" opens an event stream
+    And surface "context-1" opens an event stream
+    Then the connected kinds are "context, files"

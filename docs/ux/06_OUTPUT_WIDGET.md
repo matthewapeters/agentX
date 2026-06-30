@@ -273,7 +273,10 @@ Placement and lifecycle:
   before the bootstrap response — so a user can always scroll to the top to find it.
 - It is **collapsed by default** to keep the bootstrap view clean; the header shows
   the endpoint and an expand hint, and expanding reveals a numbered list of the
-  launchable surface **kinds by name** (e.g. `1 context`, `2 files`) plus a copy hint.
+  launchable surfaces, each shown as `<digit> <status> <name>` (e.g. `1 🔴 context`,
+  `2 🟢 files`) plus a copy hint. The **status emoji** is 🟢 when at least one surface
+  of that kind is currently attached and 🔴 otherwise; it updates live as surfaces
+  attach and detach (see Connection status below).
 - It is **surface-local**, injected via `SetLaunchInfo` at startup — it is *not* a
   session event: it is never persisted to the event log and never appears on attached
   peer surfaces (which render only bus events). It exists solely on the hub chat
@@ -291,6 +294,16 @@ works through multiplexers/SSH wherever the terminal supports OSC 52. The widget
 otherwise reuses the standard collapsible-widget machinery (selectable, Enter toggles,
 body capped/scrolled), so it shifts selection/scroll exactly as a normal widget.
 
+Connection status. Each row carries a presence indicator so the user can see, at a
+glance, which peer surfaces are live. "Connected" is defined by an **active event
+stream**, not merely a registration: a surface is green only while it holds an open
+SSE subscription (`GET /events?surface_id=…`). The orchestrator marks the surface
+live when its stream opens and dead when it closes — which also covers a crashed or
+killed surface, since its TCP connection drops and the stream ends. The chat surface
+polls the orchestrator's connected-kinds snapshot on a short interval (~1s) and
+re-renders the row emojis; it never blocks rendering on the network. See
+`docs/implementation/02_surface_orchestration_http.md` (Connection liveness).
+
 ```gherkin
 GIVEN an output panel with launch info set for 2 surface kinds
 WHEN the panel renders before any event is applied
@@ -298,8 +311,17 @@ THEN the launch-info widget is the first widget and is collapsed
 
 GIVEN an output panel with launch info set
 WHEN the launch-info widget is expanded
-THEN it lists each launchable surface by name
+THEN it lists each launchable surface by name with a status emoji
 AND it does not render any attach command or token
+
+GIVEN an output panel with launch info set and no surface attached
+WHEN the launch-info widget is expanded
+THEN every surface shows the disconnected (🔴) status
+
+GIVEN an output panel with launch info set
+WHEN a surface kind reports connected
+THEN that surface's row shows the connected (🟢) status
+AND the other surfaces stay disconnected (🔴)
 
 GIVEN an output panel with launch info set and the widget selected
 WHEN the user presses a digit for a listed surface

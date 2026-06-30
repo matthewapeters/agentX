@@ -42,6 +42,7 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the launch info widget is selected$`, w.selectLaunch)
 	sc.Step(`^launch command (\d+) is copied$`, w.copyLaunch)
 	sc.Step(`^copying launch command (\d+) is rejected$`, w.copyLaunchRejected)
+	sc.Step(`^the surface "([^"]*)" reports connected$`, w.surfaceConnected)
 	sc.Step(`^the launch info precedes "([^"]*)" in the output$`, w.launchPrecedes)
 	sc.Step(`^the output view contains "([^"]*)"$`, w.viewContains)
 	sc.Step(`^the output view does not contain "([^"]*)"$`, w.viewNotContains)
@@ -186,6 +187,11 @@ func (w *outputWorld) copyLaunchRejected(i int) error {
 	if _, ok := w.panel.CopyCommand(i); ok {
 		return fmt.Errorf("CopyCommand(%d) unexpectedly succeeded", i)
 	}
+	return nil
+}
+
+func (w *outputWorld) surfaceConnected(kind string) error {
+	w.panel.SetConnected([]string{kind})
 	return nil
 }
 

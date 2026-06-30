@@ -733,6 +733,31 @@ a kind without one yet attaches headless and prints the registration. Surfaces
 register in `surfaceModelFor` as they land (the context viewer in SS-3). The
 dispatch lives in `internal/cli` (not `cmd/agentx`) to honor the import matrix.
 
+## Connection liveness (SS-4)
+
+The launch-info widget (and any future presence indicator) needs to know which peer
+surfaces are *actually attached*, not merely which ever registered. Registration is
+durable (added on `POST /surface/register`, removed only on explicit shutdown), so it
+cannot answer "is it connected right now?" — a crashed surface would look attached
+forever. Liveness is therefore tied to the **event stream**, the one long-lived link a
+surface holds:
+
+- The subscribe request carries the surface id: `GET /events?after=N&surface_id=<id>`.
+- `handleEvents` calls `Registry.MarkLive(id)` when the stream opens and, via `defer`,
+  `Registry.MarkDead(id)` when it closes. A clean quit, a crash, or a `kill -9` all end
+  the HTTP request the same way (the TCP connection drops and the handler returns), so
+  `defer` covers every disconnect without a heartbeat.
+- The registry keeps a per-surface live-stream count (a surface may briefly hold two
+  streams across a reconnect) and exposes `ConnectedKinds()` — the sorted, unique set
+  of kinds with at least one live stream, intersected with current registrations.
+- Consumers read the snapshot by polling (`ConnectedKinds()` is cheap and lock-guarded)
+  rather than subscribing, so a stalled reader never affects the stream path. The chat
+  surface polls on a ~1s tick and updates the launch-info row emojis.
+
+`surface_id` is optional on `/events`; an omitted id (e.g. a seed-only attach) simply
+isn't tracked for liveness. Loopback-only v1 does not authenticate the stream beyond
+this, so liveness is advisory, not a security boundary.
+
 ## Non-Goals for v1
 
 - Public remote access over internet

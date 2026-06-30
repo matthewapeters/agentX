@@ -9,6 +9,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added live peer-connection status to the launch-info widget (SS-4): each surface row
+  now shows 🟢 when at least one surface of that kind is attached and 🔴 otherwise.
+  "Connected" is defined by an active event stream, not a registration — `GET
+  /events?surface_id=<id>` marks the surface live on stream open and dead on close
+  (via `defer`, so a crash/kill is caught when the connection drops). The registry
+  tracks a per-surface live-stream count and exposes `ConnectedKinds()`; the chat
+  surface polls it on a ~1s tick (`Bridge.Connected`) and re-renders the row emojis.
+  Documented in `docs/implementation/02_surface_orchestration_http.md` (Connection
+  liveness) and `docs/ux/06_OUTPUT_WIDGET.md`.
 - Added an in-session launch-info widget so the surface-attach commands survive the
   alternate screen: the chat boot path now installs a collapsed, scrollable
   launch-info widget as the first output widget (after the banner, before the

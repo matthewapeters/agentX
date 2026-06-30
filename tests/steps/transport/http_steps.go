@@ -106,7 +106,8 @@ type transportWorld struct {
 	respStatus int
 	respBody   []byte
 
-	streams []*sseStream
+	streams     []*sseStream
+	connStreams map[string]*sseStream // events streams opened with a surface_id (SS-4)
 
 	launchResult cli.LaunchResult
 	launchErr    error
@@ -188,6 +189,12 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the live stream delivers exactly (\d+) events$`, w.liveDeliversExactly)
 	sc.Step(`^the live stream delivers no event at or before the cursor$`, w.liveNoneBeforeCursor)
 
+	// connection liveness (SS-4).
+	sc.Step(`^surface "([^"]*)" connects its events stream$`, w.connectEventsStream)
+	sc.Step(`^surface "([^"]*)" disconnects its events stream$`, w.disconnectEventsStream)
+	sc.Step(`^the transport reports connected kinds "([^"]*)"$`, w.transportConnectedKinds)
+	sc.Step(`^the transport connected kinds become "([^"]*)"$`, w.transportConnectedBecome)
+
 	// surface launch CLI (TRN-5).
 	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" with the valid token$`, w.launchValid)
 	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" with token "([^"]*)"$`, w.launchToken)
@@ -258,6 +265,64 @@ func (w *transportWorld) get(path string) error {
 	w.respStatus = resp.StatusCode
 	w.respBody = body
 	return nil
+}
+
+// connectEventsStream opens an SSE stream tagged with surface_id, so the server
+// marks that registered surface live (SS-4). Headers arrive after the handler has
+// called MarkLive, so connection status is observable as soon as this returns.
+func (w *transportWorld) connectEventsStream(id string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, w.httptst.URL+"/events?surface_id="+url.QueryEscape(id), nil)
+	if err != nil {
+		cancel()
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		cancel()
+		return err
+	}
+	st := &sseStream{cancel: cancel, body: resp.Body, lines: make(chan string, 64)}
+	if w.connStreams == nil {
+		w.connStreams = make(map[string]*sseStream)
+	}
+	w.connStreams[id] = st
+	w.streams = append(w.streams, st) // ensure After cancels it
+	return nil
+}
+
+func (w *transportWorld) disconnectEventsStream(id string) error {
+	st, ok := w.connStreams[id]
+	if !ok {
+		return fmt.Errorf("no connected events stream for surface %q", id)
+	}
+	st.cancel()
+	_ = st.body.Close()
+	delete(w.connStreams, id)
+	return nil
+}
+
+func (w *transportWorld) transportConnectedKinds(want string) error {
+	if got := strings.Join(w.prov.reg.ConnectedKinds(), ", "); got != want {
+		return fmt.Errorf("connected kinds = %q, want %q", got, want)
+	}
+	return nil
+}
+
+// transportConnectedBecome polls, since MarkDead runs asynchronously after the
+// stream's context is canceled and the handler returns.
+func (w *transportWorld) transportConnectedBecome(want string) error {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got := strings.Join(w.prov.reg.ConnectedKinds(), ", ")
+		if got == want {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("connected kinds = %q, want %q (timed out)", got, want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func (w *transportWorld) openOneStream() error { return w.openStreams(1) }
@@ -462,9 +527,13 @@ func (w *transportWorld) subscribeFromZero() error {
 }
 
 func (w *transportWorld) subscribe(after uint64) error {
+	return w.subscribeAs(after, "")
+}
+
+func (w *transportWorld) subscribeAs(after uint64, surfaceID string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	w.liveCancel = cancel
-	ch, err := transporthttp.NewClient(w.httptst.URL).Subscribe(ctx, after)
+	ch, err := transporthttp.NewClient(w.httptst.URL).Subscribe(ctx, after, surfaceID)
 	if err != nil {
 		cancel()
 		return err

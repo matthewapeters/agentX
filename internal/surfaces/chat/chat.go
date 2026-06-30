@@ -61,6 +61,9 @@ type Bridge struct {
 	Approve    func(decision string)
 	Events     <-chan state.Event
 	Processing <-chan state.ProcessingState
+	// Connected returns the surface kinds currently attached (SS-4). When set, the
+	// surface polls it to drive the launch-info status emojis. Nil disables polling.
+	Connected func() []string
 }
 
 // Model is the chat surface Bubble Tea model. It composes an output panel and an
@@ -112,7 +115,26 @@ func (m Model) Init() tea.Cmd {
 	if m.bridge == nil {
 		return nil
 	}
-	return tea.Batch(m.listenEvents(), m.listenProcessing())
+	cmds := []tea.Cmd{m.listenEvents(), m.listenProcessing()}
+	if c := m.pollConnections(); c != nil {
+		cmds = append(cmds, c)
+	}
+	return tea.Batch(cmds...)
+}
+
+// connPollInterval is how often the surface refreshes peer-connection status.
+const connPollInterval = time.Second
+
+// connTickMsg requests a connection-status refresh.
+type connTickMsg struct{}
+
+// pollConnections schedules the next connection-status refresh, or nil when the
+// bridge does not expose connection status (transport disabled / unit tests).
+func (m Model) pollConnections() tea.Cmd {
+	if m.bridge == nil || m.bridge.Connected == nil {
+		return nil
+	}
+	return tea.Tick(connPollInterval, func(time.Time) tea.Msg { return connTickMsg{} })
 }
 
 // SetMaxWidgetLines configures the output widgets' body-row cap.
@@ -193,6 +215,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case EventMsg:
 		m.output.Apply(state.Event(msg))
 		return m, m.listenEvents()
+	case connTickMsg:
+		if m.bridge != nil && m.bridge.Connected != nil {
+			m.output.SetConnected(m.bridge.Connected())
+		}
+		return m, m.pollConnections()
 	case flashOffMsg:
 		m.flashing = false
 		return m, nil

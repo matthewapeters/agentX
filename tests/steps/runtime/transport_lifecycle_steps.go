@@ -124,7 +124,7 @@ func (w *tlWorld) ctxAttach() error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	w.ctxCancel = cancel
-	ch, err := c.Subscribe(ctx, last)
+	ch, err := c.Subscribe(ctx, last, "")
 	if err != nil {
 		cancel()
 		return err

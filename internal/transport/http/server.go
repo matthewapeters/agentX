@@ -145,6 +145,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	after := parseAfter(r)
 
+	// Track stream liveness for connection status (SS-4): mark the surface live for
+	// the duration of this stream. The defer fires on clean quit, ctx cancel, and
+	// crash alike (the connection drops), so presence never goes stale.
+	if surfaceID := r.URL.Query().Get("surface_id"); surfaceID != "" {
+		s.prov.Registry().MarkLive(surfaceID)
+		defer s.prov.Registry().MarkDead(surfaceID)
+	}
+
 	// Subscribe before flushing headers so that once the client's request returns,
 	// the subscription is registered; capture the boundary immediately after, so
 	// every ordinal <= boundary is served from history and every ordinal > boundary

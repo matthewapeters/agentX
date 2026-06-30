@@ -75,8 +75,9 @@ type Model struct {
 	active   string // SGR color for the selected widget when focused
 	inactive string // SGR color for unselected widgets / unfocused panel
 
-	launchItems []launchItem // attach commands behind the launch-info widget
-	copied      string       // name of the last surface whose command was copied
+	launchItems []launchItem    // attach commands behind the launch-info widget
+	copied      string          // name of the last surface whose command was copied
+	connected   map[string]bool // launch kinds with a live attached surface (SS-4)
 }
 
 // New returns an empty output panel backed by a viewport.
@@ -146,17 +147,62 @@ func (m *Model) SetLaunchInfo(header string, names, commands []string) {
 }
 
 // launchBody renders the launch-info widget body: an expand-time list of numbered
-// surface names plus a copy hint, and a confirmation after a copy. Commands (and
-// thus the token) are never included.
+// surfaces, each `<digit> <status> <name>` (🟢 attached / 🔴 not), plus a copy hint
+// and a confirmation after a copy. Commands (and thus the token) are never included.
 func (m *Model) launchBody() string {
 	lines := []string{fmt.Sprintf("press 1-%d to copy a launch command to the clipboard:", len(m.launchItems)), ""}
 	for i, it := range m.launchItems {
-		lines = append(lines, fmt.Sprintf("  %d  %s", i+1, it.name))
+		status := "🔴"
+		if m.connected[it.name] {
+			status = "🟢"
+		}
+		lines = append(lines, fmt.Sprintf("  %d  %s %s", i+1, status, it.name))
 	}
 	if m.copied != "" {
 		lines = append(lines, "", "✓ copied "+m.copied+" — paste in another terminal")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// SetConnected updates which launch kinds currently have a live attached surface and
+// re-renders the launch-info widget's status emojis (SS-4). It is a no-op when the
+// connected set is unchanged or no launch-info widget is installed.
+func (m *Model) SetConnected(kinds []string) {
+	if sameStringSet(m.connected, kinds) {
+		return
+	}
+	set := make(map[string]bool, len(kinds))
+	for _, k := range kinds {
+		set[k] = true
+	}
+	m.connected = set
+	if w := m.launchWidget(); w != nil {
+		w.body = m.launchBody()
+		m.refresh(false)
+	}
+}
+
+// launchWidget returns the installed launch-info widget, or nil.
+func (m *Model) launchWidget() *widget {
+	for _, w := range m.widgets {
+		if w.kind == kindLaunch {
+			return w
+		}
+	}
+	return nil
+}
+
+// sameStringSet reports whether set has exactly the kinds in the slice.
+func sameStringSet(set map[string]bool, kinds []string) bool {
+	if len(set) != len(kinds) {
+		return false
+	}
+	for _, k := range kinds {
+		if !set[k] {
+			return false
+		}
+	}
+	return true
 }
 
 // launchSelected reports whether the launch-info widget is the current selection.

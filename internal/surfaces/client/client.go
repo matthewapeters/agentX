@@ -162,7 +162,7 @@ func Run(ctx context.Context, opts Options) error {
 	if n := len(seed); n > 0 {
 		last = seed[n-1].Ordinal
 	}
-	ch, err := c.Subscribe(ctx, last)
+	ch, err := c.Subscribe(ctx, last, opts.SurfaceID)
 	if err != nil {
 		return err
 	}

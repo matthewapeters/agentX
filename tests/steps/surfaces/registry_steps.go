@@ -36,6 +36,9 @@ func registerRegistrySteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the record has the required surface-registration fields$`, w.requiredFields)
 	sc.Step(`^the registry has (\d+) surfaces?$`, w.surfaceCount)
 	sc.Step(`^the registry lists surfaces in order "([^"]*)"$`, w.listOrder)
+	sc.Step(`^surface "([^"]*)" opens an event stream$`, w.streamOpen)
+	sc.Step(`^surface "([^"]*)" closes an event stream$`, w.streamClose)
+	sc.Step(`^the connected kinds are "([^"]*)"$`, w.connectedKinds)
 }
 
 func (w *registryWorld) mintRegistry() error {
@@ -92,6 +95,24 @@ func (w *registryWorld) registerKindToken(kind, token string) error {
 
 func (w *registryWorld) shutdown(id string) error {
 	return w.registry.Shutdown(id)
+}
+
+func (w *registryWorld) streamOpen(id string) error {
+	w.registry.MarkLive(id)
+	return nil
+}
+
+func (w *registryWorld) streamClose(id string) error {
+	w.registry.MarkDead(id)
+	return nil
+}
+
+func (w *registryWorld) connectedKinds(want string) error {
+	got := strings.Join(w.registry.ConnectedKinds(), ", ")
+	if got != want {
+		return fmt.Errorf("connected kinds = %q, want %q", got, want)
+	}
+	return nil
 }
 
 func (w *registryWorld) accepted() error {

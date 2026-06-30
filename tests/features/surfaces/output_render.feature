@@ -89,6 +89,25 @@ Feature: Output panel event rendering
     And the output view does not contain "token"
 
   # use-case: UC-OUTPUT-LAUNCH
+  # variant: every surface is disconnected (red) until one attaches
+  Scenario: Disconnected surfaces show a red status by default
+    Given an output panel sized 100 by 16
+    And the launch info is set for 2 surface kinds
+    When launch widget 0 is expanded
+    Then the output view contains "🔴 kind-1"
+    And the output view contains "🔴 kind-2"
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: an attached surface turns green; the others stay red
+  Scenario: A connected surface shows a green status
+    Given an output panel sized 100 by 16
+    And the launch info is set for 2 surface kinds
+    And launch widget 0 is expanded
+    When the surface "kind-1" reports connected
+    Then the output view contains "🟢 kind-1"
+    And the output view contains "🔴 kind-2"
+
+  # use-case: UC-OUTPUT-LAUNCH
   # variant: digit copies the command and confirms by name
   Scenario: Pressing a digit copies a surface's attach command
     Given an output panel sized 100 by 16

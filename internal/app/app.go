@@ -159,6 +159,13 @@ func RunChat(ctx context.Context, opts Options) error {
 
 	// Each prompt runs under its own cancelable context so the surface can
 	// interrupt the in-flight cycle via Stop without tearing down the program.
+	// Expose peer-connection status to the surface only when the transport serves
+	// (otherwise there are no peers and the surface skips connection polling).
+	var connected func() []string
+	if orc.Endpoint() != "" {
+		connected = orc.Registry().ConnectedKinds
+	}
+
 	var promptMu sync.Mutex
 	var cancelPrompt context.CancelFunc
 	bridge := chat.Bridge{
@@ -184,6 +191,7 @@ func RunChat(ctx context.Context, opts Options) error {
 		Approve:    func(decision string) { orc.Resolve(decision) },
 		Events:     sub.C,
 		Processing: procCh,
+		Connected:  connected,
 	}
 
 	// Auto-submit the bootstrap prompt (if configured) once the surface is

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -115,9 +116,15 @@ func (c *Client) Seed(ctx context.Context) ([]state.Event, error) {
 // on the returned channel until ctx is canceled or the stream ends (SS-1). Pass the
 // last ordinal from Seed to resume with no gap or duplicate; pass 0 for the full
 // stream.
-func (c *Client) Subscribe(ctx context.Context, after uint64) (<-chan state.Event, error) {
-	url := fmt.Sprintf("%s/events?after=%s", c.endpoint, strconv.FormatUint(after, 10))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// surfaceID, when non-empty, is reported to the orchestrator so it can track this
+// stream as a live connection for presence/status (SS-4); pass "" to attach without
+// being tracked.
+func (c *Client) Subscribe(ctx context.Context, after uint64, surfaceID string) (<-chan state.Event, error) {
+	endpoint := fmt.Sprintf("%s/events?after=%s", c.endpoint, strconv.FormatUint(after, 10))
+	if surfaceID != "" {
+		endpoint += "&surface_id=" + url.QueryEscape(surfaceID)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
 	}

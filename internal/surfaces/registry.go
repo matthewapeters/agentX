@@ -150,6 +150,7 @@ type Registry struct {
 
 	mu       sync.Mutex
 	surfaces map[string]Registration
+	live     map[string]int // surface_id → open event-stream count (liveness, SS-4)
 }
 
 // NewRegistry returns a registry bound to a session and its attach token.
@@ -159,6 +160,7 @@ func NewRegistry(token AttachToken, sessionID, sessionName string) *Registry {
 		sessionID:   sessionID,
 		sessionName: sessionName,
 		surfaces:    make(map[string]Registration),
+		live:        make(map[string]int),
 	}
 }
 
@@ -232,6 +234,56 @@ func (r *Registry) StopAll() {
 		reg.LifecycleState = LifecycleStopped
 		r.surfaces[id] = reg
 	}
+}
+
+// MarkLive records that surface_id has opened an event stream. A surface may hold
+// more than one stream momentarily across a reconnect, so liveness is counted.
+// Called when an SSE subscription begins (SS-4). An empty id is ignored.
+func (r *Registry) MarkLive(surfaceID string) {
+	if surfaceID == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.live[surfaceID]++
+}
+
+// MarkDead records that one of surface_id's event streams has closed. Called via
+// defer when an SSE subscription ends — including on crash, since the connection
+// drops (SS-4). An empty or unknown id is a no-op.
+func (r *Registry) MarkDead(surfaceID string) {
+	if surfaceID == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.live[surfaceID] <= 1 {
+		delete(r.live, surfaceID)
+		return
+	}
+	r.live[surfaceID]--
+}
+
+// ConnectedKinds returns the sorted, unique set of surface kinds that currently hold
+// at least one live event stream and a matching registration (SS-4).
+func (r *Registry) ConnectedKinds() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	set := make(map[string]bool)
+	for id, n := range r.live {
+		if n <= 0 {
+			continue
+		}
+		if reg, ok := r.surfaces[id]; ok {
+			set[reg.SurfaceKind] = true
+		}
+	}
+	out := make([]string, 0, len(set))
+	for kind := range set {
+		out = append(out, kind)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Get returns the registration for an id.
