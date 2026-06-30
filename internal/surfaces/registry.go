@@ -50,6 +50,7 @@ var knownKinds = map[string]bool{
 	"context":            true,
 	"context-history":    true,
 	"context-visualizer": true,
+	"working-memory":     true,
 }
 
 // KnownKind reports whether kind is a launchable surface type.

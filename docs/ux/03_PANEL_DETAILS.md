@@ -2025,6 +2025,39 @@ Requires ARCH-03 (tagging WM SYSTEM message with `metadata["is_working_memory"]`
 
 ---
 
+## PD-WM — Working-Memory Editor (TUI)
+
+> **TUI surface (M2, SS-6).** The first **read-write** peer surface, launched as a
+> separate process (`agentx surface launch working-memory`). It lists the session's
+> working-memory facts and lets the user curate what folds into the agent's context.
+> It re-authors, for the TUI, the legacy GUI working-memory affordances (PD-14). See
+> `docs/implementation/02_surface_orchestration_http.md` (Working-Memory CRUD SS-6).
+
+### Behaviour
+
+Working memory is a document (`working_memory.json`), not an event stream, so the
+surface reads on attach (`GET /working-memory`), polls (~2s) for live refresh, and
+mutates through dedicated token-gated endpoints. Each fact renders as
+`<cursor> <●/○> key = value` (● enabled / ○ disabled; agent-owned facts are tagged).
+Mutations persist and take effect on the **next** prompt's assembled context (only
+enabled facts fold in). It is read-write but single-purpose: no prompt input.
+
+### Affordance Inventory
+
+| Affordance | ID | Status |
+|-----------|-----|--------|
+| List facts with enabled/disabled markers | PD-WM-AF-001 | ✅ |
+| Navigate the selection cursor (↑/↓, j/k) | PD-WM-AF-002 | ✅ |
+| Toggle enable/disable (space) | PD-WM-AF-003 | ✅ |
+| Delete the selected fact (d) | PD-WM-AF-004 | ✅ |
+| Add a fact (a → `key=value`, enter) | PD-WM-AF-005 | ✅ |
+| Edit the selected value (e) / cancel (esc) | PD-WM-AF-006 | ✅ |
+
+### Deferred (later slices)
+
+Inline edit→clone, multi-select action bar, synthesize-via-LLM, system-prompt row
+toggle, and click-to-navigate (the remainder of legacy PD-14).
+
 ## PD-CTX — Context Surface (TUI)
 
 > **TUI surface (M2, SS-3).** A read-only peer surface launched as a separate

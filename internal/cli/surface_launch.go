@@ -12,6 +12,7 @@ import (
 	"agentx/internal/surfaces"
 	"agentx/internal/surfaces/client"
 	contextsurface "agentx/internal/surfaces/context"
+	"agentx/internal/surfaces/workmemory"
 	transporthttp "agentx/internal/transport/http"
 )
 
@@ -134,6 +135,17 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 	if err != nil {
 		return err
 	}
+	// Working memory is read-write and document-based, so it runs its own program
+	// rather than the event-stream surface host.
+	if args.SurfaceKind == "working-memory" {
+		return workmemory.Run(ctx, workmemory.Options{
+			Endpoint:    res.Endpoint,
+			Token:       res.Token,
+			SurfaceID:   res.SurfaceID,
+			SessionName: res.SessionName,
+		})
+	}
+
 	if surface, title, ok := surfaceModelFor(args.SurfaceKind, res); ok {
 		return client.Run(ctx, client.Options{
 			Endpoint:  res.Endpoint,
