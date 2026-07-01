@@ -14,12 +14,10 @@ import (
 	"agentx/internal/surfaces/output"
 )
 
-// inputHeight is the fixed row count reserved for the input panel; hintHeight is
-// the single context-sensitive hint/command row beneath the status bar.
-const (
-	inputHeight = 3
-	hintHeight  = 1
-)
+// hintHeight is the single context-sensitive hint/command row beneath the status
+// bar. The input panel's height is dynamic (it grows with wrapped content up to its
+// max), so the output panel takes whatever height remains.
+const hintHeight = 1
 
 // flashDuration is how long the input border stays highlighted after a history
 // navigation hits a boundary (PD-02-AF-015).
@@ -139,6 +137,9 @@ func (m Model) pollConnections() tea.Cmd {
 
 // SetMaxWidgetLines configures the output widgets' body-row cap.
 func (m Model) SetMaxWidgetLines(n int) { m.output.SetMaxBody(n) }
+
+// SetMaxInputLines caps how tall the input panel grows before it scrolls.
+func (m Model) SetMaxInputLines(n int) { m.input.SetMaxHeight(n) }
 
 // SetBanner sets the output panel's bootstrap logo banner (pinned above all
 // widgets); empty clears it.
@@ -327,11 +328,15 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Input focus: edit the prompt or navigate prompt history.
-	switch m.input.Update(msg) {
+	// Input focus: edit the prompt or navigate prompt history. The edit may change
+	// the wrapped input height, so relayout after it settles (input grows, output
+	// shrinks, and vice versa).
+	action := m.input.Update(msg)
+	switch action {
 	case input.ActionSubmit:
 		text := m.input.Value()
 		m.input.Reset()
+		m.relayout()
 		if m.bridge != nil && m.bridge.Submit != nil {
 			// Route to the runtime; the user prompt and response arrive as
 			// EventMsgs and render through the output panel.
@@ -347,6 +352,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.flashing = true
 		return m, m.flashCmd()
 	}
+	m.relayout()
 	return m, nil
 }
 
@@ -427,13 +433,18 @@ func (m *Model) relayout() {
 	if innerW < 0 {
 		innerW = 0
 	}
+	// Set the input width first so its desired (wrapped) height reflects this width,
+	// then give the input that height and the output the remaining space. This runs on
+	// every content change, so the input grows and the output shrinks as text wraps.
+	m.input.SetSize(innerW, 0)
+	ih := m.input.DesiredHeight()
 	// Chrome: output border (2) + status (1) + hint (1) + input border (2).
-	outputHeight := m.height - 2 - 1 - hintHeight - 2 - inputHeight
+	outputHeight := m.height - 2 - 1 - hintHeight - 2 - ih
 	if outputHeight < 0 {
 		outputHeight = 0
 	}
 	m.output.SetSize(innerW, outputHeight)
-	m.input.SetSize(innerW, inputHeight)
+	m.input.SetSize(innerW, ih)
 }
 
 // View implements tea.Model: a focus-bordered output panel, a status bar

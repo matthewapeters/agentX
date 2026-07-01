@@ -206,3 +206,20 @@ Feature: Input panel controls
     Then the rendered input shows a cursor cell
     When the panel is blurred
     Then the rendered input shows no cursor cell
+
+  # use-case: UC-INPUT-WRAP
+  # long text word-wraps to the width and the panel grows vertically, no overflow
+  Scenario: Long text word-wraps instead of running off the edge
+    Given a focused input panel sized 20 wide with max 8 rows
+    When the user types "alpha bravo charlie delta echo foxtrot"
+    Then the input wants 3 rows
+    And no input line is wider than 20
+
+  # use-case: UC-INPUT-WRAP
+  # variant: growth caps at the max and a scrollbar appears past it
+  Scenario: The input caps its height and shows a scrollbar past the max
+    Given a focused input panel sized 12 wide with max 3 rows
+    When the user types "one two three four five six seven eight nine ten"
+    Then the input wants 3 rows
+    And no input line is wider than 12
+    And the rendered input shows a scrollbar

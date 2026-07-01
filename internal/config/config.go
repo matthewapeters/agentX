@@ -88,6 +88,7 @@ type Classification struct {
 // Output is the [agentx.output] table tuning the output panel widgets.
 type Output struct {
 	MaxWidgetLines int `toml:"max_widget_lines"`
+	InputMaxLines  int `toml:"input_max_lines"`
 }
 
 // Theme is the [agentx.theme] table styling the chat surface. Colors accept a
@@ -127,6 +128,14 @@ func (c Config) MaxWidgetLines() int {
 		return defaultMaxWidgetLines
 	}
 	return c.Agentx.Output.MaxWidgetLines
+}
+
+// InputMaxLines returns the max rows the input panel grows to before it scrolls.
+func (c Config) InputMaxLines() int {
+	if c.Agentx.Output.InputMaxLines <= 0 {
+		return defaultInputMaxLines
+	}
+	return c.Agentx.Output.InputMaxLines
 }
 
 // ToolsEnabled reports whether the single_tool execution cycle is on (default on).
@@ -275,6 +284,7 @@ const (
 	defaultClassificationRetries = 2
 	defaultClarificationOptions  = 3
 	defaultMaxWidgetLines        = 20
+	defaultInputMaxLines         = 8
 	defaultActiveBorder          = "cyan"
 	defaultInactiveBorder        = "dark gray"
 	defaultThinkingBudgetSeconds = 180
@@ -296,7 +306,7 @@ func Default() Config {
 				Retries:              defaultClassificationRetries,
 				ClarificationOptions: defaultClarificationOptions,
 			},
-			Output: Output{MaxWidgetLines: defaultMaxWidgetLines},
+			Output: Output{MaxWidgetLines: defaultMaxWidgetLines, InputMaxLines: defaultInputMaxLines},
 			Thinking: Thinking{
 				Enabled:           boolPtr(true),
 				TimeBudgetSeconds: defaultThinkingBudgetSeconds,

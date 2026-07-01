@@ -3,6 +3,11 @@
 // newline, backspace, a stop/interrupt action while streaming, readline-style
 // history seeding (↑/↓), and a cursor with readline movement keys.
 //
+// Long lines word-wrap to the panel width (no horizontal overflow) and the panel
+// grows vertically with its content up to a configured cap (input_max_lines), beyond
+// which it windows the content around the cursor with a right-gutter scrollbar. The
+// host reads DesiredHeight to size the panel each layout.
+//
 // Source contract: docs/ux/03_PANEL_DETAILS.md PD-02 (re-authored for the TUI).
 // Backlog task: CHT-B3.
 package input
@@ -12,6 +17,7 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Action is the outcome of handling a key, signaled to the host surface.
@@ -39,6 +45,7 @@ const (
 type Model struct {
 	width     int
 	height    int
+	maxHeight int // cap on vertical growth before the panel scrolls (input_max_lines)
 	value     string
 	cursor    int // rune index into value; edits and movement are relative to it
 	focused   bool
@@ -48,8 +55,8 @@ type Model struct {
 	draft     string
 }
 
-// New returns an input panel, focused, with a default height of 3 rows.
-func New() *Model { return &Model{focused: true, height: 3} }
+// New returns a focused input panel that starts one row tall and grows with content.
+func New() *Model { return &Model{focused: true, height: 1, maxHeight: 8} }
 
 // SetSize sets the panel's render dimensions.
 func (m *Model) SetSize(width, height int) {
@@ -59,8 +66,29 @@ func (m *Model) SetSize(width, height int) {
 	}
 }
 
+// SetMaxHeight sets the cap on vertical growth (input_max_lines). Beyond it the
+// panel scrolls with a gutter scrollbar.
+func (m *Model) SetMaxHeight(n int) {
+	if n > 0 {
+		m.maxHeight = n
+	}
+}
+
 // Height returns the panel's row count.
 func (m *Model) Height() int { return m.height }
+
+// DesiredHeight is the number of rows the panel wants at its current width: the
+// wrapped visual-row count, clamped to [1, maxHeight].
+func (m *Model) DesiredHeight() int {
+	n := len(m.visualRows())
+	if n < 1 {
+		n = 1
+	}
+	if m.maxHeight > 0 && n > m.maxHeight {
+		n = m.maxHeight
+	}
+	return n
+}
 
 // Focused reports whether the panel has input focus.
 func (m *Model) Focused() bool { return m.focused }
@@ -266,50 +294,131 @@ func nextWordStart(r []rune, pos int) int {
 	return i
 }
 
-// cursorLineCol maps the rune cursor to a (line, column) within value, where
-// column is the rune offset on that line (excluding the render prefix).
-func (m *Model) cursorLineCol() (int, int) {
-	line, col := 0, 0
-	r := []rune(m.value)
-	for i := 0; i < m.cursor && i < len(r); i++ {
-		if r[i] == '\n' {
-			line++
-			col = 0
-		} else {
-			col++
-		}
-	}
-	return line, col
+// wrapWidth is the number of text runes per visual row: the panel width minus the
+// scrollbar gutter (1), the prompt prefix (2), and one column reserved for the
+// end-of-line cursor cell.
+func (m *Model) wrapWidth() int { return max(m.width-1-prefixLen-1, 1) }
+
+const prefixLen = 2
+
+// visualRow is one rendered line: its prompt prefix + wrapped text, and the range of
+// value runes it covers (for cursor mapping). start/end are absolute rune offsets
+// into value.
+type visualRow struct {
+	prefix string
+	text   string
+	start  int
+	end    int
 }
 
-// View renders exactly Height rows: the (multi-line) input with a prompt marker,
-// bottom-aligned, padded with blanks. While focused it overlays a reverse-video
-// cursor cell at the cursor position (a virtual cell at end-of-line).
+// visualRows word-wraps the value into rendered rows at the current width. Logical
+// lines (split on "\n") each wrap independently; the prompt marker "> " leads the
+// first row and continuations are indented. All runes are preserved so the cursor
+// maps exactly.
+func (m *Model) visualRows() []visualRow {
+	w := m.wrapWidth()
+	var rows []visualRow
+	base := 0 // absolute offset of the current logical line's first rune
+	for li, lstr := range strings.Split(m.value, "\n") {
+		if li > 0 {
+			base++ // account for the '\n' separator between logical lines
+		}
+		lr := []rune(lstr)
+		for _, s := range wrapRunes(lr, w) {
+			prefix := "  "
+			if len(rows) == 0 {
+				prefix = "> "
+			}
+			rows = append(rows, visualRow{prefix: prefix, text: string(lr[s.start:s.end]), start: base + s.start, end: base + s.end})
+		}
+		base += len(lr)
+	}
+	if len(rows) == 0 {
+		rows = append(rows, visualRow{prefix: "> "})
+	}
+	return rows
+}
+
+// wrapSeg is a [start,end) rune range within a single logical line.
+type wrapSeg struct{ start, end int }
+
+// wrapRunes greedily word-wraps a logical line to w columns, preferring to break
+// after a space and hard-breaking an over-long word. It partitions [0,len(line)]
+// contiguously so every rune has a home (exact cursor mapping).
+func wrapRunes(line []rune, w int) []wrapSeg {
+	if w < 1 || len(line) == 0 {
+		return []wrapSeg{{0, len(line)}}
+	}
+	var segs []wrapSeg
+	start := 0
+	for start < len(line) {
+		end, lastBreak := start, -1
+		for end < len(line) && end-start < w {
+			end++
+			if line[end-1] == ' ' {
+				lastBreak = end
+			}
+		}
+		if end < len(line) && lastBreak > start {
+			end = lastBreak // break after the last space that fits
+		}
+		segs = append(segs, wrapSeg{start, end})
+		start = end
+	}
+	return segs
+}
+
+// View renders exactly Height rows: the wrapped input, windowed to keep the cursor
+// visible, with a reverse-video cursor overlay while focused and a right-gutter
+// scrollbar when the content exceeds the panel height.
 func (m *Model) View() string {
 	if m.height == 0 {
 		return ""
 	}
-	curLine, curCol := m.cursorLineCol()
-	valueLines := strings.Split(m.value, "\n")
-	rows := make([]string, 0, len(valueLines))
-	for i, l := range valueLines {
-		prefix := "  "
-		if i == 0 {
-			prefix = "> "
-		}
-		row := fitWidth(prefix+l, m.width)
-		if m.focused && i == curLine {
-			row = overlayCursor(row, len([]rune(prefix))+curCol)
-		}
-		rows = append(rows, row)
-	}
+	rows := m.visualRows()
+	curRow, curCol := m.cursorVisual(rows)
+
+	// Window: keep the cursor row within [top, top+height).
+	top := 0
 	if len(rows) > m.height {
-		rows = rows[len(rows)-m.height:]
+		top = len(rows) - m.height
+		if curRow < top {
+			top = curRow
+		}
 	}
-	for len(rows) < m.height {
-		rows = append(rows, "")
+	rowW := max(m.width-1, 0)
+	out := make([]string, 0, m.height)
+	for i := range m.height {
+		line := ""
+		if vi := top + i; vi < len(rows) {
+			line = rows[vi].prefix + rows[vi].text
+			if m.focused && vi == curRow {
+				line = overlayCursor(line, curCol)
+			}
+		}
+		gutter := " "
+		if len(rows) > m.height {
+			gutter = scrollbarCell(i, top, len(rows), m.height)
+		}
+		out = append(out, padTo(line, rowW)+gutter)
 	}
-	return strings.Join(rows, "\n")
+	return strings.Join(out, "\n")
+}
+
+// cursorVisual maps the rune cursor to a (visual row, column-in-row) for the overlay.
+func (m *Model) cursorVisual(rows []visualRow) (int, int) {
+	for i, r := range rows {
+		if m.cursor < r.end {
+			return i, prefixLen + (m.cursor - r.start)
+		}
+		// At a row boundary the cursor belongs here when this is the last row or the
+		// next row begins a new logical line (a '\n' gap); otherwise it is the start
+		// of the wrapped continuation row.
+		if m.cursor == r.end && (i == len(rows)-1 || rows[i+1].start > r.end) {
+			return i, prefixLen + (m.cursor - r.start)
+		}
+	}
+	return 0, prefixLen
 }
 
 // overlayCursor wraps the rune at col in reverse video, extending the row with a
@@ -322,13 +431,29 @@ func overlayCursor(row string, col int) string {
 	return string(r[:col]) + "\x1b[7m" + string(r[col]) + "\x1b[0m" + string(r[col+1:])
 }
 
-func fitWidth(s string, width int) string {
-	if width <= 0 {
+// padTo pads (or ANSI-aware clips) a rendered row to w display columns.
+func padTo(s string, w int) string {
+	dw := ansi.StringWidth(s)
+	switch {
+	case dw < w:
+		return s + strings.Repeat(" ", w-dw)
+	case dw > w:
+		return ansi.Truncate(s, w, "")
+	default:
 		return s
 	}
-	r := []rune(s)
-	if len(r) <= width {
-		return s
+}
+
+// scrollbarCell returns the gutter glyph for visible row i given the scroll offset.
+func scrollbarCell(i, offset, total, track int) string {
+	thumb := max(track*track/total, 1)
+	span := total - track
+	top := 0
+	if span > 0 {
+		top = (track - thumb) * offset / span
 	}
-	return string(r[:width])
+	if i >= top && i < top+thumb {
+		return "█"
+	}
+	return "░"
 }

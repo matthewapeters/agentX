@@ -42,6 +42,8 @@ type Settings struct {
 	ClassificationRetries int
 	// MaxWidgetLines is the output-widget body-row cap surfaced to the chat UI.
 	MaxWidgetLines int
+	// InputMaxLines caps how tall the input panel grows before it scrolls.
+	InputMaxLines int
 	// ThinkingEnabled is the master switch for model reasoning during the respond
 	// phase, streamed as thinking events ahead of the answer.
 	ThinkingEnabled bool

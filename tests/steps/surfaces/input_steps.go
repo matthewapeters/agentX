@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/cucumber/godog"
 
 	"agentx/internal/surfaces/input"
@@ -47,6 +48,44 @@ func registerInputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the input reports no action$`, w.reportsNone)
 	sc.Step(`^the input reports a stop action$`, w.reportsStop)
 	sc.Step(`^the input reports a history boundary$`, w.reportsBoundary)
+	sc.Step(`^a focused input panel sized (\d+) wide with max (\d+) rows$`, w.sizedPanel)
+	sc.Step(`^the input wants (\d+) rows$`, w.wantsRows)
+	sc.Step(`^no input line is wider than (\d+)$`, w.noLineWiderThan)
+	sc.Step(`^the rendered input shows a scrollbar$`, w.showsScrollbar)
+}
+
+func (w *inputWorld) sizedPanel(width, maxRows int) error {
+	w.panel = input.New()
+	w.panel.SetMaxHeight(maxRows)
+	w.panel.SetSize(width, maxRows)
+	w.action = input.ActionNone
+	return nil
+}
+
+func (w *inputWorld) wantsRows(want int) error {
+	if got := w.panel.DesiredHeight(); got != want {
+		return fmt.Errorf("input wants %d rows, want %d", got, want)
+	}
+	return nil
+}
+
+func (w *inputWorld) noLineWiderThan(limit int) error {
+	for _, line := range strings.Split(w.panel.View(), "\n") {
+		if wdt := ansi.StringWidth(line); wdt > limit {
+			return fmt.Errorf("input line %q has width %d, exceeds %d", line, wdt, limit)
+		}
+	}
+	return nil
+}
+
+func (w *inputWorld) showsScrollbar() error {
+	for _, line := range strings.Split(w.panel.View(), "\n") {
+		r := []rune(line)
+		if len(r) > 0 && r[len(r)-1] == '█' {
+			return nil
+		}
+	}
+	return fmt.Errorf("rendered input shows no scrollbar thumb in the gutter")
 }
 
 func (w *inputWorld) focusedPanel() error {

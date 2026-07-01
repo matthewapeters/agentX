@@ -52,6 +52,8 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a spinner tick advances the indicator$`, w.spinnerTickAdvances)
 	sc.Step(`^ESC is pressed$`, w.pressEsc)
 	sc.Step(`^the "([^"]*)" key is pressed$`, w.pressKey)
+	sc.Step(`^the user types the prompt "([^"]*)"$`, w.types)
+	sc.Step(`^the user inserts a prompt newline$`, w.pressShiftEnter)
 	sc.Step(`^the chat hint shows "([^"]*)"$`, w.statusShows)
 	sc.Step(`^the output panel has focus$`, w.outputFocused)
 	sc.Step(`^the chat view shows the active border color$`, w.viewHasActiveColor)
@@ -104,6 +106,18 @@ func (w *chatWorld) pressKey(name string) error {
 		msg = tea.KeyPressMsg{Code: r, Text: name}
 	}
 	w.update(msg)
+	return nil
+}
+
+func (w *chatWorld) types(text string) error {
+	for _, r := range text {
+		w.update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	return nil
+}
+
+func (w *chatWorld) pressShiftEnter() error {
+	w.update(tea.KeyPressMsg{Mod: tea.ModShift, Code: tea.KeyEnter})
 	return nil
 }
 

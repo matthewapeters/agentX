@@ -9,6 +9,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The chat input panel now **word-wraps** long text to the panel width instead of
+  running off the terminal edge, and **grows vertically** with its content up to a
+  configurable cap (`input_max_lines`, default 8); beyond the cap it windows the text
+  around the cursor with a right-gutter scrollbar. The chat layout is now dynamic —
+  the output panel takes whatever height the input does not. An empty input is a
+  single row. New `input.Model.DesiredHeight`/`SetMaxHeight`; `[agentx.output]
+  input_max_lines`.
 - The context viewer now omits the startup **bootstrap exchange**, which engages the
   session but is not part of the user's conversation. Events from the bootstrap cycle
   are marked `ephemeral` on the envelope (`state.Event.Ephemeral`); the chat surface

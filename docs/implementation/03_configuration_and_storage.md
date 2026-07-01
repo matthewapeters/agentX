@@ -72,6 +72,7 @@ clarification_options = 3 # Stage-2: candidate interpretations offered on ambigu
 
 [agentx.output]
 max_widget_lines = 20     # max body rows before an output widget scrolls in place
+input_max_lines = 8       # max rows the input panel grows to before it scrolls
 
 [agentx.thinking]
 enabled = true              # master switch for reasoning during respond (💭 widget); absent → on
