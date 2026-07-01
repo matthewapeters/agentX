@@ -247,14 +247,19 @@ func (m *Model) SetMaxBody(n int) {
 	m.refresh(false)
 }
 
-// SetSize sets the panel's render dimensions and reflows content.
+// SetSize sets the panel's render dimensions and reflows content. The rightmost
+// column is reserved as a transcript-scrollbar gutter, so content renders one column
+// narrower than the panel.
 func (m *Model) SetSize(width, height int) {
 	m.width = max(width, 0)
 	m.height = max(height, 0)
-	m.vp.SetWidth(m.width)
+	m.vp.SetWidth(m.contentWidth())
 	m.vp.SetHeight(m.height)
 	m.refresh(false)
 }
+
+// contentWidth is the panel width minus the transcript-scrollbar gutter column.
+func (m *Model) contentWidth() int { return max(m.width-1, 0) }
 
 // Height returns the panel's row count.
 func (m *Model) Height() int { return m.height }
@@ -276,7 +281,10 @@ func (m *Model) Apply(ev state.Event) {
 	case state.ContentUserPrompt:
 		m.add(&widget{kind: kindUser, title: "👤 You", body: eventText(ev), previewWhenCollapsed: true})
 	case state.ContentClassification:
-		m.add(&widget{kind: kindClassification, title: "⚙️ classification", body: eventText(ev), previewWhenCollapsed: true})
+		// Plain gear (no VS16): its display width is a deterministic 1 cell, so the
+		// titled border's right corner stays aligned on terminals that render the
+		// emoji-presentation gear as a single column.
+		m.add(&widget{kind: kindClassification, title: "⚙ classification", body: eventText(ev), previewWhenCollapsed: true})
 	case state.ContentAgentResponse:
 		m.appendAssistant(eventText(ev))
 		return
@@ -391,7 +399,22 @@ func (m *Model) View() string {
 	if m.height == 0 {
 		return ""
 	}
-	return m.vp.View()
+	// Append the transcript scrollbar in the reserved right gutter: a thumb sized
+	// and positioned by the viewport's scroll offset over the whole transcript, so
+	// the user sees where the visible window sits within the whole. When everything
+	// fits, the gutter is blank.
+	lines := strings.Split(m.vp.View(), "\n")
+	total := m.vp.TotalLineCount()
+	track := len(lines)
+	offset := m.vp.YOffset()
+	for i := range lines {
+		if total > track {
+			lines[i] += scrollbarCell(i, offset, total, track)
+		} else {
+			lines[i] += " "
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // blocks holds, per widget, its rendered lines and starting row in the transcript.
@@ -426,13 +449,14 @@ func (m *Model) render() blocks {
 // width so embedded color is preserved without soft-wrapping the art.
 func (m *Model) bannerLines() []string {
 	lines := strings.Split(m.banner, "\n")
-	if m.width <= 0 {
+	cw := m.contentWidth()
+	if cw <= 0 {
 		return lines
 	}
 	out := make([]string, len(lines))
 	for i, l := range lines {
-		if ansi.StringWidth(l) > m.width {
-			l = ansi.Truncate(l, m.width, "")
+		if ansi.StringWidth(l) > cw {
+			l = ansi.Truncate(l, cw, "")
 		}
 		out[i] = l
 	}
@@ -474,9 +498,9 @@ func (m *Model) scrollSelectedIntoView() {
 // line (narrative kinds) or nothing (noise kinds); an expanded box shows the capped,
 // scrollable body.
 func (m *Model) renderWidget(w *widget, selected bool) []string {
-	innerW := m.width - 2
+	innerW := m.contentWidth() - 2
 	if innerW < 1 {
-		return []string{truncateWord(w.title, max(m.width, 0))}
+		return []string{truncateWord(w.title, m.contentWidth())}
 	}
 
 	var rows []string

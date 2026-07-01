@@ -134,6 +134,20 @@ Feature: Output panel event rendering
     When a user_prompt event "hello there" is applied
     Then the launch info precedes "hello there" in the output
 
+  # use-case: UC-OUTPUT-SCROLLBAR
+  # a transcript-level scrollbar in the right gutter shows position within the whole
+  Scenario: The transcript shows a scrollbar when content overflows the viewport
+    Given an output panel sized 20 by 3
+    When 10 numbered user events are applied
+    Then the output has a transcript scrollbar
+
+  # use-case: UC-OUTPUT-SCROLLBAR
+  # variant: no scrollbar when everything fits
+  Scenario: No transcript scrollbar when content fits the viewport
+    Given an output panel sized 40 by 40
+    When a user_prompt event "hello there" is applied
+    Then the output has no transcript scrollbar
+
   # use-case: UC-OUTPUT-SCROLL
   Scenario: Scrolling to the top reveals the earliest widget
     Given an output panel sized 20 by 3

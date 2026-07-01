@@ -35,6 +35,8 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the output view contains an unselected widget border$`, w.hasUnselectedBorder)
 	sc.Step(`^the output view contains a selected widget border$`, w.hasSelectedBorder)
 	sc.Step(`^the output view contains a scrollbar$`, w.hasScrollbar)
+	sc.Step(`^the output has a transcript scrollbar$`, w.hasTranscriptScrollbar)
+	sc.Step(`^the output has no transcript scrollbar$`, w.noTranscriptScrollbar)
 	sc.Step(`^the logo banner "([^"]*)" is set$`, w.setBanner)
 	sc.Step(`^the logo banner precedes "([^"]*)" in the output$`, w.bannerPrecedes)
 	sc.Step(`^the launch info is set for (\d+) surface kinds$`, w.setLaunchInfo)
@@ -135,6 +137,32 @@ func (w *outputWorld) hasUnselectedBorder() error {
 func (w *outputWorld) hasSelectedBorder() error {
 	if !strings.Contains(w.panel.View(), "┏") {
 		return fmt.Errorf("output view has no selected (heavy) widget border")
+	}
+	return nil
+}
+
+// gutterHasThumb reports whether any rendered line ends with a scrollbar thumb (the
+// reserved right gutter column, appended after the box border).
+func (w *outputWorld) gutterHasThumb() bool {
+	for _, line := range strings.Split(w.panel.View(), "\n") {
+		r := []rune(line)
+		if len(r) > 0 && r[len(r)-1] == '█' {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *outputWorld) hasTranscriptScrollbar() error {
+	if !w.gutterHasThumb() {
+		return fmt.Errorf("expected a transcript scrollbar thumb in the right gutter")
+	}
+	return nil
+}
+
+func (w *outputWorld) noTranscriptScrollbar() error {
+	if w.gutterHasThumb() {
+		return fmt.Errorf("unexpected transcript scrollbar when content fits")
 	}
 	return nil
 }

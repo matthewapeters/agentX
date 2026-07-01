@@ -176,6 +176,12 @@ THEN exactly 20 body rows are visible
 
 ### Proportional scrollbar thumb
 
+There are two scrollbars: a **per-widget** thumb inside a box whose body exceeds
+`max_widget_lines`, and a **transcript** thumb in a reserved right-gutter column of
+the panel that shows where the visible window sits within the whole transcript. The
+transcript gutter is blank when everything fits and shows a proportional thumb once
+the content overflows the viewport; content renders one column narrower to make room.
+
 ```gherkin
 GIVEN an expanded widget with 50 body lines shown in a 20-row viewport
 WHEN the scrollbar renders
@@ -183,7 +189,19 @@ THEN the thumb height is proportional to visible/total (≈ 8 of 20 rows)
   AND the thumb sits at the top while scrolled to the top
   AND the thumb sits at the bottom while scrolled to the bottom
   AND intermediate scroll positions place the thumb proportionally between.
+
+GIVEN more widgets than fit the viewport
+WHEN the panel renders
+THEN a transcript scrollbar thumb appears in the right gutter
+
+GIVEN content that fits the viewport
+WHEN the panel renders
+THEN the right gutter is blank (no transcript scrollbar)
 ```
+
+Emoji titles use glyphs with a deterministic single- or double-column width (e.g. the
+plain `⚙`, not the VS16 `⚙️`), so the titled border's right corner stays aligned even
+on terminals that render emoji-presentation selectors as one column.
 
 ### Focus & keymap (CHT-D5)
 
