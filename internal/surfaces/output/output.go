@@ -90,12 +90,18 @@ type Model struct {
 	copied        string          // name of the last surface whose command was copied
 	connected     map[string]bool // launch kinds with a live attached surface (SS-4)
 
-	collapseAll bool // context surface: every element starts collapsed (summary)
+	collapseAll     bool // context surface: every element starts collapsed (summary)
+	showToggleState bool // context surface: show an enabled checkbox on toggleables
 }
 
 // SetCollapseByDefault makes newly added elements start collapsed — the context
 // surface's navigable-summary mode. The chat window leaves it off.
 func (m *Model) SetCollapseByDefault(on bool) { m.collapseAll = on }
+
+// SetShowToggleState makes toggleable elements render an enabled checkbox ([x]/[ ])
+// left of their emoji — the context surface's management cue. The chat window,
+// which does not toggle, leaves it off.
+func (m *Model) SetShowToggleState(on bool) { m.showToggleState = on }
 
 // SelectedToggleable returns the selected element's ordinal and current enabled
 // state when it is a user/agent conversation element the context surface can
@@ -582,13 +588,19 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 	case w.body != "":
 		rows = m.renderBody(w, innerW)
 	}
-	// Disabled conversation elements (toggled off from the context surface) get a ⊘
-	// marker and a muted border/title so it's clear they are withheld from context.
+	// On the context surface, toggleable elements carry an enabled checkbox to the
+	// left of the emoji (☑ analogue): [x] enabled (in context) / [ ] disabled. This
+	// is orthogonal to the selection border, so navigation and context-membership
+	// read independently. The chat window leaves toggle state off.
 	title := w.title
-	if w.disabled {
-		title = "⊘ " + w.title
+	if m.showToggleState && w.toggleable {
+		box := "[x] "
+		if w.disabled {
+			box = "[ ] "
+		}
+		title = box + w.title
 	}
-	return m.boxify(title, rows, innerW, selected, w.disabled)
+	return m.boxify(title, rows, innerW, selected)
 }
 
 // collapsedPreview returns the first wrapped body line, marked with an ellipsis when
@@ -653,15 +665,13 @@ func scrollbarCell(i, offset, total, track int) string {
 // the selected widget gets a heavy border. Borders are colored: the selected
 // widget uses the active color while the panel is focused, every other widget
 // (and the selected one when the panel is unfocused) uses the inactive color.
-func (m *Model) boxify(title string, rows []string, innerW int, selected, disabled bool) []string {
+func (m *Model) boxify(title string, rows []string, innerW int, selected bool) []string {
 	tl, tr, bl, br, h, v := "┌", "┐", "└", "┘", "─", "│"
 	if selected {
 		tl, tr, bl, br, h, v = "┏", "┓", "┗", "┛", "━", "┃"
 	}
 	code := m.inactive
-	// A disabled element keeps its (heavy, if selected) border shape but stays muted
-	// even when selected/focused, reinforcing that it is out of context.
-	if selected && m.focused && !disabled {
+	if selected && m.focused {
 		code = m.active
 	}
 	paint := func(s string) string {
@@ -671,7 +681,7 @@ func (m *Model) boxify(title string, rows []string, innerW int, selected, disabl
 		return "\x1b[" + code + "m" + s + "\x1b[0m"
 	}
 	out := make([]string, 0, len(rows)+2)
-	out = append(out, m.topBorder(title, innerW, tl, tr, h, paint, disabled))
+	out = append(out, m.topBorder(title, innerW, tl, tr, h, paint))
 	for _, r := range rows {
 		out = append(out, paint(v)+r+paint(v))
 	}
@@ -682,7 +692,7 @@ func (m *Model) boxify(title string, rows []string, innerW int, selected, disabl
 // topBorder draws the top border with the kind label embedded as `┌─ title ──┐`.
 // The border glyphs take the focus color; the title keeps the default text color so
 // it stays legible. A title that does not fit (very narrow box) is dropped.
-func (m *Model) topBorder(title string, innerW int, tl, tr, h string, paint func(string) string, disabled bool) string {
+func (m *Model) topBorder(title string, innerW int, tl, tr, h string, paint func(string) string) string {
 	const lead = 3 // h + space before the title + space after it
 	if title == "" || innerW-lead <= 0 {
 		return paint(tl + strings.Repeat(h, innerW) + tr)
@@ -691,11 +701,6 @@ func (m *Model) topBorder(title string, innerW int, tl, tr, h string, paint func
 	fill := innerW - lead - ansi.StringWidth(t)
 	if fill < 0 {
 		fill = 0
-	}
-	// Mute a disabled element's title (StringWidth ignores the SGR, so the fill
-	// stays correct); enabled titles keep the default text color for legibility.
-	if disabled && m.inactive != "" {
-		t = "\x1b[" + m.inactive + "m" + t + "\x1b[0m"
 	}
 	return paint(tl+h+" ") + t + paint(" "+strings.Repeat(h, fill)+tr)
 }

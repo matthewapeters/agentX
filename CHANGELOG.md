@@ -52,10 +52,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   user-prompt or agent-response element and pressing **space** toggles whether it
   participates in the agent's upcoming context. The orchestrator applies the toggle
   in memory (effective next prompt) and persists it in the element's event file, so
-  a re-attaching surface seeds the correct state. Disabled elements render dimmed
-  with a `⊘` marker; every element renders **collapsed by default** (a navigable
-  summary — expand with Enter). Non-conversation elements (thinking/tool) are not
-  toggleable. New `POST /events/{ordinal}/enabled`, `Orchestrator.SetEventEnabled`,
+  a re-attaching surface seeds the correct state. Each toggleable element shows an
+  **enabled checkbox** left of its emoji (`[x]` in context / `[ ]` disabled),
+  independent of the selection border; every element renders **collapsed by
+  default** (a navigable summary — expand with Enter). Non-conversation elements
+  (thinking/tool) are not toggleable. New `POST /events/{ordinal}/enabled`, `Orchestrator.SetEventEnabled`,
   `Recorder.SetEnabled`. Re-authors PD-CTX; see docs/implementation/03 (Enabled
   Semantics). `SurfaceModel.Key` now returns a `tea.Cmd`.
 - Added the **context-visualizer** surface (SS-7): a read-only budget meter that

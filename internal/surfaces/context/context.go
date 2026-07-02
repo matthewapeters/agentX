@@ -35,6 +35,7 @@ func New(cl *transporthttp.Client, token string) *Model {
 	out := output.New()
 	out.SetFocus(true)
 	out.SetCollapseByDefault(true)
+	out.SetShowToggleState(true)
 	return &Model{out: out, cl: cl, token: token}
 }
 

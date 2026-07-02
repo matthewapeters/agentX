@@ -56,18 +56,19 @@ Feature: Context viewer surface
     Then the context view does not contain "secret reasoning"
 
   # use-case: PD-CTX-AF-006  (enable/disable the selected element)
-  # space toggles the selected element out of context; the surface dims it (⊘).
-  Scenario: Space disables the selected element
+  # elements show an enabled checkbox; space unchecks the selected element.
+  Scenario: Space unchecks the selected element
     Given a context surface sized 40 by 12
     When the context surface applies a user_prompt "keep this"
     And the context surface applies an agent_response "drop this"
-    And the context surface receives key "space"
-    Then the context view contains "⊘"
+    Then the context view contains "[x]"
+    When the context surface receives key "space"
+    Then the context view contains "[ ]"
 
   # use-case: PD-CTX-AF-008  (non-toggleable elements)
-  # thinking never enters context, so space does not disable it.
-  Scenario: Space does not disable a thinking element
+  # thinking never enters context, so it carries no checkbox and space is a no-op.
+  Scenario: A thinking element has no checkbox
     Given a context surface sized 40 by 12
     When the context surface applies a thinking "reasoning"
     And the context surface receives key "space"
-    Then the context view does not contain "⊘"
+    Then the context view does not contain "[ ]"

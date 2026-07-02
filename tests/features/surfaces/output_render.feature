@@ -49,11 +49,16 @@ Feature: Output panel event rendering
     Then no output line is wider than 20
     And the output view contains "lazy dog"
 
-  # use-case: UC-OUTPUT-DISABLED  (context surface: element toggled out of context)
-  Scenario: A disabled element renders with a marker
+  # use-case: UC-OUTPUT-CHECKBOX  (context surface: enable/disable checkbox)
+  # In toggle-state mode, toggleable elements carry an enabled checkbox left of the
+  # emoji: [x] enabled (in context), [ ] disabled (withheld) — orthogonal to selection.
+  Scenario: Enabled and disabled elements show a checkbox
     Given an output panel sized 40 by 10
+    And the output panel shows enable/disable state
+    When an agent_response event "kept" is applied
+    Then the output view contains "[x]"
     When a disabled agent_response event "withheld" is applied
-    Then the output view contains "⊘"
+    Then the output view contains "[ ]"
     And the output view contains "withheld"
 
   # use-case: UC-OUTPUT-SUMMARY  (context surface: navigable summary)

@@ -25,6 +25,7 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^an agent_delta event "([^"]*)" is applied$`, w.applyAgentDelta)
 	sc.Step(`^a disabled agent_response event "([^"]*)" is applied$`, w.applyAgentResponseDisabled)
 	sc.Step(`^the output panel is a navigable summary$`, w.summaryMode)
+	sc.Step(`^the output panel shows enable/disable state$`, w.showsToggleState)
 	sc.Step(`^a thinking event "([^"]*)" is applied$`, w.applyThinking)
 	sc.Step(`^a tool_call event for "([^"]*)" is applied$`, w.applyToolCall)
 	sc.Step(`^(\d+) numbered user events are applied$`, w.applyNumbered)
@@ -80,6 +81,11 @@ func (w *outputWorld) applyAgentResponseDisabled(text string) error {
 
 func (w *outputWorld) summaryMode() error {
 	w.panel.SetCollapseByDefault(true)
+	return nil
+}
+
+func (w *outputWorld) showsToggleState() error {
+	w.panel.SetShowToggleState(true)
 	return nil
 }
 

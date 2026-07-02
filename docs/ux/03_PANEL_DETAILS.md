@@ -2085,10 +2085,14 @@ Its **primary affordance is enable/disable** (not read-only): selecting a
 user-prompt or agent-response element and pressing **space** toggles whether that
 element participates in the agent's upcoming context. The toggle is sent to the
 orchestrator, which applies it in memory (effective on the next prompt) and persists
-it in the element's event file. Disabled elements render dimmed with an `⊘` marker.
-Thinking/tool/classification elements are display-only and not toggleable (they
-never enter context). A one-line processing-state indicator sits at the bottom.
-Quitting (`Ctrl-C`/`q`) marks the surface stopped.
+it in the element's event file. Each toggleable element carries an **enabled
+checkbox to the left of its role emoji** — `[x]` when it is in context, `[ ]` when
+disabled (re-authoring PD-03-AF-007's message-enabled checkbox). The checkbox is
+deliberately independent of the selection border, so navigation and
+context-membership read as separate cues. Thinking/tool/classification elements are
+display-only and not toggleable, so they carry no checkbox. A one-line
+processing-state indicator sits at the bottom. Quitting (`Ctrl-C`/`q`) marks the
+surface stopped.
 
 ### Affordance Inventory
 
@@ -2100,7 +2104,7 @@ Quitting (`Ctrl-C`/`q`) marks the surface stopped.
 | Navigation keys (scroll, page, select, expand/collapse) | PD-CTX-AF-004 | ✅ |
 | Processing-state line reflects state · phase | PD-CTX-AF-005 | ✅ |
 | Enable/disable the selected element (space) → context inclusion | PD-CTX-AF-006 | ✅ |
-| Disabled elements render dimmed with an `⊘` marker | PD-CTX-AF-007 | ✅ |
+| Enabled checkbox (`[x]`/`[ ]`) left of the emoji, independent of selection | PD-CTX-AF-007 | ✅ |
 | Only user/agent elements toggle; others are display-only | PD-CTX-AF-008 | ✅ |
 | Complete agent responses only (no live `agent_delta` stream) | PD-CTX-AF-009 | ✅ |
 | Title strip (`context · <session>`) via the surface host | PD-CTX-AF-010 | ✅ |
@@ -2118,8 +2122,8 @@ Use-case: Enable/disable an element (PD-CTX-AF-006)
 
 - GIVEN a context surface with a selected agent-response element
 - WHEN the user presses space
-- THEN the element's enabled state flips, the surface dims it, and the toggle is
-  sent to the orchestrator (excluded from the next assembled context)
+- THEN the element's checkbox flips (`[x]`→`[ ]`) and the toggle is sent to the
+  orchestrator (excluded from the next assembled context)
 
 Use-case: Non-toggleable element (PD-CTX-AF-008)
 
