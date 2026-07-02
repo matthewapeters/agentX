@@ -39,9 +39,10 @@ type SurfaceModel interface {
 	Apply(ev state.Event)
 	// SetSize sets the inner render area (inside the host's title strip).
 	SetSize(width, height int)
-	// Key handles a surface-specific key (scroll, etc.). Global keys (quit) are
-	// handled by the host before this is called.
-	Key(msg tea.KeyPressMsg)
+	// Key handles a surface-specific key (scroll, toggle, etc.) and may return a
+	// command (e.g. a transport POST). Global keys (quit) are handled by the host
+	// before this is called.
+	Key(msg tea.KeyPressMsg) tea.Cmd
 	// View renders the surface body to its current size.
 	View() string
 }
@@ -103,8 +104,7 @@ func (h Host) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return h, tea.Quit
 		}
-		h.surface.Key(msg)
-		return h, nil
+		return h, h.surface.Key(msg)
 	}
 	return h, nil
 }

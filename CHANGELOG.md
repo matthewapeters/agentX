@@ -9,6 +9,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Agent responses are now streamed and stored as two distinct kinds.** The live
+  answer streams as transient `agent_delta` chunks (in-process bus, chat window's
+  typing effect only — never persisted, never sent to external surfaces); when it
+  finishes, the complete answer is published once as a durable `agent_response`.
+  The recorder and every external surface (context viewer, context-visualizer) now
+  deal in one complete event per conversation element rather than a fragmented
+  delta stream, giving each element a single durable identity (its ordinal) for
+  enable/disable. New `state.ContentAgentDelta`; `state.Bus.Publish` returns the
+  stamped ordinal. Documented in docs/implementation/03 (Streaming vs. durable).
 - The chat input now has a **terminal-agnostic soft-newline**: `Alt+Enter` (and
   `Ctrl+J`) insert a newline on any terminal, alongside `Shift+Enter` which only
   works where the terminal disambiguates modified keys (Kitty protocol /
@@ -39,6 +48,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- The **context surface** is now the context-management surface: selecting a
+  user-prompt or agent-response element and pressing **space** toggles whether it
+  participates in the agent's upcoming context. The orchestrator applies the toggle
+  in memory (effective next prompt) and persists it in the element's event file, so
+  a re-attaching surface seeds the correct state. Disabled elements render dimmed
+  with a `⊘` marker; every element renders **collapsed by default** (a navigable
+  summary — expand with Enter). Non-conversation elements (thinking/tool) are not
+  toggleable. New `POST /events/{ordinal}/enabled`, `Orchestrator.SetEventEnabled`,
+  `Recorder.SetEnabled`. Re-authors PD-CTX; see docs/implementation/03 (Enabled
+  Semantics). `SurfaceModel.Key` now returns a `tea.Cmd`.
 - Added the **context-visualizer** surface (SS-7): a read-only budget meter that
   polls the orchestrator's assembled context composition and renders one bar per
   content class (working memory 🧠, instructions 📜, user 👤, attachments 📎,

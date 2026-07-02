@@ -57,6 +57,12 @@ type widget struct {
 	// such as thinking / tool result).
 	previewWhenCollapsed bool
 	offset               int // inner scroll offset (wrapped body-line index)
+	// ordinal is the source event's durable identity; toggleable marks a user or
+	// agent conversation element that the context surface can enable/disable;
+	// disabled means it is withheld from the agent's upcoming context.
+	ordinal    uint64
+	toggleable bool
+	disabled   bool
 }
 
 // defaultActive and defaultInactive are the built-in border SGR colors used
@@ -83,6 +89,40 @@ type Model struct {
 	launchSession string          // this session's name, for the manual-launch footer
 	copied        string          // name of the last surface whose command was copied
 	connected     map[string]bool // launch kinds with a live attached surface (SS-4)
+
+	collapseAll bool // context surface: every element starts collapsed (summary)
+}
+
+// SetCollapseByDefault makes newly added elements start collapsed — the context
+// surface's navigable-summary mode. The chat window leaves it off.
+func (m *Model) SetCollapseByDefault(on bool) { m.collapseAll = on }
+
+// SelectedToggleable returns the selected element's ordinal and current enabled
+// state when it is a user/agent conversation element the context surface can
+// toggle; ok is false otherwise (e.g. thinking/tool elements, or none selected).
+func (m *Model) SelectedToggleable() (ordinal uint64, enabled, ok bool) {
+	if m.selected < 0 || m.selected >= len(m.widgets) {
+		return 0, false, false
+	}
+	w := m.widgets[m.selected]
+	if !w.toggleable || w.ordinal == 0 {
+		return 0, false, false
+	}
+	return w.ordinal, !w.disabled, true
+}
+
+// SetSelectedEnabled flips the selected element's local disabled state (optimistic
+// UI after a toggle POST). It is a no-op when the selection is not toggleable.
+func (m *Model) SetSelectedEnabled(enabled bool) {
+	if m.selected < 0 || m.selected >= len(m.widgets) {
+		return
+	}
+	w := m.widgets[m.selected]
+	if !w.toggleable {
+		return
+	}
+	w.disabled = !enabled
+	m.refresh(false)
 }
 
 // New returns an empty output panel backed by a viewport.
@@ -279,14 +319,21 @@ func (m *Model) Apply(ev state.Event) {
 	}
 	switch ev.ContentType {
 	case state.ContentUserPrompt:
-		m.add(&widget{kind: kindUser, title: "👤 You", body: eventText(ev), previewWhenCollapsed: true})
+		m.add(&widget{kind: kindUser, title: "👤 You", body: eventText(ev), previewWhenCollapsed: true,
+			ordinal: ev.Ordinal, toggleable: true, disabled: !ev.Enabled})
 	case state.ContentClassification:
 		// Plain gear (no VS16): its display width is a deterministic 1 cell, so the
 		// titled border's right corner stays aligned on terminals that render the
 		// emoji-presentation gear as a single column.
 		m.add(&widget{kind: kindClassification, title: "⚙ classification", body: eventText(ev), previewWhenCollapsed: true})
-	case state.ContentAgentResponse:
+	case state.ContentAgentDelta:
+		// Live streaming chunk (chat window only): coalesce into an in-progress
+		// assistant widget for the typing effect. The complete agent_response
+		// finalizes it and stamps its identity.
 		m.appendAssistant(eventText(ev))
+		return
+	case state.ContentAgentResponse:
+		m.finalizeAssistant(eventText(ev), ev.Ordinal, ev.Enabled)
 		return
 	case state.ContentThinking:
 		m.appendThinking(eventText(ev))
@@ -310,19 +357,42 @@ func (m *Model) add(w *widget) {
 	if w.body != "" {
 		w.collapsible = true
 	}
+	// Collapse-all surfaces (the context navigable summary) start every element
+	// collapsed regardless of kind.
+	if m.collapseAll && w.collapsible {
+		w.collapsed = true
+	}
 	m.widgets = append(m.widgets, w)
 	m.selected = len(m.widgets) - 1
 	m.refresh(true)
 }
 
-// appendAssistant streams text into a single assistant widget (its body).
+// appendAssistant streams a delta into a single in-progress assistant widget (its
+// body). Used for the chat window's live agent_delta chunks only.
 func (m *Model) appendAssistant(text string) {
 	if n := len(m.widgets); n > 0 && m.widgets[n-1].kind == kindAssistant {
 		m.widgets[n-1].body += text
 		m.refresh(true)
 		return
 	}
-	m.add(&widget{kind: kindAssistant, title: "🤖 AgentX", body: text, previewWhenCollapsed: true})
+	m.add(&widget{kind: kindAssistant, title: "🤖 AgentX", body: text, previewWhenCollapsed: true, toggleable: true})
+}
+
+// finalizeAssistant records the complete agent response as one conversation
+// element. In the chat window it finalizes the widget the deltas built (stamping
+// its identity); in the context surface, which sees no deltas, it adds the element.
+func (m *Model) finalizeAssistant(text string, ordinal uint64, enabled bool) {
+	if n := len(m.widgets); n > 0 && m.widgets[n-1].kind == kindAssistant {
+		w := m.widgets[n-1]
+		w.body = text
+		w.ordinal = ordinal
+		w.toggleable = true
+		w.disabled = !enabled
+		m.refresh(true)
+		return
+	}
+	m.add(&widget{kind: kindAssistant, title: "🤖 AgentX", body: text, previewWhenCollapsed: true,
+		ordinal: ordinal, toggleable: true, disabled: !enabled})
 }
 
 // appendThinking streams reasoning text into a single collapsed thinking widget
@@ -512,7 +582,13 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 	case w.body != "":
 		rows = m.renderBody(w, innerW)
 	}
-	return m.boxify(w.title, rows, innerW, selected)
+	// Disabled conversation elements (toggled off from the context surface) get a ⊘
+	// marker and a muted border/title so it's clear they are withheld from context.
+	title := w.title
+	if w.disabled {
+		title = "⊘ " + w.title
+	}
+	return m.boxify(title, rows, innerW, selected, w.disabled)
 }
 
 // collapsedPreview returns the first wrapped body line, marked with an ellipsis when
@@ -577,13 +653,15 @@ func scrollbarCell(i, offset, total, track int) string {
 // the selected widget gets a heavy border. Borders are colored: the selected
 // widget uses the active color while the panel is focused, every other widget
 // (and the selected one when the panel is unfocused) uses the inactive color.
-func (m *Model) boxify(title string, rows []string, innerW int, selected bool) []string {
+func (m *Model) boxify(title string, rows []string, innerW int, selected, disabled bool) []string {
 	tl, tr, bl, br, h, v := "┌", "┐", "└", "┘", "─", "│"
 	if selected {
 		tl, tr, bl, br, h, v = "┏", "┓", "┗", "┛", "━", "┃"
 	}
 	code := m.inactive
-	if selected && m.focused {
+	// A disabled element keeps its (heavy, if selected) border shape but stays muted
+	// even when selected/focused, reinforcing that it is out of context.
+	if selected && m.focused && !disabled {
 		code = m.active
 	}
 	paint := func(s string) string {
@@ -593,7 +671,7 @@ func (m *Model) boxify(title string, rows []string, innerW int, selected bool) [
 		return "\x1b[" + code + "m" + s + "\x1b[0m"
 	}
 	out := make([]string, 0, len(rows)+2)
-	out = append(out, m.topBorder(title, innerW, tl, tr, h, paint))
+	out = append(out, m.topBorder(title, innerW, tl, tr, h, paint, disabled))
 	for _, r := range rows {
 		out = append(out, paint(v)+r+paint(v))
 	}
@@ -604,7 +682,7 @@ func (m *Model) boxify(title string, rows []string, innerW int, selected bool) [
 // topBorder draws the top border with the kind label embedded as `┌─ title ──┐`.
 // The border glyphs take the focus color; the title keeps the default text color so
 // it stays legible. A title that does not fit (very narrow box) is dropped.
-func (m *Model) topBorder(title string, innerW int, tl, tr, h string, paint func(string) string) string {
+func (m *Model) topBorder(title string, innerW int, tl, tr, h string, paint func(string) string, disabled bool) string {
 	const lead = 3 // h + space before the title + space after it
 	if title == "" || innerW-lead <= 0 {
 		return paint(tl + strings.Repeat(h, innerW) + tr)
@@ -613,6 +691,11 @@ func (m *Model) topBorder(title string, innerW int, tl, tr, h string, paint func
 	fill := innerW - lead - ansi.StringWidth(t)
 	if fill < 0 {
 		fill = 0
+	}
+	// Mute a disabled element's title (StringWidth ignores the SGR, so the fill
+	// stays correct); enabled titles keep the default text color for legibility.
+	if disabled && m.inactive != "" {
+		t = "\x1b[" + m.inactive + "m" + t + "\x1b[0m"
 	}
 	return paint(tl+h+" ") + t + paint(" "+strings.Repeat(h, fill)+tr)
 }

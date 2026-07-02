@@ -115,7 +115,7 @@ func (w *tlWorld) ctxAttach() error {
 	if err != nil {
 		return err
 	}
-	w.ctxModel = contextsurface.New()
+	w.ctxModel = contextsurface.New(transporthttp.NewClient(w.orc.Endpoint()), w.orc.AttachToken().Raw())
 	w.ctxModel.SetSize(80, 24)
 	var last uint64
 	for _, ev := range seed {

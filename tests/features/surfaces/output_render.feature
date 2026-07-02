@@ -23,8 +23,8 @@ Feature: Output panel event rendering
   # use-case: UC-OUTPUT-STREAM
   Scenario: Assistant response streams into a single entry
     Given an output panel sized 40 by 10
-    When an agent_response event "Hel" is applied
-    And an agent_response event "lo" is applied
+    When an agent_delta event "Hel" is applied
+    And an agent_delta event "lo" is applied
     Then the output view contains "Hello"
     And the output has 1 assistant entry
 
@@ -48,6 +48,20 @@ Feature: Output panel event rendering
     When an agent_response event "the quick brown fox jumps over the lazy dog" is applied
     Then no output line is wider than 20
     And the output view contains "lazy dog"
+
+  # use-case: UC-OUTPUT-DISABLED  (context surface: element toggled out of context)
+  Scenario: A disabled element renders with a marker
+    Given an output panel sized 40 by 10
+    When a disabled agent_response event "withheld" is applied
+    Then the output view contains "⊘"
+    And the output view contains "withheld"
+
+  # use-case: UC-OUTPUT-SUMMARY  (context surface: navigable summary)
+  Scenario: Summary mode collapses elements by default
+    Given an output panel sized 20 by 10
+    And the output panel is a navigable summary
+    When an agent_response event "the quick brown fox jumps over the lazy dog" is applied
+    Then the output view contains "…"
 
   # use-case: UC-OUTPUT-BANNER  (docs/ux/06_OUTPUT_WIDGET.md "Logo banner")
   Scenario: The logo banner renders as the first element before any event

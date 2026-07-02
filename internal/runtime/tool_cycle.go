@@ -104,9 +104,14 @@ func (o *Orchestrator) runToolPhase(ctx context.Context, text string) (string, b
 // streamResponse streams the answer for the assembled messages. When doThink is
 // set it reasons first (PhaseThinking → PhaseRespond on the first content delta)
 // and, if the thinking budget elapses before any content, cancels and re-asks with
-// fallback (no thinking). It returns the full assembled answer (for conversation
-// history) and the model error for finishCycle to map.
-func (o *Orchestrator) streamResponse(ctx context.Context, messages, fallback []prompting.Message, doThink, ephemeral bool) (string, error) {
+// fallback (no thinking).
+//
+// The live answer streams as transient agent_delta events (for the chat window's
+// typing effect); when it finishes, the complete answer is published once as a
+// durable agent_response. It returns the full answer (for conversation history),
+// that complete event's ordinal (0 when nothing was answered), and the model error
+// for finishCycle to map.
+func (o *Orchestrator) streamResponse(ctx context.Context, messages, fallback []prompting.Message, doThink, ephemeral bool) (string, uint64, error) {
 	prePhase := state.PhaseRespond
 	if doThink {
 		prePhase = state.PhaseThinking
@@ -124,7 +129,7 @@ func (o *Orchestrator) streamResponse(ctx context.Context, messages, fallback []
 		if doThink && respondStarted.CompareAndSwap(false, true) {
 			o.setProcessing(state.StateWorking, state.PhaseRespond)
 		}
-		o.publishEv("AGENT_CONTENT", state.ContentAgentResponse, map[string]any{"text": delta}, ephemeral)
+		o.publishEv("AGENT_DELTA", state.ContentAgentDelta, map[string]any{"text": delta}, ephemeral)
 	}
 
 	respondCtx := ctx
@@ -149,7 +154,15 @@ func (o *Orchestrator) streamResponse(ctx context.Context, messages, fallback []
 		o.setProcessing(state.StateWorking, state.PhaseRespond)
 		resp, err = o.model.Chat(ctx, o.settings.OllamaModel, fallback, onDelta, nil)
 	}
-	return resp, err
+
+	// Publish the complete answer as one durable agent_response (the canonical
+	// conversation element) on success or a user interrupt that kept partial text.
+	// A hard error publishes its own error agent_response via finishCycle.
+	var respOrd uint64
+	if resp != "" && (err == nil || errors.Is(err, context.Canceled)) {
+		respOrd = o.publishEv("AGENT_RESPONSE", state.ContentAgentResponse, map[string]any{"text": resp}, ephemeral)
+	}
+	return resp, respOrd, err
 }
 
 // finishCycle maps the terminal model error to processing-state: nil and a user

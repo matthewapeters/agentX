@@ -1,32 +1,41 @@
-// Package context is the read-only context viewer surface (SS-3): a SurfaceModel
-// that projects the session event stream into the shared collapsible output
-// renderer and shows a processing-state line. It is launched as a separate process
-// (`agentx surface launch context`) and attaches over the transport, mirroring the
-// conversation the chat surface shows.
+// Package context is the context surface (SS-3): a SurfaceModel that projects the
+// session's complete conversation elements into the shared collapsible output
+// renderer as a navigable summary (every element collapsed by default). It is the
+// context-management surface — selecting a user or agent element and pressing space
+// toggles whether it participates in the agent's upcoming context (persisted by the
+// orchestrator). It sees only complete events (never the live agent_delta stream,
+// which is the chat window's job). Launched with `agentx surface launch context`.
 package context
 
 import (
+	stdctx "context"
+
 	tea "charm.land/bubbletea/v2"
 
 	"agentx/internal/state"
 	"agentx/internal/surfaces/output"
+	transporthttp "agentx/internal/transport/http"
 )
 
-// Model renders the session event stream read-only. It reuses output.Model for the
-// collapsible boxed widgets and viewport scroll, and intercepts processing-state
-// events for a status line (output ignores them).
+// Model renders the session's conversation elements as a collapsed, navigable
+// summary and drives enable/disable toggles back to the orchestrator. It reuses
+// output.Model for the boxed widgets/scroll and intercepts processing-state events
+// for a status line.
 type Model struct {
-	out  *output.Model
-	proc state.ProcessingState
+	out   *output.Model
+	proc  state.ProcessingState
+	cl    *transporthttp.Client // transport for toggle POSTs (nil in unit tests)
+	token string
 }
 
-// New returns an empty context viewer. Its output panel is always focused — it is
-// the sole panel in the surface process — so the selected object is highlighted as
-// the user navigates.
-func New() *Model {
+// New returns a context surface bound to a transport client for toggle POSTs. Its
+// output panel is always focused — it is the sole panel in the process — and every
+// element renders collapsed (a navigable summary).
+func New(cl *transporthttp.Client, token string) *Model {
 	out := output.New()
 	out.SetFocus(true)
-	return &Model{out: out}
+	out.SetCollapseByDefault(true)
+	return &Model{out: out, cl: cl, token: token}
 }
 
 // Apply folds one event into the projection. Processing-state events update the
@@ -49,12 +58,11 @@ func (m *Model) SetSize(width, height int) {
 	m.out.SetSize(width, max(0, height-1))
 }
 
-// Key handles read-only navigation: scroll and collapse/expand. There is no prompt
-// input — this surface only observes.
-// Key handles read-only navigation, mirroring the chat output panel so the keys are
-// consistent: PgUp/PgDn move the selection between objects, Up/Down (k/j) scroll
-// within the selected object, and Enter expands/collapses it.
-func (m *Model) Key(msg tea.KeyPressMsg) {
+// Key handles navigation and the enable/disable toggle, mirroring the chat output
+// panel so the keys are consistent: PgUp/PgDn move the selection between elements,
+// Up/Down (k/j) scroll within the selected element, Enter expands/collapses it, and
+// space toggles whether a user/agent element participates in the agent's context.
+func (m *Model) Key(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "pgup":
 		m.out.SelectUp()
@@ -66,6 +74,29 @@ func (m *Model) Key(msg tea.KeyPressMsg) {
 		m.out.ScrollSelected(1)
 	case "enter", "ctrl+o":
 		m.out.ToggleSelected()
+	case " ", "space":
+		return m.toggleSelected()
+	}
+	return nil
+}
+
+// toggleSelected flips the selected element's context participation: it updates the
+// surface optimistically and returns a command that persists the change through the
+// orchestrator. It is a no-op for non-toggleable elements (thinking/tool/etc.).
+func (m *Model) toggleSelected() tea.Cmd {
+	ordinal, enabled, ok := m.out.SelectedToggleable()
+	if !ok {
+		return nil
+	}
+	newEnabled := !enabled
+	m.out.SetSelectedEnabled(newEnabled)
+	if m.cl == nil {
+		return nil
+	}
+	cl, token := m.cl, m.token
+	return func() tea.Msg {
+		_ = cl.SetEventEnabled(stdctx.Background(), token, ordinal, newEnabled)
+		return nil
 	}
 }
 

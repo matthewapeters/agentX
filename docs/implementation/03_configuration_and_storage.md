@@ -166,16 +166,47 @@ Initial content_type values:
 - user_prompt
 - system_prompt
 - thinking
-- agent_response
+- agent_delta — a **transient** streaming chunk of the agent's answer, published
+  on the in-process bus for the chat window's live typing effect only. Deltas are
+  **never persisted** and **never streamed to external surfaces** — they carry no
+  durable identity. The complete answer is emitted once as `agent_response`.
+- agent_response — the **complete**, durable agent answer for a turn, published
+  once when the response finishes assembling. This is the canonical conversation
+  element: persisted, seeded/streamed to surfaces, and the unit the context
+  surface toggles (one event, one ordinal, one file — see Enabled semantics).
 - attachments
 - tool_call
 - tool_result
 - processing_state
 
+> **Streaming vs. durable (agent_delta vs agent_response).** The chat window, which
+> subscribes to the in-process bus, renders `agent_delta` chunks live and finalizes
+> the widget when the complete `agent_response` arrives. The recorder and every
+> external surface (context viewer, context-visualizer) deal only in the complete
+> `agent_response`, so the durable log holds one event per conversation element
+> rather than a fragmented stream. Errors are emitted directly as a complete
+> `agent_response`.
+
+## Enabled Semantics
+
+`enabled` on the envelope controls whether a conversation element participates in
+the **assembled LLM context** of subsequent turns (`runtime.withContext`).
+User-prompt and agent-response elements default enabled; thinking, tool, and
+classification events are display-only and never enter context.
+
+- The **context surface** is the management affordance: toggling an element
+  (space) flips its `enabled`.
+- The orchestrator applies the toggle **in memory** (so the next prompt's context
+  reflects it immediately) and **persists it in the element's event file** (so a
+  re-attaching surface seeds the correct state). Because each element is a single
+  event, this is a single-file rewrite.
+
 ## Persistence Behavior
 
 - writes should be append-oriented and crash-safe
-- avoid mutable rewrite of prior events except explicit maintenance operations
+- avoid mutable rewrite of prior events except explicit maintenance operations —
+  toggling an element's `enabled` from the context surface is such an explicit
+  maintenance operation (a single-field rewrite of one event file)
 - maintain chronological ordering by epoch and filename prefix
 - persist enough metadata for replay and audit
 

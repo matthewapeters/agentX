@@ -31,3 +31,9 @@ Feature: Working-memory CRUD over the transport
     When an unauthorized client adds a fact "x" valued "y"
     Then the working-memory mutation is rejected as "auth"
     And reading working memory has no "x" fact
+
+  # use-case: UC-CTX-TOGGLE-API  (context surface → enable/disable endpoint)
+  Scenario: The enable/disable endpoint reaches the orchestrator
+    Given a running transport server
+    When the client toggles element 7 to enabled false
+    Then the provider recorded a toggle for ordinal 7 enabled false

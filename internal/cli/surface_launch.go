@@ -212,7 +212,7 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 func surfaceModelFor(kind string, res LaunchResult) (client.SurfaceModel, string, bool) {
 	switch kind {
 	case "context":
-		return contextsurface.New(), "context · " + res.SessionName, true
+		return contextsurface.New(transporthttp.NewClient(res.Endpoint), res.Token), "context · " + res.SessionName, true
 	default:
 		return nil, "", false
 	}

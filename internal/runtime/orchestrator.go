@@ -113,8 +113,19 @@ type Orchestrator struct {
 	mu        sync.Mutex
 	started   bool
 	accepting bool
-	history   []prompting.Message
+	history   []turnMsg
 	ctxWindow int // cached model context length (tokens); 0 = not yet resolved
+}
+
+// turnMsg is one conversation element in the in-memory context history: a user
+// prompt or a complete agent response. ordinal is the element's durable identity
+// (its source event's ordinal); enabled controls whether it folds into the next
+// prompt's assembled context (toggled from the context surface).
+type turnMsg struct {
+	ordinal uint64
+	role    string // "user" | "assistant"
+	content string
+	enabled bool
 }
 
 // Option configures an Orchestrator at construction time.
@@ -376,8 +387,9 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	if classifyPrompt {
 		o.setProcessing(state.StateWorking, state.PhaseClassify)
 	}
+	var userOrd uint64
 	if recordUserPrompt {
-		o.publishEv("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text}, ephemeral)
+		userOrd = o.publishEv("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text}, ephemeral)
 	}
 
 	route := ""
@@ -404,8 +416,8 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		}
 		if handled {
 			msgs := o.withContext(o.assembler.Assemble(text + toolCtx))
-			resp, err := o.streamResponse(ctx, msgs, nil, false, ephemeral)
-			o.recordTurn(err, recordUserPrompt, text, resp)
+			resp, respOrd, err := o.streamResponse(ctx, msgs, nil, false, ephemeral)
+			o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp)
 			return o.finishCycle(err)
 		}
 	}
@@ -415,17 +427,19 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	doThink := o.thinkForRoute(route)
 	messages := o.withContext(o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route))
 	fallback := o.withContext(o.assembler.Assemble(text))
-	resp, err := o.streamResponse(ctx, messages, fallback, doThink, ephemeral)
-	o.recordTurn(err, recordUserPrompt, text, resp)
+	resp, respOrd, err := o.streamResponse(ctx, messages, fallback, doThink, ephemeral)
+	o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp)
 	return o.finishCycle(err)
 }
 
 // recordTurn appends the completed turn to the in-memory conversation history when
 // the cycle ended cleanly (success or user interrupt), so the next turn carries
-// the prior user prompt and agent response as enabled context. The bootstrap turn
+// the prior user prompt and agent response as enabled context. Each entry keeps the
+// ordinal of its source event (user_prompt / complete agent_response) as its stable
+// identity, so the context surface can toggle it. The bootstrap turn
 // (recordTurn=false, like its user-prompt event) is excluded: it engages the
 // session but is irrelevant to the user's intent. Hard failures are not recorded.
-func (o *Orchestrator) recordTurn(err error, record bool, userText, response string) {
+func (o *Orchestrator) recordTurn(err error, record bool, userOrd uint64, userText string, respOrd uint64, response string) {
 	if !record {
 		return
 	}
@@ -435,19 +449,24 @@ func (o *Orchestrator) recordTurn(err error, record bool, userText, response str
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if userText != "" {
-		o.history = append(o.history, prompting.Message{Role: "user", Content: userText})
+		o.history = append(o.history, turnMsg{ordinal: userOrd, role: "user", content: userText, enabled: true})
 	}
 	if response != "" {
-		o.history = append(o.history, prompting.Message{Role: "assistant", Content: response})
+		o.history = append(o.history, turnMsg{ordinal: respOrd, role: "assistant", content: response, enabled: true})
 	}
 }
 
-// historyMessages returns a copy of the enabled prior-turn conversation history.
+// historyMessages returns the enabled prior-turn conversation history as assembler
+// messages — disabled elements (toggled off from the context surface) are withheld.
 func (o *Orchestrator) historyMessages() []prompting.Message {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	out := make([]prompting.Message, len(o.history))
-	copy(out, o.history)
+	out := make([]prompting.Message, 0, len(o.history))
+	for _, h := range o.history {
+		if h.enabled {
+			out = append(out, prompting.Message{Role: h.role, Content: h.content})
+		}
+	}
 	return out
 }
 
@@ -570,6 +589,31 @@ func (o *Orchestrator) ContextBreakdown() (session.ContextReport, error) {
 	}, nil
 }
 
+// SetEventEnabled toggles whether a conversation element participates in the
+// agent's upcoming context. It flips the in-memory history entry (so the next
+// prompt reflects it) and rewrites the element's persisted event file (so a
+// re-attaching surface seeds the correct state). It is an error to toggle an
+// ordinal that is not a user/agent conversation element.
+func (o *Orchestrator) SetEventEnabled(ordinal uint64, enabled bool) error {
+	o.mu.Lock()
+	found := false
+	for i := range o.history {
+		if o.history[i].ordinal == ordinal {
+			o.history[i].enabled = enabled
+			found = true
+			break
+		}
+	}
+	o.mu.Unlock()
+	if !found {
+		return fmt.Errorf("ordinal %d is not a toggleable conversation element", ordinal)
+	}
+	if _, err := o.store.Recorder(o.id.ID).SetEnabled(ordinal, enabled); err != nil {
+		return err
+	}
+	return nil
+}
+
 // contextWindow returns the active model's context length in tokens, cached after
 // the first lookup (a fixed model property). A lookup failure returns 0 (unknown),
 // which the visualizer renders without a budget percentage.
@@ -672,8 +716,10 @@ func (o *Orchestrator) publish(eventType string, ct state.ContentType, payload a
 // publishEv publishes an event, marking it ephemeral when it engages the session but
 // is not part of the user's conversation (the bootstrap exchange). Ephemeral events
 // still reach the chat surface; read-only observers like the context viewer omit them.
-func (o *Orchestrator) publishEv(eventType string, ct state.ContentType, payload any, ephemeral bool) {
-	o.bus.Publish(state.Event{
+// It returns the stamped ordinal, the element's durable identity (used to record the
+// turn and to target enable/disable toggles).
+func (o *Orchestrator) publishEv(eventType string, ct state.ContentType, payload any, ephemeral bool) uint64 {
+	return o.bus.Publish(state.Event{
 		Epoch:       time.Now().UnixMilli(),
 		SessionID:   o.id.ID,
 		EventType:   eventType,

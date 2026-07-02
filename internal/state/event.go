@@ -11,6 +11,11 @@ const (
 	ContentSystemPrompt    ContentType = "system_prompt"
 	ContentClassification  ContentType = "classification"
 	ContentThinking        ContentType = "thinking"
+	// ContentAgentDelta is a transient streaming chunk of the agent's answer,
+	// published on the in-process bus for the chat window's live typing effect. It
+	// is never persisted and never streamed to external surfaces; the complete
+	// answer is emitted once as ContentAgentResponse.
+	ContentAgentDelta      ContentType = "agent_delta"
 	ContentAgentResponse   ContentType = "agent_response"
 	ContentAttachments     ContentType = "attachments"
 	ContentToolCall        ContentType = "tool_call"
@@ -20,8 +25,9 @@ const (
 
 var validContentTypes = map[ContentType]bool{
 	ContentUserPrompt: true, ContentSystemPrompt: true, ContentClassification: true,
-	ContentThinking: true, ContentAgentResponse: true, ContentAttachments: true,
-	ContentToolCall: true, ContentToolResult: true, ContentProcessingState: true,
+	ContentThinking: true, ContentAgentDelta: true, ContentAgentResponse: true,
+	ContentAttachments: true, ContentToolCall: true, ContentToolResult: true,
+	ContentProcessingState: true,
 }
 
 // DefaultEnabled reports whether an event of the given content type participates

@@ -226,6 +226,13 @@ func (c *Client) ContextBreakdown(ctx context.Context) (session.ContextReport, e
 	return report, nil
 }
 
+// SetEventEnabled toggles whether a conversation element (by ordinal) folds into
+// the agent's upcoming context (POST /events/{ordinal}/enabled).
+func (c *Client) SetEventEnabled(ctx context.Context, token string, ordinal uint64, enabled bool) error {
+	path := fmt.Sprintf("/events/%d/enabled", ordinal)
+	return c.postWM(ctx, token, path, map[string]any{"enabled": enabled})
+}
+
 // SetFact adds or edits a working-memory fact (POST /working-memory/set).
 func (c *Client) SetFact(ctx context.Context, token, key, value string) error {
 	return c.postWM(ctx, token, "/working-memory/set", map[string]any{"key": key, "value": value})

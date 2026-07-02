@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/cucumber/godog"
 
 	"agentx/internal/state"
@@ -12,6 +13,7 @@ import (
 
 type contextWorld struct {
 	model *contextsurface.Model
+	ord   uint64
 }
 
 // registerContextSteps wires the context-viewer surface steps (SS-3).
@@ -28,20 +30,33 @@ func registerContextSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the context view does not contain "([^"]*)"$`, w.viewNotContains)
 	sc.Step(`^the context status line shows "([^"]*)"$`, w.statusShows)
 	sc.Step(`^the context view shows a selected object border$`, w.selectedBorder)
+	sc.Step(`^the context surface receives key "([^"]*)"$`, w.receiveKey)
+}
+
+func (w *contextWorld) receiveKey(name string) error {
+	if name == "space" {
+		w.model.Key(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+		return nil
+	}
+	r := []rune(name)[0]
+	w.model.Key(tea.KeyPressMsg{Code: r, Text: name})
+	return nil
 }
 
 func (w *contextWorld) sized(width, height int) error {
-	w.model = contextsurface.New()
+	w.model = contextsurface.New(nil, "")
 	w.model.SetSize(width, height)
 	return nil
 }
 
 func (w *contextWorld) applyContent(et string, ct state.ContentType, text string) error {
+	w.ord++
 	w.model.Apply(state.Event{
 		Epoch:       1,
 		SessionID:   "s",
 		EventType:   et,
 		ContentType: ct,
+		Ordinal:     w.ord,
 		Payload:     map[string]any{"text": text},
 		Enabled:     state.DefaultEnabled(ct),
 	})

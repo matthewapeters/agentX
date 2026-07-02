@@ -2072,23 +2072,38 @@ toggle, and click-to-navigate (the remainder of legacy PD-14).
 ### Behaviour
 
 The surface seeds from the durable event log on attach (the full prior session),
-then resumes the live stream by cursor and appends new events (SS-1). It renders the
-event stream with the shared collapsible output widgets (`docs/ux/06_OUTPUT_WIDGET.md`)
-and shows a one-line processing-state indicator. It is **read-only** — there is no
-prompt input; keys drive scroll/selection only. Quitting (`Ctrl-C`/`q`) marks the
-surface stopped.
+then resumes the live stream by cursor and appends new events (SS-1). It is a
+**navigable summary**: every element renders **collapsed by default** (titled border
++ preview), so the surface reads as a scannable list of conversation elements, not a
+full transcript — expand one with Enter to read it.
+
+It deals only in **complete conversation elements**: it never receives the live
+`agent_delta` stream (that is the chat window's job); an agent turn appears as one
+finished `agent_response` element. Streaming is watched in the main window.
+
+Its **primary affordance is enable/disable** (not read-only): selecting a
+user-prompt or agent-response element and pressing **space** toggles whether that
+element participates in the agent's upcoming context. The toggle is sent to the
+orchestrator, which applies it in memory (effective on the next prompt) and persists
+it in the element's event file. Disabled elements render dimmed with an `⊘` marker.
+Thinking/tool/classification elements are display-only and not toggleable (they
+never enter context). A one-line processing-state indicator sits at the bottom.
+Quitting (`Ctrl-C`/`q`) marks the surface stopped.
 
 ### Affordance Inventory
 
 | Affordance | ID | Status |
 |-----------|-----|--------|
 | Seed render: durable history on attach | PD-CTX-AF-001 | ✅ |
-| Live tail: resumed events append after the seed cursor | PD-CTX-AF-002 | ✅ |
-| Collapsible widgets (thinking/tool collapsed by default) | PD-CTX-AF-003 | ✅ |
-| Read-only navigation keys (scroll, page, select, toggle) | PD-CTX-AF-004 | ✅ |
+| Live tail: resumed complete events append after the seed cursor | PD-CTX-AF-002 | ✅ |
+| Every element collapsed by default (navigable summary) | PD-CTX-AF-003 | ✅ |
+| Navigation keys (scroll, page, select, expand/collapse) | PD-CTX-AF-004 | ✅ |
 | Processing-state line reflects state · phase | PD-CTX-AF-005 | ✅ |
-| Read-only: no prompt input affordance | PD-CTX-AF-006 | ✅ |
-| Title strip (`context · <session>`) via the surface host | PD-CTX-AF-007 | ✅ |
+| Enable/disable the selected element (space) → context inclusion | PD-CTX-AF-006 | ✅ |
+| Disabled elements render dimmed with an `⊘` marker | PD-CTX-AF-007 | ✅ |
+| Only user/agent elements toggle; others are display-only | PD-CTX-AF-008 | ✅ |
+| Complete agent responses only (no live `agent_delta` stream) | PD-CTX-AF-009 | ✅ |
+| Title strip (`context · <session>`) via the surface host | PD-CTX-AF-010 | ✅ |
 
 ### Behavior contracts (GIVEN/WHEN/THEN)
 
@@ -2096,19 +2111,27 @@ Use-case: Seed then live (PD-CTX-AF-001 / PD-CTX-AF-002)
 
 - GIVEN a session with a recorded exchange
 - WHEN a context surface attaches
-- THEN it renders the prior exchange, and live events stream in thereafter
+- THEN it renders the prior exchange as collapsed elements, and complete events
+  stream in thereafter
 
-Use-case: Processing-state line (PD-CTX-AF-005)
+Use-case: Enable/disable an element (PD-CTX-AF-006)
+
+- GIVEN a context surface with a selected agent-response element
+- WHEN the user presses space
+- THEN the element's enabled state flips, the surface dims it, and the toggle is
+  sent to the orchestrator (excluded from the next assembled context)
+
+Use-case: Non-toggleable element (PD-CTX-AF-008)
+
+- GIVEN a context surface with a selected thinking element
+- WHEN the user presses space
+- THEN nothing is toggled (thinking never enters context)
+
+Use-case: Collapsed by default (PD-CTX-AF-003)
 
 - GIVEN a context surface
-- WHEN a processing-state event arrives
-- THEN the status line shows the state and phase (not a widget)
-
-Use-case: Collapsed reasoning (PD-CTX-AF-003)
-
-- GIVEN a context surface
-- WHEN a thinking event arrives
-- THEN its body is collapsed (not shown until expanded)
+- WHEN any element arrives
+- THEN it renders collapsed until the user expands it
 
 ## PD-CTXVIZ — Context Visualizer (TUI)
 

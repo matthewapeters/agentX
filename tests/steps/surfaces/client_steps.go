@@ -21,7 +21,10 @@ type fakeSurface struct {
 
 func (f *fakeSurface) Apply(state.Event)       { f.applied++ }
 func (f *fakeSurface) SetSize(w, h int)        { f.width = w; f.height = h }
-func (f *fakeSurface) Key(msg tea.KeyPressMsg) { f.keys = append(f.keys, msg.String()) }
+func (f *fakeSurface) Key(msg tea.KeyPressMsg) tea.Cmd {
+	f.keys = append(f.keys, msg.String())
+	return nil
+}
 func (f *fakeSurface) View() string            { return "" }
 
 type clientWorld struct {

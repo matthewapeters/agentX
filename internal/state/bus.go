@@ -43,7 +43,7 @@ func (b *Bus) Subscribe() *Subscription {
 // Publish stamps ev with the next monotonic ordinal and enqueues it to every
 // current subscriber in subscription order. Stamping at publish (rather than at
 // disk write) means the live event and its persisted copy share one identity.
-func (b *Bus) Publish(ev Event) {
+func (b *Bus) Publish(ev Event) uint64 {
 	ev.Ordinal = b.ordinal.Add(1)
 	b.mu.Lock()
 	subs := make([]*Subscription, 0, len(b.subs))
@@ -54,6 +54,7 @@ func (b *Bus) Publish(ev Event) {
 	for _, s := range subs {
 		s.enqueue(ev)
 	}
+	return ev.Ordinal
 }
 
 // Subscription delivers events to one consumer in published order via C.

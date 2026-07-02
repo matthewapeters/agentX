@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,13 @@ type fakeProvider struct {
 	history      []state.Event
 	wm           session.WorkingMemory
 	ctxReport    session.ContextReport
+	toggled      []toggleRecord
+}
+
+// toggleRecord captures a SetEventEnabled call for assertion.
+type toggleRecord struct {
+	ordinal uint64
+	enabled bool
 }
 
 func (p *fakeProvider) Bus() *state.Bus                        { return p.bus }
@@ -129,6 +137,13 @@ func (p *fakeProvider) ContextBreakdown() (session.ContextReport, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.ctxReport, nil
+}
+
+func (p *fakeProvider) SetEventEnabled(ordinal uint64, enabled bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.toggled = append(p.toggled, toggleRecord{ordinal: ordinal, enabled: enabled})
+	return nil
 }
 
 func (p *fakeProvider) decision() string {
@@ -277,6 +292,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^reading working memory shows "([^"]*)" disabled$`, w.wmShowsDisabled)
 	sc.Step(`^reading working memory has no "([^"]*)" fact$`, w.wmHasNo)
 	sc.Step(`^the working-memory mutation is rejected as "([^"]*)"$`, w.wmRejected)
+	sc.Step(`^the client toggles element (\d+) to enabled (true|false)$`, w.toggleElement)
+	sc.Step(`^the provider recorded a toggle for ordinal (\d+) enabled (true|false)$`, w.providerToggled)
 	sc.Step(`^the launch succeeds$`, w.launchSucceeds)
 	sc.Step(`^the launched surface kind is "([^"]*)"$`, w.launchedKind)
 	sc.Step(`^the launched surface appears in the registry$`, w.launchedInRegistry)
@@ -715,6 +732,20 @@ func (w *transportWorld) post(path string, body any) error {
 	w.respStatus = resp.StatusCode
 	w.respBody = data
 	return nil
+}
+
+func (w *transportWorld) toggleElement(ordinal uint64, enabled string) error {
+	return w.wmClient().SetEventEnabled(context.Background(), w.token.Raw(), ordinal, enabled == "true")
+}
+
+func (w *transportWorld) providerToggled(ordinal uint64, enabled string) error {
+	w.prov.mu.Lock()
+	defer w.prov.mu.Unlock()
+	want := toggleRecord{ordinal: ordinal, enabled: enabled == "true"}
+	if slices.Contains(w.prov.toggled, want) {
+		return nil
+	}
+	return fmt.Errorf("provider did not record toggle %+v; got %+v", want, w.prov.toggled)
 }
 
 func (w *transportWorld) postRegisterValid() error {

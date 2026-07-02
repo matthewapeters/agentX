@@ -50,6 +50,10 @@ type Provider interface {
 	// ContextBreakdown reports the assembled context window's composition by
 	// content class for the read-only context-visualizer surface (SS-7).
 	ContextBreakdown() (session.ContextReport, error)
+
+	// SetEventEnabled toggles whether a conversation element (by ordinal) folds
+	// into the agent's upcoming context — the context surface's management path.
+	SetEventEnabled(ordinal uint64, enabled bool) error
 }
 
 // Server is the loopback HTTP/SSE transport for external surfaces.
@@ -92,6 +96,9 @@ func (s *Server) routes() {
 
 	// Context composition (read-only visualizer, SS-7).
 	s.mux.HandleFunc("GET /context", s.handleContext)
+
+	// Enable/disable a conversation element's context participation (context surface).
+	s.mux.HandleFunc("POST /events/{ordinal}/enabled", s.handleEventEnabled)
 }
 
 // Handler exposes the routes for in-process testing (httptest).
@@ -210,6 +217,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if ev.Ordinal <= boundary {
+				continue
+			}
+			// agent_delta is a transient chunk for the in-process chat window's
+			// live typing effect; external surfaces receive only the complete
+			// agent_response, so they never see the streaming deltas.
+			if ev.ContentType == state.ContentAgentDelta {
 				continue
 			}
 			writeEvent(w, flusher, ev)

@@ -22,6 +22,9 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^an output panel sized (\d+) by (\d+)$`, w.panelSized)
 	sc.Step(`^a user_prompt event "([^"]*)" is applied$`, w.applyUserPrompt)
 	sc.Step(`^an agent_response event "([^"]*)" is applied$`, w.applyAgentResponse)
+	sc.Step(`^an agent_delta event "([^"]*)" is applied$`, w.applyAgentDelta)
+	sc.Step(`^a disabled agent_response event "([^"]*)" is applied$`, w.applyAgentResponseDisabled)
+	sc.Step(`^the output panel is a navigable summary$`, w.summaryMode)
 	sc.Step(`^a thinking event "([^"]*)" is applied$`, w.applyThinking)
 	sc.Step(`^a tool_call event for "([^"]*)" is applied$`, w.applyToolCall)
 	sc.Step(`^(\d+) numbered user events are applied$`, w.applyNumbered)
@@ -59,12 +62,29 @@ func (w *outputWorld) panelSized(width, height int) error {
 }
 
 func (w *outputWorld) applyUserPrompt(text string) error {
-	w.panel.Apply(state.Event{ContentType: state.ContentUserPrompt, Payload: map[string]any{"text": text}})
+	w.panel.Apply(state.Event{ContentType: state.ContentUserPrompt, Enabled: true, Ordinal: 1, Payload: map[string]any{"text": text}})
 	return nil
 }
 
 func (w *outputWorld) applyAgentResponse(text string) error {
-	w.panel.Apply(state.Event{ContentType: state.ContentAgentResponse, Payload: map[string]any{"text": text}})
+	w.panel.Apply(state.Event{ContentType: state.ContentAgentResponse, Enabled: true, Ordinal: 2, Payload: map[string]any{"text": text}})
+	return nil
+}
+
+// applyAgentResponseDisabled applies a complete agent response that has been toggled
+// off (Enabled=false), so the panel renders it disabled (⊘, muted).
+func (w *outputWorld) applyAgentResponseDisabled(text string) error {
+	w.panel.Apply(state.Event{ContentType: state.ContentAgentResponse, Enabled: false, Ordinal: 3, Payload: map[string]any{"text": text}})
+	return nil
+}
+
+func (w *outputWorld) summaryMode() error {
+	w.panel.SetCollapseByDefault(true)
+	return nil
+}
+
+func (w *outputWorld) applyAgentDelta(text string) error {
+	w.panel.Apply(state.Event{ContentType: state.ContentAgentDelta, Payload: map[string]any{"text": text}})
 	return nil
 }
 
