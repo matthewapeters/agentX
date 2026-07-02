@@ -1,0 +1,6 @@
+#! /bin/bash
+
+# Generate a random session string
+export AX_SESSION_STRING=$(head -c25 /dev/random|base64)
+
+zellij --layout ~/.config/agentx/agentx.kdl

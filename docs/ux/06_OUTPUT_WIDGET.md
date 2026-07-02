@@ -10,12 +10,16 @@ and the PD-01 message-entry rendering for the Bubble Tea chat surface._
 
 ## Purpose
 
-Every renderable element in the output panel — user prompt, classification,
-thinking, tool call, tool result, assistant response, error, system notice — is a
-**collapsible output widget**. The widget guarantees a constant, scannable
-transcript: a one-line header is always visible, and any longer body is collapsed
-by default, bounded to a configurable height, scrollable in place, and framed by a
-box border.
+Every renderable element in the output panel — user prompt, thinking, tool call,
+tool result, assistant response, error, system notice — is a **collapsible output
+widget**. The widget guarantees a constant, scannable transcript: a one-line header
+is always visible, and any longer body is collapsed by default, bounded to a
+configurable height, scrollable in place, and framed by a box border.
+
+**Classification is the one exception:** its payload is always a single line of
+metadata (`intent → route`), so it renders **flat** — `⚙ classification · <intent →
+route>` on one row, no box — rather than paying for a three-row frame. It is still
+selectable (tinted by selection like a border).
 
 ## Component mapping (Bubble Tea / Bubbles / Lipgloss)
 

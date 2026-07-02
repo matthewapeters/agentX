@@ -27,6 +27,7 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the output panel is a navigable summary$`, w.summaryMode)
 	sc.Step(`^the output panel shows enable/disable state$`, w.showsToggleState)
 	sc.Step(`^a thinking event "([^"]*)" is applied$`, w.applyThinking)
+	sc.Step(`^a classification event "([^"]*)" is applied$`, w.applyClassification)
 	sc.Step(`^a tool_call event for "([^"]*)" is applied$`, w.applyToolCall)
 	sc.Step(`^(\d+) numbered user events are applied$`, w.applyNumbered)
 	sc.Step(`^entry (\d+) is toggled$`, w.toggleEntry)
@@ -91,6 +92,11 @@ func (w *outputWorld) showsToggleState() error {
 
 func (w *outputWorld) applyAgentDelta(text string) error {
 	w.panel.Apply(state.Event{ContentType: state.ContentAgentDelta, Payload: map[string]any{"text": text}})
+	return nil
+}
+
+func (w *outputWorld) applyClassification(text string) error {
+	w.panel.Apply(state.Event{ContentType: state.ContentClassification, Payload: map[string]any{"text": text}})
 	return nil
 }
 

@@ -574,6 +574,12 @@ func (m *Model) scrollSelectedIntoView() {
 // line (narrative kinds) or nothing (noise kinds); an expanded box shows the capped,
 // scrollable body.
 func (m *Model) renderWidget(w *widget, selected bool) []string {
+	// Classification is always a single line of metadata, so it renders flat (no
+	// box): "⚙ classification · <intent → route>", tinted by selection like a border.
+	if w.kind == kindClassification {
+		return []string{m.flatLine(w, selected)}
+	}
+
 	innerW := m.contentWidth() - 2
 	if innerW < 1 {
 		return []string{truncateWord(w.title, m.contentWidth())}
@@ -601,6 +607,25 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 		title = box + w.title
 	}
 	return m.boxify(title, rows, innerW, selected)
+}
+
+// flatLine renders a borderless one-row widget ("<title> · <body>"), tinted by the
+// selection state the way a box border would be. Used for classification, whose
+// payload is always a single line of metadata.
+func (m *Model) flatLine(w *widget, selected bool) string {
+	line := w.title
+	if b := oneLine(w.body); b != "" {
+		line += " · " + b
+	}
+	line = truncateWord(line, m.contentWidth())
+	code := m.inactive
+	if selected && m.focused {
+		code = m.active
+	}
+	if code == "" {
+		return line
+	}
+	return "\x1b[" + code + "m" + line + "\x1b[0m"
 }
 
 // collapsedPreview returns the first wrapped body line, marked with an ellipsis when

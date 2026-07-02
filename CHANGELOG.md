@@ -9,6 +9,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The **classification widget renders flat** — `⚙ classification · <intent →
+  route>` on a single line, no box — instead of a three-row bordered widget, since
+  its payload is always one line of metadata. Frees two transcript rows per turn
+  and matches the output-widget spec's "single greyed line" intent. Still
+  selectable.
 - **Agent responses are now streamed and stored as two distinct kinds.** The live
   answer streams as transient `agent_delta` chunks (in-process bus, chat window's
   typing effect only — never persisted, never sent to external surfaces); when it

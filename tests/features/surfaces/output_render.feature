@@ -49,6 +49,15 @@ Feature: Output panel event rendering
     Then no output line is wider than 20
     And the output view contains "lazy dog"
 
+  # use-case: UC-OUTPUT-CLASSIFICATION  (classification is one line, no box)
+  # Classification always holds a single line of metadata, so it renders flat —
+  # emoji + title + text on one line — instead of a three-row box.
+  Scenario: Classification renders as a single flat line
+    Given an output panel sized 60 by 10
+    When a classification event "greeting → respond_directly" is applied
+    Then the output view contains "⚙ classification · greeting → respond_directly"
+    And the output view does not contain "┌"
+
   # use-case: UC-OUTPUT-CHECKBOX  (context surface: enable/disable checkbox)
   # In toggle-state mode, toggleable elements carry an enabled checkbox left of the
   # emoji: [x] enabled (in context), [ ] disabled (withheld) — orthogonal to selection.
