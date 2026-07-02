@@ -48,6 +48,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `agentx --session <name>` (or `-s`) names the booted session instead of the
+  generated adjective-noun, so scripted multiplexer layouts (zellij/tmux) get
+  predictable session names to launch peer surfaces against. A collision is
+  disambiguated with a numeric suffix (`<name>-2`, …). Absent the flag, a name is
+  generated as before. New `cli.Command.SessionName`, `app.Options.SessionName`,
+  `runtime.Settings.SessionName`.
 - The **context surface** is now the context-management surface: selecting a
   user-prompt or agent-response element and pressing **space** toggles whether it
   participates in the agent's upcoming context. The orchestrator applies the toggle

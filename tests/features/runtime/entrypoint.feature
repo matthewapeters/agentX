@@ -17,6 +17,22 @@ Feature: Application composition and entrypoint
     When the arguments "--version" are parsed
     Then the parsed command requests version output
 
+  # use-case: UC-CLI-SESSION
+  # A --session name lets the user boot predictable session names for scripted
+  # multiplexer layouts (zellij/tmux), instead of the generated adjective-noun.
+  @unit
+  Scenario: Session name flag is parsed
+    When the arguments "--session my-layout" are parsed
+    Then the parsed session name is "my-layout"
+
+  # use-case: UC-APP-SESSION-NAME
+  @integration
+  Scenario: A provided session name names the session
+    Given app options with a temp config selecting model "testmodel"
+    And the session name option is "top-pane"
+    When the app builds the runtime
+    Then the active session name is "top-pane"
+
   # use-case: UC-APP-BUILD
   @integration
   Scenario: Build starts the orchestrator from resolved config

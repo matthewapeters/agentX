@@ -24,6 +24,9 @@ var _ transporthttp.Provider = (*Orchestrator)(nil)
 type Settings struct {
 	// SessionRoot is the directory under which sessions are stored.
 	SessionRoot string
+	// SessionName names the session; empty generates a default adjective-noun name.
+	// A collision is disambiguated with a numeric suffix (see session.uniqueName).
+	SessionName string
 	// OllamaHost and OllamaModel configure the model adapter (used by the prompt
 	// cycle in CHT-C*).
 	OllamaHost  string
@@ -162,7 +165,11 @@ func (o *Orchestrator) Start() error {
 	}
 
 	o.store = session.NewStore(o.settings.SessionRoot)
-	id, err := o.store.Create()
+	var createOpts []session.Option
+	if name := strings.TrimSpace(o.settings.SessionName); name != "" {
+		createOpts = append(createOpts, session.WithNamer(func() string { return name }))
+	}
+	id, err := o.store.Create(createOpts...)
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}

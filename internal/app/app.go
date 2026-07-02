@@ -23,6 +23,9 @@ type Options struct {
 	Paths *config.Paths
 	// SessionRoot overrides the session storage root. Empty derives it from Paths.
 	SessionRoot string
+	// SessionName names the booted session (e.g. from --session). Empty generates
+	// the default adjective-noun name.
+	SessionName string
 	// Logo is the bootstrap banner shown as the first element of the output
 	// surface. Empty shows no banner.
 	Logo string
@@ -82,6 +85,7 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 
 	orc := runtime.New(runtime.Settings{
 		SessionRoot:           root,
+		SessionName:           opts.SessionName,
 		OllamaHost:            cfg.OllamaHost(),
 		OllamaModel:           cfg.OllamaModel(),
 		Instructions:          instructions,

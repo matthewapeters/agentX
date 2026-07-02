@@ -138,7 +138,10 @@ Example layout:
   Human-readable naming guidance (v1):
 
   - use adjective-noun generation for default names.
-  - ensure uniqueness with deterministic suffixing when needed.
+  - accept an explicit name via `agentx --session <name>` (for scripted
+    multiplexer layouts); absent the flag, generate the default.
+  - ensure uniqueness with deterministic suffixing when needed (applies to both
+    generated and explicitly provided names).
 
 ## JSON Event Envelope
 

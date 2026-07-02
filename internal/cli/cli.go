@@ -1,6 +1,9 @@
 package cli
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Command is the parsed result of the agentx command line.
 type Command struct {
@@ -9,6 +12,9 @@ type Command struct {
 	// Launch, when non-nil, requests `agentx surface launch` (canonical or alias
 	// form) instead of the default runtime + chat surface.
 	Launch *LaunchArgs
+	// SessionName, when set, names the booted session instead of the generated
+	// adjective-noun — so scripted multiplexer layouts get predictable names.
+	SessionName string
 }
 
 // Parse interprets process arguments (excluding the program name). The default
@@ -32,12 +38,21 @@ func Parse(args []string) (Command, error) {
 	}
 
 	var cmd Command
-	for _, a := range args {
-		switch a {
-		case "--version", "-v":
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--version" || a == "-v":
 			cmd.ShowVersion = true
-		case "-h", "--help":
+		case a == "-h" || a == "--help":
 			// Help is handled by the caller; treat as no-op here.
+		case a == "--session" || a == "-s":
+			if i+1 >= len(args) {
+				return Command{}, fmt.Errorf("%s requires a value", a)
+			}
+			i++
+			cmd.SessionName = args[i]
+		case strings.HasPrefix(a, "--session="):
+			cmd.SessionName = strings.TrimPrefix(a, "--session=")
 		default:
 			return Command{}, fmt.Errorf("unknown argument %q", a)
 		}
