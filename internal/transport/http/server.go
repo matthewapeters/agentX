@@ -46,6 +46,10 @@ type Provider interface {
 	SetFact(key, value string) error
 	DeleteFact(key string) error
 	SetFactEnabled(key string, enabled bool) error
+
+	// ContextBreakdown reports the assembled context window's composition by
+	// content class for the read-only context-visualizer surface (SS-7).
+	ContextBreakdown() (session.ContextReport, error)
 }
 
 // Server is the loopback HTTP/SSE transport for external surfaces.
@@ -85,6 +89,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /working-memory/set", s.handleWMSet)
 	s.mux.HandleFunc("POST /working-memory/delete", s.handleWMDelete)
 	s.mux.HandleFunc("POST /working-memory/enabled", s.handleWMEnabled)
+
+	// Context composition (read-only visualizer, SS-7).
+	s.mux.HandleFunc("GET /context", s.handleContext)
 }
 
 // Handler exposes the routes for in-process testing (httptest).

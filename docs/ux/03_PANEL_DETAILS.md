@@ -2106,3 +2106,64 @@ Use-case: Collapsed reasoning (PD-CTX-AF-003)
 - GIVEN a context surface
 - WHEN a thinking event arrives
 - THEN its body is collapsed (not shown until expanded)
+
+## PD-CTXVIZ — Context Visualizer (TUI)
+
+> **TUI surface (M2, SS-7).** A read-only peer surface launched as a separate
+> process (`agentx surface launch context-visualizer`) that polls the assembled
+> context window's composition and renders it as a budget meter. It re-authors the
+> legacy GUI ContextMeterWidget (PD-10) and ContextKeyWidget (PD-12) for the TUI.
+> See `docs/build-plan/06_system_surfaces_backlog.md`.
+
+### Behaviour
+
+The surface polls `GET /context` (every 2 s) for a per-content-class breakdown of
+the standing context window and draws one bar per class in PD-10 band order, using
+the app's content emoji so it reads consistently with the output widgets: working
+memory 🧠, instructions 📜, user 👤, attachments 📎, thinking 💭, assistant 🤖,
+tools 🔧. A remaining-capacity ghost band (`░`) and a total line complete the meter,
+all measured against the model's context window — read from Ollama's `/api/show`
+(`<architecture>.context_length`), the same window the runtime requests as
+`num_ctx`. Token figures are a `chars ÷ 4` estimate (Ollama exposes no universal
+local tokenizer), labelled "est.". When the model reports no context length the
+meter drops the percentages and the ghost band.
+
+It is **strictly read-only**: it holds an event stream only for connection presence
+(SS-4) and performs no writes. The enable/disable-a-turn management affordance lives
+on the context pane (PD-CTX); the meter only *hints* at what to prune. Classes not
+yet fed into the assembled context (attachments, thinking, tools today) render as
+zero rather than being hidden, so the legend stays complete. Quitting (`Ctrl-C`/`q`)
+marks the surface stopped.
+
+### Affordance Inventory
+
+| Affordance | ID | Status |
+|-----------|-----|--------|
+| Per-class bars in band order with content emoji | PD-CTXVIZ-AF-001 | ✅ |
+| Bars sized against the model's context window | PD-CTXVIZ-AF-002 | ✅ |
+| Remaining-capacity ghost band | PD-CTXVIZ-AF-003 | ✅ |
+| Total line: est. tokens / window (percent) · model | PD-CTXVIZ-AF-004 | ✅ |
+| Near-limit (≥80%) / full (≥100%) annotation | PD-CTXVIZ-AF-005 | ✅ |
+| Graceful degrade when the window is unknown | PD-CTXVIZ-AF-006 | ✅ |
+| Strictly read-only: no mutation affordance | PD-CTXVIZ-AF-007 | ✅ |
+| Live refresh via poll (agent turns, WM edits appear) | PD-CTXVIZ-AF-008 | ✅ |
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: Per-class meter (PD-CTXVIZ-AF-001 / PD-CTXVIZ-AF-002)
+
+- GIVEN a context breakdown with working-memory and user contributions and a known window
+- WHEN the visualizer renders
+- THEN it shows a bar per content class and a remaining band against the window
+
+Use-case: Window unknown (PD-CTXVIZ-AF-006)
+
+- GIVEN a breakdown whose model reports no context length
+- WHEN the visualizer renders
+- THEN it shows "window unknown" and omits the percentages and ghost band
+
+Use-case: Read-only (PD-CTXVIZ-AF-007)
+
+- GIVEN a context visualizer
+- WHEN a mutation key (e.g. `a`) is pressed
+- THEN nothing changes — no editor opens; management is directed to the context pane

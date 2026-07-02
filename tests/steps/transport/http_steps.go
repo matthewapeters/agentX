@@ -43,6 +43,7 @@ type fakeProvider struct {
 	lastDecision string
 	history      []state.Event
 	wm           session.WorkingMemory
+	ctxReport    session.ContextReport
 }
 
 func (p *fakeProvider) Bus() *state.Bus                        { return p.bus }
@@ -122,6 +123,12 @@ func (p *fakeProvider) SetFactEnabled(key string, enabled bool) error {
 		return fmt.Errorf("unknown fact %q", key)
 	}
 	return nil
+}
+
+func (p *fakeProvider) ContextBreakdown() (session.ContextReport, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.ctxReport, nil
 }
 
 func (p *fakeProvider) decision() string {

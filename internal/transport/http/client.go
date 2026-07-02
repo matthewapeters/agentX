@@ -204,6 +204,28 @@ func (c *Client) WorkingMemory(ctx context.Context) ([]session.Fact, error) {
 	return body.Facts, nil
 }
 
+// ContextBreakdown fetches the assembled context window's composition by content
+// class (GET /context) for the read-only context-visualizer surface.
+func (c *Client) ContextBreakdown(ctx context.Context) (session.ContextReport, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+"/context", nil)
+	if err != nil {
+		return session.ContextReport{}, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return session.ContextReport{}, &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return session.ContextReport{}, attachErrorFrom(resp)
+	}
+	var report session.ContextReport
+	if err := json.NewDecoder(resp.Body).Decode(&report); err != nil {
+		return session.ContextReport{}, &AttachError{Category: "transport", Message: err.Error()}
+	}
+	return report, nil
+}
+
 // SetFact adds or edits a working-memory fact (POST /working-memory/set).
 func (c *Client) SetFact(ctx context.Context, token, key, value string) error {
 	return c.postWM(ctx, token, "/working-memory/set", map[string]any{"key": key, "value": value})

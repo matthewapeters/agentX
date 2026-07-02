@@ -36,3 +36,25 @@ Feature: Ollama chat adapter
     Given a stub Ollama server that returns HTTP 500
     When a chat request for model "test" is sent with prompt "hi"
     Then the chat returns an error
+
+  # use-case: UC-OLLAMA-CTXLEN
+  # The model's max context window is read from /api/show model_info, keyed by
+  # the model's own architecture (SS-7: visualizer denominator + chat num_ctx).
+  Scenario: Context length is read from the model's architecture
+    Given a stub Ollama server reporting architecture "qwen2" with context length 32768
+    When the context length for model "test" is fetched
+    Then the reported context length is 32768
+
+  # use-case: UC-OLLAMA-CTXLEN
+  # variant: missing model_info
+  Scenario: Context length lookup fails when unreported
+    Given a stub Ollama server listing model "test"
+    When the context length for model "test" is fetched
+    Then the context length lookup fails
+
+  # use-case: UC-OLLAMA-NUMCTX
+  # The requested context window reaches Ollama as options.num_ctx so the model
+  # uses its full window instead of the small server default.
+  Scenario: Chat sends the context window as num_ctx
+    When a chat request for model "test" is sent with prompt "hi" and context window 8192
+    Then the chat request set num_ctx to 8192

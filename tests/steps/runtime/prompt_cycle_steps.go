@@ -27,6 +27,7 @@ type stubModel struct {
 	err         error
 	block       bool
 	captured    *[]prompting.Message
+	ctxLen      int // reported context window (0 → ContextLength errors)
 }
 
 func (s stubModel) Chat(ctx context.Context, _ string, messages []prompting.Message, onDelta, onThink func(string)) (string, error) {
@@ -56,6 +57,13 @@ func (s stubModel) Chat(ctx context.Context, _ string, messages []prompting.Mess
 }
 
 func (s stubModel) Ready(context.Context, string) error { return s.err }
+
+func (s stubModel) ContextLength(context.Context, string) (int, error) {
+	if s.ctxLen <= 0 {
+		return 0, fmt.Errorf("stub: no context length")
+	}
+	return s.ctxLen, nil
+}
 
 type promptCycleWorld struct {
 	dir string

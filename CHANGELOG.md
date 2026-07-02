@@ -30,6 +30,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added the **context-visualizer** surface (SS-7): a read-only budget meter that
+  polls the orchestrator's assembled context composition and renders one bar per
+  content class (working memory 🧠, instructions 📜, user 👤, attachments 📎,
+  thinking 💭, assistant 🤖, tools 🔧) plus a remaining-capacity band, measured
+  against the model's context window. Launch with `agentx surface launch
+  context-visualizer`. It performs no writes — the enable/disable management
+  affordance lives on the context pane; the meter only hints at what to prune.
+  Token figures are a `chars ÷ 4` estimate. New `GET /context` endpoint,
+  `session.ContextReport`/`ContextComponent`, `Orchestrator.ContextBreakdown`,
+  `internal/surfaces/contextviz`. Re-authors legacy PD-10 (ContextMeterWidget).
+- The Ollama adapter now reads a model's **maximum context window** from
+  `POST /api/show` (`ollama.Client.ContextLength`, cached per model) and sets
+  `options.num_ctx` on every chat to that window, so the model uses its full
+  context instead of Ollama's small server default — and the visualizer measures
+  the budget against the window actually enforced. A lookup failure falls back to
+  the default window (num_ctx unset).
 - Added flagless surface launch with on-disk token discovery (SS-5), making
   attach-over-SSH first-class without any clipboard. The orchestrator now publishes the
   raw attach token to a `0600` `attach-token` file beside `transport.json` (removed on

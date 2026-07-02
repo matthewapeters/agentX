@@ -30,6 +30,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerClientSteps(sc)
 	registerContextSteps(sc)
 	registerWorkMemorySteps(sc)
+	registerContextVizSteps(sc)
 }
 
 // registerChatSteps wires the chat-surface layout steps (CHT-B1).

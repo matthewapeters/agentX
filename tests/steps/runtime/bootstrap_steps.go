@@ -37,6 +37,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerApprovalSteps(sc)
 	registerToolCycleSteps(sc)
 	registerTransportLifecycleSteps(sc)
+	registerContextBreakdownSteps(sc)
 }
 
 // registerHarnessSteps wires the harness smoke steps.

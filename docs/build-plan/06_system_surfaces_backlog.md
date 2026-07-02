@@ -190,7 +190,7 @@ Each reuses the SS-2 framework; each is its own increment with re-authored TUI s
 | Files browser | PD-11 FileBrowser | filesystem read access; directory tree model |
 | Config surface | PD-07 SettingsSurface | config read endpoint; later: write-back + restart-required semantics |
 | Context-history | (new) | session-list + reload-from-log (ties to CTX-1 follow-up) |
-| Context-visualizer | PD-10 ContextMeterWidget / PD-08 | context-window accounting; enable/disable affordances |
+| Context-visualizer (done, SS-7) | PD-10 ContextMeterWidget / PD-08 | read-only context-window accounting by content class; measured against the model's context length (`/api/show` → `num_ctx`). Enable/disable is **not** here — it belongs to the context pane (PD-CTX); the meter only hints. See PD-CTXVIZ. |
 | Working-memory editor | PD-03 (Working Memory) | working_memory.json read/edit over the transport |
 
 Also deferred: surface→surface coordination, attachment chips, plan/DAG visualizer,

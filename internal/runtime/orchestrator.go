@@ -114,6 +114,7 @@ type Orchestrator struct {
 	started   bool
 	accepting bool
 	history   []prompting.Message
+	ctxWindow int // cached model context length (tokens); 0 = not yet resolved
 }
 
 // Option configures an Orchestrator at construction time.
@@ -519,6 +520,81 @@ func (o *Orchestrator) mutateWorkingMemory(fn func(*session.WorkingMemory) error
 		return err
 	}
 	return o.store.SaveWorkingMemory(o.id.ID, wm)
+}
+
+// ContextBreakdown reports the composition of the session's standing context
+// window by content class (working memory, instructions, user, assistant) for the
+// read-only context-visualizer surface. Sizes are the exact bytes withContext
+// would assemble; the window is the model's context length. Content classes not
+// yet fed into context (attachments, thinking, tools) are omitted here and render
+// as zero on the surface.
+func (o *Orchestrator) ContextBreakdown() (session.ContextReport, error) {
+	comps := make([]session.ContextComponent, 0, 4)
+
+	// Working memory (band 0), the enabled facts rendered as a system message.
+	if wm, ok := o.workingMemoryMessage(); ok {
+		comps = append(comps, session.ContextComponent{Class: "working-memory", Chars: len(wm.Content)})
+	}
+	// Instructions (Layer 0): the assembler's standing system prompt.
+	if o.assembler != nil {
+		for _, m := range o.assembler.Assemble("") {
+			if m.Role == "system" && m.Content != "" {
+				comps = append(comps, session.ContextComponent{Class: "instructions", Chars: len(m.Content)})
+			}
+		}
+	}
+	// Enabled conversation history, summed by role into user and assistant classes.
+	var userChars, asstChars int
+	for _, m := range o.historyMessages() {
+		switch m.Role {
+		case "user":
+			userChars += len(m.Content)
+		case "assistant":
+			asstChars += len(m.Content)
+		}
+	}
+	if userChars > 0 {
+		comps = append(comps, session.ContextComponent{Class: "user", Chars: userChars})
+	}
+	if asstChars > 0 {
+		comps = append(comps, session.ContextComponent{Class: "assistant", Chars: asstChars})
+	}
+
+	o.mu.Lock()
+	model := o.settings.OllamaModel
+	o.mu.Unlock()
+	return session.ContextReport{
+		Model:        model,
+		WindowTokens: o.contextWindow(),
+		Components:   comps,
+	}, nil
+}
+
+// contextWindow returns the active model's context length in tokens, cached after
+// the first lookup (a fixed model property). A lookup failure returns 0 (unknown),
+// which the visualizer renders without a budget percentage.
+func (o *Orchestrator) contextWindow() int {
+	o.mu.Lock()
+	if o.ctxWindow > 0 {
+		w := o.ctxWindow
+		o.mu.Unlock()
+		return w
+	}
+	model, name := o.model, o.settings.OllamaModel
+	o.mu.Unlock()
+	if model == nil {
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	n, err := model.ContextLength(ctx, name)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	o.mu.Lock()
+	o.ctxWindow = n
+	o.mu.Unlock()
+	return n
 }
 
 // withContext folds working memory and enabled prior-turn history into an
