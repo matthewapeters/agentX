@@ -224,6 +224,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case flashOffMsg:
 		m.flashing = false
 		return m, nil
+	case tea.KeyboardEnhancementsMsg:
+		// The terminal answered the enhancement query: if it disambiguates modified
+		// keys, Shift+Enter will reach us distinctly, so advertise it as the
+		// soft-newline. Otherwise the terminal-agnostic Alt+Enter default stands.
+		// (Terminals without support never send this message.)
+		if msg.SupportsKeyDisambiguation() {
+			m.input.SetNewlineKey("shift+enter")
+		}
+		return m, nil
 	case tea.MouseWheelMsg:
 		// Forwarded to the output viewport; only delivered when the program
 		// enables the mouse (off by default to preserve native text selection).

@@ -40,6 +40,39 @@ Feature: Input panel controls
     And the user types "b"
     Then the input value is "a\nb"
 
+  # use-case: UC-INPUT-NEWLINE
+  # Alt+Enter is the terminal-agnostic soft-newline (works without key
+  # disambiguation, unlike Shift+Enter).
+  Scenario: Alt+Enter inserts a newline
+    Given a focused input panel
+    When the user types "a"
+    And the user presses alt+enter
+    And the user types "b"
+    Then the input value is "a\nb"
+
+  # use-case: UC-INPUT-NEWLINE
+  Scenario: Ctrl+J inserts a newline
+    Given a focused input panel
+    When the user types "a"
+    And the user presses ctrl+j
+    And the user types "b"
+    Then the input value is "a\nb"
+
+  # use-case: UC-INPUT-NEWLINE-HINT
+  # The empty input shows a dim soft-newline hint that vanishes once the user types.
+  Scenario: The soft-newline hint shows on an empty input and clears on typing
+    Given a focused input panel sized 40 wide with max 8 rows
+    Then the rendered input hints "alt+enter for newline"
+    When the user types "x"
+    Then the rendered input shows no hint
+
+  # use-case: UC-INPUT-NEWLINE-HINT
+  # On a terminal that disambiguates modified keys, the hint advertises Shift+Enter.
+  Scenario: The hint upgrades to Shift+Enter when the terminal supports it
+    Given a focused input panel sized 40 wide with max 8 rows
+    And the terminal supports key disambiguation
+    Then the rendered input hints "shift+enter for newline"
+
   # use-case: UC-INPUT-STREAMING
   Scenario: Submit is disabled while streaming
     Given a focused input panel

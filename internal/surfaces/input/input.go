@@ -1,7 +1,8 @@
 // Package input is the chat surface's input panel: a multi-line prompt editor.
-// It supports typing, Enter-to-submit (disabled while streaming), Shift+Enter
-// newline, backspace, a stop/interrupt action while streaming, readline-style
-// history seeding (↑/↓), and a cursor with readline movement keys.
+// It supports typing, Enter-to-submit (disabled while streaming), a soft-newline
+// (Shift+Enter on terminals that disambiguate it, plus the terminal-agnostic
+// Alt+Enter / Ctrl+J aliases), backspace, a stop/interrupt action while streaming,
+// readline-style history seeding (↑/↓), and a cursor with readline movement keys.
 //
 // Long lines word-wrap to the panel width (no horizontal overflow) and the panel
 // grows vertically with its content up to a configured cap (input_max_lines), beyond
@@ -53,10 +54,23 @@ type Model struct {
 	history   []string
 	histIdx   int
 	draft     string
+	// newlineKey labels the soft-newline binding shown in the empty-buffer hint.
+	// It defaults to the terminal-agnostic "alt+enter"; the host upgrades it to
+	// "shift+enter" once the terminal reports key-disambiguation support.
+	newlineKey string
 }
 
 // New returns a focused input panel that starts one row tall and grows with content.
-func New() *Model { return &Model{focused: true, height: 1, maxHeight: 8} }
+func New() *Model { return &Model{focused: true, height: 1, maxHeight: 8, newlineKey: "alt+enter"} }
+
+// SetNewlineKey sets the soft-newline key label shown in the placeholder hint. The
+// host calls it with "shift+enter" when the terminal disambiguates modified keys,
+// otherwise the terminal-agnostic default ("alt+enter") stands.
+func (m *Model) SetNewlineKey(key string) {
+	if key != "" {
+		m.newlineKey = key
+	}
+}
 
 // SetSize sets the panel's render dimensions.
 func (m *Model) SetSize(width, height int) {
@@ -143,7 +157,10 @@ func (m *Model) Update(msg tea.KeyPressMsg) Action {
 		m.histIdx = len(m.history)
 		m.draft = ""
 		return ActionSubmit
-	case "shift+enter":
+	case "shift+enter", "alt+enter", "ctrl+j":
+		// Soft-newline. Shift+Enter only reaches us on terminals that disambiguate
+		// modified keys (Kitty protocol / modifyOtherKeys); Alt+Enter and Ctrl+J are
+		// the terminal-agnostic aliases that work everywhere.
 		if !m.streaming {
 			m.insert("\n")
 		}
@@ -396,6 +413,11 @@ func (m *Model) View() string {
 				line = overlayCursor(line, curCol)
 			}
 		}
+		// Placeholder hint: a dim soft-newline reminder on the empty first row that
+		// disappears as soon as the user types (and only while focused and idle).
+		if top+i == 0 && m.focused && m.value == "" && !m.streaming && m.newlineKey != "" {
+			line += dimHint(" " + m.newlineKey + " for newline")
+		}
 		gutter := " "
 		if len(rows) > m.height {
 			gutter = scrollbarCell(i, top, len(rows), m.height)
@@ -420,6 +442,10 @@ func (m *Model) cursorVisual(rows []visualRow) (int, int) {
 	}
 	return 0, prefixLen
 }
+
+// dimHint renders placeholder text in gray (SGR 90), matching the muted styling
+// used for non-content affordances.
+func dimHint(s string) string { return "\x1b[90m" + s + "\x1b[0m" }
 
 // overlayCursor wraps the rune at col in reverse video, extending the row with a
 // blank virtual cell when the cursor sits at or past the line's end.

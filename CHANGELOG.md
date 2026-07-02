@@ -9,6 +9,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The chat input now has a **terminal-agnostic soft-newline**: `Alt+Enter` (and
+  `Ctrl+J`) insert a newline on any terminal, alongside `Shift+Enter` which only
+  works where the terminal disambiguates modified keys (Kitty protocol /
+  modifyOtherKeys — already requested by default). The empty input shows a dim
+  placeholder hint (`alt+enter for newline`) that clears once you type; when the
+  terminal reports key-disambiguation support (`tea.KeyboardEnhancementsMsg`) the
+  chat upgrades the hint to `shift+enter for newline`. Fixes Shift+Enter
+  submitting instead of inserting a newline on terminals (e.g. VTE) that collapse
+  it to Enter. New `input.Model.SetNewlineKey`.
 - The chat input panel now **word-wraps** long text to the panel width instead of
   running off the terminal edge, and **grows vertically** with its content up to a
   configurable cap (`input_max_lines`, default 8); beyond the cap it windows the text

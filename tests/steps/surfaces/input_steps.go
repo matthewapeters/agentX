@@ -25,6 +25,11 @@ func registerInputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the user types "([^"]*)"$`, w.types)
 	sc.Step(`^the user presses enter$`, w.pressEnter)
 	sc.Step(`^the user presses shift\+enter$`, w.pressShiftEnter)
+	sc.Step(`^the user presses alt\+enter$`, w.pressAltEnter)
+	sc.Step(`^the user presses ctrl\+j$`, w.pressCtrlJ)
+	sc.Step(`^the terminal supports key disambiguation$`, w.supportsDisambiguation)
+	sc.Step(`^the rendered input hints "([^"]*)"$`, w.hints)
+	sc.Step(`^the rendered input shows no hint$`, w.showsNoHint)
 	sc.Step(`^the user presses esc$`, w.pressEsc)
 	sc.Step(`^the user presses up$`, w.pressUp)
 	sc.Step(`^the user presses down$`, w.pressDown)
@@ -108,6 +113,38 @@ func (w *inputWorld) pressEnter() error {
 
 func (w *inputWorld) pressShiftEnter() error {
 	w.panel.Update(tea.KeyPressMsg{Mod: tea.ModShift, Code: tea.KeyEnter})
+	return nil
+}
+
+func (w *inputWorld) pressAltEnter() error {
+	w.panel.Update(tea.KeyPressMsg{Mod: tea.ModAlt, Code: tea.KeyEnter})
+	return nil
+}
+
+func (w *inputWorld) pressCtrlJ() error {
+	w.panel.Update(tea.KeyPressMsg{Mod: tea.ModCtrl, Code: 'j'})
+	return nil
+}
+
+// supportsDisambiguation mirrors what the chat surface does on a terminal that
+// reports key-disambiguation support: it upgrades the soft-newline hint to
+// "shift+enter".
+func (w *inputWorld) supportsDisambiguation() error {
+	w.panel.SetNewlineKey("shift+enter")
+	return nil
+}
+
+func (w *inputWorld) hints(want string) error {
+	if !strings.Contains(w.panel.View(), want) {
+		return fmt.Errorf("rendered input does not hint %q; view:\n%s", want, w.panel.View())
+	}
+	return nil
+}
+
+func (w *inputWorld) showsNoHint() error {
+	if strings.Contains(w.panel.View(), "for newline") {
+		return fmt.Errorf("rendered input unexpectedly shows the newline hint")
+	}
 	return nil
 }
 

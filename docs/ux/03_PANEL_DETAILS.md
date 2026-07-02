@@ -383,8 +383,11 @@ THEN  the input value is "first revised"
 
 > **TUI-native affordances** (no Tkinter precedent). When the input panel is
 > focused it shows a text cursor and edits relative to it: typing inserts at the
-> cursor, Backspace deletes the rune before it, and Shift+Enter inserts a newline
-> at it. Movement keys follow readline. The buffer is treated as one logical line
+> cursor, Backspace deletes the rune before it, and a **soft-newline** inserts a
+> `\n` at it. The soft-newline binding is `Alt+Enter` (or `Ctrl+J`) on any
+> terminal, plus `Shift+Enter` on terminals that disambiguate modified keys; an
+> empty input shows a dim hint advertising whichever key applies (detected via
+> `tea.KeyboardEnhancementsMsg`). Movement keys follow readline. The buffer is treated as one logical line
 > (embedded newlines are ordinary characters), so Ctrl-A/Ctrl-E address the whole
 > buffer. A *word* is a maximal run of non-space runes; Alt-B lands on the start of
 > the prior word and Alt-F on the start of the next word. Source:
