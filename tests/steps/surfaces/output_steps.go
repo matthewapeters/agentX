@@ -59,6 +59,9 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the output view shows bolded "([^"]*)"$`, w.showsBold)
 	sc.Step(`^the output view shows inline code "([^"]*)"$`, w.showsCode)
 	sc.Step(`^the output view shows an h(\d) header "([^"]*)"$`, w.showsHeader)
+	sc.Step(`^the output view shows a bullet "([^"]*)"$`, w.showsBullet)
+	sc.Step(`^the output view shows an ordered marker "([^"]*)"$`, w.showsOrderedMarker)
+	sc.Step(`^the output view shows a blockquote "([^"]*)"$`, w.showsBlockquote)
 	sc.Step(`^the output has (\d+) assistant entry$`, w.assistantEntries)
 	sc.Step(`^no output line is wider than (\d+)$`, w.noLineWiderThan)
 }
@@ -95,6 +98,10 @@ const (
 	sgrH1    = "\x1b[1;4m"
 	sgrH2    = "\x1b[1m"
 	sgrH3    = "\x1b[4m"
+	sgrQuote = "\x1b[2m"
+
+	bulletGlyph = "•"
+	quoteGlyph  = "▎"
 )
 
 func (w *outputWorld) showsBold(text string) error {
@@ -121,6 +128,30 @@ func (w *outputWorld) showsHeader(level int, text string) error {
 	want := open + text + sgrReset
 	if !strings.Contains(w.panel.View(), want) {
 		return fmt.Errorf("output view does not render %q as an h%d header", text, level)
+	}
+	return nil
+}
+
+func (w *outputWorld) showsBullet(text string) error {
+	want := sgrBold + bulletGlyph + sgrReset + " " + text
+	if !strings.Contains(w.panel.View(), want) {
+		return fmt.Errorf("output view does not render %q as a bullet item", text)
+	}
+	return nil
+}
+
+func (w *outputWorld) showsOrderedMarker(marker string) error {
+	want := sgrBold + marker + sgrReset
+	if !strings.Contains(w.panel.View(), want) {
+		return fmt.Errorf("output view does not render %q as an ordered marker", marker)
+	}
+	return nil
+}
+
+func (w *outputWorld) showsBlockquote(text string) error {
+	want := sgrQuote + quoteGlyph + " " + text + sgrReset
+	if !strings.Contains(w.panel.View(), want) {
+		return fmt.Errorf("output view does not render %q as a blockquote", text)
 	}
 	return nil
 }

@@ -797,6 +797,10 @@ const (
 	sgrH1    = "\x1b[1;4m" // bold + underline
 	sgrH2    = "\x1b[1m"   // bold
 	sgrH3    = "\x1b[4m"   // underline
+	sgrQuote = "\x1b[2m"   // dim: a recessed blockquote
+
+	bulletGlyph = "•" // normalized unordered-list marker (-, *, + all fold to this)
+	quoteGlyph  = "▎" // blockquote gutter marker
 )
 
 // styleMarkdown applies Tier-1 markdown emphasis line by line, preserving newlines so
@@ -809,8 +813,11 @@ func styleMarkdown(body string) string {
 	return strings.Join(lines, "\n")
 }
 
-// styleLine styles one source line: an ATX header (#{1,3} then a space) styles the
-// whole line by level; any other line gets inline emphasis only.
+// styleLine styles one source line. An ATX header (#{1,3} then a space) styles the
+// whole line by level. Otherwise, leading block markers are recognized (Tier 2):
+// blockquotes (> ), unordered lists (-/*/+ ), and ordered lists (\d+. ). Their source
+// markers are replaced with styled glyphs and the remainder gets inline emphasis. Any
+// leading indentation is preserved so nested items keep their shape.
 func styleLine(line string) string {
 	n := 0
 	for n < len(line) && n < 3 && line[n] == '#' {
@@ -826,7 +833,37 @@ func styleLine(line string) string {
 		}
 		return open + styleInline(strings.TrimLeft(line[n+1:], " ")) + sgrReset
 	}
+
+	indent := line[:len(line)-len(strings.TrimLeft(line, " "))]
+	rest := line[len(indent):]
+
+	switch {
+	// Blockquote: "> text" → a dim, gutter-marked line.
+	case strings.HasPrefix(rest, "> "):
+		return indent + sgrQuote + quoteGlyph + " " + styleInline(rest[2:]) + sgrReset
+	// Unordered list: "-"/"*"/"+" then a space → a normalized bullet glyph.
+	case len(rest) >= 2 && (rest[0] == '-' || rest[0] == '*' || rest[0] == '+') && rest[1] == ' ':
+		return indent + sgrBold + bulletGlyph + sgrReset + " " + styleInline(rest[2:])
+	}
+	// Ordered list: "12. text" → keep the number, embolden the marker.
+	if m := orderedMarker(rest); m > 0 {
+		return indent + sgrBold + rest[:m] + sgrReset + " " + styleInline(rest[m+1:])
+	}
 	return styleInline(line)
+}
+
+// orderedMarker returns the length of a leading ordered-list marker ("12.") when s
+// begins with one or more digits, a dot, and a trailing space; otherwise 0. The space
+// at index m separates the marker from the content that starts at m+1.
+func orderedMarker(s string) int {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i > 0 && i+1 < len(s) && s[i] == '.' && s[i+1] == ' ' {
+		return i + 1
+	}
+	return 0
 }
 
 // styleInline consumes **bold** and `code` spans left to right, emitting SGR and

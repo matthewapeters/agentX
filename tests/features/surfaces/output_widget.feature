@@ -121,3 +121,39 @@ Feature: Collapsible output widgets
     Given an output panel sized 40 by 12
     When a user_prompt event "literal **stars** stay" is applied
     Then the output view contains "**stars**"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 2)
+  # Unordered list markers (-, *, +) fold to one bold bullet glyph; the item text
+  # still gets inline emphasis and the source marker is consumed.
+  Scenario: An assistant response renders unordered lists
+    Given an output panel sized 40 by 12
+    When an agent_response with body:
+      """
+      - first item
+      * second item
+      + third item
+      """
+    Then the output view shows a bullet "first item"
+    And the output view shows a bullet "second item"
+    And the output view shows a bullet "third item"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 2)
+  # Ordered list markers keep their number but the marker is emboldened.
+  Scenario: An assistant response renders ordered lists
+    Given an output panel sized 40 by 12
+    When an agent_response with body:
+      """
+      1. alpha
+      2. bravo
+      """
+    Then the output view shows an ordered marker "1."
+    And the output view shows an ordered marker "2."
+    And the output view contains "alpha"
+    And the output view contains "bravo"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 2)
+  # A blockquote line is rendered dim with a gutter marker; the "> " is consumed.
+  Scenario: An assistant response renders blockquotes
+    Given an output panel sized 40 by 12
+    When an agent_response event "> quoted wisdom here" is applied
+    Then the output view shows a blockquote "quoted wisdom here"

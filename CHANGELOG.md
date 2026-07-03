@@ -77,6 +77,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   text literal. The SGR constants are the seed of a future emphasis/header theme.
   New `output.styleMarkdown`. Tier 1 of nits.md #6 (UC-WIDGET-MARKDOWN); lists,
   block quotes, and tables are follow-on tiers.
+- **Assistant markdown now renders lists and blockquotes (Tier 2).** Unordered list
+  markers (`-`/`*`/`+`) fold to a single bold bullet glyph (`•`), ordered markers
+  (`1.`) keep their number with the marker emboldened, and blockquotes (`> `) render
+  dim behind a gutter glyph (`▎`) — source markers consumed, leading indentation
+  preserved, item/quote text still getting inline emphasis. Line-level styling extends
+  `output.styleLine` (new `output.orderedMarker`) so the ANSI-aware wrap math stays
+  exact; wrapped blockquote continuation lines fall back to plain text. Tier 2 of
+  nits.md #6 (UC-WIDGET-MARKDOWN); tables remain the Tier 3 follow-on.
 - **Agent responses are now streamed and stored as two distinct kinds.** The live
   answer streams as transient `agent_delta` chunks (in-process bus, chat window's
   typing effect only — never persisted, never sent to external surfaces); when it
