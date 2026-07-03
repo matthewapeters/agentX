@@ -46,3 +46,28 @@ embed configuration; see `creating-a-layout.md`).
 `config.kdl` supports a `keybinds clear-defaults=true { … }` block that replaces the
 default keymap with an explicit one (the setup this project's author already uses).
 Layouts cannot carry keybinds.
+
+## AgentX keymap vs. a default (`normal`) mode
+
+Audit of this project's author config (zellij 0.44.3, `clear-defaults=true`,
+`default_mode` unset → `normal`) against the keys the AgentX surfaces bind. In
+`normal` mode the `shared_except "locked"` block is live, so those keys are
+intercepted before the TUI; **locked** mode passes everything through except the
+unlock key (`Ctrl+g`).
+
+Everything AgentX needs passes through in `normal` mode — typing, Enter, Esc,
+`Shift+Enter`, `Alt+Enter`/`Ctrl+J` (newline), `Ctrl+C` (quit), `PgUp`/`PgDn`,
+arrows, `Ctrl+A/E/L/R`, `Ctrl+Left`/`Ctrl+Right` — **except two aliases that zellij
+claims:**
+
+| AgentX binding | Action | zellij `normal` | Mitigation |
+|----------------|--------|-----------------|------------|
+| `Alt+f` | word-forward in the input (`input.go`) | `Alt f` → ToggleFloatingPanes | primary `Ctrl+Right` is **not** intercepted; use it, or `unbind "Alt f"` |
+| `Ctrl+o` | expand/activate element (chat/context) | `Ctrl o` → SwitchToMode "session" | primary `Enter` is **not** intercepted; use it, or `unbind "Ctrl o"` |
+
+Both collisions are on redundant aliases, so AgentX is fully usable in `normal` mode
+as-is. To reclaim the two aliases without the sledgehammer of global `default_mode
+"locked"`, `unbind` just those two keys in `config.kdl`. `support_kitty_keyboard_protocol`
+and `mouse_mode` are already at their (good) defaults in this config, so
+`Shift+Enter` passthrough and click-to-focus + Shift+drag selection work without
+changes.
