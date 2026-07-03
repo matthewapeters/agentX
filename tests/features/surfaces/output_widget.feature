@@ -60,3 +60,25 @@ Feature: Collapsible output widgets
     When the selected widget scrolls down by 100
     Then the output view contains "line-19"
     And the output view does not contain "line-00"
+
+  # use-case: UC-WIDGET-STREAM-FOLLOW (nits.md #2)
+  # A streaming assistant body auto-follows the incoming tail so the user reads
+  # the newest text without a manual scroll; the in-place scroll cap still holds.
+  Scenario: A streaming assistant body follows the incoming tail
+    Given an output panel sized 30 by 40
+    And the max widget lines is 3
+    When 20 agent_delta lines are streamed
+    Then the output view contains "line-19"
+    And the output view does not contain "line-00"
+    And the output view contains a scrollbar
+
+  # use-case: UC-WIDGET-STREAM-FOLLOW (nits.md #2)
+  # variant: scrolling up while streaming detaches from the tail so the reader can
+  # hold their place on earlier text.
+  Scenario: Scrolling up detaches a streaming body from the tail
+    Given an output panel sized 30 by 40
+    And the max widget lines is 3
+    When 20 agent_delta lines are streamed
+    And the selected widget scrolls up by 100
+    Then the output view contains "line-00"
+    And the output view does not contain "line-19"

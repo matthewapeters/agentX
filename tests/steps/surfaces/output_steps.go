@@ -35,8 +35,10 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the panel pages up$`, w.pageUp)
 	sc.Step(`^the max widget lines is (\d+)$`, w.setMaxBody)
 	sc.Step(`^a thinking event with (\d+) body lines is applied$`, w.applyThinkingLines)
+	sc.Step(`^(\d+) agent_delta lines are streamed$`, w.streamAgentDeltaLines)
 	sc.Step(`^the selected widget is toggled$`, w.toggleSelected)
 	sc.Step(`^the selected widget scrolls down by (\d+)$`, w.scrollSelected)
+	sc.Step(`^the selected widget scrolls up by (\d+)$`, w.scrollSelectedUp)
 	sc.Step(`^the output view contains an unselected widget border$`, w.hasUnselectedBorder)
 	sc.Step(`^the output view contains a selected widget border$`, w.hasSelectedBorder)
 	sc.Step(`^the output view contains a scrollbar$`, w.hasScrollbar)
@@ -149,6 +151,15 @@ func (w *outputWorld) applyThinkingLines(n int) error {
 	return nil
 }
 
+// streamAgentDeltaLines streams n one-line agent_delta chunks, mimicking a live
+// response arriving token-by-token so the follow-the-tail behavior can be exercised.
+func (w *outputWorld) streamAgentDeltaLines(n int) error {
+	for i := range n {
+		w.panel.Apply(state.Event{ContentType: state.ContentAgentDelta, Payload: map[string]any{"text": fmt.Sprintf("line-%02d\n", i)}})
+	}
+	return nil
+}
+
 func (w *outputWorld) toggleSelected() error {
 	w.panel.ToggleSelected()
 	return nil
@@ -156,6 +167,11 @@ func (w *outputWorld) toggleSelected() error {
 
 func (w *outputWorld) scrollSelected(n int) error {
 	w.panel.ScrollSelected(n)
+	return nil
+}
+
+func (w *outputWorld) scrollSelectedUp(n int) error {
+	w.panel.ScrollSelected(-n)
 	return nil
 }
 

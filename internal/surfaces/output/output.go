@@ -57,6 +57,11 @@ type widget struct {
 	// such as thinking / tool result).
 	previewWhenCollapsed bool
 	offset               int // inner scroll offset (wrapped body-line index)
+	// followTail keeps the body window pinned to the growing tail while the widget
+	// streams (agent_delta / thinking chunks), so incoming text stays visible
+	// without a manual scroll. A manual scroll up detaches it; scrolling back to the
+	// bottom re-attaches. See nits.md #2 / UC-WIDGET-STREAM-FOLLOW.
+	followTail bool
 	// ordinal is the source event's durable identity; toggleable marks a user or
 	// agent conversation element that the context surface can enable/disable;
 	// disabled means it is withheld from the agent's upcoming context.
@@ -378,6 +383,7 @@ func (m *Model) add(w *widget) {
 func (m *Model) appendAssistant(text string) {
 	if n := len(m.widgets); n > 0 && m.widgets[n-1].kind == kindAssistant {
 		m.widgets[n-1].body += text
+		m.widgets[n-1].followTail = true // stream: keep the window on the newest text
 		m.refresh(true)
 		return
 	}
@@ -406,6 +412,7 @@ func (m *Model) finalizeAssistant(text string, ordinal uint64, enabled bool) {
 func (m *Model) appendThinking(text string) {
 	if n := len(m.widgets); n > 0 && m.widgets[n-1].kind == kindThinking {
 		m.widgets[n-1].body += text
+		m.widgets[n-1].followTail = true // stream: keep the window on the newest text
 		m.refresh(true)
 		return
 	}
@@ -460,7 +467,11 @@ func (m *Model) ScrollSelected(n int) {
 	if m.selected < 0 {
 		return
 	}
-	m.widgets[m.selected].offset += n
+	w := m.widgets[m.selected]
+	w.offset += n
+	if n < 0 {
+		w.followTail = false // scrolling up detaches from the streaming tail
+	}
 	m.refresh(false) // refresh clamps the offset against the body length
 }
 
@@ -658,7 +669,15 @@ func (m *Model) renderBody(w *widget, innerW int) []string {
 	bodyW := innerW - 1
 	lines = wrapLines(w.body, bodyW)
 	total := len(lines)
-	w.offset = clampInt(w.offset, 0, total-m.maxBody)
+	maxOffset := total - m.maxBody
+	if w.followTail {
+		// Streaming / bottom-pinned: track the growing tail so new text stays visible.
+		w.offset = maxOffset
+	} else {
+		w.offset = clampInt(w.offset, 0, maxOffset)
+		// Scrolled to the bottom edge: re-attach so further growth keeps following.
+		w.followTail = w.offset >= maxOffset
+	}
 	window := lines[w.offset : w.offset+m.maxBody]
 
 	out := make([]string, m.maxBody)

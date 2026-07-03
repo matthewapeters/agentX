@@ -46,6 +46,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   its payload is always one line of metadata. Frees two transcript rows per turn
   and matches the output-widget spec's "single greyed line" intent. Still
   selectable.
+- **A streaming widget's body follows the incoming tail.** While an `agent_delta`
+  (or thinking) response streams past the `max_widget_lines` cap, its in-place
+  scroll window now tracks the growing tail so the newest text stays on screen
+  without a manual scroll — the reader watches the answer arrive instead of a frozen
+  head. Scrolling up detaches from the tail so an earlier passage can be held in
+  view; scrolling back to the bottom re-attaches. A complete, non-streamed body
+  still anchors at its top. New per-widget `followTail`, honored in
+  `output.renderBody` and toggled by `appendAssistant`/`appendThinking`/`ScrollSelected`.
+  Closes nits.md #2 (UC-WIDGET-STREAM-FOLLOW).
 - **Agent responses are now streamed and stored as two distinct kinds.** The live
   answer streams as transient `agent_delta` chunks (in-process bus, chat window's
   typing effect only — never persisted, never sent to external surfaces); when it
