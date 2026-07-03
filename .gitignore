@@ -162,3 +162,6 @@ apm_modules/
 # Local developer MCP/tooling launchers (not project artifacts)
 /gopls.mcp
 /open-websearch
+
+# local source files
+source.me
