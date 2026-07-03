@@ -9,6 +9,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`make seed`** installs the baseline config files (`config/seed/*`) into the
+  user's config dir (`$XDG_CONFIG_HOME/agentx`, else `~/.config/agentx`) without
+  clobbering any file already there — the packaging step previously noted as future
+  work. The zellij harness layout now lives in the seed set as
+  **`config/seed/agentx.kdl`** (deployed by `make seed`, consumed by `ax`, never read
+  by the agentx runtime). Its per-pane `sleep` hacks are removed now that
+  `surface launch` waits out the server-start race. Vendored the zellij layout and
+  options docs under `docs/reference/zellij/` (for zellij 0.44.3) — recording that
+  layouts cannot embed keyboard/mouse config, so the harness *documents* the
+  recommended `config.kdl` settings (`default_mode "locked"`,
+  `support_kitty_keyboard_protocol true`, `mouse_mode` on with Shift+drag for native
+  selection) rather than overriding the user's global config.
 - **`agentx session new-name`** prints one session name in AgentX's own
   adjective-noun style and exits — a side-effect-free helper (no server, no session
   created) so a scripted launcher can pre-mint a name in the same vocabulary the app

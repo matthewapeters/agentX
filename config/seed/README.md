@@ -14,6 +14,15 @@ identical to the runtime fallbacks, giving a common baseline from which to tune.
 | `agentx-shell-commands.md` | `~/.config/agentx/agentx-shell-commands.md` | `tools.DefaultCatalog` | uses the constant |
 | `agentx-tool-blacklist.toml` | `~/.config/agentx/agentx-tool-blacklist.toml` | none — seed *is* the baseline | no blacklist rules |
 | `agentx.toml` | `~/.config/agentx/agentx.toml` | `config.Default()` | seeded on first run |
+| `agentx.kdl` | `~/.config/agentx/agentx.kdl` | none — harness artifact | not read by AgentX (see note) |
+
+`agentx.kdl` is the odd one out: it is **not read by the AgentX runtime** at all. It
+is a [zellij](https://zellij.dev) layout consumed by the `ax` dev launcher to open
+the multi-surface harness (chat + context + context-visualizer + working-memory) in
+one window. It ships here so it is deployed alongside the other defaults, but it has
+no code source of truth and no runtime fallback — if it is absent, only `ax` is
+affected, not `agentx`. Keyboard/mouse tuning for the harness lives in zellij's
+`config.kdl` (layouts cannot embed it; see `docs/reference/zellij/creating-a-layout.md`).
 
 The command-policy **global approvals** file
 (`~/.config/agentx/agentx-tool-approvals.toml`) is runtime-managed — written when you
