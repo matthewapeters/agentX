@@ -58,6 +58,39 @@ Feature: Launch a child surface
     When I launch a "files" surface with auto-discovery
     Then the launch fails with category "validation"
 
+  # use-case: UC-LAUNCH-RACE  (TC-M2-ss5-006)
+  # source: docs/implementation/02_surface_orchestration_http.md (Flagless launch SS-5)
+  # A surface launched concurrently with its server (e.g. a multiplexer layout that
+  # starts every pane at once) must wait for the transport to appear, not lose the race.
+  Scenario: Auto-discovery waits for a session that is still starting
+    Given a running transport server
+    And the session's transport is published after a short delay
+    When I launch a "files" surface with auto-discovery and a retry budget
+    Then the launch succeeds
+    And the launched surface kind is "files"
+    And the launched surface appears in the registry
+
+  # use-case: UC-LAUNCH-RACE  (TC-M2-ss5-007)
+  # variant: nothing ever appears — the retry budget bounds the wait and then fails.
+  Scenario: Auto-discovery gives up after the retry budget
+    Given a running transport server
+    And no session is published to an empty temp session root
+    When I launch a "files" surface with auto-discovery and a brief retry budget
+    Then the launch fails with category "validation"
+
+  # use-case: UC-LAUNCH-TITLE  (TC-M2-ss5-008)
+  # A display harness names sessions via its pane labels, so surface titles omit the
+  # session by default to stay uncluttered; the chat's attach widget still names it.
+  Scenario: Surface titles omit the session by default
+    When I parse the launch command "surface launch context"
+    Then the launch omits the session from the surface title
+
+  # use-case: UC-LAUNCH-TITLE  (TC-M2-ss5-009)
+  # variant: a standalone launch opts in so peer surfaces can be told apart.
+  Scenario: The session appears in the surface title when requested
+    When I parse the launch command "surface launch context --session-in-title"
+    Then the launch shows session "calm-otter" in the surface title
+
   # use-case: UC-LAUNCH-AUTH  (TC-M1-launch-003)
   Scenario: Reject attach without a valid token
     Given a running transport server

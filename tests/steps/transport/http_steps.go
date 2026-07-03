@@ -167,6 +167,7 @@ type transportWorld struct {
 
 	launchResult   cli.LaunchResult
 	launchErr      error
+	parsedLaunch   *cli.LaunchArgs    // last parsed `surface launch` command (title-toggle tests)
 	tmpRoot        string             // temp session root for auto-discovery launch (SS-5)
 	wmErr          error              // last working-memory mutation error (SS-6)
 	presenceCancel context.CancelFunc // held presence stream (SS-4 / SS-6)
@@ -280,6 +281,13 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^both sessions are published to a temp session root$`, w.publishBothToDisk)
 	sc.Step(`^I launch a "([^"]*)" surface for session "([^"]*)" with auto-discovery$`, w.launchBySession)
 	sc.Step(`^the launched session is "([^"]*)"$`, w.launchedSession)
+	sc.Step(`^the session's transport is published after a short delay$`, w.publishTransportDelayed)
+	sc.Step(`^I launch a "([^"]*)" surface with auto-discovery and a retry budget$`, w.launchAutoRetry)
+	sc.Step(`^no session is published to an empty temp session root$`, w.emptyTempRoot)
+	sc.Step(`^I launch a "([^"]*)" surface with auto-discovery and a brief retry budget$`, w.launchAutoBrief)
+	sc.Step(`^I parse the launch command "([^"]*)"$`, w.parseLaunchCmd)
+	sc.Step(`^the launch omits the session from the surface title$`, w.titleOmitsSession)
+	sc.Step(`^the launch shows session "([^"]*)" in the surface title$`, w.titleShowsSession)
 
 	// working-memory CRUD (SS-6).
 	sc.Step(`^the client adds a fact "([^"]*)" valued "([^"]*)"$`, w.wmAdd)
@@ -833,6 +841,100 @@ func (w *transportWorld) publishTransportToDisk() error {
 
 func (w *transportWorld) launchAuto(kind string) error {
 	return w.launch(cli.LaunchArgs{SurfaceKind: kind, SessionRoot: w.tmpRoot})
+}
+
+// launchPublishDelay models a server that publishes its transport shortly after a
+// surface is launched (the concurrent-boot race). It is comfortably shorter than
+// the retry budget in launchAutoRetry so the launch retries and then attaches.
+const launchPublishDelay = 250 * time.Millisecond
+
+// publishTransportDelayed sets the temp session root now but only writes the
+// transport (token first, transport file last, so a candidate never appears
+// half-published) after a delay — so at launch time the disk is still empty and
+// only the retry loop can succeed.
+func (w *transportWorld) publishTransportDelayed() error {
+	root, err := os.MkdirTemp("", "agentx-ss5-delay-*")
+	if err != nil {
+		return err
+	}
+	w.tmpRoot = root
+	store := session.NewStore(root)
+	id := w.prov.sess.ID
+	endpoint := w.httptst.URL
+	token := w.token.Raw()
+	go func() {
+		time.Sleep(launchPublishDelay)
+		if err := os.MkdirAll(store.Dir(id), 0o700); err != nil {
+			return
+		}
+		if err := store.WriteAttachToken(id, token); err != nil {
+			return
+		}
+		_ = store.WriteTransport(id, session.TransportInfo{SessionID: id, Endpoint: endpoint})
+	}()
+	return nil
+}
+
+// launchAutoRetry launches with auto-discovery and a generous retry budget, so a
+// session that publishes within launchPublishDelay is still attached.
+func (w *transportWorld) launchAutoRetry(kind string) error {
+	return w.launch(cli.LaunchArgs{SurfaceKind: kind, SessionRoot: w.tmpRoot, ConnectTimeout: 3 * time.Second})
+}
+
+// emptyTempRoot points auto-discovery at a temp root where nothing is ever
+// published, so the retry budget must bound the wait and then fail.
+func (w *transportWorld) emptyTempRoot() error {
+	root, err := os.MkdirTemp("", "agentx-ss5-empty-*")
+	if err != nil {
+		return err
+	}
+	w.tmpRoot = root
+	return nil
+}
+
+// launchAutoBrief launches with a short retry budget so the give-up path returns
+// promptly instead of waiting the full default timeout.
+func (w *transportWorld) launchAutoBrief(kind string) error {
+	return w.launch(cli.LaunchArgs{SurfaceKind: kind, SessionRoot: w.tmpRoot, ConnectTimeout: 300 * time.Millisecond})
+}
+
+// parseLaunchCmd parses a `surface launch …` command line so the title-toggle
+// scenarios can inspect the resolved LaunchArgs.
+func (w *transportWorld) parseLaunchCmd(line string) error {
+	cmd, err := cli.Parse(strings.Fields(line))
+	if err != nil {
+		return err
+	}
+	if cmd.Launch == nil {
+		return fmt.Errorf("%q did not parse to a launch command", line)
+	}
+	w.parsedLaunch = cmd.Launch
+	return nil
+}
+
+// titleOmitsSession asserts the parsed launch keeps the session out of the surface
+// title (the default), given a session that would otherwise appear.
+func (w *transportWorld) titleOmitsSession() error {
+	if w.parsedLaunch == nil {
+		return fmt.Errorf("no parsed launch command")
+	}
+	got := cli.LaunchTitleSession(*w.parsedLaunch, cli.LaunchResult{SessionName: "calm-otter"})
+	if got != "" {
+		return fmt.Errorf("title session = %q, want empty", got)
+	}
+	return nil
+}
+
+// titleShowsSession asserts the parsed launch surfaces the session name in the title.
+func (w *transportWorld) titleShowsSession(want string) error {
+	if w.parsedLaunch == nil {
+		return fmt.Errorf("no parsed launch command")
+	}
+	got := cli.LaunchTitleSession(*w.parsedLaunch, cli.LaunchResult{SessionName: want})
+	if got != want {
+		return fmt.Errorf("title session = %q, want %q", got, want)
+	}
+	return nil
 }
 
 func (w *transportWorld) secondServer(name string) error {

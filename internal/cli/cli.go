@@ -72,6 +72,12 @@ func parseLaunch(args []string) (*LaunchArgs, error) {
 	}
 	for i < len(args) {
 		a := args[i]
+		// Valueless toggle: show the session name in the surface title (default off).
+		if a == "--session-in-title" {
+			la.SessionInTitle = true
+			i++
+			continue
+		}
 		val, ok := nextValue(args, &i)
 		switch a {
 		case "--session", "-s":

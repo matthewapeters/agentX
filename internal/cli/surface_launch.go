@@ -19,12 +19,39 @@ import (
 
 // LaunchArgs are the resolved inputs to a `surface launch` (canonical or alias).
 type LaunchArgs struct {
-	SurfaceKind string
-	Session     string // selector: session name or id (optional; auto-resolved if empty)
-	Connect     string // orchestrator endpoint; empty auto-resolves from disk (SS-5)
-	Token       string // ephemeral attach token; empty auto-resolves from disk (SS-5)
-	SessionRoot string // session storage root for auto-resolution; empty uses config default
+	SurfaceKind    string
+	Session        string        // selector: session name or id (optional; auto-resolved if empty)
+	Connect        string        // orchestrator endpoint; empty auto-resolves from disk (SS-5)
+	Token          string        // ephemeral attach token; empty auto-resolves from disk (SS-5)
+	SessionRoot    string        // session storage root for auto-resolution; empty uses config default
+	ConnectTimeout time.Duration // auto-discovery retry window; zero uses defaultConnectTimeout; ignored when Connect is set
+	SessionInTitle bool          // show the session name in the surface's title (default off; see LaunchTitleSession)
 }
+
+// LaunchTitleSession returns the session label to embed in a launched surface's
+// title. It is empty unless the operator opted in with --session-in-title: under a
+// display harness the surrounding panes already name the session, so titles stay
+// uncluttered by default; a standalone launch opts in so peer surfaces can be told
+// apart. The chat's "attach surfaces" widget names the session regardless, to guide
+// operators who launch surfaces by hand. Because each surface already omits the
+// " · <session>" suffix when the name is empty, gating the name here is the single
+// point that governs every surface's title.
+func LaunchTitleSession(args LaunchArgs, res LaunchResult) string {
+	if args.SessionInTitle {
+		return res.SessionName
+	}
+	return ""
+}
+
+// defaultConnectTimeout bounds how long an auto-discovery launch waits for a
+// just-started server to publish its transport and begin answering before giving
+// up. A surface is often launched at the same instant as the `agentx` it attaches
+// to (e.g. every pane of a multiplexer layout starts at once), so discovery polls
+// rather than losing the race — this is what lets a layout drop the `sleep` hack.
+const defaultConnectTimeout = 10 * time.Second
+
+// connectRetryInterval is the poll cadence while waiting for a session to appear.
+const connectRetryInterval = 150 * time.Millisecond
 
 // LaunchResult is the outcome of a successful attach, for operator output.
 type LaunchResult struct {
@@ -100,12 +127,44 @@ func resolveConnection(ctx context.Context, args LaunchArgs) (endpoint, token st
 		root = paths.SessionRoot()
 	}
 
+	// A surface is frequently launched at the same instant as the server it attaches
+	// to, so the server may not have published its transport — or may not be answering
+	// — on the first look. Poll discovery until a matching live session appears or the
+	// timeout elapses, so a concurrent launch attaches instead of losing the race.
+	// Terminal outcomes (unreadable root, genuine ambiguity) do not retry.
+	timeout := args.ConnectTimeout
+	if timeout <= 0 {
+		timeout = defaultConnectTimeout
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		ep, tok, retry, rerr := resolveOnce(ctx, args, root)
+		if rerr == nil {
+			return ep, tok, nil
+		}
+		if !retry || time.Now().After(deadline) {
+			return "", "", rerr
+		}
+		select {
+		case <-ctx.Done():
+			return "", "", rerr
+		case <-time.After(min(connectRetryInterval, time.Until(deadline))):
+		}
+	}
+}
+
+// resolveOnce performs a single discovery pass: it reads the published sessions,
+// keeps the ones whose server is answering, and resolves the selector. The bool
+// reports whether a failure is worth retrying — the awaited session may still be
+// starting (nothing published yet, or published but not answering) — versus
+// terminal (an unreadable root, or genuine ambiguity that waiting cannot resolve).
+func resolveOnce(ctx context.Context, args LaunchArgs, root string) (endpoint, token string, retry bool, err error) {
 	cands, derr := session.NewStore(root).DiscoverTransports()
 	if derr != nil {
-		return "", "", validation("cannot read published sessions: %v", derr)
+		return "", "", false, validation("cannot read published sessions: %v", derr)
 	}
 	if len(cands) == 0 {
-		return "", "", validation("no running session found; start agentx, or pass --connect and --token")
+		return "", "", true, validation("no running session found; start agentx, or pass --connect and --token")
 	}
 
 	// Only consider sessions whose server is actually answering.
@@ -116,7 +175,7 @@ func resolveConnection(ctx context.Context, args LaunchArgs) (endpoint, token st
 		}
 	}
 	if len(live) == 0 {
-		return "", "", &transporthttp.AttachError{
+		return "", "", true, &transporthttp.AttachError{
 			Category: "transport",
 			Message:  "found published session(s) but none are reachable; pass --connect",
 		}
@@ -128,15 +187,16 @@ func resolveConnection(ctx context.Context, args LaunchArgs) (endpoint, token st
 	if sel := strings.TrimSpace(args.Session); sel != "" {
 		for _, c := range live {
 			if sel == c.SessionName || sel == c.SessionID {
-				return c.Endpoint, c.Token, nil
+				return c.Endpoint, c.Token, false, nil
 			}
 		}
-		return "", "", validation("no running session matches %q; running: %s", sel, sessionNames(live))
+		// The named session may still be booting, so keep polling for it.
+		return "", "", true, validation("no running session matches %q; running: %s", sel, sessionNames(live))
 	}
 	if len(live) == 1 {
-		return live[0].Endpoint, live[0].Token, nil
+		return live[0].Endpoint, live[0].Token, false, nil
 	}
-	return "", "", validation("multiple sessions are running (%s); pass --session <name>", sessionNames(live))
+	return "", "", false, validation("multiple sessions are running (%s); pass --session <name>", sessionNames(live))
 }
 
 // sessionNames lists the discoverable session names (falling back to id) for an
@@ -171,6 +231,9 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 	if err != nil {
 		return err
 	}
+	// One gate governs every surface's title: surfaces show the session only when a
+	// non-empty name reaches them, so passing the toggled value here cascades.
+	titleSession := LaunchTitleSession(args, res)
 	// Working memory is read-write and document-based, so it runs its own program
 	// rather than the event-stream surface host.
 	if args.SurfaceKind == "working-memory" {
@@ -178,7 +241,7 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 			Endpoint:    res.Endpoint,
 			Token:       res.Token,
 			SurfaceID:   res.SurfaceID,
-			SessionName: res.SessionName,
+			SessionName: titleSession,
 		})
 	}
 	// Context visualizer is read-only and document-based (it polls the assembled
@@ -188,11 +251,11 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 			Endpoint:    res.Endpoint,
 			Token:       res.Token,
 			SurfaceID:   res.SurfaceID,
-			SessionName: res.SessionName,
+			SessionName: titleSession,
 		})
 	}
 
-	if surface, title, ok := surfaceModelFor(args.SurfaceKind, res); ok {
+	if surface, title, ok := surfaceModelFor(args.SurfaceKind, res, titleSession); ok {
 		return client.Run(ctx, client.Options{
 			Endpoint:  res.Endpoint,
 			Token:     res.Token,
@@ -209,10 +272,14 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 
 // surfaceModelFor returns the SurfaceModel + title for a launchable kind, or
 // false when the kind has no TUI yet. Concrete surfaces register here as they land.
-func surfaceModelFor(kind string, res LaunchResult) (client.SurfaceModel, string, bool) {
+func surfaceModelFor(kind string, res LaunchResult, sessionName string) (client.SurfaceModel, string, bool) {
 	switch kind {
 	case "context":
-		return contextsurface.New(transporthttp.NewClient(res.Endpoint), res.Token), "context · " + res.SessionName, true
+		title := "context"
+		if sessionName != "" {
+			title += " · " + sessionName
+		}
+		return contextsurface.New(transporthttp.NewClient(res.Endpoint), res.Token), title, true
 	default:
 		return nil, "", false
 	}

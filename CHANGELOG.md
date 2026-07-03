@@ -9,6 +9,27 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Surface launch waits out the server-start race instead of relying on a
+  `sleep`.** Auto-discovery (`agentx surface launch <kind>` with no `--connect`)
+  now polls for a published, answering session until a bounded deadline
+  (`LaunchArgs.ConnectTimeout`, default 10s) rather than failing the first look —
+  so a surface launched concurrently with `agentx` (e.g. every pane of a
+  multiplexer layout starting at once) attaches instead of dying. The wait covers
+  both "transport not published yet" and "published but not answering"; terminal
+  outcomes (unreadable session root, genuine multi-session ambiguity) still fail
+  immediately. The single retry loop lives in `cli.resolveConnection`, so it
+  cascades to every current and future surface. Layouts can drop their per-pane
+  `sleep` hack.
+- **Surface titles omit the session name by default.** A launched surface's title
+  shows just its label (e.g. `context`, `working memory`) unless the operator
+  passes `--session-in-title`, which restores the `<label> · <session>` form for
+  standalone launches that need to tell peers apart. Under a display harness the
+  surrounding pane labels already name the session, so the default stays
+  uncluttered; the chat's "attach surfaces" widget continues to name the session
+  regardless, to guide operators launching by hand. The toggle is gated once in
+  `cli.RunSurface` (`LaunchTitleSession`) and cascades to every surface. New
+  `LaunchArgs.SessionInTitle`.
+
 - The **classification widget renders flat** — `⚙ classification · <intent →
   route>` on a single line, no box — instead of a three-row bordered widget, since
   its payload is always one line of metadata. Frees two transcript rows per turn
