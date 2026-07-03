@@ -38,6 +38,7 @@ func registerEntrypointSteps(sc *godog.ScenarioContext) {
 
 	sc.Step(`^the arguments "([^"]*)" are parsed$`, w.parseArgs)
 	sc.Step(`^the parsed command requests version output$`, w.requestsVersion)
+	sc.Step(`^the parsed command requests a generated session name$`, w.requestsGenName)
 	sc.Step(`^the parsed session name is "([^"]*)"$`, w.parsedSessionName)
 	sc.Step(`^the session name option is "([^"]*)"$`, w.setSessionName)
 	sc.Step(`^the active session name is "([^"]*)"$`, w.activeSessionName)
@@ -57,6 +58,16 @@ func (w *entrypointWorld) parseArgs(args string) error {
 func (w *entrypointWorld) requestsVersion() error {
 	if !w.cmd.ShowVersion {
 		return fmt.Errorf("expected ShowVersion to be true")
+	}
+	return nil
+}
+
+func (w *entrypointWorld) requestsGenName() error {
+	if !w.cmd.GenSessionName {
+		return fmt.Errorf("expected GenSessionName to be true")
+	}
+	if w.cmd.Launch != nil || w.cmd.ShowVersion {
+		return fmt.Errorf("new-name should not also request launch or version")
 	}
 	return nil
 }

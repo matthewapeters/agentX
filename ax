@@ -1,6 +1,8 @@
 #! /bin/bash
 
-# Generate a random session string
-export AX_SESSION_STRING=$(head -c25 /dev/random|base64)
+# Mint a session name in AgentX's own adjective-noun style (filesystem-safe,
+# human-readable, and unique among sessions already on disk).
+export AX_SESSION_STRING=$(agentx session new-name)
+echo $AX_SESSION_STRING
 
 zellij --layout ~/.config/agentx/agentx.kdl

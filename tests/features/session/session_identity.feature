@@ -22,6 +22,23 @@ Feature: Session identity and storage initialization
     And the session directory exists with an events folder
     And session.json records the same id and name
 
+  # use-case: UC-SESSION-NAME-HELPER
+  # source: internal/session/names.go — the `agentx session new-name` helper mints
+  # names in the same vocabulary the runtime uses, so a launcher's session names
+  # match the app's instead of an ad-hoc random string.
+  Scenario: A default session name uses the adjective-noun style
+    When a default session name is generated
+    Then the resulting name has the adjective-noun form
+
+  # use-case: UC-SESSION-NAME-HELPER
+  # variant: a minted name avoids a session already on disk
+  Scenario: A minted unique name avoids an existing session
+    Given an empty session root
+    And a session is created
+    When a unique session name is minted
+    Then the resulting name has the adjective-noun form
+    And the minted name differs from the existing session's name
+
   # use-case: UC-SESSION-CREATE
   # variant: name-collision
   Scenario: Session name collisions get deterministic suffixes

@@ -25,6 +25,14 @@ Feature: Application composition and entrypoint
     When the arguments "--session my-layout" are parsed
     Then the parsed session name is "my-layout"
 
+  # use-case: UC-CLI-SESSION-NEWNAME
+  # `agentx session new-name` prints one session name in AgentX's own style and
+  # exits, so a scripted launcher can pre-mint a name instead of rolling its own.
+  @unit
+  Scenario: Session new-name subcommand is parsed
+    When the arguments "session new-name" are parsed
+    Then the parsed command requests a generated session name
+
   # use-case: UC-APP-SESSION-NAME
   @integration
   Scenario: A provided session name names the session

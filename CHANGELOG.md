@@ -7,6 +7,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] - 2026-06-23
 
+### Added
+
+- **`agentx session new-name`** prints one session name in AgentX's own
+  adjective-noun style and exits — a side-effect-free helper (no server, no session
+  created) so a scripted launcher can pre-mint a name in the same vocabulary the app
+  uses, instead of rolling its own. It prefers a name not already used by a session
+  on disk, falling back to a plain generated name if the session root cannot be
+  resolved. New `session.GenerateName`, `session.Store.UniqueName`, `cli.NewSessionName`,
+  and `Command.GenSessionName`. The `ax` launcher now uses it in place of a random
+  base64 string (which could contain `/`, `+`, `=`).
+
 ### Changed
 
 - **Surface launch waits out the server-start race instead of relying on a

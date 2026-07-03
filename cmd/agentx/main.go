@@ -43,6 +43,10 @@ func run(args []string) error {
 		fmt.Println("agentx", version)
 		return nil
 	}
+	if cmd.GenSessionName {
+		fmt.Println(cli.NewSessionName())
+		return nil
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -12,6 +12,10 @@ type Command struct {
 	// Launch, when non-nil, requests `agentx surface launch` (canonical or alias
 	// form) instead of the default runtime + chat surface.
 	Launch *LaunchArgs
+	// GenSessionName requests `agentx session new-name`: print one default-style
+	// session name and exit, so a scripted launcher can pre-mint a name in AgentX's
+	// own vocabulary instead of rolling its own.
+	GenSessionName bool
 	// SessionName, when set, names the booted session instead of the generated
 	// adjective-noun — so scripted multiplexer layouts get predictable names.
 	SessionName string
@@ -20,6 +24,10 @@ type Command struct {
 // Parse interprets process arguments (excluding the program name). The default
 // (no recognized flags) launches the runtime + chat surface.
 func Parse(args []string) (Command, error) {
+	// Session helper: `agentx session new-name` prints one session name and exits.
+	if len(args) == 2 && args[0] == "session" && args[1] == "new-name" {
+		return Command{GenSessionName: true}, nil
+	}
 	// Canonical subcommand: surface launch <kind> --session ... --connect ... --token ...
 	if len(args) >= 2 && args[0] == "surface" && args[1] == "launch" {
 		la, err := parseLaunch(args[2:])

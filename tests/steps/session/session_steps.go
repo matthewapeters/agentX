@@ -9,16 +9,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/cucumber/godog"
 
 	"agentx/internal/session"
 )
 
+// adjNounForm matches a default-style session name, allowing an optional numeric
+// collision suffix (e.g. "brave-otter" or "brave-otter-2").
+var adjNounForm = regexp.MustCompile(`^[a-z]+-[a-z]+(-[0-9]+)?$`)
+
 type sessionWorld struct {
 	dir      string
 	namer    func() string
 	sessions []session.Identity
+	genned   string // last generated/minted session name (name-helper steps)
 }
 
 // InitializeScenario registers the session-domain steps.
@@ -40,6 +46,7 @@ func registerIdentitySteps(sc *godog.ScenarioContext) {
 		w.dir = dir
 		w.namer = nil
 		w.sessions = nil
+		w.genned = ""
 		return ctx, nil
 	})
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
@@ -59,6 +66,42 @@ func registerIdentitySteps(sc *godog.ScenarioContext) {
 	sc.Step(`^session\.json records the same id and name$`, w.metadataMatches)
 	sc.Step(`^the first session_name is "([^"]*)"$`, w.firstNameIs)
 	sc.Step(`^the second session_name is "([^"]*)"$`, w.secondNameIs)
+	sc.Step(`^a default session name is generated$`, w.genName)
+	sc.Step(`^a unique session name is minted$`, w.mintUnique)
+	sc.Step(`^the resulting name has the adjective-noun form$`, w.formOK)
+	sc.Step(`^the minted name differs from the existing session's name$`, w.mintedDiffers)
+}
+
+func (w *sessionWorld) genName() error {
+	w.genned = session.GenerateName()
+	return nil
+}
+
+func (w *sessionWorld) mintUnique() error {
+	name, err := session.NewStore(w.dir).UniqueName()
+	if err != nil {
+		return err
+	}
+	w.genned = name
+	return nil
+}
+
+func (w *sessionWorld) formOK() error {
+	if !adjNounForm.MatchString(w.genned) {
+		return fmt.Errorf("name %q is not adjective-noun form", w.genned)
+	}
+	return nil
+}
+
+func (w *sessionWorld) mintedDiffers() error {
+	existing, err := w.first()
+	if err != nil {
+		return err
+	}
+	if w.genned == existing.Name {
+		return fmt.Errorf("minted name %q collides with existing session name", w.genned)
+	}
+	return nil
 }
 
 func (w *sessionWorld) emptyRoot() error {
