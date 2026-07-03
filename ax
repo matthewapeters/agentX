@@ -1,8 +1,21 @@
-#! /bin/bash
+#!/bin/bash
+set -eu
+
+# Fail early and clearly if a hard dependency is missing, rather than opening a
+# multiplexer full of dead panes.
+if ! command -v agentx >/dev/null 2>&1; then
+	echo "ax: agentx not found on PATH — build it (make all) and put ./bin on PATH" >&2
+	exit 1
+fi
+if ! command -v zellij >/dev/null 2>&1; then
+	echo "ax: zellij not found on PATH — install it to run the surface layout" >&2
+	exit 1
+fi
 
 # Mint a session name in AgentX's own adjective-noun style (filesystem-safe,
 # human-readable, and unique among sessions already on disk).
-export AX_SESSION_STRING=$(agentx session new-name)
-echo $AX_SESSION_STRING
+AX_SESSION_STRING=$(agentx session new-name)
+export AX_SESSION_STRING
+echo "$AX_SESSION_STRING"
 
 zellij --layout ~/.config/agentx/agentx.kdl
