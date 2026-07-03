@@ -82,3 +82,42 @@ Feature: Collapsible output widgets
     And the selected widget scrolls up by 100
     Then the output view contains "line-00"
     And the output view does not contain "line-19"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 1)
+  # Assistant bodies get lightweight markdown emphasis rendered as ANSI styling so
+  # LLM markdown reads richly in the terminal; the source markers are consumed.
+  Scenario: An assistant response renders inline bold
+    Given an output panel sized 40 by 12
+    When an agent_response event "I am **AgentX**, your agent" is applied
+    Then the output view shows bolded "AgentX"
+    And the output view does not contain "**"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 1)
+  Scenario: An assistant response renders inline code
+    Given an output panel sized 40 by 12
+    When an agent_response event "run `go build` now" is applied
+    Then the output view shows inline code "go build"
+    And the output view does not contain "`"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 1)
+  Scenario: An assistant response renders ATX headers by level
+    Given an output panel sized 40 by 12
+    When an agent_response with body:
+      """
+      # One
+      ## Two
+      ### Three
+      body
+      """
+    Then the output view shows an h1 header "One"
+    And the output view shows an h2 header "Two"
+    And the output view shows an h3 header "Three"
+    And the output view does not contain "# One"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 1)
+  # variant: only assistant bodies are styled; other kinds keep their text literal
+  # so pasted prose / tool output is never mangled.
+  Scenario: A user prompt is not markdown-styled
+    Given an output panel sized 40 by 12
+    When a user_prompt event "literal **stars** stay" is applied
+    Then the output view contains "**stars**"

@@ -68,6 +68,10 @@ type widget struct {
 	ordinal    uint64
 	toggleable bool
 	disabled   bool
+	// markdown renders the body with Tier-1 markdown emphasis (**bold**, `code`,
+	// #/##/### headers) as terminal SGR. Set for model-authored assistant bodies;
+	// left off for user prompts and tool output so their text stays literal.
+	markdown bool
 }
 
 // defaultActive and defaultInactive are the built-in border SGR colors used
@@ -387,7 +391,7 @@ func (m *Model) appendAssistant(text string) {
 		m.refresh(true)
 		return
 	}
-	m.add(&widget{kind: kindAssistant, title: "🤖 AgentX", body: text, previewWhenCollapsed: true, toggleable: true})
+	m.add(&widget{kind: kindAssistant, title: "🤖 AgentX", body: text, previewWhenCollapsed: true, toggleable: true, markdown: true})
 }
 
 // finalizeAssistant records the complete agent response as one conversation
@@ -404,7 +408,7 @@ func (m *Model) finalizeAssistant(text string, ordinal uint64, enabled bool) {
 		return
 	}
 	m.add(&widget{kind: kindAssistant, title: "🤖 AgentX", body: text, previewWhenCollapsed: true,
-		ordinal: ordinal, toggleable: true, disabled: !enabled})
+		ordinal: ordinal, toggleable: true, disabled: !enabled, markdown: true})
 }
 
 // appendThinking streams reasoning text into a single collapsed thinking widget
@@ -596,14 +600,21 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 		return []string{truncateWord(w.title, m.contentWidth())}
 	}
 
+	// Style once (markdown → SGR) before wrapping, so the ANSI-aware wrap/pad math
+	// measures true display width and the markers never count toward it.
+	body := w.body
+	if w.markdown {
+		body = styleMarkdown(w.body)
+	}
+
 	var rows []string
 	switch {
 	case w.collapsed:
 		if w.previewWhenCollapsed && w.body != "" {
-			rows = []string{padTo(collapsedPreview(w.body, innerW), innerW)}
+			rows = []string{padTo(collapsedPreview(body, innerW), innerW)}
 		}
 	case w.body != "":
-		rows = m.renderBody(w, innerW)
+		rows = m.renderBody(w, body, innerW)
 	}
 	// On the context surface, toggleable elements carry an enabled checkbox to the
 	// left of the emoji (☑ analogue): [x] enabled (in context) / [ ] disabled. This
@@ -654,8 +665,8 @@ func collapsedPreview(body string, innerW int) string {
 
 // renderBody wraps and windows a widget body, adding a proportional scrollbar
 // column when the body exceeds the cap.
-func (m *Model) renderBody(w *widget, innerW int) []string {
-	lines := wrapLines(w.body, innerW)
+func (m *Model) renderBody(w *widget, body string, innerW int) []string {
+	lines := wrapLines(body, innerW)
 	if len(lines) <= m.maxBody {
 		w.offset = 0
 		out := make([]string, len(lines))
@@ -667,7 +678,7 @@ func (m *Model) renderBody(w *widget, innerW int) []string {
 
 	// Over the cap: reserve a scrollbar column and window the body.
 	bodyW := innerW - 1
-	lines = wrapLines(w.body, bodyW)
+	lines = wrapLines(body, bodyW)
 	total := len(lines)
 	maxOffset := total - m.maxBody
 	if w.followTail {
@@ -773,6 +784,76 @@ func truncateWord(s string, w int) string {
 		return first
 	}
 	return ansi.Truncate(first, w, "…")
+}
+
+// Tier-1 markdown emphasis rendered as terminal SGR — enough to make LLM markdown
+// read richly without pulling in a heavyweight renderer. Scope: inline **bold** and
+// `code`, plus level 1..3 ATX headers (# / ## / ###). Source markers are consumed.
+// These constants are the seed of a future emphasis/header theme (nits.md #6).
+const (
+	sgrReset = "\x1b[0m"
+	sgrBold  = "\x1b[1m"
+	sgrCode  = "\x1b[7m"   // reverse video: a theme-neutral inline-code cue
+	sgrH1    = "\x1b[1;4m" // bold + underline
+	sgrH2    = "\x1b[1m"   // bold
+	sgrH3    = "\x1b[4m"   // underline
+)
+
+// styleMarkdown applies Tier-1 markdown emphasis line by line, preserving newlines so
+// the existing ANSI-aware wrap/pad math still measures display width correctly.
+func styleMarkdown(body string) string {
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		lines[i] = styleLine(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// styleLine styles one source line: an ATX header (#{1,3} then a space) styles the
+// whole line by level; any other line gets inline emphasis only.
+func styleLine(line string) string {
+	n := 0
+	for n < len(line) && n < 3 && line[n] == '#' {
+		n++
+	}
+	if n > 0 && n < len(line) && line[n] == ' ' {
+		open := sgrH3
+		switch n {
+		case 1:
+			open = sgrH1
+		case 2:
+			open = sgrH2
+		}
+		return open + styleInline(strings.TrimLeft(line[n+1:], " ")) + sgrReset
+	}
+	return styleInline(line)
+}
+
+// styleInline consumes **bold** and `code` spans left to right, emitting SGR and
+// dropping the markers. Whichever delimiter opens first wins, so **stars** inside a
+// `code` span stay literal. Unpaired or empty delimiters are left as written, so a
+// mid-stream "**Age" renders plainly until its closing marker arrives.
+func styleInline(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		switch {
+		case strings.HasPrefix(s[i:], "**"):
+			if end := strings.Index(s[i+2:], "**"); end > 0 {
+				b.WriteString(sgrBold + s[i+2:i+2+end] + sgrReset)
+				i += 2 + end + 2
+				continue
+			}
+		case s[i] == '`':
+			if end := strings.IndexByte(s[i+1:], '`'); end > 0 {
+				b.WriteString(sgrCode + s[i+1:i+1+end] + sgrReset)
+				i += 1 + end + 1
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
 }
 
 // wrapLines word-wraps s to w columns, preserving existing newlines.

@@ -67,6 +67,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   still anchors at its top. New per-widget `followTail`, honored in
   `output.renderBody` and toggled by `appendAssistant`/`appendThinking`/`ScrollSelected`.
   Closes nits.md #2 (UC-WIDGET-STREAM-FOLLOW).
+- **Assistant responses render lightweight markdown as terminal styling.** Model
+  bodies now show `**bold**`, `` `code` `` (reverse-video), and level 1–3 ATX headers
+  (`#`/`##`/`###`, styled bold/underline by level) as ANSI SGR, with the source
+  markers consumed — so LLM markdown reads richly in the TUI without a heavyweight
+  renderer (no new dependency). Styling is applied before wrapping so the existing
+  ANSI-aware wrap/pad/scrollbar math stays exact, and is scoped to the assistant
+  kind (via a per-widget `markdown` flag) so user prompts and tool output keep their
+  text literal. The SGR constants are the seed of a future emphasis/header theme.
+  New `output.styleMarkdown`. Tier 1 of nits.md #6 (UC-WIDGET-MARKDOWN); lists,
+  block quotes, and tables are follow-on tiers.
 - **Agent responses are now streamed and stored as two distinct kinds.** The live
   answer streams as transient `agent_delta` chunks (in-process bus, chat window's
   typing effect only — never persisted, never sent to external surfaces); when it

@@ -22,6 +22,7 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^an output panel sized (\d+) by (\d+)$`, w.panelSized)
 	sc.Step(`^a user_prompt event "([^"]*)" is applied$`, w.applyUserPrompt)
 	sc.Step(`^an agent_response event "([^"]*)" is applied$`, w.applyAgentResponse)
+	sc.Step(`^an agent_response with body:$`, w.applyAgentResponseBody)
 	sc.Step(`^an agent_delta event "([^"]*)" is applied$`, w.applyAgentDelta)
 	sc.Step(`^a disabled agent_response event "([^"]*)" is applied$`, w.applyAgentResponseDisabled)
 	sc.Step(`^the output panel is a navigable summary$`, w.summaryMode)
@@ -55,6 +56,9 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the launch info precedes "([^"]*)" in the output$`, w.launchPrecedes)
 	sc.Step(`^the output view contains "([^"]*)"$`, w.viewContains)
 	sc.Step(`^the output view does not contain "([^"]*)"$`, w.viewNotContains)
+	sc.Step(`^the output view shows bolded "([^"]*)"$`, w.showsBold)
+	sc.Step(`^the output view shows inline code "([^"]*)"$`, w.showsCode)
+	sc.Step(`^the output view shows an h(\d) header "([^"]*)"$`, w.showsHeader)
 	sc.Step(`^the output has (\d+) assistant entry$`, w.assistantEntries)
 	sc.Step(`^no output line is wider than (\d+)$`, w.noLineWiderThan)
 }
@@ -72,6 +76,52 @@ func (w *outputWorld) applyUserPrompt(text string) error {
 
 func (w *outputWorld) applyAgentResponse(text string) error {
 	w.panel.Apply(state.Event{ContentType: state.ContentAgentResponse, Enabled: true, Ordinal: 2, Payload: map[string]any{"text": text}})
+	return nil
+}
+
+// applyAgentResponseBody applies a complete agent response whose body is a multiline
+// doc string, so markdown scenarios (headers spanning lines) can be expressed.
+func (w *outputWorld) applyAgentResponseBody(body *godog.DocString) error {
+	w.panel.Apply(state.Event{ContentType: state.ContentAgentResponse, Enabled: true, Ordinal: 2, Payload: map[string]any{"text": body.Content}})
+	return nil
+}
+
+// SGR sequences the output panel emits for Tier-1 markdown emphasis; the assertions
+// pin the rendered contract (marker consumed, styling applied).
+const (
+	sgrReset = "\x1b[0m"
+	sgrBold  = "\x1b[1m"
+	sgrCode  = "\x1b[7m"
+	sgrH1    = "\x1b[1;4m"
+	sgrH2    = "\x1b[1m"
+	sgrH3    = "\x1b[4m"
+)
+
+func (w *outputWorld) showsBold(text string) error {
+	want := sgrBold + text + sgrReset
+	if !strings.Contains(w.panel.View(), want) {
+		return fmt.Errorf("output view does not render %q as bold", text)
+	}
+	return nil
+}
+
+func (w *outputWorld) showsCode(text string) error {
+	want := sgrCode + text + sgrReset
+	if !strings.Contains(w.panel.View(), want) {
+		return fmt.Errorf("output view does not render %q as inline code", text)
+	}
+	return nil
+}
+
+func (w *outputWorld) showsHeader(level int, text string) error {
+	open := map[int]string{1: sgrH1, 2: sgrH2, 3: sgrH3}[level]
+	if open == "" {
+		return fmt.Errorf("unsupported header level %d", level)
+	}
+	want := open + text + sgrReset
+	if !strings.Contains(w.panel.View(), want) {
+		return fmt.Errorf("output view does not render %q as an h%d header", text, level)
+	}
 	return nil
 }
 
