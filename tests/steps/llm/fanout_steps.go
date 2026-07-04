@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -79,6 +80,9 @@ type fanoutWorld struct {
 	done         chan struct{}
 	cancelAt     time.Time
 	cancelElapsed time.Duration
+
+	// env restore for the server-defaults scenarios
+	envRestore func()
 }
 
 // InitializeScenario registers the LLM-domain steps.
@@ -86,6 +90,9 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	w := &fanoutWorld{}
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
+		if w.envRestore != nil {
+			w.envRestore()
+		}
 		*w = fanoutWorld{}
 		return ctx, err
 	})
@@ -96,6 +103,9 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^a fan-out pool with a maximum width of (\d+)$`, w.poolWidth)
 	sc.Step(`^a fan-out pool with provenance recording enabled$`, w.poolRecorder)
 	sc.Step(`^a fan-out pool backed by a stub model with invocations in flight$`, w.poolInFlight)
+	sc.Step(`^the Ollama parallel-slot count is "([^"]*)"$`, w.slotsEnv)
+	sc.Step(`^the Ollama parallel-slot count is unset$`, w.slotsUnset)
+	sc.Step(`^a pool is built with server defaults$`, w.poolServerDefaults)
 
 	// --- aggregators ---
 	sc.Step(`^a majority-vote aggregator$`, w.majAgg)
@@ -154,6 +164,51 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the fan-out is rejected with reason "([^"]*)"$`, w.rejectedWith)
 	sc.Step(`^each invocation is recorded as an event$`, w.eachRecorded)
 	sc.Step(`^the aggregate decision is recorded with its vote spread$`, w.decisionRecorded)
+	sc.Step(`^the pool default concurrency is (\d+)$`, w.defaultConcurrency)
+	sc.Step(`^the pool default width budget is (\d+)$`, w.defaultWidth)
+}
+
+// ---- server-defaults steps ----
+
+func (w *fanoutWorld) captureSlotsEnv() {
+	old, had := os.LookupEnv("OLLAMA_NUM_PARALLEL")
+	w.envRestore = func() {
+		if had {
+			_ = os.Setenv("OLLAMA_NUM_PARALLEL", old)
+		} else {
+			_ = os.Unsetenv("OLLAMA_NUM_PARALLEL")
+		}
+	}
+}
+
+func (w *fanoutWorld) slotsEnv(val string) error {
+	w.captureSlotsEnv()
+	return os.Setenv("OLLAMA_NUM_PARALLEL", val)
+}
+
+func (w *fanoutWorld) slotsUnset() error {
+	w.captureSlotsEnv()
+	return os.Unsetenv("OLLAMA_NUM_PARALLEL")
+}
+
+func (w *fanoutWorld) poolServerDefaults() error {
+	w.ensureInvoker()
+	w.pool = fanout.New(w.invoker, fanout.WithServerDefaults())
+	return nil
+}
+
+func (w *fanoutWorld) defaultConcurrency(n int) error {
+	if got := w.pool.Concurrency(); got != n {
+		return fmt.Errorf("pool concurrency = %d, want %d", got, n)
+	}
+	return nil
+}
+
+func (w *fanoutWorld) defaultWidth(n int) error {
+	if got := w.pool.MaxWidth(); got != n {
+		return fmt.Errorf("pool width budget = %d, want %d", got, n)
+	}
+	return nil
 }
 
 // ---- stub invoker ----

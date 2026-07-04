@@ -16,10 +16,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// fallbackSlots is the assumed parallel-slot count when the Ollama server does
+// not advertise one via OLLAMA_NUM_PARALLEL. It matches the measured knee on
+// this project's hardware (see the fan-out concurrency spike): aggregate token
+// throughput is flat past ~4-5 in-flight requests, so fanning wider only queues.
+const fallbackSlots = 4
+
+// DefaultConcurrency returns the fan-out width to use when a caller does not set
+// one: the Ollama server's parallel-slot count (OLLAMA_NUM_PARALLEL), since total
+// throughput does not rise past it — extra width just pays a linear latency tax.
+// Falls back to fallbackSlots when the env var is unset or unparseable.
+func DefaultConcurrency() int {
+	if v := strings.TrimSpace(os.Getenv("OLLAMA_NUM_PARALLEL")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return fallbackSlots
+}
 
 // Params carries the per-invocation model knobs that make voting meaningful:
 // varying temperature/seed across otherwise-identical invocations is what turns
@@ -139,14 +160,38 @@ func WithMaxWidth(n int) Option { return func(p *Pool) { p.maxWidth = n } }
 // WithRecorder attaches provenance recording.
 func WithRecorder(r Recorder) Option { return func(p *Pool) { p.recorder = r } }
 
-// New builds a Pool over the given invoker.
+// WithServerDefaults is the recommended production configuration: it sizes the
+// concurrency to the server's parallel-slot count (DefaultConcurrency) and sets
+// the width budget to twice that. Past the slot count throughput is flat and
+// latency grows linearly, so the budget refuses pathologically wide batches
+// while still allowing a bounded self-consistency vote to queue one deep.
+func WithServerDefaults() Option {
+	return func(p *Pool) {
+		slots := DefaultConcurrency()
+		p.concurrency = slots
+		p.maxWidth = 2 * slots
+	}
+}
+
+// New builds a Pool over the given invoker. When no concurrency is configured it
+// defaults to the server's slot count (DefaultConcurrency); the width budget is
+// left unbounded unless set via WithServerDefaults or WithMaxWidth.
 func New(inv Invoker, opts ...Option) *Pool {
-	p := &Pool{invoker: inv, concurrency: 4}
+	p := &Pool{invoker: inv}
 	for _, o := range opts {
 		o(p)
 	}
+	if p.concurrency <= 0 {
+		p.concurrency = DefaultConcurrency()
+	}
 	return p
 }
+
+// Concurrency reports the pool's configured in-flight cap.
+func (p *Pool) Concurrency() int { return p.concurrency }
+
+// MaxWidth reports the pool's batch-width budget (0 means unbounded).
+func (p *Pool) MaxWidth() int { return p.maxWidth }
 
 // ErrWidthExceeded is returned when a batch is wider than the pool's budget.
 var ErrWidthExceeded = errors.New("width exceeds budget")

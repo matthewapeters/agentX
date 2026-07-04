@@ -173,6 +173,24 @@ Feature: Parallel model-invocation pool (fan-out / fan-in)
     When a batch of 12 invocations is submitted
     Then the fan-out is rejected with reason "width exceeds budget"
 
+  # use-case: UC-FANOUT-DEFAULTS  (TC-FAN-016)
+  # Bound width to the server's parallel-slot count; wider only queues (see the
+  # fan-out concurrency spike — throughput is flat past the slots).
+  @unit
+  Scenario: The pool sizes itself to the Ollama slot count
+    Given the Ollama parallel-slot count is "6"
+    When a pool is built with server defaults
+    Then the pool default concurrency is 6
+    And the pool default width budget is 12
+
+  # use-case: UC-FANOUT-DEFAULTS  (TC-FAN-017)
+  @unit
+  Scenario: The pool falls back to a default slot count when none is advertised
+    Given the Ollama parallel-slot count is unset
+    When a pool is built with server defaults
+    Then the pool default concurrency is 4
+    And the pool default width budget is 8
+
   # use-case: UC-FANOUT-PROV  (TC-FAN-015)
   # Every vote and the aggregate are answerable from the event log later.
   @integration
