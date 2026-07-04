@@ -70,6 +70,12 @@ user turn
 [A] is unchanged. [B] and [C] are each a **cascade** (§4). [D] reconciles the two
 signals into a routing decision. [E] performs and *verifies* the action.
 
+A **stage 0 (relatedness triage)** runs *before* [B]/[C] and decides what context they
+may see — closing the "who decides what's relevant?" question left open by the
+minimal-context rule above. It is specified in
+[`prompt_fan_groups.md`](prompt_fan_groups.md), which also defines the prompt corpus
+(fan-groups) that all of [0]/[B]/[C] draw their prompts from.
+
 ## The cascade (applies to both [B] and [C])
 
 Each classifier is a three-tier cascade so the common turn stays at R=1 (≈0.77s on the
