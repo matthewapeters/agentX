@@ -158,6 +158,7 @@ apm_modules/
 
 # Go build artifact from `go build ./...` at repo root (canonical build is bin/agentx)
 /agentx
+/ollamabench
 
 # Local developer MCP/tooling launchers (not project artifacts)
 /gopls.mcp

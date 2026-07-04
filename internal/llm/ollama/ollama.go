@@ -21,9 +21,21 @@ type Client struct {
 }
 
 // New returns a Client for the given host (e.g. "localhost:11434"). A bare
-// host:port is assumed to use http.
+// host:port is assumed to use http. It uses http.DefaultClient.
 func New(host string) *Client {
-	return &Client{baseURL: normalizeHost(host), http: http.DefaultClient, ctxLen: map[string]int{}}
+	return NewWithHTTPClient(host, http.DefaultClient)
+}
+
+// NewWithHTTPClient is like New but uses the supplied *http.Client. Pass a
+// client with a tuned Transport (e.g. raised MaxConnsPerHost /
+// MaxIdleConnsPerHost) when issuing many concurrent requests, so the client's
+// connection pool does not itself cap concurrency. A nil hc falls back to
+// http.DefaultClient.
+func NewWithHTTPClient(host string, hc *http.Client) *Client {
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	return &Client{baseURL: normalizeHost(host), http: hc, ctxLen: map[string]int{}}
 }
 
 func normalizeHost(host string) string {
