@@ -30,6 +30,21 @@ Feature: Configuration resolution and first-run seeding
     And the config source is "seeded"
 
   # use-case: UC-CONFIG-RESOLVE
+  # variant: markdown renderer defaults to glamour (ADR 0007)
+  Scenario: The markdown renderer defaults to glamour
+    Given no deployment config exists
+    And no project config exists
+    When the runtime resolves configuration
+    Then the effective markdown renderer is "glamour"
+
+  # use-case: UC-CONFIG-RESOLVE
+  # variant: an explicit "scanner" opts out of the glamour default
+  Scenario: An explicit scanner setting is honored
+    Given a deployment config with markdown_renderer "scanner"
+    When the runtime resolves configuration
+    Then the effective markdown renderer is "scanner"
+
+  # use-case: UC-CONFIG-RESOLVE
   # variant: project-fallback
   Scenario: First run falls back to project-local defaults
     Given no deployment config exists

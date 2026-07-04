@@ -89,9 +89,14 @@ explicit:
 
 ### Rollout: behind a flag
 
-- A config flag `[agentx.output] markdown_renderer` selects `"scanner"` (default) or
-  `"glamour"`. The scanner remains the default until the glamour path is proven; then
-  the default flips in a follow-up.
+- A config flag `[agentx.output] markdown_renderer` selects `"glamour"` (default) or
+  `"scanner"`. Only an explicit `"scanner"` opts out; every other value resolves to
+  glamour.
+- **Update 2026-07-04:** the default flipped from `"scanner"` to `"glamour"` once the
+  finalize-swap path was proven (aligned tables, syntax-highlighted code, the
+  horizontal-scroll guarantee under the width contract). The scanner is retained as
+  the streaming renderer and the opt-out/fallback, so this advances the rollout stage
+  without changing the dual-renderer intent.
 - Because the finalized glamour block is fed back through the *existing* `renderBody`
   pipeline (windowing, cap, scrollbar, padding all operate on the pre-wrapped lines),
   the swap is confined to the render seam — no change to widget navigation, collapse,

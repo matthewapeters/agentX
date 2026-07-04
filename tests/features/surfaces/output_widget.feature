@@ -210,10 +210,12 @@ Feature: Collapsible output widgets
     And no output line is wider than 40
 
   # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 3 — ADR 0007)
-  # variant: the default scanner renderer does not render tables — the pipe markup
-  # stays literal, so the glamour path is what unlocks tables.
-  Scenario: The default scanner renderer leaves table markup literal
+  # variant: the scanner renderer does not render tables — the pipe markup stays
+  # literal, so the glamour path is what unlocks tables. (Glamour is the product
+  # default; this pins the opt-out behavior.)
+  Scenario: The scanner renderer leaves table markup literal
     Given an output panel sized 52 by 12
+    And the markdown renderer is "scanner"
     When an agent_response with body:
       """
       | A | B |

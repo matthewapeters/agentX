@@ -91,9 +91,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   aligned box-drawing columns and fenced code blocks are syntax-highlighted, the
   "HUGE bonus" a per-line scanner cannot do. The streaming path is untouched: deltas
   still render live with the lightweight scanner, and glamour swaps in only on
-  finalize, so partial markdown never flickers. The scanner remains the default
-  (`"scanner"`) and the always-available fallback whenever a glamour render is
-  unavailable or stale. Glamour is rendered to `innerW - 1`, reserving the per-widget
+  finalize, so partial markdown never flickers. Glamour is now the **default**
+  renderer (`markdown_renderer = "glamour"`); an explicit `"scanner"` opts out. The
+  scanner remains the streaming renderer and the always-available fallback whenever a
+  glamour render is unavailable or stale. Glamour is rendered to `innerW - 1`, reserving the per-widget
   vertical-scrollbar gutter unconditionally, which guarantees a table that grows tall
   enough to scroll still fits horizontally — the output panel never forces a
   horizontal scroll. Renders are cached per width and invalidated on resize. New
