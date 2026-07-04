@@ -143,12 +143,16 @@ func (c Config) InputMaxLines() int {
 }
 
 // MarkdownRenderer returns the assistant-markdown rendering mode: "glamour" (the
-// default) for the full finalize-time render, or "scanner" for the lightweight
-// per-line scanner. Only an explicit "scanner" opts out; every other value (empty,
-// "glamour", or unrecognized) resolves to the glamour default. See ADR 0007.
+// default) for the full finalize-time render, "native" for scanner prose + tables
+// drawn directly with lipgloss/table, or "scanner" for the lightweight per-line
+// scanner alone. An explicit "scanner" or "native" is honored; every other value
+// (empty, "glamour", or unrecognized) resolves to the glamour default. See ADR 0007.
 func (c Config) MarkdownRenderer() string {
-	if strings.EqualFold(strings.TrimSpace(c.Agentx.Output.MarkdownRenderer), "scanner") {
+	switch strings.ToLower(strings.TrimSpace(c.Agentx.Output.MarkdownRenderer)) {
+	case "scanner":
 		return "scanner"
+	case "native":
+		return "native"
 	}
 	return defaultMarkdownRenderer
 }

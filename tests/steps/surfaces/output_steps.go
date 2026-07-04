@@ -36,6 +36,8 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the panel pages up$`, w.pageUp)
 	sc.Step(`^the max widget lines is (\d+)$`, w.setMaxBody)
 	sc.Step(`^the markdown renderer is "([^"]*)"$`, w.setMarkdownRenderer)
+	sc.Step(`^the output view has table row rules$`, w.hasTableRowRules)
+	sc.Step(`^the output view has zebra-striped rows$`, w.hasZebraRows)
 	sc.Step(`^a thinking event with (\d+) body lines is applied$`, w.applyThinkingLines)
 	sc.Step(`^(\d+) agent_delta lines are streamed$`, w.streamAgentDeltaLines)
 	sc.Step(`^the selected widget is toggled$`, w.toggleSelected)
@@ -410,6 +412,25 @@ func (w *outputWorld) noLineWiderThan(limit int) error {
 
 func (w *outputWorld) setMarkdownRenderer(mode string) error {
 	w.panel.SetMarkdownRenderer(mode)
+	return nil
+}
+
+// hasTableRowRules asserts a light horizontal rule "─" (U+2500) appears — the native
+// table renderer draws inter-row rules with it (the box border uses heavy "━").
+func (w *outputWorld) hasTableRowRules() error {
+	if !strings.Contains(w.panel.View(), "─") {
+		return fmt.Errorf("output view has no table row rule")
+	}
+	return nil
+}
+
+// hasZebraRows asserts both native zebra background SGR bands appear, i.e. body rows
+// alternate shading. 236 = dark gray, 233 = near black (mirrors the output constants).
+func (w *outputWorld) hasZebraRows() error {
+	view := w.panel.View()
+	if !strings.Contains(view, "48;5;236") || !strings.Contains(view, "48;5;233") {
+		return fmt.Errorf("output view does not show alternating zebra row backgrounds")
+	}
 	return nil
 }
 

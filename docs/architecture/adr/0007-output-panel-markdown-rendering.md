@@ -162,6 +162,20 @@ capability — at that point, weigh "fork glamour" against "drop glamour, render
 lipgloss/table directly," and default toward the latter unless chroma highlighting alone
 justifies keeping the whole dependency.
 
+**Spike result (2026-07-04).** The drop-glamour table path was prototyped and now ships
+behind the flag as a third renderer: `markdown_renderer = "native"` — the scanner styles
+prose and GFM table blocks are parsed and drawn directly with `lipgloss/table`, with
+**inter-row rules (`BorderRow`) and zebra-striped body rows**, bounded to `innerW - 1`
+(the width contract holds; no horizontal scroll). It delivers exactly the clarity
+glamour cannot: a row's wrapped continuation lines share its stripe, so long cells stay
+legible. Cost measured: `native` uses the scanner for fenced code, so it loses chroma
+syntax highlighting — the one glamour-unique capability that remains. Net: glamour stays
+the default for its code highlighting and full-document polish, but `native` is the
+concrete, lower-dependency fallback and the demonstrated answer to "what does dropping
+glamour cost." If code highlighting is later added to the native path (chroma used
+directly, or a lighter treatment), dropping glamour becomes the preferred default per
+"clarity trumps polish." Implementation: `output.renderNative` / `renderMarkdownTable`.
+
 ## Companions
 
 - Implementation: `internal/surfaces/output/output.go` (`finalizeAssistant`, the

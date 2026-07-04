@@ -45,6 +45,13 @@ Feature: Configuration resolution and first-run seeding
     Then the effective markdown renderer is "scanner"
 
   # use-case: UC-CONFIG-RESOLVE
+  # variant: the "native" renderer (scanner prose + lipgloss/table tables) is honored
+  Scenario: An explicit native setting is honored
+    Given a deployment config with markdown_renderer "native"
+    When the runtime resolves configuration
+    Then the effective markdown renderer is "native"
+
+  # use-case: UC-CONFIG-RESOLVE
   # variant: project-fallback
   Scenario: First run falls back to project-local defaults
     Given no deployment config exists

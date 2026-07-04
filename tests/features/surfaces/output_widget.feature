@@ -210,9 +210,30 @@ Feature: Collapsible output widgets
     And no output line is wider than 40
 
   # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 3 — ADR 0007)
+  # The native renderer draws GFM tables directly with lipgloss/table: pipe markup is
+  # consumed, inter-row rules are drawn, and body rows are zebra-shaded so wrapped
+  # cells stay legible — the clarity affordances glamour cannot express.
+  Scenario: The native renderer draws bordered, zebra-striped tables
+    Given an output panel sized 46 by 20
+    And the markdown renderer is "native"
+    When an agent_response with body:
+      """
+      | Task | Owner |
+      |------|-------|
+      | build | Ada |
+      | test | Grace |
+      """
+    Then the output view contains "Task"
+    And the output view contains "Grace"
+    And the output view does not contain "|------|"
+    And the output view has table row rules
+    And the output view has zebra-striped rows
+    And no output line is wider than 46
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 3 — ADR 0007)
   # variant: the scanner renderer does not render tables — the pipe markup stays
-  # literal, so the glamour path is what unlocks tables. (Glamour is the product
-  # default; this pins the opt-out behavior.)
+  # literal, so the glamour/native paths are what unlock tables. (Glamour is the
+  # product default; this pins the opt-out behavior.)
   Scenario: The scanner renderer leaves table markup literal
     Given an output panel sized 52 by 12
     And the markdown renderer is "scanner"

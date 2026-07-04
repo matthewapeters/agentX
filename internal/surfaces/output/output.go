@@ -18,6 +18,8 @@ import (
 	glamour "charm.land/glamour/v2"
 	glansi "charm.land/glamour/v2/ansi"
 	glstyles "charm.land/glamour/v2/styles"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 	"github.com/charmbracelet/x/ansi"
 
 	"agentx/internal/state"
@@ -113,7 +115,7 @@ type Model struct {
 
 	collapseAll     bool // context surface: every element starts collapsed (summary)
 	showToggleState bool // context surface: show an enabled checkbox on toggleables
-	glamourMD       bool // render finalized assistant bodies with glamour (ADR 0007)
+	mdMode          string // finalized-assistant renderer: "glamour", "native", or "" (scanner) — ADR 0007
 }
 
 // SetCollapseByDefault makes newly added elements start collapsed — the context
@@ -125,16 +127,23 @@ func (m *Model) SetCollapseByDefault(on bool) { m.collapseAll = on }
 // which does not toggle, leaves it off.
 func (m *Model) SetShowToggleState(on bool) { m.showToggleState = on }
 
-// SetMarkdownRenderer selects assistant-markdown rendering: "glamour" upgrades a
-// finalized answer to a full glamour render; any other value keeps the lightweight
-// per-line scanner. The streaming path always uses the scanner regardless. Switching
-// modes invalidates cached glamour renders. See ADR 0007.
+// SetMarkdownRenderer selects how a finalized assistant answer is rendered: "glamour"
+// (full glamour document), "native" (scanner prose + GFM tables drawn directly with
+// lipgloss/table — bordered, zebra-striped), or anything else for the plain scanner.
+// The streaming path always uses the scanner regardless. Switching modes invalidates
+// any cached render. See ADR 0007.
 func (m *Model) SetMarkdownRenderer(mode string) {
-	on := strings.EqualFold(strings.TrimSpace(mode), "glamour")
-	if on == m.glamourMD {
+	next := ""
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "glamour":
+		next = "glamour"
+	case "native":
+		next = "native"
+	}
+	if next == m.mdMode {
 		return
 	}
-	m.glamourMD = on
+	m.mdMode = next
 	for _, w := range m.widgets {
 		w.renderedBody, w.renderedWidth = "", 0
 	}
@@ -633,13 +642,17 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 
 	// Style once (markdown → SGR) before wrapping, so the ANSI-aware wrap/pad math
 	// measures true display width and the markers never count toward it. A finalized
-	// assistant body upgrades to the glamour render when enabled; the streaming path
-	// (not yet finalized) always uses the lightweight scanner. See ADR 0007.
+	// assistant body upgrades to the configured renderer; the streaming path (not yet
+	// finalized) always uses the lightweight scanner. Both the glamour and native
+	// renderers are rendered to innerW-1, reserving the scrollbar gutter. See ADR 0007.
 	body := w.body
 	if w.markdown {
-		if m.glamourMD && w.finalized {
+		switch {
+		case w.finalized && m.mdMode == "glamour":
 			body = m.glamourBody(w, innerW-1)
-		} else {
+		case w.finalized && m.mdMode == "native":
+			body = m.nativeBody(w, innerW-1)
+		default:
 			body = styleMarkdown(w.body)
 		}
 	}
@@ -887,6 +900,165 @@ func renderGlamour(src string, width int) string {
 		return styleMarkdown(src)
 	}
 	return strings.Trim(out, "\n")
+}
+
+// Native-table styling: theme-neutral dark SGR indices. The zebra pair is a near-black
+// and a dark-gray so body rows — and their wrapped continuation lines — stay visually
+// distinct; the header gets a slightly lighter band. See ADR 0007 (drop-glamour path).
+const (
+	nativeTableBorder   = "240" // dark gray column/row rules
+	nativeTableHeaderBg = "238"
+	nativeZebraA        = "236" // dark gray
+	nativeZebraB        = "233" // near black
+)
+
+// nativeBody returns the "native" render of the widget's markdown body wrapped to
+// width, cached on the widget (keyed by width, like glamourBody). Callers pass innerW-1
+// to reserve the scrollbar gutter (ADR 0007).
+func (m *Model) nativeBody(w *widget, width int) string {
+	if width < 1 {
+		return styleMarkdown(w.body)
+	}
+	if w.renderedWidth == width && w.renderedBody != "" {
+		return w.renderedBody
+	}
+	w.renderedBody = renderNative(w.body, width)
+	w.renderedWidth = width
+	return w.renderedBody
+}
+
+// renderNative styles prose with the per-line scanner and renders GFM table blocks
+// directly with lipgloss/table — bordered (inter-row rules) and zebra-striped — the
+// "drop glamour" table path (ADR 0007). A table block is a pipe-delimited header row
+// followed by a delimiter row (dashes, optional colons); contiguous pipe rows below it
+// form the body. Everything else falls through to styleLine.
+func renderNative(src string, width int) string {
+	lines := strings.Split(src, "\n")
+	var out []string
+	for i := 0; i < len(lines); {
+		if i+1 < len(lines) && strings.Contains(lines[i], "|") && isTableDelimiter(lines[i+1]) {
+			header := splitTableCells(lines[i])
+			aligns := tableAligns(lines[i+1], len(header))
+			var rows [][]string
+			j := i + 2
+			for j < len(lines) && strings.Contains(lines[j], "|") && strings.TrimSpace(lines[j]) != "" {
+				rows = append(rows, padCells(splitTableCells(lines[j]), len(header)))
+				j++
+			}
+			out = append(out, renderMarkdownTable(header, aligns, rows, width))
+			i = j
+			continue
+		}
+		out = append(out, styleLine(lines[i]))
+		i++
+	}
+	return strings.Join(out, "\n")
+}
+
+// isTableDelimiter reports whether line is a GFM table delimiter row: every
+// pipe-separated cell is dashes with an optional leading/trailing colon (alignment).
+func isTableDelimiter(line string) bool {
+	cells := splitTableCells(line)
+	if len(cells) == 0 {
+		return false
+	}
+	for _, c := range cells {
+		c = strings.TrimSpace(c)
+		c = strings.TrimPrefix(c, ":")
+		c = strings.TrimSuffix(c, ":")
+		if c == "" {
+			return false
+		}
+		for _, r := range c {
+			if r != '-' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// splitTableCells splits a pipe-delimited row into trimmed cells, dropping the optional
+// outer pipes.
+func splitTableCells(line string) []string {
+	s := strings.TrimSpace(line)
+	s = strings.TrimPrefix(s, "|")
+	s = strings.TrimSuffix(s, "|")
+	parts := strings.Split(s, "|")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
+}
+
+// tableAligns derives per-column alignment (0 left, 1 center, 2 right) from a delimiter
+// row: a leading colon means left-anchored, both colons center, a trailing colon right.
+func tableAligns(delim string, n int) []int {
+	cells := splitTableCells(delim)
+	a := make([]int, n)
+	for i := 0; i < n; i++ {
+		if i >= len(cells) {
+			continue
+		}
+		c := strings.TrimSpace(cells[i])
+		left, right := strings.HasPrefix(c, ":"), strings.HasSuffix(c, ":")
+		switch {
+		case left && right:
+			a[i] = 1
+		case right:
+			a[i] = 2
+		}
+	}
+	return a
+}
+
+// padCells normalizes a row to exactly n cells (truncating extras, padding shortfalls).
+func padCells(cells []string, n int) []string {
+	if len(cells) >= n {
+		return cells[:n]
+	}
+	out := make([]string, n)
+	copy(out, cells)
+	return out
+}
+
+// renderMarkdownTable draws a GFM table with lipgloss/table: column + inter-row rules,
+// a header band, and zebra body rows, bounded to width (wrapping long cells). This is
+// what glamour's table renderer cannot express (it discards the row index and never
+// enables BorderRow) — the affordance the drop-glamour path buys.
+func renderMarkdownTable(header []string, aligns []int, rows [][]string, width int) string {
+	borderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(nativeTableBorder))
+	t := table.New().
+		Width(width).
+		Wrap(true).
+		Border(lipgloss.NormalBorder()).
+		BorderStyle(borderStyle).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderRow(true).
+		Headers(header...).
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			st := lipgloss.NewStyle().Padding(0, 1)
+			if col >= 0 && col < len(aligns) {
+				switch aligns[col] {
+				case 1:
+					st = st.Align(lipgloss.Center)
+				case 2:
+					st = st.Align(lipgloss.Right)
+				}
+			}
+			if row == table.HeaderRow {
+				return st.Bold(true).Background(lipgloss.Color(nativeTableHeaderBg))
+			}
+			if row%2 == 0 {
+				return st.Background(lipgloss.Color(nativeZebraA))
+			}
+			return st.Background(lipgloss.Color(nativeZebraB))
+		})
+	return strings.TrimRight(t.String(), "\n")
 }
 
 // styleMarkdown applies Tier-1 markdown emphasis line by line, preserving newlines so

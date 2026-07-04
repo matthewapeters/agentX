@@ -101,6 +101,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   dependencies vendored: `charm.land/glamour/v2`, goldmark, chroma, bluemonday
   (lipgloss bumped v2.0.3 → v2.0.4). New config `output.MarkdownRenderer`,
   `output.SetMarkdownRenderer`. Design of record: ADR 0007. Tier 3 of nits.md #6.
+- **`native` markdown renderer draws bordered, zebra-striped tables (ADR 0007 spike).**
+  A third `markdown_renderer` mode, `"native"`, styles prose with the per-line scanner
+  and renders GFM table blocks directly with `lipgloss/table` — with inter-row rules
+  and alternating row backgrounds glamour cannot express (its table renderer discards
+  the row index and never enables `BorderRow`). A row's wrapped continuation lines
+  share its stripe, so long cells stay legible. Bounded to `innerW - 1` like glamour
+  (no horizontal scroll); parses column alignment from the delimiter row. Trade vs.
+  glamour: `native` loses chroma code-block highlighting. Glamour remains the default;
+  `native` is the lower-dependency fallback and the demonstrated "drop glamour" path.
+  New `output.renderNative` / `output.renderMarkdownTable`.
 - **Agent responses are now streamed and stored as two distinct kinds.** The live
   answer streams as transient `agent_delta` chunks (in-process bus, chat window's
   typing effect only — never persisted, never sent to external surfaces); when it
