@@ -157,3 +157,66 @@ Feature: Collapsible output widgets
     Given an output panel sized 40 by 12
     When an agent_response event "> quoted wisdom here" is applied
     Then the output view shows a blockquote "quoted wisdom here"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 3 — ADR 0007)
+  # With the glamour renderer, a finalized answer is rendered as a full document:
+  # GFM tables draw aligned box-drawing columns and the pipe markup is consumed.
+  # Assertions are structural (not exact SGR) so they survive glamour theme/version.
+  Scenario: The glamour renderer renders a GFM table
+    Given an output panel sized 52 by 30
+    And the markdown renderer is "glamour"
+    When an agent_response with body:
+      """
+      | Name | Role |
+      |------|------|
+      | Ada | Engineer |
+      """
+    Then the output view contains "Name"
+    And the output view contains "Ada"
+    And the output view contains "│"
+    And the output view does not contain "|------|"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 3 — ADR 0007)
+  # A fenced code block is syntax-highlighted; the ``` fence markers are consumed.
+  Scenario: The glamour renderer highlights a fenced code block
+    Given an output panel sized 52 by 30
+    And the markdown renderer is "glamour"
+    When an agent_response with body:
+      """
+      ```go
+      func main() {}
+      ```
+      """
+    Then the output view contains "func"
+    And the output view contains "main"
+    And the output view does not contain "```"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 3 — ADR 0007)
+  # The width contract: a table taller than the cap scrolls vertically, and NO line
+  # ever exceeds the panel width — the output panel never forces a horizontal scroll.
+  Scenario: A wide glamour table scrolls vertically without a horizontal scroll
+    Given an output panel sized 40 by 12
+    And the max widget lines is 4
+    And the markdown renderer is "glamour"
+    When an agent_response with body:
+      """
+      | Name | Role | Score |
+      |------|------|-------|
+      | Ada | Engineer | 99 |
+      | Grace | Admiral | 100 |
+      | Alan | Theorist | 88 |
+      """
+    Then the output view contains a scrollbar
+    And no output line is wider than 40
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 3 — ADR 0007)
+  # variant: the default scanner renderer does not render tables — the pipe markup
+  # stays literal, so the glamour path is what unlocks tables.
+  Scenario: The default scanner renderer leaves table markup literal
+    Given an output panel sized 52 by 12
+    When an agent_response with body:
+      """
+      | A | B |
+      | 1 | 2 |
+      """
+    Then the output view contains "| A | B |"

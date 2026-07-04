@@ -86,9 +86,13 @@ type Classification struct {
 }
 
 // Output is the [agentx.output] table tuning the output panel widgets.
+// MarkdownRenderer selects how assistant markdown is styled: "scanner" (the default
+// lightweight per-line ANSI scanner, used live while streaming) or "glamour" (a full
+// glamour render swapped in when the response finalizes). See ADR 0007.
 type Output struct {
-	MaxWidgetLines int `toml:"max_widget_lines"`
-	InputMaxLines  int `toml:"input_max_lines"`
+	MaxWidgetLines   int    `toml:"max_widget_lines"`
+	InputMaxLines    int    `toml:"input_max_lines"`
+	MarkdownRenderer string `toml:"markdown_renderer"`
 }
 
 // Theme is the [agentx.theme] table styling the chat surface. Colors accept a
@@ -136,6 +140,16 @@ func (c Config) InputMaxLines() int {
 		return defaultInputMaxLines
 	}
 	return c.Agentx.Output.InputMaxLines
+}
+
+// MarkdownRenderer returns the assistant-markdown rendering mode: "glamour" for the
+// full finalize-time render, or "scanner" (the default) for the lightweight per-line
+// scanner. Unrecognized values fall back to "scanner". See ADR 0007.
+func (c Config) MarkdownRenderer() string {
+	if strings.EqualFold(strings.TrimSpace(c.Agentx.Output.MarkdownRenderer), "glamour") {
+		return "glamour"
+	}
+	return defaultMarkdownRenderer
 }
 
 // ToolsEnabled reports whether the single_tool execution cycle is on (default on).
@@ -285,6 +299,7 @@ const (
 	defaultClarificationOptions  = 3
 	defaultMaxWidgetLines        = 20
 	defaultInputMaxLines         = 8
+	defaultMarkdownRenderer      = "scanner"
 	defaultActiveBorder          = "cyan"
 	defaultInactiveBorder        = "dark gray"
 	defaultThinkingBudgetSeconds = 180
@@ -306,7 +321,7 @@ func Default() Config {
 				Retries:              defaultClassificationRetries,
 				ClarificationOptions: defaultClarificationOptions,
 			},
-			Output: Output{MaxWidgetLines: defaultMaxWidgetLines, InputMaxLines: defaultInputMaxLines},
+			Output: Output{MaxWidgetLines: defaultMaxWidgetLines, InputMaxLines: defaultInputMaxLines, MarkdownRenderer: defaultMarkdownRenderer},
 			Thinking: Thinking{
 				Enabled:           boolPtr(true),
 				TimeBudgetSeconds: defaultThinkingBudgetSeconds,

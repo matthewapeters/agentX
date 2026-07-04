@@ -94,6 +94,7 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ClassificationRetries: cfg.ClassificationRetries(),
 		MaxWidgetLines:        cfg.MaxWidgetLines(),
 		InputMaxLines:         cfg.InputMaxLines(),
+		MarkdownRenderer:      cfg.MarkdownRenderer(),
 		ThinkingEnabled:       cfg.ThinkingEnabled(),
 		ThinkingPrompt:        thinkingPrompt,
 		ThinkingBudget:        time.Duration(cfg.ThinkingTimeBudgetSeconds()) * time.Second,
@@ -207,6 +208,7 @@ func RunChat(ctx context.Context, opts Options) error {
 	surface := chat.NewWithBridge(bridge)
 	surface.SetMaxWidgetLines(orc.Settings().MaxWidgetLines)
 	surface.SetMaxInputLines(orc.Settings().InputMaxLines)
+	surface.SetMarkdownRenderer(orc.Settings().MarkdownRenderer)
 	surface.SetTheme(orc.Settings().ActiveBorderColor, orc.Settings().InactiveBorderColor)
 	surface.SetBanner(opts.Logo)
 

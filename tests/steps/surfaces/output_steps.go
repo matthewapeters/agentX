@@ -35,6 +35,7 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the panel scrolls up by (\d+)$`, w.scrollUp)
 	sc.Step(`^the panel pages up$`, w.pageUp)
 	sc.Step(`^the max widget lines is (\d+)$`, w.setMaxBody)
+	sc.Step(`^the markdown renderer is "([^"]*)"$`, w.setMarkdownRenderer)
 	sc.Step(`^a thinking event with (\d+) body lines is applied$`, w.applyThinkingLines)
 	sc.Step(`^(\d+) agent_delta lines are streamed$`, w.streamAgentDeltaLines)
 	sc.Step(`^the selected widget is toggled$`, w.toggleSelected)
@@ -404,6 +405,11 @@ func (w *outputWorld) noLineWiderThan(limit int) error {
 			return fmt.Errorf("line %q has display width %d, exceeds %d", line, width, limit)
 		}
 	}
+	return nil
+}
+
+func (w *outputWorld) setMarkdownRenderer(mode string) error {
+	w.panel.SetMarkdownRenderer(mode)
 	return nil
 }
 

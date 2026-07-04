@@ -15,6 +15,9 @@ import (
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	glamour "charm.land/glamour/v2"
+	glansi "charm.land/glamour/v2/ansi"
+	glstyles "charm.land/glamour/v2/styles"
 	"github.com/charmbracelet/x/ansi"
 
 	"agentx/internal/state"
@@ -68,10 +71,19 @@ type widget struct {
 	ordinal    uint64
 	toggleable bool
 	disabled   bool
-	// markdown renders the body with Tier-1 markdown emphasis (**bold**, `code`,
-	// #/##/### headers) as terminal SGR. Set for model-authored assistant bodies;
-	// left off for user prompts and tool output so their text stays literal.
+	// markdown renders the body with markdown emphasis as terminal SGR. Set for
+	// model-authored assistant bodies; left off for user prompts and tool output so
+	// their text stays literal. While streaming, the lightweight per-line scanner
+	// styles it live; once finalized, the glamour renderer may upgrade it (ADR 0007).
 	markdown bool
+	// finalized marks an assistant widget whose complete answer has landed, so the
+	// glamour renderer (when enabled) may replace the streaming scanner render.
+	finalized bool
+	// renderedBody caches the glamour render of body at renderedWidth. It is
+	// invalidated (cleared) when the body changes or the target width does, so a
+	// resize re-renders at the new width. See ADR 0007's width contract.
+	renderedBody  string
+	renderedWidth int
 }
 
 // defaultActive and defaultInactive are the built-in border SGR colors used
@@ -101,6 +113,7 @@ type Model struct {
 
 	collapseAll     bool // context surface: every element starts collapsed (summary)
 	showToggleState bool // context surface: show an enabled checkbox on toggleables
+	glamourMD       bool // render finalized assistant bodies with glamour (ADR 0007)
 }
 
 // SetCollapseByDefault makes newly added elements start collapsed — the context
@@ -111,6 +124,22 @@ func (m *Model) SetCollapseByDefault(on bool) { m.collapseAll = on }
 // left of their emoji — the context surface's management cue. The chat window,
 // which does not toggle, leaves it off.
 func (m *Model) SetShowToggleState(on bool) { m.showToggleState = on }
+
+// SetMarkdownRenderer selects assistant-markdown rendering: "glamour" upgrades a
+// finalized answer to a full glamour render; any other value keeps the lightweight
+// per-line scanner. The streaming path always uses the scanner regardless. Switching
+// modes invalidates cached glamour renders. See ADR 0007.
+func (m *Model) SetMarkdownRenderer(mode string) {
+	on := strings.EqualFold(strings.TrimSpace(mode), "glamour")
+	if on == m.glamourMD {
+		return
+	}
+	m.glamourMD = on
+	for _, w := range m.widgets {
+		w.renderedBody, w.renderedWidth = "", 0
+	}
+	m.refresh(false)
+}
 
 // SelectedToggleable returns the selected element's ordinal and current enabled
 // state when it is a user/agent conversation element the context surface can
@@ -404,11 +433,13 @@ func (m *Model) finalizeAssistant(text string, ordinal uint64, enabled bool) {
 		w.ordinal = ordinal
 		w.toggleable = true
 		w.disabled = !enabled
+		w.finalized = true
+		w.renderedBody, w.renderedWidth = "", 0 // body changed: drop any stale glamour render
 		m.refresh(true)
 		return
 	}
 	m.add(&widget{kind: kindAssistant, title: "🤖 AgentX", body: text, previewWhenCollapsed: true,
-		ordinal: ordinal, toggleable: true, disabled: !enabled, markdown: true})
+		ordinal: ordinal, toggleable: true, disabled: !enabled, markdown: true, finalized: true})
 }
 
 // appendThinking streams reasoning text into a single collapsed thinking widget
@@ -601,10 +632,16 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 	}
 
 	// Style once (markdown → SGR) before wrapping, so the ANSI-aware wrap/pad math
-	// measures true display width and the markers never count toward it.
+	// measures true display width and the markers never count toward it. A finalized
+	// assistant body upgrades to the glamour render when enabled; the streaming path
+	// (not yet finalized) always uses the lightweight scanner. See ADR 0007.
 	body := w.body
 	if w.markdown {
-		body = styleMarkdown(w.body)
+		if m.glamourMD && w.finalized {
+			body = m.glamourBody(w, innerW-1)
+		} else {
+			body = styleMarkdown(w.body)
+		}
 	}
 
 	var rows []string
@@ -802,6 +839,55 @@ const (
 	bulletGlyph = "•" // normalized unordered-list marker (-, *, + all fold to this)
 	quoteGlyph  = "▎" // blockquote gutter marker
 )
+
+// glamourStyle is the dark glamour style with the document margin zeroed and its
+// block prefix/suffix newlines dropped, so a rendered block fills the widget's inner
+// width exactly (no left indent the box did not budget for) and carries no leading or
+// trailing blank line that would waste a capped row. Built once.
+var glamourStyle = func() glansi.StyleConfig {
+	s := glstyles.DarkStyleConfig
+	zero := uint(0)
+	s.Document.Margin = &zero
+	s.Document.BlockPrefix = ""
+	s.Document.BlockSuffix = ""
+	return s
+}()
+
+// glamourBody returns the glamour render of the widget's markdown body wrapped to
+// width, cached on the widget. The cache is keyed by width so a resize (which changes
+// the reserved width) re-renders; callers pass innerW-1 to reserve the vertical
+// scrollbar gutter unconditionally, guaranteeing tables never need a horizontal
+// scroll (ADR 0007). A render error falls back to the scanner styling.
+func (m *Model) glamourBody(w *widget, width int) string {
+	if width < 1 {
+		return styleMarkdown(w.body)
+	}
+	if w.renderedWidth == width && w.renderedBody != "" {
+		return w.renderedBody
+	}
+	w.renderedBody = renderGlamour(w.body, width)
+	w.renderedWidth = width
+	return w.renderedBody
+}
+
+// renderGlamour renders markdown source to ANSI at the given wrap width using the
+// margin-zeroed dark style, trimming the outer blank lines. On any renderer error it
+// degrades to the lightweight scanner so the body is never lost.
+func renderGlamour(src string, width int) string {
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStyles(glamourStyle),
+		glamour.WithWordWrap(width),
+		glamour.WithEmoji(),
+	)
+	if err != nil {
+		return styleMarkdown(src)
+	}
+	out, err := r.Render(src)
+	if err != nil {
+		return styleMarkdown(src)
+	}
+	return strings.Trim(out, "\n")
+}
 
 // styleMarkdown applies Tier-1 markdown emphasis line by line, preserving newlines so
 // the existing ANSI-aware wrap/pad math still measures display width correctly.

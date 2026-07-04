@@ -85,6 +85,21 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `output.styleLine` (new `output.orderedMarker`) so the ANSI-aware wrap math stays
   exact; wrapped blockquote continuation lines fall back to plain text. Tier 2 of
   nits.md #6 (UC-WIDGET-MARKDOWN); tables remain the Tier 3 follow-on.
+- **Optional glamour rendering upgrades finalized assistant answers (Tier 3).** With
+  `[agentx.output] markdown_renderer = "glamour"`, a completed `agent_response` is
+  re-rendered by charmbracelet **glamour** (goldmark + chroma) — GFM tables draw
+  aligned box-drawing columns and fenced code blocks are syntax-highlighted, the
+  "HUGE bonus" a per-line scanner cannot do. The streaming path is untouched: deltas
+  still render live with the lightweight scanner, and glamour swaps in only on
+  finalize, so partial markdown never flickers. The scanner remains the default
+  (`"scanner"`) and the always-available fallback whenever a glamour render is
+  unavailable or stale. Glamour is rendered to `innerW - 1`, reserving the per-widget
+  vertical-scrollbar gutter unconditionally, which guarantees a table that grows tall
+  enough to scroll still fits horizontally — the output panel never forces a
+  horizontal scroll. Renders are cached per width and invalidated on resize. New
+  dependencies vendored: `charm.land/glamour/v2`, goldmark, chroma, bluemonday
+  (lipgloss bumped v2.0.3 → v2.0.4). New config `output.MarkdownRenderer`,
+  `output.SetMarkdownRenderer`. Design of record: ADR 0007. Tier 3 of nits.md #6.
 - **Agent responses are now streamed and stored as two distinct kinds.** The live
   answer streams as transient `agent_delta` chunks (in-process bus, chat window's
   typing effect only — never persisted, never sent to external surfaces); when it
