@@ -1,36 +1,30 @@
-// AgentX multi-surface harness layout for zellij (consumed by ./ax).
-//
-// Opens the chat runtime (server + chat surface) beside a stacked column of peer
-// surfaces, all sharing one session named by $AX_SESSION_STRING. The surfaces no
-// longer need a `sleep` before launching: `agentx surface launch` polls discovery
-// until the server has published its transport (see cli.resolveConnection), so a
-// concurrent boot attaches instead of racing.
-//
-// Keyboard/mouse tuning is NOT here — zellij layouts cannot embed configuration.
-// See docs/reference/zellij/options.md for the recommended config.kdl settings
-// (default_mode "locked", support_kitty_keyboard_protocol true, mouse_mode on +
-// Shift+drag for native selection).
 layout {
-	pane split_direction="vertical" {
-		pane {
-			cwd "$PWD"
-			command "bash"
-			args "-c" "agentx --session $AX_SESSION_STRING"
-			close_on_exit true
-			focus true
-			borderless true
-			name "agentX"
+	pane split_direction="horizontal"{
+		pane split_direction="vertical" {
+			pane {
+				cwd "$PWD"
+				command "bash"
+				args "-c" "agentx --session $AX_SESSION_STRING"
+				close_on_exit true
+				focus true
+				borderless false
+				name "agentX"
+			}
+			pane split_direction="horizontal" name="system"{
+				pane command="bash" name="context"{
+					args  "-c" "sleep 1 &&  agentx surface launch context --session $AX_SESSION_STRING"
+				}
+			
+				pane command="bash" name="context memory consumption"{
+					args "-c" "sleep 1 && agentx surface launch context-visualizer --session $AX_SESSION_STRING"
+				}
+				pane command="bash" name="working memory"{
+					args "-c" "sleep 1 && agentx surface launch working-memory --session $AX_SESSION_STRING"
+				}	
+			}
 		}
-		pane split_direction="horizontal" name="system" {
-			pane command="bash" name="context" {
-				args "-c" "agentx surface launch context --session $AX_SESSION_STRING"
-			}
-			pane command="bash" name="context memory consumption" {
-				args "-c" "agentx surface launch context-visualizer --session $AX_SESSION_STRING"
-			}
-			pane command="bash" name="working memory" {
-				args "-c" "agentx surface launch working-memory --session $AX_SESSION_STRING"
-			}
+		pane size=1 borderless=true {
+		    plugin location="zellij:status-bar"
 		}
 	}
 }
