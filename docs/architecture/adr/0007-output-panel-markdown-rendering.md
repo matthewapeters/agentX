@@ -131,6 +131,37 @@ large syntax-highlighted code blocks.
   resize re-renders affected assistant widgets on the next frame. Acceptable for the
   spike; the async path bounds it further.
 
+## Table styling limits and a revisit trigger (2026-07-04)
+
+Glamour renders tables on top of `charm.land/lipgloss/v2/table`, which natively
+supports the clarity affordances we'd want — horizontal row rules (`BorderRow(true)`),
+full outer borders, and per-row backgrounds/zebra striping via a row-aware
+`StyleFunc(row, col)`. **Glamour exposes none of them.** Its table renderer hardcodes
+`setBorders` (outer borders off, no `BorderRow` call → no inter-row rules) and installs
+a column-only `StyleFunc(func(_, col int) ...)` that discards the row index (no
+alternating backgrounds). There is no `WithStyles` knob for either. Both features would
+land from one small patch to glamour's `ansi/table.go`, but only via a **glamour fork**
+(a `replace` directive, the pattern already used for the bubbletea submodule), which
+commits us to maintaining a second fork.
+
+This surfaces a larger trade to revisit. The clarity features (bordered, zebra-striped
+tables) are available **directly from `lipgloss/table` without glamour at all** — glamour
+is the layer *hiding* them. Glamour's unique value over the always-on scanner is
+narrow: (a) GFM tables and (b) chroma syntax-highlighted code blocks. The scanner
+already owns prose (tiers 1–2: headers, lists, blockquotes, inline emphasis).
+
+**Decision principle: clarity trumps polish.** If glamour's opinionated rendering stands
+in the way of clear tables, prefer dropping glamour over forking it. The alternative is
+coherent and arguably simpler: keep the scanner for prose, detect GFM table blocks and
+render them ourselves with `lipgloss/table` (full control of borders/backgrounds/zebra,
+still honoring the `innerW - 1` width contract), and decide code-block highlighting
+separately (chroma directly, or a lighter treatment, or none). This would also shed the
+goldmark + chroma + bluemonday dependency weight. **Revisit trigger:** the first time a
+desired table-clarity change is blocked only by glamour not exposing a lipgloss/table
+capability — at that point, weigh "fork glamour" against "drop glamour, render tables on
+lipgloss/table directly," and default toward the latter unless chroma highlighting alone
+justifies keeping the whole dependency.
+
 ## Companions
 
 - Implementation: `internal/surfaces/output/output.go` (`finalizeAssistant`, the
