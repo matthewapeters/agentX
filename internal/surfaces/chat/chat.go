@@ -142,8 +142,8 @@ func (m Model) SetMaxWidgetLines(n int) { m.output.SetMaxBody(n) }
 func (m Model) SetMaxInputLines(n int) { m.input.SetMaxHeight(n) }
 
 // SetMarkdownRenderer selects how assistant markdown is styled in the output panel:
-// "glamour" for the full finalize-time render, anything else for the lightweight
-// per-line scanner (ADR 0007).
+// "native" for the full finalize-time render (tables + highlighted code), anything
+// else for the lightweight per-line scanner (ADR 0007).
 func (m Model) SetMarkdownRenderer(mode string) { m.output.SetMarkdownRenderer(mode) }
 
 // SetBanner sets the output panel's bootstrap logo banner (pinned above all

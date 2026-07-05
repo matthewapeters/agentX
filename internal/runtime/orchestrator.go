@@ -47,7 +47,7 @@ type Settings struct {
 	MaxWidgetLines int
 	// InputMaxLines caps how tall the input panel grows before it scrolls.
 	InputMaxLines int
-	// MarkdownRenderer selects assistant-markdown styling: "scanner" or "glamour"
+	// MarkdownRenderer selects assistant-markdown styling: "native" or "scanner"
 	// (ADR 0007). Surfaced to the chat UI.
 	MarkdownRenderer string
 	// ThinkingEnabled is the master switch for model reasoning during the respond
