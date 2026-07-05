@@ -168,13 +168,20 @@ prose and GFM table blocks are parsed and drawn directly with `lipgloss/table`, 
 **inter-row rules (`BorderRow`) and zebra-striped body rows**, bounded to `innerW - 1`
 (the width contract holds; no horizontal scroll). It delivers exactly the clarity
 glamour cannot: a row's wrapped continuation lines share its stripe, so long cells stay
-legible. Cost measured: `native` uses the scanner for fenced code, so it loses chroma
-syntax highlighting — the one glamour-unique capability that remains. Net: glamour stays
-the default for its code highlighting and full-document polish, but `native` is the
-concrete, lower-dependency fallback and the demonstrated answer to "what does dropping
-glamour cost." If code highlighting is later added to the native path (chroma used
-directly, or a lighter treatment), dropping glamour becomes the preferred default per
-"clarity trumps polish." Implementation: `output.renderNative` / `renderMarkdownTable`.
+legible. Implementation: `output.renderNative` / `renderMarkdownTable`.
+
+**Native reaches parity (2026-07-05).** Chroma syntax highlighting was ported into the
+native path (`output.renderCodeBlock` / `chromaHighlight`): fenced code is tokenized and
+formatted to 256-color ANSI with the same `chroma` library glamour uses (already
+vendored — no new dependency), tabs expanded and every line reset so the color never
+bleeds into the border, hard-wrapped to `innerW - 1`. This closes the last gap — the
+revisit trigger's condition ("if code highlighting is later added to the native path")
+is now **met**. Native now strictly dominates glamour on the output surface: it has code
+highlighting *and* the table clarity (row rules + zebra) glamour structurally cannot
+express, without glamour/goldmark/bluemonday. Per "clarity trumps polish," the standing
+recommendation is to **make `native` the default and retire glamour** (keeping only
+`chroma` + `lipgloss/table`); glamour remains the default until that cutover is taken
+deliberately, since it drops a dependency and is worth doing as its own change.
 
 ## Companions
 

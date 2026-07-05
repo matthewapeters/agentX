@@ -231,6 +231,22 @@ Feature: Collapsible output widgets
     And no output line is wider than 46
 
   # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 3 — ADR 0007)
+  # The native renderer syntax-highlights fenced code with chroma (256-color), closing
+  # the last gap with glamour; the ``` fence markers are consumed.
+  Scenario: The native renderer syntax-highlights fenced code
+    Given an output panel sized 48 by 16
+    And the markdown renderer is "native"
+    When an agent_response with body:
+      """
+      ```go
+      func main() {}
+      ```
+      """
+    Then the output view highlights code "func"
+    And the output view contains "main"
+    And the output view does not contain "```"
+
+  # use-case: UC-WIDGET-MARKDOWN (nits.md #6, tier 3 — ADR 0007)
   # variant: the scanner renderer does not render tables — the pipe markup stays
   # literal, so the glamour/native paths are what unlock tables. (Glamour is the
   # product default; this pins the opt-out behavior.)

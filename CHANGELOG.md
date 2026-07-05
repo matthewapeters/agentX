@@ -111,6 +111,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   glamour: `native` loses chroma code-block highlighting. Glamour remains the default;
   `native` is the lower-dependency fallback and the demonstrated "drop glamour" path.
   New `output.renderNative` / `output.renderMarkdownTable`.
+- **`native` renderer now syntax-highlights fenced code (chroma), reaching parity with
+  glamour.** Fenced code blocks in `native` mode are tokenized and formatted to
+  256-color ANSI via `chroma` (already vendored through glamour — no new dependency),
+  with tabs expanded and each line SGR-reset so color never bleeds into the widget
+  border, hard-wrapped to `innerW - 1` (no horizontal scroll). `native` now has both
+  code highlighting *and* the table clarity (row rules + zebra) glamour cannot express;
+  per ADR 0007 the standing recommendation is to make `native` the default and retire
+  glamour (keeping `chroma` + `lipgloss/table`). New `output.renderCodeBlock` /
+  `output.chromaHighlight`; `chroma` promoted to a direct dependency.
 - **Agent responses are now streamed and stored as two distinct kinds.** The live
   answer streams as transient `agent_delta` chunks (in-process bus, chat window's
   typing effect only — never persisted, never sent to external surfaces); when it

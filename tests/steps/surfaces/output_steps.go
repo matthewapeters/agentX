@@ -2,6 +2,7 @@ package surfacesteps
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -38,6 +39,7 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the markdown renderer is "([^"]*)"$`, w.setMarkdownRenderer)
 	sc.Step(`^the output view has table row rules$`, w.hasTableRowRules)
 	sc.Step(`^the output view has zebra-striped rows$`, w.hasZebraRows)
+	sc.Step(`^the output view highlights code "([^"]*)"$`, w.highlightsCode)
 	sc.Step(`^a thinking event with (\d+) body lines is applied$`, w.applyThinkingLines)
 	sc.Step(`^(\d+) agent_delta lines are streamed$`, w.streamAgentDeltaLines)
 	sc.Step(`^the selected widget is toggled$`, w.toggleSelected)
@@ -430,6 +432,17 @@ func (w *outputWorld) hasZebraRows() error {
 	view := w.panel.View()
 	if !strings.Contains(view, "48;5;236") || !strings.Contains(view, "48;5;233") {
 		return fmt.Errorf("output view does not show alternating zebra row backgrounds")
+	}
+	return nil
+}
+
+// highlightsCode asserts text is emitted with a 256-color foreground SGR immediately
+// preceding it — chroma's terminal256 formatter coloring a code token. Stable across
+// chroma styles (always 38;5;N), unlike asserting a specific color.
+func (w *outputWorld) highlightsCode(text string) error {
+	re := regexp.MustCompile(`\x1b\[38;5;[0-9]+m` + regexp.QuoteMeta(text))
+	if !re.MatchString(w.panel.View()) {
+		return fmt.Errorf("output view does not syntax-highlight %q", text)
 	}
 	return nil
 }

@@ -20,6 +20,9 @@ import (
 	glstyles "charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/x/ansi"
 
 	"agentx/internal/state"
@@ -927,15 +930,32 @@ func (m *Model) nativeBody(w *widget, width int) string {
 	return w.renderedBody
 }
 
-// renderNative styles prose with the per-line scanner and renders GFM table blocks
-// directly with lipgloss/table — bordered (inter-row rules) and zebra-striped — the
-// "drop glamour" table path (ADR 0007). A table block is a pipe-delimited header row
-// followed by a delimiter row (dashes, optional colons); contiguous pipe rows below it
-// form the body. Everything else falls through to styleLine.
+// renderNative styles prose with the per-line scanner and renders the two blocks the
+// scanner cannot: GFM tables (drawn directly with lipgloss/table — bordered,
+// zebra-striped) and fenced code (chroma syntax highlighting). This closes the gap
+// with glamour without its full document renderer (ADR 0007). A table block is a
+// pipe-delimited header row followed by a delimiter row; a code block is a ``` fence.
+// Everything else falls through to styleLine.
 func renderNative(src string, width int) string {
 	lines := strings.Split(src, "\n")
 	var out []string
 	for i := 0; i < len(lines); {
+		// Fenced code block: ```lang ... ``` → chroma-highlighted, wrapped to width.
+		if lang, ok := fenceInfo(lines[i]); ok {
+			var code []string
+			j := i + 1
+			for j < len(lines) && !isFence(lines[j]) {
+				code = append(code, lines[j])
+				j++
+			}
+			out = append(out, renderCodeBlock(strings.Join(code, "\n"), lang, width))
+			if j < len(lines) { // consume the closing fence
+				j++
+			}
+			i = j
+			continue
+		}
+		// GFM table block.
 		if i+1 < len(lines) && strings.Contains(lines[i], "|") && isTableDelimiter(lines[i+1]) {
 			header := splitTableCells(lines[i])
 			aligns := tableAligns(lines[i+1], len(header))
@@ -953,6 +973,77 @@ func renderNative(src string, width int) string {
 		i++
 	}
 	return strings.Join(out, "\n")
+}
+
+// nativeCodeStyle is the chroma style used for fenced code blocks in the native
+// renderer — a dark palette that reads on the panel's dark default.
+const nativeCodeStyle = "catppuccin-mocha"
+
+// fenceInfo reports whether line opens a fenced code block (``` optionally followed by
+// an info string), returning the language token (the first word of the info string).
+func fenceInfo(line string) (string, bool) {
+	t := strings.TrimSpace(line)
+	if !strings.HasPrefix(t, "```") {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimPrefix(t, "```")), true
+}
+
+// isFence reports whether line is a ``` fence (used to find a block's closing fence).
+func isFence(line string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), "```")
+}
+
+// renderCodeBlock syntax-highlights code with chroma and hard-wraps each highlighted
+// line to width so a long line never forces a horizontal scroll (ADR 0007's width
+// contract). chroma colors the trailing newline of each line, which would bleed the
+// code color into the panel's padding and border, so every emitted line is closed with
+// an SGR reset. An empty or unhighlightable block degrades to the raw code.
+func renderCodeBlock(code, lang string, width int) string {
+	// Expand tabs to spaces first: a tab measures as ~0 cells to the ANSI width math
+	// but the terminal expands it, which would drift the padding and right border.
+	code = strings.ReplaceAll(code, "\t", "    ")
+	highlighted := chromaHighlight(code, lang)
+	var out []string
+	for _, ln := range strings.Split(strings.TrimRight(highlighted, "\n"), "\n") {
+		if width > 0 && ansi.StringWidth(ln) > width {
+			ln = ansi.Hardwrap(ln, width, false)
+		}
+		for _, seg := range strings.Split(ln, "\n") {
+			out = append(out, seg+sgrReset)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// chromaHighlight tokenizes code (by language name, else auto-detected, else plain
+// text) and formats it to 256-color ANSI. Any failure returns the code unstyled so a
+// code block is never lost.
+func chromaHighlight(code, lang string) string {
+	lexer := lexers.Get(lang)
+	if lexer == nil {
+		lexer = lexers.Analyse(code)
+	}
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	style := styles.Get(nativeCodeStyle)
+	if style == nil {
+		style = styles.Fallback
+	}
+	formatter := formatters.Get("terminal256")
+	if formatter == nil {
+		formatter = formatters.Fallback
+	}
+	it, err := lexer.Tokenise(nil, code)
+	if err != nil {
+		return code
+	}
+	var b strings.Builder
+	if err := formatter.Format(&b, style, it); err != nil {
+		return code
+	}
+	return b.String()
 }
 
 // isTableDelimiter reports whether line is a GFM table delimiter row: every
