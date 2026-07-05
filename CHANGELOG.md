@@ -120,6 +120,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   per ADR 0007 the standing recommendation is to make `native` the default and retire
   glamour (keeping `chroma` + `lipgloss/table`). New `output.renderCodeBlock` /
   `output.chromaHighlight`; `chroma` promoted to a direct dependency.
+- **`native` is now the default markdown renderer; glamour retired.** Executing the ADR
+  0007 recommendation: `markdown_renderer` now defaults to `"native"` and accepts only
+  `"native"` or `"scanner"` (a retired `"glamour"` value resolves to native). The
+  `"glamour"` mode, `output.glamourBody`/`renderGlamour`, and the
+  `charm.land/glamour/v2` + goldmark + goldmark-emoji + bluemonday + douceur +
+  gorilla/css dependencies were removed from `go.mod` and the vendor tree — `chroma`
+  and `lipgloss/table` are the only rendering deps now. Net: clearer tables (row rules
+  + zebra) and highlighted code on a smaller dependency footprint.
 - **Agent responses are now streamed and stored as two distinct kinds.** The live
   answer streams as transient `agent_delta` chunks (in-process bus, chat window's
   typing effect only — never persisted, never sent to external surfaces); when it

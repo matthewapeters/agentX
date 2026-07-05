@@ -183,6 +183,17 @@ recommendation is to **make `native` the default and retire glamour** (keeping o
 `chroma` + `lipgloss/table`); glamour remains the default until that cutover is taken
 deliberately, since it drops a dependency and is worth doing as its own change.
 
+**Cutover executed (2026-07-05).** `native` is now the **default and only** finalize-time
+renderer; glamour was retired. The `"glamour"` mode, `output.glamourBody`/`renderGlamour`,
+and the `charm.land/glamour/v2` + goldmark + goldmark-emoji + bluemonday + douceur +
+gorilla/css dependencies were removed from `go.mod` and the vendor tree (`chroma` and
+`lipgloss/table` remain, now direct). `markdown_renderer` accepts `"native"` (default)
+or `"scanner"`; a retired `"glamour"` value resolves to the native default. This
+supersedes the glamour-specific mechanics described earlier in this ADR — read those
+sections as the historical record of how the dual-renderer design arrived at native.
+The core intent is unchanged: scanner while streaming, a richer renderer on finalize,
+bounded by the `innerW - 1` width contract.
+
 ## Companions
 
 - Implementation: `internal/surfaces/output/output.go` (`finalizeAssistant`, the

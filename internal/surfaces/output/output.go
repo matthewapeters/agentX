@@ -15,9 +15,6 @@ import (
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	glamour "charm.land/glamour/v2"
-	glansi "charm.land/glamour/v2/ansi"
-	glstyles "charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
 	"github.com/alecthomas/chroma/v2/formatters"
@@ -79,12 +76,12 @@ type widget struct {
 	// markdown renders the body with markdown emphasis as terminal SGR. Set for
 	// model-authored assistant bodies; left off for user prompts and tool output so
 	// their text stays literal. While streaming, the lightweight per-line scanner
-	// styles it live; once finalized, the glamour renderer may upgrade it (ADR 0007).
+	// styles it live; once finalized, the native renderer may upgrade it (ADR 0007).
 	markdown bool
 	// finalized marks an assistant widget whose complete answer has landed, so the
-	// glamour renderer (when enabled) may replace the streaming scanner render.
+	// native renderer (when enabled) may replace the streaming scanner render.
 	finalized bool
-	// renderedBody caches the glamour render of body at renderedWidth. It is
+	// renderedBody caches the native render of body at renderedWidth. It is
 	// invalidated (cleared) when the body changes or the target width does, so a
 	// resize re-renders at the new width. See ADR 0007's width contract.
 	renderedBody  string
@@ -118,7 +115,7 @@ type Model struct {
 
 	collapseAll     bool // context surface: every element starts collapsed (summary)
 	showToggleState bool // context surface: show an enabled checkbox on toggleables
-	mdMode          string // finalized-assistant renderer: "glamour", "native", or "" (scanner) — ADR 0007
+	mdMode          string // finalized-assistant renderer: "native" or "" (scanner) — ADR 0007
 }
 
 // SetCollapseByDefault makes newly added elements start collapsed — the context
@@ -130,17 +127,14 @@ func (m *Model) SetCollapseByDefault(on bool) { m.collapseAll = on }
 // which does not toggle, leaves it off.
 func (m *Model) SetShowToggleState(on bool) { m.showToggleState = on }
 
-// SetMarkdownRenderer selects how a finalized assistant answer is rendered: "glamour"
-// (full glamour document), "native" (scanner prose + GFM tables drawn directly with
-// lipgloss/table — bordered, zebra-striped), or anything else for the plain scanner.
-// The streaming path always uses the scanner regardless. Switching modes invalidates
-// any cached render. See ADR 0007.
+// SetMarkdownRenderer selects how a finalized assistant answer is rendered: "native"
+// (scanner prose + GFM tables drawn directly with lipgloss/table — bordered,
+// zebra-striped — and chroma-highlighted fenced code) or anything else for the plain
+// scanner. The streaming path always uses the scanner regardless. Switching modes
+// invalidates any cached render. See ADR 0007.
 func (m *Model) SetMarkdownRenderer(mode string) {
 	next := ""
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "glamour":
-		next = "glamour"
-	case "native":
+	if strings.EqualFold(strings.TrimSpace(mode), "native") {
 		next = "native"
 	}
 	if next == m.mdMode {
@@ -446,7 +440,7 @@ func (m *Model) finalizeAssistant(text string, ordinal uint64, enabled bool) {
 		w.toggleable = true
 		w.disabled = !enabled
 		w.finalized = true
-		w.renderedBody, w.renderedWidth = "", 0 // body changed: drop any stale glamour render
+		w.renderedBody, w.renderedWidth = "", 0 // body changed: drop any stale native render
 		m.refresh(true)
 		return
 	}
@@ -645,14 +639,12 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 
 	// Style once (markdown → SGR) before wrapping, so the ANSI-aware wrap/pad math
 	// measures true display width and the markers never count toward it. A finalized
-	// assistant body upgrades to the configured renderer; the streaming path (not yet
-	// finalized) always uses the lightweight scanner. Both the glamour and native
-	// renderers are rendered to innerW-1, reserving the scrollbar gutter. See ADR 0007.
+	// assistant body upgrades to the native renderer; the streaming path (not yet
+	// finalized) always uses the lightweight scanner. The native renderer is rendered
+	// to innerW-1, reserving the scrollbar gutter. See ADR 0007.
 	body := w.body
 	if w.markdown {
 		switch {
-		case w.finalized && m.mdMode == "glamour":
-			body = m.glamourBody(w, innerW-1)
 		case w.finalized && m.mdMode == "native":
 			body = m.nativeBody(w, innerW-1)
 		default:
@@ -856,55 +848,6 @@ const (
 	quoteGlyph  = "▎" // blockquote gutter marker
 )
 
-// glamourStyle is the dark glamour style with the document margin zeroed and its
-// block prefix/suffix newlines dropped, so a rendered block fills the widget's inner
-// width exactly (no left indent the box did not budget for) and carries no leading or
-// trailing blank line that would waste a capped row. Built once.
-var glamourStyle = func() glansi.StyleConfig {
-	s := glstyles.DarkStyleConfig
-	zero := uint(0)
-	s.Document.Margin = &zero
-	s.Document.BlockPrefix = ""
-	s.Document.BlockSuffix = ""
-	return s
-}()
-
-// glamourBody returns the glamour render of the widget's markdown body wrapped to
-// width, cached on the widget. The cache is keyed by width so a resize (which changes
-// the reserved width) re-renders; callers pass innerW-1 to reserve the vertical
-// scrollbar gutter unconditionally, guaranteeing tables never need a horizontal
-// scroll (ADR 0007). A render error falls back to the scanner styling.
-func (m *Model) glamourBody(w *widget, width int) string {
-	if width < 1 {
-		return styleMarkdown(w.body)
-	}
-	if w.renderedWidth == width && w.renderedBody != "" {
-		return w.renderedBody
-	}
-	w.renderedBody = renderGlamour(w.body, width)
-	w.renderedWidth = width
-	return w.renderedBody
-}
-
-// renderGlamour renders markdown source to ANSI at the given wrap width using the
-// margin-zeroed dark style, trimming the outer blank lines. On any renderer error it
-// degrades to the lightweight scanner so the body is never lost.
-func renderGlamour(src string, width int) string {
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStyles(glamourStyle),
-		glamour.WithWordWrap(width),
-		glamour.WithEmoji(),
-	)
-	if err != nil {
-		return styleMarkdown(src)
-	}
-	out, err := r.Render(src)
-	if err != nil {
-		return styleMarkdown(src)
-	}
-	return strings.Trim(out, "\n")
-}
-
 // Native-table styling: theme-neutral dark SGR indices. The zebra pair is a near-black
 // and a dark-gray so body rows — and their wrapped continuation lines — stay visually
 // distinct; the header gets a slightly lighter band. See ADR 0007 (drop-glamour path).
@@ -916,7 +859,7 @@ const (
 )
 
 // nativeBody returns the "native" render of the widget's markdown body wrapped to
-// width, cached on the widget (keyed by width, like glamourBody). Callers pass innerW-1
+// width, cached on the widget (keyed by width, so a resize re-renders). Callers pass innerW-1
 // to reserve the scrollbar gutter (ADR 0007).
 func (m *Model) nativeBody(w *widget, width int) string {
 	if width < 1 {

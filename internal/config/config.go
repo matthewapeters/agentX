@@ -86,9 +86,10 @@ type Classification struct {
 }
 
 // Output is the [agentx.output] table tuning the output panel widgets.
-// MarkdownRenderer selects how assistant markdown is styled: "scanner" (the default
-// lightweight per-line ANSI scanner, used live while streaming) or "glamour" (a full
-// glamour render swapped in when the response finalizes). See ADR 0007.
+// MarkdownRenderer selects how a finalized assistant answer is styled: "native" (the
+// default — scanner prose plus lipgloss/table tables and chroma-highlighted code) or
+// "scanner" (the lightweight per-line scanner alone, also used live while streaming).
+// See ADR 0007.
 type Output struct {
 	MaxWidgetLines   int    `toml:"max_widget_lines"`
 	InputMaxLines    int    `toml:"input_max_lines"`
@@ -142,17 +143,14 @@ func (c Config) InputMaxLines() int {
 	return c.Agentx.Output.InputMaxLines
 }
 
-// MarkdownRenderer returns the assistant-markdown rendering mode: "glamour" (the
-// default) for the full finalize-time render, "native" for scanner prose + tables
-// drawn directly with lipgloss/table, or "scanner" for the lightweight per-line
-// scanner alone. An explicit "scanner" or "native" is honored; every other value
-// (empty, "glamour", or unrecognized) resolves to the glamour default. See ADR 0007.
+// MarkdownRenderer returns the assistant-markdown rendering mode: "native" (the
+// default) renders prose with the per-line scanner plus GFM tables (lipgloss/table,
+// bordered + zebra) and chroma-highlighted code; "scanner" is the lightweight per-line
+// scanner alone. An explicit "scanner" opts out; every other value (empty, the retired
+// "glamour", or unrecognized) resolves to the native default. See ADR 0007.
 func (c Config) MarkdownRenderer() string {
-	switch strings.ToLower(strings.TrimSpace(c.Agentx.Output.MarkdownRenderer)) {
-	case "scanner":
+	if strings.EqualFold(strings.TrimSpace(c.Agentx.Output.MarkdownRenderer), "scanner") {
 		return "scanner"
-	case "native":
-		return "native"
 	}
 	return defaultMarkdownRenderer
 }
@@ -304,7 +302,7 @@ const (
 	defaultClarificationOptions  = 3
 	defaultMaxWidgetLines        = 20
 	defaultInputMaxLines         = 8
-	defaultMarkdownRenderer      = "glamour"
+	defaultMarkdownRenderer      = "native"
 	defaultActiveBorder          = "cyan"
 	defaultInactiveBorder        = "dark gray"
 	defaultThinkingBudgetSeconds = 180
