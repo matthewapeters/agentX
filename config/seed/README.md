@@ -15,6 +15,8 @@ identical to the runtime fallbacks, giving a common baseline from which to tune.
 | `agentx-tool-blacklist.toml` | `~/.config/agentx/agentx-tool-blacklist.toml` | none — seed *is* the baseline | no blacklist rules |
 | `agentx.toml` | `~/.config/agentx/agentx.toml` | `config.Default()` | seeded on first run |
 | `agentx.kdl` | `~/.config/agentx/agentx.kdl` | none — harness artifact | not read by AgentX (see note) |
+| `prompts.toml` | `~/.config/agentx/prompts.toml` | `prompting` fan-group corpus (design draft) | uses the built-in default corpus |
+| `PROMPTS.md` | `~/.config/agentx/PROMPTS.md` | none — human-facing companion to `prompts.toml` | not loaded by AgentX (see note) |
 
 `agentx.kdl` is the odd one out: it is **not read by the AgentX runtime** at all. It
 is a [zellij](https://zellij.dev) layout consumed by the `ax` dev launcher to open
@@ -23,6 +25,14 @@ one window. It ships here so it is deployed alongside the other defaults, but it
 no code source of truth and no runtime fallback — if it is absent, only `ax` is
 affected, not `agentx`. Keyboard/mouse tuning for the harness lives in zellij's
 `config.kdl` (layouts cannot embed it; see `docs/reference/zellij/creating-a-layout.md`).
+
+`prompts.toml` is the **fan-group prompt corpus** the cascade classifier votes with
+(design: `docs/architecture/prompt_fan_groups.md`). Unlike the verbatim `*.md` prompt
+files, it is **parsed as TOML** and so carries explanatory comments; its templates are
+rendered (placeholder substitution) rather than injected raw. `PROMPTS.md` is its
+**human-facing decision-tree companion** — like `agentx.kdl`, it is *not loaded by the
+runtime*; it ships so the corpus is self-documenting where the user finds it. (Both are
+a design draft until the `prompting` loader lands.)
 
 The command-policy **global approvals** file
 (`~/.config/agentx/agentx-tool-approvals.toml`) is runtime-managed — written when you
@@ -34,8 +44,9 @@ than a 1:1 mirror of code. It is read verbatim like the other prompt files.
 
 ## Important: prompt files are read verbatim
 
-Every `*.md` file is loaded raw (trimmed) and becomes part of the model's context
-verbatim — there is no out-of-band commentary. So:
+Every `*.md` file *that the runtime loads* is read raw (trimmed) and becomes part of
+the model's context verbatim — there is no out-of-band commentary. (`PROMPTS.md` is the
+exception: it is documentation, not loaded.) So:
 
 - `agentx-instructions.md`, `agentx-thinking.md`, `agentx-classification.md`, and
   `bootstrap-prompt.md` contain **only the prompt text** (no markdown headings or
@@ -44,6 +55,7 @@ verbatim — there is no out-of-band commentary. So:
   written *for* the model, so its markdown structure (headings, the JSON call
   contract) is intentional context, injected only when a turn routes to `single_tool`.
 
-Only `agentx.toml` (parsed as TOML) carries explanatory comments.
+The TOML files (`agentx.toml`, `agentx-tool-blacklist.toml`, `prompts.toml`) are
+parsed, so they carry explanatory comments; the verbatim `*.md` prompt files do not.
 
 If you change a default in code, update the matching seed file here so they stay 1:1.

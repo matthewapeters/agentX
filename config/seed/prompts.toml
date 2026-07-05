@@ -1,0 +1,197 @@
+# ==========================================================================
+# AgentX prompt corpus — fan-groups. Machine-readable source of truth.
+#
+# A fan-group is a set of prompt VARIANTS plus one shared [output_contract]
+# that fan out and VOTE on a single question. Variants vary the *ask*
+# (wording/framing/params) but must all return the *same* answer schema, so
+# their votes stay comparable.
+#
+# Human-facing walk-through of how these relate: PROMPTS.md (decision tree).
+# Design: docs/architecture/prompt_fan_groups.md + cascade_classifier.md.
+#
+# Editing: your copy in ~/.config/agentx/prompts.toml wins over the shipped
+# default and is never clobbered by `make seed`. Every variant must still
+# satisfy its group's [output_contract]; a variant that fails validation on
+# load falls back to the shipped default and logs a warning — it will not
+# silently misclassify.
+#
+# Template placeholders (filled at render time):
+#   {{turn}}            the incoming user message
+#   {{session_digest}}  compact topic + open-tasks + recent-turns summary
+#   {{open_tasks}}      the open task list
+#   {{context}}         thread context, scoped by the relatedness-triage directive
+# ==========================================================================
+
+
+# --------------------------------------------------------------------------
+# STAGE 0 — relatedness triage
+# Decides how the incoming turn relates to the session, and therefore what
+# context the downstream classifiers may see. Conservative: when unsure, keep
+# context. The related_aside verdict ("looks new but isn't") is the hard case
+# the vote exists to catch.
+# --------------------------------------------------------------------------
+[fangroup.relatedness_triage]
+stage          = "triage"
+purpose        = "Decide how the incoming turn relates to the session and what context to carry."
+width          = 4          # Tier-2 vote width (~ Ollama slot count)
+coarse_variant = "direct"   # Tier-1 gate (runs first, at R=1)
+quorum         = 3          # early-exit once this many agree
+abstain_below  = 0.6        # winning share below this → abstain → ask
+
+  [fangroup.relatedness_triage.output_contract]
+  require       = ["relation", "confidence"]
+  max_words     = 40
+  enum.relation = ["continuation", "new", "orthogonal", "related_aside"]
+
+  [[fangroup.relatedness_triage.variant]]
+  id          = "direct"
+  axis        = "template"
+  temperature = 0.2
+  template = """
+Classify how a NEW message relates to an ongoing session.
+
+Session so far:
+{{session_digest}}
+
+New message:
+{{turn}}
+
+Reply with JSON only: {"relation": ..., "confidence": 0..1, "why": "<=40 words"}.
+relation is exactly one of:
+  continuation  - extends what we were just doing
+  new           - a fresh, unrelated request
+  orthogonal    - a side-quest, related to the domain but not the current task
+  related_aside - looks new, but is really a lateral move in the same goal
+"""
+
+  [[fangroup.relatedness_triage.variant]]
+  id          = "reframed"
+  axis        = "context_reframe"
+  temperature = 0.6
+  template = """
+A user just sent a message mid-session. Decide, from their point of view,
+whether it CONTINUES the current task, starts something NEW, is an ORTHOGONAL
+aside, or looks new but is really a RELATED_ASIDE to the same goal.
+
+What they were doing:
+{{session_digest}}
+
+Their message:
+{{turn}}
+
+Reply JSON only: {"relation": ..., "confidence": 0..1, "why": "..."}.
+"""
+
+  [[fangroup.relatedness_triage.variant]]
+  id          = "skeptical"
+  axis        = "template"
+  temperature = 0.4
+  template = """
+Be skeptical of "this is a brand new topic" — users often make lateral moves
+that only look unrelated. Given the session and the new message, choose the
+relation and say how sure you are.
+
+Session:
+{{session_digest}}
+Message:
+{{turn}}
+
+JSON only: {"relation": continuation|new|orthogonal|related_aside,
+"confidence": 0..1, "why": "<=40 words"}.
+"""
+
+  [[fangroup.relatedness_triage.variant]]
+  id          = "minimal"
+  axis        = "param"
+  temperature = 0.8
+  template = """
+Session digest: {{session_digest}}
+New message: {{turn}}
+Return JSON {"relation","confidence","why"} where relation is one of
+continuation, new, orthogonal, related_aside.
+"""
+
+
+# --------------------------------------------------------------------------
+# STAGE [B] — action classification
+# Decides whether the turn asks the assistant to DO something, and of what
+# type. High-stakes types (artifact/command) always escalate to a vote — a
+# false positive there is destructive.
+# --------------------------------------------------------------------------
+[fangroup.action_classify]
+stage                 = "classify_turn"
+purpose               = "Decide whether the turn requests an action, and of what type."
+width                 = 4
+coarse_variant        = "direct"
+quorum                = 3
+abstain_below         = 0.6
+always_escalate_types = ["artifact", "command"]
+
+  [fangroup.action_classify.output_contract]
+  require        = ["actionable", "task_type", "confidence"]
+  max_words      = 40
+  enum.task_type = ["artifact", "command", "query", "none"]
+
+  [[fangroup.action_classify.variant]]
+  id          = "direct"
+  axis        = "template"
+  temperature = 0.2
+  template = """
+Does this message ask the assistant to DO something, or just to converse or think?
+
+Context:
+{{context}}
+
+Message:
+{{turn}}
+
+Reply JSON only: {"actionable": true|false, "task_type": ..., "confidence": 0..1,
+"why": "<=40 words"}. task_type is exactly one of:
+  artifact - produce or write content/a file
+  command  - run a tool or shell action
+  query    - retrieve or look up an answer
+  none     - no action; conversation only
+"""
+
+  [[fangroup.action_classify.variant]]
+  id          = "imperative"
+  axis        = "template"
+  temperature = 0.3
+  template = """
+Look for an imperative or request in the message (create, write, run, generate,
+fetch, delete, open ...). Even if it is embedded in a longer discussion, if the
+user is asking for an action, classify it.
+
+Context: {{context}}
+Message: {{turn}}
+
+JSON only: {"actionable", "task_type": artifact|command|query|none,
+"confidence": 0..1, "why": "..."}.
+"""
+
+  [[fangroup.action_classify.variant]]
+  id          = "reframed"
+  axis        = "context_reframe"
+  temperature = 0.6
+  template = """
+Imagine you must either (a) hand this to a tool executor or (b) just reply in
+chat. Which is it, and what kind of task?
+
+Recent context:
+{{context}}
+User said:
+{{turn}}
+
+Reply JSON {"actionable","task_type","confidence","why"}.
+"""
+
+  [[fangroup.action_classify.variant]]
+  id          = "minimal"
+  axis        = "param"
+  temperature = 0.8
+  template = """
+Context: {{context}}
+Message: {{turn}}
+Return JSON {"actionable": bool, "task_type": artifact|command|query|none,
+"confidence": 0..1, "why": "<=40 words"}.
+"""
