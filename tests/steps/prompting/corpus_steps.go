@@ -49,6 +49,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the fan-group "([^"]*)" aggregator has quorum (\d+)$`, w.aggQuorum)
 	sc.Step(`^(\d+) invocations are produced$`, w.invCount)
 	sc.Step(`^every invocation carries the compiled contract$`, w.invContract)
+	sc.Step(`^every invocation votes on "([^"]*)"$`, w.invVotesOn)
 	sc.Step(`^every invocation prompt substitutes the turn$`, w.invSubstitutes)
 	sc.Step(`^no invocation prompt has an unfilled placeholder$`, w.invNoPlaceholder)
 	sc.Step(`^the invocations carry more than one distinct temperature$`, w.invDistinctTemps)
@@ -63,6 +64,7 @@ stage = "triage"
 purpose = "decide relatedness"
 width = %d
 coarse_variant = %q
+vote_on = "relation"
 quorum = %d
 abstain_below = 0.6
   [fangroup.triage.output_contract]
@@ -238,6 +240,15 @@ func (w *corpusWorld) invContract() error {
 	for _, inv := range w.invs {
 		if strings.Join(inv.Contract.RequireFields, ",") != want {
 			return fmt.Errorf("invocation %q carries contract %v, want %v", inv.Tag, inv.Contract.RequireFields, g.Contract().RequireFields)
+		}
+	}
+	return nil
+}
+
+func (w *corpusWorld) invVotesOn(field string) error {
+	for _, inv := range w.invs {
+		if inv.VerdictField != field {
+			return fmt.Errorf("invocation %q votes on %q, want %q", inv.Tag, inv.VerdictField, field)
 		}
 	}
 	return nil

@@ -39,6 +39,7 @@ Feature: Load and render the fan-group prompt corpus
     When the fan-group "triage" is rendered
     Then 3 invocations are produced
     And every invocation carries the compiled contract
+    And every invocation votes on "relation"
     And every invocation prompt substitutes the turn
     And no invocation prompt has an unfilled placeholder
     And the invocations carry more than one distinct temperature

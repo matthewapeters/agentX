@@ -44,6 +44,7 @@ type FanGroup struct {
 	Purpose             string         `toml:"purpose"`
 	Width               int            `toml:"width"`
 	CoarseVariant       string         `toml:"coarse_variant"`
+	VoteOn              string         `toml:"vote_on"` // which response field is the vote key
 	Quorum              int            `toml:"quorum"`
 	AbstainBelow        float64        `toml:"abstain_below"`
 	AlwaysEscalateTypes []string       `toml:"always_escalate_types"`
@@ -137,6 +138,12 @@ func (g *FanGroup) validate() error {
 	if len(g.OutputContract.Require) == 0 {
 		return fmt.Errorf("output_contract.require must name at least one field")
 	}
+	if strings.TrimSpace(g.VoteOn) == "" {
+		return fmt.Errorf("vote_on must name the response field to vote on")
+	}
+	if !contains(g.OutputContract.Require, g.VoteOn) {
+		return fmt.Errorf("vote_on %q is not one of the required fields", g.VoteOn)
+	}
 	ids := make(map[string]bool, len(g.Variants))
 	for i, v := range g.Variants {
 		if strings.TrimSpace(v.ID) == "" {
@@ -199,13 +206,23 @@ func (g *FanGroup) Render(vars map[string]string) []fanout.Invocation {
 			seed = v.Seed + i // vary the seed on padded repeats so votes still diverge
 		}
 		invs = append(invs, fanout.Invocation{
-			Tag:      tag,
-			Prompt:   renderTemplate(v.Template, vars),
-			Params:   fanout.Params{Temperature: v.Temperature, Seed: seed},
-			Contract: contract,
+			Tag:          tag,
+			Prompt:       renderTemplate(v.Template, vars),
+			Params:       fanout.Params{Temperature: v.Temperature, Seed: seed},
+			Contract:     contract,
+			VerdictField: g.VoteOn,
 		})
 	}
 	return invs
+}
+
+func contains(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 func renderTemplate(tmpl string, vars map[string]string) string {
