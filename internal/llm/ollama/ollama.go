@@ -142,6 +142,80 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 	return assembled.String(), nil
 }
 
+// CompleteRequest is a non-streaming, optionally schema-constrained completion.
+// Unlike Chat it returns the whole message at once and supports per-request
+// sampling options (Temperature, Seed) and Format (a JSON schema for constrained
+// decoding). It is the request shape the classifier fan-out uses.
+type CompleteRequest struct {
+	Model       string
+	Messages    []Message
+	Temperature float64
+	Seed        int
+	Format      json.RawMessage // JSON schema; nil leaves output unconstrained
+	NumCtx      int
+}
+
+// Complete runs a single non-streaming chat completion and returns the assembled
+// message content. It honors ctx cancellation.
+func (c *Client) Complete(ctx context.Context, req CompleteRequest) (string, error) {
+	options := map[string]any{}
+	if req.Temperature > 0 {
+		options["temperature"] = req.Temperature
+	}
+	if req.Seed != 0 {
+		options["seed"] = req.Seed
+	}
+	if req.NumCtx > 0 {
+		options["num_ctx"] = req.NumCtx
+	}
+
+	payload := map[string]any{
+		"model":    req.Model,
+		"messages": req.Messages,
+		"stream":   false,
+	}
+	if len(options) > 0 {
+		payload["options"] = options
+	}
+	if len(req.Format) > 0 {
+		payload["format"] = req.Format
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("encode complete request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/chat", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("build complete request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("complete request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("ollama chat returned status %d", resp.StatusCode)
+	}
+
+	var out struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+		Error string `json:"error,omitempty"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode complete response: %w", err)
+	}
+	if out.Error != "" {
+		return "", fmt.Errorf("ollama error: %s", out.Error)
+	}
+	return out.Message.Content, nil
+}
+
 type tagsResponse struct {
 	Models []struct {
 		Name string `json:"name"`

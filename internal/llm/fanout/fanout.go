@@ -89,6 +89,10 @@ type Invocation struct {
 	Params   Params
 	Timeout  time.Duration // per-invocation; 0 inherits the batch context deadline
 	Contract Contract
+	// VerdictField names the response field whose value becomes Response.Verdict
+	// (the vote key) when a backend parses structured output. Empty for backends
+	// that set Verdict directly (e.g. the test stub).
+	VerdictField string
 }
 
 // Response is a model's structured answer to one invocation. The structured

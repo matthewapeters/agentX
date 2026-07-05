@@ -166,6 +166,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the aggregate decision is recorded with its vote spread$`, w.decisionRecorded)
 	sc.Step(`^the pool default concurrency is (\d+)$`, w.defaultConcurrency)
 	sc.Step(`^the pool default width budget is (\d+)$`, w.defaultWidth)
+
+	registerInvokerSteps(sc)
 }
 
 // ---- server-defaults steps ----
