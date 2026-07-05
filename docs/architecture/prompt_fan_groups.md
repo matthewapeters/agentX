@@ -176,7 +176,7 @@ always_escalate_types = ["artifact", "command"]  # high-stakes never rides on th
 ```
 
 **Contract mapping.** A group's `[output_contract]` compiles to a `fanout.Contract`:
-`require` → `RequireField`, `max_words` → `MaxWords`, list caps → `MaxMilestones`. The
+`require` → `RequireFields`, `max_words` → `MaxWords`, `max_items` → `MaxMilestones`. The
 `enum.*` verdict-domain check is a classifier-layer validation (a candidate `Contract`
 extension). The *same* contract also drives **constrained decoding** on the request
 side (Ollama `format`/grammar) — one schema, two uses: it tells the model what shape to

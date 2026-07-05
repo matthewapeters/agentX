@@ -54,9 +54,10 @@ type Params struct {
 // batch stays bounded. A result that violates the contract is quarantined out of
 // the fold rather than failing the batch or poisoning the vote.
 type Contract struct {
-	// RequireField, when set, demands a non-empty Response.Fields[RequireField]
-	// ("answer in this exact structure").
-	RequireField string
+	// RequireFields demands a non-empty Response.Fields[f] for each listed field
+	// ("answer in this exact structure"). A classifier fan-group typically requires
+	// several, e.g. {"relation", "confidence"}.
+	RequireFields []string
 	// MaxWords, when > 0, caps Response.Text length ("answer in 250 words").
 	MaxWords int
 	// MaxMilestones, when > 0, caps len(Response.Milestones) ("decompose into no
@@ -66,8 +67,10 @@ type Contract struct {
 
 // check returns the quarantine reason for a response, or "" if it conforms.
 func (c Contract) check(r Response) string {
-	if c.RequireField != "" && strings.TrimSpace(r.Fields[c.RequireField]) == "" {
-		return "malformed"
+	for _, f := range c.RequireFields {
+		if strings.TrimSpace(r.Fields[f]) == "" {
+			return "malformed"
+		}
 	}
 	if c.MaxWords > 0 && len(strings.Fields(r.Text)) > c.MaxWords {
 		return "over length"

@@ -11,6 +11,7 @@ import (
 	"github.com/cucumber/godog"
 
 	llmsteps "agentx/tests/steps/llm"
+	promptingsteps "agentx/tests/steps/prompting"
 	runtimesteps "agentx/tests/steps/runtime"
 	sessionsteps "agentx/tests/steps/session"
 	surfacesteps "agentx/tests/steps/surfaces"
@@ -26,6 +27,7 @@ var featurePaths = []string{"../features"}
 // is introduced.
 func initializeAll(sc *godog.ScenarioContext) {
 	llmsteps.InitializeScenario(sc)
+	promptingsteps.InitializeScenario(sc)
 	runtimesteps.InitializeScenario(sc)
 	sessionsteps.InitializeScenario(sc)
 	surfacesteps.InitializeScenario(sc)

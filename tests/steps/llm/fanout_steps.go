@@ -480,7 +480,7 @@ func (w *fanoutWorld) batchForVote(n int) error {
 // ---- output-contract steps ----
 
 func (w *fanoutWorld) contractField(field string) error {
-	w.contract = fanout.Contract{RequireField: field}
+	w.contract = fanout.Contract{RequireFields: []string{field}}
 	return nil
 }
 
@@ -529,7 +529,7 @@ func (w *fanoutWorld) resultMilestones(n int) error {
 
 func (w *fanoutWorld) resultsOnlyNConform(total, conform int) error {
 	w.ensureInvoker()
-	c := fanout.Contract{RequireField: "verdict"}
+	c := fanout.Contract{RequireFields: []string{"verdict"}}
 	for i := 0; i < total; i++ {
 		tag := fmt.Sprintf("k%d", i)
 		fields := map[string]string{}
