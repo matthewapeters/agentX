@@ -216,6 +216,25 @@ func (g *FanGroup) Render(vars map[string]string) []fanout.Invocation {
 	return invs
 }
 
+// RenderCoarse renders only the coarse (Tier-1) variant into a single invocation
+// — the cheap gate that runs at R=1 before any escalation. The bool is false only
+// if the coarse variant is undefined (Validate already guarantees it resolves).
+func (g *FanGroup) RenderCoarse(vars map[string]string) (fanout.Invocation, bool) {
+	for _, v := range g.Variants {
+		if v.ID != g.CoarseVariant {
+			continue
+		}
+		return fanout.Invocation{
+			Tag:          g.Name + "/" + v.ID,
+			Prompt:       renderTemplate(v.Template, vars),
+			Params:       fanout.Params{Temperature: v.Temperature, Seed: v.Seed},
+			Contract:     g.Contract(),
+			VerdictField: g.VoteOn,
+		}, true
+	}
+	return fanout.Invocation{}, false
+}
+
 func contains(xs []string, s string) bool {
 	for _, x := range xs {
 		if x == s {

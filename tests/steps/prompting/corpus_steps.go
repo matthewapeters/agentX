@@ -53,6 +53,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^every invocation prompt substitutes the turn$`, w.invSubstitutes)
 	sc.Step(`^no invocation prompt has an unfilled placeholder$`, w.invNoPlaceholder)
 	sc.Step(`^the invocations carry more than one distinct temperature$`, w.invDistinctTemps)
+
+	registerCascadeSteps(sc)
 }
 
 // ---- corpus fixtures ----
