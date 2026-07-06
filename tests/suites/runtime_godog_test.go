@@ -10,6 +10,7 @@ import (
 
 	"github.com/cucumber/godog"
 
+	executorsteps "agentx/tests/steps/executor"
 	llmsteps "agentx/tests/steps/llm"
 	promptingsteps "agentx/tests/steps/prompting"
 	runtimesteps "agentx/tests/steps/runtime"
@@ -26,6 +27,7 @@ var featurePaths = []string{"../features"}
 // scenario initializer. Add a line here when a new tests/steps/<domain> package
 // is introduced.
 func initializeAll(sc *godog.ScenarioContext) {
+	executorsteps.InitializeScenario(sc)
 	llmsteps.InitializeScenario(sc)
 	promptingsteps.InitializeScenario(sc)
 	runtimesteps.InitializeScenario(sc)
