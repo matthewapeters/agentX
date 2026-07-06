@@ -89,17 +89,24 @@ go-test:
 
 # Godog suites are tag-scoped (docs/implementation/07_test_and_documentation_contract.md).
 # Suite runners live under tests/suites and select scenarios by tag.
+#
+# GOTEST_TIMEOUT bounds each suite: a scenario that spins is killed with a full
+# goroutine dump instead of hanging to the 10m default or dying to a silent
+# SIGKILL, so the stuck step is named. Belt-and-suspenders with the progress
+# formatter (pretty-buffering was the OOM amplifier; see tests/suites).
+GOTEST_TIMEOUT ?= 120s
+
 go-test-unit:
-	$(GO) test -run 'TestUnit' ./tests/...
+	$(GO) test -timeout $(GOTEST_TIMEOUT) -run 'TestUnit' ./tests/...
 
 go-test-integration:
-	$(GO) test -run 'TestIntegration' ./tests/...
+	$(GO) test -timeout $(GOTEST_TIMEOUT) -run 'TestIntegration' ./tests/...
 
 go-test-functional:
-	$(GO) test -run 'TestFunctional' ./tests/...
+	$(GO) test -timeout $(GOTEST_TIMEOUT) -run 'TestFunctional' ./tests/...
 
 go-test-e2e:
-	$(GO) test -run 'TestE2E' ./tests/...
+	$(GO) test -timeout $(GOTEST_TIMEOUT) -run 'TestE2E' ./tests/...
 
 vendor-check:
 	$(GO) mod verify
