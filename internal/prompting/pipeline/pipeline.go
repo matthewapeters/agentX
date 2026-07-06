@@ -23,8 +23,9 @@ import (
 
 // Fan-group names the pipeline chains, in order.
 const (
-	triageGroup = "relatedness_triage"
-	actionGroup = "action_classify"
+	triageGroup   = "relatedness_triage"
+	actionGroup   = "action_classify"
+	responseGroup = "response_classify"
 )
 
 // Directive is the context-assembly decision produced by relatedness triage: the
@@ -93,6 +94,24 @@ func (p *Pipeline) Classify(ctx context.Context, events []state.Event, turn stri
 		Action:    ares.Decision,
 		Escalated: tres.Escalated || ares.Escalated,
 	}, nil
+}
+
+// ClassifyResponse runs the response classifier ([C]) over the model's own
+// response text: did it actually produce or execute an action, or only converse?
+// It is the verifier/critic that catches a model narrating an action it never
+// took. The verdict is one of none | produced | executed. ok is false when the
+// corpus has no response_classify group (an older or trimmed corpus), so the
+// caller can fall back to an empty response signal.
+func (p *Pipeline) ClassifyResponse(ctx context.Context, response string) (fanout.Decision, bool) {
+	g, ok := p.corpus.Group(responseGroup)
+	if !ok {
+		return fanout.Decision{}, false
+	}
+	res, err := p.runner.Run(ctx, g, map[string]string{"response": response})
+	if err != nil {
+		return fanout.Decision{}, false
+	}
+	return res.Decision, true
 }
 
 // deriveDirective maps a relatedness verdict to the context the downstream turn

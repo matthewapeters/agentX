@@ -27,6 +27,7 @@ var knownPlaceholders = map[string]bool{
 	"session_digest": true,
 	"open_tasks":     true,
 	"context":        true,
+	"response":       true,
 }
 
 var placeholderRE = regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}`)

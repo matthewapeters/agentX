@@ -58,6 +58,13 @@ Feature: the classify pipeline chains triage into action classification
     Then the directive context is empty
     And the action task type is "query"
 
+  # use-case: UC-PIPE-RESPONSE  (TC-PIPE-006)  the [C] response classifier
+  @unit
+  Scenario: The response classifier reads what the model actually did
+    Given response classify returns "produced" at confidence 0.9
+    When the pipeline classifies the response "here is the file: hello world"
+    Then the response classifier verdict is "produced"
+
   # use-case: UC-PIPE-ABSTAIN  (TC-PIPE-005)
   @unit
   Scenario: A scattered triage vote abstains and keeps context

@@ -42,12 +42,14 @@ func respond(inv fanout.Invocation, r scriptResp) fanout.Response {
 }
 
 type pipelineWorld struct {
-	inv    pipeInvoker
-	corpus *corpus.Corpus
-	events []state.Event
-	next   uint64
-	result pipeline.Result
-	err    error
+	inv     pipeInvoker
+	corpus  *corpus.Corpus
+	events  []state.Event
+	next    uint64
+	result  pipeline.Result
+	respDec fanout.Decision
+	respOK  bool
+	err     error
 }
 
 func registerPipelineSteps(sc *godog.ScenarioContext) {
@@ -64,8 +66,11 @@ func registerPipelineSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the session has a prior turn "([^"]*)"$`, w.priorTurn)
 	sc.Step(`^triage returns "([^"]*)" at confidence ([0-9.]+)$`, w.triageReturns)
 	sc.Step(`^action returns "([^"]*)" at confidence ([0-9.]+)$`, w.actionReturns)
+	sc.Step(`^response classify returns "([^"]*)" at confidence ([0-9.]+)$`, w.responseReturns)
 	sc.Step(`^triage variant "([^"]*)" returns "([^"]*)" at confidence ([0-9.]+)$`, w.triageVariant)
 	sc.Step(`^the pipeline classifies "([^"]*)"$`, w.classify)
+	sc.Step(`^the pipeline classifies the response "([^"]*)"$`, w.classifyResponse)
+	sc.Step(`^the response classifier verdict is "([^"]*)"$`, w.responseVerdict)
 	sc.Step(`^the triage relation is "([^"]*)"$`, w.triageRelation)
 	sc.Step(`^the action task type is "([^"]*)"$`, w.actionTaskType)
 	sc.Step(`^the directive relation is "([^"]*)"$`, w.directiveRelation)
@@ -103,6 +108,28 @@ func (w *pipelineWorld) triageReturns(verdict string, conf float64) error {
 
 func (w *pipelineWorld) actionReturns(verdict string, conf float64) error {
 	w.inv.byField["task_type"] = scriptResp{verdict: verdict, conf: conf}
+	return nil
+}
+
+func (w *pipelineWorld) responseReturns(verdict string, conf float64) error {
+	w.inv.byField["response_action"] = scriptResp{verdict: verdict, conf: conf}
+	return nil
+}
+
+func (w *pipelineWorld) classifyResponse(response string) error {
+	runner := cascade.NewRunner(w.inv)
+	p := pipeline.New(runner, w.corpus, 10)
+	w.respDec, w.respOK = p.ClassifyResponse(context.Background(), response)
+	return nil
+}
+
+func (w *pipelineWorld) responseVerdict(want string) error {
+	if !w.respOK {
+		return fmt.Errorf("response classification did not run (no response_classify group?)")
+	}
+	if got := w.respDec.Verdict; got != want {
+		return fmt.Errorf("response verdict = %q, want %q", got, want)
+	}
 	return nil
 }
 
@@ -217,4 +244,29 @@ abstain_below  = 0.6
   axis        = "context_reframe"
   temperature = 0.6
   template     = "Classify {{turn}} given {{context}}. Reply JSON {task_type, confidence}."
+
+[fangroup.response_classify]
+stage          = "classify_response"
+purpose        = "test"
+width          = 2
+coarse_variant = "direct"
+vote_on        = "response_action"
+quorum         = 2
+abstain_below  = 0.6
+
+  [fangroup.response_classify.output_contract]
+  require              = ["response_action", "confidence"]
+  enum.response_action = ["none", "produced", "executed"]
+
+  [[fangroup.response_classify.variant]]
+  id          = "direct"
+  axis        = "template"
+  temperature = 0.2
+  template     = "What did {{response}} do? Reply JSON {response_action, confidence}."
+
+  [[fangroup.response_classify.variant]]
+  id          = "skeptical"
+  axis        = "context_reframe"
+  temperature = 0.5
+  template     = "Skeptically classify {{response}}. Reply JSON {response_action, confidence}."
 `
