@@ -451,7 +451,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	messages := o.withContext(o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route))
 	fallback := o.withContext(o.assembler.Assemble(text))
 	resp, respOrd, err := o.streamResponse(ctx, messages, fallback, doThink, ephemeral)
-	o.maybeEmitTask(ctx, err, recordUserPrompt, userOrd, text)
+	o.maybeEmitTask(ctx, err, recordUserPrompt, userOrd, text, resp)
 	o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp)
 	return o.finishCycle(err)
 }

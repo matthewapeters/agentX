@@ -57,6 +57,7 @@ func registerTaskClassifierSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the task_proposed event records type "([^"]*)"$`, w.taskEventType)
 	sc.Step(`^the session timeline contains a task_result event$`, w.hasResultEvent)
 	sc.Step(`^the task_result event records status "([^"]*)"$`, w.resultEventStatus)
+	sc.Step(`^the task_result event records route "([^"]*)"$`, w.resultEventRoute)
 }
 
 func (w *taskClassifierWorld) executorReports(status string) error {
@@ -71,8 +72,11 @@ type fixedInvoker struct{ taskType string }
 
 func (f fixedInvoker) Invoke(_ context.Context, inv fanout.Invocation) (fanout.Response, error) {
 	verdict := "continuation"
-	if inv.VerdictField == "task_type" {
+	switch inv.VerdictField {
+	case "task_type":
 		verdict = f.taskType
+	case "response_action":
+		verdict = "produced" // the model showed the artifact in prose but did not run a tool
 	}
 	fields := map[string]string{
 		"confidence":     strconv.FormatFloat(0.95, 'g', -1, 64),
@@ -203,6 +207,24 @@ func (w *taskClassifierWorld) resultEventStatus(want string) error {
 	return nil
 }
 
+func (w *taskClassifierWorld) resultEventRoute(want string) error {
+	evs, err := w.resultEvents()
+	if err != nil {
+		return err
+	}
+	if len(evs) == 0 {
+		return fmt.Errorf("no task_result event to inspect")
+	}
+	payload, ok := evs[0].Payload.(map[string]any)
+	if !ok {
+		return fmt.Errorf("task_result payload is %T, want map", evs[0].Payload)
+	}
+	if got, _ := payload["route"].(string); got != want {
+		return fmt.Errorf("task_result route = %q, want %q", got, want)
+	}
+	return nil
+}
+
 func (w *taskClassifierWorld) taskEventType(want string) error {
 	evs, err := w.taskEvents()
 	if err != nil {
@@ -271,4 +293,29 @@ abstain_below  = 0.6
   axis        = "context_reframe"
   temperature = 0.6
   template     = "Classify {{turn}} given {{context}}. Reply JSON {task_type, confidence}."
+
+[fangroup.response_classify]
+stage          = "classify_response"
+purpose        = "test"
+width          = 2
+coarse_variant = "direct"
+vote_on        = "response_action"
+quorum         = 2
+abstain_below  = 0.6
+
+  [fangroup.response_classify.output_contract]
+  require              = ["response_action", "confidence"]
+  enum.response_action = ["none", "produced", "executed"]
+
+  [[fangroup.response_classify.variant]]
+  id          = "direct"
+  axis        = "template"
+  temperature = 0.2
+  template     = "What did {{response}} do? Reply JSON {response_action, confidence}."
+
+  [[fangroup.response_classify.variant]]
+  id          = "skeptical"
+  axis        = "context_reframe"
+  temperature = 0.5
+  template     = "Skeptically classify {{response}}. Reply JSON {response_action, confidence}."
 `

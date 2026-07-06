@@ -38,3 +38,4 @@ Feature: the orchestrator emits a task record when the classifier is wired
     When the classifier turn "write hello.txt with hi" is submitted
     Then the session timeline contains a task_result event
     And the task_result event records status "executed"
+    And the task_result event records route "reify"

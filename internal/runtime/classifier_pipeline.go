@@ -75,7 +75,7 @@ func (o *Orchestrator) buildTaskExecutor() {
 // classification error yields no task and never disturbs the prompt cycle. It is
 // called before recordTurn, so the digest reflects prior history (not this turn,
 // which is passed explicitly).
-func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record bool, userOrd uint64, turn string) {
+func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record bool, userOrd uint64, turn, response string) {
 	if !record || cycleErr != nil {
 		return
 	}
@@ -106,9 +106,17 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 	if ex == nil {
 		return
 	}
+	// [C] classifies the model's own response, so the reconciler distinguishes the
+	// vivid-willow reify case (model produced the artifact in prose) from a plain
+	// redispatch. On this non-tool path no tool actually ran, so a "produced" or
+	// narrated "executed" verdict is treated as produced (not proof of execution).
+	respSig := reconcile.ResponseSignal{}
+	if rd, ok := p.ClassifyResponse(ctx, response); ok {
+		respSig = responseSignal(rd)
+	}
 	route, _ := reconcile.Reconcile(
 		reconcile.TurnSignal{Actionable: rec.Status == task.Proposed, Abstained: rec.Status == task.Abstained},
-		reconcile.ResponseSignal{},
+		respSig,
 	)
 	if route != reconcile.Reify && route != reconcile.Redispatch {
 		return // Ask / None / Confirm / Verify: nothing to drain here
@@ -122,6 +130,17 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 		"verified": outcome.Status == executor.Executed,
 		"reason":   outcome.Reason,
 	})
+}
+
+// responseSignal maps a [C] response-classifier verdict to a reconciler signal.
+// On the conversational (non-tool) path no tool actually ran, so both "produced"
+// and a narrated "executed" mean the model only showed or claimed the action —
+// proof of a real effect is absent, so Executed is never set here.
+func responseSignal(d fanout.Decision) reconcile.ResponseSignal {
+	return reconcile.ResponseSignal{
+		Produced:  d.Verdict == "produced" || d.Verdict == "executed",
+		Abstained: d.Abstained,
+	}
 }
 
 // historyEvents projects the in-memory conversation history into events for the
