@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"agentx/internal/executor"
 	"agentx/internal/llm/fanout"
@@ -14,6 +15,7 @@ import (
 	"agentx/internal/prompting/reconcile"
 	"agentx/internal/prompting/task"
 	"agentx/internal/state"
+	"agentx/internal/tools"
 )
 
 // taskExecutor drains a proposed task record into a verified effect. The concrete
@@ -66,7 +68,19 @@ func (o *Orchestrator) buildTaskExecutor() {
 	if o.taskExec != nil || o.taskPipeline == nil || !o.toolsReady() {
 		return
 	}
-	o.taskExec = executor.New(o.proposer, o.registry, o.policy, o.runner, executor.FSVerifier{})
+	// Confine execution to the working directory; a task that would operate outside
+	// it prompts the user through the existing interactive approval gate.
+	root, _ := os.Getwd()
+	approver := executor.ApproverFunc(func(ctx context.Context, d tools.Descriptor, args map[string]string, _ string) bool {
+		v, err := o.RequestApproval(ctx, d, args, o.policy)
+		return err == nil && v.Decision == tools.Allow
+	})
+	o.taskExec = executor.New(
+		o.proposer, o.registry, o.policy, o.runner,
+		executor.FSVerifier{Root: root},
+		executor.WithRoot(root),
+		executor.WithApprover(approver),
+	)
 }
 
 // maybeEmitTask runs the classifier pipeline over the session's prior turns and this
