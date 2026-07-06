@@ -20,6 +20,31 @@ type Message struct {
 	Content string
 }
 
+// Fact is a single working-memory entry rendered into a turn's context.
+type Fact struct {
+	Key   string
+	Value string
+}
+
+// WorkingMemoryMessage renders enabled working-memory facts into a single system
+// message (context band 0 — see docs/ux/03_PANEL_DETAILS.md). It returns
+// ok=false when there are no facts, so the caller can omit the message entirely
+// rather than emit an empty one.
+func WorkingMemoryMessage(facts []Fact) (Message, bool) {
+	if len(facts) == 0 {
+		return Message{}, false
+	}
+	var b strings.Builder
+	b.WriteString("Working memory — durable facts about this session:")
+	for _, f := range facts {
+		b.WriteString("\n- ")
+		b.WriteString(f.Key)
+		b.WriteString(": ")
+		b.WriteString(f.Value)
+	}
+	return Message{Role: "system", Content: b.String()}, true
+}
+
 // Assembler builds the message sequence for a user turn.
 type Assembler struct {
 	systemPrompt string

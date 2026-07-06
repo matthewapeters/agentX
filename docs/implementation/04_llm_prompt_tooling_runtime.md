@@ -92,6 +92,50 @@ Behavior:
   response is the first thing shown in the output panel.
 - Executable contract: `tests/features/runtime/bootstrap_prompt.feature`.
 
+## Context Continuity (v1)
+
+Each turn is assembled with the prior conversation folded in, so the model has
+multi-turn continuity rather than seeing only the current prompt. The assembled
+context is layered, in order:
+
+1. **Instructions** (Layer 0) — `agentx-instructions.md` / `DefaultSystemPrompt`.
+2. **Working memory** (band 0) — enabled facts from `working_memory.json`, re-read
+   fresh each turn (see WM-1).
+3. **Enabled history** — the prior turns' messages.
+4. **Current user prompt** — finishes the context.
+
+### Enabled-by-content-type
+
+Whether an event participates in assembled context is carried by an `enabled` flag
+on the event envelope, defaulted by `content_type` (`internal/state.DefaultEnabled`):
+
+| Content type | Default | In context |
+|--------------|---------|------------|
+| `user_prompt`, `agent_response`, `attachments` | **enabled** | yes |
+| `thinking`, `tool_call`, `tool_result` | **disabled** | retained, off by default |
+| `classification`, `system_prompt`, `processing_state` | n/a | never context |
+
+- A later context surface (PD-03 Context section / `context-history`) toggles the
+  flag per message; disabled messages are excluded from the next call.
+- `thinking` defaults off (it is the model's scratch reasoning); the user may enable
+  it later. `tool_call`/`tool_result` are retained for audit and may be enabled to
+  feed prior tool output back, but default off to keep context lean.
+- Adding `enabled` to the frozen event-envelope is a **versioned change** to the
+  contract (`architecture/runtime_contracts/event-envelope.schema.json`); absent is
+  treated as `false`.
+
+The **bootstrap exchange is excluded** from context. The bootstrap prompt and its
+response engage the session at startup but are irrelevant to the user's intent, so
+the bootstrap turn is not added to history (it already skips the `user_prompt`
+record). Live continuity therefore starts from the first real user turn.
+
+> v1 builds the live history in memory from completed turns (consolidating streamed
+> `agent_response` deltas into one assistant message). Reconstructing history from
+> the persisted event log on session reload — which must likewise exclude the
+> bootstrap exchange (its persisted `agent_response` is still flagged enabled on
+> disk) — and deterministic token-budget trimming (persona canon Layer 4) are
+> follow-ups.
+
 ## Classification Cycle (v1, Stage 1)
 
 Every user prompt is first **classified** for intent, then routed, then answered.

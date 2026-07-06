@@ -38,6 +38,10 @@ func registerEntrypointSteps(sc *godog.ScenarioContext) {
 
 	sc.Step(`^the arguments "([^"]*)" are parsed$`, w.parseArgs)
 	sc.Step(`^the parsed command requests version output$`, w.requestsVersion)
+	sc.Step(`^the parsed command requests a generated session name$`, w.requestsGenName)
+	sc.Step(`^the parsed session name is "([^"]*)"$`, w.parsedSessionName)
+	sc.Step(`^the session name option is "([^"]*)"$`, w.setSessionName)
+	sc.Step(`^the active session name is "([^"]*)"$`, w.activeSessionName)
 	sc.Step(`^app options with a temp config selecting model "([^"]*)"$`, w.appOptions)
 	sc.Step(`^the app builds the runtime$`, w.build)
 	sc.Step(`^the built orchestrator has an active session$`, w.hasSession)
@@ -54,6 +58,35 @@ func (w *entrypointWorld) parseArgs(args string) error {
 func (w *entrypointWorld) requestsVersion() error {
 	if !w.cmd.ShowVersion {
 		return fmt.Errorf("expected ShowVersion to be true")
+	}
+	return nil
+}
+
+func (w *entrypointWorld) requestsGenName() error {
+	if !w.cmd.GenSessionName {
+		return fmt.Errorf("expected GenSessionName to be true")
+	}
+	if w.cmd.Launch != nil || w.cmd.ShowVersion {
+		return fmt.Errorf("new-name should not also request launch or version")
+	}
+	return nil
+}
+
+func (w *entrypointWorld) parsedSessionName(want string) error {
+	if w.cmd.SessionName != want {
+		return fmt.Errorf("parsed session name = %q, want %q", w.cmd.SessionName, want)
+	}
+	return nil
+}
+
+func (w *entrypointWorld) setSessionName(name string) error {
+	w.opts.SessionName = name
+	return nil
+}
+
+func (w *entrypointWorld) activeSessionName(want string) error {
+	if got := w.orc.Session().Name; got != want {
+		return fmt.Errorf("active session name = %q, want %q", got, want)
 	}
 	return nil
 }

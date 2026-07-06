@@ -11,17 +11,43 @@ const (
 	ContentSystemPrompt    ContentType = "system_prompt"
 	ContentClassification  ContentType = "classification"
 	ContentThinking        ContentType = "thinking"
+	// ContentAgentDelta is a transient streaming chunk of the agent's answer,
+	// published on the in-process bus for the chat window's live typing effect. It
+	// is never persisted and never streamed to external surfaces; the complete
+	// answer is emitted once as ContentAgentResponse.
+	ContentAgentDelta      ContentType = "agent_delta"
 	ContentAgentResponse   ContentType = "agent_response"
 	ContentAttachments     ContentType = "attachments"
 	ContentToolCall        ContentType = "tool_call"
 	ContentToolResult      ContentType = "tool_result"
 	ContentProcessingState ContentType = "processing_state"
+	// ContentTaskProposed is a durable task record the classifier emits when a turn
+	// is recognized as actionable (docs/architecture/task_record.md). It is not
+	// conversation context; a future executor drains it.
+	ContentTaskProposed ContentType = "task_proposed"
+	// ContentTaskResult records the outcome of draining a task record through the
+	// executor: executed (and verified) / phantom / denied / etc.
+	ContentTaskResult ContentType = "task_result"
 )
 
 var validContentTypes = map[ContentType]bool{
 	ContentUserPrompt: true, ContentSystemPrompt: true, ContentClassification: true,
-	ContentThinking: true, ContentAgentResponse: true, ContentAttachments: true,
-	ContentToolCall: true, ContentToolResult: true, ContentProcessingState: true,
+	ContentThinking: true, ContentAgentDelta: true, ContentAgentResponse: true,
+	ContentAttachments: true, ContentToolCall: true, ContentToolResult: true,
+	ContentProcessingState: true, ContentTaskProposed: true, ContentTaskResult: true,
+}
+
+// DefaultEnabled reports whether an event of the given content type participates
+// in assembled LLM context by default. User and agent turns (and attachments) are
+// on; thinking and tool events are retained but off (a later context surface may
+// toggle them on); classification/system/processing-state events are not context.
+func DefaultEnabled(ct ContentType) bool {
+	switch ct {
+	case ContentUserPrompt, ContentAgentResponse, ContentAttachments:
+		return true
+	default:
+		return false
+	}
 }
 
 // Event is the canonical session-event envelope fanned out over the Bus and
@@ -32,6 +58,17 @@ type Event struct {
 	EventType     string      `json:"event_type"`
 	ContentType   ContentType `json:"content_type"`
 	Payload       any         `json:"payload"`
+	Enabled       bool        `json:"enabled"`
+	// Ordinal is a per-session monotonic sequence stamped by the Bus at publish
+	// time (1-based; 0 means unstamped). It is the canonical total order and the
+	// resume cursor for surface attach (seed-then-subscribe). Unlike the recorder's
+	// filename seq, it travels on the envelope so live bus events and their
+	// persisted files share one identity.
+	Ordinal       uint64      `json:"ordinal,omitempty"`
+	// Ephemeral marks an event that engages the session but is not part of the
+	// user's conversation (e.g. the startup bootstrap exchange). The chat surface
+	// still shows it; read-only observers like the context viewer omit it.
+	Ephemeral     bool        `json:"ephemeral,omitempty"`
 	CorrelationID string      `json:"correlation_id,omitempty"`
 	ParentEventID string      `json:"parent_event_id,omitempty"`
 	SurfaceID     string      `json:"surface_id,omitempty"`

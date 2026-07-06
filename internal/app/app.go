@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -11,7 +12,9 @@ import (
 
 	"agentx/internal/config"
 	"agentx/internal/runtime"
+	"agentx/internal/surfaces"
 	"agentx/internal/surfaces/chat"
+	transporthttp "agentx/internal/transport/http"
 )
 
 // Options configures composition. The zero value uses the conventional config
@@ -21,6 +24,12 @@ type Options struct {
 	Paths *config.Paths
 	// SessionRoot overrides the session storage root. Empty derives it from Paths.
 	SessionRoot string
+	// SessionName names the booted session (e.g. from --session). Empty generates
+	// the default adjective-noun name.
+	SessionName string
+	// Logo is the bootstrap banner shown as the first element of the output
+	// surface. Empty shows no banner.
+	Logo string
 }
 
 // shutdownTimeout bounds graceful shutdown.
@@ -72,16 +81,29 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Optional fan-group prompt corpus (~/.config/agentx/prompts.toml). Absent leaves
+	// the experimental task classifier off. The config dir is derived from an existing
+	// prompt-file path so no new config accessor is needed.
+	promptCorpus, err := config.ReadPromptFile(filepath.Join(filepath.Dir(paths.InstructionsPath()), "prompts.toml"))
+	if err != nil {
+		return nil, err
+	}
+
+	transportStart, transportEnd := cfg.TransportPortRange()
 
 	orc := runtime.New(runtime.Settings{
 		SessionRoot:           root,
+		SessionName:           opts.SessionName,
 		OllamaHost:            cfg.OllamaHost(),
 		OllamaModel:           cfg.OllamaModel(),
 		Instructions:          instructions,
 		BootstrapPrompt:       bootstrap,
 		ClassificationPrompt:  classification,
 		ClassificationRetries: cfg.ClassificationRetries(),
+		PromptCorpus:          promptCorpus,
 		MaxWidgetLines:        cfg.MaxWidgetLines(),
+		InputMaxLines:         cfg.InputMaxLines(),
+		MarkdownRenderer:      cfg.MarkdownRenderer(),
 		ThinkingEnabled:       cfg.ThinkingEnabled(),
 		ThinkingPrompt:        thinkingPrompt,
 		ThinkingBudget:        time.Duration(cfg.ThinkingTimeBudgetSeconds()) * time.Second,
@@ -94,6 +116,10 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ToolBlacklistPath:     paths.ToolBlacklistPath(),
 		ToolApprovalsPath:     paths.ToolApprovalsPath(),
 		ToolOutputMaxBytes:    cfg.ToolOutputMaxBytes(),
+		TransportEnabled:      cfg.TransportEnabled(),
+		TransportHost:         cfg.TransportHost(),
+		TransportPortStart:    transportStart,
+		TransportPortEnd:      transportEnd,
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err
@@ -148,6 +174,13 @@ func RunChat(ctx context.Context, opts Options) error {
 
 	// Each prompt runs under its own cancelable context so the surface can
 	// interrupt the in-flight cycle via Stop without tearing down the program.
+	// Expose peer-connection status to the surface only when the transport serves
+	// (otherwise there are no peers and the surface skips connection polling).
+	var connected func() []string
+	if orc.Endpoint() != "" {
+		connected = orc.Registry().ConnectedKinds
+	}
+
 	var promptMu sync.Mutex
 	var cancelPrompt context.CancelFunc
 	bridge := chat.Bridge{
@@ -173,6 +206,7 @@ func RunChat(ctx context.Context, opts Options) error {
 		Approve:    func(decision string) { orc.Resolve(decision) },
 		Events:     sub.C,
 		Processing: procCh,
+		Connected:  connected,
 	}
 
 	// Auto-submit the bootstrap prompt (if configured) once the surface is
@@ -182,7 +216,28 @@ func RunChat(ctx context.Context, opts Options) error {
 
 	surface := chat.NewWithBridge(bridge)
 	surface.SetMaxWidgetLines(orc.Settings().MaxWidgetLines)
+	surface.SetMaxInputLines(orc.Settings().InputMaxLines)
+	surface.SetMarkdownRenderer(orc.Settings().MarkdownRenderer)
 	surface.SetTheme(orc.Settings().ActiveBorderColor, orc.Settings().InactiveBorderColor)
+	surface.SetBanner(opts.Logo)
+
+	// When the transport is served, surface the attach commands as a collapsed
+	// launch-info widget (the chat runs in the alternate screen, so a printed hint
+	// would be wiped). The user expands it and presses a digit to copy a surface's
+	// full attach command to the clipboard; the command (and token) is never shown.
+	if ep := orc.Endpoint(); ep != "" {
+		kinds := surfaces.ExternalKinds()
+		name := orc.Session().Name
+		header := fmt.Sprintf("🔌 Attach surfaces · session %s · %s · enter to expand", name, ep)
+		// Session-named, token-free commands: a same-machine peer auto-resolves the
+		// endpoint and token from disk (SS-5); naming the session keeps the command
+		// unambiguous when more than one agentx session is running.
+		commands := make([]string, len(kinds))
+		for i, k := range kinds {
+			commands[i] = transporthttp.SessionLaunchCommand(k, name)
+		}
+		surface.SetLaunchInfo(header, name, kinds, commands)
+	}
 	p := tea.NewProgram(surface, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		return err

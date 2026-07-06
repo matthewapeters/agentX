@@ -168,7 +168,7 @@ Use this table as the default dependency contract for v1.
 | internal/session | internal/state, internal/config | cmd/agentx, tests/ |
 | internal/tools | internal/config, internal/session, internal/state | cmd/agentx, tests/ |
 | internal/llm/* | internal/config, internal/state | cmd/agentx, tests/ |
-| internal/prompting | internal/config, internal/state, internal/session | cmd/agentx, tests/ |
+| internal/prompting | internal/config, internal/state, internal/session, internal/llm/fanout | cmd/agentx, tests/ |
 | tests/steps | internal/* (test-only usage) | cmd/agentx |
 | tests/suites | tests/steps, internal/* (test-only usage) | cmd/agentx |
 
@@ -176,6 +176,15 @@ Guidance:
 
 - Prefer depending on internal/app and runtime contracts instead of reaching into deep implementation packages.
 - Any exception to this matrix must be documented in implementation docs and approved in review.
+- Sibling packages within one top-level group (notably `internal/llm/*` — `fanout`,
+  `ollama`, `invoke`) may import one another. The matrix rows constrain cross-group
+  direction, not intra-group composition.
+- **Documented exception:** `internal/prompting/corpus` imports `internal/llm/fanout`.
+  The prompting layer renders the LLM fan-out invocations (a fan-group compiles to
+  `[]fanout.Invocation` with a `fanout.Contract`), so it legitimately depends on that
+  invocation/contract primitive. `fanout` is a narrow, dependency-free primitive
+  (guidance rule 4), so this does not create a cycle or an outward CLI dependency.
+  See `docs/architecture/prompt_fan_groups.md`.
 
 ## Package Naming Standard (v1)
 

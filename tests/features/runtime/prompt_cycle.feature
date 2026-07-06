@@ -4,7 +4,8 @@
 #   - docs/architecture/runtime_contracts/processing-state.schema.json
 #
 # Behavior: a prompt submission records the user prompt, streams the model's
-# response as agent_response deltas, and drives processing-state
+# response as transient agent_delta chunks then one complete agent_response, and
+# drives processing-state
 # working/respond → completed (or → failed on model error), with deterministic
 # event ordering recoverable from the persisted event log.
 
@@ -23,8 +24,7 @@ Feature: Prompt cycle orchestration
       | content_type   | text              |
       | user_prompt    | hi                |
       | classification | → respond_directly |
-      | agent_response | Hel               |
-      | agent_response | lo                |
+      | agent_response | Hello             |
     And the final processing state is "completed"
 
   # use-case: UC-PROMPT-CYCLE

@@ -10,12 +10,16 @@ and the PD-01 message-entry rendering for the Bubble Tea chat surface._
 
 ## Purpose
 
-Every renderable element in the output panel — user prompt, classification,
-thinking, tool call, tool result, assistant response, error, system notice — is a
-**collapsible output widget**. The widget guarantees a constant, scannable
-transcript: a one-line header is always visible, and any longer body is collapsed
-by default, bounded to a configurable height, scrollable in place, and framed by a
-box border.
+Every renderable element in the output panel — user prompt, thinking, tool call,
+tool result, assistant response, error, system notice — is a **collapsible output
+widget**. The widget guarantees a constant, scannable transcript: a one-line header
+is always visible, and any longer body is collapsed by default, bounded to a
+configurable height, scrollable in place, and framed by a box border.
+
+**Classification is the one exception:** its payload is always a single line of
+metadata (`intent → route`), so it renders **flat** — `⚙ classification · <intent →
+route>` on one row, no box — rather than paying for a three-row frame. It is still
+selectable (tinted by selection like a border).
 
 ## Component mapping (Bubble Tea / Bubbles / Lipgloss)
 
@@ -46,8 +50,11 @@ track rows. The scrollbar is shown only when `total > visible`.
 
 ## Anatomy
 
+The widget kind (emoji + type label) is rendered **in the top border**, not as a body
+row, so every visible inner row is content:
+
 ```
- ┌─ 💭 thinking  ────────────────────────────────────────┐   ← header row (always visible)
+ ┌─ 💭 thinking ──────────────────────────────────────────┐   ← title in the border
  │ The user is asking about parser internals, so I    █ │   ← body (viewport), capped
  │ should inspect parser.go before answering. The     █ │     at max_widget_lines;
  │ relevant function is Parse(), which …              ░ │     right column = scrollbar
@@ -55,13 +62,26 @@ track rows. The scrollbar is shown only when `total > visible`.
  └────────────────────────────────────────────────────┘
 ```
 
-When collapsed, only the header row inside the top border is shown (no body, no
-scrollbar):
+Collapse behaviour depends on the kind, so collapsing a verbose box hides it while a
+narrative box still shows a one-line teaser:
 
-```
- ┌─ 💭 thinking  (expand: enter) ─────────────────────────┐
- └────────────────────────────────────────────────────┘
-```
+- **Narrative** boxes (user prompt, assistant response, tool call) collapse to the
+  titled border plus the **first content line** (with an `…` when there is more),
+  so the gist stays visible:
+
+  ```
+   ┌─ 🤖 AgentX ─────────────────────────────────────────┐
+   │ Here is the answer to your question about parser…   │
+   └────────────────────────────────────────────────────┘
+  ```
+
+- **Noise** boxes (thinking, tool result) collapse to the **titled border only** — the
+  label in the border says what it is, the content is hidden until expanded:
+
+  ```
+   ┌─ 💭 thinking ───────────────────────────────────────┐
+   └────────────────────────────────────────────────────┘
+  ```
 
 Streaming entries (assistant response) render expanded and auto-follow the bottom
 while tokens arrive.
@@ -160,6 +180,12 @@ THEN exactly 20 body rows are visible
 
 ### Proportional scrollbar thumb
 
+There are two scrollbars: a **per-widget** thumb inside a box whose body exceeds
+`max_widget_lines`, and a **transcript** thumb in a reserved right-gutter column of
+the panel that shows where the visible window sits within the whole transcript. The
+transcript gutter is blank when everything fits and shows a proportional thumb once
+the content overflows the viewport; content renders one column narrower to make room.
+
 ```gherkin
 GIVEN an expanded widget with 50 body lines shown in a 20-row viewport
 WHEN the scrollbar renders
@@ -167,7 +193,19 @@ THEN the thumb height is proportional to visible/total (≈ 8 of 20 rows)
   AND the thumb sits at the top while scrolled to the top
   AND the thumb sits at the bottom while scrolled to the bottom
   AND intermediate scroll positions place the thumb proportionally between.
+
+GIVEN more widgets than fit the viewport
+WHEN the panel renders
+THEN a transcript scrollbar thumb appears in the right gutter
+
+GIVEN content that fits the viewport
+WHEN the panel renders
+THEN the right gutter is blank (no transcript scrollbar)
 ```
+
+Emoji titles use glyphs with a deterministic single- or double-column width (e.g. the
+plain `⚙`, not the VS16 `⚙️`), so the titled border's right corner stays aligned even
+on terminals that render emoji-presentation selectors as one column.
 
 ### Focus & keymap (CHT-D5)
 
@@ -223,6 +261,122 @@ WHEN it renders
 THEN it is framed by a single-line box border (lipgloss NormalBorder)
   AND the header text sits on the top border row
   AND the border reflows to the current panel width on resize.
+```
+
+## Logo banner (bootstrap)
+
+The output panel renders an optional **logo banner** as the very first element of
+the transcript, above every widget. It is a pre-rendered, ANSI-colored block of
+text (the application logo) supplied at startup. Its purpose is a bootstrap-time
+visual signal that the application is running while the bootstrap prompt is being
+processed — it appears on the first render, before any response arrives, and then
+remains pinned at the top of the transcript for the session.
+
+The banner is rendered verbatim except that each line is clipped (ANSI-aware) to
+the current panel width, so its embedded color sequences are preserved while the
+art never soft-wraps into garbage on a narrow terminal. The banner is not a
+widget: it has no border, header, selection, or collapse, and it does not shift
+the widget selection or scroll-pinning behavior.
+
+The banner content is the build artifact embedded from `logo/agentx.logo` (see
+`docs/implementation/09_makefile_and_quality_gate_contract.md` for the build-time
+sync); the surface is given the content at startup via `SetBanner`.
+
+```gherkin
+GIVEN an output panel with a logo banner set
+WHEN the panel renders before any event is applied
+THEN the rendered transcript begins with the banner content
+
+GIVEN an output panel with a logo banner set
+WHEN a user_prompt widget is applied
+THEN the banner still precedes the widget in the rendered transcript
+
+GIVEN an output panel sized narrower than the banner's widest line
+WHEN the panel renders the banner
+THEN no rendered line is wider than the panel width
+```
+
+## Launch-info widget (attach surfaces)
+
+The chat surface boots the server with an HTTP/SSE transport that external surfaces
+attach to (M1). The attach endpoint and the session's ephemeral attach token are
+needed to launch a peer surface — but the chat surface runs in the alternate screen,
+so anything printed to stdout before the program starts is wiped and not scrollable.
+To make the attach information durably available during the session, the output panel
+renders a **launch-info widget**.
+
+Placement and lifecycle:
+
+- It is the **first widget** of the transcript — rendered after the logo banner and
+  before the bootstrap response — so a user can always scroll to the top to find it.
+- It is **collapsed by default** to keep the bootstrap view clean; the header shows
+  the endpoint and an expand hint, and expanding reveals a numbered list of the
+  launchable surfaces, each shown as `<digit> <status> <name>` (e.g. `1 🔴 context`,
+  `2 🟢 files`) plus a copy hint. The **status emoji** is 🟢 when at least one surface
+  of that kind is currently attached and 🔴 otherwise; it updates live as surfaces
+  attach and detach (see Connection status below).
+- It is **surface-local**, injected via `SetLaunchInfo` at startup — it is *not* a
+  session event: it is never persisted to the event log and never appears on attached
+  peer surfaces (which render only bus events). It exists solely on the hub chat
+  surface that knows how to launch peers.
+- It is omitted entirely when the transport is disabled (no endpoint).
+
+Copying / typing the command. The attach command is the **short** form
+`agentx surface launch <kind>` — the peer resolves the endpoint and token from the
+session directory on disk (SS-5), so no token appears in the command or on screen.
+Because it is short and unwrapped, it can be **cleanly selected over SSH in any
+terminal** (the original motivation: a wrapped, bordered command scraped border
+characters). As a convenience where supported, with the launch-info widget selected,
+pressing a **digit `1..N`** also copies that surface's command to the system clipboard
+via the terminal's **OSC 52** sequence (`tea.SetClipboard`), and the widget body
+confirms by name. OSC 52 is terminal-dependent (VTE-based terminals such as GNOME
+Terminal/Terminator ignore clipboard writes), which is why the short, selectable
+command — not the clipboard — is the load-bearing path. For exactly that reason the
+expanded body ends with a **manual-invocation footer**
+(`or run in another pane:  agentx surface launch <name> --session <this-session>`) so a
+user whose terminal drops the clipboard write can just type the command, substituting a
+listed name. The header and footer name the session because more than one agentx
+session may be running, and the launcher disambiguates on `--session` (SS-5). The widget reuses the standard
+collapsible-widget machinery (selectable, Enter toggles, body capped/scrolled), so it
+shifts selection/scroll exactly as a normal widget.
+
+Connection status. Each row carries a presence indicator so the user can see, at a
+glance, which peer surfaces are live. "Connected" is defined by an **active event
+stream**, not merely a registration: a surface is green only while it holds an open
+SSE subscription (`GET /events?surface_id=…`). The orchestrator marks the surface
+live when its stream opens and dead when it closes — which also covers a crashed or
+killed surface, since its TCP connection drops and the stream ends. The chat surface
+polls the orchestrator's connected-kinds snapshot on a short interval (~1s) and
+re-renders the row emojis; it never blocks rendering on the network. See
+`docs/implementation/02_surface_orchestration_http.md` (Connection liveness).
+
+```gherkin
+GIVEN an output panel with launch info set for 2 surface kinds
+WHEN the panel renders before any event is applied
+THEN the launch-info widget is the first widget and is collapsed
+
+GIVEN an output panel with launch info set
+WHEN the launch-info widget is expanded
+THEN it lists each launchable surface by name with a status emoji
+AND it does not render any attach command or token
+
+GIVEN an output panel with launch info set and no surface attached
+WHEN the launch-info widget is expanded
+THEN every surface shows the disconnected (🔴) status
+
+GIVEN an output panel with launch info set
+WHEN a surface kind reports connected
+THEN that surface's row shows the connected (🟢) status
+AND the other surfaces stay disconnected (🔴)
+
+GIVEN an output panel with launch info set and the widget selected
+WHEN the user presses a digit for a listed surface
+THEN that surface's attach command is copied to the clipboard
+AND the widget confirms the copied surface by name
+
+GIVEN an output panel with launch info set
+WHEN a user_prompt widget is applied
+THEN the launch-info widget still precedes it in the transcript
 ```
 
 ## Ordering (inherited from PD-01)

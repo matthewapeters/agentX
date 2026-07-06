@@ -43,9 +43,17 @@ func run(args []string) error {
 		fmt.Println("agentx", version)
 		return nil
 	}
+	if cmd.GenSessionName {
+		fmt.Println(cli.NewSessionName())
+		return nil
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return app.RunChat(ctx, app.Options{})
+	if cmd.Launch != nil {
+		return cli.RunSurface(ctx, *cmd.Launch)
+	}
+
+	return app.RunChat(ctx, app.Options{Logo: logo, SessionName: cmd.SessionName})
 }

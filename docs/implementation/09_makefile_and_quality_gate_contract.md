@@ -35,6 +35,16 @@ Implementation note:
 - project-specific Makefile may include additional checks during build.
 - make all is the minimum required verification gate before merge and before release candidate handoff.
 
+### Logo asset sync
+
+The application logo is authored in `logo/agentx.logo` (ANSI-colored text). The
+build embeds it into the binary from a copy under the command tree at
+`cmd/agentx/assets/agentx.logo`. The `build` target depends on that copy and
+refreshes it from `logo/agentx.logo` whenever the source is newer (Make's
+prerequisite/timestamp comparison), so an edited logo is re-embedded on the next
+build with no manual step. The embedded copy is committed so the build does not
+require the `logo/` source to be present.
+
 ## Dependency Hygiene Contract
 
 Dependency-change policy (v1):

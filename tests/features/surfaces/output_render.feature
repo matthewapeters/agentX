@@ -23,8 +23,8 @@ Feature: Output panel event rendering
   # use-case: UC-OUTPUT-STREAM
   Scenario: Assistant response streams into a single entry
     Given an output panel sized 40 by 10
-    When an agent_response event "Hel" is applied
-    And an agent_response event "lo" is applied
+    When an agent_delta event "Hel" is applied
+    And an agent_delta event "lo" is applied
     Then the output view contains "Hello"
     And the output has 1 assistant entry
 
@@ -48,6 +48,133 @@ Feature: Output panel event rendering
     When an agent_response event "the quick brown fox jumps over the lazy dog" is applied
     Then no output line is wider than 20
     And the output view contains "lazy dog"
+
+  # use-case: UC-OUTPUT-CLASSIFICATION  (classification is one line, no box)
+  # Classification always holds a single line of metadata, so it renders flat —
+  # emoji + title + text on one line — instead of a three-row box.
+  Scenario: Classification renders as a single flat line
+    Given an output panel sized 60 by 10
+    When a classification event "greeting → respond_directly" is applied
+    Then the output view contains "⚙ classification · greeting → respond_directly"
+    And the output view does not contain "┌"
+
+  # use-case: UC-OUTPUT-CHECKBOX  (context surface: enable/disable checkbox)
+  # In toggle-state mode, toggleable elements carry an enabled checkbox left of the
+  # emoji: [x] enabled (in context), [ ] disabled (withheld) — orthogonal to selection.
+  Scenario: Enabled and disabled elements show a checkbox
+    Given an output panel sized 40 by 10
+    And the output panel shows enable/disable state
+    When an agent_response event "kept" is applied
+    Then the output view contains "[x]"
+    When a disabled agent_response event "withheld" is applied
+    Then the output view contains "[ ]"
+    And the output view contains "withheld"
+
+  # use-case: UC-OUTPUT-SUMMARY  (context surface: navigable summary)
+  Scenario: Summary mode collapses elements by default
+    Given an output panel sized 20 by 10
+    And the output panel is a navigable summary
+    When an agent_response event "the quick brown fox jumps over the lazy dog" is applied
+    Then the output view contains "…"
+
+  # use-case: UC-OUTPUT-BANNER  (docs/ux/06_OUTPUT_WIDGET.md "Logo banner")
+  Scenario: The logo banner renders as the first element before any event
+    Given an output panel sized 40 by 10
+    And the logo banner "AGENTX-LOGO" is set
+    Then the output view contains "AGENTX-LOGO"
+
+  # use-case: UC-OUTPUT-BANNER
+  # the banner stays above the first widget
+  Scenario: The logo banner precedes applied widgets
+    Given an output panel sized 40 by 10
+    And the logo banner "AGENTX-LOGO" is set
+    When a user_prompt event "hello there" is applied
+    Then the logo banner precedes "hello there" in the output
+
+  # use-case: UC-OUTPUT-BANNER
+  # variant: clipped to width, never wider than the panel
+  Scenario: A wide banner line is clipped to the panel width
+    Given an output panel sized 12 by 10
+    And the logo banner "0123456789ABCDEFGHIJ" is set
+    Then no output line is wider than 12
+
+  # use-case: UC-OUTPUT-LAUNCH  (docs/ux/06_OUTPUT_WIDGET.md "Launch-info widget")
+  Scenario: Launch info renders collapsed as the first widget
+    Given an output panel sized 60 by 12
+    And the launch info is set for 2 surface kinds
+    Then the output view contains "Attach surfaces"
+    And the output view does not contain "kind-1"
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: expand lists surfaces by name, never the command or token
+  Scenario: Expanding launch info lists each surface by name
+    Given an output panel sized 100 by 16
+    And the launch info is set for 2 surface kinds
+    When launch widget 0 is expanded
+    Then the output view contains "kind-1"
+    And the output view contains "kind-2"
+    And the output view does not contain "token"
+    And the output view contains "agentx surface launch <name>"
+    And the output view contains "--session calm-otter"
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: every surface is disconnected (red) until one attaches
+  Scenario: Disconnected surfaces show a red status by default
+    Given an output panel sized 100 by 16
+    And the launch info is set for 2 surface kinds
+    When launch widget 0 is expanded
+    Then the output view contains "🔴 kind-1"
+    And the output view contains "🔴 kind-2"
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: an attached surface turns green; the others stay red
+  Scenario: A connected surface shows a green status
+    Given an output panel sized 100 by 16
+    And the launch info is set for 2 surface kinds
+    And launch widget 0 is expanded
+    When the surface "kind-1" reports connected
+    Then the output view contains "🟢 kind-1"
+    And the output view contains "🔴 kind-2"
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: digit copies the command and confirms by name
+  Scenario: Pressing a digit copies a surface's attach command
+    Given an output panel sized 100 by 16
+    And the launch info is set for 2 surface kinds
+    And launch widget 0 is expanded
+    And the launch info widget is selected
+    When launch command 1 is copied
+    Then the output view contains "copied kind-1"
+    And the output view does not contain "token"
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: copy is rejected unless the launch widget is selected
+  Scenario: Copy requires the launch widget to be selected
+    Given an output panel sized 100 by 16
+    And the launch info is set for 2 surface kinds
+    Then copying launch command 1 is rejected
+
+  # use-case: UC-OUTPUT-LAUNCH
+  # variant: stays above applied widgets
+  Scenario: Launch info precedes applied widgets
+    Given an output panel sized 60 by 12
+    And the launch info is set for 1 surface kinds
+    When a user_prompt event "hello there" is applied
+    Then the launch info precedes "hello there" in the output
+
+  # use-case: UC-OUTPUT-SCROLLBAR
+  # a transcript-level scrollbar in the right gutter shows position within the whole
+  Scenario: The transcript shows a scrollbar when content overflows the viewport
+    Given an output panel sized 20 by 3
+    When 10 numbered user events are applied
+    Then the output has a transcript scrollbar
+
+  # use-case: UC-OUTPUT-SCROLLBAR
+  # variant: no scrollbar when everything fits
+  Scenario: No transcript scrollbar when content fits the viewport
+    Given an output panel sized 40 by 40
+    When a user_prompt event "hello there" is applied
+    Then the output has no transcript scrollbar
 
   # use-case: UC-OUTPUT-SCROLL
   Scenario: Scrolling to the top reveals the earliest widget

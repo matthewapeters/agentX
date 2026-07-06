@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentx/runtime/task-record.schema.json",
+  "title": "TaskRecord",
+  "description": "Design draft (pre-implementation, NOT yet frozen). The durable, DAG-node-shaped unit of work the cascade classifier emits and the executor drains. Carried as the payload of a task_proposed / task_updated session event (see docs/architecture/task_record.md). Source: docs/architecture/cascade_classifier.md.",
+  "type": "object",
+  "required": ["id", "goal", "type", "status", "created_epoch"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Session-unique task identifier. Stable across the record's lifecycle; the DAG node key that deps reference."
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The extracted objective in natural language, e.g. 'write the Temporal design doc to docs/architecture/task_management_with_temporal_io.md'."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["artifact", "command", "query"],
+      "description": "artifact = produce/write content; command = execute a tool/shell action; query = read-only retrieval/answer. Drives which executor path and which command-policy gate applies."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["proposed", "ready", "in_progress", "done", "failed", "abstained", "cancelled"],
+      "description": "Lifecycle state. Append-only: each transition is a new task_updated event; the current state is the latest event for this id. See the state machine in task_record.md."
+    },
+    "stakes": {
+      "type": "string",
+      "enum": ["low", "high"],
+      "default": "low",
+      "description": "high for destructive/irreversible actions (file write, command exec) — these always escalate to a classifier vote and may require command-policy confirmation."
+    },
+    "params": {
+      "type": "object",
+      "description": "Type-specific parameters. artifact: { path, content_ref | content }. command: { argv | command }. query: { target }. Shape is validated by the executor per type, not here.",
+      "additionalProperties": true
+    },
+    "deps": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "default": [],
+      "description": "Ids of tasks that must reach 'done' before this one is 'ready'. Empty for a standalone task (Family A). A populated deps set is a DAG edge list — the Family-B seam, same schema."
+    },
+    "provenance": {
+      "type": "object",
+      "description": "How this task was classified — the audit trail, answerable from the event log.",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": ["turn", "response", "reconciler"],
+          "description": "turn = the user asked for it; response = the model produced/committed to it (verifier/critic path); reconciler = derived by folding both."
+        },
+        "escalated": {
+          "type": "boolean",
+          "description": "Whether classification went past the Tier-1 coarse gate into a Tier-2 self-consistency vote."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Measured confidence: for an escalated task, the vote's agreement share; otherwise the coarse gate's self-report."
+        },
+        "vote_spread": {
+          "type": "object",
+          "description": "Verdict -> count from the Tier-2 fold (fanout.Decision.Spread), present when escalated.",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "model": {
+          "type": "string",
+          "description": "The (single) model that produced the classification."
+        }
+      },
+      "additionalProperties": false
+    },
+    "verification": {
+      "type": "object",
+      "description": "Set by the executor after acting, before the surface may report success. Closes the phantom-success loop: 'done' requires verified=true.",
+      "properties": {
+        "verified": {
+          "type": "boolean",
+          "description": "Whether the action's effect was observed (file exists, command exited 0, etc.)."
+        },
+        "detail": {
+          "type": "string",
+          "description": "Human-readable evidence, e.g. 'docs/.../file.md exists, 2.1KB' or 'exit=0'."
+        },
+        "checked_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Millisecond epoch when the effect was verified."
+        }
+      },
+      "additionalProperties": false
+    },
+    "result_ref": {
+      "type": "string",
+      "description": "Ordinal or id of the tool_result event this task produced, linking the record to its outcome in the event log."
+    },
+    "created_epoch": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Millisecond epoch when the task was first proposed."
+    },
+    "updated_epoch": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Millisecond epoch of the latest status transition."
+    }
+  },
+  "additionalProperties": false
+}

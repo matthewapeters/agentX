@@ -13,9 +13,22 @@ CMD_DIR  := ./cmd/agentx
 BIN_DIR  := bin
 BIN      := $(BIN_DIR)/agentx
 
+# Logo asset: authored source vs. the embedded copy under the command tree. The
+# build refreshes the copy whenever the source is newer so an edited logo is
+# re-embedded automatically (docs/implementation/09_makefile_and_quality_gate_contract.md).
+LOGO_SRC := logo/agentx.logo
+LOGO_DST := cmd/agentx/assets/agentx.logo
+
+# Default-config seed: baseline files installed into the user's config dir. The
+# packaging step named as "future work" in config/seed/README.md — copies each
+# baseline into place without clobbering an existing (user-tuned) copy.
+SEED_DIR    := config/seed
+CONFIG_HOME ?= $(or $(XDG_CONFIG_HOME),$(HOME)/.config)
+CONFIG_DIR  := $(CONFIG_HOME)/agentx
+
 .PHONY: help all build clean test go-test \
 	go-test-unit go-test-integration go-test-functional go-test-e2e \
-	vendor-check run
+	vendor-check run seed
 
 help:
 	@echo "AgentX Make Targets"
@@ -38,6 +51,9 @@ help:
 	@echo "Hygiene:"
 	@echo "  vendor-check        Verify go.mod/vendor are consistent"
 	@echo ""
+	@echo "Config:"
+	@echo "  seed                Install baseline config into $(CONFIG_DIR) (keeps existing files)"
+	@echo ""
 	@echo "Run:"
 	@echo "  run                 Build and run the agentx runtime"
 
@@ -45,7 +61,7 @@ all:
 	@$(MAKE) clean && $(MAKE) build
 	@echo "Baseline verification complete"
 
-build:
+build: $(LOGO_DST)
 	@echo "Validating (vet + tests)..."
 	$(GO) vet ./...
 	$(GO) test ./...
@@ -53,6 +69,12 @@ build:
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(BIN) $(CMD_DIR)
 	@echo "agentx built at $(BIN)"
+
+# Refresh the embedded logo copy when the authored source changes. Make's
+# timestamp comparison drives "is it changed"; cmp avoids a no-op rewrite.
+$(LOGO_DST): $(LOGO_SRC)
+	@mkdir -p $(dir $@)
+	@if ! cmp -s $< $@; then echo "Logo changed; updating $@"; cp $< $@; else touch $@; fi
 
 clean:
 	@echo "Cleaning artifacts..."
@@ -85,3 +107,18 @@ vendor-check:
 
 run: build
 	./$(BIN)
+
+# Install the baseline config files into the user's config dir, preserving any
+# file already there (a user's tuned copy always wins). README.md is repo-facing
+# documentation, not a deployed file, so it is skipped. The zellij harness layout
+# (agentx.kdl) rides along here even though the agentx runtime never reads it.
+seed:
+	@echo "Seeding baseline config into $(CONFIG_DIR) (existing files preserved)..."
+	@mkdir -p "$(CONFIG_DIR)"
+	@for f in $(SEED_DIR)/*; do \
+		b=$$(basename "$$f"); \
+		[ "$$b" = "README.md" ] && continue; \
+		if [ -e "$(CONFIG_DIR)/$$b" ]; then echo "  keep  $$b"; \
+		else cp "$$f" "$(CONFIG_DIR)/$$b" && echo "  seed  $$b"; fi; \
+	done
+	@echo "Seed complete"

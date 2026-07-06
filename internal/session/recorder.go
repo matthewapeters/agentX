@@ -29,6 +29,12 @@ func (s *Store) Recorder(id string) *Recorder {
 // epoch still load back in the order they were written. Writes are append-only:
 // an existing file is never overwritten; a numeric suffix is added instead.
 func (r *Recorder) Write(ev state.Event) error {
+	// agent_delta events are transient streaming chunks for the live chat window;
+	// they carry no durable identity and are never persisted (the complete answer
+	// is recorded once as agent_response).
+	if ev.ContentType == state.ContentAgentDelta {
+		return nil
+	}
 	if err := ev.Validate(); err != nil {
 		return fmt.Errorf("refusing to persist invalid event: %w", err)
 	}
@@ -83,6 +89,40 @@ func (r *Recorder) Load() ([]state.Event, error) {
 		events = append(events, ev)
 	}
 	return events, nil
+}
+
+// SetEnabled rewrites the persisted event with the given ordinal, setting its
+// Enabled field, so a re-attaching surface seeds the correct state. It reports
+// whether a matching event file was found. This is the explicit maintenance
+// rewrite the persistence contract permits; because each conversation element is
+// a single event, it touches exactly one file.
+func (r *Recorder) SetEnabled(ordinal uint64, enabled bool) (bool, error) {
+	entries, err := os.ReadDir(r.eventsDir)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read events dir: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(r.eventsDir, e.Name())
+		var ev state.Event
+		if err := readJSON(path, &ev); err != nil {
+			return false, fmt.Errorf("load %s: %w", e.Name(), err)
+		}
+		if ev.Ordinal != ordinal {
+			continue
+		}
+		ev.Enabled = enabled
+		if err := writeJSON(path, ev); err != nil {
+			return false, fmt.Errorf("rewrite %s: %w", e.Name(), err)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func fileExists(path string) bool {

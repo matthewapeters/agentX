@@ -26,6 +26,11 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerOutputSteps(sc)
 	registerInputSteps(sc)
 	registerRoundTripSteps(sc)
+	registerRegistrySteps(sc)
+	registerClientSteps(sc)
+	registerContextSteps(sc)
+	registerWorkMemorySteps(sc)
+	registerContextVizSteps(sc)
 }
 
 // registerChatSteps wires the chat-surface layout steps (CHT-B1).
@@ -48,6 +53,8 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a spinner tick advances the indicator$`, w.spinnerTickAdvances)
 	sc.Step(`^ESC is pressed$`, w.pressEsc)
 	sc.Step(`^the "([^"]*)" key is pressed$`, w.pressKey)
+	sc.Step(`^the user types the prompt "([^"]*)"$`, w.types)
+	sc.Step(`^the user inserts a prompt newline$`, w.pressShiftEnter)
 	sc.Step(`^the chat hint shows "([^"]*)"$`, w.statusShows)
 	sc.Step(`^the output panel has focus$`, w.outputFocused)
 	sc.Step(`^the chat view shows the active border color$`, w.viewHasActiveColor)
@@ -58,6 +65,22 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the processing state becomes awaiting input$`, w.processingAwaiting)
 	sc.Step(`^a chat surface that records approvals sized (\d+) by (\d+)$`, w.recordingApprovalsSized)
 	sc.Step(`^the approval decision is "([^"]*)"$`, w.approvalDecisionIs)
+	sc.Step(`^the chat input value is "([^"]*)"$`, w.chatInputValueIs)
+	sc.Step(`^the chat view shows the flash border color$`, w.viewHasFlashColor)
+}
+
+func (w *chatWorld) chatInputValueIs(want string) error {
+	if got := w.model.Input().Value(); got != want {
+		return fmt.Errorf("chat input value = %q, want %q", got, want)
+	}
+	return nil
+}
+
+func (w *chatWorld) viewHasFlashColor() error {
+	if !strings.Contains(w.model.View().Content, "7;38;5;6") {
+		return fmt.Errorf("chat view does not show the flash border color")
+	}
+	return nil
 }
 
 func (w *chatWorld) pressEsc() error {
@@ -84,6 +107,18 @@ func (w *chatWorld) pressKey(name string) error {
 		msg = tea.KeyPressMsg{Code: r, Text: name}
 	}
 	w.update(msg)
+	return nil
+}
+
+func (w *chatWorld) types(text string) error {
+	for _, r := range text {
+		w.update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	return nil
+}
+
+func (w *chatWorld) pressShiftEnter() error {
+	w.update(tea.KeyPressMsg{Mod: tea.ModShift, Code: tea.KeyEnter})
 	return nil
 }
 

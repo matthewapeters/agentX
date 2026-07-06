@@ -24,11 +24,22 @@
         "attachments",
         "tool_call",
         "tool_result",
-        "processing_state"
+        "processing_state",
+        "task_proposed",
+        "task_result"
       ]
     },
     "payload": {
       "description": "Event body; shape varies by content_type."
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether this event participates in assembled LLM context (continuity). Defaults by content_type: user_prompt/agent_response/attachments on; thinking/tool_call/tool_result retained but off; control/meta events not context. Absent is treated as false."
+    },
+    "ordinal": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Per-session monotonic sequence stamped by the event bus at publish time. The canonical total order and the resume cursor for surface attach (seed-then-subscribe). Carried on both the live event and its persisted copy so the two share one identity. Absent/0 means unstamped."
     },
     "correlation_id": { "type": "string" },
     "parent_event_id": { "type": "string" },

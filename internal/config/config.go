@@ -32,6 +32,18 @@ type Agentx struct {
 	Theme          Theme          `toml:"theme"`
 	Thinking       Thinking       `toml:"thinking"`
 	Tools          Tools          `toml:"tools"`
+	Transport      Transport      `toml:"transport"`
+}
+
+// Transport is the [agentx.transport] table configuring the HTTP/SSE endpoint
+// external surfaces attach to. Enabled is a pointer so an absent key defaults on.
+// Host is loopback-only in v1; [PortStart, PortEnd] is the inclusive candidate
+// range the allocator binds the first free port from.
+type Transport struct {
+	Enabled   *bool  `toml:"enabled"`
+	Host      string `toml:"host"`
+	PortStart int    `toml:"port_start"`
+	PortEnd   int    `toml:"port_end"`
 }
 
 // Tools is the [agentx.tools] table gating the single_tool execution cycle.
@@ -74,8 +86,14 @@ type Classification struct {
 }
 
 // Output is the [agentx.output] table tuning the output panel widgets.
+// MarkdownRenderer selects how a finalized assistant answer is styled: "native" (the
+// default — scanner prose plus lipgloss/table tables and chroma-highlighted code) or
+// "scanner" (the lightweight per-line scanner alone, also used live while streaming).
+// See ADR 0007.
 type Output struct {
-	MaxWidgetLines int `toml:"max_widget_lines"`
+	MaxWidgetLines   int    `toml:"max_widget_lines"`
+	InputMaxLines    int    `toml:"input_max_lines"`
+	MarkdownRenderer string `toml:"markdown_renderer"`
 }
 
 // Theme is the [agentx.theme] table styling the chat surface. Colors accept a
@@ -115,6 +133,26 @@ func (c Config) MaxWidgetLines() int {
 		return defaultMaxWidgetLines
 	}
 	return c.Agentx.Output.MaxWidgetLines
+}
+
+// InputMaxLines returns the max rows the input panel grows to before it scrolls.
+func (c Config) InputMaxLines() int {
+	if c.Agentx.Output.InputMaxLines <= 0 {
+		return defaultInputMaxLines
+	}
+	return c.Agentx.Output.InputMaxLines
+}
+
+// MarkdownRenderer returns the assistant-markdown rendering mode: "native" (the
+// default) renders prose with the per-line scanner plus GFM tables (lipgloss/table,
+// bordered + zebra) and chroma-highlighted code; "scanner" is the lightweight per-line
+// scanner alone. An explicit "scanner" opts out; every other value (empty, the retired
+// "glamour", or unrecognized) resolves to the native default. See ADR 0007.
+func (c Config) MarkdownRenderer() string {
+	if strings.EqualFold(strings.TrimSpace(c.Agentx.Output.MarkdownRenderer), "scanner") {
+		return "scanner"
+	}
+	return defaultMarkdownRenderer
 }
 
 // ToolsEnabled reports whether the single_tool execution cycle is on (default on).
@@ -159,6 +197,28 @@ func (c Config) ThinkingRoutes() map[string]bool {
 		"single_tool":      boolOr(r.SingleTool, true),
 		"invoke_planner":   boolOr(r.InvokePlanner, true),
 	}
+}
+
+// TransportEnabled reports whether the HTTP/SSE transport server is served
+// alongside the in-process chat surface (default on).
+func (c Config) TransportEnabled() bool { return boolOr(c.Agentx.Transport.Enabled, true) }
+
+// TransportHost returns the loopback host the transport binds (default 127.0.0.1).
+func (c Config) TransportHost() string {
+	if h := strings.TrimSpace(c.Agentx.Transport.Host); h != "" {
+		return h
+	}
+	return defaultTransportHost
+}
+
+// TransportPortRange returns the inclusive [start, end] candidate port range,
+// falling back to the built-in range when unset or invalid.
+func (c Config) TransportPortRange() (int, int) {
+	start, end := c.Agentx.Transport.PortStart, c.Agentx.Transport.PortEnd
+	if start <= 0 || end <= 0 || end < start {
+		return defaultTransportPortStart, defaultTransportPortEnd
+	}
+	return start, end
 }
 
 func boolOr(p *bool, def bool) bool {
@@ -241,9 +301,14 @@ const (
 	defaultClassificationRetries = 2
 	defaultClarificationOptions  = 3
 	defaultMaxWidgetLines        = 20
+	defaultInputMaxLines         = 8
+	defaultMarkdownRenderer      = "native"
 	defaultActiveBorder          = "cyan"
 	defaultInactiveBorder        = "dark gray"
 	defaultThinkingBudgetSeconds = 180
+	defaultTransportHost         = "127.0.0.1"
+	defaultTransportPortStart    = 8420
+	defaultTransportPortEnd      = 8460
 )
 
 // Default returns the built-in default configuration used to seed a deployment
@@ -259,7 +324,7 @@ func Default() Config {
 				Retries:              defaultClassificationRetries,
 				ClarificationOptions: defaultClarificationOptions,
 			},
-			Output: Output{MaxWidgetLines: defaultMaxWidgetLines},
+			Output: Output{MaxWidgetLines: defaultMaxWidgetLines, InputMaxLines: defaultInputMaxLines, MarkdownRenderer: defaultMarkdownRenderer},
 			Thinking: Thinking{
 				Enabled:           boolPtr(true),
 				TimeBudgetSeconds: defaultThinkingBudgetSeconds,
@@ -278,6 +343,12 @@ func Default() Config {
 				ReadOnly:       boolPtr(true),
 				TimeoutSeconds: 30,
 				OutputMaxBytes: 65536,
+			},
+			Transport: Transport{
+				Enabled:   boolPtr(true),
+				Host:      defaultTransportHost,
+				PortStart: defaultTransportPortStart,
+				PortEnd:   defaultTransportPortEnd,
 			},
 		},
 	}

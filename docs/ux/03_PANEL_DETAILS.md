@@ -310,6 +310,175 @@ THEN  the input widget contains "hello world"
  AND  the popup is dismissed
 ```
 
+### Prompt history seeding (TUI-native)
+
+> **TUI-native affordances** (no Tkinter precedent). The input panel keeps a
+> readline-style history of prompts submitted during the current run. `↑`/`↓`
+> *seed* the editable buffer with a prior prompt — they copy it in for reuse, they
+> do not edit the original. The user may submit the seed as-is with Enter or edit it
+> first; either way a **new** prompt is created. Source: `internal/surfaces/input`,
+> wired through `internal/surfaces/chat`. Scope is the current process run only
+> (in-memory, captured at submit time); persisting history across a session reload
+> is a follow-up.
+
+| ID | Affordance | Trigger | Outcome |
+|----|-----------|---------|---------|
+| PD-02-AF-013 | History prev seeds the input | `↑` while input-focused, idle | Buffer is replaced with the previous (older) submitted prompt; the in-progress draft is stashed on first step back |
+| PD-02-AF-014 | History next walks toward the present | `↓` while input-focused, idle | Buffer is replaced with the next (newer) prompt; stepping past the newest restores the stashed draft |
+| PD-02-AF-015 | Boundary flash | `↑` past the oldest prompt, or `↓` past the restored draft | The buffer does not change; the input frame flashes briefly to signal the boundary |
+| PD-02-AF-016 | Esc,Esc clears a seed | `Esc` then `Esc` while idle with a seed active | The buffer returns to empty (unseeded) and history navigation resets to the present |
+
+```gherkin
+# PD-02-AF-013 — up seeds the previous prompt
+GIVEN the input has submitted prompts "first" then "second"
+  AND the input buffer is empty
+WHEN  the user presses up
+THEN  the input value is "second"
+WHEN  the user presses up
+THEN  the input value is "first"
+
+# PD-02-AF-013 — the in-progress draft is stashed on the first step back
+GIVEN the input has submitted prompt "first"
+  AND the user has typed "draft" without submitting
+WHEN  the user presses up
+THEN  the input value is "first"
+
+# PD-02-AF-014 — down walks back toward the present and restores the draft
+GIVEN the input has submitted prompts "first" then "second"
+  AND the user has typed "draft" without submitting
+  AND the user presses up twice
+WHEN  the user presses down
+THEN  the input value is "second"
+WHEN  the user presses down
+THEN  the input value is "draft"
+
+# PD-02-AF-015 — up at the oldest prompt flashes and does not change the buffer
+GIVEN the input has submitted prompt "first"
+  AND the user has pressed up once so the value is "first"
+WHEN  the user presses up
+THEN  the input value is "first"
+  AND the input reports a history boundary
+
+# PD-02-AF-015 — down past the draft flashes and does not change the buffer
+GIVEN the input has submitted prompt "first"
+  AND the input buffer is empty
+WHEN  the user presses down
+THEN  the input value is ""
+  AND the input reports a history boundary
+
+# PD-02-AF-016 — Esc,Esc returns to an empty, unseeded prompt
+GIVEN the input has submitted prompt "first"
+  AND the user has pressed up so the value is "first"
+WHEN  the user presses esc then esc
+THEN  the input value is ""
+
+# PD-02-AF-013 — submitting appends the submitted text to history
+GIVEN the input has submitted prompt "first"
+  AND the user seeds "first" and edits it to "first revised" and submits
+WHEN  the user presses up
+THEN  the input value is "first revised"
+```
+
+### Cursor & line editing (TUI-native)
+
+> **TUI-native affordances** (no Tkinter precedent). When the input panel is
+> focused it shows a text cursor and edits relative to it: typing inserts at the
+> cursor, Backspace deletes the rune before it, and a **soft-newline** inserts a
+> `\n` at it. The soft-newline binding is `Alt+Enter` (or `Ctrl+J`) on any
+> terminal, plus `Shift+Enter` on terminals that disambiguate modified keys; an
+> empty input shows a dim hint advertising whichever key applies (detected via
+> `tea.KeyboardEnhancementsMsg`). Movement keys follow readline. The buffer is treated as one logical line
+> (embedded newlines are ordinary characters), so Ctrl-A/Ctrl-E address the whole
+> buffer. A *word* is a maximal run of non-space runes; Alt-B lands on the start of
+> the prior word and Alt-F on the start of the next word. Source:
+> `internal/surfaces/input`. The cursor position is exposed as a rune index via
+> `Cursor()` for testing; it is rendered as a reverse-video cell (including a
+> virtual cell at end-of-line) and is shown only while the panel is focused.
+>
+> **Multiplexer-safe aliases.** zellij binds `Alt-f` to toggle floating panes and
+> intercepts it before the app sees it, so word motion is also bound to
+> `Ctrl+←`/`Ctrl+→`, which zellij does not grab by default. Both bindings invoke
+> the same back-word / forward-word movement.
+>
+> History seeding (PD-02-AF-013/AF-014) places the cursor at the end of the seeded
+> text so the user can keep typing immediately.
+
+| ID | Affordance | Trigger | Outcome |
+|----|-----------|---------|---------|
+| PD-02-AF-017 | Left moves the cursor back one rune | `←` while input-focused, idle | Cursor index decremented, floored at 0 |
+| PD-02-AF-018 | Right moves the cursor forward one rune | `→` while input-focused, idle | Cursor index incremented, capped at the buffer length |
+| PD-02-AF-019 | Ctrl-A jumps to the start of the buffer | `Ctrl+A` | Cursor index set to 0 |
+| PD-02-AF-020 | Ctrl-E jumps to the end of the buffer | `Ctrl+E` | Cursor index set to the buffer length |
+| PD-02-AF-021 | Jump to the start of the prior word | `Alt+B` or `Ctrl+←` | Cursor moves left over any spaces then over non-spaces, landing on the word start |
+| PD-02-AF-022 | Jump to the start of the next word | `Alt+F` or `Ctrl+→` | Cursor moves right over the current word then over spaces, landing on the next word start |
+| PD-02-AF-023 | Edits act at the cursor | typing / `Backspace` / `Shift+Enter` | Rune inserted at the cursor (cursor advances); Backspace deletes the rune before the cursor; newline inserted at the cursor |
+| PD-02-AF-024 | The cursor is rendered while focused | panel focused | A reverse-video cell marks the cursor position; absent when the panel is blurred |
+
+```gherkin
+# PD-02-AF-023 — typing inserts at the cursor
+GIVEN a focused input panel containing "ac" with the cursor at 1
+WHEN  the user types "b"
+THEN  the input value is "abc"
+  AND the cursor is at 2
+
+# PD-02-AF-023 — backspace deletes the rune before the cursor
+GIVEN a focused input panel containing "abc" with the cursor at 2
+WHEN  the user presses backspace
+THEN  the input value is "ac"
+  AND the cursor is at 1
+
+# PD-02-AF-017 / AF-018 — left and right move one rune and clamp at the edges
+GIVEN a focused input panel containing "ab" with the cursor at 2
+WHEN  the user presses left
+THEN  the cursor is at 1
+WHEN  the user presses left
+THEN  the cursor is at 0
+WHEN  the user presses left
+THEN  the cursor is at 0
+WHEN  the user presses right
+THEN  the cursor is at 1
+
+# PD-02-AF-019 / AF-020 — Ctrl-A and Ctrl-E jump to the buffer ends
+GIVEN a focused input panel containing "hello world" with the cursor at 5
+WHEN  the user presses ctrl+a
+THEN  the cursor is at 0
+WHEN  the user presses ctrl+e
+THEN  the cursor is at 11
+
+# PD-02-AF-021 — Alt-B jumps to the start of the prior word
+GIVEN a focused input panel containing "foo bar baz" with the cursor at 11
+WHEN  the user presses alt+b
+THEN  the cursor is at 8
+WHEN  the user presses alt+b
+THEN  the cursor is at 4
+
+# PD-02-AF-022 — Alt-F jumps to the start of the next word
+GIVEN a focused input panel containing "foo bar baz" with the cursor at 0
+WHEN  the user presses alt+f
+THEN  the cursor is at 4
+WHEN  the user presses alt+f
+THEN  the cursor is at 8
+
+# PD-02-AF-021 / AF-022 — Ctrl+arrow aliases move by word (multiplexer-safe)
+GIVEN a focused input panel containing "foo bar" with the cursor at 0
+WHEN  the user presses ctrl+right
+THEN  the cursor is at 4
+WHEN  the user presses ctrl+left
+THEN  the cursor is at 0
+
+# PD-02-AF-013 — seeding a prompt leaves the cursor at the end
+GIVEN the input has submitted prompt "hello"
+WHEN  the user presses up
+THEN  the input value is "hello"
+  AND the cursor is at 5
+
+# PD-02-AF-024 — the cursor is rendered only while focused
+GIVEN a focused input panel containing "hi"
+THEN  the rendered input shows a cursor cell
+WHEN  the panel is blurred
+THEN  the rendered input shows no cursor cell
+```
+
 ### Keyboard Shortcuts
 
 | Key | Behaviour |
@@ -1856,3 +2025,175 @@ Requires ARCH-03 (tagging WM SYSTEM message with `metadata["is_working_memory"]`
 | Q-11 | Should synthesis (ENH-14) require a preview/approval step before originals are disabled? |
 | Q-12 | Where does a synthesised message appear in the list: (a) replace last source position, (b) bottom of selection range, or (c) dedicated Synthesis section? |
 | Q-13 | Should the synthesis compression instruction be a fixed internal prompt or user-editable per invocation? |
+
+---
+
+## PD-WM — Working-Memory Editor (TUI)
+
+> **TUI surface (M2, SS-6).** The first **read-write** peer surface, launched as a
+> separate process (`agentx surface launch working-memory`). It lists the session's
+> working-memory facts and lets the user curate what folds into the agent's context.
+> It re-authors, for the TUI, the legacy GUI working-memory affordances (PD-14). See
+> `docs/implementation/02_surface_orchestration_http.md` (Working-Memory CRUD SS-6).
+
+### Behaviour
+
+Working memory is a document (`working_memory.json`), not an event stream, so the
+surface reads on attach (`GET /working-memory`), polls (~2s) for live refresh, and
+mutates through dedicated token-gated endpoints. Each fact renders as
+`<cursor> <●/○> key = value` (● enabled / ○ disabled; agent-owned facts are tagged).
+Mutations persist and take effect on the **next** prompt's assembled context (only
+enabled facts fold in). It is read-write but single-purpose: no prompt input.
+
+### Affordance Inventory
+
+| Affordance | ID | Status |
+|-----------|-----|--------|
+| List facts with enabled/disabled markers | PD-WM-AF-001 | ✅ |
+| Navigate the selection cursor (↑/↓, j/k) | PD-WM-AF-002 | ✅ |
+| Toggle enable/disable (space) | PD-WM-AF-003 | ✅ |
+| Delete the selected fact (d) | PD-WM-AF-004 | ✅ |
+| Add a fact (a → `key=value`, enter) | PD-WM-AF-005 | ✅ |
+| Edit the selected value (e) / cancel (esc) | PD-WM-AF-006 | ✅ |
+
+### Deferred (later slices)
+
+Inline edit→clone, multi-select action bar, synthesize-via-LLM, system-prompt row
+toggle, and click-to-navigate (the remainder of legacy PD-14).
+
+## PD-CTX — Context Surface (TUI)
+
+> **TUI surface (M2, SS-3).** A read-only peer surface launched as a separate
+> process (`agentx surface launch context`) that attaches over the transport and
+> mirrors the session. It supersedes, for the TUI, the legacy GUI context affordances
+> (PD-03 SystemSurface — Context, PD-08 ContextRenderer), which described the
+> retired single-window GUI. See `docs/build-plan/06_system_surfaces_backlog.md`.
+
+### Behaviour
+
+The surface seeds from the durable event log on attach (the full prior session),
+then resumes the live stream by cursor and appends new events (SS-1). It is a
+**navigable summary**: every element renders **collapsed by default** (titled border
++ preview), so the surface reads as a scannable list of conversation elements, not a
+full transcript — expand one with Enter to read it.
+
+It deals only in **complete conversation elements**: it never receives the live
+`agent_delta` stream (that is the chat window's job); an agent turn appears as one
+finished `agent_response` element. Streaming is watched in the main window.
+
+Its **primary affordance is enable/disable** (not read-only): selecting a
+user-prompt or agent-response element and pressing **space** toggles whether that
+element participates in the agent's upcoming context. The toggle is sent to the
+orchestrator, which applies it in memory (effective on the next prompt) and persists
+it in the element's event file. Each toggleable element carries an **enabled
+checkbox to the left of its role emoji** — `[x]` when it is in context, `[ ]` when
+disabled (re-authoring PD-03-AF-007's message-enabled checkbox). The checkbox is
+deliberately independent of the selection border, so navigation and
+context-membership read as separate cues. Thinking/tool/classification elements are
+display-only and not toggleable, so they carry no checkbox. A one-line
+processing-state indicator sits at the bottom. Quitting (`Ctrl-C`/`q`) marks the
+surface stopped.
+
+### Affordance Inventory
+
+| Affordance | ID | Status |
+|-----------|-----|--------|
+| Seed render: durable history on attach | PD-CTX-AF-001 | ✅ |
+| Live tail: resumed complete events append after the seed cursor | PD-CTX-AF-002 | ✅ |
+| Every element collapsed by default (navigable summary) | PD-CTX-AF-003 | ✅ |
+| Navigation keys (scroll, page, select, expand/collapse) | PD-CTX-AF-004 | ✅ |
+| Processing-state line reflects state · phase | PD-CTX-AF-005 | ✅ |
+| Enable/disable the selected element (space) → context inclusion | PD-CTX-AF-006 | ✅ |
+| Enabled checkbox (`[x]`/`[ ]`) left of the emoji, independent of selection | PD-CTX-AF-007 | ✅ |
+| Only user/agent elements toggle; others are display-only | PD-CTX-AF-008 | ✅ |
+| Complete agent responses only (no live `agent_delta` stream) | PD-CTX-AF-009 | ✅ |
+| Title strip (`context · <session>`) via the surface host | PD-CTX-AF-010 | ✅ |
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: Seed then live (PD-CTX-AF-001 / PD-CTX-AF-002)
+
+- GIVEN a session with a recorded exchange
+- WHEN a context surface attaches
+- THEN it renders the prior exchange as collapsed elements, and complete events
+  stream in thereafter
+
+Use-case: Enable/disable an element (PD-CTX-AF-006)
+
+- GIVEN a context surface with a selected agent-response element
+- WHEN the user presses space
+- THEN the element's checkbox flips (`[x]`→`[ ]`) and the toggle is sent to the
+  orchestrator (excluded from the next assembled context)
+
+Use-case: Non-toggleable element (PD-CTX-AF-008)
+
+- GIVEN a context surface with a selected thinking element
+- WHEN the user presses space
+- THEN nothing is toggled (thinking never enters context)
+
+Use-case: Collapsed by default (PD-CTX-AF-003)
+
+- GIVEN a context surface
+- WHEN any element arrives
+- THEN it renders collapsed until the user expands it
+
+## PD-CTXVIZ — Context Visualizer (TUI)
+
+> **TUI surface (M2, SS-7).** A read-only peer surface launched as a separate
+> process (`agentx surface launch context-visualizer`) that polls the assembled
+> context window's composition and renders it as a budget meter. It re-authors the
+> legacy GUI ContextMeterWidget (PD-10) and ContextKeyWidget (PD-12) for the TUI.
+> See `docs/build-plan/06_system_surfaces_backlog.md`.
+
+### Behaviour
+
+The surface polls `GET /context` (every 2 s) for a per-content-class breakdown of
+the standing context window and draws one bar per class in PD-10 band order, using
+the app's content emoji so it reads consistently with the output widgets: working
+memory 🧠, instructions 📜, user 👤, attachments 📎, thinking 💭, assistant 🤖,
+tools 🔧. A remaining-capacity ghost band (`░`) and a total line complete the meter,
+all measured against the model's context window — read from Ollama's `/api/show`
+(`<architecture>.context_length`), the same window the runtime requests as
+`num_ctx`. Token figures are a `chars ÷ 4` estimate (Ollama exposes no universal
+local tokenizer), labelled "est.". When the model reports no context length the
+meter drops the percentages and the ghost band.
+
+It is **strictly read-only**: it holds an event stream only for connection presence
+(SS-4) and performs no writes. The enable/disable-a-turn management affordance lives
+on the context pane (PD-CTX); the meter only *hints* at what to prune. Classes not
+yet fed into the assembled context (attachments, thinking, tools today) render as
+zero rather than being hidden, so the legend stays complete. Quitting (`Ctrl-C`/`q`)
+marks the surface stopped.
+
+### Affordance Inventory
+
+| Affordance | ID | Status |
+|-----------|-----|--------|
+| Per-class bars in band order with content emoji | PD-CTXVIZ-AF-001 | ✅ |
+| Bars sized against the model's context window | PD-CTXVIZ-AF-002 | ✅ |
+| Remaining-capacity ghost band | PD-CTXVIZ-AF-003 | ✅ |
+| Total line: est. tokens / window (percent) · model | PD-CTXVIZ-AF-004 | ✅ |
+| Near-limit (≥80%) / full (≥100%) annotation | PD-CTXVIZ-AF-005 | ✅ |
+| Graceful degrade when the window is unknown | PD-CTXVIZ-AF-006 | ✅ |
+| Strictly read-only: no mutation affordance | PD-CTXVIZ-AF-007 | ✅ |
+| Live refresh via poll (agent turns, WM edits appear) | PD-CTXVIZ-AF-008 | ✅ |
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: Per-class meter (PD-CTXVIZ-AF-001 / PD-CTXVIZ-AF-002)
+
+- GIVEN a context breakdown with working-memory and user contributions and a known window
+- WHEN the visualizer renders
+- THEN it shows a bar per content class and a remaining band against the window
+
+Use-case: Window unknown (PD-CTXVIZ-AF-006)
+
+- GIVEN a breakdown whose model reports no context length
+- WHEN the visualizer renders
+- THEN it shows "window unknown" and omits the percentages and ghost band
+
+Use-case: Read-only (PD-CTXVIZ-AF-007)
+
+- GIVEN a context visualizer
+- WHEN a mutation key (e.g. `a`) is pressed
+- THEN nothing changes — no editor opens; management is directed to the context pane

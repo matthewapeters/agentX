@@ -10,10 +10,14 @@ import (
 
 	"github.com/cucumber/godog"
 
+	executorsteps "agentx/tests/steps/executor"
+	llmsteps "agentx/tests/steps/llm"
+	promptingsteps "agentx/tests/steps/prompting"
 	runtimesteps "agentx/tests/steps/runtime"
 	sessionsteps "agentx/tests/steps/session"
 	surfacesteps "agentx/tests/steps/surfaces"
 	toolsteps "agentx/tests/steps/tools"
+	transportsteps "agentx/tests/steps/transport"
 )
 
 // featurePaths points at the shared feature corpus relative to tests/suites.
@@ -23,10 +27,14 @@ var featurePaths = []string{"../features"}
 // scenario initializer. Add a line here when a new tests/steps/<domain> package
 // is introduced.
 func initializeAll(sc *godog.ScenarioContext) {
+	executorsteps.InitializeScenario(sc)
+	llmsteps.InitializeScenario(sc)
+	promptingsteps.InitializeScenario(sc)
 	runtimesteps.InitializeScenario(sc)
 	sessionsteps.InitializeScenario(sc)
 	surfacesteps.InitializeScenario(sc)
 	toolsteps.InitializeScenario(sc)
+	transportsteps.InitializeScenario(sc)
 }
 
 // runTagged runs every registered scenario initializer against the feature

@@ -17,6 +17,7 @@ This folder captures architecture decisions for orchestration design, rollout se
 - [0004 - Persona, Skill Policy, and Security Boundaries](0004-persona-skill-policy-and-security-boundaries.md)
 - [0005 - Traceability, Replay, and Quality Gates](0005-traceability-replay-and-quality-gates.md)
 - [0006 - Persona Identification and Context Loading](0006-persona-identification-and-context-loading.md)
+- [0007 - Output-Panel Markdown Rendering (Dual Renderer)](0007-output-panel-markdown-rendering.md) — Family A surface concern
 
 ## Reading Order
 

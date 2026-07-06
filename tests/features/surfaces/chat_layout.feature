@@ -14,13 +14,25 @@ Feature: Chat surface two-panel layout
   So that I can read responses and type prompts in one view
 
   # use-case: UC-CHAT-LAYOUT
-  # Layout rows: output frame (flex+2) + status (1) + hint (1) + input frame (3+2).
+  # The input height is dynamic: an empty input is one row and the output takes the
+  # rest. Chrome: output frame (flex+2) + status (1) + hint (1) + input frame (1+2).
   Scenario: Surface fills the terminal with output, status, hint, and input
     Given a new chat surface
     When the terminal size is 80 by 24
     Then the rendered view has 24 rows
-    And the output region is 15 rows
-    And the input region is 3 rows
+    And the output region is 17 rows
+    And the input region is 1 rows
+
+  # use-case: UC-CHAT-LAYOUT
+  # the input grows with content (up to its max) and the output shrinks to match
+  Scenario: The input grows as the prompt spans more lines
+    Given a new chat surface
+    When the terminal size is 80 by 24
+    And the user types the prompt "one"
+    And the user inserts a prompt newline
+    And the user types the prompt "two"
+    Then the input region is 2 rows
+    And the output region is 16 rows
 
   # use-case: UC-CHAT-FOCUS
   Scenario: Input is focused on start

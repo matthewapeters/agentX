@@ -48,6 +48,8 @@ func registerConfigSteps(sc *godog.ScenarioContext) {
 	})
 
 	sc.Step(`^a deployment config with ollama_model "([^"]*)"$`, w.aDeploymentConfigWithModel)
+	sc.Step(`^a deployment config with markdown_renderer "([^"]*)"$`, w.aDeploymentConfigWithRenderer)
+	sc.Step(`^the effective markdown renderer is "([^"]*)"$`, w.effectiveRendererIs)
 	sc.Step(`^no deployment config exists$`, w.noDeploymentConfig)
 	sc.Step(`^no project config exists$`, w.noProjectConfig)
 	sc.Step(`^a project config with ollama_model "([^"]*)"$`, w.aProjectConfigWithModel)
@@ -65,6 +67,21 @@ func (w *configWorld) aDeploymentConfigWithModel(model string) error {
 
 func (w *configWorld) aProjectConfigWithModel(model string) error {
 	return writeModelConfig(w.paths.Project, model)
+}
+
+func (w *configWorld) aDeploymentConfigWithRenderer(mode string) error {
+	if err := os.MkdirAll(filepath.Dir(w.paths.Deployment), 0o755); err != nil {
+		return err
+	}
+	body := fmt.Sprintf("[agentx.output]\nmarkdown_renderer = %q\n", mode)
+	return os.WriteFile(w.paths.Deployment, []byte(body), 0o644)
+}
+
+func (w *configWorld) effectiveRendererIs(want string) error {
+	if got := w.cfg.MarkdownRenderer(); got != want {
+		return fmt.Errorf("effective markdown renderer = %q, want %q", got, want)
+	}
+	return nil
 }
 
 func (w *configWorld) noDeploymentConfig() error {

@@ -3,6 +3,7 @@ package chat
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
@@ -13,12 +14,14 @@ import (
 	"agentx/internal/surfaces/output"
 )
 
-// inputHeight is the fixed row count reserved for the input panel; hintHeight is
-// the single context-sensitive hint/command row beneath the status bar.
-const (
-	inputHeight = 3
-	hintHeight  = 1
-)
+// hintHeight is the single context-sensitive hint/command row beneath the status
+// bar. The input panel's height is dynamic (it grows with wrapped content up to its
+// max), so the output panel takes whatever height remains.
+const hintHeight = 1
+
+// flashDuration is how long the input border stays highlighted after a history
+// navigation hits a boundary (PD-02-AF-015).
+const flashDuration = 150 * time.Millisecond
 
 // focus identifies which panel currently receives navigation/edit keys.
 type focus int
@@ -43,6 +46,9 @@ type ProcessingStateMsg state.ProcessingState
 // EventMsg delivers a bus event to the chat surface for rendering.
 type EventMsg state.Event
 
+// flashOffMsg ends an input-border flash; scheduled by flashCmd.
+type flashOffMsg struct{}
+
 // Bridge connects the chat surface to the runtime: a Submit function for prompts,
 // a Stop function that interrupts the in-flight prompt, and the channels the
 // surface listens on for events and processing-state. A zero Bridge (nil fields)
@@ -53,6 +59,9 @@ type Bridge struct {
 	Approve    func(decision string)
 	Events     <-chan state.Event
 	Processing <-chan state.ProcessingState
+	// Connected returns the surface kinds currently attached (SS-4). When set, the
+	// surface polls it to drive the launch-info status emojis. Nil disables polling.
+	Connected func() []string
 }
 
 // Model is the chat surface Bubble Tea model. It composes an output panel and an
@@ -67,6 +76,7 @@ type Model struct {
 	spinner      spinner.Model
 	focus        focus
 	chordPending bool // an ESC was pressed; the next key resolves the chord
+	flashing     bool // the input border is flashing a history boundary
 	active       string
 	inactive     string
 	bridge       *Bridge
@@ -103,11 +113,50 @@ func (m Model) Init() tea.Cmd {
 	if m.bridge == nil {
 		return nil
 	}
-	return tea.Batch(m.listenEvents(), m.listenProcessing())
+	cmds := []tea.Cmd{m.listenEvents(), m.listenProcessing()}
+	if c := m.pollConnections(); c != nil {
+		cmds = append(cmds, c)
+	}
+	return tea.Batch(cmds...)
+}
+
+// connPollInterval is how often the surface refreshes peer-connection status.
+const connPollInterval = time.Second
+
+// connTickMsg requests a connection-status refresh.
+type connTickMsg struct{}
+
+// pollConnections schedules the next connection-status refresh, or nil when the
+// bridge does not expose connection status (transport disabled / unit tests).
+func (m Model) pollConnections() tea.Cmd {
+	if m.bridge == nil || m.bridge.Connected == nil {
+		return nil
+	}
+	return tea.Tick(connPollInterval, func(time.Time) tea.Msg { return connTickMsg{} })
 }
 
 // SetMaxWidgetLines configures the output widgets' body-row cap.
 func (m Model) SetMaxWidgetLines(n int) { m.output.SetMaxBody(n) }
+
+// SetMaxInputLines caps how tall the input panel grows before it scrolls.
+func (m Model) SetMaxInputLines(n int) { m.input.SetMaxHeight(n) }
+
+// SetMarkdownRenderer selects how assistant markdown is styled in the output panel:
+// "native" for the full finalize-time render (tables + highlighted code), anything
+// else for the lightweight per-line scanner (ADR 0007).
+func (m Model) SetMarkdownRenderer(mode string) { m.output.SetMarkdownRenderer(mode) }
+
+// SetBanner sets the output panel's bootstrap logo banner (pinned above all
+// widgets); empty clears it.
+func (m Model) SetBanner(s string) { m.output.SetBanner(s) }
+
+// SetLaunchInfo installs the collapsed launch-info widget (attach commands for peer
+// surfaces) as the first output widget. names label the surfaces; commands are the
+// matching attach commands, reachable only via digit-copy; session names this
+// session for the manual-launch footer. See docs/ux/06_OUTPUT_WIDGET.md.
+func (m Model) SetLaunchInfo(header, session string, names, commands []string) {
+	m.output.SetLaunchInfo(header, session, names, commands)
+}
 
 // SetTheme sets the focus-border SGR colors for the panels and output widgets.
 // Empty values keep the built-in defaults.
@@ -172,6 +221,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case EventMsg:
 		m.output.Apply(state.Event(msg))
 		return m, m.listenEvents()
+	case connTickMsg:
+		if m.bridge != nil && m.bridge.Connected != nil {
+			m.output.SetConnected(m.bridge.Connected())
+		}
+		return m, m.pollConnections()
+	case flashOffMsg:
+		m.flashing = false
+		return m, nil
+	case tea.KeyboardEnhancementsMsg:
+		// The terminal answered the enhancement query: if it disambiguates modified
+		// keys, Shift+Enter will reach us distinctly, so advertise it as the
+		// soft-newline. Otherwise the terminal-agnostic Alt+Enter default stands.
+		// (Terminals without support never send this message.)
+		if msg.SupportsKeyDisambiguation() {
+			m.input.SetNewlineKey("shift+enter")
+		}
+		return m, nil
 	case tea.MouseWheelMsg:
 		// Forwarded to the output viewport; only delivered when the program
 		// enables the mouse (off by default to preserve native text selection).
@@ -205,9 +271,13 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.setFocus(focusInput)
 			return m, nil
 		case "esc", "escape":
-			// ESC,ESC interrupts while working; otherwise it cancels the chord.
+			// ESC,ESC interrupts while working; idle, it clears an active
+			// history seed; otherwise it cancels the chord.
 			if m.proc.State == state.StateWorking {
 				return m, m.stopCmd()
+			}
+			if m.focus == focusInput && m.input.Seeded() {
+				m.input.ClearSeed()
 			}
 			return m, nil
 		default:
@@ -260,14 +330,27 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.output.ScrollSelected(1)
 		case "ctrl+o", "enter":
 			m.output.ToggleSelected()
+		default:
+			// A digit copies the matching attach command from the selected
+			// launch-info widget to the clipboard (no-op for any other widget).
+			if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+				if cmd, ok := m.output.CopyCommand(int(key[0] - '0')); ok {
+					return m, cmd
+				}
+			}
 		}
 		return m, nil
 	}
 
-	// Input focus: edit the prompt.
-	if m.input.Update(msg) == input.ActionSubmit {
+	// Input focus: edit the prompt or navigate prompt history. The edit may change
+	// the wrapped input height, so relayout after it settles (input grows, output
+	// shrinks, and vice versa).
+	action := m.input.Update(msg)
+	switch action {
+	case input.ActionSubmit:
 		text := m.input.Value()
 		m.input.Reset()
+		m.relayout()
 		if m.bridge != nil && m.bridge.Submit != nil {
 			// Route to the runtime; the user prompt and response arrive as
 			// EventMsgs and render through the output panel.
@@ -278,8 +361,18 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			ContentType: state.ContentUserPrompt,
 			Payload:     map[string]any{"text": text},
 		})
+	case input.ActionHistoryBoundary:
+		// History navigation hit an edge; flash the input border.
+		m.flashing = true
+		return m, m.flashCmd()
 	}
+	m.relayout()
 	return m, nil
+}
+
+// flashCmd schedules the end of an input-border flash.
+func (m Model) flashCmd() tea.Cmd {
+	return tea.Tick(flashDuration, func(time.Time) tea.Msg { return flashOffMsg{} })
 }
 
 // approveCmd sends a tool-approval decision ("session"/"global"/"deny") to the
@@ -354,13 +447,18 @@ func (m *Model) relayout() {
 	if innerW < 0 {
 		innerW = 0
 	}
+	// Set the input width first so its desired (wrapped) height reflects this width,
+	// then give the input that height and the output the remaining space. This runs on
+	// every content change, so the input grows and the output shrinks as text wraps.
+	m.input.SetSize(innerW, 0)
+	ih := m.input.DesiredHeight()
 	// Chrome: output border (2) + status (1) + hint (1) + input border (2).
-	outputHeight := m.height - 2 - 1 - hintHeight - 2 - inputHeight
+	outputHeight := m.height - 2 - 1 - hintHeight - 2 - ih
 	if outputHeight < 0 {
 		outputHeight = 0
 	}
 	m.output.SetSize(innerW, outputHeight)
-	m.input.SetSize(innerW, inputHeight)
+	m.input.SetSize(innerW, ih)
 }
 
 // View implements tea.Model: a focus-bordered output panel, a status bar
@@ -368,10 +466,10 @@ func (m *Model) relayout() {
 // focus-bordered input panel.
 func (m Model) View() tea.View {
 	rows := make([]string, 0, m.height)
-	rows = append(rows, m.frame(m.output.View(), m.focus == focusOutput)...)
+	rows = append(rows, m.frame(m.output.View(), m.focus == focusOutput, false)...)
 	rows = append(rows, statusBar(m.proc, m.spinner.View(), m.width))
 	rows = append(rows, m.hintStrip())
-	rows = append(rows, m.frame(m.input.View(), m.focus == focusInput)...)
+	rows = append(rows, m.frame(m.input.View(), m.focus == focusInput, m.flashing)...)
 	v := tea.NewView(strings.Join(rows, "\n"))
 	v.AltScreen = true
 	return v
@@ -379,7 +477,7 @@ func (m Model) View() tea.View {
 
 // frame wraps a panel's rendered content in a box border colored by focus: the
 // active panel uses a bold active color, the inactive panel the inactive color.
-func (m Model) frame(content string, active bool) []string {
+func (m Model) frame(content string, active, flash bool) []string {
 	innerW := m.width - 2
 	if innerW < 0 {
 		innerW = 0
@@ -387,6 +485,10 @@ func (m Model) frame(content string, active bool) []string {
 	code := m.inactive
 	if active {
 		code = "1;" + m.active
+	}
+	// A history-boundary flash inverts the border in the active color.
+	if flash {
+		code = "7;" + m.active
 	}
 	paint := func(s string) string {
 		if code == "" {
@@ -422,7 +524,7 @@ func (m Model) hintStrip() string {
 	case m.focus == focusOutput:
 		text = "j/k scroll · pgup/pgdn select · ^o expand · esc → input"
 	default:
-		text = "esc → options"
+		text = "↑/↓ history · esc → options"
 	}
 	return padLine(text, m.width)
 }
