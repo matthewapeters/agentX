@@ -90,6 +90,13 @@ A group runs as a cascade: its `coarse_variant` is the Tier-1 gate (R=1); on esc
 the full variant list is the Tier-2 vote (R = `width` ≈ slot count), folded by
 `fanout.MajorityVote` with the group's `quorum` and `abstain_below`.
 
+> **Two fan-group shapes.** The above is a **self-consistency** group (variants =
+> paraphrases, aggregator = majority vote) for a single-verdict question. The classifier
+> stage instead uses a **pre-frontal battery** (variants = overlapping coordinate
+> probes, aggregator = cross-check fusion) — see
+> [`prefrontal_battery.md`](prefrontal_battery.md). Both are the same `fanout.Pool`
+> primitive with a different variant shape and aggregator.
+
 ## The corpus — `prompts.toml` (machine-readable source of truth)
 
 ```toml

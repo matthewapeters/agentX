@@ -76,6 +76,11 @@ minimal-context rule above. It is specified in
 [`prompt_fan_groups.md`](prompt_fan_groups.md), which also defines the prompt corpus
 (fan-groups) that all of [0]/[B]/[C] draw their prompts from.
 
+> **What the classify tiers actually ask.** [B]/[C] are not a single verdict but a
+> **battery of coordinate probes** read by cross-check fusion — see
+> [`prefrontal_battery.md`](prefrontal_battery.md). The Tier-1/Tier-2 cascade below is
+> how that battery is run (whole battery at R=1; re-ask shaky axes as voted probes).
+
 ## The cascade (applies to both [B] and [C])
 
 Each classifier is a three-tier cascade so the common turn stays at R=1 (≈0.77s on the
