@@ -10,6 +10,7 @@ import (
 
 	"agentx/internal/classify"
 	"agentx/internal/prompting"
+	"agentx/internal/prompting/pipeline"
 	"agentx/internal/session"
 	"agentx/internal/state"
 	"agentx/internal/surfaces"
@@ -43,6 +44,10 @@ type Settings struct {
 	ClassificationPrompt string
 	// ClassificationRetries is the classify-cycle retry budget.
 	ClassificationRetries int
+	// PromptCorpus is the fan-group prompt corpus (prompts.toml content) that drives
+	// the experimental task classifier. Empty (the default, when no prompts.toml is
+	// seeded) leaves the classifier off and the prompt cycle unchanged.
+	PromptCorpus string
 	// MaxWidgetLines is the output-widget body-row cap surfaced to the chat UI.
 	MaxWidgetLines int
 	// InputMaxLines caps how tall the input panel grows before it scrolls.
@@ -105,9 +110,10 @@ type Orchestrator struct {
 	server     *transporthttp.Server
 	endpoint   string
 	serveDone  chan error
-	model      Model
-	assembler  *prompting.Assembler
-	classifier *classify.Classifier
+	model        Model
+	assembler    *prompting.Assembler
+	classifier   *classify.Classifier
+	taskPipeline *pipeline.Pipeline
 	recDone    chan error
 	recSub     *state.Subscription
 	gate       approvalGate
@@ -208,6 +214,9 @@ func (o *Orchestrator) Start() error {
 		}
 		o.classifier = classify.New(o.settings.ClassificationPrompt, o.settings.ClassificationRetries, chat)
 	}
+	// Presence-gated experimental task classifier: built only when a prompt corpus
+	// is configured (or one was injected for tests).
+	o.buildTaskClassifier()
 	if o.settings.ToolsEnabled {
 		if err := o.buildTools(); err != nil {
 			return err
@@ -438,6 +447,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	messages := o.withContext(o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route))
 	fallback := o.withContext(o.assembler.Assemble(text))
 	resp, respOrd, err := o.streamResponse(ctx, messages, fallback, doThink, ephemeral)
+	o.maybeEmitTask(ctx, err, recordUserPrompt, userOrd, text)
 	o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp)
 	return o.finishCycle(err)
 }

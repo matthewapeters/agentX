@@ -21,13 +21,17 @@ const (
 	ContentToolCall        ContentType = "tool_call"
 	ContentToolResult      ContentType = "tool_result"
 	ContentProcessingState ContentType = "processing_state"
+	// ContentTaskProposed is a durable task record the classifier emits when a turn
+	// is recognized as actionable (docs/architecture/task_record.md). It is not
+	// conversation context; a future executor drains it.
+	ContentTaskProposed ContentType = "task_proposed"
 )
 
 var validContentTypes = map[ContentType]bool{
 	ContentUserPrompt: true, ContentSystemPrompt: true, ContentClassification: true,
 	ContentThinking: true, ContentAgentDelta: true, ContentAgentResponse: true,
 	ContentAttachments: true, ContentToolCall: true, ContentToolResult: true,
-	ContentProcessingState: true,
+	ContentProcessingState: true, ContentTaskProposed: true,
 }
 
 // DefaultEnabled reports whether an event of the given content type participates

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -80,6 +81,13 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Optional fan-group prompt corpus (~/.config/agentx/prompts.toml). Absent leaves
+	// the experimental task classifier off. The config dir is derived from an existing
+	// prompt-file path so no new config accessor is needed.
+	promptCorpus, err := config.ReadPromptFile(filepath.Join(filepath.Dir(paths.InstructionsPath()), "prompts.toml"))
+	if err != nil {
+		return nil, err
+	}
 
 	transportStart, transportEnd := cfg.TransportPortRange()
 
@@ -92,6 +100,7 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		BootstrapPrompt:       bootstrap,
 		ClassificationPrompt:  classification,
 		ClassificationRetries: cfg.ClassificationRetries(),
+		PromptCorpus:          promptCorpus,
 		MaxWidgetLines:        cfg.MaxWidgetLines(),
 		InputMaxLines:         cfg.InputMaxLines(),
 		MarkdownRenderer:      cfg.MarkdownRenderer(),
