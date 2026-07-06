@@ -29,3 +29,12 @@ Feature: the orchestrator emits a task record when the classifier is wired
     Given a started orchestrator whose classifier calls the turn "none"
     When the classifier turn "how are you" is submitted
     Then the session timeline contains no task_proposed event
+
+  # use-case: UC-RT-TASK-EXEC  (TC-RTTASK-003)
+  @integration
+  Scenario: An actionable turn is reconciled and drained through the executor
+    Given the task executor reports "executed"
+    And a started orchestrator whose classifier calls the turn "artifact"
+    When the classifier turn "write hello.txt with hi" is submitted
+    Then the session timeline contains a task_result event
+    And the task_result event records status "executed"

@@ -25,7 +25,8 @@
         "tool_call",
         "tool_result",
         "processing_state",
-        "task_proposed"
+        "task_proposed",
+        "task_result"
       ]
     },
     "payload": {

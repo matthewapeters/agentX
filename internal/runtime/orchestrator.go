@@ -114,6 +114,7 @@ type Orchestrator struct {
 	assembler    *prompting.Assembler
 	classifier   *classify.Classifier
 	taskPipeline *pipeline.Pipeline
+	taskExec     taskExecutor
 	recDone    chan error
 	recSub     *state.Subscription
 	gate       approvalGate
@@ -222,6 +223,9 @@ func (o *Orchestrator) Start() error {
 			return err
 		}
 	}
+	// The task executor drains classifier tasks into verified effects; it needs the
+	// tool collaborators, so it is built after buildTools.
+	o.buildTaskExecutor()
 
 	recorder := o.store.Recorder(id.ID)
 	sub := o.bus.Subscribe()

@@ -25,13 +25,16 @@ const (
 	// is recognized as actionable (docs/architecture/task_record.md). It is not
 	// conversation context; a future executor drains it.
 	ContentTaskProposed ContentType = "task_proposed"
+	// ContentTaskResult records the outcome of draining a task record through the
+	// executor: executed (and verified) / phantom / denied / etc.
+	ContentTaskResult ContentType = "task_result"
 )
 
 var validContentTypes = map[ContentType]bool{
 	ContentUserPrompt: true, ContentSystemPrompt: true, ContentClassification: true,
 	ContentThinking: true, ContentAgentDelta: true, ContentAgentResponse: true,
 	ContentAttachments: true, ContentToolCall: true, ContentToolResult: true,
-	ContentProcessingState: true, ContentTaskProposed: true,
+	ContentProcessingState: true, ContentTaskProposed: true, ContentTaskResult: true,
 }
 
 // DefaultEnabled reports whether an event of the given content type participates

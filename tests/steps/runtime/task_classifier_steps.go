@@ -10,19 +10,32 @@ import (
 	"github.com/cucumber/godog"
 
 	"agentx/internal/classify"
+	"agentx/internal/executor"
 	"agentx/internal/llm/fanout"
 	"agentx/internal/prompting"
 	"agentx/internal/prompting/cascade"
 	"agentx/internal/prompting/corpus"
 	"agentx/internal/prompting/pipeline"
+	"agentx/internal/prompting/task"
 	"agentx/internal/runtime"
 	"agentx/internal/session"
 	"agentx/internal/state"
+	"agentx/internal/tools"
 )
 
+// stubTaskExec is an injected executor that reports a fixed outcome, so the
+// orchestrator's reconcile->execute->task_result wiring is exercised without a
+// real tool run.
+type stubTaskExec struct{ status executor.Status }
+
+func (s stubTaskExec) Execute(context.Context, task.Record) executor.Outcome {
+	return executor.Outcome{Status: s.status, Result: tools.Result{ToolID: "write_file"}}
+}
+
 type taskClassifierWorld struct {
-	orc *runtime.Orchestrator
-	dir string
+	orc        *runtime.Orchestrator
+	dir        string
+	execStatus executor.Status
 }
 
 func registerTaskClassifierSteps(sc *godog.ScenarioContext) {
@@ -36,11 +49,19 @@ func registerTaskClassifierSteps(sc *godog.ScenarioContext) {
 		return ctx, err
 	})
 
+	sc.Step(`^the task executor reports "([^"]*)"$`, w.executorReports)
 	sc.Step(`^a started orchestrator whose classifier calls the turn "([^"]*)"$`, w.startWithClassifier)
 	sc.Step(`^the classifier turn "([^"]*)" is submitted$`, w.submit)
 	sc.Step(`^the session timeline contains a task_proposed event$`, w.hasTaskEvent)
 	sc.Step(`^the session timeline contains no task_proposed event$`, w.noTaskEvent)
 	sc.Step(`^the task_proposed event records type "([^"]*)"$`, w.taskEventType)
+	sc.Step(`^the session timeline contains a task_result event$`, w.hasResultEvent)
+	sc.Step(`^the task_result event records status "([^"]*)"$`, w.resultEventStatus)
+}
+
+func (w *taskClassifierWorld) executorReports(status string) error {
+	w.execStatus = executor.Status(status)
+	return nil
 }
 
 // fixedInvoker answers every triage probe "continuation" and every action probe
@@ -77,12 +98,15 @@ func (w *taskClassifierWorld) startWithClassifier(taskType string) error {
 	classifierChat := func(context.Context, []prompting.Message) (string, error) {
 		return `{"route": "respond_directly"}`, nil
 	}
-	w.orc = runtime.New(
-		runtime.Settings{SessionRoot: dir, OllamaModel: "stub"},
+	opts := []runtime.Option{
 		runtime.WithModel(stubModel{deltas: []string{"ok"}}),
 		runtime.WithClassifier(classify.New("", 0, classifierChat)),
 		runtime.WithTaskClassifier(p),
-	)
+	}
+	if w.execStatus != "" {
+		opts = append(opts, runtime.WithTaskExecutor(stubTaskExec{status: w.execStatus}))
+	}
+	w.orc = runtime.New(runtime.Settings{SessionRoot: dir, OllamaModel: "stub"}, opts...)
 	return w.orc.Start()
 }
 
@@ -132,6 +156,49 @@ func (w *taskClassifierWorld) noTaskEvent() error {
 	}
 	if len(evs) != 0 {
 		return fmt.Errorf("expected no task_proposed event, found %d", len(evs))
+	}
+	return nil
+}
+
+func (w *taskClassifierWorld) resultEvents() ([]state.Event, error) {
+	events, err := w.timeline()
+	if err != nil {
+		return nil, err
+	}
+	var out []state.Event
+	for _, ev := range events {
+		if ev.ContentType == state.ContentTaskResult {
+			out = append(out, ev)
+		}
+	}
+	return out, nil
+}
+
+func (w *taskClassifierWorld) hasResultEvent() error {
+	evs, err := w.resultEvents()
+	if err != nil {
+		return err
+	}
+	if len(evs) == 0 {
+		return fmt.Errorf("expected a task_result event, found none")
+	}
+	return nil
+}
+
+func (w *taskClassifierWorld) resultEventStatus(want string) error {
+	evs, err := w.resultEvents()
+	if err != nil {
+		return err
+	}
+	if len(evs) == 0 {
+		return fmt.Errorf("no task_result event to inspect")
+	}
+	payload, ok := evs[0].Payload.(map[string]any)
+	if !ok {
+		return fmt.Errorf("task_result payload is %T, want map", evs[0].Payload)
+	}
+	if got, _ := payload["status"].(string); got != want {
+		return fmt.Errorf("task_result status = %q, want %q", got, want)
 	}
 	return nil
 }

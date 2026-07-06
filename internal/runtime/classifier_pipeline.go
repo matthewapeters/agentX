@@ -4,15 +4,23 @@ import (
 	"context"
 	"fmt"
 
+	"agentx/internal/executor"
 	"agentx/internal/llm/fanout"
 	"agentx/internal/llm/invoke"
 	"agentx/internal/llm/ollama"
 	"agentx/internal/prompting/cascade"
 	"agentx/internal/prompting/corpus"
 	"agentx/internal/prompting/pipeline"
+	"agentx/internal/prompting/reconcile"
 	"agentx/internal/prompting/task"
 	"agentx/internal/state"
 )
+
+// taskExecutor drains a proposed task record into a verified effect. The concrete
+// implementation is *executor.Executor; the interface lets tests inject a stub.
+type taskExecutor interface {
+	Execute(ctx context.Context, rec task.Record) executor.Outcome
+}
 
 // digestMaxTurns bounds the v1 session digest window fed to the classifier.
 const digestMaxTurns = 12
@@ -22,6 +30,13 @@ const digestMaxTurns = 12
 // configured (Settings.PromptCorpus).
 func WithTaskClassifier(p *pipeline.Pipeline) Option {
 	return func(o *Orchestrator) { o.taskPipeline = p }
+}
+
+// WithTaskExecutor injects the task executor (for tests). Without it, the
+// orchestrator builds one from its tool collaborators at Start when the classifier
+// is active and tools are enabled.
+func WithTaskExecutor(e taskExecutor) Option {
+	return func(o *Orchestrator) { o.taskExec = e }
 }
 
 // buildTaskClassifier constructs a live pipeline from settings when a prompt corpus
@@ -41,6 +56,17 @@ func (o *Orchestrator) buildTaskClassifier() {
 	inv := invoke.NewOllama(client, o.settings.OllamaModel, "")
 	runner := cascade.NewRunner(inv, fanout.WithServerDefaults())
 	o.taskPipeline = pipeline.New(runner, c, digestMaxTurns)
+}
+
+// buildTaskExecutor wires the classifier's tasks to a real, verified execution
+// path, reusing the command stack. It builds only when the classifier is active
+// and tools are enabled (and none was injected); otherwise the classifier stays a
+// pure observer that emits task_proposed without executing. Caller holds o.mu.
+func (o *Orchestrator) buildTaskExecutor() {
+	if o.taskExec != nil || o.taskPipeline == nil || !o.toolsReady() {
+		return
+	}
+	o.taskExec = executor.New(o.proposer, o.registry, o.policy, o.runner, executor.FSVerifier{})
 }
 
 // maybeEmitTask runs the classifier pipeline over the session's prior turns and this
@@ -69,6 +95,33 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 		return
 	}
 	o.publish("TASK_PROPOSED", state.ContentTaskProposed, rec)
+
+	// Reconcile and drain. The response classifier [C] is deferred, so the response
+	// signal is empty: an actionable task reconciles to Redispatch, an abstained one
+	// to Ask. Execution runs only on the non-tool path (the single_tool cycle returns
+	// earlier in runPrompt), so it never double-executes.
+	o.mu.Lock()
+	ex := o.taskExec
+	o.mu.Unlock()
+	if ex == nil {
+		return
+	}
+	route, _ := reconcile.Reconcile(
+		reconcile.TurnSignal{Actionable: rec.Status == task.Proposed, Abstained: rec.Status == task.Abstained},
+		reconcile.ResponseSignal{},
+	)
+	if route != reconcile.Reify && route != reconcile.Redispatch {
+		return // Ask / None / Confirm / Verify: nothing to drain here
+	}
+	outcome := ex.Execute(ctx, rec)
+	o.publish("TASK_RESULT", state.ContentTaskResult, map[string]any{
+		"task_id":  rec.ID,
+		"route":    string(route),
+		"status":   string(outcome.Status),
+		"tool":     outcome.Result.ToolID,
+		"verified": outcome.Status == executor.Executed,
+		"reason":   outcome.Reason,
+	})
 }
 
 // historyEvents projects the in-memory conversation history into events for the
