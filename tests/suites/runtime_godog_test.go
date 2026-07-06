@@ -47,7 +47,10 @@ func runTagged(t *testing.T, tags string) {
 		Name:                "agentx",
 		ScenarioInitializer: initializeAll,
 		Options: &godog.Options{
-			Format:   "pretty",
+			// "progress" (one char per step) not "pretty" (full per-step render):
+			// on a failing/spinning scenario the pretty formatter's output balloons
+			// and OOM-kills anything buffering it. See docs note on suite output.
+			Format:   "progress",
 			Paths:    featurePaths,
 			Tags:     tags,
 			Strict:   true,
