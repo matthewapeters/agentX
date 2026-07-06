@@ -16,6 +16,8 @@ package executor
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 
 	"agentx/internal/prompting/task"
 	"agentx/internal/tools"
@@ -45,6 +47,22 @@ type Runner interface {
 // command exited cleanly). It is the anti-phantom-success check.
 type Verifier interface {
 	Verify(d tools.Descriptor, args map[string]string, res tools.Result) bool
+}
+
+// Approver decides whether a call the policy or the working-directory confinement
+// flagged may proceed. Reason explains why approval is needed (e.g. "outside
+// working directory"). The orchestrator backs this with its interactive approval
+// gate; a nil Approver means such a call is surfaced as NeedsApproval and not run.
+type Approver interface {
+	Approve(ctx context.Context, d tools.Descriptor, args map[string]string, reason string) bool
+}
+
+// ApproverFunc adapts a function to the Approver interface.
+type ApproverFunc func(ctx context.Context, d tools.Descriptor, args map[string]string, reason string) bool
+
+// Approve implements Approver.
+func (f ApproverFunc) Approve(ctx context.Context, d tools.Descriptor, args map[string]string, reason string) bool {
+	return f(ctx, d, args, reason)
 }
 
 // Status is the terminal state of a drain attempt.
@@ -80,11 +98,53 @@ type Executor struct {
 	gate     Gate
 	runner   Runner
 	verify   Verifier
+	root     string   // working directory calls are confined to ("" = no boundary)
+	approve  Approver // grants calls that need approval (policy or confinement)
+}
+
+// Option configures an Executor.
+type Option func(*Executor)
+
+// WithRoot confines execution to a working directory: a call whose file target
+// resolves outside root requires approval before it runs.
+func WithRoot(root string) Option {
+	return func(e *Executor) { e.root = root }
+}
+
+// WithApprover supplies the interactive approval seam for flagged calls. Without
+// it, a call needing approval is surfaced as NeedsApproval and not run.
+func WithApprover(a Approver) Option {
+	return func(e *Executor) { e.approve = a }
 }
 
 // New builds an executor from its collaborators.
-func New(p Proposer, reg Registry, g Gate, r Runner, v Verifier) *Executor {
-	return &Executor{proposer: p, registry: reg, gate: g, runner: r, verify: v}
+func New(p Proposer, reg Registry, g Gate, r Runner, v Verifier, opts ...Option) *Executor {
+	e := &Executor{proposer: p, registry: reg, gate: g, runner: r, verify: v}
+	for _, o := range opts {
+		o(e)
+	}
+	return e
+}
+
+// escapesRoot reports whether the call's file target resolves outside the
+// confinement root. No root or no path means no boundary applies.
+func (e *Executor) escapesRoot(args map[string]string) bool {
+	if e.root == "" {
+		return false
+	}
+	p := args["path"]
+	if p == "" {
+		return false
+	}
+	full := p
+	if !filepath.IsAbs(p) {
+		full = filepath.Join(e.root, p)
+	}
+	rel, err := filepath.Rel(e.root, filepath.Clean(full))
+	if err != nil {
+		return true
+	}
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // Execute drains one task record: it proposes a concrete tool call for the task's
@@ -102,11 +162,23 @@ func (e *Executor) Execute(ctx context.Context, rec task.Record) Outcome {
 	}
 
 	verdict := e.gate.Evaluate(d, prop.Args)
-	switch verdict.Decision {
-	case tools.Deny:
+	if verdict.Decision == tools.Deny {
 		return Outcome{Status: Denied, Reason: verdict.Reason}
-	case tools.NeedsApproval:
-		return Outcome{Status: NeedsApproval, Reason: verdict.Reason}
+	}
+
+	// A call needs approval when the policy asks for it, or when it would operate
+	// outside the working directory. Confinement never silently escapes the cwd.
+	needApproval, reason := verdict.Decision == tools.NeedsApproval, verdict.Reason
+	if e.escapesRoot(prop.Args) {
+		needApproval, reason = true, "outside working directory"
+	}
+	if needApproval {
+		if e.approve == nil {
+			return Outcome{Status: NeedsApproval, Reason: reason}
+		}
+		if !e.approve.Approve(ctx, d, prop.Args, reason) {
+			return Outcome{Status: Denied, Reason: "declined: " + reason}
+		}
 	}
 
 	res, err := e.runner.Run(ctx, d, prop.Args)

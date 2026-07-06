@@ -49,6 +49,50 @@ Feature: the executor drains a task into a verified effect
     When the task "muse about the weather" is executed
     Then the executor outcome is "no_tool"
 
+  # use-case: UC-EXEC-CONFINE-IN  (TC-EXEC-007)
+  @unit
+  Scenario: A call inside the working directory runs normally
+    Given a proposer that proposes writing to "notes/out.txt"
+    And the executor is confined to "/work"
+    And the policy allows the call
+    And the runner reports status "ok"
+    And the effect verifies
+    When the task "write a note" is executed
+    Then the executor outcome is "executed"
+
+  # use-case: UC-EXEC-CONFINE-NEEDS  (TC-EXEC-008)  the safety boundary
+  @unit
+  Scenario: A call outside the working directory needs approval and does not run
+    Given a proposer that proposes writing to "/etc/passwd"
+    And the executor is confined to "/work"
+    And the policy allows the call
+    When the task "overwrite passwd" is executed
+    Then the executor outcome is "needs_approval"
+    And the runner did not run
+
+  # use-case: UC-EXEC-CONFINE-APPROVE  (TC-EXEC-009)
+  @unit
+  Scenario: An approved out-of-directory call runs
+    Given a proposer that proposes writing to "../outside.txt"
+    And the executor is confined to "/work"
+    And the policy allows the call
+    And the user approves the flagged call
+    And the runner reports status "ok"
+    And the effect verifies
+    When the task "write outside" is executed
+    Then the executor outcome is "executed"
+
+  # use-case: UC-EXEC-CONFINE-DECLINE  (TC-EXEC-010)
+  @unit
+  Scenario: A declined out-of-directory call does not run
+    Given a proposer that proposes writing to "../outside.txt"
+    And the executor is confined to "/work"
+    And the policy allows the call
+    And the user declines the flagged call
+    When the task "write outside" is executed
+    Then the executor outcome is "denied"
+    And the runner did not run
+
   # use-case: UC-EXEC-VERIFY-FILE  (TC-EXEC-005)
   @unit
   Scenario: The filesystem verifier confirms a written file

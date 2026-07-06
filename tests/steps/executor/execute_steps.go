@@ -18,11 +18,16 @@ import (
 
 type stubProposer struct {
 	tool string
+	path string
 	ok   bool
 }
 
 func (s stubProposer) Propose(context.Context, string) (tools.Proposal, bool) {
-	return tools.Proposal{Tool: s.tool, Args: map[string]string{"path": "out.txt"}}, s.ok
+	path := s.path
+	if path == "" {
+		path = "out.txt"
+	}
+	return tools.Proposal{Tool: s.tool, Args: map[string]string{"path": path}}, s.ok
 }
 
 type stubRegistry struct{}
@@ -67,6 +72,10 @@ type world struct {
 	ranFlag  bool
 	outcome  executor.Outcome
 
+	// confinement scenarios
+	root     string
+	approver executor.Approver
+
 	// filesystem-verifier scenarios
 	fsRoot   string
 	fsResult tools.Result
@@ -90,7 +99,11 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	})
 
 	sc.Step(`^a proposer that proposes tool "([^"]*)"$`, w.proposesTool)
+	sc.Step(`^a proposer that proposes writing to "([^"]*)"$`, w.proposesWriting)
 	sc.Step(`^a proposer that proposes nothing$`, w.proposesNothing)
+	sc.Step(`^the executor is confined to "([^"]*)"$`, w.confinedTo)
+	sc.Step(`^the user approves the flagged call$`, w.userApproves)
+	sc.Step(`^the user declines the flagged call$`, w.userDeclines)
 	sc.Step(`^the policy allows the call$`, w.policyAllows)
 	sc.Step(`^the policy denies the call$`, w.policyDenies)
 	sc.Step(`^the runner reports status "([^"]*)"$`, w.runnerStatus)
@@ -115,8 +128,28 @@ func (w *world) proposesTool(tool string) error {
 	return nil
 }
 
+func (w *world) proposesWriting(path string) error {
+	w.proposer = stubProposer{tool: "write_file", path: path, ok: true}
+	return nil
+}
+
 func (w *world) proposesNothing() error {
 	w.proposer = stubProposer{ok: false}
+	return nil
+}
+
+func (w *world) confinedTo(root string) error {
+	w.root = root
+	return nil
+}
+
+func (w *world) userApproves() error {
+	w.approver = executor.ApproverFunc(func(context.Context, tools.Descriptor, map[string]string, string) bool { return true })
+	return nil
+}
+
+func (w *world) userDeclines() error {
+	w.approver = executor.ApproverFunc(func(context.Context, tools.Descriptor, map[string]string, string) bool { return false })
 	return nil
 }
 
@@ -149,7 +182,14 @@ func (w *world) execute(goal string) error {
 	if w.runner.ran == nil {
 		w.runner.ran = &w.ranFlag
 	}
-	ex := executor.New(w.proposer, stubRegistry{}, w.gate, w.runner, w.verifier)
+	var opts []executor.Option
+	if w.root != "" {
+		opts = append(opts, executor.WithRoot(w.root))
+	}
+	if w.approver != nil {
+		opts = append(opts, executor.WithApprover(w.approver))
+	}
+	ex := executor.New(w.proposer, stubRegistry{}, w.gate, w.runner, w.verifier, opts...)
 	w.outcome = ex.Execute(context.Background(), task.Record{Goal: goal})
 	return nil
 }
