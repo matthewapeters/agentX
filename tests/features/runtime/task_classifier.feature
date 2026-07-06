@@ -25,17 +25,30 @@ Feature: the orchestrator emits a task record when the classifier is wired
 
   # use-case: UC-RT-TASK-NONE  (TC-RTTASK-002)
   @integration
-  Scenario: A conversational turn emits no task_proposed event
+  Scenario: A pure conversational turn emits no task events
     Given a started orchestrator whose classifier calls the turn "none"
     When the classifier turn "how are you" is submitted
     Then the session timeline contains no task_proposed event
+    And the session timeline contains no task_result event
 
   # use-case: UC-RT-TASK-EXEC  (TC-RTTASK-003)
   @integration
   Scenario: An actionable turn is reconciled and drained through the executor
     Given the task executor reports "executed"
+    And the model's response shows an action
     And a started orchestrator whose classifier calls the turn "artifact"
     When the classifier turn "write hello.txt with hi" is submitted
     Then the session timeline contains a task_result event
     And the task_result event records status "executed"
     And the task_result event records route "reify"
+
+  # use-case: UC-RT-TASK-VOLUNTEERED  (TC-RTTASK-004)
+  @integration
+  Scenario: A volunteered action on a conversational turn needs approval and is not executed
+    Given the task executor reports "executed"
+    And the model's response shows an action
+    And a started orchestrator whose classifier calls the turn "none"
+    When the classifier turn "what does this file contain" is submitted
+    Then the session timeline contains no task_proposed event
+    And the task_result event records route "confirm"
+    And the task_result event records status "needs_approval"

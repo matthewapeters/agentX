@@ -36,6 +36,7 @@ type taskClassifierWorld struct {
 	orc        *runtime.Orchestrator
 	dir        string
 	execStatus executor.Status
+	respAction string
 }
 
 func registerTaskClassifierSteps(sc *godog.ScenarioContext) {
@@ -50,12 +51,14 @@ func registerTaskClassifierSteps(sc *godog.ScenarioContext) {
 	})
 
 	sc.Step(`^the task executor reports "([^"]*)"$`, w.executorReports)
+	sc.Step(`^the model's response shows an action$`, w.responseShowsAction)
 	sc.Step(`^a started orchestrator whose classifier calls the turn "([^"]*)"$`, w.startWithClassifier)
 	sc.Step(`^the classifier turn "([^"]*)" is submitted$`, w.submit)
 	sc.Step(`^the session timeline contains a task_proposed event$`, w.hasTaskEvent)
 	sc.Step(`^the session timeline contains no task_proposed event$`, w.noTaskEvent)
 	sc.Step(`^the task_proposed event records type "([^"]*)"$`, w.taskEventType)
 	sc.Step(`^the session timeline contains a task_result event$`, w.hasResultEvent)
+	sc.Step(`^the session timeline contains no task_result event$`, w.noResultEvent)
 	sc.Step(`^the task_result event records status "([^"]*)"$`, w.resultEventStatus)
 	sc.Step(`^the task_result event records route "([^"]*)"$`, w.resultEventRoute)
 }
@@ -65,10 +68,15 @@ func (w *taskClassifierWorld) executorReports(status string) error {
 	return nil
 }
 
+func (w *taskClassifierWorld) responseShowsAction() error {
+	w.respAction = "produced"
+	return nil
+}
+
 // fixedInvoker answers every triage probe "continuation" and every action probe
 // with taskType, both at high confidence — so the pipeline runs its full chain
 // without a live model.
-type fixedInvoker struct{ taskType string }
+type fixedInvoker struct{ taskType, responseAction string }
 
 func (f fixedInvoker) Invoke(_ context.Context, inv fanout.Invocation) (fanout.Response, error) {
 	verdict := "continuation"
@@ -76,7 +84,10 @@ func (f fixedInvoker) Invoke(_ context.Context, inv fanout.Invocation) (fanout.R
 	case "task_type":
 		verdict = f.taskType
 	case "response_action":
-		verdict = "produced" // the model showed the artifact in prose but did not run a tool
+		verdict = f.responseAction
+		if verdict == "" {
+			verdict = "none"
+		}
 	}
 	fields := map[string]string{
 		"confidence":     strconv.FormatFloat(0.95, 'g', -1, 64),
@@ -96,7 +107,7 @@ func (w *taskClassifierWorld) startWithClassifier(taskType string) error {
 	if err != nil {
 		return fmt.Errorf("parse corpus: %w", err)
 	}
-	runner := cascade.NewRunner(fixedInvoker{taskType: taskType})
+	runner := cascade.NewRunner(fixedInvoker{taskType: taskType, responseAction: w.respAction})
 	p := pipeline.New(runner, c, 10)
 
 	classifierChat := func(context.Context, []prompting.Message) (string, error) {
@@ -185,6 +196,17 @@ func (w *taskClassifierWorld) hasResultEvent() error {
 	}
 	if len(evs) == 0 {
 		return fmt.Errorf("expected a task_result event, found none")
+	}
+	return nil
+}
+
+func (w *taskClassifierWorld) noResultEvent() error {
+	evs, err := w.resultEvents()
+	if err != nil {
+		return err
+	}
+	if len(evs) != 0 {
+		return fmt.Errorf("expected no task_result event, found %d", len(evs))
 	}
 	return nil
 }

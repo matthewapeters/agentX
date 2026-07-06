@@ -83,12 +83,12 @@ func (o *Orchestrator) buildTaskExecutor() {
 	)
 }
 
-// maybeEmitTask runs the classifier pipeline over the session's prior turns and this
-// turn, publishing a task_proposed event when the turn is actionable. It is a
-// best-effort observer: it runs only on a cleanly completed, recorded turn, and any
-// classification error yields no task and never disturbs the prompt cycle. It is
-// called before recordTurn, so the digest reflects prior history (not this turn,
-// which is passed explicitly).
+// maybeEmitTask runs the classifier over this turn and folds it with a response
+// classification ([C], always-on) into a route, then acts on it. It is a
+// best-effort observer: it runs only on a cleanly completed, recorded turn, any
+// classification error yields no task, and it never disturbs the prompt cycle. It
+// runs before recordTurn, so the digest reflects prior history (this turn is passed
+// explicitly), and only on runPrompt's non-tool path, so it never double-executes.
 func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record bool, userOrd uint64, turn, response string) {
 	if !record || cycleErr != nil {
 		return
@@ -96,6 +96,7 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 	o.mu.Lock()
 	p := o.taskPipeline
 	events := o.historyEvents()
+	ex := o.taskExec
 	o.mu.Unlock()
 	if p == nil {
 		return
@@ -104,36 +105,44 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 	if err != nil {
 		return
 	}
-	rec, ok := task.FromAction(fmt.Sprintf("task-%d", userOrd), turn, res.Action, res.Escalated)
-	if !ok {
-		return
-	}
-	o.publish("TASK_PROPOSED", state.ContentTaskProposed, rec)
 
-	// Reconcile and drain. The response classifier [C] is deferred, so the response
-	// signal is empty: an actionable task reconciles to Redispatch, an abstained one
-	// to Ask. Execution runs only on the non-tool path (the single_tool cycle returns
-	// earlier in runPrompt), so it never double-executes.
-	o.mu.Lock()
-	ex := o.taskExec
-	o.mu.Unlock()
-	if ex == nil {
-		return
-	}
-	// [C] classifies the model's own response, so the reconciler distinguishes the
-	// vivid-willow reify case (model produced the artifact in prose) from a plain
-	// redispatch. On this non-tool path no tool actually ran, so a "produced" or
-	// narrated "executed" verdict is treated as produced (not proof of execution).
+	// [C] runs on every turn, independent of [B], so it catches an action the model
+	// volunteered on a turn the user did not ask for one. On this non-tool path no
+	// tool actually ran, so "produced"/narrated "executed" are treated as produced.
 	respSig := reconcile.ResponseSignal{}
 	if rd, ok := p.ClassifyResponse(ctx, response); ok {
 		respSig = responseSignal(rd)
 	}
+	rec, hasTask := task.FromAction(fmt.Sprintf("task-%d", userOrd), turn, res.Action, res.Escalated)
 	route, _ := reconcile.Reconcile(
-		reconcile.TurnSignal{Actionable: rec.Status == task.Proposed, Abstained: rec.Status == task.Abstained},
+		reconcile.TurnSignal{
+			Actionable: hasTask && rec.Status == task.Proposed,
+			Abstained:  hasTask && rec.Status == task.Abstained,
+		},
 		respSig,
 	)
-	if route != reconcile.Reify && route != reconcile.Redispatch {
-		return // Ask / None / Confirm / Verify: nothing to drain here
+
+	switch route {
+	case reconcile.Confirm:
+		// A volunteered action — the model did or produced something the user never
+		// requested. Never auto-execute it; surface it for approval.
+		o.publish("TASK_RESULT", state.ContentTaskResult, map[string]any{
+			"route":  string(route),
+			"status": string(executor.NeedsApproval),
+			"reason": "volunteered action — approval required",
+		})
+		return
+	case reconcile.Reify, reconcile.Redispatch, reconcile.Verify:
+		// A requested action: emit the durable task and drain it.
+	default:
+		return // None (pure conversation) / Ask (abstained)
+	}
+	if !hasTask {
+		return
+	}
+	o.publish("TASK_PROPOSED", state.ContentTaskProposed, rec)
+	if ex == nil {
+		return
 	}
 	outcome := ex.Execute(ctx, rec)
 	o.publish("TASK_RESULT", state.ContentTaskResult, map[string]any{
