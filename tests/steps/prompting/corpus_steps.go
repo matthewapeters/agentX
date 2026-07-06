@@ -55,6 +55,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the invocations carry more than one distinct temperature$`, w.invDistinctTemps)
 
 	registerCascadeSteps(sc)
+	registerDigestSteps(sc)
 }
 
 // ---- corpus fixtures ----
