@@ -5,6 +5,19 @@ This was the largest phase and the first to touch the live LLM path. Six leans a
 (async scheduler, scheduler-driven root, produced-majority discriminator, shared budget,
 read-executor-now/UI-later, planner schema).
 
+> **Addendum (2026-07-07): the atomicity oracle described in 4c/4d/4e below was retired.**
+> The ADR's amendment section (typed DAG nodes) replaced `decompose.Oracle` /
+> `decompose.PipelineActions` / `decompose.HeuristicOneStep` / `decompose.ForceRoot` — all
+> named below as shipped Phase-4 deliverables — with a single declared `task.Kind` field the
+> planner sets at generation time. The route/wiring/planner-existence facts below (4a, 4b's
+> parser shell, 4c's Decomposer, 4d's pipeline wiring, 4e's live Ollama call) are all still
+> true and unchanged in shape; only the atomicity mechanism they cite is gone. The planner's
+> wire shape also changed from a flat `{id,goal,deps,cost}` step to a discriminated
+> `{id,deps,task:{...}}|{id,deps,step:{...}}` node under JSON-schema-constrained decoding,
+> and its prompt moved to `config/seed/agentx-planner.md`. This section is left as
+> originally written below it, as the historical record of what Phase 4 first shipped; see
+> the ADR amendment for the current design.
+
 - **4a — Decompose route: DONE.** `reconcile.Decompose` + `ResponseSignal.LeansProduced` +
   the produced-majority discriminator (`responseSignal` spread test) + the `maybeEmitTask`
   route case (records "decompose"; scheduler wiring is 4d). Tests: reconcile.feature

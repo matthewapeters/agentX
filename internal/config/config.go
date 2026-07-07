@@ -411,6 +411,13 @@ func (p Paths) ShellCommandsPath() string {
 	return filepath.Join(p.configDir(), "agentx-shell-commands.md")
 }
 
+// PlannerPath is the decomposition-planner system-prompt file
+// (~/.config/agentx/agentx-planner.md) — externalized so the Step/Task decomposition
+// rules can be tuned without a rebuild (ADR 0008 amendment).
+func (p Paths) PlannerPath() string {
+	return filepath.Join(p.configDir(), "agentx-planner.md")
+}
+
 // ToolBlacklistPath is the persisted command-policy blacklist
 // (~/.config/agentx/agentx-tool-blacklist.toml).
 func (p Paths) ToolBlacklistPath() string {

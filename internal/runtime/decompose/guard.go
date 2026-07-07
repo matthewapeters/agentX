@@ -6,14 +6,12 @@ import (
 )
 
 // The tidy-cove spiral (ADR 0009): the planner phrased steps as "Run `ls -la` … and
-// capture its output", the " and " marker judged that non-atomic, and re-planning produced
-// the same goal rephrased — ten levels deep. Two defenses live here:
-//
-//   - stripResultPlumbing removes result-capture idioms ("and save output to $X") so the
-//     one-step heuristic judges the action, not the plumbing — the executor returns results
-//     automatically, so plumbing clauses carry no extra step.
-//   - SimilarGoals detects an echoed goal so the decomposer can refuse to recurse
-//     (scheduler.ErrNoProgress → the node executes instead).
+// capture its output", ten levels of re-planning producing the same goal rephrased.
+// SimilarGoals detects that echo so the decomposer can refuse to recurse
+// (scheduler.ErrNoProgress → the node executes as a Task instead). stripResultPlumbing
+// feeds it: plumbing clauses ("and save output to $X") are stripped before comparison so
+// they cannot mask an otherwise-identical goal — the executor returns results
+// automatically, so plumbing carries no distinguishing content.
 
 // resultPlumbing matches a trailing result-capture clause: "and/then capture|save|store|
 // write|return|record|print|pipe … output|result|stdout|stderr …" up to the next clause
@@ -90,35 +88,4 @@ func SimilarGoals(a, b string) bool {
 		}
 	}
 	return float64(shared)/float64(len(small)) >= 0.8
-}
-
-// clauseVerbs are action verbs that, following " and ", signal a genuinely separate step —
-// distinguishing "list files and directories" (noun coordination, one step) from
-// "review the project and identify a feature" (two actions).
-var clauseVerbs = map[string]bool{
-	"run": true, "read": true, "write": true, "list": true, "scan": true, "search": true,
-	"find": true, "check": true, "review": true, "identify": true, "analyze": true,
-	"create": true, "build": true, "edit": true, "delete": true, "propose": true,
-	"recommend": true, "summarize": true, "compare": true, "verify": true, "report": true,
-	"fix": true, "refactor": true, "test": true, "install": true, "generate": true,
-	"inspect": true, "examine": true, "explore": true, "categorize": true, "flag": true,
-}
-
-// coordinatesClauses reports whether the goal chains two actions: " then ", ";", or
-// " and <action-verb>". A bare " and " between nouns does not count.
-func coordinatesClauses(goal string) bool {
-	g := strings.ToLower(goal)
-	if strings.Contains(g, " then ") || strings.Contains(g, ";") {
-		return true
-	}
-	fields := strings.Fields(g)
-	for i, f := range fields {
-		if (f == "and" || f == "&" || f == "plus") && i+1 < len(fields) {
-			next := strings.Trim(fields[i+1], "`\"'.,()")
-			if clauseVerbs[next] {
-				return true
-			}
-		}
-	}
-	return false
 }

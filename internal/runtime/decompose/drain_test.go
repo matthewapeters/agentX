@@ -9,10 +9,6 @@ import (
 	"agentx/internal/runtime/branch"
 )
 
-type oracleFunc func(task.Record) bool
-
-func (f oracleFunc) Atomic(_ context.Context, r task.Record) (bool, error) { return f(r), nil }
-
 type decompFunc func(task.Record) branch.Result
 
 func (f decompFunc) Decompose(_ context.Context, r task.Record) (branch.Result, error) {
@@ -23,20 +19,19 @@ type execFunc func(task.Record) executor.Outcome
 
 func (f execFunc) Execute(_ context.Context, r task.Record) executor.Outcome { return f(r) }
 
-// TestDrainPlanCompound: a compound root decomposes into atomic leaves, all of which the
-// scheduler drains to done via parent-as-join. This is the Phase-4d pipeline seam.
+// TestDrainPlanCompound: a compound root (Kind: Step) decomposes into task leaves, all of
+// which the scheduler drains to done via parent-as-join. This is the pipeline seam.
 func TestDrainPlanCompound(t *testing.T) {
-	root := task.Record{ID: "goal", Goal: "review the project", Type: task.Query, Status: task.Proposed, Deps: []string{}}
-	oracle := oracleFunc(func(r task.Record) bool { return r.ID != "goal" }) // root compound, leaves atomic
+	root := task.Record{ID: "goal", Goal: "review the project", Type: task.Query, Kind: task.KindStep, Status: task.Proposed, Deps: []string{}}
 	dec := decompFunc(func(task.Record) branch.Result {
 		return branch.Result{Synthesis: "investigate then propose", Records: []task.Record{
-			{ID: "l1", Goal: "read packages", Type: task.Query, Status: task.Proposed, Deps: []string{}},
-			{ID: "l2", Goal: "pick sparsest", Type: task.Query, Status: task.Proposed, Deps: []string{}},
+			{ID: "l1", Goal: "read packages", Type: task.Query, Kind: task.KindTask, Status: task.Proposed, Deps: []string{}},
+			{ID: "l2", Goal: "pick sparsest", Type: task.Query, Kind: task.KindTask, Status: task.Proposed, Deps: []string{}},
 		}}
 	})
 	ex := execFunc(func(task.Record) executor.Outcome { return executor.Outcome{Status: executor.Executed} })
 
-	out, err := DrainPlan(context.Background(), root, oracle, dec, ex, 4, 10, nil)
+	out, err := DrainPlan(context.Background(), root, dec, ex, 4, 10, nil)
 	if err != nil {
 		t.Fatalf("DrainPlan: %v", err)
 	}

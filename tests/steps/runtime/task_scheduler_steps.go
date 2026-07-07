@@ -17,17 +17,6 @@ import (
 
 // --- stub collaborators (goroutine-safe) ---------------------------------------
 
-type stubOracle struct {
-	mu     sync.Mutex
-	atomic map[string]bool // id -> atomic verdict; absent = non-atomic
-}
-
-func (o *stubOracle) Atomic(_ context.Context, rec task.Record) (bool, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.atomic[rec.ID], nil
-}
-
 type stubExecutor struct {
 	mu      sync.Mutex
 	outcome map[string]executor.Status // id -> status; absent = Executed
@@ -63,7 +52,6 @@ func (d *stubDecomposer) Decompose(_ context.Context, rec task.Record) (branch.R
 
 type schedWorld struct {
 	graph      *task.Graph
-	oracle     *stubOracle
 	decomposer *stubDecomposer
 	exec       *stubExecutor
 	sched      *scheduler.Scheduler
@@ -78,7 +66,6 @@ func registerTaskSchedulerSteps(sc *godog.ScenarioContext) {
 	sc.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
 		*w = schedWorld{
 			graph:      task.NewGraph(),
-			oracle:     &stubOracle{atomic: map[string]bool{}},
 			decomposer: &stubDecomposer{children: map[string][]task.Record{}},
 			exec:       &stubExecutor{outcome: map[string]executor.Status{}},
 			slots:      4,
@@ -87,16 +74,16 @@ func registerTaskSchedulerSteps(sc *godog.ScenarioContext) {
 		return ctx, nil
 	})
 
-	sc.Step(`^a plan of atomic leaves "([^"]*)", "([^"]*)", "([^"]*)" with no dependencies$`, w.threeAtomic)
-	sc.Step(`^atomic leaves "([^"]*)" and "([^"]*)" with no dependencies$`, w.twoAtomic)
-	sc.Step(`^an atomic leaf "([^"]*)" depending on "([^"]*)" and "([^"]*)"$`, w.atomicDep)
-	sc.Step(`^an atomic leaf "([^"]*)" with no dependencies$`, w.oneAtomic)
-	sc.Step(`^a non-atomic node "([^"]*)"(?: with no dependencies)?$`, w.nonAtomic)
-	sc.Step(`^the decomposer expands "([^"]*)" into atomic leaves "([^"]*)" and "([^"]*)"$`, w.expandInto)
+	sc.Step(`^a plan of task leaves "([^"]*)", "([^"]*)", "([^"]*)" with no dependencies$`, w.threeTasks)
+	sc.Step(`^task leaves "([^"]*)" and "([^"]*)" with no dependencies$`, w.twoTasks)
+	sc.Step(`^a task leaf "([^"]*)" depending on "([^"]*)" and "([^"]*)"$`, w.taskDep)
+	sc.Step(`^a task leaf "([^"]*)" with no dependencies$`, w.oneTask)
+	sc.Step(`^a step node "([^"]*)"(?: with no dependencies)?$`, w.addStep)
+	sc.Step(`^the decomposer expands "([^"]*)" into task leaves "([^"]*)" and "([^"]*)"$`, w.expandInto)
 	sc.Step(`^the executor reports every leaf executed$`, w.noopSched)
 	sc.Step(`^the executor reports "([^"]*)" failed$`, w.execFails)
 	sc.Step(`^a slot budget of (\d+)$`, w.slotBudget)
-	sc.Step(`^a plan of (\d+) atomic leaves with no dependencies$`, w.nAtomic)
+	sc.Step(`^a plan of (\d+) task leaves with no dependencies$`, w.nTasks)
 	sc.Step(`^a max task depth of (\d+)$`, w.setMaxDepth)
 
 	sc.Step(`^the scheduler runs$`, w.run)
@@ -121,51 +108,52 @@ func registerTaskSchedulerSteps(sc *godog.ScenarioContext) {
 
 // --- record helpers ------------------------------------------------------------
 
-func rec(id string, deps ...string) task.Record {
+// rec builds a bare record of the given Kind. taskRec/stepRec are the two entry points
+// scenarios actually use — atomicity is a declared field, never an injected stub verdict.
+func rec(id string, kind task.Kind, deps ...string) task.Record {
 	if deps == nil {
 		deps = []string{}
 	}
-	return task.Record{ID: id, Goal: id, Type: task.Query, Status: task.Proposed, Deps: deps}
+	return task.Record{ID: id, Goal: id, Type: task.Query, Kind: kind, Status: task.Proposed, Deps: deps}
 }
 
-func (w *schedWorld) addAtomic(id string, deps ...string) error {
-	w.oracle.atomic[id] = true
-	return w.graph.Add(rec(id, deps...))
+func taskRec(id string, deps ...string) task.Record { return rec(id, task.KindTask, deps...) }
+func stepRec(id string, deps ...string) task.Record { return rec(id, task.KindStep, deps...) }
+
+func (w *schedWorld) addTask(id string, deps ...string) error {
+	return w.graph.Add(taskRec(id, deps...))
 }
 
 // --- given ---------------------------------------------------------------------
 
-func (w *schedWorld) threeAtomic(a, b, c string) error {
+func (w *schedWorld) threeTasks(a, b, c string) error {
 	for _, id := range []string{a, b, c} {
-		if err := w.addAtomic(id); err != nil {
+		if err := w.addTask(id); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (w *schedWorld) twoAtomic(a, b string) error {
+func (w *schedWorld) twoTasks(a, b string) error {
 	for _, id := range []string{a, b} {
-		if err := w.addAtomic(id); err != nil {
+		if err := w.addTask(id); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (w *schedWorld) atomicDep(id, d1, d2 string) error { return w.addAtomic(id, d1, d2) }
+func (w *schedWorld) taskDep(id, d1, d2 string) error { return w.addTask(id, d1, d2) }
 
-func (w *schedWorld) oneAtomic(id string) error { return w.addAtomic(id) }
+func (w *schedWorld) oneTask(id string) error { return w.addTask(id) }
 
-func (w *schedWorld) nonAtomic(id string) error {
-	w.oracle.atomic[id] = false
-	return w.graph.Add(rec(id))
+func (w *schedWorld) addStep(id string) error {
+	return w.graph.Add(stepRec(id))
 }
 
 func (w *schedWorld) expandInto(parent, g1, g2 string) error {
-	w.oracle.atomic[g1] = true
-	w.oracle.atomic[g2] = true
-	w.decomposer.children[parent] = []task.Record{rec(g1), rec(g2)}
+	w.decomposer.children[parent] = []task.Record{taskRec(g1), taskRec(g2)}
 	return nil
 }
 
@@ -176,15 +164,14 @@ func (w *schedWorld) execFails(id string) error {
 
 func (w *schedWorld) slotBudget(n int) error { w.slots = n; return nil }
 
-func (w *schedWorld) nAtomic(n int) error {
+func (w *schedWorld) nTasks(n int) error {
 	for i := 1; i <= n; i++ {
-		if err := w.addAtomic(fmt.Sprintf("n%d", i)); err != nil {
+		if err := w.addTask(fmt.Sprintf("n%d", i)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
-
 
 func (w *schedWorld) setMaxDepth(n int) error { w.maxDepth = n; return nil }
 
@@ -193,7 +180,7 @@ func (w *schedWorld) setMaxDepth(n int) error { w.maxDepth = n; return nil }
 func (w *schedWorld) run() error {
 	// Run synchronously: the scheduler is provably terminating (each node is dispatched at
 	// most once, else ErrStalled), and no stub blocks, so no timer/watchdog is needed.
-	w.sched = scheduler.New(w.graph, w.oracle, w.decomposer, w.exec, w.slots, w.maxDepth)
+	w.sched = scheduler.New(w.graph, w.decomposer, w.exec, w.slots, w.maxDepth)
 	if err := w.sched.Run(context.Background()); err != nil {
 		return fmt.Errorf("scheduler.Run: %w", err)
 	}
@@ -289,7 +276,7 @@ func (w *schedWorld) peakAtMost(n int) error {
 
 // inFlightTogether asserts both nodes were dispatched and the scheduler held at least two
 // workers in flight at once. With only these two nodes ready initially, a peak of >=2 means
-// the atomic leaf's execution and the sibling's decomposition overlapped (interleaving),
+// the task leaf's execution and the sibling step's decomposition overlapped (interleaving),
 // proven structurally without a blocking stub or timer.
 func (w *schedWorld) inFlightTogether(a, b string) error {
 	order := w.sched.DispatchOrder()

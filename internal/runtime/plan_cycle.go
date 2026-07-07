@@ -12,10 +12,10 @@ import (
 	"agentx/internal/state"
 )
 
-// planReady reports whether the decomposition substrate is wired (classifier oracle,
-// branch decomposer, and executor). buildDecomposition sets these at Start.
+// planReady reports whether the decomposition substrate is wired (branch decomposer and
+// executor). buildDecomposition sets these at Start.
 func (o *Orchestrator) planReady() bool {
-	return o.taskOracle != nil && o.taskDecomp != nil && o.taskExec != nil
+	return o.taskDecomp != nil && o.taskExec != nil
 }
 
 // capturingExec wraps the task executor to record every leaf outcome as the scheduler
@@ -83,6 +83,7 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text string, userOrd ui
 		ID:     fmt.Sprintf("task-%d", userOrd),
 		Goal:   text,
 		Type:   task.Query,
+		Kind:   task.KindStep, // the invoke_planner route already judged this multi-step
 		Status: task.Proposed,
 		Deps:   []string{},
 	}
@@ -93,7 +94,7 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text string, userOrd ui
 		"nodes": []map[string]any{{"task_id": root.ID, "goal": root.Goal, "status": string(root.Status), "deps": root.Deps}},
 	})
 	cap := &capturingExec{inner: o.taskExec}
-	out, derr := decompose.DrainPlan(ctx, root, o.taskOracle, o.taskDecomp, cap,
+	out, derr := decompose.DrainPlan(ctx, root, o.taskDecomp, cap,
 		decompose.DefaultSlots, decompose.DefaultMaxDepth, &planObserver{o: o, root: root.ID})
 	if ctx.Err() != nil {
 		return "", false, ctx.Err()
@@ -109,25 +110,47 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text string, userOrd ui
 
 // publishPlan records the drained plan (node goals, deps, final statuses) as the final
 // task_plan snapshot. Per-node progress was already streamed as task_node deltas; this is
-// the terminal summary. A plan that executed nothing is reported loudly, never silently.
+// the terminal summary. An incomplete plan — anything failed, abstained, or blocked
+// behind a failed dependency — is reported loudly, never silently (mellow-meadow: one
+// failed leaf silently stranded five nodes).
 func (o *Orchestrator) publishPlan(root task.Record, out decompose.PlanOutcome, executed int, derr error) {
-	nodes := make([]map[string]any, 0, len(out.Nodes))
-	for _, n := range out.Nodes {
+	payload := planSummary(root, out.Nodes, executed, derr)
+	o.publish("TASK_PLAN", state.ContentTaskPlan, payload)
+}
+
+// planSummary builds the terminal task_plan payload, deriving an "incomplete" error line
+// from the node statuses when the drain error alone would under-report.
+func planSummary(root task.Record, recs []task.Record, executed int, derr error) map[string]any {
+	nodes := make([]map[string]any, 0, len(recs))
+	var failed, abstained, neverRan int
+	for _, n := range recs {
 		nodes = append(nodes, map[string]any{
 			"task_id": n.ID, "goal": n.Goal, "status": string(n.Status), "deps": n.Deps,
 		})
+		switch n.Status {
+		case task.Done:
+			// complete
+		case task.Failed:
+			failed++
+		case task.Abstained:
+			abstained++
+		default: // proposed / ready / in_progress: stranded behind a failed/abstained dep
+			neverRan++
+		}
 	}
 	payload := map[string]any{
 		"root": root.ID, "goal": root.Goal, "phase": "ended", "nodes": nodes,
 		"executed": executed,
 	}
-	if derr != nil {
+	switch {
+	case derr != nil:
 		payload["error"] = derr.Error()
-	} else if executed == 0 {
+	case failed+abstained+neverRan > 0:
 		payload["error"] = fmt.Sprintf(
-			"plan blocked: none of %d nodes executed (deepest likely abstained or blocked)", len(out.Nodes))
+			"plan incomplete: %d failed, %d abstained, %d never ran (blocked behind them) of %d nodes",
+			failed, abstained, neverRan, len(recs))
 	}
-	o.publish("TASK_PLAN", state.ContentTaskPlan, payload)
+	return payload
 }
 
 // planContext renders the executed steps and their findings as prompt context, so the

@@ -41,6 +41,7 @@ const (
 	kindSystem
 	kindError
 	kindLaunch
+	kindPlan
 )
 
 // launchItem pairs a launchable surface kind with its full attach command. The
@@ -87,6 +88,9 @@ type widget struct {
 	// resize re-renders at the new width. See ADR 0007's width contract.
 	renderedBody  string
 	renderedWidth int
+	// nested indents the whole box under its parent (a plan step's 🔧 call and
+	// 📋 result render as children of the 🗺 plan widget — ADR 0009 §9c).
+	nested bool
 }
 
 // defaultActive and defaultInactive are the built-in border SGR colors used
@@ -117,6 +121,8 @@ type Model struct {
 	collapseAll     bool // context surface: every element starts collapsed (summary)
 	showToggleState bool // context surface: show an enabled checkbox on toggleables
 	mdMode          string // finalized-assistant renderer: "native" or "" (scanner) — ADR 0007
+
+	plans map[string]*planState // live plan widgets by root task id (ADR 0009 §9c)
 }
 
 // SetCollapseByDefault makes newly added elements start collapsed — the context
@@ -180,7 +186,8 @@ func (m *Model) SetSelectedEnabled(enabled bool) {
 func New() *Model {
 	vp := viewport.New()
 	vp.FillHeight = true
-	return &Model{vp: vp, maxBody: defaultMaxBody, selected: -1, active: defaultActive, inactive: defaultInactive}
+	return &Model{vp: vp, maxBody: defaultMaxBody, selected: -1, active: defaultActive, inactive: defaultInactive,
+		plans: map[string]*planState{}}
 }
 
 // SetTheme sets the border SGR colors for selected (active) and other (inactive)
@@ -395,9 +402,31 @@ func (m *Model) Apply(ev state.Event) {
 		m.appendThinking(eventText(ev))
 		return
 	case state.ContentToolCall:
-		m.add(&widget{kind: kindToolCall, title: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true, previewWhenCollapsed: true})
+		// A call tagged with a plan step's task id nests (indented) under the plan
+		// widget; an untagged call (single_tool cycle) renders flat as before.
+		w := &widget{kind: kindToolCall, title: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true, previewWhenCollapsed: true}
+		if tid := taskIDOf(ev); tid != "" && m.planFor(tid) != nil {
+			w.nested, w.title = true, "🔧 "+ev.ToolName+" · "+tid
+		}
+		m.add(w)
 	case state.ContentToolResult:
-		m.add(&widget{kind: kindToolResult, title: "📋 result", body: eventText(ev), collapsible: true, collapsed: true})
+		w := &widget{kind: kindToolResult, title: "📋 result", body: eventText(ev), collapsible: true, collapsed: true}
+		if tid := taskIDOf(ev); tid != "" && m.planFor(tid) != nil {
+			w.nested = true
+			if out := resultOutcome(ev); out != "" {
+				w.title = "📋 result · " + out
+			}
+		}
+		m.add(w)
+	case state.ContentTaskPlan:
+		// A plan gets ONE live widget, created at the "started" snapshot — before any
+		// execution — and finalized by the "ended" snapshot (ADR 0009 §9c).
+		m.applyPlanEvent(ev)
+		return
+	case state.ContentTaskNode:
+		// Per-node delta: mutate the plan widget in place (dispatch/decompose/complete).
+		m.applyNodeEvent(ev)
+		return
 	case state.ContentSystemPrompt:
 		m.add(&widget{kind: kindSystem, title: "📜 system prompt", body: eventText(ev), previewWhenCollapsed: true})
 	default:
@@ -638,7 +667,14 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 		return []string{m.flatLine(w, selected)}
 	}
 
-	innerW := m.contentWidth() - 2
+	// A nested widget (a plan step's tool call/result) indents two columns under its
+	// parent box, narrowing its own frame to match (ADR 0009 §9c).
+	const nestIndent = "  "
+	indentW := 0
+	if w.nested {
+		indentW = len(nestIndent)
+	}
+	innerW := m.contentWidth() - 2 - indentW
 	if innerW < 1 {
 		return []string{truncateWord(w.title, m.contentWidth())}
 	}
@@ -679,7 +715,13 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 		}
 		title = box + w.title
 	}
-	return m.boxify(title, rows, innerW, selected)
+	lines := m.boxify(title, rows, innerW, selected)
+	if w.nested {
+		for i := range lines {
+			lines[i] = nestIndent + lines[i]
+		}
+	}
+	return lines
 }
 
 // flatLine renders a borderless one-row widget ("<title> · <body>"), tinted by the

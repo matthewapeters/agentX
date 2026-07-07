@@ -16,6 +16,7 @@ package executor
 
 import (
 	"context"
+	"maps"
 	"path/filepath"
 	"strings"
 
@@ -100,6 +101,18 @@ type Outcome struct {
 	Reason string
 }
 
+// CallObserver receives per-call lifecycle callbacks so tool execution is user-visible
+// while it happens (ADR 0009): the resolved tool + args before the run, and the result
+// after — for every attempt, including denied ones, so a blocked call is as legible as a
+// successful one. Callbacks are synchronous on the Execute goroutine.
+type CallObserver interface {
+	// ToolCalled fires once the proposal resolved to a known tool, before gate/run.
+	ToolCalled(rec task.Record, d tools.Descriptor, args map[string]string)
+	// ToolFinished fires at the call's terminal point with its outcome status; res is
+	// the zero Result when the call never ran (denied / needs approval).
+	ToolFinished(rec task.Record, d tools.Descriptor, res tools.Result, status Status)
+}
+
 // Executor drains task records into verified tool calls.
 type Executor struct {
 	proposer Proposer
@@ -107,9 +120,10 @@ type Executor struct {
 	gate     Gate
 	runner   Runner
 	verify   Verifier
-	root     string     // working directory calls are confined to ("" = no boundary)
-	approve  Approver   // grants calls that need approval (policy or confinement)
-	reads    ReadGrants // standing out-of-root read grants (nil = none)
+	root     string       // working directory calls are confined to ("" = no boundary)
+	approve  Approver     // grants calls that need approval (policy or confinement)
+	reads    ReadGrants   // standing out-of-root read grants (nil = none)
+	observer CallObserver // per-call visibility seam (nil = silent)
 }
 
 // Option configures an Executor.
@@ -132,6 +146,11 @@ func WithApprover(a Approver) Option {
 // decision. It only widens read access; it never permits a mutating call.
 func WithReadGrants(g ReadGrants) Option {
 	return func(e *Executor) { e.reads = g }
+}
+
+// WithCallObserver attaches the per-call visibility seam (nil is allowed = silent).
+func WithCallObserver(obs CallObserver) Option {
+	return func(e *Executor) { e.observer = obs }
 }
 
 // New builds an executor from its collaborators.
@@ -170,12 +189,41 @@ func (e *Executor) escapesRoot(d tools.Descriptor, args map[string]string) bool 
 	return true
 }
 
-// Execute drains one task record: it proposes a concrete tool call for the task's
+// resolvedProposal reads a pre-resolved tool call from rec.Params (ADR 0008 amendment: a
+// planner-produced Task carries {"tool","args"} directly, resolved at plan-generation time
+// under JSON-schema-constrained decoding — see internal/prompting/planner). ok is false for
+// any record without one (Redispatch/Reify/Verify-route records, which only ever carry a
+// Goal), so Execute falls back to the proposer unchanged for those. Args values are
+// stringified with tools.StringifyArg because Params round-trips through JSON (session
+// persistence), so a value that started as map[string]string may arrive back as
+// map[string]any/map[string]interface{} — never assume the original Go type survived.
+func resolvedProposal(rec task.Record) (tools.Proposal, bool) {
+	toolID, ok := rec.Params["tool"].(string)
+	if !ok || toolID == "" {
+		return tools.Proposal{}, false
+	}
+	args := map[string]string{}
+	switch m := rec.Params["args"].(type) {
+	case map[string]string:
+		maps.Copy(args, m)
+	case map[string]any:
+		for k, v := range m {
+			args[k] = tools.StringifyArg(v)
+		}
+	}
+	return tools.Proposal{Tool: toolID, Args: args}, true
+}
+
+// Execute drains one task record: it uses a pre-resolved tool call when the record carries
+// one (a planner-produced Task), otherwise proposes a concrete tool call for the task's
 // goal, gates it through policy, runs it, and verifies the effect. A denied or
 // approval-pending call does not run; a run whose effect fails verification is
 // reported as Phantom, never as done.
 func (e *Executor) Execute(ctx context.Context, rec task.Record) Outcome {
-	prop, ok := e.proposer.Propose(ctx, rec.Goal)
+	prop, ok := resolvedProposal(rec)
+	if !ok {
+		prop, ok = e.proposer.Propose(ctx, rec.Goal)
+	}
 	if !ok {
 		return Outcome{Status: NoTool, Reason: "no tool proposed for goal"}
 	}
@@ -184,9 +232,21 @@ func (e *Executor) Execute(ctx context.Context, rec task.Record) Outcome {
 		return Outcome{Status: NoTool, Reason: "unknown tool " + prop.Tool}
 	}
 
+	// The call is resolved: announce it before anything runs, and report however it
+	// ends (ADR 0009 — execution is visible, including denied attempts).
+	if e.observer != nil {
+		e.observer.ToolCalled(rec, d, prop.Args)
+	}
+	finish := func(out Outcome) Outcome {
+		if e.observer != nil {
+			e.observer.ToolFinished(rec, d, out.Result, out.Status)
+		}
+		return out
+	}
+
 	verdict := e.gate.Evaluate(d, prop.Args)
 	if verdict.Decision == tools.Deny {
-		return Outcome{Status: Denied, Reason: verdict.Reason}
+		return finish(Outcome{Status: Denied, Reason: verdict.Reason})
 	}
 
 	// A call needs approval when the policy asks for it, or when it would operate
@@ -197,19 +257,19 @@ func (e *Executor) Execute(ctx context.Context, rec task.Record) Outcome {
 	}
 	if needApproval {
 		if e.approve == nil {
-			return Outcome{Status: NeedsApproval, Reason: reason}
+			return finish(Outcome{Status: NeedsApproval, Reason: reason})
 		}
 		if !e.approve.Approve(ctx, d, prop.Args, reason) {
-			return Outcome{Status: Denied, Reason: "declined: " + reason}
+			return finish(Outcome{Status: Denied, Reason: "declined: " + reason})
 		}
 	}
 
 	res, err := e.runner.Run(ctx, d, prop.Args)
 	if err != nil {
-		return Outcome{Status: Failed, Result: res, Reason: err.Error()}
+		return finish(Outcome{Status: Failed, Result: res, Reason: err.Error()})
 	}
 	if !e.verify.Verify(d, prop.Args, res) {
-		return Outcome{Status: Phantom, Result: res, Reason: "effect not verified"}
+		return finish(Outcome{Status: Phantom, Result: res, Reason: "effect not verified"})
 	}
-	return Outcome{Status: Executed, Result: res}
+	return finish(Outcome{Status: Executed, Result: res})
 }

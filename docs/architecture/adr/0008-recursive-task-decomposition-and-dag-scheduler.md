@@ -1,6 +1,6 @@
 # ADR 0008: Recursive Task Decomposition and the DAG Scheduler
 
-Status: Proposed
+Status: Proposed; **amended 2026-07-07** (typed DAG nodes — see amendment at the end)
 Date: 2026-07-06
 Deciders: AgentX architecture owners
 Supersedes (in part): `docs/architecture/hierarchical_task_execution_plan.md` (2026-03-22 Draft) —
@@ -220,3 +220,262 @@ Operational implications:
    grants the whole DAG? Ties into the workdir-confinement/approval work already landed.
 5. **Slot fairness.** With one shared budget, does decomposition get a reserved minimum so a
    wide execution frontier can't starve planning (deadlocking progress)? Likely yes.
+
+---
+
+## Amendment (2026-07-07): Typed DAG Nodes — Step vs. Task
+
+**Supersedes:** §2 ("The atomicity oracle") as the *primary* dispatch mechanism, and the
+`decompose.ForceRoot` / `HeuristicOneStep` / echo-similarity guards built as inference-time
+patches around it (session `tidy-cove`, `nimble-otter`). Those guards existed because
+atomicity was *inferred* from goal text after generation. This amendment has the planner
+*declare* it at generation time instead, which removes the inference problem — and the
+whole class of guard it required — by construction.
+
+### Context for the amendment
+
+Three sessions (`tidy-cove`, `mellow-meadow`, `nimble-otter`) each exposed a variant of the
+same root cause: the scheduler asks an LLM-backed Oracle "is this atomic?" for *every* node,
+and a wrong answer either spirals (non-atomic verdict on an already-atomic goal → re-plan
+forever, caught by the echo guard) or under-decomposes (atomic verdict on a compound goal
+because a lexicon-based heuristic missed a verb, caught by `ForceRoot`). Each fix added
+another inference-time patch. The user's proposal (2026-07-07) inverts the mechanism:
+**the planner labels every node it emits as a Step or a Task. The scheduler dispatches on
+that label — it never asks an Oracle to guess.**
+
+### Decision
+
+**A DAG node is one of two kinds**, replacing the single untyped `task.Record` used as
+both a plan node and an executable leaf. Every node in the graph — root included — points
+to either a Step or a Task; there is no third kind and no bare/untyped node:
+
+- **Step** (plan node) — `Decompose()` asks the LLM to break the goal into **at most 5**
+  child units, **preferring Task children where the child is already a single concrete
+  action, and only using a child Step where it genuinely isn't** — a Step never executes
+  directly. This preference is what keeps plans low-resolution at each level: a node only
+  stays a Step, and drills down further, when it truly cannot yet resolve to one tool call.
+- **Task** (tool node) — `Execute()`s exactly once, via the existing proposer/executor
+  path, exposes its outcome through `Results()`, and **never decomposes** — there is no
+  decompose operation for a Task to call. This is what makes a tool-call loop structurally
+  impossible, not merely guarded against.
+
+`task.Record` gains a `Kind` field:
+
+```go
+type Kind string
+
+const (
+    KindStep Kind = "step" // plan node: Decompose() only
+    KindTask Kind = "task" // tool node: Execute()/Results() only
+)
+```
+
+This is the wire/persisted shape — unchanged JSON envelope, one new field, so the existing
+graph, session-event persistence, and plan-widget rendering (ADR 0009 §9c) all carry over
+without a schema break.
+
+**Two Go interfaces**, both embedding a common `Node` accessor shape, formalize the
+contract for anything that consumes a typed node (the scheduler, a future WM-promotion
+step, the plan widget):
+
+```go
+// Node is the read-only shape every DAG entry exposes, regardless of kind.
+type Node interface {
+    ID() string
+    Goal() string
+    Kind() task.Kind
+    Deps() []string
+    Depth() int
+}
+
+// Step is a plan node: decomposes into ≤5 children, never executes.
+type Step interface {
+    Node
+    Decompose(ctx context.Context) (children []task.Record, synthesis string, err error)
+}
+
+// Task is a tool node: a leaf that never decomposes.
+type Task interface {
+    Node
+    Execute(ctx context.Context) (executor.Outcome, error)
+    Results() (executor.Outcome, bool) // ok=false before Execute has run
+}
+```
+
+The scheduler's dispatch stays a cheap switch on `rec.Kind` — it does not need to construct
+a `Step`/`Task` value just to decide which collaborator to call. The interfaces exist for
+code that *holds* a typed node afterward (the WM-promotion path below is the first
+consumer) rather than for the dispatch loop itself.
+
+**Lean (placement):** these interfaces live in `internal/runtime/scheduler` (next to the
+existing `Oracle`/`Decomposer`/`Executor` collaborator interfaces they replace), not in
+`internal/prompting/task` — that package stays pure data model (`Record`, `Kind`, `Graph`).
+Open for the user to override.
+
+### What retires from the primary path
+
+The atomicity **Oracle is no longer called in the scheduler loop.** `PipelineActions`,
+`HeuristicOneStep`, and `decompose.ForceRoot` are retired as gating mechanisms — the
+planner's declared `Kind` *is* the atomicity decision now, decided once at generation
+time instead of re-inferred at every dispatch. (`HeuristicOneStep`'s clause-detection logic
+may be repurposed as a non-blocking lint on the planner's own output — flag a suspicious
+Task goal in the widget — but it no longer decides what runs.) This is a real complexity
+reduction: three files, two prompt-tuning surfaces, and the whole echo-similarity guard
+collapse into one field.
+
+The classifier's action-type resolution (`Type`: artifact/command/query) is unaffected — it
+still stamps a `Type` on records for policy/display purposes, orthogonal to `Kind`.
+
+### Constraints, enforced in `planner.Parse`
+
+- Every step **must** declare `kind` (`"step"` or `"task"`) — no default. An omitted or
+  unknown kind is a parse error (same tolerant-JSON path via `internal/jsonx`, same retry
+  budget as today).
+- **≤ 5 children** per decomposition, counting Steps and Tasks together. A 6th step is a
+  parse error, not a silent truncation (dropping the 6th could drop the synthesis-critical
+  step).
+- A Task's `Deps` are set once at creation for ordering (a Task can still wait on a sibling)
+  and are **never appended to** — only a Step gains additional `Deps` entries, and only via
+  its own `Decompose` (parent-as-join, unchanged from the original decision). The scheduler
+  enforces this structurally by never invoking `Decompose` on a `KindTask` record — not by
+  checking after the fact.
+
+### Degrade-on-violation (replaces `ErrNoProgress`)
+
+A `Decompose` call that violates a constraint (>5 children, missing `kind`, or the
+echo/no-progress case from `tidy-cove` — now just one instance of "decompose failed",
+not a special mechanism) gets **one retry**, with the specific violation named in the
+regenerated prompt. A second failure **demotes the node to a Task for a single execution
+attempt** via the proposer — never a hard `Failed` on decomposition trouble alone, and
+never a third attempt. This subsumes and generalizes the old echo-guard fallback under one
+rule, and preserves the anti-spiral guarantee: at most one retry + one execute attempt, per
+node, ever. The plan widget (ADR 0009 §9c) renders a degraded node truthfully — 🔧 instead
+of ⑂, with the demotion reason in its body — so the visibility contract holds even on the
+failure path.
+
+### Root node
+
+The request classifier already asserted "multi-step" to route `invoke_planner` in the
+first place, so the plan-cycle root is constructed as `KindStep` directly — no wrapper
+needed. This retires `decompose.ForceRoot` entirely rather than keeping it as a shim.
+
+### Prompt changes (planner)
+
+The planner prompt must teach the Step/Task distinction with a worked example, not just
+state it — "decompose vs. execute" is exactly the ambiguity that caused `tidy-cove` and
+`nimble-otter`. It must also state the drill-down preference explicitly as a rule, not
+leave it implicit in the example: **for each child, prefer `kind: "task"` — a single
+concrete action — and only use `kind: "step"` when the child genuinely cannot yet resolve
+to one tool call.** A plan that is all Steps has deferred every real decision to a later
+round; a plan that is all Tasks when the goal is still coarse will under-decompose (the
+`nimble-otter` failure). The preference or bias must run *toward* Task at every level —
+drilling down only happens where it's actually still needed.
+
+Two examples, both drawn from this project's own review fixture so they are concrete
+rather than abstract:
+
+**Example A — a plan (Step), low resolution, 5 nodes:**
+
+> Goal: "review the current project and suggest one feature improvement"
+>
+> ```json
+> {"plan_name": "Project Review",
+>  "synthesis": "Investigate structure, docs, and source; the assistant recommends an improvement from these findings.",
+>  "steps": [
+>    {"id": "s1", "kind": "task", "goal": "List the top-level directory structure", "deps": [], "cost": 1},
+>    {"id": "s2", "kind": "task", "goal": "Read the project README", "deps": [], "cost": 1},
+>    {"id": "s3", "kind": "step", "goal": "Review source code for existing feature coverage and quality issues", "deps": ["s1"], "cost": 3},
+>    {"id": "s4", "kind": "task", "goal": "Check test coverage across modules", "deps": ["s1"], "cost": 2},
+>    {"id": "s5", "kind": "task", "goal": "Read the CHANGELOG for recently shipped work", "deps": [], "cost": 1}
+>  ]}
+> ```
+>
+> Four leaves resolve to one tool call each (`kind: "task"`) — no further planning needed.
+> `s3` is still coarse ("review source code" spans many files) and is `kind: "step"`: once
+> `s1` completes, it will itself decompose into ≤5 further children. Note there is **no**
+> "recommend the feature" node — that synthesis happens after the plan drains, over the
+> gathered findings; it is not a DAG node at all.
+
+**Example B — a single tool call (Task), from dispatch to Results():**
+
+> `s1` above (`{"id": "s1", "kind": "task", "goal": "List the top-level directory structure"}`)
+> is a leaf. The scheduler never calls Decompose on it — it goes straight to the existing
+> proposer/executor path:
+>
+> ```
+> Execute(s1) → proposer resolves {"tool": "list_dir", "args": {"path": "."}}
+>            → policy gate → run → verify
+>            → Outcome{Status: Executed, Result: {...}}
+> Results()  → the same Outcome, readable again without re-running —
+>              this is what a later WM-promotion step (below) reads from.
+> ```
+
+### Working-memory TTL (a smaller, concrete slice worth building now)
+
+Some Task results are worth remembering across a session without re-fetching — "the
+project's dominant language," "the top-level structure" — things that change rarely but
+get referenced by many later Steps. `session.Fact` gains an optional expiry so this is
+possible without a new storage layer:
+
+```go
+type Fact struct {
+    Key       string
+    Value     string
+    Owner     Owner
+    Enabled   bool
+    ExpiresAt *time.Time `json:"expires_at,omitempty"` // nil = no expiry (all current facts)
+}
+```
+
+Backward compatible (every existing fact has `ExpiresAt == nil`). WM read paths
+(`Facts()`/`Fact()`) filter expired entries. This is small, additive, and useful on its own
+(e.g., a read grant's Once/Session distinction could eventually use it) even before
+anything promotes a Task's `Results()` into WM.
+
+**Deferred — not scoped in this amendment:** the actual *promotion policy* (which results
+qualify, who decides "doesn't change much but is referenced often," default TTL). That
+needs product judgment this amendment doesn't presume; tracked as Open Question 6 below.
+
+### Open Question (forward note, not scoped): WM as a pluggable backend
+
+The user raised — correctly — that TTL-bearing facts start to look like a small KV cache,
+and asked whether WM could eventually sit behind a `Get/Set/Delete` + TTL interface with a
+Redis (or similar) backend instead of the current session-file store. This ADR does not
+scope that: it's a storage-backend swap with no behavioral need yet (session-local files
+are correct for a local-first, single-user app). Flagged here so the `ExpiresAt` field
+above is *shaped* compatibly with that future (TTL as data, not as file-store-specific
+logic) without committing to build the seam now.
+
+### Consequences (amendment)
+
+Positive:
+
+- Removes an entire class of inference-time guard (echo-similarity, clause-verb lexicon,
+  `ForceRoot`) by moving the decision to generation time, where the planner already has
+  full context.
+- Removes an LLM call (the Oracle) from every single dispatch — real latency win; roughly
+  half of `mellow-meadow`'s per-node ~10s was oracle voting.
+- The plan widget (ADR 0009 §9c) can render Step (⑂, will expand) vs. Task (🔧, will run)
+  *before* either happens — strengthens the pre-execution visibility contract, doesn't just
+  coexist with it.
+- Bounded by construction: ≤5 children × `DefaultMaxDepth` (3) means a worst-case plan is
+  small and every path provably terminates in a non-decomposable node.
+
+Trade-offs:
+
+- Correctness now depends on the planner's `kind` compliance rather than a separate
+  verdict; mitigated by strict `Parse` validation + the one-retry-then-degrade rule, which
+  bounds the damage of a misdeclared node to "one wasted attempt," never a loop.
+- Two new interfaces plus a field is more ceremony than one field would be alone; justified
+  by giving future consumers (WM promotion, the widget) a checked contract instead of a
+  string tag to switch on.
+
+### Open Questions (amendment)
+
+6. **Promotion policy.** What decides a Task's `Results()` gets written to WM with a TTL —
+   an explicit planner-declared flag (`"cacheable": true`), a fixed allowlist of goal
+   shapes, or a later heuristic? Deferred; needs product input before building.
+7. **Retry-prompt shape.** The one-retry-on-violation path needs the specific violation
+   (">5 children" / "missing kind" / "echoes parent") fed back into the regenerated
+   prompt — a small `Render` variant, not a new template. Implementation detail, not
+   architecture; noted so it isn't lost.

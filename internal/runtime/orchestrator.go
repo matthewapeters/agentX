@@ -49,6 +49,9 @@ type Settings struct {
 	// the experimental task classifier. Empty (the default, when no prompts.toml is
 	// seeded) leaves the classifier off and the prompt cycle unchanged.
 	PromptCorpus string
+	// PlannerPrompt is the decomposition-planner system prompt (from
+	// ~/.config/agentx/agentx-planner.md). Empty uses planner.DefaultPromptTemplate.
+	PlannerPrompt string
 	// MaxWidgetLines is the output-widget body-row cap surfaced to the chat UI.
 	MaxWidgetLines int
 	// InputMaxLines caps how tall the input panel grows before it scrolls.
@@ -116,7 +119,6 @@ type Orchestrator struct {
 	classifier   *classify.Classifier
 	taskPipeline *pipeline.Pipeline
 	taskExec     taskExecutor
-	taskOracle   scheduler.Oracle
 	taskDecomp   scheduler.Decomposer
 	recDone    chan error
 	recSub     *state.Subscription
@@ -461,8 +463,12 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 			return nil
 		}
 		if handled {
-			msgs := o.withContext(o.assembler.Assemble(text + planCtx))
-			resp, respOrd, err := o.streamResponse(ctx, msgs, nil, false, ephemeral)
+			// The synthesis over findings gets the same route-aware thinking pass as
+			// a direct answer would — grounding doesn't preclude reasoning.
+			doThink := o.thinkForRoute(route)
+			msgs := o.withContext(o.assembler.AssembleWithThinking(text+planCtx, o.thinkingPrompt(doThink), route))
+			fallback := o.withContext(o.assembler.Assemble(text + planCtx))
+			resp, respOrd, err := o.streamResponse(ctx, msgs, fallback, doThink, ephemeral)
 			o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp)
 			return o.finishCycle(err)
 		}

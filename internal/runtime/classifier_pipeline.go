@@ -2,7 +2,9 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 	"os"
 	"sort"
 	"strings"
@@ -47,15 +49,12 @@ func WithTaskExecutor(e taskExecutor) Option {
 	return func(o *Orchestrator) { o.taskExec = e }
 }
 
-// WithDecomposition injects the atomicity oracle and decomposer that drive the
-// Decompose route (ADR 0008 Phase 4). Without them, a Decompose-routed turn records the
-// route as a diagnostic but does not run a plan (the decomposer is not yet wired). The
-// real oracle/decomposer are built from the classifier + LLM planner in Phase 4e.
-func WithDecomposition(oracle scheduler.Oracle, decomposer scheduler.Decomposer) Option {
-	return func(o *Orchestrator) {
-		o.taskOracle = oracle
-		o.taskDecomp = decomposer
-	}
+// WithDecomposition injects the decomposer that drives the Decompose route (ADR 0008,
+// amended 2026-07-07: the planner declares each child's Kind at generation time, so no
+// separate atomicity oracle is wired here). Without it, a Decompose-routed turn records the
+// route as a diagnostic but does not run a plan.
+func WithDecomposition(decomposer scheduler.Decomposer) Option {
+	return func(o *Orchestrator) { o.taskDecomp = decomposer }
 }
 
 // buildTaskClassifier constructs a live pipeline from settings when a prompt corpus
@@ -97,33 +96,67 @@ func (o *Orchestrator) buildTaskExecutor() {
 		executor.FSVerifier{Root: root},
 		executor.WithRoot(root),
 		executor.WithApprover(approver),
+		executor.WithCallObserver(taskToolPublisher{o: o}),
 	)
 }
 
-// buildDecomposition wires the Decompose route's atomicity oracle and branch-backed
-// decomposer, turning the compound-goal path on in production. It needs the classifier
-// (the oracle runs action_classify) and the executor (leaves drain through it), and is a
-// no-op if either is absent or if a decomposer was injected (tests). The planner calls the
-// same Ollama model as the classifier — one model, prompt-engineered. Caller holds o.mu.
-func (o *Orchestrator) buildDecomposition() {
-	if o.taskDecomp != nil || o.taskPipeline == nil || o.taskExec == nil {
-		return
+// taskToolPublisher streams executor call lifecycle to the bus, tagged with the owning
+// task id so the output surface nests the 🔧 call and 📋 result under the plan step that
+// ran them (ADR 0009 §9c). Untagged tool events (the single_tool cycle) render flat.
+type taskToolPublisher struct{ o *Orchestrator }
+
+func (p taskToolPublisher) ToolCalled(rec task.Record, d tools.Descriptor, args map[string]string) {
+	p.o.bus.Publish(state.Event{
+		Epoch: time.Now().UnixMilli(), SessionID: p.o.id.ID,
+		EventType: "TOOL_CALL", ContentType: state.ContentToolCall, ToolName: d.ID,
+		Payload:   map[string]any{"text": proposalText(d, args), "task_id": rec.ID},
+		ModelName: p.o.settings.OllamaModel,
+	})
+}
+
+func (p taskToolPublisher) ToolFinished(rec task.Record, d tools.Descriptor, res tools.Result, status executor.Status) {
+	if res.ToolID == "" {
+		res.ToolID = d.ID // a call that never ran still reports which tool it was
 	}
-	o.taskOracle = decompose.Oracle{
-		Action:  decompose.PipelineActions{P: o.taskPipeline},
-		OneStep: decompose.HeuristicOneStep{},
+	p.o.bus.Publish(state.Event{
+		Epoch: time.Now().UnixMilli(), SessionID: p.o.id.ID,
+		EventType: "TOOL_RESULT", ContentType: state.ContentToolResult, ToolName: res.ToolID,
+		Payload: map[string]any{
+			"text": toolResultText(res), "task_id": rec.ID, "outcome": string(status),
+			"status": res.Status, "exit": res.Exit, "ref": res.Ref, "bytes": res.Bytes,
+		},
+		ModelName: p.o.settings.OllamaModel,
+	})
+}
+
+// buildDecomposition wires the Decompose route's branch-backed decomposer, turning the
+// compound-goal path on in production. It needs only the executor (leaves drain through
+// it) — unlike before the ADR 0008 amendment, it does NOT need the experimental prompt
+// corpus (o.taskPipeline): the planner declares each child's Kind itself, so there is no
+// atomicity oracle here to build from the classifier. This is a deliberate behavior
+// broadening: invoke_planner now works even with no prompts.toml configured. No-op if the
+// executor is absent or a decomposer was injected (tests). The planner calls the same
+// Ollama model as the classifier — one model, prompt-engineered. Caller holds o.mu.
+func (o *Orchestrator) buildDecomposition() {
+	if o.taskDecomp != nil || o.taskExec == nil {
+		return
 	}
 	client := ollama.New(o.settings.OllamaHost)
 	model := o.settings.OllamaModel
-	chat := func(ctx context.Context, prompt string) (string, error) {
+	chat := func(ctx context.Context, prompt string, format json.RawMessage) (string, error) {
 		return client.Complete(ctx, ollama.CompleteRequest{
 			Model:    model,
 			Messages: []ollama.Message{{Role: "user", Content: prompt}},
+			Format:   format,
 		})
 	}
 	sessionID := o.id.ID
 	o.taskDecomp = decompose.Decomposer{
-		Planner:   decompose.LLMPlanner{Chat: chat},
+		Planner: decompose.LLMPlanner{
+			Chat:     chat,
+			Template: o.settings.PlannerPrompt,
+			Catalog:  plannerCatalog(o.registry),
+		},
 		SessionID: sessionID,
 		MaxDepth:  branch.DefaultMaxDepth,
 		Facts: func() []session.Fact {
@@ -134,6 +167,27 @@ func (o *Orchestrator) buildDecomposition() {
 			return wm.Enabled()
 		},
 	}
+}
+
+// plannerCatalog renders a compact, drift-proof tool list for the planner prompt: id +
+// arg names + risk tier, built from the live registry (never hand-duplicated text, so it
+// cannot drift from what's actually callable). Deliberately terser than
+// agentx-shell-commands.md's markdown catalog — that file also carries the proposer's
+// "how to reply" framing, which would conflict with the planner's own reply-shape
+// instructions; a nil registry (tools disabled) renders an empty catalog.
+func plannerCatalog(reg *tools.Registry) string {
+	if reg == nil {
+		return "(no tools available)"
+	}
+	var b strings.Builder
+	for _, d := range reg.Available(false) {
+		names := make([]string, len(d.Args))
+		for i, a := range d.Args {
+			names[i] = a.Name
+		}
+		fmt.Fprintf(&b, "- %s: args {%s} (%s)\n", d.ID, strings.Join(names, ", "), d.Risk)
+	}
+	return b.String()
 }
 
 // maybeEmitTask runs the classifier over this turn and folds it with a response
@@ -200,11 +254,14 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 	case reconcile.Reify, reconcile.Redispatch, reconcile.Verify:
 		// A requested action: emit the durable task and drain it.
 	case reconcile.Decompose:
-		// A compound goal: the model narrated a multi-step action. When the oracle and
-		// decomposer are wired (Phase 4e), run the plan through the scheduler in the
-		// background so the turn is not blocked; otherwise record the route so the decision
-		// is legible rather than mislabeled "uncertain".
-		if o.taskOracle != nil && o.taskDecomp != nil && ex != nil && hasTask {
+		// A compound goal: the model narrated a multi-step action. When the decomposer is
+		// wired, run the plan through the scheduler in the background so the turn is not
+		// blocked; otherwise record the route so the decision is legible rather than
+		// mislabeled "uncertain". The reconciler has already judged this goal multi-step,
+		// so the root is constructed as a Step directly (ADR 0008 amendment) — no oracle
+		// re-litigates that.
+		if o.taskDecomp != nil && ex != nil && hasTask {
+			rec.Kind = task.KindStep
 			o.publishTaskDiag(&res, respDecision, "decompose", fmt.Sprintf("%s: %s", route, why))
 			go o.runDecomposition(context.Background(), rec, ex)
 			return
@@ -239,31 +296,21 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 // runDecomposition drains a compound goal through the scheduler in the background (so the
 // turn is never blocked), streaming per-node task_node deltas as it goes (ADR 0009 §9a —
 // all execution is user-visible while it runs) and closing with the final task_plan
-// snapshot. It reuses the tuned classifier (via the oracle) and a read-restricted branch
-// (via the decomposer). Best-effort, like the rest of the classifier path: a decomposition
-// error is surfaced on the plan event, never as a disturbed prompt cycle.
+// snapshot. root already carries Kind: task.KindStep (set by the caller, per the ADR 0008
+// amendment — the reconciler judged this goal compound, so there is no oracle to
+// re-litigate that here). Best-effort, like the rest of the classifier path: a
+// decomposition error is surfaced on the plan event, never as a disturbed prompt cycle.
 func (o *Orchestrator) runDecomposition(ctx context.Context, root task.Record, ex taskExecutor) {
-	outcome, err := decompose.DrainPlan(ctx, root, o.taskOracle, o.taskDecomp, ex,
+	outcome, err := decompose.DrainPlan(ctx, root, o.taskDecomp, ex,
 		decompose.DefaultSlots, decompose.DefaultMaxDepth, &planObserver{o: o, root: root.ID})
 
 	executed := 0
-	nodes := make([]map[string]any, 0, len(outcome.Nodes))
 	for _, n := range outcome.Nodes {
-		nodes = append(nodes, map[string]any{
-			"task_id": n.ID, "goal": n.Goal, "status": string(n.Status), "deps": n.Deps,
-		})
 		if n.Status == task.Done {
 			executed++
 		}
 	}
-	payload := map[string]any{
-		"root": root.ID, "goal": root.Goal, "phase": "ended", "nodes": nodes,
-		"executed": executed,
-	}
-	if err != nil {
-		payload["error"] = err.Error()
-	}
-	o.publish("TASK_PLAN", state.ContentTaskPlan, payload)
+	o.publish("TASK_PLAN", state.ContentTaskPlan, planSummary(root, outcome.Nodes, executed, err))
 }
 
 // responseSignal maps a [C] response-classifier verdict to a reconciler signal.

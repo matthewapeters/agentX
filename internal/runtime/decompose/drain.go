@@ -25,17 +25,18 @@ type PlanOutcome struct {
 	Nodes []task.Record
 }
 
-// DrainPlan seeds a task DAG with a compound root and runs the scheduler to completion over
-// the given oracle / decomposer / executor, returning the final node states. It is the pure
-// bridge from the Decompose route to the scheduler — no bus, no I/O — so the wiring is
+// DrainPlan seeds a task DAG with a root node (already carrying its declared Kind — the
+// caller decides Step/Task, never inferred here) and runs the scheduler to completion over
+// the given decomposer / executor, returning the final node states. It is the pure bridge
+// from the Decompose route to the scheduler — no bus, no I/O — so the wiring is
 // unit-testable. slots < 1 and maxDepth are defaulted by scheduler.New. obs (nil ⇒ silent)
 // receives lifecycle callbacks as the plan drains (ADR 0009 §9a).
-func DrainPlan(ctx context.Context, root task.Record, oracle scheduler.Oracle, dec scheduler.Decomposer, ex scheduler.Executor, slots, maxDepth int, obs scheduler.Observer) (PlanOutcome, error) {
+func DrainPlan(ctx context.Context, root task.Record, dec scheduler.Decomposer, ex scheduler.Executor, slots, maxDepth int, obs scheduler.Observer) (PlanOutcome, error) {
 	g := task.NewGraph()
 	if err := g.Add(root); err != nil {
 		return PlanOutcome{}, err
 	}
-	s := scheduler.New(g, oracle, dec, ex, slots, maxDepth, scheduler.WithObserver(obs))
+	s := scheduler.New(g, dec, ex, slots, maxDepth, scheduler.WithObserver(obs))
 	err := s.Run(ctx)
 
 	out := PlanOutcome{Nodes: g.Nodes()}

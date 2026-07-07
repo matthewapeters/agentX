@@ -10,6 +10,16 @@ Realizes **Phase 3** of `docs/architecture/adr/0008-recursive-task-decomposition
 *"The readiness state machine (BLOCKED / NEEDS-DECOMPOSE / RUNNABLE / DONE / FAILED), single
 shared slot budget, cycle + depth guards, breadth-first v1."*
 
+> **Addendum (2026-07-07): typed DAG nodes superseded the Oracle.** The ADR's amendment
+> section retired the `Oracle` interface described below — dispatch is now a switch on the
+> node's declared `task.Kind` (`KindTask` executes, `KindStep` decomposes), decided by the
+> planner at generation time rather than voted on by an injected atomicity test. Below, read
+> every "atomic leaf" as "Task leaf" and "non-atomic node" as "Step node" — the state
+> machine, slot budget, and parent-as-join mechanics this doc describes are unchanged; only
+> the READINESS test's source changed (`Kind` field, not an `Oracle.Atomic` call). The
+> runnable contract (`tests/features/runtime/task_scheduler.feature`) has been updated to
+> this vocabulary; this historical section is left as originally written below it.
+
 The scheduler is the load-bearing piece: it walks the live `task.Graph`, drives every node
 through one state machine, and — treating "not yet atomic" as just another not-ready state —
 makes lazy decomposition and interleaved execution fall out of a single loop. It is

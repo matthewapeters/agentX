@@ -10,6 +10,7 @@ identical to the runtime fallbacks, giving a common baseline from which to tune.
 | `agentx-instructions.md` | `~/.config/agentx/agentx-instructions.md` | `prompting.DefaultSystemPrompt` | uses the constant |
 | `agentx-thinking.md` | `~/.config/agentx/agentx-thinking.md` | `prompting.DefaultThinkingPrompt` | uses the constant |
 | `agentx-classification.md` | `~/.config/agentx/agentx-classification.md` | `classify.DefaultPrompt` | uses the constant |
+| `agentx-planner.md` | `~/.config/agentx/agentx-planner.md` | `planner.DefaultPromptTemplate` | uses the constant |
 | `bootstrap-prompt.md` | `~/.config/agentx/bootstrap-prompt.md` | none — seed *is* the baseline | startup auto-submit is skipped |
 | `agentx-shell-commands.md` | `~/.config/agentx/agentx-shell-commands.md` | `tools.DefaultCatalog` | uses the constant |
 | `agentx-tool-blacklist.toml` | `~/.config/agentx/agentx-tool-blacklist.toml` | none — seed *is* the baseline | no blacklist rules |

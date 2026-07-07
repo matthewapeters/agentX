@@ -1,12 +1,15 @@
-// Package scheduler is the DAG scheduler of ADR 0008 Phase 3. It walks a live
-// task.Graph and drives every node through one derived state machine — DONE / FAILED /
+// Package scheduler is the DAG scheduler of ADR 0008 (amended 2026-07-07). It walks a
+// live task.Graph and drives every node through one derived state machine — DONE / FAILED /
 // BLOCKED / IN-FLIGHT / RUNNABLE / NEEDS-DECOMPOSE / NEEDS-CLARIFY — so that lazy
-// decomposition and interleaved execution fall out of a single loop. Treating "not yet
-// atomic" as just another not-ready state is what unifies the two.
+// decomposition and interleaved execution fall out of a single loop.
 //
-// The scheduler is itself LLM-free: the atomicity test (Oracle), the decomposition
-// (Decomposer), and the execution (Executor) are injected, so the orchestration logic
-// is unit-testable with deterministic stubs. Real classifier/decomposer wiring is Phase 4.
+// Dispatch is a cheap switch on the node's declared task.Kind (Task executes, Step
+// decomposes) — never an inferred vote. Earlier this scheduler asked an injected Oracle to
+// vote on every dispatch ("is this atomic?"); the amendment retired that in favor of the
+// planner declaring Kind at generation time, which makes a tool-call loop structurally
+// impossible rather than merely guarded against. The decomposition (Decomposer) and
+// execution (Executor) collaborators are still injected, so the orchestration logic stays
+// unit-testable with deterministic stubs.
 //
 // Concurrency model: continuous. Up to `slots` workers run as goroutines; the graph is
 // mutated only on the main loop goroutine (workers report results over a channel), so the
@@ -64,18 +67,12 @@ func WithObserver(obs Observer) Option {
 	return func(s *Scheduler) { s.observer = obs }
 }
 
-// Oracle decides whether a task is atomic — it type-resolves AND is one-step (the ADR §2
-// refinement). Classifier-backed in production; stubbed in tests.
-type Oracle interface {
-	Atomic(ctx context.Context, rec task.Record) (bool, error)
-}
-
-// Decomposer expands a non-atomic node into child records + a synthesis, in a branch.
+// Decomposer expands a Step node into child records + a synthesis, in a branch.
 type Decomposer interface {
 	Decompose(ctx context.Context, rec task.Record) (branch.Result, error)
 }
 
-// Executor drains an atomic leaf into a verified effect (the existing executor seam).
+// Executor drains a Task leaf into a verified effect (the existing executor seam).
 type Executor interface {
 	Execute(ctx context.Context, rec task.Record) executor.Outcome
 }
@@ -83,7 +80,6 @@ type Executor interface {
 // Scheduler runs a task.Graph to completion over its injected collaborators.
 type Scheduler struct {
 	graph      *task.Graph
-	oracle     Oracle
 	decomposer Decomposer
 	executor   Executor
 	slots      int
@@ -96,16 +92,16 @@ type Scheduler struct {
 }
 
 // New builds a scheduler. slots < 1 is clamped to 1. A negative maxDepth means "unset" and
-// uses the branch default; maxDepth == 0 is a valid strict bound (depth-0 nodes may not
-// decompose — they must be atomic or fail to Ask).
-func New(g *task.Graph, o Oracle, d Decomposer, e Executor, slots, maxDepth int, opts ...Option) *Scheduler {
+// uses the branch default; maxDepth == 0 is a valid strict bound (depth-0 Step nodes may
+// not decompose — they must arrive as a Task or fail to Ask).
+func New(g *task.Graph, d Decomposer, e Executor, slots, maxDepth int, opts ...Option) *Scheduler {
 	if slots < 1 {
 		slots = 1
 	}
 	if maxDepth < 0 {
 		maxDepth = branch.DefaultMaxDepth
 	}
-	s := &Scheduler{graph: g, oracle: o, decomposer: d, executor: e, slots: slots, maxDepth: maxDepth}
+	s := &Scheduler{graph: g, decomposer: d, executor: e, slots: slots, maxDepth: maxDepth}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -216,44 +212,47 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}
 }
 
-// work runs one candidate off the main loop: classify atomicity, then execute a leaf,
-// decompose a non-atomic node, or (at max depth) fail to Ask. It reports back on done.
+// work runs one candidate off the main loop: dispatch on the node's declared Kind — a
+// Task executes, a Step decomposes (or, at max depth, fails to Ask). It reports back on
+// done.
 func (s *Scheduler) work(ctx context.Context, rec task.Record, d int, done chan<- workDone) {
-	atomicNode, err := s.oracle.Atomic(ctx, rec)
-	if err != nil {
-		done <- workDone{id: rec.ID, kind: doneError}
-		return
-	}
-	if atomicNode {
-		out := s.executor.Execute(ctx, rec)
-		st := task.Failed
-		if out.Status == executor.Executed {
-			st = task.Done
+	switch rec.Kind {
+	case task.KindTask:
+		done <- workDone{id: rec.ID, kind: doneExecute, status: s.execute(ctx, rec)}
+	case task.KindStep:
+		if d >= s.maxDepth {
+			done <- workDone{id: rec.ID, kind: doneAsk} // bounded recursion → clarify
+			return
 		}
-		done <- workDone{id: rec.ID, kind: doneExecute, status: st}
-		return
-	}
-	if d >= s.maxDepth {
-		done <- workDone{id: rec.ID, kind: doneAsk} // bounded recursion → clarify
-		return
-	}
-	res, err := s.decomposer.Decompose(ctx, rec)
-	if errors.Is(err, ErrNoProgress) {
-		// The decomposition would not advance the plan (echoed goal). The node is
-		// effectively atomic: execute it rather than recurse — the anti-spiral fallback.
-		out := s.executor.Execute(ctx, rec)
-		st := task.Failed
-		if out.Status == executor.Executed {
-			st = task.Done
+		res, err := s.decomposer.Decompose(ctx, rec)
+		if errors.Is(err, ErrNoProgress) {
+			// The decomposition would not advance the plan (e.g. echoed goal, or the
+			// planner's declared cap/shape violated even under schema constraint). The
+			// node executes as a Task for one attempt rather than recurse — the
+			// anti-spiral fallback.
+			done <- workDone{id: rec.ID, kind: doneExecute, status: s.execute(ctx, rec)}
+			return
 		}
-		done <- workDone{id: rec.ID, kind: doneExecute, status: st}
-		return
-	}
-	if err != nil {
+		if err != nil {
+			done <- workDone{id: rec.ID, kind: doneError}
+			return
+		}
+		done <- workDone{id: rec.ID, kind: doneDecompose, result: res}
+	default:
+		// A node reaching the scheduler without a valid declared Kind is a producer bug
+		// (every node — root included — must carry one); fail loudly rather than guess.
 		done <- workDone{id: rec.ID, kind: doneError}
-		return
 	}
-	done <- workDone{id: rec.ID, kind: doneDecompose, result: res}
+}
+
+// execute drains a Task leaf through the executor and maps its outcome to a terminal
+// status.
+func (s *Scheduler) execute(ctx context.Context, rec task.Record) task.Status {
+	out := s.executor.Execute(ctx, rec)
+	if out.Status == executor.Executed {
+		return task.Done
+	}
+	return task.Failed
 }
 
 // applyDecompose merges a branch's children into the graph and makes the parent a join:

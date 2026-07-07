@@ -83,12 +83,16 @@ func ParseProposal(raw string) (Proposal, error) {
 	}
 	args := make(map[string]string, len(decoded.Args))
 	for k, v := range decoded.Args {
-		args[k] = stringifyArg(v)
+		args[k] = StringifyArg(v)
 	}
 	return Proposal{Tool: decoded.Tool, Args: args}, nil
 }
 
-func stringifyArg(v any) string {
+// StringifyArg normalizes a JSON-decoded arg value (string/float64/bool/nil/other) to its
+// canonical string form — the executor's string-args model. Exported so a pre-resolved
+// tool call (e.g. a planner-produced Task's Params, ADR 0008 amendment) can be converted
+// the same way a freshly-parsed Proposal's args are, without a second conversion routine.
+func StringifyArg(v any) string {
 	switch t := v.(type) {
 	case string:
 		return t

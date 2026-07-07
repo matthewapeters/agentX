@@ -1,20 +1,18 @@
-// Package decompose adapts the real classifier, branch, and planner to the scheduler's
-// injected seams (ADR 0008 Phase 4c). The scheduler stays LLM-free; these adapters are
-// where its Oracle and Decomposer become concrete.
+// Package decompose adapts the real branch and planner to the scheduler's injected
+// Decomposer seam (ADR 0008, amended 2026-07-07). The scheduler stays LLM-free; this
+// adapter is where its Decomposer becomes concrete.
 //
-//   - Oracle: a node is atomic iff the action classifier resolves its goal to a single
-//     actionable type AND a one-step check passes (the ADR §2 refinement — the canonical
-//     fixture proved type-resolution alone is not enough).
-//   - Decomposer: forks a Phase-2 investigating branch (isolated, WM-snapshotted, read-
-//     restricted), runs the planner inside it, and seals a branch.Result of child records
-//     + synthesis.
+// Decomposer forks a Phase-2 investigating branch (isolated, WM-snapshotted, read-
+// restricted), runs the planner inside it, and seals a branch.Result of child records +
+// synthesis. The planner declares each child's Kind (Step/Task) at generation time — the
+// amendment retired the separate "atomicity oracle" that used to vote on this per node;
+// Decomposer's only remaining judgment call is the echo check (a child that just restates
+// the parent's goal), which a JSON-schema constraint cannot catch since it's semantic, not
+// structural. A violation gets one retry with the problem named, then the node degrades to
+// executing as a Task (scheduler.ErrNoProgress) rather than recursing.
 //
-// The classifier / one-step / planner collaborators are narrow interfaces, so the adapters
-// are unit-testable with stubs and the live wiring (pipeline classifier, LLM planner) lands
-// in Phase 4d/4e.
-//
-// Design: docs/architecture/adr/0008-recursive-task-decomposition-and-dag-scheduler.md.
-// Behavior: docs/architecture/behavior/adr/0008_task_decomposition_integration.feature.md.
+// Design: docs/architecture/adr/0008-recursive-task-decomposition-and-dag-scheduler.md
+// (amendment section). Behavior: docs/architecture/behavior/adr/0008_task_decomposition_integration.feature.md.
 package decompose
 
 import (
@@ -22,7 +20,6 @@ import (
 	"fmt"
 	"strings"
 
-	"agentx/internal/llm/fanout"
 	"agentx/internal/prompting/planner"
 	"agentx/internal/prompting/task"
 	"agentx/internal/runtime/branch"
@@ -30,48 +27,13 @@ import (
 	"agentx/internal/session"
 )
 
-// ActionClassifier resolves a goal to an action verdict (the tuned action_classify group).
-type ActionClassifier interface {
-	ClassifyAction(ctx context.Context, goal string) (fanout.Decision, error)
-}
-
-// OneStepChecker answers whether a goal is satisfiable in a single executor step, rather
-// than a narrated multi-step effort. It is the ADR §2 one-step detector.
-type OneStepChecker interface {
-	OneStep(ctx context.Context, goal string) (bool, error)
-}
-
-// Oracle is the scheduler's atomicity oracle: resolve AND one-step.
-type Oracle struct {
-	Action  ActionClassifier
-	OneStep OneStepChecker // nil ⇒ resolution alone decides (degenerate; see note)
-}
-
-// Atomic reports whether a node is an atomic leaf. It is non-atomic when the action
-// classifier abstains or resolves to "none"/"" (it does not name an actionable type), or
-// when it resolves but the one-step check says the goal needs several steps. Only a node
-// that both resolves and is one-step is handed to the executor.
-func (o Oracle) Atomic(ctx context.Context, rec task.Record) (bool, error) {
-	d, err := o.Action.ClassifyAction(ctx, rec.Goal)
-	if err != nil {
-		return false, err
-	}
-	if d.Abstained || d.Verdict == "" || d.Verdict == "none" {
-		return false, nil // does not resolve to an actionable type ⇒ decompose
-	}
-	if o.OneStep == nil {
-		return true, nil
-	}
-	return o.OneStep.OneStep(ctx, rec.Goal)
-}
-
 // Planner renders a goal (with the branch's investigation context) into a parsed plan.
 // parentID namespaces the child ids so the sub-plan is session-unique (Phase-1 DAG).
 type Planner interface {
 	Plan(ctx context.Context, parentID, goal, contextText string) (planner.Plan, error)
 }
 
-// Decomposer is the scheduler's decomposer: it plans a non-atomic goal in an isolated,
+// Decomposer is the scheduler's decomposer: it plans a Step's goal in an isolated,
 // read-restricted branch and returns only the plan.
 type Decomposer struct {
 	Planner   Planner
@@ -87,6 +49,12 @@ type Decomposer struct {
 // branch is plan-only (Phase 2), so decomposition cannot mutate. The scheduler has already
 // bounded recursion depth before calling this, so the branch fork here starts a fresh
 // isolated context.
+//
+// A plan whose only defect is a child echoing the parent's goal (SimilarGoals — the one
+// thing a JSON-schema constraint cannot catch, since it's semantic) gets one retry, with
+// the violation named in the regenerated context, before Decompose gives up and returns an
+// error wrapping scheduler.ErrNoProgress — the scheduler then executes the node as a Task
+// for one attempt rather than recurse (tidy-cove's anti-spiral guarantee, generalized).
 func (d Decomposer) Decompose(ctx context.Context, rec task.Record) (branch.Result, error) {
 	var facts []session.Fact
 	if d.Facts != nil {
@@ -96,19 +64,17 @@ func (d Decomposer) Decompose(ctx context.Context, rec task.Record) (branch.Resu
 	if err != nil {
 		return branch.Result{}, err
 	}
-	plan, err := d.Planner.Plan(ctx, rec.ID, rec.Goal, factsContext(b.Facts()))
-	if err != nil {
-		return branch.Result{}, err
-	}
-	// Non-progress guard (ADR 0009, tidy-cove spiral): a child that echoes the parent's
-	// goal would recurse forever — refuse, so the scheduler executes the node instead.
-	for _, child := range plan.Records {
-		if SimilarGoals(rec.Goal, child.Goal) {
-			return branch.Result{}, fmt.Errorf(
-				"decompose %q: child %q echoes the parent goal: %w",
-				rec.ID, child.ID, scheduler.ErrNoProgress)
+
+	ctxText := factsContext(b.Facts())
+	plan, violation := d.attemptPlan(ctx, rec, ctxText)
+	if violation != "" {
+		retryCtx := ctxText + "\n\nYour previous attempt was invalid: " + violation + ". Fix this and reply again."
+		plan, violation = d.attemptPlan(ctx, rec, retryCtx)
+		if violation != "" {
+			return branch.Result{}, fmt.Errorf("decompose %q: %s (after retry): %w", rec.ID, violation, scheduler.ErrNoProgress)
 		}
 	}
+
 	for _, child := range plan.Records {
 		if err := b.Add(child); err != nil {
 			return branch.Result{}, err
@@ -116,6 +82,25 @@ func (d Decomposer) Decompose(ctx context.Context, rec task.Record) (branch.Resu
 	}
 	b.SetSynthesis(plan.Synthesis)
 	return b.Seal(), nil
+}
+
+// attemptPlan calls the planner once and classifies the result: a valid plan with an empty
+// violation, or a violation description the caller can feed back into a retry prompt. Most
+// structural violations (too many children, a node missing/mixing task-or-step) are caught
+// by planner.Parse (itself a backstop behind PlanSchema's JSON-schema constraint) and
+// surface here as the Plan error's text; the echo check is Decomposer's own, since it needs
+// the parent's goal, which Parse never sees.
+func (d Decomposer) attemptPlan(ctx context.Context, rec task.Record, contextText string) (planner.Plan, string) {
+	plan, err := d.Planner.Plan(ctx, rec.ID, rec.Goal, contextText)
+	if err != nil {
+		return planner.Plan{}, err.Error()
+	}
+	for _, child := range plan.Records {
+		if SimilarGoals(rec.Goal, child.Goal) {
+			return planner.Plan{}, fmt.Sprintf("child %q echoes the parent goal", child.ID)
+		}
+	}
+	return plan, ""
 }
 
 // factsContext renders the branch's inherited facts as "key: value" lines for the planner

@@ -9,6 +9,42 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Typed DAG nodes — Step vs. Task (ADR 0008 amendment).** The scheduler's LLM
+  "atomicity oracle" (a vote on every dispatch) is retired: the planner now declares
+  each node's kind — `Step` (decomposes, ≤5 children) or `Task` (a leaf, executes
+  once, never decomposes) — at generation time, under Ollama JSON-schema-constrained
+  decoding (`Format`, already used by the fan-group classifiers, newly wired to the
+  planner). A tool-call loop is now structurally impossible rather than merely
+  guarded against, and this retires `decompose.Oracle`/`ForceRoot`/`HeuristicOneStep`
+  and the clause-verb lexicon from the entries above outright — one declared field
+  replaces three inference-time patches. New `task.Kind`/`KindStep`/`KindTask`;
+  `scheduler.Node`/`Step`/`Task` interfaces (+ adapters) for code that needs to hold
+  a typed node; `planner.PlanSchema()` (the `oneOf(task,step)` wire shape — a node
+  carries exactly one of `{"task":{"tool","args","explanation"}}` or
+  `{"step":{"description","deliverable"}}`, discriminated by key presence, not a
+  flat tag, so a task cannot structurally acquire step-shaped fields or vice versa).
+  A `Task` node's tool call is pre-resolved by the planner itself and the executor
+  skips the separate proposer LLM call for it (`executor.resolvedProposal`) — one
+  fewer model round-trip per leaf. A decomposition violation (>5 children, invalid/
+  missing kind, or a child echoing its parent — the one thing schema-constraint
+  can't catch, still `SimilarGoals`) gets one retry with the problem named, then
+  degrades to executing as a Task rather than recursing (reuses the existing
+  `scheduler.ErrNoProgress` fallback). The planner's system prompt moved out of a
+  hardcoded Go constant into `config/seed/agentx-planner.md` (mirrors
+  `agentx-classification.md`'s pattern) so the Step/Task rules can be tuned without
+  a rebuild. Retiring the Oracle also removed `buildDecomposition`'s only real
+  dependency on the experimental prompt corpus, so `invoke_planner` now works even
+  with no `prompts.toml` configured — a deliberate behavior broadening, not just a
+  refactor. Live-verified end to end against Ollama and the real filesystem (real
+  classifier → real schema-constrained planner → real scheduler → real executor,
+  including the skip-propose path): `oneOf`/`maxItems:5`/`minLength` all honored,
+  correct Step/Task mix, bounded recursion, zero spiral on the exact prompts that
+  previously broke (`tidy-cove`, `nimble-otter`). That run also surfaced a real,
+  pre-existing (not introduced by this change) gap worth a follow-up: a step's
+  decomposition only sees session working-memory facts, not its own siblings'
+  tool findings, so a later step can still guess a plausible-but-wrong path (e.g.
+  assuming `package.json` in a Go project) instead of using what was already
+  discovered earlier in the same plan.
 - **Pre-response plan execution (`invoke_planner` goes live).** The prompt classifier
   was rewritten as a request-type gate — it classifies the *kind* of request by verb
   and scope and is forbidden from judging missing specifics ("which project") or
@@ -33,6 +69,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   clause chaining); a non-progress guard (`scheduler.ErrNoProgress` — a child that
   echoes its parent executes instead of recursing, with stopword/verb-synonym
   tolerant similarity); and `decompose.DefaultMaxDepth = 3` (was 10).
+- **Plan widget in the Output surface (ADR 0009 §9c).** Each plan renders as one live
+  widget ("🗺 plan") created the moment planning starts — before anything executes —
+  and mutated in place by the streamed deltas: ⏳ running steps with elapsed time,
+  ⑂ decomposition with children indented under the parent, ✅/❌/⊘ completion glyphs
+  with per-step durations (from server event epochs), an "N running ∥" parallel cue
+  in the title, and 🚫 blocked marks plus an ⚠ error line on an incomplete plan. The
+  widget persists in the transcript as the record of what ran.
+
+- **Nested tool widgets under the plan (ADR 0009 §9c.2).** The executor gained a
+  `CallObserver` seam that announces every resolved call *before* it runs and reports
+  its terminal outcome (including denied attempts). Plan-leaf calls publish
+  `tool_call`/`tool_result` events tagged with their step's task id; the Output
+  surface nests them as indented boxes under the 🗺 plan — "🔧 <tool> · <step>" with
+  the rendered command, and a collapsed "📋 result · <outcome>" that expands to the
+  height-capped, scrollable body. Untagged (single_tool cycle) events render flat as
+  before.
 - **`internal/jsonx`** — one tolerant first-JSON-object extractor shared by the
   classifier, tool proposer, and planner, so a model reply wrapped in ```json fences
   parses everywhere (the calm-pebble planner failure); the two hand-rolled duplicate
@@ -63,6 +115,29 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   resolved. New `session.GenerateName`, `session.Store.UniqueName`, `cli.NewSessionName`,
   and `Command.GenSessionName`. The `ax` launcher now uses it in place of a random
   base64 string (which could contain `/`, `+`, `=`).
+
+### Fixed
+
+- **Read tools no longer phantom (the mellow-meadow first-leaf kill).** `FSVerifier`
+  stat-ed the "path" arg as a file target, so every successful `list_dir` — whose
+  path is a directory — failed verification, was reported Phantom, and (in a plan)
+  marked Failed, stranding every dependent step. Read-class tools now verify on
+  clean exit + output present (the output *is* the effect); write semantics are
+  unchanged.
+- **Incomplete plans report loudly.** The final `task_plan` snapshot now derives a
+  "plan incomplete: N failed, M abstained, K never ran" error from node statuses;
+  previously a plan with one failed leaf and five stranded nodes reported no error
+  (the blocked diagnostic only fired when *nothing* executed).
+- **The plan root always decomposes (`decompose.ForceRoot`).** The request classifier
+  already judged an `invoke_planner` turn multi-step; re-litigating that with the
+  one-step heuristic let compound goals run as a single leaf on lexicon gaps
+  (nimble-otter: "review X **and suggest** Y" executed one `list_dir` and answered
+  from a top-level listing). The heuristic now only arbitrates children, and its
+  clause-verb lexicon was broadened (suggest, describe, explain, improve, …).
+- **Thinking restored on the plan path.** The plan-handled response hard-coded the
+  no-thinking variant, so a successful plan never showed a 💭 widget even with
+  `thinking.routes.invoke_planner = true`; the synthesis over findings now gets the
+  same route-aware thinking pass as a direct answer.
 
 ### Changed
 

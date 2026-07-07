@@ -25,13 +25,10 @@ func (r *recObserver) NodeCompleted(id string, status task.Status) {
 
 type oneSplit struct{}
 
-func (oneSplit) Atomic(_ context.Context, rec task.Record) (bool, error) {
-	return rec.ID != "root", nil
-}
 func (oneSplit) Decompose(_ context.Context, rec task.Record) (branch.Result, error) {
 	return branch.Result{Records: []task.Record{
-		{ID: "root-1", Goal: "leaf one", Type: task.Query, Status: task.Proposed, Deps: []string{}},
-		{ID: "root-2", Goal: "leaf two", Type: task.Query, Status: task.Proposed, Deps: []string{}},
+		{ID: "root-1", Goal: "leaf one", Type: task.Query, Kind: task.KindTask, Status: task.Proposed, Deps: []string{}},
+		{ID: "root-2", Goal: "leaf two", Type: task.Query, Kind: task.KindTask, Status: task.Proposed, Deps: []string{}},
 	}}, nil
 }
 
@@ -39,9 +36,9 @@ func (oneSplit) Decompose(_ context.Context, rec task.Record) (branch.Result, er
 // the root dispatch, its decomposition, both leaf completions, and the root join.
 func TestObserverStreamsLifecycle(t *testing.T) {
 	g := task.NewGraph()
-	_ = g.Add(task.Record{ID: "root", Goal: "compound", Type: task.Query, Status: task.Proposed, Deps: []string{}})
+	_ = g.Add(task.Record{ID: "root", Goal: "compound", Type: task.Query, Kind: task.KindStep, Status: task.Proposed, Deps: []string{}})
 	obs := &recObserver{}
-	s := New(g, oneSplit{}, oneSplit{}, okExec{}, 1, 10, WithObserver(obs))
+	s := New(g, oneSplit{}, okExec{}, 1, 10, WithObserver(obs))
 	if err := s.Run(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -76,16 +73,12 @@ func (echoDecomp) Decompose(context.Context, task.Record) (branch.Result, error)
 	return branch.Result{}, fmt.Errorf("child echoes parent: %w", ErrNoProgress)
 }
 
-type neverAtomic struct{}
-
-func (neverAtomic) Atomic(context.Context, task.Record) (bool, error) { return false, nil }
-
 // TestNoProgressExecutesInsteadOfRecursing: the anti-spiral fallback — a non-progress
-// decomposition executes the node as atomic (Done), never recurses, never fails it.
+// decomposition executes the node as a Task (Done), never recurses, never fails it.
 func TestNoProgressExecutesInsteadOfRecursing(t *testing.T) {
 	g := task.NewGraph()
-	_ = g.Add(task.Record{ID: "n", Goal: "run ls -la", Type: task.Query, Status: task.Proposed, Deps: []string{}})
-	s := New(g, neverAtomic{}, echoDecomp{}, okExec{}, 1, 10)
+	_ = g.Add(task.Record{ID: "n", Goal: "run ls -la", Type: task.Query, Kind: task.KindStep, Status: task.Proposed, Deps: []string{}})
+	s := New(g, echoDecomp{}, okExec{}, 1, 10)
 	if err := s.Run(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}

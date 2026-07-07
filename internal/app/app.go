@@ -81,6 +81,10 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 	if err != nil {
 		return nil, err
 	}
+	plannerPrompt, err := config.ReadPromptFile(paths.PlannerPath())
+	if err != nil {
+		return nil, err
+	}
 	// Optional fan-group prompt corpus (~/.config/agentx/prompts.toml). Absent leaves
 	// the experimental task classifier off. The config dir is derived from an existing
 	// prompt-file path so no new config accessor is needed.
@@ -101,6 +105,7 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ClassificationPrompt:  classification,
 		ClassificationRetries: cfg.ClassificationRetries(),
 		PromptCorpus:          promptCorpus,
+		PlannerPrompt:         plannerPrompt,
 		MaxWidgetLines:        cfg.MaxWidgetLines(),
 		InputMaxLines:         cfg.InputMaxLines(),
 		MarkdownRenderer:      cfg.MarkdownRenderer(),

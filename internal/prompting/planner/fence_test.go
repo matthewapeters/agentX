@@ -4,9 +4,9 @@ import "testing"
 
 // The calm-pebble failure: a valid plan wrapped in a ```json fence must parse.
 func TestParseToleratesFence(t *testing.T) {
-	raw := "```json\n" + `{"plan_name":"Review","synthesis":"look then pick","steps":[
-		{"id":"s1","goal":"list project structure","deps":[],"cost":2},
-		{"id":"s2","goal":"pick weakest feature","deps":["s1"],"cost":2}]}` + "\n```"
+	raw := "```json\n" + `{"plan":{"name":"Review","objective":"look then pick","dag":[
+		{"id":"s1","deps":[],"task":{"tool":"list_dir","args":{"path":"."},"explanation":"list project structure"}},
+		{"id":"s2","deps":["s1"],"step":{"description":"pick weakest feature","deliverable":"a chosen feature"}}]}}` + "\n```"
 	plan, err := Parse("task-9", []byte(raw))
 	if err != nil {
 		t.Fatalf("Parse fenced plan: %v", err)

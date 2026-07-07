@@ -22,6 +22,20 @@ const (
 	Query    Type = "query"
 )
 
+// Kind selects whether a DAG node decomposes (Step) or executes (Task) — ADR 0008's
+// typed-node amendment. Every node — root included — carries one; there is no third kind
+// and no bare/untyped node. Declared by the planner at generation time, never inferred by
+// the scheduler, so a tool-call loop is structurally impossible: a Task has no decompose
+// operation to call.
+type Kind string
+
+const (
+	// KindStep is a plan node: Decompose() only, never executes directly.
+	KindStep Kind = "step"
+	// KindTask is a tool node: Execute()/Results() only, never decomposes.
+	KindTask Kind = "task"
+)
+
 // Status is the task lifecycle state. proposed/abstained are the classifier-side
 // states; ready/running/done/failed are added when the executor ([E]) lands.
 type Status string
@@ -59,6 +73,7 @@ type Record struct {
 	ID         string         `json:"id"`
 	Goal       string         `json:"goal"`
 	Type       Type           `json:"type"`
+	Kind       Kind           `json:"kind"`
 	Status     Status         `json:"status"`
 	Params     map[string]any `json:"params,omitempty"`
 	Deps       []string       `json:"deps"`
@@ -71,11 +86,17 @@ type Record struct {
 // pure-conversation turn emits nothing. An abstained decision still emits a record
 // (status "abstained") so the uncertainty survives and the caller can ask. escalated
 // is the cascade's Tier-1→Tier-2 escalation flag, carried into provenance.
+//
+// Kind defaults to KindTask: this record is normally drained directly (Redispatch/
+// Reify/Verify), never decomposed. The one call site that instead routes it through the
+// scheduler as a plan root (the Decompose reconcile route) overrides Kind to KindStep —
+// the reconciler has already judged the goal multi-step by the time it gets there.
 func FromAction(id, goal string, action fanout.Decision, escalated bool) (Record, bool) {
 	rec := Record{
 		ID:   id,
 		Goal: goal,
 		Type: Type(action.Verdict),
+		Kind: KindTask,
 		Deps: []string{},
 		Provenance: Provenance{
 			Source:     "turn",
