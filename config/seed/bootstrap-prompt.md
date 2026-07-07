@@ -8,4 +8,4 @@
     - want agentX to remember something? Add it to Working Memory.
 
 [USER]
-Hi!  Identify yourself!  Feel like sharing just one tip with me?
+Hi!  Identify yourself!  Feel like sharing just one random tip with me?
