@@ -26,6 +26,8 @@ func registerReconcileSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the turn is actionable$`, w.turnActionable)
 	sc.Step(`^the turn is not actionable$`, w.turnNotActionable)
 	sc.Step(`^the turn classification abstained$`, w.turnAbstained)
+	sc.Step(`^the turn abstained leaning toward actionable$`, w.turnAbstainedLeansActionable)
+	sc.Step(`^the turn abstained with a scatter toward none$`, w.turnAbstainedScatterNone)
 	sc.Step(`^the response executed the action$`, w.responseExecuted)
 	sc.Step(`^the response produced the action without executing it$`, w.responseProduced)
 	sc.Step(`^the response did nothing$`, w.responseNothing)
@@ -47,6 +49,18 @@ func (w *reconcileWorld) turnNotActionable() error {
 
 func (w *reconcileWorld) turnAbstained() error {
 	w.turn.Abstained = true
+	return nil
+}
+
+func (w *reconcileWorld) turnAbstainedLeansActionable() error {
+	w.turn.Abstained = true
+	w.turn.LeansActionable = true
+	return nil
+}
+
+func (w *reconcileWorld) turnAbstainedScatterNone() error {
+	w.turn.Abstained = true
+	w.turn.LeansActionable = false
 	return nil
 }
 

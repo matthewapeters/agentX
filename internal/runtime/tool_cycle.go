@@ -43,6 +43,11 @@ func (o *Orchestrator) buildTools() error {
 			return o.model.Chat(ctx, o.settings.OllamaModel, msgs, func(string) {}, nil)
 		}
 		o.proposer = tools.NewProposer(o.settings.ToolCatalog, o.settings.ClassificationRetries, chat)
+		// Ground every proposal in cwd/project facts (not history — a tool resolution is a
+		// narrow job). Fixes both the single_tool route (runToolPhase, below) and the
+		// executor's own Redispatch/Reify fallback (buildTaskExecutor shares this same
+		// instance) in one place, since they call the same *Proposer.
+		o.proposer.Facts = o.workingMemoryFacts
 	}
 	return nil
 }

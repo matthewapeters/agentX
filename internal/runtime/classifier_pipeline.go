@@ -234,8 +234,9 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 	rec, hasTask := task.FromAction(fmt.Sprintf("task-%d", userOrd), turn, res.Action, res.Escalated)
 	route, why := reconcile.Reconcile(
 		reconcile.TurnSignal{
-			Actionable: hasTask && rec.Status == task.Proposed,
-			Abstained:  hasTask && rec.Status == task.Abstained,
+			Actionable:      hasTask && rec.Status == task.Proposed,
+			Abstained:       hasTask && rec.Status == task.Abstained,
+			LeansActionable: leansActionable(res.Action),
 		},
 		respSig,
 	)
@@ -295,13 +296,20 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 
 // runDecomposition drains a compound goal through the scheduler in the background (so the
 // turn is never blocked), streaming per-node task_node deltas as it goes (ADR 0009 §9a —
-// all execution is user-visible while it runs) and closing with the final task_plan
-// snapshot. root already carries Kind: task.KindStep (set by the caller, per the ADR 0008
-// amendment — the reconciler judged this goal compound, so there is no oracle to
-// re-litigate that here). Best-effort, like the rest of the classifier path: a
-// decomposition error is surfaced on the plan event, never as a disturbed prompt cycle.
+// all execution is user-visible while it runs), then — unlike before — closes the loop with
+// a synthesized follow-up answer when it found anything, mirroring what the foreground plan
+// cycle (runPlanPhase) already does. Without this, a background Decompose ran real work and
+// then went silent: the model's own turn had already finished, so nothing ever told the
+// user what the investigation found (clever-raven-3 — the agent narrated "let me check...
+// and run it now" and then just stopped). root already carries Kind: task.KindStep (set by
+// the caller — the reconciler judged this goal compound, so there is no oracle to
+// re-litigate that here). Best-effort: a decomposition error is surfaced on the plan event,
+// never as a disturbed prompt cycle.
 func (o *Orchestrator) runDecomposition(ctx context.Context, root task.Record, ex taskExecutor) {
-	outcome, err := decompose.DrainPlan(ctx, root, o.taskDecomp, ex,
+	o.setProcessing(state.StateWorking, state.PhasePlanning)
+
+	cap := &capturingExec{inner: ex}
+	outcome, err := decompose.DrainPlan(ctx, root, o.taskDecomp, cap,
 		decompose.DefaultSlots, decompose.DefaultMaxDepth, &planObserver{o: o, root: root.ID})
 
 	executed := 0
@@ -311,6 +319,36 @@ func (o *Orchestrator) runDecomposition(ctx context.Context, root task.Record, e
 		}
 	}
 	o.publish("TASK_PLAN", state.ContentTaskPlan, planSummary(root, outcome.Nodes, executed, err))
+
+	planCtx := planContext(cap.steps)
+	if strings.TrimSpace(planCtx) == "" {
+		// Nothing investigated successfully: no grounded follow-up to add. The task_plan's
+		// own "incomplete" error (if any) is the visible signal; close out the background
+		// cycle so the surface doesn't sit on "working" forever.
+		o.setProcessing(state.StateCompleted, state.PhaseNone)
+		return
+	}
+	msgs := o.withContext(o.assembler.Assemble(root.Goal + planCtx))
+	resp, respOrd, rerr := o.streamResponse(ctx, msgs, nil, false, false)
+	o.recordTurn(rerr, true, 0, "", respOrd, resp)
+	o.finishCycle(rerr)
+}
+
+// leansActionable discriminates an abstained [B] action vote whose spread scattered across
+// actionable labels from one that leans toward "none" (genuine non-action ambiguity).
+// Structural, not enum-exhaustive: the strict contract enum is artifact/command/query/none,
+// but a hallucinated out-of-enum label (still quarantined at the fold, not fixed here) is
+// still clearly action-flavored — everything except "none" counts toward action, so this
+// doesn't need to enumerate valid task_types to work correctly (clever-raven-3: spread
+// {command:1, investigation/structure_review:1}, zero weight on "none" → leans actionable).
+func leansActionable(d fanout.Decision) bool {
+	action := 0
+	for label, n := range d.Spread {
+		if label != "none" {
+			action += n
+		}
+	}
+	return action > d.Spread["none"]
 }
 
 // responseSignal maps a [C] response-classifier verdict to a reconciler signal.

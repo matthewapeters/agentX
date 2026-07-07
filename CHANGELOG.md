@@ -9,6 +9,52 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Context Curation** is now stated in `CLAUDE.md` as the project's core design
+  motto: every LLM call gets deliberately curated context for *that specific
+  call*, never a default one-size-fits-all assembly. Written down after tracing
+  session `clever-raven-3`'s stall to exactly this — see below.
+- **Indirect imperatives now classify as actions.** `agentx-classification.md`
+  (+ `classify.DefaultPrompt` fallback) gained a rule: a question about whether
+  something was already done ("did you try X?", "have you considered Y?") is an
+  indirect request to do it now, not conversation. Previously "did you try
+  `tree .`?" classified `respond_directly`, the model narrated "let me check...
+  and run it now" with no tool phase on that route to act on it, and the turn
+  just stopped. Live-verified: the exact text now classifies `single_tool`.
+- **`Ask` folds into `Decompose` when the turn's own abstain leans actionable.**
+  `reconcile.TurnSignal` gained `LeansActionable` — the same spread-shape
+  discriminator `responseSignal` already used for the response classifier's
+  abstain (`LeansProduced`), now applied to the *action* classifier's abstain
+  too (structural: everything except `"none"` counts toward action, so it's
+  robust to the existing out-of-enum label-pollution issue rather than needing
+  to special-case it). An abstain that scattered across actionable labels is not
+  genuinely ambiguous about *whether* it's an action, only *which* — reify a
+  plan instead of silently punting.
+- **The background Decompose route synthesizes a follow-up answer.**
+  `runDecomposition` previously drained a plan and stopped — no synthesized
+  response, unlike the foreground plan cycle. It now folds findings into a real
+  answer via the same `streamResponse`/`recordTurn`/`finishCycle` machinery
+  `runPlanPhase` already uses, with `setProcessing` bookending it so the surface
+  shows "working" during the background investigation instead of going silent.
+  Together with the two entries above, this closes the clever-raven-3 stall
+  end to end: misroute fixed at the gate, and even a residual abstain-but-
+  actionable turn now investigates and answers instead of dead-ending.
+- **`tree` joins the tool catalog** (depth-capped at 3, common generated/
+  vendored dirs excluded) — a bounded structural overview in one call instead
+  of one `list_dir` per directory (each an LLM-authored guess at what to look
+  at next, the repeated cause of hallucinated paths this session).
+- **The tool proposer is grounded in working-memory facts.** Live-testing
+  `tree` surfaced a second bug: `single_tool` resolution had *no* cwd/project
+  context at all — asked to use `tree .`, it proposed `read_file` at `/app` (a
+  hallucinated container-convention path). Unlike the conversational path,
+  this doesn't fold in full history (a tool resolution is a narrow job, not a
+  conversation — Context Curation, not "just reuse `withContext`"): `Proposer`
+  gained a `Facts func() []prompting.Fact` field (mirroring
+  `decompose.Decomposer.Facts`'s existing pattern), folded in as its own
+  system message. One wiring point in `buildTools()` fixes two call sites at
+  once — the `single_tool` route and the executor's own Redispatch/Reify
+  fallback proposal — since both share the same `*Proposer` instance. New
+  `internal/tools/proposal_test.go` (the package's first unit test file).
+  Live-verified: the exact miss now resolves to `tree, path:.`.
 - **Typed DAG nodes — Step vs. Task (ADR 0008 amendment).** The scheduler's LLM
   "atomicity oracle" (a vote on every dispatch) is retired: the planner now declares
   each node's kind — `Step` (decomposes, ≤5 children) or `Task` (a leaf, executes

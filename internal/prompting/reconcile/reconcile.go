@@ -16,6 +16,13 @@ package reconcile
 type TurnSignal struct {
 	Actionable bool
 	Abstained  bool // classification too uncertain to trust
+	// LeansActionable marks an abstained turn whose vote scattered toward actionable
+	// labels rather than "none" — the classifier couldn't resolve WHICH action, but was
+	// confident something actionable was being asked for (e.g. "did you try tree .?" — an
+	// indirect imperative the pre-response gate missed). It discriminates Decompose
+	// (investigate and answer) from Ask (genuine ambiguity — may not be an action at all).
+	// Only meaningful when Abstained is true.
+	LeansActionable bool
 }
 
 // ResponseSignal is the response classifier's read of what the model actually did.
@@ -66,6 +73,13 @@ func Reconcile(turn TurnSignal, resp ResponseSignal) (Route, string) {
 	// checked before the abstain→Ask fallthrough, since the response abstained here.
 	if turn.Actionable && !turn.Abstained && resp.Abstained && resp.LeansProduced {
 		return Decompose, "compound action narrated across steps"
+	}
+	// An abstained turn whose vote still scattered toward actionable labels (not "none")
+	// is not genuinely ambiguous about WHETHER it's an action — only about which one. Reify
+	// a plan and let investigation resolve it, rather than silently punting to Ask (which
+	// today has no visible follow-up — clever-raven-3).
+	if turn.Abstained && turn.LeansActionable {
+		return Decompose, "turn abstained but leaned actionable"
 	}
 	if turn.Abstained || resp.Abstained {
 		return Ask, "classification uncertain"

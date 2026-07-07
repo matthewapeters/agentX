@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Guiding Principle: Context Curation
+
+**Context Curation is AgentX's core design motto.** Every LLM call builds *some* variant
+of context — the goal is deliberately choosing what that variant should contain for
+*that specific call*, never reusing one default assembly everywhere. The
+"context-of-the-context" matters: a request-type classifier, a tool proposer, a
+decomposition planner, and a conversational response are different jobs, and may
+legitimately need different context shapes (working-memory facts, session history, prior
+turn text, a tool catalog, or none of the above). The per-element "enable" toggles on user
+prompts/attachments/responses (`state.DefaultEnabled`, the context surface) are one
+instantiation of this principle at the conversation-history granularity — not the whole of
+it. When touching any LLM call site, actively ask: what context does it have, what's it
+missing, and is that a deliberate choice or an oversight? Treat that question as a standing
+invitation to dig in, not an edge case to note in passing.
+
 ## What This Repository Is
 
 AgentX is a local-first AI agent application. It is a **client-server** app: a core

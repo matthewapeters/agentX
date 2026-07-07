@@ -21,6 +21,17 @@ func DefaultRegistry() *Registry {
 		{ID: "list_dir", Command: "ls", Argv: []string{"ls", "-la", "--", "{path}"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
+		// tree: a bounded structural overview in one call, instead of one list_dir per
+		// directory (each an LLM-authored guess at what to look at next — the repeated
+		// cause of hallucinated paths this session: package.json/tsconfig guessed instead
+		// of observed). Depth capped at 3 and common generated/vendored dirs excluded so
+		// output stays bounded and signal-dense on a large repo; no arg for either, since
+		// BuildArgv requires every "{name}" placeholder to be supplied and this tool's
+		// only variable input is the target path.
+		{ID: "tree", Command: "tree", Argv: []string{"tree", "-L", "3",
+			"-I", "node_modules|.git|vendor|__pycache__|.venv|dist|build|.next|target", "--", "{path}"},
+			Risk: RiskRead, TimeoutSeconds: 30,
+			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
 		{ID: "find_path", Command: "find", Argv: []string{"find", "{root}", "-name", "{name}"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "root", Kind: KindPath, Required: true}, {Name: "name", Kind: KindString, Required: true}}},

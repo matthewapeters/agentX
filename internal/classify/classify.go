@@ -68,7 +68,12 @@ Classify by the verb and scope:
   general knowledge without inspecting the project or environment.
 
 A request commands an action even when it omits names or details — classify it by its
-verb and scope, never by whether you happen to know the specifics. Output only the JSON.`
+verb and scope, never by whether you happen to know the specifics.
+
+A question about whether or how something was already done — "did you try X?", "have you
+tried Y?", "why not Z?", "have you considered W?" — is an INDIRECT request to do X/Y/Z/W
+now. Classify it exactly as you would classify "try X" as an imperative; the interrogative
+grammar does not make it conversational. Output only the JSON.`
 
 // ChatFunc runs a non-streaming chat completion for the assembled messages and
 // returns the full response text.

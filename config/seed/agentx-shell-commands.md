@@ -32,6 +32,10 @@ If none of the listed tools fits the request, reply:
   args: `{"path": string}`
 - `list_dir` — list a directory.
   args: `{"path": string}`
+- `tree` — show a directory's structure (depth-limited to 3, common generated/vendored
+  dirs excluded). Prefer this over repeated `list_dir` calls when you need to see a
+  project's overall layout — one call, not a guess per directory.
+  args: `{"path": string}`
 - `find_path` — find files by name under a directory (name match only).
   args: `{"root": string, "name": string}`
 - `read_output` — re-read a previous tool result that was stored in the session

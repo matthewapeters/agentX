@@ -718,16 +718,27 @@ func (o *Orchestrator) withContext(msgs []prompting.Message) []prompting.Message
 // system message (band 0). The file is the source of truth, re-read fresh each
 // turn. ok is false on a read error or an empty fact set.
 func (o *Orchestrator) workingMemoryMessage() (prompting.Message, bool) {
+	return prompting.WorkingMemoryMessage(o.workingMemoryFacts())
+}
+
+// workingMemoryFacts loads the session's enabled working-memory facts — the shared
+// grounding primitive for any LLM call that needs to resolve "the project"/"here" to a
+// real path. Used for the conversational path (via workingMemoryMessage, folded with full
+// history through withContext) and, more narrowly, for the tool proposer (facts only, no
+// history — a single_tool resolution is a narrow job, not a conversation; see CLAUDE.md's
+// Context Curation principle). nil (via a load error) is a valid "no grounding" result, not
+// a fatal one — callers already treat an empty/absent fact set as "omit the message."
+func (o *Orchestrator) workingMemoryFacts() []prompting.Fact {
 	wm, err := o.store.LoadWorkingMemory(o.id.ID)
 	if err != nil {
-		return prompting.Message{}, false
+		return nil
 	}
 	enabled := wm.Enabled()
 	facts := make([]prompting.Fact, 0, len(enabled))
 	for _, f := range enabled {
 		facts = append(facts, prompting.Fact{Key: f.Key, Value: f.Value})
 	}
-	return prompting.WorkingMemoryMessage(facts)
+	return facts
 }
 
 // thinkForRoute reports whether this turn should reason before answering: the

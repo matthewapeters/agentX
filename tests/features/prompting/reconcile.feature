@@ -79,3 +79,25 @@ Feature: reconcile the turn and response classifications into a route
     And the response abstained with a scatter toward none
     When the classifications are reconciled
     Then the route is "ask"
+
+  # use-case: UC-RECON-DECOMPOSE-TURN  (TC-RECON-009, clever-raven-3)
+  # The turn-side mirror of TC-RECON-007: an abstained ACTION vote whose spread still
+  # leaned actionable (not "none") is not genuinely ambiguous about whether it's an action —
+  # only about which one. Reify a plan rather than silently punting to Ask, regardless of
+  # what the response classifier says (it may resolve cleanly, as it did here — "neither").
+  @unit
+  Scenario: An abstained turn leaning actionable routes to decompose even when the response is clean
+    Given the turn abstained leaning toward actionable
+    And the response did nothing
+    When the classifications are reconciled
+    Then the route is "decompose"
+
+  # use-case: UC-RECON-DECOMPOSE-TURN-NOT  (TC-RECON-010)
+  # The discriminator's negative case on the turn side: an action abstain scattered toward
+  # "none" is genuine ambiguity about whether this is an action at all → still Ask.
+  @unit
+  Scenario: An abstained turn scattered toward none still routes to ask
+    Given the turn abstained with a scatter toward none
+    And the response did nothing
+    When the classifications are reconciled
+    Then the route is "ask"

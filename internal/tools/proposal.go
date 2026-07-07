@@ -27,6 +27,13 @@ type Proposer struct {
 	assembler *prompting.Assembler
 	chat      ChatFunc
 	retries   int
+	// Facts supplies grounding working-memory facts (cwd/project/repo_root) folded into
+	// every proposal call as their own system message — context curation (CLAUDE.md):
+	// without this, tool resolution has no idea where it's operating and guesses (e.g.
+	// "/app" for a container-convention path that doesn't exist in this project). nil ⇒ no
+	// grounding, matching the prior ungrounded behavior. Set post-construction (like
+	// decompose.Decomposer.Facts) since the source is session-stable, not per-call.
+	Facts func() []prompting.Fact
 }
 
 // NewProposer returns a proposer using catalog as the tool-catalog system prompt
@@ -46,6 +53,7 @@ func NewProposer(catalog string, retries int, chat ChatFunc) *Proposer {
 // failed to produce a parseable proposal) — the caller then answers directly.
 func (p *Proposer) Propose(ctx context.Context, userText string) (Proposal, bool) {
 	msgs := p.assembler.Assemble(userText)
+	msgs = insertFacts(msgs, p.Facts)
 	for attempt := 0; attempt <= p.retries; attempt++ {
 		raw, err := p.chat(ctx, msgs)
 		if err != nil {
@@ -61,6 +69,29 @@ func (p *Proposer) Propose(ctx context.Context, userText string) (Proposal, bool
 		return prop, true
 	}
 	return Proposal{}, false
+}
+
+// insertFacts folds a working-memory facts message (if getFacts is non-nil and produces
+// any) between the assembler's system message and the user message. Assemble always
+// returns at most one leading system message, so the insertion point is simple: right
+// after it (or at the front, if there's no system message at all).
+func insertFacts(msgs []prompting.Message, getFacts func() []prompting.Fact) []prompting.Message {
+	if getFacts == nil {
+		return msgs
+	}
+	factMsg, ok := prompting.WorkingMemoryMessage(getFacts())
+	if !ok {
+		return msgs
+	}
+	at := 0
+	if len(msgs) > 0 && msgs[0].Role == "system" {
+		at = 1
+	}
+	out := make([]prompting.Message, 0, len(msgs)+1)
+	out = append(out, msgs[:at]...)
+	out = append(out, factMsg)
+	out = append(out, msgs[at:]...)
+	return out
 }
 
 // ParseProposal extracts the first balanced JSON object from raw and decodes it
