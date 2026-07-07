@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"agentx/internal/jsonx"
 	"agentx/internal/prompting"
 )
 
@@ -66,7 +67,7 @@ func (p *Proposer) Propose(ctx context.Context, userText string) (Proposal, bool
 // into a Proposal. Argument values are normalized to strings (JSON numbers become
 // their integer/float text), matching the executor's string-args model.
 func ParseProposal(raw string) (Proposal, error) {
-	obj := extractJSONObject(raw)
+	obj := jsonx.FirstObject(raw)
 	if obj == "" {
 		return Proposal{}, fmt.Errorf("no JSON object in proposal")
 	}
@@ -105,33 +106,3 @@ func stringifyArg(v any) string {
 	}
 }
 
-// extractJSONObject returns the first top-level {...} object in s, honoring
-// strings and escapes so braces inside strings do not unbalance the scan.
-func extractJSONObject(s string) string {
-	start := strings.IndexByte(s, '{')
-	if start < 0 {
-		return ""
-	}
-	depth, inStr, esc := 0, false, false
-	for i := start; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case esc:
-			esc = false
-		case c == '\\' && inStr:
-			esc = true
-		case c == '"':
-			inStr = !inStr
-		case inStr:
-			// skip
-		case c == '{':
-			depth++
-		case c == '}':
-			depth--
-			if depth == 0 {
-				return s[start : i+1]
-			}
-		}
-	}
-	return ""
-}

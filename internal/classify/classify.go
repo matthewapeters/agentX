@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 
+	"agentx/internal/jsonx"
 	"agentx/internal/prompting"
 )
 
@@ -44,20 +45,30 @@ type Verdict struct {
 }
 
 // DefaultPrompt is the built-in classification system prompt used when no
-// agentx-classification.md is configured.
-const DefaultPrompt = `You are AgentX's prompt classifier. Read the user's message and decide how the
-assistant should handle it. Reply with ONE JSON object and nothing else:
+// agentx-classification.md is configured. It classifies the KIND of request from its
+// phrasing — the speech act — not how to fulfill it. It deliberately does not reason
+// about referents or missing detail: "which project?" is resolved downstream from
+// working memory and investigation, never a reason to fall back to conversation.
+const DefaultPrompt = `You are AgentX's request-type classifier. Your ONLY job is to identify the KIND of
+request from how it is phrased. Do not answer it. Do not judge whether it has enough
+detail. Never ask for clarification — missing specifics (which file, which project) are
+resolved later, not here.
 
+Reply with ONE JSON object and nothing else:
 {"route": "<route>", "confidence": <0..1>, "rationale": "<=10 words"}
 
-Routes:
-- respond_directly — conversation, questions, explanations, or anything answerable
-  without running tools or a multi-step plan.
-- single_tool — the request needs exactly one tool/command (e.g. read or edit a
-  file, run a command).
-- invoke_planner — a complex, multi-step task needing decomposition into a plan.
+Classify by the verb and scope:
+- invoke_planner — an imperative to DO work that spans multiple steps: review, analyze,
+  audit, investigate, refactor, build, "look at", "go through", or anything about "this
+  project / this repo / these files / the current state / what needs improvement". This
+  is the default for any broad or open-ended action on the local environment.
+- single_tool — an imperative for ONE concrete operation: read or edit a named file, run
+  a specific command, show one specific thing.
+- respond_directly — NOT an action: greetings, chit-chat, or a question answerable from
+  general knowledge without inspecting the project or environment.
 
-Prefer respond_directly when unsure. Output only the JSON object.`
+A request commands an action even when it omits names or details — classify it by its
+verb and scope, never by whether you happen to know the specifics. Output only the JSON.`
 
 // ChatFunc runs a non-streaming chat completion for the assembled messages and
 // returns the full response text.
@@ -105,7 +116,7 @@ func (c *Classifier) Classify(ctx context.Context, userText string) Verdict {
 // Parse extracts the first balanced JSON object from raw (tolerating surrounding
 // prose or code fences), unmarshals it, and validates the route enum.
 func Parse(raw string) (Verdict, error) {
-	obj := extractJSONObject(raw)
+	obj := jsonx.FirstObject(raw)
 	if obj == "" {
 		return Verdict{}, fmt.Errorf("no JSON object in classification response")
 	}
@@ -117,40 +128,4 @@ func Parse(raw string) (Verdict, error) {
 		return Verdict{}, fmt.Errorf("unknown route %q", v.Route)
 	}
 	return v, nil
-}
-
-// extractJSONObject returns the first balanced {...} substring, respecting string
-// literals and escapes, or "" if none is present.
-func extractJSONObject(s string) string {
-	start := strings.IndexByte(s, '{')
-	if start < 0 {
-		return ""
-	}
-	depth, inStr, esc := 0, false, false
-	for i := start; i < len(s); i++ {
-		ch := s[i]
-		if inStr {
-			switch {
-			case esc:
-				esc = false
-			case ch == '\\':
-				esc = true
-			case ch == '"':
-				inStr = false
-			}
-			continue
-		}
-		switch ch {
-		case '"':
-			inStr = true
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return s[start : i+1]
-			}
-		}
-	}
-	return ""
 }

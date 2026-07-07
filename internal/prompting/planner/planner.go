@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"agentx/internal/jsonx"
 	"agentx/internal/prompting/task"
 )
 
@@ -77,8 +78,14 @@ func Render(goal, context string) string {
 // empty plan, a step missing an id or goal, a duplicate id, or a dep referencing an unknown
 // step (a dangling edge) — failing loudly rather than emitting a broken plan.
 func Parse(parentID string, data []byte) (Plan, error) {
+	// Models wrap the plan in ```json fences despite "JSON only"; extract the object first
+	// so a strict decode does not choke on the fence (see internal/jsonx).
+	obj := jsonx.FirstObject(string(data))
+	if obj == "" {
+		return Plan{}, fmt.Errorf("planner: no JSON object in plan response")
+	}
 	var pj planJSON
-	if err := json.Unmarshal(data, &pj); err != nil {
+	if err := json.Unmarshal([]byte(obj), &pj); err != nil {
 		return Plan{}, fmt.Errorf("planner: parse plan json: %w", err)
 	}
 	if len(pj.Steps) == 0 {

@@ -140,20 +140,20 @@ run: build
 # documentation, not a deployed file, so it is skipped. The zellij harness layout
 # (agentx.kdl) rides along here even though the agentx runtime never reads it.
 seed:
-	@echo "Seeding baseline config into $(CONFIG_DIR) (existing files preserved)..."
+	@echo "Seeding baseline config into $(CONFIG_DIR) (overwriting — customization retention not yet implemented)..."
 	@mkdir -p "$(CONFIG_DIR)"
 	@for f in $(SEED_DIR)/*; do \
 		b=$$(basename "$$f"); \
 		[ "$$b" = "README.md" ] && continue; \
-		if [ -e "$(CONFIG_DIR)/$$b" ]; then echo "  keep  $$b"; \
-		else cp "$$f" "$(CONFIG_DIR)/$$b" && echo "  seed  $$b"; fi; \
+		cp "$$f" "$(CONFIG_DIR)/$$b" && echo "  seed  $$b"; \
 	done
 	@echo "Seed complete"
 
 # End-to-end install: build the (version-stamped) binary, seed config, drop the
 # binary + the ax launcher onto PATH, then report on external deps. seed runs
-# every install, so an upgrade picks up newly shipped baseline files (e.g. a new
-# prompts.toml that arms task detection) instead of silently leaving them behind.
+# every install and overwrites the deployed baseline files with the shipped ones,
+# so an upgrade always picks up prompt/config changes. Customization retention is
+# not yet implemented, so local edits under $(CONFIG_DIR) are replaced on install.
 install: build seed install-bin doctor
 	@echo ""
 	@echo "AgentX $(VERSION) installed to $(BINDIR). Launch with 'ax' (or 'agentx')."

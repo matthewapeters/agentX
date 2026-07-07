@@ -450,6 +450,24 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		}
 	}
 
+	// Plan execution cycle: an imperative that spans multiple steps is decomposed and
+	// its leaves executed (real read tools) before the model answers, so the response is
+	// grounded in what was actually inspected rather than assumed. A decomposition that
+	// investigates nothing falls through to a normal answer.
+	if route == string(classify.InvokePlanner) && o.planReady() {
+		planCtx, handled, perr := o.runPlanPhase(ctx, text, userOrd)
+		if perr != nil {
+			o.setProcessing(state.StateCompleted, state.PhaseNone)
+			return nil
+		}
+		if handled {
+			msgs := o.withContext(o.assembler.Assemble(text + planCtx))
+			resp, respOrd, err := o.streamResponse(ctx, msgs, nil, false, ephemeral)
+			o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp)
+			return o.finishCycle(err)
+		}
+	}
+
 	// Route-aware thinking: the verdict decides whether this turn reasons before
 	// answering, with a wall-clock budget that falls back to a direct answer.
 	doThink := o.thinkForRoute(route)
