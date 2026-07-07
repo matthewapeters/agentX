@@ -65,6 +65,15 @@ func (f ApproverFunc) Approve(ctx context.Context, d tools.Descriptor, args map[
 	return f(ctx, d, args, reason)
 }
 
+// ReadGrants reports whether a resolved absolute path has a standing read grant, so a
+// read outside the confinement root need not prompt again. It is how a session-scoped
+// "allow reads under X" approval (persisted in working memory) is honored on later
+// calls — the executor consults it before treating an out-of-root path as needing
+// approval. A nil ReadGrants grants nothing.
+type ReadGrants interface {
+	Allows(path string) bool
+}
+
 // Status is the terminal state of a drain attempt.
 type Status string
 
@@ -98,8 +107,9 @@ type Executor struct {
 	gate     Gate
 	runner   Runner
 	verify   Verifier
-	root     string   // working directory calls are confined to ("" = no boundary)
-	approve  Approver // grants calls that need approval (policy or confinement)
+	root     string     // working directory calls are confined to ("" = no boundary)
+	approve  Approver   // grants calls that need approval (policy or confinement)
+	reads    ReadGrants // standing out-of-root read grants (nil = none)
 }
 
 // Option configures an Executor.
@@ -117,6 +127,13 @@ func WithApprover(a Approver) Option {
 	return func(e *Executor) { e.approve = a }
 }
 
+// WithReadGrants supplies standing out-of-root read grants: a path they allow is read
+// without a fresh approval prompt, honoring a session-scoped "allow reads under X"
+// decision. It only widens read access; it never permits a mutating call.
+func WithReadGrants(g ReadGrants) Option {
+	return func(e *Executor) { e.reads = g }
+}
+
 // New builds an executor from its collaborators.
 func New(p Proposer, reg Registry, g Gate, r Runner, v Verifier, opts ...Option) *Executor {
 	e := &Executor{proposer: p, registry: reg, gate: g, runner: r, verify: v}
@@ -126,9 +143,11 @@ func New(p Proposer, reg Registry, g Gate, r Runner, v Verifier, opts ...Option)
 	return e
 }
 
-// escapesRoot reports whether the call's file target resolves outside the
-// confinement root. No root or no path means no boundary applies.
-func (e *Executor) escapesRoot(args map[string]string) bool {
+// escapesRoot reports whether the call's file target resolves outside the confinement
+// root, requiring approval. No root or no path means no boundary applies. A standing
+// read grant (WithReadGrants) that covers the target suppresses the escape for
+// read-risk calls only — a grant widens reads, never a mutating call.
+func (e *Executor) escapesRoot(d tools.Descriptor, args map[string]string) bool {
 	if e.root == "" {
 		return false
 	}
@@ -140,11 +159,15 @@ func (e *Executor) escapesRoot(args map[string]string) bool {
 	if !filepath.IsAbs(p) {
 		full = filepath.Join(e.root, p)
 	}
-	rel, err := filepath.Rel(e.root, filepath.Clean(full))
-	if err != nil {
-		return true
+	full = filepath.Clean(full)
+	rel, err := filepath.Rel(e.root, full)
+	if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false // within root
 	}
-	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	if d.Risk == tools.RiskRead && e.reads != nil && e.reads.Allows(full) {
+		return false // standing read grant covers this out-of-root read
+	}
+	return true
 }
 
 // Execute drains one task record: it proposes a concrete tool call for the task's
@@ -169,7 +192,7 @@ func (e *Executor) Execute(ctx context.Context, rec task.Record) Outcome {
 	// A call needs approval when the policy asks for it, or when it would operate
 	// outside the working directory. Confinement never silently escapes the cwd.
 	needApproval, reason := verdict.Decision == tools.NeedsApproval, verdict.Reason
-	if e.escapesRoot(prop.Args) {
+	if e.escapesRoot(d, prop.Args) {
 		needApproval, reason = true, "outside working directory"
 	}
 	if needApproval {

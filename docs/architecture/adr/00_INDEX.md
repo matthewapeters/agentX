@@ -1,6 +1,6 @@
 # AgentX ADR Index
 
-Last updated: 2026-06-23
+Last updated: 2026-07-06
 Owner: Architecture
 
 This folder captures architecture decisions for orchestration design, rollout sequencing, and quality governance. These ADRs are implementation-oriented and aligned with:
@@ -18,6 +18,7 @@ This folder captures architecture decisions for orchestration design, rollout se
 - [0005 - Traceability, Replay, and Quality Gates](0005-traceability-replay-and-quality-gates.md)
 - [0006 - Persona Identification and Context Loading](0006-persona-identification-and-context-loading.md)
 - [0007 - Output-Panel Markdown Rendering (Dual Renderer)](0007-output-panel-markdown-rendering.md) — Family A surface concern
+- [0008 - Recursive Task Decomposition and the DAG Scheduler](0008-recursive-task-decomposition-and-dag-scheduler.md) — realizes `invoke_planner`; supersedes the eager `run_subtask` model
 
 ## Reading Order
 

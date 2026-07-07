@@ -52,3 +52,23 @@ Feature: the orchestrator emits a task record when the classifier is wired
     Then the session timeline contains no task_proposed event
     And the task_result event records route "confirm"
     And the task_result event records status "needs_approval"
+
+  # use-case: UC-RT-TASK-DIAG  (TC-RTTASK-005)
+  # Observability: the three fan-group stage scores (triage/action/response) are
+  # surfaced on every classified turn, so a routing decision is never opaque.
+  @integration
+  Scenario: A classified turn emits a task_diagnostic carrying the three stage scores
+    Given a started orchestrator whose classifier calls the turn "artifact"
+    When the classifier turn "write hello.txt with hi" is submitted
+    Then the session timeline contains a task_diagnostic event
+    And the task_diagnostic event records the triage, action, and response scores
+
+  # use-case: UC-RT-TASK-DIAG-SKIP  (TC-RTTASK-006)
+  # No turn is silently dropped: a turn that does not execute still leaves a reason.
+  @integration
+  Scenario: A non-executing turn still emits a task_diagnostic with a skip reason
+    Given a started orchestrator whose classifier calls the turn "none"
+    When the classifier turn "how are you" is submitted
+    Then the session timeline contains a task_diagnostic event
+    And the task_diagnostic event outcome is "skipped"
+    And the task_diagnostic event reason is not empty

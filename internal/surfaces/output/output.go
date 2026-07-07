@@ -33,6 +33,7 @@ type entryKind int
 const (
 	kindUser entryKind = iota
 	kindClassification
+	kindTaskDiag
 	kindAssistant
 	kindThinking
 	kindToolCall
@@ -376,6 +377,11 @@ func (m *Model) Apply(ev state.Event) {
 		// titled border's right corner stays aligned on terminals that render the
 		// emoji-presentation gear as a single column.
 		m.add(&widget{kind: kindClassification, title: "⚙ classification", body: eventText(ev), previewWhenCollapsed: true})
+	case state.ContentTaskDiagnostic:
+		// The task classifier's per-turn trace: three stage scores + outcome/reason.
+		// A multi-line body, so it renders as a titled box (not the flat one-liner),
+		// collapsed by default with a preview to keep the log unobtrusive.
+		m.add(&widget{kind: kindTaskDiag, title: "⚙ task classify", body: eventText(ev), collapsible: true, collapsed: true, previewWhenCollapsed: true})
 	case state.ContentAgentDelta:
 		// Live streaming chunk (chat window only): coalesce into an in-progress
 		// assistant widget for the typing effect. The complete agent_response

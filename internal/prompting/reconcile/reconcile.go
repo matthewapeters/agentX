@@ -23,6 +23,11 @@ type ResponseSignal struct {
 	Produced  bool // the response contains an artifact/action it committed to
 	Executed  bool // the action was actually carried out
 	Abstained bool
+	// LeansProduced marks an abstained response whose vote scattered toward
+	// produced/executed rather than "none" — the model narrated a multi-step action it
+	// could not resolve to a single call. It discriminates Decompose (a compound action,
+	// reify a plan) from Ask (genuine ambiguity). Only meaningful when Abstained is true.
+	LeansProduced bool
 }
 
 // Route is the reconciled decision the executor stage acts on.
@@ -44,6 +49,11 @@ const (
 	None Route = "none"
 	// Ask — a classifier abstained; ask one clarifying question rather than guess.
 	Ask Route = "ask"
+	// Decompose — the turn is actionable but the model narrated a multi-step action it
+	// could not execute in one call (the response scattered toward produced). It is a
+	// compound goal: reify a *plan* (decompose into a task DAG), not a single tool call.
+	// The generalization of Reify from one call to a plan. See ADR 0008.
+	Decompose Route = "decompose"
 )
 
 // Reconcile folds the two signals into a route. An abstain on either side routes
@@ -51,6 +61,12 @@ const (
 // decides whether an action was requested and the response decides what became of
 // it.
 func Reconcile(turn TurnSignal, resp ResponseSignal) (Route, string) {
+	// An actionable, non-abstained turn whose response scattered toward "produced" is not
+	// uncertain — the model narrated a multi-step action. Reify a plan: Decompose. This is
+	// checked before the abstain→Ask fallthrough, since the response abstained here.
+	if turn.Actionable && !turn.Abstained && resp.Abstained && resp.LeansProduced {
+		return Decompose, "compound action narrated across steps"
+	}
 	if turn.Abstained || resp.Abstained {
 		return Ask, "classification uncertain"
 	}

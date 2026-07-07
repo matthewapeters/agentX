@@ -11,6 +11,7 @@ import (
 	"agentx/internal/classify"
 	"agentx/internal/prompting"
 	"agentx/internal/prompting/pipeline"
+	"agentx/internal/runtime/scheduler"
 	"agentx/internal/session"
 	"agentx/internal/state"
 	"agentx/internal/surfaces"
@@ -115,6 +116,8 @@ type Orchestrator struct {
 	classifier   *classify.Classifier
 	taskPipeline *pipeline.Pipeline
 	taskExec     taskExecutor
+	taskOracle   scheduler.Oracle
+	taskDecomp   scheduler.Decomposer
 	recDone    chan error
 	recSub     *state.Subscription
 	gate       approvalGate
@@ -226,6 +229,8 @@ func (o *Orchestrator) Start() error {
 	// The task executor drains classifier tasks into verified effects; it needs the
 	// tool collaborators, so it is built after buildTools.
 	o.buildTaskExecutor()
+	// Decomposition (Decompose route) needs the classifier + executor; build it last.
+	o.buildDecomposition()
 
 	recorder := o.store.Recorder(id.ID)
 	sub := o.bus.Subscribe()

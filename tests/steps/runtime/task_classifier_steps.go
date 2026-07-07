@@ -61,6 +61,10 @@ func registerTaskClassifierSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the session timeline contains no task_result event$`, w.noResultEvent)
 	sc.Step(`^the task_result event records status "([^"]*)"$`, w.resultEventStatus)
 	sc.Step(`^the task_result event records route "([^"]*)"$`, w.resultEventRoute)
+	sc.Step(`^the session timeline contains a task_diagnostic event$`, w.hasDiagEvent)
+	sc.Step(`^the task_diagnostic event records the triage, action, and response scores$`, w.diagHasScores)
+	sc.Step(`^the task_diagnostic event outcome is "([^"]*)"$`, w.diagOutcome)
+	sc.Step(`^the task_diagnostic event reason is not empty$`, w.diagReasonNotEmpty)
 }
 
 func (w *taskClassifierWorld) executorReports(status string) error {
@@ -261,6 +265,81 @@ func (w *taskClassifierWorld) taskEventType(want string) error {
 	}
 	if got, _ := payload["type"].(string); got != want {
 		return fmt.Errorf("task_proposed type = %q, want %q", got, want)
+	}
+	return nil
+}
+
+func (w *taskClassifierWorld) diagEvents() ([]state.Event, error) {
+	events, err := w.timeline()
+	if err != nil {
+		return nil, err
+	}
+	var out []state.Event
+	for _, ev := range events {
+		if ev.ContentType == state.ContentTaskDiagnostic {
+			out = append(out, ev)
+		}
+	}
+	return out, nil
+}
+
+func (w *taskClassifierWorld) hasDiagEvent() error {
+	evs, err := w.diagEvents()
+	if err != nil {
+		return err
+	}
+	if len(evs) == 0 {
+		return fmt.Errorf("expected a task_diagnostic event, found none")
+	}
+	return nil
+}
+
+func (w *taskClassifierWorld) diagPayload() (map[string]any, error) {
+	evs, err := w.diagEvents()
+	if err != nil {
+		return nil, err
+	}
+	if len(evs) == 0 {
+		return nil, fmt.Errorf("no task_diagnostic event to inspect")
+	}
+	payload, ok := evs[len(evs)-1].Payload.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("task_diagnostic payload is %T, want map", evs[len(evs)-1].Payload)
+	}
+	return payload, nil
+}
+
+func (w *taskClassifierWorld) diagHasScores() error {
+	payload, err := w.diagPayload()
+	if err != nil {
+		return err
+	}
+	for _, stage := range []string{"triage", "action", "response"} {
+		if _, ok := payload[stage].(map[string]any); !ok {
+			return fmt.Errorf("task_diagnostic missing %q stage score", stage)
+		}
+	}
+	return nil
+}
+
+func (w *taskClassifierWorld) diagOutcome(want string) error {
+	payload, err := w.diagPayload()
+	if err != nil {
+		return err
+	}
+	if got, _ := payload["outcome"].(string); got != want {
+		return fmt.Errorf("task_diagnostic outcome = %q, want %q", got, want)
+	}
+	return nil
+}
+
+func (w *taskClassifierWorld) diagReasonNotEmpty() error {
+	payload, err := w.diagPayload()
+	if err != nil {
+		return err
+	}
+	if got, _ := payload["reason"].(string); got == "" {
+		return fmt.Errorf("task_diagnostic reason is empty")
 	}
 	return nil
 }

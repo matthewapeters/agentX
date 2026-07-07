@@ -29,6 +29,8 @@ func registerReconcileSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the response executed the action$`, w.responseExecuted)
 	sc.Step(`^the response produced the action without executing it$`, w.responseProduced)
 	sc.Step(`^the response did nothing$`, w.responseNothing)
+	sc.Step(`^the response abstained leaning toward produced$`, w.responseAbstainedLeansProduced)
+	sc.Step(`^the response abstained with a scatter toward none$`, w.responseAbstainedScatterNone)
 	sc.Step(`^the classifications are reconciled$`, w.reconcile)
 	sc.Step(`^the route is "([^"]*)"$`, w.routeIs)
 }
@@ -61,6 +63,18 @@ func (w *reconcileWorld) responseProduced() error {
 
 func (w *reconcileWorld) responseNothing() error {
 	w.resp = reconcile.ResponseSignal{}
+	return nil
+}
+
+func (w *reconcileWorld) responseAbstainedLeansProduced() error {
+	w.resp.Abstained = true
+	w.resp.LeansProduced = true
+	return nil
+}
+
+func (w *reconcileWorld) responseAbstainedScatterNone() error {
+	w.resp.Abstained = true
+	w.resp.LeansProduced = false
 	return nil
 }
 

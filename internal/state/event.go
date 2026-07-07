@@ -28,6 +28,15 @@ const (
 	// ContentTaskResult records the outcome of draining a task record through the
 	// executor: executed (and verified) / phantom / denied / etc.
 	ContentTaskResult ContentType = "task_result"
+	// ContentTaskDiagnostic is a per-turn trace of the task classifier: the three
+	// fan-group stage verdicts (triage / action / response), their vote spreads, and
+	// the outcome or skip reason. It exists for observability — never conversation
+	// context, never executed — so a skipped turn always leaves a legible reason.
+	ContentTaskDiagnostic ContentType = "task_diagnostic"
+	// ContentTaskPlan is the synthesis of a decomposed compound goal: the plan's node
+	// set (goals + deps + final statuses) after the scheduler drained it. Emitted on the
+	// Decompose route (ADR 0008 Phase 4); observability, never conversation context.
+	ContentTaskPlan ContentType = "task_plan"
 )
 
 var validContentTypes = map[ContentType]bool{
@@ -35,6 +44,7 @@ var validContentTypes = map[ContentType]bool{
 	ContentThinking: true, ContentAgentDelta: true, ContentAgentResponse: true,
 	ContentAttachments: true, ContentToolCall: true, ContentToolResult: true,
 	ContentProcessingState: true, ContentTaskProposed: true, ContentTaskResult: true,
+	ContentTaskDiagnostic: true, ContentTaskPlan: true,
 }
 
 // DefaultEnabled reports whether an event of the given content type participates

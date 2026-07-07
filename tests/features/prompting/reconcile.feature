@@ -60,3 +60,22 @@ Feature: reconcile the turn and response classifications into a route
     And the response executed the action
     When the classifications are reconciled
     Then the route is "ask"
+
+  # use-case: UC-RECON-DECOMPOSE  (TC-RECON-007)  ADR-0008 Phase 4a
+  # An actionable turn whose response scattered toward "produced" is a compound goal the
+  # model narrated across steps — reify a plan (decompose), not one call, and not Ask.
+  @unit
+  Scenario: An actionable turn with a produced-leaning abstain routes to decompose
+    Given the turn is actionable
+    And the response abstained leaning toward produced
+    When the classifications are reconciled
+    Then the route is "decompose"
+
+  # use-case: UC-RECON-DECOMPOSE-NOT  (TC-RECON-008)
+  # The discriminator: an abstain scattered toward "none" is genuine ambiguity → Ask.
+  @unit
+  Scenario: An actionable turn with a none-scattered abstain routes to ask
+    Given the turn is actionable
+    And the response abstained with a scatter toward none
+    When the classifications are reconciled
+    Then the route is "ask"

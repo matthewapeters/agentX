@@ -40,6 +40,9 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerContextBreakdownSteps(sc)
 	registerContextToggleSteps(sc)
 	registerTaskClassifierSteps(sc)
+	registerTaskBranchSteps(sc)
+	registerTaskSchedulerSteps(sc)
+	registerDecomposeAdapterSteps(sc)
 }
 
 // registerHarnessSteps wires the harness smoke steps.

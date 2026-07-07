@@ -123,10 +123,15 @@ continuation, new, orthogonal, related_aside.
 [fangroup.action_classify]
 stage                 = "classify_turn"
 purpose               = "Decide whether the turn requests an action, and of what type."
-width                 = 4
+# Resolution gate tuned from a 3-of-4 supermajority to a 2-of-3 majority: a single
+# genuinely-actionable prompt should resolve on a majority (share 0.67 >= 0.6), not
+# require near-unanimity, which was scatter-abstaining plainly actionable turns.
+# Odd width avoids a nondeterministic 0.5 tie; a true 3-way scatter (share 0.33)
+# still abstains — that ambiguity is a real signal (clarify / decompose), not noise.
+width                 = 3
 coarse_variant        = "direct"
 vote_on               = "task_type"
-quorum                = 3
+quorum                = 2
 abstain_below         = 0.6
 always_escalate_types = ["artifact", "command"]
 

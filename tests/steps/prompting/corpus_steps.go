@@ -58,7 +58,9 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerDigestSteps(sc)
 	registerPipelineSteps(sc)
 	registerTaskSteps(sc)
+	registerTaskDAGSteps(sc)
 	registerReconcileSteps(sc)
+	registerPlannerSteps(sc)
 }
 
 // ---- corpus fixtures ----

@@ -32,6 +32,16 @@ const (
 	// Abstained — classification was not confident enough (scattered vote); the
 	// uncertainty is recorded durably so the caller asks rather than guesses.
 	Abstained Status = "abstained"
+	// Ready — reconciled for execution with every dep done; eligible to drain.
+	Ready Status = "ready"
+	// InProgress — the executor drained it and issued the tool call.
+	InProgress Status = "in_progress"
+	// Done — executed and the effect verified; only now may success be reported.
+	Done Status = "done"
+	// Failed — execution errored or the effect could not be verified.
+	Failed Status = "failed"
+	// Cancelled — superseded by a later turn or explicitly withdrawn.
+	Cancelled Status = "cancelled"
 )
 
 // Provenance records how a task was classified, so a decision is answerable from

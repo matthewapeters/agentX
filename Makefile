@@ -26,9 +26,22 @@ SEED_DIR    := config/seed
 CONFIG_HOME ?= $(or $(XDG_CONFIG_HOME),$(HOME)/.config)
 CONFIG_DIR  := $(CONFIG_HOME)/agentx
 
+# Install layout (GNU convention): a no-sudo user install by default, landing in
+# a dir already on most PATHs. Override for a system install:
+#   make install PREFIX=/usr/local        (needs sudo)
+# DESTDIR stages the tree elsewhere for packaging.
+PREFIX  ?= $(HOME)/.local
+BINDIR  ?= $(PREFIX)/bin
+DESTDIR ?=
+
+# Version stamped into the binary via -ldflags (main.version). Derived from git
+# so an installed build is identifiable; falls back to "dev" outside a checkout.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -X main.version=$(VERSION)
+
 .PHONY: help all build clean test go-test \
 	go-test-unit go-test-integration go-test-functional go-test-e2e \
-	vendor-check run seed
+	vendor-check run seed install install-bin uninstall doctor install-deps
 
 help:
 	@echo "AgentX Make Targets"
@@ -54,6 +67,13 @@ help:
 	@echo "Config:"
 	@echo "  seed                Install baseline config into $(CONFIG_DIR) (keeps existing files)"
 	@echo ""
+	@echo "Install:"
+	@echo "  install             Build + seed + install agentx & ax into $(BINDIR), then doctor"
+	@echo "  install-bin         Copy the built binary + ax into $(BINDIR)"
+	@echo "  uninstall           Remove installed binaries (config left intact)"
+	@echo "  doctor              Report binary/config/dep health (non-fatal)"
+	@echo "  install-deps        Best-effort install of zellij (opt-in)"
+	@echo ""
 	@echo "Run:"
 	@echo "  run                 Build and run the agentx runtime"
 
@@ -65,9 +85,9 @@ build: $(LOGO_DST)
 	@echo "Validating (vet + tests)..."
 	$(GO) vet ./...
 	$(GO) test ./...
-	@echo "Building agentx..."
+	@echo "Building agentx ($(VERSION))..."
 	@mkdir -p $(BIN_DIR)
-	$(GO) build -o $(BIN) $(CMD_DIR)
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) $(CMD_DIR)
 	@echo "agentx built at $(BIN)"
 
 # Refresh the embedded logo copy when the authored source changes. Make's
@@ -129,3 +149,59 @@ seed:
 		else cp "$$f" "$(CONFIG_DIR)/$$b" && echo "  seed  $$b"; fi; \
 	done
 	@echo "Seed complete"
+
+# End-to-end install: build the (version-stamped) binary, seed config, drop the
+# binary + the ax launcher onto PATH, then report on external deps. seed runs
+# every install, so an upgrade picks up newly shipped baseline files (e.g. a new
+# prompts.toml that arms task detection) instead of silently leaving them behind.
+install: build seed install-bin doctor
+	@echo ""
+	@echo "AgentX $(VERSION) installed to $(BINDIR). Launch with 'ax' (or 'agentx')."
+
+# Copy the built binary and the ax launcher into BINDIR. Depends on build so the
+# artifact carries the version stamp and passed the vet+test gate.
+install-bin: build
+	@echo "Installing binaries into $(DESTDIR)$(BINDIR)..."
+	@mkdir -p "$(DESTDIR)$(BINDIR)"
+	install -m 0755 $(BIN) "$(DESTDIR)$(BINDIR)/agentx"
+	install -m 0755 ax     "$(DESTDIR)$(BINDIR)/ax"
+	@echo "  installed  agentx"
+	@echo "  installed  ax"
+
+# Remove the installed binaries. Config in CONFIG_DIR is left intact — it may hold
+# user-tuned files; remove it by hand if a clean slate is wanted.
+uninstall:
+	@rm -f "$(DESTDIR)$(BINDIR)/agentx" "$(DESTDIR)$(BINDIR)/ax"
+	@echo "Removed agentx + ax from $(DESTDIR)$(BINDIR)."
+	@echo "Config in $(CONFIG_DIR) left intact (remove manually for a clean slate)."
+
+# Non-fatal health check: reports each requirement ✓/✗ with a one-line fix. Run
+# standalone anytime, or as the last step of install. Never fails the build — a
+# missing external dep should not block installing the binary.
+doctor:
+	@echo "AgentX doctor:"
+	@case ":$$PATH:" in *":$(BINDIR):"*) echo "  \342\234\223 $(BINDIR) on PATH";; \
+		*) echo "  \342\234\227 $(BINDIR) not on PATH — add: export PATH=\"$(BINDIR):\$$PATH\"";; esac
+	@if command -v agentx >/dev/null 2>&1; then echo "  \342\234\223 agentx: $$(agentx --version 2>/dev/null)"; \
+		else echo "  \342\234\227 agentx not on PATH"; fi
+	@if command -v zellij >/dev/null 2>&1; then echo "  \342\234\223 zellij: $$(zellij --version 2>/dev/null)"; \
+		else echo "  \342\234\227 zellij not found — 'ax' needs it (baseline 0.44.3). Try 'make install-deps'"; fi
+	@if command -v ollama >/dev/null 2>&1; then echo "  \342\234\223 ollama present"; \
+		else echo "  \342\234\227 ollama not found — required at runtime (https://ollama.com)"; fi
+	@MODEL=$$(sed -n 's/^[[:space:]]*model[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' "$(CONFIG_DIR)/agentx.toml" 2>/dev/null | head -1); \
+		if [ -z "$$MODEL" ]; then echo "  - model: none configured in $(CONFIG_DIR)/agentx.toml"; \
+		elif command -v ollama >/dev/null 2>&1 && ollama list 2>/dev/null | grep -q "$$MODEL"; then echo "  \342\234\223 model $$MODEL pulled"; \
+		else echo "  \342\234\227 model $$MODEL not pulled — run: ollama pull $$MODEL"; fi
+	@if [ -e "$(CONFIG_DIR)/prompts.toml" ]; then echo "  \342\234\223 prompts.toml installed (task detection armed)"; \
+		else echo "  \342\234\227 prompts.toml missing — run 'make seed' (task detection stays OFF without it)"; fi
+
+# Best-effort, opt-in install of the external harness dependency (zellij). Cross-
+# distro package managers vary; this tries the common ones and otherwise points at
+# the upstream docs rather than guessing.
+install-deps:
+	@if command -v zellij >/dev/null 2>&1; then echo "zellij already installed ($$(zellij --version))"; \
+	elif command -v cargo >/dev/null 2>&1; then echo "Installing zellij via cargo..."; cargo install zellij; \
+	elif command -v brew >/dev/null 2>&1; then echo "Installing zellij via brew..."; brew install zellij; \
+	elif command -v pacman >/dev/null 2>&1; then echo "Installing zellij via pacman..."; sudo pacman -S --needed zellij; \
+	else echo "No supported package manager found. Install zellij manually:"; \
+		echo "  https://zellij.dev/documentation/installation"; fi
