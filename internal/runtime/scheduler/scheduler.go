@@ -37,6 +37,33 @@ import (
 // makes progress (a new node each dispatch) or returns this error, never spins.
 var ErrStalled = errors.New("scheduler: stalled — node re-dispatched without progress")
 
+// ErrNoProgress is the contract error a Decomposer returns (wrapped) when a decomposition
+// would not advance the plan — e.g. the model echoed the parent goal back as its only
+// child. The scheduler then treats the node as atomic and executes it instead of recursing,
+// which is what broke the tidy-cove spiral (ten re-plannings of the same ls -la).
+var ErrNoProgress = errors.New("scheduler: decomposition made no progress")
+
+// Observer receives plan lifecycle callbacks as the scheduler drains the graph. All
+// callbacks fire on the main loop goroutine (never concurrently), immediately as each
+// transition happens — the seam that makes execution user-visible while it runs
+// (ADR 0009 §9a) instead of batch-reported at completion. A nil observer is a no-op.
+type Observer interface {
+	// NodeDispatched fires when a node is handed to a worker (before its oracle call).
+	NodeDispatched(rec task.Record, depth int)
+	// NodeDecomposed fires when a decomposition lands: parent became a join over children.
+	NodeDecomposed(parent task.Record, children []task.Record)
+	// NodeCompleted fires when a node reaches a terminal status (done/failed/abstained).
+	NodeCompleted(id string, status task.Status)
+}
+
+// Option configures a Scheduler.
+type Option func(*Scheduler)
+
+// WithObserver attaches a lifecycle observer (nil is allowed and means no-op).
+func WithObserver(obs Observer) Option {
+	return func(s *Scheduler) { s.observer = obs }
+}
+
 // Oracle decides whether a task is atomic — it type-resolves AND is one-step (the ADR §2
 // refinement). Classifier-backed in production; stubbed in tests.
 type Oracle interface {
@@ -61,6 +88,7 @@ type Scheduler struct {
 	executor   Executor
 	slots      int
 	maxDepth   int
+	observer   Observer // nil ⇒ silent
 
 	// observability, written only on the main loop goroutine.
 	dispatchOrder []string
@@ -70,14 +98,18 @@ type Scheduler struct {
 // New builds a scheduler. slots < 1 is clamped to 1. A negative maxDepth means "unset" and
 // uses the branch default; maxDepth == 0 is a valid strict bound (depth-0 nodes may not
 // decompose — they must be atomic or fail to Ask).
-func New(g *task.Graph, o Oracle, d Decomposer, e Executor, slots, maxDepth int) *Scheduler {
+func New(g *task.Graph, o Oracle, d Decomposer, e Executor, slots, maxDepth int, opts ...Option) *Scheduler {
 	if slots < 1 {
 		slots = 1
 	}
 	if maxDepth < 0 {
 		maxDepth = branch.DefaultMaxDepth
 	}
-	return &Scheduler{graph: g, oracle: o, decomposer: d, executor: e, slots: slots, maxDepth: maxDepth}
+	s := &Scheduler{graph: g, oracle: o, decomposer: d, executor: e, slots: slots, maxDepth: maxDepth}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // DispatchOrder returns the ids in the order the scheduler spawned work for them
@@ -148,6 +180,9 @@ func (s *Scheduler) Run(ctx context.Context) error {
 					s.peak = active
 				}
 				s.dispatchOrder = append(s.dispatchOrder, id)
+				if s.observer != nil {
+					s.observer.NodeDispatched(rec, depth[id])
+				}
 				go s.work(ctx, rec, depth[id], done)
 				progressed = true
 			}
@@ -203,6 +238,17 @@ func (s *Scheduler) work(ctx context.Context, rec task.Record, d int, done chan<
 		return
 	}
 	res, err := s.decomposer.Decompose(ctx, rec)
+	if errors.Is(err, ErrNoProgress) {
+		// The decomposition would not advance the plan (echoed goal). The node is
+		// effectively atomic: execute it rather than recurse — the anti-spiral fallback.
+		out := s.executor.Execute(ctx, rec)
+		st := task.Failed
+		if out.Status == executor.Executed {
+			st = task.Done
+		}
+		done <- workDone{id: rec.ID, kind: doneExecute, status: st}
+		return
+	}
 	if err != nil {
 		done <- workDone{id: rec.ID, kind: doneError}
 		return
@@ -233,10 +279,20 @@ func (s *Scheduler) applyDecompose(wd workDone, depth map[string]int, decomposed
 		return
 	}
 	decomposed[wd.id] = true
+	if s.observer != nil {
+		children := make([]task.Record, 0, len(childIDs))
+		for _, id := range childIDs {
+			if c, ok := s.graph.Node(id); ok {
+				children = append(children, c)
+			}
+		}
+		s.observer.NodeDecomposed(parent, children)
+	}
 }
 
 // setStatus rewrites a node's status in place (deps unchanged, so Update re-validation is
-// a no-op). Main-loop only.
+// a no-op) and notifies the observer — every terminal transition flows through here.
+// Main-loop only.
 func (s *Scheduler) setStatus(id string, st task.Status) {
 	rec, ok := s.graph.Node(id)
 	if !ok {
@@ -244,4 +300,7 @@ func (s *Scheduler) setStatus(id string, st task.Status) {
 	}
 	rec.Status = st
 	_ = s.graph.Update(rec)
+	if s.observer != nil {
+		s.observer.NodeCompleted(id, st)
+	}
 }

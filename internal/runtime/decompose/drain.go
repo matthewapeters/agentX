@@ -11,6 +11,12 @@ import (
 // plateau; the classifier fan-out draws from the same budget in production.
 const DefaultSlots = 4
 
+// DefaultMaxDepth bounds plan recursion. Useful plans are shallow (root → steps →
+// sub-steps); tidy-cove showed a generous bound only funds a spiral — ten levels of
+// re-planning ls -la at ~12s of LLM per level. 3 allows one legitimate refinement below
+// a sub-step and stops there. (branch.DefaultMaxDepth still governs branch forking.)
+const DefaultMaxDepth = 3
+
 // PlanOutcome is a drained decomposition plan: the root goal and every node's final state,
 // ready to publish as task_plan / task_result events. It is the value the Phase-4d pipeline
 // wiring turns into durable events.
@@ -22,13 +28,14 @@ type PlanOutcome struct {
 // DrainPlan seeds a task DAG with a compound root and runs the scheduler to completion over
 // the given oracle / decomposer / executor, returning the final node states. It is the pure
 // bridge from the Decompose route to the scheduler — no bus, no I/O — so the wiring is
-// unit-testable. slots < 1 and maxDepth are defaulted by scheduler.New.
-func DrainPlan(ctx context.Context, root task.Record, oracle scheduler.Oracle, dec scheduler.Decomposer, ex scheduler.Executor, slots, maxDepth int) (PlanOutcome, error) {
+// unit-testable. slots < 1 and maxDepth are defaulted by scheduler.New. obs (nil ⇒ silent)
+// receives lifecycle callbacks as the plan drains (ADR 0009 §9a).
+func DrainPlan(ctx context.Context, root task.Record, oracle scheduler.Oracle, dec scheduler.Decomposer, ex scheduler.Executor, slots, maxDepth int, obs scheduler.Observer) (PlanOutcome, error) {
 	g := task.NewGraph()
 	if err := g.Add(root); err != nil {
 		return PlanOutcome{}, err
 	}
-	s := scheduler.New(g, oracle, dec, ex, slots, maxDepth)
+	s := scheduler.New(g, oracle, dec, ex, slots, maxDepth, scheduler.WithObserver(obs))
 	err := s.Run(ctx)
 
 	out := PlanOutcome{Nodes: g.Nodes()}

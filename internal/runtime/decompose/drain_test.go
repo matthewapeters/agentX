@@ -36,7 +36,7 @@ func TestDrainPlanCompound(t *testing.T) {
 	})
 	ex := execFunc(func(task.Record) executor.Outcome { return executor.Outcome{Status: executor.Executed} })
 
-	out, err := DrainPlan(context.Background(), root, oracle, dec, ex, 4, 10)
+	out, err := DrainPlan(context.Background(), root, oracle, dec, ex, 4, 10, nil)
 	if err != nil {
 		t.Fatalf("DrainPlan: %v", err)
 	}

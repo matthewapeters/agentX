@@ -26,12 +26,15 @@ const (
 	PhaseThinking Phase = "thinking"
 	PhaseTool     Phase = "tool"
 	PhaseRespond  Phase = "respond"
+	// PhasePlanning is the plan-cycle phase (ADR 0009): the scheduler is decomposing and
+	// executing a plan, so the surface shows life during multi-step work.
+	PhasePlanning Phase = "planning"
 	PhaseNone     Phase = "none"
 )
 
 var (
 	validStates = map[RunState]bool{StateIdle: true, StateWorking: true, StateCompleted: true, StateFailed: true, StateAwaitingInput: true}
-	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhaseNone: true}
+	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhasePlanning: true, PhaseNone: true}
 )
 
 // ProcessingState is the session-level processing-state payload

@@ -19,6 +19,7 @@ This folder captures architecture decisions for orchestration design, rollout se
 - [0006 - Persona Identification and Context Loading](0006-persona-identification-and-context-loading.md)
 - [0007 - Output-Panel Markdown Rendering (Dual Renderer)](0007-output-panel-markdown-rendering.md) — Family A surface concern
 - [0008 - Recursive Task Decomposition and the DAG Scheduler](0008-recursive-task-decomposition-and-dag-scheduler.md) — realizes `invoke_planner`; supersedes the eager `run_subtask` model
+- [0009 - Plan & Tool Execution Visibility and Control](0009-plan-and-tool-execution-visibility.md) — all tool execution user-visible: streamed plan events, approval/abort, plan JSON persistence, Context surface
 
 ## Reading Order
 

@@ -27,29 +27,27 @@ func (a PipelineActions) ClassifyAction(ctx context.Context, goal string) (fanou
 }
 
 // HeuristicOneStep is the interim one-step check (ADR 0008 Phase 4e): a goal is treated as
-// multi-step — and therefore non-atomic even when its action resolves — when it coordinates
-// clauses (" and ", " then ", ";", "&") or runs long. It is a cheap, deterministic stand-in
-// for a dedicated one-step fan-group, which can replace it once the extra vote is worth the
-// slots. It exists to stop the canonical-fixture failure mode: a confident single-type
-// verdict on a compound goal ("review the project AND identify a feature") being mistaken
-// for atomic.
+// multi-step — and therefore non-atomic even when its action resolves — when it chains two
+// actions (" then ", ";", " and <verb>") or runs long. It is a cheap, deterministic
+// stand-in for a dedicated one-step fan-group. Two hardenings from the tidy-cove spiral
+// (ADR 0009): result-plumbing clauses ("and capture its output") are stripped before
+// judging — the executor returns results automatically, so plumbing is not a second step —
+// and a bare " and " between nouns ("files and directories") does not count as chaining.
 type HeuristicOneStep struct {
-	MaxWords int // 0 ⇒ 12
+	MaxWords int // 0 ⇒ 16
 }
 
 // OneStep reports whether goal is satisfiable in a single executor step.
 func (h HeuristicOneStep) OneStep(_ context.Context, goal string) (bool, error) {
-	g := strings.ToLower(goal)
-	for _, marker := range []string{" and ", " then ", ";", ", and ", " & ", " plus "} {
-		if strings.Contains(g, marker) {
-			return false, nil
-		}
+	action := stripResultPlumbing(goal)
+	if coordinatesClauses(action) {
+		return false, nil
 	}
 	max := h.MaxWords
 	if max <= 0 {
-		max = 12
+		max = 16
 	}
-	if len(strings.Fields(goal)) > max {
+	if len(strings.Fields(action)) > max {
 		return false, nil
 	}
 	return true, nil

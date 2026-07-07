@@ -5,14 +5,48 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - 2026-06-23
+## [Unreleased] - 2026-07-07
 
 ### Added
 
+- **Pre-response plan execution (`invoke_planner` goes live).** The prompt classifier
+  was rewritten as a request-type gate — it classifies the *kind* of request by verb
+  and scope and is forbidden from judging missing specifics ("which project") or
+  punting to conversation. An `invoke_planner` verdict now runs a **plan cycle**
+  before the model answers: the goal is decomposed (ADR 0008 scheduler), leaves
+  execute real read tools, and the findings are folded into the prompt so the answer
+  is grounded in what was actually inspected. Previously `invoke_planner` was a dead
+  branch that fell through to a free-form narrated answer.
+- **Streamed plan events (ADR 0009 §9a).** All tool/plan execution is user-visible
+  *while it runs* — a hard requirement from the tidy-cove RCA (123 s of silent
+  planning). New `scheduler.Observer` seam (`WithObserver`); the plan cycle publishes
+  an initial `task_plan` snapshot before any work, live `task_node` deltas
+  (dispatched / decomposed / completed) per transition, and a final snapshot with an
+  executed count. A plan that executed nothing reports a loud "plan blocked" error.
+  New `task_node` content type and `planning` processing phase. Batch-emit at
+  completion is retired as a documented invariant.
+- **Decomposition spiral guard.** Four layers, from the tidy-cove RCA (ten recursive
+  re-plannings of `ls -la`): planner prompt rules (one verb+object action per step;
+  result plumbing like "and capture the output" explicitly forbidden — the tool
+  returns results automatically; no shell syntax; never restate the goal as a step);
+  a hardened one-step heuristic (plumbing stripped before judging, noun "and" is not
+  clause chaining); a non-progress guard (`scheduler.ErrNoProgress` — a child that
+  echoes its parent executes instead of recursing, with stopword/verb-synonym
+  tolerant similarity); and `decompose.DefaultMaxDepth = 3` (was 10).
+- **`internal/jsonx`** — one tolerant first-JSON-object extractor shared by the
+  classifier, tool proposer, and planner, so a model reply wrapped in ```json fences
+  parses everywhere (the calm-pebble planner failure); the two hand-rolled duplicate
+  extractors were removed.
+- **ADR 0009 — Plan & Tool Execution Visibility and Control** (+ behavior doc):
+  pre-execution announcement, approval, abort, result sub-widgets, decompose/parallel
+  cues, ✅/❌ status, plan JSON persistence, Context-surface representation; phases
+  9a–9e with 9a built.
 - **`make seed`** installs the baseline config files (`config/seed/*`) into the
-  user's config dir (`$XDG_CONFIG_HOME/agentx`, else `~/.config/agentx`) without
-  clobbering any file already there — the packaging step previously noted as future
-  work. The zellij harness layout now lives in the seed set as
+  user's config dir (`$XDG_CONFIG_HOME/agentx`, else `~/.config/agentx`) — the
+  packaging step previously noted as future work. Seeding now **overwrites** the
+  deployed files on every install (customization retention is not yet implemented),
+  so an upgrade always picks up prompt/config changes; the seed model default is
+  `ornith:latest`. The zellij harness layout now lives in the seed set as
   **`config/seed/agentx.kdl`** (deployed by `make seed`, consumed by `ax`, never read
   by the agentx runtime). Its per-pane `sleep` hacks are removed now that
   `surface launch` waits out the server-start race. Vendored the zellij layout and

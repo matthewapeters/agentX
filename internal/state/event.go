@@ -37,6 +37,10 @@ const (
 	// set (goals + deps + final statuses) after the scheduler drained it. Emitted on the
 	// Decompose route (ADR 0008 Phase 4); observability, never conversation context.
 	ContentTaskPlan ContentType = "task_plan"
+	// ContentTaskNode is a live per-node plan delta (ADR 0009 §9a): dispatched /
+	// decomposed / completed, streamed as the scheduler drains so execution is
+	// user-visible while it happens — never batched to completion.
+	ContentTaskNode ContentType = "task_node"
 )
 
 var validContentTypes = map[ContentType]bool{
@@ -44,7 +48,7 @@ var validContentTypes = map[ContentType]bool{
 	ContentThinking: true, ContentAgentDelta: true, ContentAgentResponse: true,
 	ContentAttachments: true, ContentToolCall: true, ContentToolResult: true,
 	ContentProcessingState: true, ContentTaskProposed: true, ContentTaskResult: true,
-	ContentTaskDiagnostic: true, ContentTaskPlan: true,
+	ContentTaskDiagnostic: true, ContentTaskPlan: true, ContentTaskNode: true,
 }
 
 // DefaultEnabled reports whether an event of the given content type participates

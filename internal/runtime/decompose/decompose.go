@@ -19,12 +19,14 @@ package decompose
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"agentx/internal/llm/fanout"
 	"agentx/internal/prompting/planner"
 	"agentx/internal/prompting/task"
 	"agentx/internal/runtime/branch"
+	"agentx/internal/runtime/scheduler"
 	"agentx/internal/session"
 )
 
@@ -97,6 +99,15 @@ func (d Decomposer) Decompose(ctx context.Context, rec task.Record) (branch.Resu
 	plan, err := d.Planner.Plan(ctx, rec.ID, rec.Goal, factsContext(b.Facts()))
 	if err != nil {
 		return branch.Result{}, err
+	}
+	// Non-progress guard (ADR 0009, tidy-cove spiral): a child that echoes the parent's
+	// goal would recurse forever — refuse, so the scheduler executes the node instead.
+	for _, child := range plan.Records {
+		if SimilarGoals(rec.Goal, child.Goal) {
+			return branch.Result{}, fmt.Errorf(
+				"decompose %q: child %q echoes the parent goal: %w",
+				rec.ID, child.ID, scheduler.ErrNoProgress)
+		}
 	}
 	for _, child := range plan.Records {
 		if err := b.Add(child); err != nil {

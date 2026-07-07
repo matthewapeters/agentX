@@ -9,11 +9,16 @@ import (
 func TestHeuristicOneStep(t *testing.T) {
 	h := HeuristicOneStep{}
 	cases := map[string]bool{ // goal -> want one-step
-		"read the go.mod file":                                                  true,
-		"list the packages":                                                     true,
-		"review the current project and identify one under-developed feature":   false, // " and " ⇒ compound
-		"read every file then summarize the architecture":                       false, // " then "
-		"do a very long thing with lots of separate words exceeding the limit here": false, // length
+		"read the go.mod file":                                                true,
+		"list the packages":                                                   true,
+		"review the current project and identify one under-developed feature": false, // " and <verb>" ⇒ compound
+		"read every file then summarize the architecture":                     false, // " then "
+		// tidy-cove spiral cases (ADR 0009): result plumbing is not a second step, and a
+		// bare " and " between nouns is not clause chaining.
+		"Run `ls -la` on /home/mpeters/Projects/agentX and capture its output": true,
+		"List the files and save output to $OUTPUT":                           true,
+		"enumerate all files and directories in the project root":             true,
+		"do an exceedingly long thing with very many separate words that easily exceeds the generous default length limit here": false, // length
 	}
 	for goal, want := range cases {
 		got, err := h.OneStep(context.Background(), goal)

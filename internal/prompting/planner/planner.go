@@ -42,7 +42,17 @@ Reply with JSON only:
   {"id": "s1", "goal": "<a single concrete sub-step>", "deps": [], "cost": 1}
 ]}
 Each step id is a short local label; deps lists the ids of steps that must finish first;
-cost is a rough 1-5 effort estimate. Keep steps atomic — one action each.`
+cost is a rough 1-5 effort estimate.
+
+Rules for step goals — follow exactly:
+- ONE action per step, phrased as a verb + object. Never chain actions with "and"/"then".
+- The tool that runs a step RETURNS ITS RESULTS AUTOMATICALLY. DO NOT add result plumbing:
+  never write "and capture the output", "and save results to a variable", "and return
+  results". WRONG: "Run ls -la and capture its output". RIGHT: "List the files in <dir>".
+- No shell syntax: no pipes, redirects, $VARIABLES, or command chaining. Name the action,
+  not the command line.
+- Never restate the goal itself as a step. If the goal is already a single action, reply
+  with exactly one step that names that action directly.`
 
 // Plan is a parsed decomposition: the child task records (DAG-shaped, with deps rewritten
 // to the namespaced child ids), plus the model's plan name and synthesis.

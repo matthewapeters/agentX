@@ -237,26 +237,29 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 }
 
 // runDecomposition drains a compound goal through the scheduler in the background (so the
-// turn is never blocked) and publishes the plan: a task_plan event summarizing the drained
-// DAG, and a task_result per leaf. It reuses the tuned classifier (via the oracle) and a
-// read-restricted branch (via the decomposer). Best-effort, like the rest of the classifier
-// path: a decomposition error is surfaced as a diagnostic, never as a disturbed prompt cycle.
+// turn is never blocked), streaming per-node task_node deltas as it goes (ADR 0009 §9a —
+// all execution is user-visible while it runs) and closing with the final task_plan
+// snapshot. It reuses the tuned classifier (via the oracle) and a read-restricted branch
+// (via the decomposer). Best-effort, like the rest of the classifier path: a decomposition
+// error is surfaced on the plan event, never as a disturbed prompt cycle.
 func (o *Orchestrator) runDecomposition(ctx context.Context, root task.Record, ex taskExecutor) {
-	outcome, err := decompose.DrainPlan(ctx, root, o.taskOracle, o.taskDecomp, ex, decompose.DefaultSlots, branch.DefaultMaxDepth)
+	outcome, err := decompose.DrainPlan(ctx, root, o.taskOracle, o.taskDecomp, ex,
+		decompose.DefaultSlots, decompose.DefaultMaxDepth, &planObserver{o: o, root: root.ID})
 
+	executed := 0
 	nodes := make([]map[string]any, 0, len(outcome.Nodes))
 	for _, n := range outcome.Nodes {
 		nodes = append(nodes, map[string]any{
 			"task_id": n.ID, "goal": n.Goal, "status": string(n.Status), "deps": n.Deps,
 		})
-		if n.ID != root.ID {
-			o.publish("TASK_RESULT", state.ContentTaskResult, map[string]any{
-				"task_id": n.ID, "route": string(reconcile.Decompose),
-				"status": string(n.Status), "verified": n.Status == task.Done,
-			})
+		if n.Status == task.Done {
+			executed++
 		}
 	}
-	payload := map[string]any{"root": root.ID, "goal": root.Goal, "nodes": nodes}
+	payload := map[string]any{
+		"root": root.ID, "goal": root.Goal, "phase": "ended", "nodes": nodes,
+		"executed": executed,
+	}
 	if err != nil {
 		payload["error"] = err.Error()
 	}
