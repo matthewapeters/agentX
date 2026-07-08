@@ -39,29 +39,66 @@ const (
 	DecisionGlobal
 )
 
-// approvalGate carries a single in-flight approval decision from the surface back
-// to the paused prompt cycle.
-type approvalGate struct {
-	mu sync.Mutex
-	ch chan ApprovalDecision
+// approvalRequest is one pending tool call awaiting a user decision. Each request owns
+// its own response channel — the fix for the concurrent-approval deadlock (session
+// vivid-raven): the scheduler can dispatch several leaves that each call RequestApproval
+// on their own goroutine, and a single shared channel gets silently overwritten by
+// whichever request arms it last, permanently orphaning every earlier one (blocked
+// forever on a channel nothing will ever write to again — a lost wakeup, not a timeout,
+// so the plan can never finish). A channel per request makes that structurally
+// impossible: delivery always targets the exact request it was meant for.
+type approvalRequest struct {
+	descriptor tools.Descriptor
+	args       map[string]string
+	resp       chan ApprovalDecision // size-1, owned solely by this request
 }
 
-func (g *approvalGate) arm() chan ApprovalDecision {
+// approvalGate serializes concurrent approval requests into a FIFO queue and shows
+// exactly one at a time to the surface — "orchestrate approvals being displayed and
+// responded to: one request at a time" — rather than racing several tool_call/
+// awaiting_input announcements against each other.
+type approvalGate struct {
+	mu      sync.Mutex
+	pending []*approvalRequest // pending[0], if any, is the one currently shown
+}
+
+// enqueue adds req to the queue and reports whether it is now at the front (i.e. should
+// be shown immediately rather than waiting for earlier requests to resolve).
+func (g *approvalGate) enqueue(req *approvalRequest) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.ch = make(chan ApprovalDecision, 1)
-	return g.ch
+	g.pending = append(g.pending, req)
+	return len(g.pending) == 1
 }
 
-func (g *approvalGate) disarm() {
+// dequeue removes req from the queue (wherever it is — it may still be waiting in line,
+// e.g. if its ctx was canceled before ever being shown) and reports the new front-of-queue
+// request to show next, if the queue is non-empty and its front changed.
+func (g *approvalGate) dequeue(req *approvalRequest) (next *approvalRequest, ok bool) {
 	g.mu.Lock()
-	g.ch = nil
-	g.mu.Unlock()
+	defer g.mu.Unlock()
+	wasFront := len(g.pending) > 0 && g.pending[0] == req
+	for i, r := range g.pending {
+		if r == req {
+			g.pending = append(g.pending[:i], g.pending[i+1:]...)
+			break
+		}
+	}
+	if wasFront && len(g.pending) > 0 {
+		return g.pending[0], true
+	}
+	return nil, false
 }
 
+// deliver resolves the currently-shown (front-of-queue) request only — the surface only
+// ever answers the one request it was shown, so there is never ambiguity about which
+// request a decision belongs to.
 func (g *approvalGate) deliver(d ApprovalDecision) bool {
 	g.mu.Lock()
-	ch := g.ch
+	var ch chan ApprovalDecision
+	if len(g.pending) > 0 {
+		ch = g.pending[0].resp
+	}
 	g.mu.Unlock()
 	if ch == nil {
 		return false
@@ -74,9 +111,8 @@ func (g *approvalGate) deliver(d ApprovalDecision) bool {
 	}
 }
 
-// Resolve delivers a surface approval decision to a pending RequestApproval:
-// "session" or "global" approve, anything else denies. It is a no-op when no
-// request is pending.
+// Resolve delivers a surface approval decision to the currently-shown request: "session"
+// or "global" approve, anything else denies. It is a no-op when no request is pending.
 func (o *Orchestrator) Resolve(decision string) {
 	switch decision {
 	case "session":
@@ -88,20 +124,31 @@ func (o *Orchestrator) Resolve(decision string) {
 	}
 }
 
-// RequestApproval publishes the proposed tool call, moves the cycle to
-// awaiting_input, and blocks until the surface resolves the request (or ctx is
-// canceled). On approval it persists the chosen scope to pol and returns Allow; a
-// denial returns Deny; cancellation returns the ctx error. It is the reusable
-// approval seam the single_tool cycle calls (TOOL-4).
+// RequestApproval enqueues the proposed tool call and, once it's at the front of the
+// queue, publishes it and moves the cycle to awaiting_input; it blocks until the surface
+// resolves this specific request (or ctx is canceled) — never a shared channel, so a
+// second concurrent request can never orphan this one. On approval it persists the chosen
+// scope to pol and returns Allow; a denial returns Deny; cancellation returns the ctx
+// error and — if this request was already showing — advances the queue to the next one,
+// so a canceled/interrupted request never leaves the surface stuck displaying it forever.
+// It is the reusable approval seam both the single_tool cycle and the scheduler's
+// concurrent leaves call (TOOL-4; ADR 0008).
 func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, args map[string]string, pol *tools.Policy) (tools.Verdict, error) {
-	ch := o.gate.arm()
-	defer o.gate.disarm()
-
-	o.publishToolCall(d, args)
-	o.setProcessing(state.StateAwaitingInput, state.PhaseTool)
+	req := &approvalRequest{descriptor: d, args: args, resp: make(chan ApprovalDecision, 1)}
+	shown := o.gate.enqueue(req)
+	if shown {
+		o.publishToolCall(d, args)
+		o.setProcessing(state.StateAwaitingInput, state.PhaseTool)
+	}
+	defer func() {
+		if next, ok := o.gate.dequeue(req); ok {
+			o.publishToolCall(next.descriptor, next.args)
+			o.setProcessing(state.StateAwaitingInput, state.PhaseTool)
+		}
+	}()
 
 	select {
-	case dec := <-ch:
+	case dec := <-req.resp:
 		switch dec {
 		case DecisionSession:
 			pol.Approve(tools.ScopeSession, d, args)

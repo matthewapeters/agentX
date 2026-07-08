@@ -7,6 +7,25 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] - 2026-07-07
 
+### Fixed
+
+- **Concurrent tool approvals deadlocked the session (`vivid-raven`).**
+  `approvalGate` was a singleton — one shared response channel, safe only
+  when the single-tool cycle called `RequestApproval` one at a time. Once
+  the scheduler could dispatch concurrent plan leaves, a second concurrent
+  approval request's `arm()` silently overwrote the first's channel,
+  permanently orphaning it: blocked forever on a channel nothing would ever
+  write to again, holding a scheduler slot hostage so the plan (and the
+  whole turn) could never finish — a lost wakeup, not a timeout, so nothing
+  ever recovered it. `RequestApproval` now owns a private response channel
+  per request, and `approvalGate` serializes concurrent requests into a FIFO
+  queue, showing exactly one at a time and advancing to the next when the
+  shown one resolves or is canceled while still waiting. New
+  `internal/runtime/approval_test.go` reproduces the exact broken mechanism
+  deterministically (no goroutine timing) and proves it now resolves
+  correctly; all 4 existing approval scenarios pass unchanged;
+  `go test -race` clean.
+
 ### Added
 
 - **Plan synthesis now sees a step's real findings, not its UI preview.** Session
