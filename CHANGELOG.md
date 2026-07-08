@@ -9,6 +9,23 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Plan synthesis now sees a step's real findings, not its UI preview.** Session
+  `lively-raven`: `tree` ran successfully (538 lines) on this repo, but the
+  model's final answer called agentX "a Python-based AI agent framework" — the
+  plan cycle was folding `Result.Preview` (the executor's 20-line UI-display
+  cap) into synthesis, so `go.mod`/`cmd/`/`internal/` never made it in; what
+  did was a stray `agentx.egg-info` and a separately-guessed, failed
+  `src/main.py` read. The UI preview and the model's one shot at seeing a
+  result are different audiences with different needs (Context Curation) —
+  sharing one small cap discarded exactly the evidence that mattered.
+  `capturingExec` now reads back up to 200 lines from the artifact store
+  (which already persists every result's full output, independent of the tiny
+  preview) for synthesis, while the collapsed tool widget is untouched. New
+  `internal/runtime/plan_cycle_test.go` (the package's first unit test).
+  Live-verified against a real `tree` run on this repo: the old preview
+  genuinely lacked `go.mod`/`cmd/`; the widened read has both. Honest limit:
+  200 lines is a bounded budget, not "everything" — `internal/` still fell
+  just past it on this repo's actual output.
 - **Context Curation** is now stated in `CLAUDE.md` as the project's core design
   motto: every LLM call gets deliberately curated context for *that specific
   call*, never a default one-size-fits-all assembly. Written down after tracing

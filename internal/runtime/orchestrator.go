@@ -741,6 +741,17 @@ func (o *Orchestrator) workingMemoryFacts() []prompting.Fact {
 	return facts
 }
 
+// artifactStore returns the session's artifact store, tolerating a lookup failure by
+// returning nil — an auxiliary capability (widening a plan step's findings beyond its UI
+// preview) degrading gracefully is preferable to a hard failure over it.
+func (o *Orchestrator) artifactStore() artifactReader {
+	art, err := o.store.Artifacts(o.id.ID)
+	if err != nil {
+		return nil
+	}
+	return art
+}
+
 // thinkForRoute reports whether this turn should reason before answering: the
 // master switch is on and the classified route opts into thinking. An empty
 // route (unclassified, e.g. bootstrap) never thinks.

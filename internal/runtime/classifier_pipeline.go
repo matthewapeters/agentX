@@ -308,7 +308,7 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 func (o *Orchestrator) runDecomposition(ctx context.Context, root task.Record, ex taskExecutor) {
 	o.setProcessing(state.StateWorking, state.PhasePlanning)
 
-	cap := &capturingExec{inner: ex}
+	cap := &capturingExec{inner: ex, reader: o.artifactStore()}
 	outcome, err := decompose.DrainPlan(ctx, root, o.taskDecomp, cap,
 		decompose.DefaultSlots, decompose.DefaultMaxDepth, &planObserver{o: o, root: root.ID})
 

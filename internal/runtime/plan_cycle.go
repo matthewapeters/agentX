@@ -18,24 +18,55 @@ func (o *Orchestrator) planReady() bool {
 	return o.taskDecomp != nil && o.taskExec != nil
 }
 
+// findingsLines bounds how much of a tool result's real output feeds the plan's synthesis
+// — deliberately much larger than the executor's UI-preview cap (20 lines). Those two
+// numbers serve different audiences (Context Curation, CLAUDE.md): the collapsed tool
+// widget is a human glance, expandable on demand; the synthesis prompt is the model's ONE
+// chance to see what a step actually found, with no way to ask for more. Sharing one small
+// cap between them (the lively-raven bug) meant `tree`'s entire depth-3 structure was
+// discarded down to its first ~20 alphabetical entries before synthesis ever saw it — a
+// stray `agentx.egg-info` and a failed guessed path made it in; `go.mod`/`cmd/`/`internal/`
+// did not, and the model concluded "Python-based" from what little survived.
+const findingsLines = 200
+
+// artifactReader reads back a tool result's full stored output by ref (satisfied by
+// *session.Artifacts) — the same store the executor already writes every result to,
+// regardless of how short its UI preview is.
+type artifactReader interface {
+	Read(ref string, offset, limit int) ([]byte, error)
+}
+
 // capturingExec wraps the task executor to record every leaf outcome as the scheduler
 // drains a plan, so the plan cycle can fold the real findings into the answer. The
 // scheduler runs Execute on worker goroutines, so it locks.
 type capturingExec struct {
 	inner taskExecutor
-	mu    sync.Mutex
-	steps []capturedStep
+	// reader fetches the widened findings text from the artifact store; nil (no store, or
+	// a lookup failure at construction) falls back to the step's UI preview — degraded,
+	// but never a hard failure over an auxiliary capability.
+	reader artifactReader
+	mu     sync.Mutex
+	steps  []capturedStep
 }
 
 type capturedStep struct {
 	goal    string
 	outcome executor.Outcome
+	// findings is what actually reaches the synthesis prompt: up to findingsLines of the
+	// real result, read back from the artifact store — not the UI's tight preview.
+	findings string
 }
 
 func (c *capturingExec) Execute(ctx context.Context, rec task.Record) executor.Outcome {
 	out := c.inner.Execute(ctx, rec)
+	findings := strings.TrimSpace(out.Result.Preview)
+	if c.reader != nil && out.Result.Ref != "" {
+		if data, err := c.reader.Read(out.Result.Ref, 0, findingsLines); err == nil && len(data) > 0 {
+			findings = strings.TrimSpace(string(data))
+		}
+	}
 	c.mu.Lock()
-	c.steps = append(c.steps, capturedStep{goal: rec.Goal, outcome: out})
+	c.steps = append(c.steps, capturedStep{goal: rec.Goal, outcome: out, findings: findings})
 	c.mu.Unlock()
 	return out
 }
@@ -93,7 +124,7 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text string, userOrd ui
 		"root": root.ID, "goal": root.Goal, "phase": "started",
 		"nodes": []map[string]any{{"task_id": root.ID, "goal": root.Goal, "status": string(root.Status), "deps": root.Deps}},
 	})
-	cap := &capturingExec{inner: o.taskExec}
+	cap := &capturingExec{inner: o.taskExec, reader: o.artifactStore()}
 	out, derr := decompose.DrainPlan(ctx, root, o.taskDecomp, cap,
 		decompose.DefaultSlots, decompose.DefaultMaxDepth, &planObserver{o: o, root: root.ID})
 	if ctx.Err() != nil {
@@ -163,8 +194,8 @@ func planContext(steps []capturedStep) string {
 	b.WriteString("\n\n[Investigation — executed steps and findings]\n")
 	for _, s := range steps {
 		fmt.Fprintf(&b, "- %s → %s", s.goal, s.outcome.Status)
-		if p := strings.TrimSpace(s.outcome.Result.Preview); p != "" {
-			fmt.Fprintf(&b, ": %s", p)
+		if s.findings != "" {
+			fmt.Fprintf(&b, ": %s", s.findings)
 		}
 		if s.outcome.Reason != "" {
 			fmt.Fprintf(&b, " (%s)", s.outcome.Reason)
