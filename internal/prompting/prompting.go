@@ -45,6 +45,19 @@ func WorkingMemoryMessage(facts []Fact) (Message, bool) {
 	return Message{Role: "system", Content: b.String()}, true
 }
 
+// PlanFindingsMessage renders a decomposition plan's live findings-so-far (see
+// internal/planfindings) into its own system message, separate from
+// WorkingMemoryMessage — persistent session facts and one specific plan's in-flight
+// discoveries are different context shapes (Context Curation, CLAUDE.md) and
+// deliberately not folded into the same message. Returns ok=false for an empty
+// string, so the caller can omit the message entirely.
+func PlanFindingsMessage(findings string) (Message, bool) {
+	if strings.TrimSpace(findings) == "" {
+		return Message{}, false
+	}
+	return Message{Role: "system", Content: findings}, true
+}
+
 // Assembler builds the message sequence for a user turn.
 type Assembler struct {
 	systemPrompt string

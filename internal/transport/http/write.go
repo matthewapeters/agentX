@@ -94,6 +94,26 @@ func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "resolved"})
 }
 
+// handleVerbApproval forwards a verb-continuation decision to the orchestrator's
+// verb-approval gate — the same shape as handleApproval, for the distinct
+// stated-continuation-verb decision (see internal/runtime's verbApprovalGate).
+func (s *Server) handleVerbApproval(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(r) {
+		writeError(w, http.StatusUnauthorized, surfaces.CategoryAuth, "invalid or missing attach token")
+		return
+	}
+	var body approvalBody
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Decision) == "" {
+		writeError(w, http.StatusBadRequest, surfaces.CategoryValidation, "decision is required")
+		return
+	}
+	s.prov.ResolveVerb(body.Decision)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "resolved"})
+}
+
 // handleShutdown transitions a registered surface to stopped.
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(r) {

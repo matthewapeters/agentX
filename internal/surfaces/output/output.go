@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -42,6 +43,7 @@ const (
 	kindError
 	kindLaunch
 	kindPlan
+	kindVerbPrompt
 )
 
 // launchItem pairs a launchable surface kind with its full attach command. The
@@ -91,6 +93,10 @@ type widget struct {
 	// nested indents the whole box under its parent (a plan step's 🔧 call and
 	// 📋 result render as children of the 🗺 plan widget — ADR 0009 §9c).
 	nested bool
+	// planRoot identifies the plan tree this widget renders (kindPlan only) —
+	// renderPlanWidget looks it up in Model.plans and draws it recursively at view
+	// time (ADR 0009 §9c redesign: nested Step/Task boxes, not a flat text body).
+	planRoot string
 }
 
 // defaultActive and defaultInactive are the built-in border SGR colors used
@@ -123,6 +129,10 @@ type Model struct {
 	mdMode          string // finalized-assistant renderer: "native" or "" (scanner) — ADR 0007
 
 	plans map[string]*planState // live plan widgets by root task id (ADR 0009 §9c)
+	// spinIndex routes a spinner.TickMsg to the plan node it belongs to — each
+	// currently-running node owns an independent spinner.Model (see applyNodeEvent),
+	// keyed by its own globally-unique spinner ID.
+	spinIndex map[int]*planNode
 }
 
 // SetCollapseByDefault makes newly added elements start collapsed — the context
@@ -187,7 +197,7 @@ func New() *Model {
 	vp := viewport.New()
 	vp.FillHeight = true
 	return &Model{vp: vp, maxBody: defaultMaxBody, selected: -1, active: defaultActive, inactive: defaultInactive,
-		plans: map[string]*planState{}}
+		plans: map[string]*planState{}, spinIndex: map[int]*planNode{}}
 }
 
 // SetTheme sets the border SGR colors for selected (active) and other (inactive)
@@ -362,18 +372,46 @@ func (m *Model) contentWidth() int { return max(m.width-1, 0) }
 // Height returns the panel's row count.
 func (m *Model) Height() int { return m.height }
 
-// Update forwards scrolling messages (mouse wheel) to the transcript viewport.
+// Update forwards scrolling messages (mouse wheel) to the transcript viewport, and
+// routes a plan node's independent spinner tick (ADR 0009 §9c redesign — each
+// concurrently-running node animates on its own, not in lockstep). A tick whose ID
+// doesn't match any currently-running node (already completed, or never ours) is a
+// harmless no-op — its Tick chain simply ends there.
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
-	var cmd tea.Cmd
-	m.vp, cmd = m.vp.Update(msg)
-	return cmd
+	switch msg := msg.(type) {
+	case spinner.TickMsg:
+		// msg.ID <= 0 never belongs to a real node spinner (startSpin's spinner.New()
+		// always yields a positive, globally-unique ID) — defensive, since chat.go's
+		// own forwarding already filters this, but Update has no other caller
+		// guarantee to lean on.
+		if msg.ID <= 0 {
+			return nil
+		}
+		n, ok := m.spinIndex[msg.ID]
+		if !ok || n.status != "running" || n.spin == nil {
+			return nil
+		}
+		var cmd tea.Cmd
+		*n.spin, cmd = n.spin.Update(msg)
+		m.refresh(false) // a tick must not yank scroll position the way a new event does
+		return cmd
+	default:
+		var cmd tea.Cmd
+		m.vp, cmd = m.vp.Update(msg)
+		return cmd
+	}
 }
 
-// Apply folds a bus event into the panel as a widget and selects it.
-func (m *Model) Apply(ev state.Event) {
+// Apply folds a bus event into the panel as a widget and selects it. The returned
+// tea.Cmd starts a plan node's spinner ticking on dispatch (ADR 0009 §9c redesign);
+// every other path returns nil. client.SurfaceModel's Apply(ev) has no return value —
+// callers outside the bundled chat surface (e.g. the context surface, which holds its
+// own internal output.Model) may simply discard it, losing only the live spinner
+// animation, not correctness.
+func (m *Model) Apply(ev state.Event) tea.Cmd {
 	if ev.EventType == "ERROR" {
 		m.add(&widget{kind: kindError, title: "⚠ error", body: eventText(ev), previewWhenCollapsed: true})
-		return
+		return nil
 	}
 	switch ev.ContentType {
 	case state.ContentUserPrompt:
@@ -394,44 +432,47 @@ func (m *Model) Apply(ev state.Event) {
 		// assistant widget for the typing effect. The complete agent_response
 		// finalizes it and stamps its identity.
 		m.appendAssistant(eventText(ev))
-		return
+		return nil
 	case state.ContentAgentResponse:
 		m.finalizeAssistant(eventText(ev), ev.Ordinal, ev.Enabled)
-		return
+		return nil
 	case state.ContentThinking:
 		m.appendThinking(eventText(ev))
-		return
+		return nil
 	case state.ContentToolCall:
-		// A call tagged with a plan step's task id nests (indented) under the plan
-		// widget; an untagged call (single_tool cycle) renders flat as before.
-		w := &widget{kind: kindToolCall, title: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true, previewWhenCollapsed: true}
+		// A call tagged with a plan step's task id folds into that Task node's own
+		// fields (ADR 0009 §9c redesign) — no separate widget. An untagged call
+		// (single_tool cycle) renders flat as before.
 		if tid := taskIDOf(ev); tid != "" && m.planFor(tid) != nil {
-			w.nested, w.title = true, "🔧 "+ev.ToolName+" · "+tid
+			m.applyTaskToolEvent(ev, false)
+			return nil
 		}
-		m.add(w)
+		m.add(&widget{kind: kindToolCall, title: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true, previewWhenCollapsed: true})
 	case state.ContentToolResult:
-		w := &widget{kind: kindToolResult, title: "📋 result", body: eventText(ev), collapsible: true, collapsed: true}
 		if tid := taskIDOf(ev); tid != "" && m.planFor(tid) != nil {
-			w.nested = true
-			if out := resultOutcome(ev); out != "" {
-				w.title = "📋 result · " + out
-			}
+			m.applyTaskToolEvent(ev, true)
+			return nil
 		}
-		m.add(w)
+		m.add(&widget{kind: kindToolResult, title: "📋 result", body: eventText(ev), collapsible: true, collapsed: true})
 	case state.ContentTaskPlan:
 		// A plan gets ONE live widget, created at the "started" snapshot — before any
 		// execution — and finalized by the "ended" snapshot (ADR 0009 §9c).
 		m.applyPlanEvent(ev)
-		return
+		return nil
 	case state.ContentTaskNode:
 		// Per-node delta: mutate the plan widget in place (dispatch/decompose/complete).
-		m.applyNodeEvent(ev)
-		return
+		return m.applyNodeEvent(ev)
 	case state.ContentSystemPrompt:
 		m.add(&widget{kind: kindSystem, title: "📜 system prompt", body: eventText(ev), previewWhenCollapsed: true})
+	case state.ContentVerbPrompt:
+		p, _ := ev.Payload.(map[string]any)
+		verb, sentence := str(p["verb"]), str(p["sentence"])
+		m.add(&widget{kind: kindVerbPrompt, title: "🤔 continue on \"" + verb + "\"?",
+			body: sentence, previewWhenCollapsed: true})
 	default:
-		return
+		return nil
 	}
+	return nil
 }
 
 // add appends a widget, makes it the selection, and pins the view to the bottom.
@@ -661,6 +702,12 @@ func (m *Model) scrollSelectedIntoView() {
 // line (narrative kinds) or nothing (noise kinds); an expanded box shows the capped,
 // scrollable body.
 func (m *Model) renderWidget(w *widget, selected bool) []string {
+	// A plan renders as a recursive nested-box DAG, not a flat text body — drawn at
+	// view time (not baked into w.body at event time) so a resize is correct for
+	// free (ADR 0009 §9c redesign).
+	if w.kind == kindPlan {
+		return m.renderPlanWidget(w, selected)
+	}
 	// Classification is always a single line of metadata, so it renders flat (no
 	// box): "⚙ classification · <intent → route>", tinted by selection like a border.
 	if w.kind == kindClassification {
@@ -814,19 +861,27 @@ func scrollbarCell(i, offset, total, track int) string {
 // widget uses the active color while the panel is focused, every other widget
 // (and the selected one when the panel is unfocused) uses the inactive color.
 func (m *Model) boxify(title string, rows []string, innerW int, selected bool) []string {
-	tl, tr, bl, br, h, v := "┌", "┐", "└", "┘", "─", "│"
-	if selected {
-		tl, tr, bl, br, h, v = "┏", "┓", "┗", "┛", "━", "┃"
-	}
 	code := m.inactive
 	if selected && m.focused {
 		code = m.active
 	}
+	return m.boxifyStyled(title, rows, innerW, code, selected)
+}
+
+// boxifyStyled is boxify's underlying primitive with an explicit border color
+// (empty = undyed) and heaviness, independent of the panel's selected/inactive
+// two-way logic — the plan widget's nested Step/Task boxes use this directly so
+// color can carry kind/running-state information instead (ADR 0009 §9c redesign).
+func (m *Model) boxifyStyled(title string, rows []string, innerW int, colorCode string, heavy bool) []string {
+	tl, tr, bl, br, h, v := "┌", "┐", "└", "┘", "─", "│"
+	if heavy {
+		tl, tr, bl, br, h, v = "┏", "┓", "┗", "┛", "━", "┃"
+	}
 	paint := func(s string) string {
-		if code == "" {
+		if colorCode == "" {
 			return s
 		}
-		return "\x1b[" + code + "m" + s + "\x1b[0m"
+		return "\x1b[" + colorCode + "m" + s + "\x1b[0m"
 	}
 	out := make([]string, 0, len(rows)+2)
 	out = append(out, m.topBorder(title, innerW, tl, tr, h, paint))

@@ -263,6 +263,98 @@ THEN it is framed by a single-line box border (lipgloss NormalBorder)
   AND the border reflows to the current panel width on resize.
 ```
 
+## Plan widget (nested Step/Task DAG)
+
+A decomposed plan (ADR 0009 §9c, redesigned 2026-07-08) gets **one** live widget per
+root, created at the `task_plan` "started" snapshot and mutated in place as
+`task_node`/`tool_call`/`tool_result` deltas arrive — never appended to, never
+replaced. Unlike every other widget kind, it does not render from a static `body`
+string: it draws its nested boxes recursively at *view* time (`renderPlanWidget` in
+`internal/surfaces/output/plan.go`), so a terminal resize is correct for free.
+
+The outer widget box *is* the root node's own box — its title bar is the plan's
+summary line (`🗺 plan · N/M steps [· K running ∥]`); its first content row is the
+root's own status line (glyph + goal + timing), followed by its children.
+
+```gherkin
+GIVEN a plan node that is a Step (kind "step")
+WHEN it renders
+THEN its own status line is its box's first content row
+  AND, if it has decomposed, each child renders as its own fully nested box inside it,
+      in order, recursively at whatever depth the plan actually reaches
+
+GIVEN a plan node that is a Task (kind "task")
+WHEN it renders
+THEN its resolved tool command renders as one reverse-video row inside its box
+  AND that row renders regardless of collapse state
+  AND its result, if present and the node is expanded, renders as a further-nested
+      collapsible box one level inside the command row
+
+GIVEN a plan node
+WHEN it or the plan overall is running
+THEN its border and title glyph pick up an amber tint that overrides its kind color
+  AND a running Task's status glyph is its own independently-animated spinner frame,
+      not a static glyph — concurrently-running nodes animate independently, not in
+      lockstep
+```
+
+**Color** differentiates Kind, not selection: Step boxes are blue (`38;5;75`), Task
+boxes are tan (`38;5;180`), a running node of either kind is amber (`38;5;214`) —
+selection is conveyed by border *heaviness* (the pre-existing thin/heavy convention),
+not by switching to the active/inactive selection colors every other widget kind uses.
+
+**Liveness-propagating auto-collapse** governs whether a node's children (if a Step)
+or result (if a Task) render at all **while the plan is still running**: a node's own
+children/result show exactly while it — or *any* descendant, at any depth — is
+running. This is an all-or-nothing gate on the whole children group per level, not per
+individual child: while a group is live, already-finished or not-yet-started siblings
+in that same group render too (useful context, still bounded — each of *those*
+siblings' own deeper content stays independently governed by its own liveness). If
+nothing anywhere in the tree is currently live, the whole thing collapses uniformly to
+just the root's own line — including mid-plan, between two bursts of activity.
+
+**Once the plan has ended, liveness stops gating anything and the full structure
+always shows**, unconditionally. A real fast tool call (`ls`, `tree`, `grep` — the
+overwhelming common case) dispatches and completes in single-digit milliseconds, far
+under one terminal frame; gating past "ended" the same way meant the "live" window was
+in practice never rendered at all, and — since there is no manual per-node expand,
+deliberately — a finished plan had no way back to showing its steps (session
+`brave-fjord-2`, 2026-07-08). Liveness exists only to bound clutter on a plan that is
+still actively producing more content; that concern doesn't exist once it's over, and
+the widget's stated job is to be "the record of what ran."
+
+```gherkin
+GIVEN a Step that has decomposed but none of its children have started, plan still running
+WHEN the plan renders
+THEN the Step's own line shows, but its children do not
+
+GIVEN a Step whose one running child has a finished sibling in the same group
+WHEN the plan renders
+THEN both the running child and its finished sibling render
+  AND the finished sibling's own deeper content (further children, or a Task's
+      result) stays collapsed regardless
+
+GIVEN a plan in which every node has finished or never started, but the plan itself
+      has not yet received its "ended" snapshot
+WHEN the plan renders
+THEN only the root's own status line shows — every child group is collapsed
+
+GIVEN a plan that has received its "ended" snapshot
+WHEN the plan renders
+THEN every node's full content shows, regardless of how quickly each step ran
+```
+
+A width floor (`nodeBoxFloor`, 8 columns) bounds recursion depth on a narrow
+terminal or a very deep plan: below it, a node falls back to a single flat
+`glyph + goal` line instead of an unreadably narrow nested box — mirroring the
+existing `innerW < 1` single-line fallback every other widget kind already has.
+
+The full nested tree (kind, status, timing, command, result ref, explicit
+parent/child containment distinct from sibling "waits-on" deps) is also persisted to
+`sessions/<id>/plans/<root-id>.json` on every mutation (ADR 0009 §9b,
+`internal/session/plans.go`) — the queryable, post-session-review companion to the
+live rendering and the append-only event log.
+
 ## Logo banner (bootstrap)
 
 The output panel renders an optional **logo banner** as the very first element of

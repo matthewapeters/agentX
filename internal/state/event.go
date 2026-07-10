@@ -41,6 +41,11 @@ const (
 	// decomposed / completed, streamed as the scheduler drains so execution is
 	// user-visible while it happens — never batched to completion.
 	ContentTaskNode ContentType = "task_node"
+	// ContentVerbPrompt announces an unrecognized stated-continuation verb (neither
+	// allow- nor deny-listed — see internal/prompting/continuation) awaiting the
+	// user's decision: allow once/always, deny once/always. Observability, never
+	// conversation context — the surface pairs it with StateAwaitingInput/PhaseVerb.
+	ContentVerbPrompt ContentType = "verb_prompt"
 )
 
 var validContentTypes = map[ContentType]bool{
@@ -49,6 +54,7 @@ var validContentTypes = map[ContentType]bool{
 	ContentAttachments: true, ContentToolCall: true, ContentToolResult: true,
 	ContentProcessingState: true, ContentTaskProposed: true, ContentTaskResult: true,
 	ContentTaskDiagnostic: true, ContentTaskPlan: true, ContentTaskNode: true,
+	ContentVerbPrompt: true,
 }
 
 // DefaultEnabled reports whether an event of the given content type participates

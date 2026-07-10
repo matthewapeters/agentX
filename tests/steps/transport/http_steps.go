@@ -39,10 +39,11 @@ type fakeProvider struct {
 	sess session.Identity
 	reg  *surfaces.Registry
 
-	mu           sync.Mutex
-	accepting    bool
-	lastDecision string
-	history      []state.Event
+	mu               sync.Mutex
+	accepting        bool
+	lastDecision     string
+	lastVerbDecision string
+	history          []state.Event
 	wm           session.WorkingMemory
 	ctxReport    session.ContextReport
 	toggled      []toggleRecord
@@ -73,6 +74,12 @@ func (p *fakeProvider) Submit(_ context.Context, text string) error {
 func (p *fakeProvider) Resolve(decision string) {
 	p.mu.Lock()
 	p.lastDecision = decision
+	p.mu.Unlock()
+}
+
+func (p *fakeProvider) ResolveVerb(decision string) {
+	p.mu.Lock()
+	p.lastVerbDecision = decision
 	p.mu.Unlock()
 }
 
@@ -150,6 +157,12 @@ func (p *fakeProvider) decision() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.lastDecision
+}
+
+func (p *fakeProvider) verbDecision() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.lastVerbDecision
 }
 
 type transportWorld struct {
@@ -244,9 +257,11 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^a client POSTs to "/surface/register" for id "([^"]*)" with a valid token$`, w.postRegisterID)
 	sc.Step(`^a client POSTs "/prompt" with text "([^"]*)"$`, w.postPrompt)
 	sc.Step(`^a client POSTs "/tool/approval" with decision "([^"]*)"$`, w.postApproval)
+	sc.Step(`^a client POSTs "/verb/approval" with decision "([^"]*)"$`, w.postVerbApproval)
 	sc.Step(`^a client POSTs to "/surface/([^"]*)/shutdown"$`, w.postShutdown)
 	sc.Step(`^a client POSTs "/model/switch"$`, w.postModelSwitch)
 	sc.Step(`^the orchestrator received decision "([^"]*)"$`, w.receivedDecision)
+	sc.Step(`^the orchestrator received verb decision "([^"]*)"$`, w.receivedVerbDecision)
 	sc.Step(`^the surface "([^"]*)" on the transport has lifecycle "([^"]*)"$`, w.lifecycleOf)
 
 	// seed + resume (SS-1).
@@ -789,6 +804,10 @@ func (w *transportWorld) postApproval(decision string) error {
 	return w.post("/tool/approval", map[string]any{"decision": decision})
 }
 
+func (w *transportWorld) postVerbApproval(decision string) error {
+	return w.post("/verb/approval", map[string]any{"decision": decision})
+}
+
 func (w *transportWorld) postShutdown(id string) error {
 	return w.post("/surface/"+id+"/shutdown", nil)
 }
@@ -800,6 +819,13 @@ func (w *transportWorld) postModelSwitch() error {
 func (w *transportWorld) receivedDecision(want string) error {
 	if got := w.prov.decision(); got != want {
 		return fmt.Errorf("orchestrator decision = %q, want %q", got, want)
+	}
+	return nil
+}
+
+func (w *transportWorld) receivedVerbDecision(want string) error {
+	if got := w.prov.verbDecision(); got != want {
+		return fmt.Errorf("orchestrator verb decision = %q, want %q", got, want)
 	}
 	return nil
 }

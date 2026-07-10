@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"agentx/internal/executor"
+	"agentx/internal/planfindings"
 	"agentx/internal/prompting/task"
 	"agentx/internal/runtime/decompose"
 	"agentx/internal/state"
@@ -71,6 +72,68 @@ func (c *capturingExec) Execute(ctx context.Context, rec task.Record) executor.O
 	return out
 }
 
+// midDrainFindingsLines caps how much of each step's findings feed BACK into later
+// decompose/proposal calls during the SAME drain — deliberately tighter than
+// findingsLines (the one-shot final synthesis budget), since this gets re-injected
+// into every subsequent LLM call for the rest of the plan, not read once at the end.
+const midDrainFindingsLines = 20
+
+// withComposedFindings attaches cap's live findings to ctx, composed underneath any
+// findings source ctx already carries — so a nested/continuation plan phase (the
+// verb-continuation follow-up round, ADR 0009-adjacent) sees an EARLIER round's
+// findings as a base layer, not just its own new cap's, without runPlanPhase or
+// runDecomposition needing a special "prior findings" parameter. Snapshotting the
+// prior source once here (rather than calling it fresh each time) is correct because
+// the outer plan phase, if any, has already finished by the time an inner one starts.
+func withComposedFindings(ctx context.Context, cap *capturingExec) context.Context {
+	prior := planfindings.From(ctx)
+	if prior == "" {
+		return planfindings.WithSource(ctx, cap.Findings)
+	}
+	return planfindings.WithSource(ctx, func() string {
+		return prior + "\n" + cap.Findings()
+	})
+}
+
+// Findings renders a live, monotonically-growing summary of every leaf this plan has
+// completed so far — safe to call concurrently while the scheduler keeps draining
+// (it locks the same mutex Execute appends under, so the read is a consistent
+// snapshot). This is the read side of the sibling/dependency-context gap
+// (mellow-meadow, lively-raven, quiet-cove, amber-quartz): a `tree` call that already
+// ran and found real paths was invisible to a sibling Task resolved moments later,
+// which then hallucinated `cat src/main.py` in a Go project. Threaded to the
+// decomposer and tool proposer via internal/planfindings (context-scoped, not a
+// struct field — see that package's doc comment for why).
+func (c *capturingExec) Findings() string {
+	c.mu.Lock()
+	steps := append([]capturedStep(nil), c.steps...)
+	c.mu.Unlock()
+	if len(steps) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("[This plan's findings so far — earlier steps in THIS investigation, not the final answer. Use these instead of guessing a path or re-discovering what's already here.]\n")
+	for _, s := range steps {
+		fmt.Fprintf(&b, "- %s → %s", s.goal, s.outcome.Status)
+		if f := firstLines(s.findings, midDrainFindingsLines); f != "" {
+			fmt.Fprintf(&b, ": %s", f)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// firstLines returns the first n lines of s, appending an ellipsis marker if more
+// followed — a compact preview, not the full widened text findingsLines allows for
+// the one-shot final synthesis.
+func firstLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) <= n {
+		return s
+	}
+	return strings.Join(lines[:n], "\n") + "\n…"
+}
+
 // planObserver streams scheduler lifecycle transitions to the session bus as they happen
 // (ADR 0009 §9a) — the seam that retired batch-emit-at-completion. Callbacks arrive on the
 // scheduler's main loop, and publish is bus-safe, so no locking is needed here.
@@ -82,36 +145,46 @@ type planObserver struct {
 func (p *planObserver) NodeDispatched(rec task.Record, depth int) {
 	p.o.publish("TASK_NODE", state.ContentTaskNode, map[string]any{
 		"root": p.root, "task_id": rec.ID, "event": "dispatched",
-		"goal": rec.Goal, "depth": depth,
+		"goal": rec.Goal, "depth": depth, "kind": string(rec.Kind),
 	})
+	p.o.planTrees.dispatched(p.root, rec, p.o.store, p.o.id.ID)
 }
 
 func (p *planObserver) NodeDecomposed(parent task.Record, children []task.Record) {
 	kids := make([]map[string]any, 0, len(children))
 	for _, c := range children {
-		kids = append(kids, map[string]any{"task_id": c.ID, "goal": c.Goal, "deps": c.Deps})
+		kids = append(kids, map[string]any{
+			"task_id": c.ID, "goal": c.Goal, "deps": c.Deps, "kind": string(c.Kind),
+		})
 	}
 	p.o.publish("TASK_NODE", state.ContentTaskNode, map[string]any{
 		"root": p.root, "task_id": parent.ID, "event": "decomposed", "children": kids,
+		"kind": string(parent.Kind),
 	})
+	p.o.planTrees.decomposed(p.root, parent, children, p.o.store, p.o.id.ID)
 }
 
 func (p *planObserver) NodeCompleted(id string, status task.Status) {
 	p.o.publish("TASK_NODE", state.ContentTaskNode, map[string]any{
 		"root": p.root, "task_id": id, "event": "completed", "status": string(status),
 	})
+	p.o.planTrees.completed(p.root, id, status, p.o.store, p.o.id.ID)
 }
 
 // runPlanPhase drains an imperative through the decomposition scheduler before the model
 // answers: it decomposes the goal into a plan, executes the leaves (real read tools), and
 // returns the plan + findings as context to ground the response. This is the wiring that
 // makes the invoke_planner route actually act instead of free-forming. It returns
-// handled=false (fall through to a direct answer) when nothing was investigated.
-func (o *Orchestrator) runPlanPhase(ctx context.Context, text string, userOrd uint64) (string, bool, error) {
+// handled=false (fall through to a direct answer) when nothing was investigated. rootID
+// must be unique per plan within the session — an explicit parameter (rather than derived
+// internally from userOrd) so a verb-continuation follow-up round (maybeContinuePlan) can
+// drain a second, distinct plan tree for the SAME turn without colliding with the first
+// round's root id.
+func (o *Orchestrator) runPlanPhase(ctx context.Context, text, rootID string) (string, bool, error) {
 	o.setProcessing(state.StateWorking, state.PhasePlanning)
 
 	root := task.Record{
-		ID:     fmt.Sprintf("task-%d", userOrd),
+		ID:     rootID,
 		Goal:   text,
 		Type:   task.Query,
 		Kind:   task.KindStep, // the invoke_planner route already judged this multi-step
@@ -122,9 +195,13 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text string, userOrd ui
 	// sees the plan being worked, not a silent gap (tidy-cove, ADR 0009).
 	o.publish("TASK_PLAN", state.ContentTaskPlan, map[string]any{
 		"root": root.ID, "goal": root.Goal, "phase": "started",
-		"nodes": []map[string]any{{"task_id": root.ID, "goal": root.Goal, "status": string(root.Status), "deps": root.Deps}},
+		"nodes": []map[string]any{{
+			"task_id": root.ID, "goal": root.Goal, "status": string(root.Status),
+			"deps": root.Deps, "kind": string(root.Kind),
+		}},
 	})
 	cap := &capturingExec{inner: o.taskExec, reader: o.artifactStore()}
+	ctx = withComposedFindings(ctx, cap)
 	out, derr := decompose.DrainPlan(ctx, root, o.taskDecomp, cap,
 		decompose.DefaultSlots, decompose.DefaultMaxDepth, &planObserver{o: o, root: root.ID})
 	if ctx.Err() != nil {
@@ -157,6 +234,7 @@ func planSummary(root task.Record, recs []task.Record, executed int, derr error)
 	for _, n := range recs {
 		nodes = append(nodes, map[string]any{
 			"task_id": n.ID, "goal": n.Goal, "status": string(n.Status), "deps": n.Deps,
+			"kind": string(n.Kind),
 		})
 		switch n.Status {
 		case task.Done:

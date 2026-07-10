@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"agentx/internal/planfindings"
 	"agentx/internal/prompting/planner"
 	"agentx/internal/prompting/task"
 	"agentx/internal/runtime/branch"
@@ -66,6 +67,14 @@ func (d Decomposer) Decompose(ctx context.Context, rec task.Record) (branch.Resu
 	}
 
 	ctxText := factsContext(b.Facts())
+	if findings := planfindings.From(ctx); findings != "" {
+		// What this plan's earlier siblings/dependencies have already found — ground the
+		// next children in it instead of re-discovering or guessing (amber-quartz: "list
+		// the project root" was generated three separate times across one plan because
+		// each decompose call only ever saw the parent's own goal text, never what an
+		// earlier step had already turned up).
+		ctxText += "\n\n" + findings
+	}
 	plan, violation := d.attemptPlan(ctx, rec, ctxText)
 	if violation != "" {
 		retryCtx := ctxText + "\n\nYour previous attempt was invalid: " + violation + ". Fix this and reply again."

@@ -54,11 +54,15 @@ type flashOffMsg struct{}
 // surface listens on for events and processing-state. A zero Bridge (nil fields)
 // leaves the surface in local-echo mode for unit tests.
 type Bridge struct {
-	Submit     func(text string)
-	Stop       func()
-	Approve    func(decision string)
-	Events     <-chan state.Event
-	Processing <-chan state.ProcessingState
+	Submit  func(text string)
+	Stop    func()
+	Approve func(decision string)
+	// ApproveVerb sends a verb-continuation decision ("allow_once"/"allow_always"/
+	// "deny_once"/"deny_always") — the same per-request-queue shape as Approve, for a
+	// distinct kind of decision (see internal/runtime's verbApprovalGate).
+	ApproveVerb func(decision string)
+	Events      <-chan state.Event
+	Processing  <-chan state.ProcessingState
 	// Connected returns the surface kinds currently attached (SS-4). When set, the
 	// surface polls it to drive the launch-info status emojis. Nil disables polling.
 	Connected func() []string
@@ -212,6 +216,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	case spinner.TickMsg:
+		// spinner.TickMsg carries a globally-unique ID (one process-wide counter, per
+		// bubbles) — a tick that isn't chat's own status spinner belongs to one of the
+		// output panel's independent per-plan-node spinners (ADR 0009 §9c redesign);
+		// forward it there instead of silently swallowing it. The ID>0 guard matters:
+		// a real spinner.Tick() always carries a positive ID, but a hand-built
+		// spinner.TickMsg{} (id 0, e.g. a test fixture) is not owned by anything —
+		// forwarding it anyway reproduced a genuine hang under the full godog suite's
+		// concurrent scenario execution (isolated single-scenario runs never hit it),
+		// so a zero ID is treated as un-owned and left for chat's own spinner branch
+		// below rather than routed anywhere.
+		if msg.ID > 0 && msg.ID != m.spinner.ID() {
+			return m, m.output.Update(msg)
+		}
 		if m.proc.State != state.StateWorking {
 			return m, nil // stop ticking once work finishes
 		}
@@ -219,8 +236,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 	case EventMsg:
-		m.output.Apply(state.Event(msg))
-		return m, m.listenEvents()
+		cmd := m.output.Apply(state.Event(msg))
+		return m, tea.Batch(cmd, m.listenEvents())
 	case connTickMsg:
 		if m.bridge != nil && m.bridge.Connected != nil {
 			m.output.SetConnected(m.bridge.Connected())
@@ -303,8 +320,24 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Awaiting a tool-approval decision: a/g/d resolve it; other keys are ignored.
+	// Awaiting an interactive decision: which keymap applies depends on which kind
+	// of prompt is showing (tool approval vs. an unrecognized stated-continuation
+	// verb) — the two never overlap, so the same physical key can mean different
+	// things in each, disambiguated by the hint bar text.
 	if m.proc.State == state.StateAwaitingInput {
+		if m.proc.Phase == state.PhaseVerb {
+			switch key {
+			case "o":
+				return m, m.approveVerbCmd("allow_once")
+			case "a":
+				return m, m.approveVerbCmd("allow_always")
+			case "n":
+				return m, m.approveVerbCmd("deny_once")
+			case "x":
+				return m, m.approveVerbCmd("deny_always")
+			}
+			return m, nil
+		}
 		switch key {
 		case "a":
 			return m, m.approveCmd("session")
@@ -346,6 +379,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// the wrapped input height, so relayout after it settles (input grows, output
 	// shrinks, and vice versa).
 	action := m.input.Update(msg)
+	var cmd tea.Cmd
 	switch action {
 	case input.ActionSubmit:
 		text := m.input.Value()
@@ -357,7 +391,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.submitCmd(text)
 		}
 		// Unwired: echo locally so the surface is usable in isolation.
-		m.output.Apply(state.Event{
+		cmd = m.output.Apply(state.Event{
 			ContentType: state.ContentUserPrompt,
 			Payload:     map[string]any{"text": text},
 		})
@@ -367,7 +401,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.flashCmd()
 	}
 	m.relayout()
-	return m, nil
+	return m, cmd
 }
 
 // flashCmd schedules the end of an input-border flash.
@@ -382,6 +416,19 @@ func (m Model) approveCmd(decision string) tea.Cmd {
 		return nil
 	}
 	approve := m.bridge.Approve
+	return func() tea.Msg {
+		approve(decision)
+		return nil
+	}
+}
+
+// approveVerbCmd sends a verb-continuation decision ("allow_once"/"allow_always"/
+// "deny_once"/"deny_always") to the runtime, resolving the awaiting_input pause.
+func (m Model) approveVerbCmd(decision string) tea.Cmd {
+	if m.bridge == nil || m.bridge.ApproveVerb == nil {
+		return nil
+	}
+	approve := m.bridge.ApproveVerb
 	return func() tea.Msg {
 		approve(decision)
 		return nil
@@ -511,6 +558,8 @@ func (m Model) frame(content string, active, flash bool) []string {
 func (m Model) hintStrip() string {
 	var text string
 	switch {
+	case m.proc.State == state.StateAwaitingInput && m.proc.Phase == state.PhaseVerb:
+		text = "continue? o once · a always · n not now · x never"
 	case m.proc.State == state.StateAwaitingInput:
 		text = "approve: a session · g global · d deny"
 	case m.proc.State == state.StateWorking:

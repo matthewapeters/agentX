@@ -4,7 +4,6 @@ import (
 	"context"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"agentx/internal/state"
@@ -39,77 +38,16 @@ const (
 	DecisionGlobal
 )
 
-// approvalRequest is one pending tool call awaiting a user decision. Each request owns
-// its own response channel — the fix for the concurrent-approval deadlock (session
-// vivid-raven): the scheduler can dispatch several leaves that each call RequestApproval
-// on their own goroutine, and a single shared channel gets silently overwritten by
-// whichever request arms it last, permanently orphaning every earlier one (blocked
-// forever on a channel nothing will ever write to again — a lost wakeup, not a timeout,
-// so the plan can never finish). A channel per request makes that structurally
-// impossible: delivery always targets the exact request it was meant for.
-type approvalRequest struct {
+// approvalPayload is one pending tool call awaiting a user decision — the Req type
+// parameter for the tool-approval gate (see gate.go).
+type approvalPayload struct {
 	descriptor tools.Descriptor
 	args       map[string]string
-	resp       chan ApprovalDecision // size-1, owned solely by this request
 }
 
-// approvalGate serializes concurrent approval requests into a FIFO queue and shows
-// exactly one at a time to the surface — "orchestrate approvals being displayed and
-// responded to: one request at a time" — rather than racing several tool_call/
-// awaiting_input announcements against each other.
-type approvalGate struct {
-	mu      sync.Mutex
-	pending []*approvalRequest // pending[0], if any, is the one currently shown
-}
-
-// enqueue adds req to the queue and reports whether it is now at the front (i.e. should
-// be shown immediately rather than waiting for earlier requests to resolve).
-func (g *approvalGate) enqueue(req *approvalRequest) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.pending = append(g.pending, req)
-	return len(g.pending) == 1
-}
-
-// dequeue removes req from the queue (wherever it is — it may still be waiting in line,
-// e.g. if its ctx was canceled before ever being shown) and reports the new front-of-queue
-// request to show next, if the queue is non-empty and its front changed.
-func (g *approvalGate) dequeue(req *approvalRequest) (next *approvalRequest, ok bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	wasFront := len(g.pending) > 0 && g.pending[0] == req
-	for i, r := range g.pending {
-		if r == req {
-			g.pending = append(g.pending[:i], g.pending[i+1:]...)
-			break
-		}
-	}
-	if wasFront && len(g.pending) > 0 {
-		return g.pending[0], true
-	}
-	return nil, false
-}
-
-// deliver resolves the currently-shown (front-of-queue) request only — the surface only
-// ever answers the one request it was shown, so there is never ambiguity about which
-// request a decision belongs to.
-func (g *approvalGate) deliver(d ApprovalDecision) bool {
-	g.mu.Lock()
-	var ch chan ApprovalDecision
-	if len(g.pending) > 0 {
-		ch = g.pending[0].resp
-	}
-	g.mu.Unlock()
-	if ch == nil {
-		return false
-	}
-	select {
-	case ch <- d:
-		return true
-	default:
-		return false
-	}
-}
+// approvalGate is the tool-approval queue: a gate of approvalPayload requests,
+// resolved with an ApprovalDecision.
+type approvalGate = gate[approvalPayload, ApprovalDecision]
 
 // Resolve delivers a surface approval decision to the currently-shown request: "session"
 // or "global" approve, anything else denies. It is a no-op when no request is pending.
@@ -134,7 +72,7 @@ func (o *Orchestrator) Resolve(decision string) {
 // It is the reusable approval seam both the single_tool cycle and the scheduler's
 // concurrent leaves call (TOOL-4; ADR 0008).
 func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, args map[string]string, pol *tools.Policy) (tools.Verdict, error) {
-	req := &approvalRequest{descriptor: d, args: args, resp: make(chan ApprovalDecision, 1)}
+	req := newPendingRequest[approvalPayload, ApprovalDecision](approvalPayload{descriptor: d, args: args})
 	shown := o.gate.enqueue(req)
 	if shown {
 		o.publishToolCall(d, args)
@@ -142,7 +80,7 @@ func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, 
 	}
 	defer func() {
 		if next, ok := o.gate.dequeue(req); ok {
-			o.publishToolCall(next.descriptor, next.args)
+			o.publishToolCall(next.payload.descriptor, next.payload.args)
 			o.setProcessing(state.StateAwaitingInput, state.PhaseTool)
 		}
 	}()

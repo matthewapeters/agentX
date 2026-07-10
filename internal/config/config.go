@@ -430,6 +430,23 @@ func (p Paths) ToolApprovalsPath() string {
 	return filepath.Join(p.configDir(), "agentx-tool-approvals.toml")
 }
 
+// ContinuationVerbsAllowedPath is the allow-list of verbs that, ending an agent
+// response as "Let me <verb> ..." / "Should I <verb> ...?" / "Shall I <verb> ...?",
+// trigger one more bounded, grounded investigation round instead of silently ending
+// the turn on a stated intent (~/.config/agentx/agentx-continuation-verbs-allowed.md).
+// Approving an unrecognized verb "always" appends it here.
+func (p Paths) ContinuationVerbsAllowedPath() string {
+	return filepath.Join(p.configDir(), "agentx-continuation-verbs-allowed.md")
+}
+
+// ContinuationVerbsDeniedPath is the deny-list counterpart: a verb here is
+// recognized but deliberately not treated as a continuation trigger, and the
+// surface does not ask about it again
+// (~/.config/agentx/agentx-continuation-verbs-denied.md). Starts empty.
+func (p Paths) ContinuationVerbsDeniedPath() string {
+	return filepath.Join(p.configDir(), "agentx-continuation-verbs-denied.md")
+}
+
 // ReadPromptFile reads an optional Markdown prompt file, returning its trimmed
 // contents, or "" when the file does not exist. See
 // docs/implementation/04_llm_prompt_tooling_runtime.md (Instructions and

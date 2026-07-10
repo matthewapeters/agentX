@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"agentx/internal/executor"
 	"agentx/internal/llm/fanout"
@@ -19,9 +19,9 @@ import (
 	"agentx/internal/prompting/reconcile"
 	"agentx/internal/prompting/task"
 	"agentx/internal/runtime/branch"
-	"agentx/internal/session"
 	"agentx/internal/runtime/decompose"
 	"agentx/internal/runtime/scheduler"
+	"agentx/internal/session"
 	"agentx/internal/state"
 	"agentx/internal/tools"
 )
@@ -112,6 +112,7 @@ func (p taskToolPublisher) ToolCalled(rec task.Record, d tools.Descriptor, args 
 		Payload:   map[string]any{"text": proposalText(d, args), "task_id": rec.ID},
 		ModelName: p.o.settings.OllamaModel,
 	})
+	p.o.planTrees.toolCalled(rec, d, args, p.o.store, p.o.id.ID)
 }
 
 func (p taskToolPublisher) ToolFinished(rec task.Record, d tools.Descriptor, res tools.Result, status executor.Status) {
@@ -127,6 +128,7 @@ func (p taskToolPublisher) ToolFinished(rec task.Record, d tools.Descriptor, res
 		},
 		ModelName: p.o.settings.OllamaModel,
 	})
+	p.o.planTrees.toolFinished(rec, res, status, p.o.store, p.o.id.ID)
 }
 
 // buildDecomposition wires the Decompose route's branch-backed decomposer, turning the
@@ -309,6 +311,7 @@ func (o *Orchestrator) runDecomposition(ctx context.Context, root task.Record, e
 	o.setProcessing(state.StateWorking, state.PhasePlanning)
 
 	cap := &capturingExec{inner: ex, reader: o.artifactStore()}
+	ctx = withComposedFindings(ctx, cap)
 	outcome, err := decompose.DrainPlan(ctx, root, o.taskDecomp, cap,
 		decompose.DefaultSlots, decompose.DefaultMaxDepth, &planObserver{o: o, root: root.ID})
 

@@ -86,6 +86,12 @@ type Settings struct {
 	// sessions (blacklist rules in, global approvals in/out). Empty disables I/O.
 	ToolBlacklistPath string
 	ToolApprovalsPath string
+	// ContinuationVerbsAllowedPath and ContinuationVerbsDeniedPath persist the
+	// verb-continuation allow/deny lists (from ~/.config/agentx/agentx-continuation-
+	// verbs-allowed.md / -denied.md) — an "always" decision appends to whichever list
+	// applies. Empty disables persistence (an "always" decision behaves like "once").
+	ContinuationVerbsAllowedPath string
+	ContinuationVerbsDeniedPath  string
 	// ToolOutputMaxBytes caps captured tool output before truncation (full output
 	// still persists to the artifact). <=0 uses the executor default.
 	ToolOutputMaxBytes int
@@ -123,10 +129,12 @@ type Orchestrator struct {
 	recDone    chan error
 	recSub     *state.Subscription
 	gate       approvalGate
+	verbGate   verbApprovalGate
 	registry   *tools.Registry
 	policy     *tools.Policy
 	proposer   *tools.Proposer
 	runner     ToolRunner
+	planTrees  *planTreeRegistry
 
 	mu        sync.Mutex
 	started   bool
@@ -163,7 +171,7 @@ func WithClassifier(c *classify.Classifier) Option {
 
 // New returns an unstarted Orchestrator for the given settings.
 func New(s Settings, opts ...Option) *Orchestrator {
-	o := &Orchestrator{settings: s}
+	o := &Orchestrator{settings: s, planTrees: newPlanTreeRegistry()}
 	for _, opt := range opts {
 		opt(o)
 	}
@@ -457,7 +465,8 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	// grounded in what was actually inspected rather than assumed. A decomposition that
 	// investigates nothing falls through to a normal answer.
 	if route == string(classify.InvokePlanner) && o.planReady() {
-		planCtx, handled, perr := o.runPlanPhase(ctx, text, userOrd)
+		rootID := fmt.Sprintf("task-%d", userOrd)
+		planCtx, handled, perr := o.runPlanPhase(ctx, text, rootID)
 		if perr != nil {
 			o.setProcessing(state.StateCompleted, state.PhaseNone)
 			return nil
@@ -469,6 +478,13 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 			msgs := o.withContext(o.assembler.AssembleWithThinking(text+planCtx, o.thinkingPrompt(doThink), route))
 			fallback := o.withContext(o.assembler.Assemble(text + planCtx))
 			resp, respOrd, err := o.streamResponse(ctx, msgs, fallback, doThink, ephemeral)
+			// The model may correctly recognize its own investigation was incomplete
+			// and say so ("Let me examine the source code...") — without this, that
+			// stated intent silently never happens (clever-raven-3, amber-quartz).
+			// One bounded follow-up round, grounded in what this round already found.
+			if err == nil {
+				resp = o.maybeContinuePlan(ctx, route, text, rootID, planCtx, resp, doThink, ephemeral)
+			}
 			o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp)
 			return o.finishCycle(err)
 		}

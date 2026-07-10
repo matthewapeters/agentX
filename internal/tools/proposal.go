@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"agentx/internal/jsonx"
+	"agentx/internal/planfindings"
 	"agentx/internal/prompting"
 )
 
@@ -54,6 +55,7 @@ func NewProposer(catalog string, retries int, chat ChatFunc) *Proposer {
 func (p *Proposer) Propose(ctx context.Context, userText string) (Proposal, bool) {
 	msgs := p.assembler.Assemble(userText)
 	msgs = insertFacts(msgs, p.Facts)
+	msgs = insertPlanFindings(msgs, planfindings.From(ctx))
 	for attempt := 0; attempt <= p.retries; attempt++ {
 		raw, err := p.chat(ctx, msgs)
 		if err != nil {
@@ -90,6 +92,29 @@ func insertFacts(msgs []prompting.Message, getFacts func() []prompting.Fact) []p
 	out := make([]prompting.Message, 0, len(msgs)+1)
 	out = append(out, msgs[:at]...)
 	out = append(out, factMsg)
+	out = append(out, msgs[at:]...)
+	return out
+}
+
+// insertPlanFindings folds a decomposition plan's live findings-so-far (see
+// internal/planfindings) in after any leading system messages (the catalog, and — if
+// present — insertFacts's working-memory message), still before the user message.
+// Deliberately a separate message from working memory: different context shape,
+// different source, different lifetime (this plan's drain, not the session). "" (no
+// plan in flight — the single_tool cycle, or a direct test call) leaves msgs
+// untouched.
+func insertPlanFindings(msgs []prompting.Message, findings string) []prompting.Message {
+	findingsMsg, ok := prompting.PlanFindingsMessage(findings)
+	if !ok {
+		return msgs
+	}
+	at := 0
+	for at < len(msgs) && msgs[at].Role == "system" {
+		at++
+	}
+	out := make([]prompting.Message, 0, len(msgs)+1)
+	out = append(out, msgs[:at]...)
+	out = append(out, findingsMsg)
 	out = append(out, msgs[at:]...)
 	return out
 }

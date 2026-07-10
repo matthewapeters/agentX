@@ -51,6 +51,11 @@ func (m *Model) Apply(ev state.Event) {
 		m.proc = decodeProcessing(ev.Payload)
 		return
 	}
+	// Discards the returned tea.Cmd deliberately: this surface has no message loop
+	// of its own driving a plan node's spinner tick (client.SurfaceModel.Apply has no
+	// return value), so a plan here renders correct static glyphs/coloring but never
+	// animates — an accepted scope boundary, not an oversight (ADR 0009 §9c redesign
+	// plan). It's a collapsed navigable summary here, not the live transcript.
 	m.out.Apply(ev)
 }
 

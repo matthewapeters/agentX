@@ -5,10 +5,121 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - 2026-07-07
+## [Unreleased] - 2026-07-10
+
+### Added
+
+- **A response that states an intent to keep investigating ("Let me examine the
+  source code...", "Should I check the config?") now actually continues instead of
+  silently ending the turn** (sessions clever-raven-3, amber-quartz: the model
+  correctly recognized its own investigation was incomplete, said so, and the turn
+  just completed anyway — `finishCycle`'s only criterion is `err == nil`, with zero
+  inspection of what the response text says). Detection is a deliberate two-step,
+  non-LLM process (matching this codebase's existing preference for cheap structural
+  checks over another model round-trip — `SimilarGoals`, the retry-then-degrade
+  guard): a regex finds `"let me"`/`"should i"`/`"shall i"` in the response's last
+  sentence and captures the verb, then the verb is checked against a new pair of
+  externalized, human-editable lists (`agentx-continuation-verbs-allowed.md` /
+  `-denied.md`, seeded with common investigative verbs and a few pre-seeded benign
+  closers like "know"/"explain" that would otherwise trigger on every "let me know if
+  you have questions"). A recognized-allowed verb runs one bounded follow-up
+  decomposition round — reusing composed findings so it's grounded in what the first
+  round already found, not just its own, directly building on the grounding fix below
+  — before re-synthesizing the final answer; an unrecognized verb pauses the turn and
+  asks the user (allow once / allow always / not this time / never), the same
+  per-request-queue interaction shape as tool-call approval, generalized: the
+  tool-approval gate (`vivid-raven`'s fix) is now `gate[Req, Resp]`, a small Go
+  generic, with tool approval and verb-continuation approval as two independent
+  instantiations sharing the identical proven queueing mechanics rather than
+  duplicating them. "Always" persists the verb to the corresponding list so the
+  system learns without needing every possible verb predicted in advance. New
+  `state.PhaseVerb` / `ContentVerbPrompt`, a chat-surface keymap (o/a/n/x) and status
+  hint distinct from tool approval's (a/g/d), and a symmetric `POST /verb/approval`
+  HTTP endpoint alongside the existing `/tool/approval`. Live-verified against the
+  real `ornith:latest` model: a hand-crafted "Let me examine..." response correctly
+  triggered a full continuation round (grounded sub-goals, not redundant/hallucinated
+  ones) via the real decomposer/executor: `internal/prompting/continuation` handles
+  detection and list I/O; `internal/runtime/gate.go`, `continuation.go` handle the
+  gate and orchestration.
+- **Decomposition and tool-call resolution are now grounded in this plan's own
+  accumulated findings, not just the parent goal text** — the recurring
+  sibling/dependency-context gap (mellow-meadow, lively-raven, quiet-cove, confirmed
+  starkly in session `amber-quartz`: 17 tool calls across two plans, zero of which
+  ever read a line of source code — `ls -la` on the project root ran 3 times,
+  `package.json` was searched for twice in a Go project, and `cat src/main.py`/
+  `cat src/utils.py` both failed on hallucinated Python paths moments after a
+  successful `tree` call in the SAME plan had already shown the real Go layout). New
+  `internal/planfindings` package threads a plan's live, growing findings (via
+  `capturingExec`'s already-existing, mutex-protected accumulator — it was
+  accumulating in real time during the drain the whole time, just never read until
+  after) through `context.Context` to both `decompose.Decomposer.Decompose` (folded
+  into the planner's context text) and `tools.Proposer.Propose` (folded in as its own
+  system message, new `prompting.PlanFindingsMessage`, deliberately separate from
+  working-memory grounding — different context shape, different source, different
+  lifetime). Context-scoped rather than a struct field because the decomposer and
+  proposer are shared, session-lifetime singletons that can serve concurrent plan
+  drains (`runDecomposition` is deliberately backgrounded so a turn is never
+  blocked) — a shared mutable field would race or cross-contaminate between two
+  plans. Live-verified against the real `ornith:latest` model (the same one
+  `amber-quartz` used): given an identical vague goal ("Read the main entry point..."),
+  the proposer resolved to a generic `list_dir .` without grounding and to the exact
+  real path `cmd/agentx/main.go` with it; decomposing the same root goal produced one
+  generic child ungrounded vs. four children all correctly targeting real
+  already-discovered paths when grounded.
+  **Known residual gap, found live-verifying this fix**: a Step that decomposes
+  several children in ONE planner call, where a later child depends on an earlier
+  sibling in the SAME batch (`deps: ["sibling-id"]`), can still have that later
+  child's tool call pre-resolved by the planner (`Params["tool"]/["args"]` baked in at
+  decompose time) using a GUESS rather than the sibling's real result — because a
+  pre-resolved Task record skips the proposer entirely (`resolvedProposal` short-
+  circuits `Execute`), the grounding this fix adds to `Proposer.Propose` never runs
+  for it. The scheduler's own dep-ordering correctly delays *dispatch* until the
+  sibling completes, but the *args* were already frozen before that sibling ever ran.
+  Observed live: `cat main.py`/`cat package.json` guessed and failed in a Go project
+  despite an explicit `deps` edge on the sibling that had already listed the real
+  layout. Distinct from — and not fixed by — the two grounding paths above; would need
+  the scheduler to force a fresh proposer resolution for a Task whose `Params` were
+  set against an unmet dependency, once that dependency actually completes.
 
 ### Fixed
 
+- **A finished plan permanently collapsed to just its root line, with no way to see
+  the individual steps** (session `brave-fjord-2`). The liveness-propagating
+  auto-collapse rule (previous entry) gated a node's children on it or a descendant
+  *currently* running — but a real fast tool call (`ls`, `tree`, `grep`) dispatches
+  and completes in single-digit milliseconds, far under one terminal frame, so the
+  "live" window was never actually observed: by the time any redraw happened, the
+  step had already finished and the whole group had already collapsed back down, with
+  no manual per-node expand to bring it back. Liveness now only bounds clutter *while*
+  a plan is running; once `phase: "ended"` lands, the plan's full structure always
+  renders, unconditionally — matching the widget's own documented job of being "the
+  record of what ran." New `TestEndedPlanShowsFullStructure` reproduces the exact
+  brave-fjord-2 timing (same-epoch dispatch→completion) and asserts both the
+  before-ended collapse (unchanged) and the after-ended full expansion.
+- **A zero-value `spinner.TickMsg{}` forwarded from the chat surface to the output
+  panel hung the full `@functional` godog suite** (never in an isolated single-scenario
+  run — only under the full suite's concurrent scenario execution). `chat.go`'s
+  `spinner.TickMsg` handler now only forwards to `output.Update` when `msg.ID > 0` — a
+  real `spinner.Tick()` always carries a positive, globally-unique ID; a hand-built
+  zero-value fixture (as the existing "spinner animates" godog scenario constructs) is
+  not owned by anything and stays with chat's own spinner branch. `output.Update` also
+  gained its own `msg.ID <= 0` guard, independent of the caller, since it has no other
+  guarantee to lean on. New regression coverage in
+  `internal/surfaces/output/plan_test.go` (`TestPerNodeSpinnerLifecycle`'s zero-ID
+  case) locks in the defensive side; the pre-existing godog scenario now exercises the
+  routing side on every `make all`.
+- **The plan widget's `anySlice` helper silently dropped every element of a
+  server-native payload.** `plan_cycle.go` builds `task_plan`/`task_node` payloads as
+  literal `[]map[string]any`/`[]string`, and the bundled chat surface's event delivery
+  never crosses a JSON boundary (a direct in-process channel of `state.Event`) — so a
+  plain `v.([]any)` type assertion (what `anySlice` did) never matched, and
+  `task_plan`'s bulk node list and `task_node`'s decomposed-children list were empty in
+  the live surface for as long as ADR 0009 §9a/9c-v1 has existed. Masked because
+  individual `dispatched`/`completed` deltas (which never touch `anySlice`) kept
+  populating nodes one at a time regardless — a standalone HTTP/SSE surface, whose
+  payloads *do* cross a JSON boundary, would have seen `[]any` and never hit this.
+  `anySlice` now tolerates any concrete slice type via `reflect`, with
+  `TestDecomposedChildrenSurviveNativePayload` reproducing the exact native shape.
 - **Concurrent tool approvals deadlocked the session (`vivid-raven`).**
   `approvalGate` was a singleton — one shared response channel, safe only
   when the single-tool cycle called `RequestApproval` one at a time. Once
@@ -28,6 +139,25 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The plan widget renders as a recursive nested Step/Task DAG, not a flat indented
+  list** (ADR 0009 §9c redesign). Separate boxes per node, color-differentiated by
+  Kind (Step blue, Task tan, running amber overriding both); a Task's resolved tool
+  command always renders in reverse video inside its own box, even collapsed; a
+  Step's decomposition renders as its children fully nested inside it, recursively, to
+  whatever depth the plan actually reaches; each currently-running node animates its
+  own independent spinner (not a shared/lockstep one); a liveness-propagating
+  auto-collapse rule keeps exactly the currently-active parts of the plan expanded,
+  collapsing a fully-quiet branch back to one line — even mid-plan, not only at the
+  end. Drawn recursively at *view* time (not baked into the widget body at event time),
+  so a terminal resize is always correct. The old flat nested tool-call/tool-result
+  widget mechanism (§9c-v1) is retired: a tagged `tool_call`/`tool_result` now folds
+  directly into the owning plan node's own `command`/`resultText` fields instead of
+  spawning a separate widget. The full nested tree is also persisted to
+  `sessions/<id>/plans/<root-id>.json` on every mutation (ADR 0009 §9b, previously
+  unbuilt) — new `internal/session/plans.go`, deliberately write-only and
+  resumability-friendly in shape without building any reconstruction logic (a named,
+  explicitly deferred follow-on). See `docs/ux/06_OUTPUT_WIDGET.md`'s new "Plan widget"
+  section for the full behavior contract.
 - **Plan synthesis now sees a step's real findings, not its UI preview.** Session
   `lively-raven`: `tree` ran successfully (538 lines) on this repo, but the
   model's final answer called agentX "a Python-based AI agent framework" — the

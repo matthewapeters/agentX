@@ -29,12 +29,18 @@ const (
 	// PhasePlanning is the plan-cycle phase (ADR 0009): the scheduler is decomposing and
 	// executing a plan, so the surface shows life during multi-step work.
 	PhasePlanning Phase = "planning"
-	PhaseNone     Phase = "none"
+	// PhaseVerb pauses the cycle in StateAwaitingInput for a verb-continuation decision
+	// (an unrecognized "Let me <verb>..." stated intent, neither allow- nor
+	// deny-listed) — distinct from PhaseTool so the surface can show the right
+	// hint/keymap (4-way: allow once/always, deny once/always) instead of the
+	// 3-way tool-approval one.
+	PhaseVerb Phase = "verb"
+	PhaseNone Phase = "none"
 )
 
 var (
 	validStates = map[RunState]bool{StateIdle: true, StateWorking: true, StateCompleted: true, StateFailed: true, StateAwaitingInput: true}
-	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhasePlanning: true, PhaseNone: true}
+	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhasePlanning: true, PhaseVerb: true, PhaseNone: true}
 )
 
 // ProcessingState is the session-level processing-state payload

@@ -9,8 +9,8 @@ import "testing"
 // leaving it blocked forever on a channel nothing would ever write to again).
 func TestApprovalGateQueuesConcurrentRequests(t *testing.T) {
 	g := &approvalGate{}
-	req1 := &approvalRequest{resp: make(chan ApprovalDecision, 1)}
-	req2 := &approvalRequest{resp: make(chan ApprovalDecision, 1)}
+	req1 := newPendingRequest[approvalPayload, ApprovalDecision](approvalPayload{})
+	req2 := newPendingRequest[approvalPayload, ApprovalDecision](approvalPayload{})
 
 	if shown := g.enqueue(req1); !shown {
 		t.Fatal("first request should be shown immediately (front of an empty queue)")
@@ -60,8 +60,8 @@ func TestApprovalGateQueuesConcurrentRequests(t *testing.T) {
 // shown, and correctly reports "no new front" since the shown request didn't change.
 func TestApprovalGateDequeueWhileWaiting(t *testing.T) {
 	g := &approvalGate{}
-	req1 := &approvalRequest{resp: make(chan ApprovalDecision, 1)}
-	req2 := &approvalRequest{resp: make(chan ApprovalDecision, 1)}
+	req1 := newPendingRequest[approvalPayload, ApprovalDecision](approvalPayload{})
+	req2 := newPendingRequest[approvalPayload, ApprovalDecision](approvalPayload{})
 	g.enqueue(req1)
 	g.enqueue(req2)
 
