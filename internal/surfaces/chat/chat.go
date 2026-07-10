@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"agentx/internal/state"
+	"agentx/internal/surfaces/approval"
 	"agentx/internal/surfaces/input"
 	"agentx/internal/surfaces/output"
 )
@@ -40,6 +41,17 @@ const (
 	defaultInactive = "38;5;240"
 )
 
+// defaultAttention is the input-panel border color while an interactive decision
+// is awaiting the user (bold yellow) — distinct from active/inactive/flash so a
+// pending approval visually stands out from ordinary focus state.
+const defaultAttention = "1;33"
+
+// approvalTitle is the fixed border title shown while the swapped-in approval
+// widget occupies the input panel's slot — the same wording regardless of what
+// decision is being asked for (tool approval, verb continuation, or any future
+// kind), per the "consistent behavior" requirement.
+const approvalTitle = "AgentX Needs Your Input"
+
 // ProcessingStateMsg delivers a processing-state update to the chat surface.
 type ProcessingStateMsg state.ProcessingState
 
@@ -54,15 +66,14 @@ type flashOffMsg struct{}
 // surface listens on for events and processing-state. A zero Bridge (nil fields)
 // leaves the surface in local-echo mode for unit tests.
 type Bridge struct {
-	Submit  func(text string)
-	Stop    func()
-	Approve func(decision string)
-	// ApproveVerb sends a verb-continuation decision ("allow_once"/"allow_always"/
-	// "deny_once"/"deny_always") — the same per-request-queue shape as Approve, for a
-	// distinct kind of decision (see internal/runtime's verbApprovalGate).
-	ApproveVerb func(decision string)
-	Events      <-chan state.Event
-	Processing  <-chan state.ProcessingState
+	Submit func(text string)
+	Stop   func()
+	// Approve sends a decision string back to whichever interactive-decision
+	// request is currently shown (tool approval, verb continuation, or any future
+	// kind) — the runtime's shared decision gate resolves it generically.
+	Approve    func(decision string)
+	Events     <-chan state.Event
+	Processing <-chan state.ProcessingState
 	// Connected returns the surface kinds currently attached (SS-4). When set, the
 	// surface polls it to drive the launch-info status emojis. Nil disables polling.
 	Connected func() []string
@@ -76,6 +87,10 @@ type Model struct {
 	height       int
 	output       *output.Model
 	input        *input.Model
+	// approval is the widget swapped into the input panel's slot in place of
+	// input while proc.State == StateAwaitingInput: a generic prompt + navigable
+	// option list, populated from the runtime's approval_request events.
+	approval     *approval.Model
 	proc         state.ProcessingState
 	spinner      spinner.Model
 	focus        focus
@@ -83,6 +98,7 @@ type Model struct {
 	flashing     bool // the input border is flashing a history boundary
 	active       string
 	inactive     string
+	attention    string
 	bridge       *Bridge
 }
 
@@ -93,13 +109,15 @@ func New() Model {
 	out.SetTheme(defaultActive, defaultInactive)
 	out.SetFocus(false)
 	return Model{
-		output:   out,
-		input:    input.New(),
-		proc:     state.ProcessingState{State: state.StateIdle, Phase: state.PhaseNone},
-		spinner:  spinner.New(spinner.WithSpinner(spinner.Dot)),
-		focus:    focusInput,
-		active:   defaultActive,
-		inactive: defaultInactive,
+		output:    out,
+		input:     input.New(),
+		approval:  approval.New(),
+		proc:      state.ProcessingState{State: state.StateIdle, Phase: state.PhaseNone},
+		spinner:   spinner.New(spinner.WithSpinner(spinner.Dot)),
+		focus:     focusInput,
+		active:    defaultActive,
+		inactive:  defaultInactive,
+		attention: defaultAttention,
 	}
 }
 
@@ -214,6 +232,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.proc.State != state.StateWorking {
 			m.chordPending = false
 		}
+		// The approval widget's height differs from the free-text input's; resize
+		// the input slot whenever a decision starts or stops being awaited.
+		if (m.proc.State == state.StateAwaitingInput) != (prev == state.StateAwaitingInput) {
+			m.relayout()
+		}
 		return m, tea.Batch(cmds...)
 	case spinner.TickMsg:
 		// spinner.TickMsg carries a globally-unique ID (one process-wide counter, per
@@ -236,7 +259,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 	case EventMsg:
-		cmd := m.output.Apply(state.Event(msg))
+		ev := state.Event(msg)
+		if ev.ContentType == state.ContentApprovalRequest {
+			if p, ok := ev.Payload.(map[string]any); ok {
+				prompt, _ := p["prompt"].(string)
+				m.approval.Set(prompt, state.DecodeApprovalOptions(p["options"]))
+				m.relayout()
+			}
+		}
+		cmd := m.output.Apply(ev)
 		return m, tea.Batch(cmd, m.listenEvents())
 	case connTickMsg:
 		if m.bridge != nil && m.bridge.Connected != nil {
@@ -320,31 +351,14 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Awaiting an interactive decision: which keymap applies depends on which kind
-	// of prompt is showing (tool approval vs. an unrecognized stated-continuation
-	// verb) — the two never overlap, so the same physical key can mean different
-	// things in each, disambiguated by the hint bar text.
+	// Awaiting an interactive decision: the swapped-in approval widget owns the
+	// key — navigate its option list and confirm with Enter. One code path
+	// regardless of which kind of decision is being asked for (tool approval,
+	// verb continuation, or any future kind): the widget renders whatever
+	// prompt/options it was handed and just echoes back the chosen Decision.
 	if m.proc.State == state.StateAwaitingInput {
-		if m.proc.Phase == state.PhaseVerb {
-			switch key {
-			case "o":
-				return m, m.approveVerbCmd("allow_once")
-			case "a":
-				return m, m.approveVerbCmd("allow_always")
-			case "n":
-				return m, m.approveVerbCmd("deny_once")
-			case "x":
-				return m, m.approveVerbCmd("deny_always")
-			}
-			return m, nil
-		}
-		switch key {
-		case "a":
-			return m, m.approveCmd("session")
-		case "g":
-			return m, m.approveCmd("global")
-		case "d":
-			return m, m.approveCmd("deny")
+		if m.approval.Update(msg) == approval.ActionConfirm {
+			return m, m.approveCmd(m.approval.Selected().Decision)
 		}
 		return m, nil
 	}
@@ -409,26 +423,13 @@ func (m Model) flashCmd() tea.Cmd {
 	return tea.Tick(flashDuration, func(time.Time) tea.Msg { return flashOffMsg{} })
 }
 
-// approveCmd sends a tool-approval decision ("session"/"global"/"deny") to the
-// runtime, resolving the awaiting_input pause.
+// approveCmd sends a decision string to the runtime, resolving whichever
+// interactive-decision request is currently shown (the widget's Selected().Decision).
 func (m Model) approveCmd(decision string) tea.Cmd {
 	if m.bridge == nil || m.bridge.Approve == nil {
 		return nil
 	}
 	approve := m.bridge.Approve
-	return func() tea.Msg {
-		approve(decision)
-		return nil
-	}
-}
-
-// approveVerbCmd sends a verb-continuation decision ("allow_once"/"allow_always"/
-// "deny_once"/"deny_always") to the runtime, resolving the awaiting_input pause.
-func (m Model) approveVerbCmd(decision string) tea.Cmd {
-	if m.bridge == nil || m.bridge.ApproveVerb == nil {
-		return nil
-	}
-	approve := m.bridge.ApproveVerb
 	return func() tea.Msg {
 		approve(decision)
 		return nil
@@ -494,18 +495,32 @@ func (m *Model) relayout() {
 	if innerW < 0 {
 		innerW = 0
 	}
-	// Set the input width first so its desired (wrapped) height reflects this width,
-	// then give the input that height and the output the remaining space. This runs on
-	// every content change, so the input grows and the output shrinks as text wraps.
-	m.input.SetSize(innerW, 0)
-	ih := m.input.DesiredHeight()
+	// While awaiting an interactive decision, the approval widget occupies the
+	// input panel's slot instead of the free-text input — size from it instead.
+	awaiting := m.proc.State == state.StateAwaitingInput
+	var ih int
+	if awaiting {
+		m.approval.SetSize(innerW, 0)
+		ih = m.approval.DesiredHeight()
+	} else {
+		// Set the input width first so its desired (wrapped) height reflects this
+		// width, then give the input that height and the output the remaining
+		// space. This runs on every content change, so the input grows and the
+		// output shrinks as text wraps.
+		m.input.SetSize(innerW, 0)
+		ih = m.input.DesiredHeight()
+	}
 	// Chrome: output border (2) + status (1) + hint (1) + input border (2).
 	outputHeight := m.height - 2 - 1 - hintHeight - 2 - ih
 	if outputHeight < 0 {
 		outputHeight = 0
 	}
 	m.output.SetSize(innerW, outputHeight)
-	m.input.SetSize(innerW, ih)
+	if awaiting {
+		m.approval.SetSize(innerW, ih)
+	} else {
+		m.input.SetSize(innerW, ih)
+	}
 }
 
 // View implements tea.Model: a focus-bordered output panel, a status bar
@@ -513,18 +528,25 @@ func (m *Model) relayout() {
 // focus-bordered input panel.
 func (m Model) View() tea.View {
 	rows := make([]string, 0, m.height)
-	rows = append(rows, m.frame(m.output.View(), m.focus == focusOutput, false)...)
+	rows = append(rows, m.frame(m.output.View(), m.focus == focusOutput, false, "")...)
 	rows = append(rows, statusBar(m.proc, m.spinner.View(), m.width))
 	rows = append(rows, m.hintStrip())
-	rows = append(rows, m.frame(m.input.View(), m.focus == focusInput, m.flashing)...)
+	if m.proc.State == state.StateAwaitingInput {
+		rows = append(rows, m.frame(m.approval.View(), true, false, approvalTitle)...)
+	} else {
+		rows = append(rows, m.frame(m.input.View(), m.focus == focusInput, m.flashing, "")...)
+	}
 	v := tea.NewView(strings.Join(rows, "\n"))
 	v.AltScreen = true
 	return v
 }
 
 // frame wraps a panel's rendered content in a box border colored by focus: the
-// active panel uses a bold active color, the inactive panel the inactive color.
-func (m Model) frame(content string, active, flash bool) []string {
+// active panel uses a bold active color, the inactive panel the inactive color. A
+// non-empty title switches to the attention color (regardless of active/flash) and
+// embeds the title in the top border, drawing attention to an interactive decision
+// that needs the user's input.
+func (m Model) frame(content string, active, flash bool, title string) []string {
 	innerW := m.width - 2
 	if innerW < 0 {
 		innerW = 0
@@ -537,19 +559,45 @@ func (m Model) frame(content string, active, flash bool) []string {
 	if flash {
 		code = "7;" + m.active
 	}
+	if title != "" {
+		code = m.attention
+	}
 	paint := func(s string) string {
 		if code == "" {
 			return s
 		}
 		return "\x1b[" + code + "m" + s + "\x1b[0m"
 	}
-	bar := strings.Repeat("─", innerW)
-	out := []string{paint("┌" + bar + "┐")}
+	out := []string{paint(titledTopBorder(title, innerW))}
 	for _, line := range strings.Split(content, "\n") {
 		out = append(out, paint("│")+padCells(line, innerW)+paint("│"))
 	}
-	out = append(out, paint("└"+bar+"┘"))
+	out = append(out, paint("└"+strings.Repeat("─", innerW)+"┘"))
 	return out
+}
+
+// titledTopBorder draws the top border, embedding title as `┌─ title ──...──┐`
+// when non-empty (a title that doesn't fit a very narrow panel is dropped).
+func titledTopBorder(title string, innerW int) string {
+	const lead = 3 // "─ " before the title + " " after it
+	if title == "" || innerW-lead <= 0 {
+		return "┌" + strings.Repeat("─", innerW) + "┐"
+	}
+	t := truncateTitle(title, innerW-lead)
+	fill := max(innerW-lead-len([]rune(t)), 0)
+	return "┌─ " + t + " " + strings.Repeat("─", fill) + "┐"
+}
+
+// truncateTitle fits s to w runes, marking truncation with an ellipsis.
+func truncateTitle(s string, w int) string {
+	r := []rune(s)
+	if len(r) <= w || w <= 0 {
+		return s
+	}
+	if w == 1 {
+		return "…"
+	}
+	return string(r[:w-1]) + "…"
 }
 
 // hintStrip renders the single context-sensitive hint row: interrupt guidance
@@ -558,10 +606,8 @@ func (m Model) frame(content string, active, flash bool) []string {
 func (m Model) hintStrip() string {
 	var text string
 	switch {
-	case m.proc.State == state.StateAwaitingInput && m.proc.Phase == state.PhaseVerb:
-		text = "continue? o once · a always · n not now · x never"
 	case m.proc.State == state.StateAwaitingInput:
-		text = "approve: a session · g global · d deny"
+		text = "↑/↓ (or j/k) navigate · enter confirm"
 	case m.proc.State == state.StateWorking:
 		if m.chordPending {
 			text = "esc again to confirm interrupt"

@@ -210,11 +210,10 @@ func RunChat(ctx context.Context, opts Options) error {
 				cancel()
 			}
 		},
-		Approve:     func(decision string) { orc.Resolve(decision) },
-		ApproveVerb: func(decision string) { orc.ResolveVerb(decision) },
-		Events:      sub.C,
-		Processing:  procCh,
-		Connected:   connected,
+		Approve:    func(decision string) { orc.Resolve(decision) },
+		Events:     sub.C,
+		Processing: procCh,
+		Connected:  connected,
 	}
 
 	// Auto-submit the bootstrap prompt (if configured) once the surface is

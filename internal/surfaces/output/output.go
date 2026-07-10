@@ -43,7 +43,14 @@ const (
 	kindError
 	kindLaunch
 	kindPlan
-	kindVerbPrompt
+	// kindApprovalRequest is a lightweight scrollback record of an interactive
+	// decision the runtime asked for (tool approval, verb continuation, or any
+	// future kind) — the same generic {prompt, options} event that also drives
+	// the swapped-in approval widget in the input panel.
+	kindApprovalRequest
+	// kindApprovalDecision is the post-decision audit line: the prompt and the
+	// chosen option's label as text. Fixed gray, not part of context.
+	kindApprovalDecision
 )
 
 // launchItem pairs a launchable surface kind with its full attach command. The
@@ -464,11 +471,18 @@ func (m *Model) Apply(ev state.Event) tea.Cmd {
 		return m.applyNodeEvent(ev)
 	case state.ContentSystemPrompt:
 		m.add(&widget{kind: kindSystem, title: "📜 system prompt", body: eventText(ev), previewWhenCollapsed: true})
-	case state.ContentVerbPrompt:
+	case state.ContentApprovalRequest:
+		// A lightweight scrollback record of what was asked — the same event also
+		// drives the swapped-in approval widget in the input panel (chat.go).
 		p, _ := ev.Payload.(map[string]any)
-		verb, sentence := str(p["verb"]), str(p["sentence"])
-		m.add(&widget{kind: kindVerbPrompt, title: "🤔 continue on \"" + verb + "\"?",
-			body: sentence, previewWhenCollapsed: true})
+		m.add(&widget{kind: kindApprovalRequest, title: "❓ approval needed",
+			body: str(p["prompt"]), collapsible: true, previewWhenCollapsed: true})
+	case state.ContentApprovalDecision:
+		// The post-decision audit line: fixed gray, not toggleable (never part of
+		// context — see grayLine/renderWidget's kindApprovalDecision dispatch).
+		p, _ := ev.Payload.(map[string]any)
+		body := "AgentX asked: " + str(p["prompt"]) + " → You selected: " + str(p["chosen_label"])
+		m.add(&widget{kind: kindApprovalDecision, body: body, toggleable: false})
 	default:
 		return nil
 	}
@@ -713,6 +727,12 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 	if w.kind == kindClassification {
 		return []string{m.flatLine(w, selected)}
 	}
+	// The approval-decision audit line renders flat and a fixed gray — unlike
+	// flatLine's selection-tinted active/inactive, this is never part of context
+	// and never draws attention, so its color doesn't change with focus/selection.
+	if w.kind == kindApprovalDecision {
+		return []string{grayLine(w, m.contentWidth())}
+	}
 
 	// A nested widget (a plan step's tool call/result) indents two columns under its
 	// parent box, narrowing its own frame to match (ADR 0009 §9c).
@@ -788,6 +808,14 @@ func (m *Model) flatLine(w *widget, selected bool) string {
 		return line
 	}
 	return "\x1b[" + code + "m" + line + "\x1b[0m"
+}
+
+// grayLine renders a borderless one-row widget in a fixed gray (SGR 90) —
+// unlike flatLine, never tinted by selection/focus — matching the muted
+// styling input.go's dimHint uses for non-content affordances. Used for the
+// approval-decision audit line, which should never draw attention.
+func grayLine(w *widget, width int) string {
+	return "\x1b[90m" + truncateWord(oneLine(w.body), width) + "\x1b[0m"
 }
 
 // collapsedPreview returns the first wrapped body line, marked with an ellipsis when

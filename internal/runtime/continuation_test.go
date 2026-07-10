@@ -1,59 +1,30 @@
 package runtime
 
-import "testing"
+import (
+	"context"
+	"testing"
+	"time"
 
-// TestVerbGateQueuesConcurrentRequests proves the generalized gate works identically
-// for a second, distinct decision kind (verbDecision, not ApprovalDecision) — the
-// same FIFO/per-request-channel mechanics TestApprovalGateQueuesConcurrentRequests
-// already proves for tool approval, now exercised through the verb-approval
-// instantiation.
-func TestVerbGateQueuesConcurrentRequests(t *testing.T) {
-	g := &verbApprovalGate{}
-	req1 := newPendingRequest[verbPayload, verbDecision](verbPayload{verb: "revise"})
-	req2 := newPendingRequest[verbPayload, verbDecision](verbPayload{verb: "restructure"})
+	"agentx/internal/session"
+	"agentx/internal/state"
+)
 
-	if shown := g.enqueue(req1); !shown {
-		t.Fatal("first request should be shown immediately")
-	}
-	if shown := g.enqueue(req2); shown {
-		t.Fatal("second concurrent request must queue, not show immediately")
-	}
-
-	if !g.deliver(VerbAllowOnce) {
-		t.Fatal("deliver found nothing to resolve")
-	}
-	select {
-	case dec := <-req1.resp:
-		if dec != VerbAllowOnce {
-			t.Errorf("req1 decision = %v, want VerbAllowOnce", dec)
-		}
-	default:
-		t.Fatal("req1 was never delivered to")
-	}
-	select {
-	case <-req2.resp:
-		t.Fatal("req2 must not receive a decision meant for req1")
-	default:
-	}
-
-	next, ok := g.dequeue(req1)
-	if !ok || next != req2 {
-		t.Fatalf("dequeue(req1) = (%v, %v), want (req2, true)", next, ok)
-	}
-	if !g.deliver(VerbDenyAlways) {
-		t.Fatal("deliver found nothing to resolve after advancing the queue")
-	}
-	select {
-	case dec := <-req2.resp:
-		if dec != VerbDenyAlways {
-			t.Errorf("req2 decision = %v, want VerbDenyAlways", dec)
-		}
-	default:
-		t.Fatal("req2 was never delivered to after becoming the front of the queue")
+// testOrchestrator builds a minimal Orchestrator sufficient to drive
+// RequestApproval/RequestVerbApproval end to end (bus + processing publisher +
+// identity wired, everything else zero-valued — AppendVerb no-ops on empty paths).
+func testOrchestrator() *Orchestrator {
+	return &Orchestrator{
+		bus:  state.NewBus(),
+		proc: state.NewProcessingPublisher("test"),
+		id:   session.Identity{ID: "test"},
 	}
 }
 
-func TestResolveVerbMapsDecisionStrings(t *testing.T) {
+// TestRequestVerbApprovalMapsDecisionStrings proves RequestVerbApproval — now a
+// thin wrapper over the shared RequestDecision seam — still converts every raw
+// decision string the surface can send back (via the generic Resolve) into the
+// correct verbDecision, exactly as the old dedicated ResolveVerb switch did.
+func TestRequestVerbApprovalMapsDecisionStrings(t *testing.T) {
 	cases := []struct {
 		decision string
 		want     verbDecision
@@ -66,17 +37,30 @@ func TestResolveVerbMapsDecisionStrings(t *testing.T) {
 		{"", VerbDenyOnce},
 	}
 	for _, c := range cases {
-		o := &Orchestrator{}
-		req := newPendingRequest[verbPayload, verbDecision](verbPayload{verb: "x"})
-		o.verbGate.enqueue(req)
-		o.ResolveVerb(c.decision)
-		select {
-		case got := <-req.resp:
-			if got != c.want {
-				t.Errorf("ResolveVerb(%q) delivered %v, want %v", c.decision, got, c.want)
-			}
-		default:
-			t.Errorf("ResolveVerb(%q) delivered nothing", c.decision)
+		o := testOrchestrator()
+		type result struct {
+			dec verbDecision
+			err error
+		}
+		done := make(chan result, 1)
+		go func() {
+			dec, err := o.RequestVerbApproval(context.Background(), "revise", "let me revise the approach")
+			done <- result{dec, err}
+		}()
+
+		// Wait for the request to reach the front of the queue before resolving —
+		// RequestVerbApproval enqueues asynchronously relative to this goroutine.
+		for !o.gate.deliver(c.decision) {
+			time.Sleep(time.Millisecond)
+		}
+
+		r := <-done
+		if r.err != nil {
+			t.Errorf("RequestVerbApproval(%q): unexpected error %v", c.decision, r.err)
+			continue
+		}
+		if r.dec != c.want {
+			t.Errorf("RequestVerbApproval(%q) = %v, want %v", c.decision, r.dec, c.want)
 		}
 	}
 }

@@ -41,11 +41,17 @@ const (
 	// decomposed / completed, streamed as the scheduler drains so execution is
 	// user-visible while it happens — never batched to completion.
 	ContentTaskNode ContentType = "task_node"
-	// ContentVerbPrompt announces an unrecognized stated-continuation verb (neither
-	// allow- nor deny-listed — see internal/prompting/continuation) awaiting the
-	// user's decision: allow once/always, deny once/always. Observability, never
-	// conversation context — the surface pairs it with StateAwaitingInput/PhaseVerb.
-	ContentVerbPrompt ContentType = "verb_prompt"
+	// ContentApprovalRequest announces a pending interactive decision — a tool call
+	// awaiting approval, an unrecognized stated-continuation verb, or any future
+	// decision kind — as a generic {prompt, options} pair. Observability, never
+	// conversation context; the surface pairs it with StateAwaitingInput and renders
+	// it as the swapped-in approval widget regardless of which kind requested it.
+	ContentApprovalRequest ContentType = "approval_request"
+	// ContentApprovalDecision records the outcome of a resolved ContentApprovalRequest:
+	// the original prompt and the chosen option's label (as text, never the raw
+	// decision key). Audit trail only — persisted like every other event, but never
+	// conversation context.
+	ContentApprovalDecision ContentType = "approval_decision"
 )
 
 var validContentTypes = map[ContentType]bool{
@@ -54,7 +60,7 @@ var validContentTypes = map[ContentType]bool{
 	ContentAttachments: true, ContentToolCall: true, ContentToolResult: true,
 	ContentProcessingState: true, ContentTaskProposed: true, ContentTaskResult: true,
 	ContentTaskDiagnostic: true, ContentTaskPlan: true, ContentTaskNode: true,
-	ContentVerbPrompt: true,
+	ContentApprovalRequest: true, ContentApprovalDecision: true,
 }
 
 // DefaultEnabled reports whether an event of the given content type participates
