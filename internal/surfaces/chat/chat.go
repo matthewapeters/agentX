@@ -87,9 +87,11 @@ type Model struct {
 	height       int
 	output       *output.Model
 	input        *input.Model
-	// approval is the widget swapped into the input panel's slot in place of
-	// input while proc.State == StateAwaitingInput: a generic prompt + navigable
-	// option list, populated from the runtime's approval_request events.
+	// approval is a third panel inserted between output and input while
+	// proc.State == StateAwaitingInput: a generic prompt + navigable option
+	// list, populated from the runtime's approval_request events. Input stays
+	// visible (inert) rather than being replaced, so there is no swap and no
+	// frame where a bottom panel goes missing.
 	approval     *approval.Model
 	proc         state.ProcessingState
 	spinner      spinner.Model
@@ -490,42 +492,50 @@ func (m Model) listenProcessing() tea.Cmd {
 // relayout sizes the panels to the current terminal. Each panel is wrapped in a
 // focus border (2 rows, 2 columns); a status row and a hint row sit between the
 // bordered output (which fills the rest) and the bordered, fixed-height input.
+// While awaiting an interactive decision, the approval widget is inserted as a
+// THIRD region between output and input — input stays visible (inert) rather
+// than being swapped out, so there is never a frame where neither the output
+// nor a bottom panel is rendered.
 func (m *Model) relayout() {
 	innerW := m.width - 2
 	if innerW < 0 {
 		innerW = 0
 	}
-	// While awaiting an interactive decision, the approval widget occupies the
-	// input panel's slot instead of the free-text input — size from it instead.
+	// Set the input width first so its desired (wrapped) height reflects this
+	// width, then give the input that height and the output the remaining
+	// space. This runs on every content change, so the input grows and the
+	// output shrinks as text wraps.
+	m.input.SetSize(innerW, 0)
+	inputH := m.input.DesiredHeight()
+
 	awaiting := m.proc.State == state.StateAwaitingInput
-	var ih int
+	var approvalH int
 	if awaiting {
 		m.approval.SetSize(innerW, 0)
-		ih = m.approval.DesiredHeight()
-	} else {
-		// Set the input width first so its desired (wrapped) height reflects this
-		// width, then give the input that height and the output the remaining
-		// space. This runs on every content change, so the input grows and the
-		// output shrinks as text wraps.
-		m.input.SetSize(innerW, 0)
-		ih = m.input.DesiredHeight()
+		approvalH = m.approval.DesiredHeight()
 	}
-	// Chrome: output border (2) + status (1) + hint (1) + input border (2).
-	outputHeight := m.height - 2 - 1 - hintHeight - 2 - ih
+	// Chrome: output border (2) + status (1) + hint (1) + input border (2), plus
+	// the approval panel's own border (2) when it's showing.
+	chrome := 2 + 1 + hintHeight + 2
+	if awaiting {
+		chrome += 2
+	}
+	outputHeight := m.height - chrome - inputH - approvalH
 	if outputHeight < 0 {
 		outputHeight = 0
 	}
 	m.output.SetSize(innerW, outputHeight)
 	if awaiting {
-		m.approval.SetSize(innerW, ih)
-	} else {
-		m.input.SetSize(innerW, ih)
+		m.approval.SetSize(innerW, approvalH)
 	}
+	m.input.SetSize(innerW, inputH)
 }
 
 // View implements tea.Model: a focus-bordered output panel, a status bar
-// (processing-state indicator), a context-sensitive hint row, and a
-// focus-bordered input panel.
+// (processing-state indicator), a context-sensitive hint row, an attention-
+// bordered approval panel (only while a decision is awaited), and a
+// focus-bordered input panel — input is always rendered, even while an
+// approval is pending (inert, since the approval widget captures the keys).
 func (m Model) View() tea.View {
 	rows := make([]string, 0, m.height)
 	rows = append(rows, m.frame(m.output.View(), m.focus == focusOutput, false, "")...)
@@ -533,9 +543,8 @@ func (m Model) View() tea.View {
 	rows = append(rows, m.hintStrip())
 	if m.proc.State == state.StateAwaitingInput {
 		rows = append(rows, m.frame(m.approval.View(), true, false, approvalTitle)...)
-	} else {
-		rows = append(rows, m.frame(m.input.View(), m.focus == focusInput, m.flashing, "")...)
 	}
+	rows = append(rows, m.frame(m.input.View(), m.focus == focusInput && m.proc.State != state.StateAwaitingInput, m.flashing, "")...)
 	v := tea.NewView(strings.Join(rows, "\n"))
 	v.AltScreen = true
 	return v
