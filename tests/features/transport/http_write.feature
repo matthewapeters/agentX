@@ -72,14 +72,6 @@ Feature: HTTP transport write endpoints
     Then the response status is 200
     And the orchestrator received decision "approve_session"
 
-  # use-case: UC-HTTP-VERB-APPROVAL
-  Scenario: Verb-continuation approval over HTTP resolves the orchestrator's verb gate
-    Given a running transport server
-    And the client is authorized with the attach token
-    When a client POSTs "/verb/approval" with decision "allow_always"
-    Then the response status is 200
-    And the orchestrator received verb decision "allow_always"
-
   # use-case: UC-HTTP-SHUTDOWN  (TC-M1-transport-014)
   Scenario: Shut a surface down over HTTP
     Given a running transport server

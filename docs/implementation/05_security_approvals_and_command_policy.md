@@ -60,10 +60,19 @@ pauses rather than blocks the UI:
 
 - processing-state enters `awaiting_input` (a versioned addition to the
   `RunState` enum / `processing-state.schema.json`; requires a `CHANGELOG.md` entry)
-- the surface renders the approval affordance on the `tool_call` (🔧) widget:
-  `[a] approve session · [g] approve global · [d] deny`
-- the runtime resumes on the decision (channel), persists the chosen scope, then
-  executes or aborts
+- the runtime publishes a generic `approval_request` event — `{prompt, options}`,
+  where each option is a `{label, decision}` pair — via the orchestrator's shared
+  decision gate (`internal/runtime/decision.go`). The chat surface swaps a
+  navigable-list widget into the input panel in place of the free-text input,
+  bordered and titled "AgentX Needs Your Input": up/down (or j/k) moves a
+  highlighted-row cursor, Enter confirms and sends the highlighted option's
+  `decision` string back. The same widget and interaction model handle every
+  decision kind (tool approval, verb-continuation approval, and any future kind)
+  — the surface never hardcodes a per-kind option vocabulary or keymap.
+- concurrent decisions of any kind serialize through one shared FIFO queue, so
+  only one is ever shown at a time regardless of which kinds are pending
+- the runtime resumes on the decision (per-request channel), persists any
+  kind-specific side effect (policy scope, verb allow/deny list), then proceeds
 - the same `awaiting_input` mechanism backs Stage-2 classification clarification
 
 ## Policy Persistence
@@ -103,6 +112,14 @@ Each tool execution record should include:
 - approval_scope
 - execution_status
 - output_digest or size metadata (the `ref` + byte/line counts above)
+
+Separately, every resolved interactive decision (not just tool-execution) is
+recorded as an `approval_decision` event — the original prompt and the chosen
+option's label as text (never the raw key) — via the same persist-everything
+session-event mechanism as any other event, but with `Enabled: false` by
+default so it never folds into assembled LLM context. The chat surface renders
+it as a fixed-gray, one-line record in scrollback. This is the audit trail for
+the decision itself, distinct from the tool-execution fields above.
 
 ## Future Security Extensions
 

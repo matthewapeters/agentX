@@ -28,76 +28,40 @@ const (
 	VerbDenyAlways
 )
 
-// verbPayload is one pending stated-continuation verb awaiting a decision — the Req
-// type parameter for the verb-approval gate (see gate.go).
-type verbPayload struct {
-	verb     string
-	sentence string
-}
-
-// verbApprovalGate is the verb-continuation queue: a gate of verbPayload requests,
-// resolved with a verbDecision. Generalized from the same gate[Req, Resp] mechanism
-// the tool-approval gate uses (see approval.go) — two independent decision kinds,
-// same proven queueing underneath.
-type verbApprovalGate = gate[verbPayload, verbDecision]
-
-// ResolveVerb delivers a surface decision to the currently-shown verb-approval
-// request: "allow_once", "allow_always", "deny_once", or "deny_always" (anything
-// else denies once). It is a no-op when no request is pending.
-func (o *Orchestrator) ResolveVerb(decision string) {
-	switch decision {
-	case "allow_once":
-		o.verbGate.deliver(VerbAllowOnce)
-	case "allow_always":
-		o.verbGate.deliver(VerbAllowAlways)
-	case "deny_always":
-		o.verbGate.deliver(VerbDenyAlways)
-	default:
-		o.verbGate.deliver(VerbDenyOnce)
-	}
+// verbApprovalOptions is the fixed option set every verb-continuation request
+// offers — deliberately not configurable per call site, so the surface always
+// shows the same four choices regardless of which verb is being asked about.
+var verbApprovalOptions = []state.ApprovalOption{
+	{Label: "Yes, just this once", Decision: "allow_once"},
+	{Label: "Yes, always", Decision: "allow_always"},
+	{Label: "No, not now", Decision: "deny_once"},
+	{Label: "No, never", Decision: "deny_always"},
 }
 
 // RequestVerbApproval enqueues an unrecognized stated-continuation verb and, once
-// it's at the front of the queue, publishes it and moves the cycle to
-// awaiting_input; it blocks until the surface resolves this specific request (or ctx
-// is canceled) — the same per-request-channel, FIFO-queue shape RequestApproval uses,
-// so a second concurrent verb prompt can never orphan this one. On an "always"
-// decision it persists the verb to the corresponding externalized list so the system
-// learns it without needing every possible verb predicted in advance.
+// it's at the front of the shared decision queue, blocks until the surface resolves
+// this specific request (or ctx is canceled) — the same per-request-channel,
+// FIFO-queue shape RequestApproval uses, so a second concurrent verb prompt can
+// never orphan this one. On an "always" decision it persists the verb to the
+// corresponding externalized list so the system learns it without needing every
+// possible verb predicted in advance.
 func (o *Orchestrator) RequestVerbApproval(ctx context.Context, verb, sentence string) (verbDecision, error) {
-	req := newPendingRequest[verbPayload, verbDecision](verbPayload{verb: verb, sentence: sentence})
-	shown := o.verbGate.enqueue(req)
-	if shown {
-		o.publishVerbPrompt(verb, sentence)
-		o.setProcessing(state.StateAwaitingInput, state.PhaseVerb)
+	dec, err := o.RequestDecision(ctx, state.PhaseVerb, sentence, verbApprovalOptions)
+	if err != nil {
+		return VerbDenyOnce, err
 	}
-	defer func() {
-		if next, ok := o.verbGate.dequeue(req); ok {
-			o.publishVerbPrompt(next.payload.verb, next.payload.sentence)
-			o.setProcessing(state.StateAwaitingInput, state.PhaseVerb)
-		}
-	}()
-
-	select {
-	case dec := <-req.resp:
-		switch dec {
-		case VerbAllowAlways:
-			_ = continuation.AppendVerb(o.settings.ContinuationVerbsAllowedPath, verb)
-		case VerbDenyAlways:
-			_ = continuation.AppendVerb(o.settings.ContinuationVerbsDeniedPath, verb)
-		}
-		return dec, nil
-	case <-ctx.Done():
-		return VerbDenyOnce, ctx.Err()
+	switch dec {
+	case "allow_once":
+		return VerbAllowOnce, nil
+	case "allow_always":
+		_ = continuation.AppendVerb(o.settings.ContinuationVerbsAllowedPath, verb)
+		return VerbAllowAlways, nil
+	case "deny_always":
+		_ = continuation.AppendVerb(o.settings.ContinuationVerbsDeniedPath, verb)
+		return VerbDenyAlways, nil
+	default:
+		return VerbDenyOnce, nil
 	}
-}
-
-// publishVerbPrompt emits the pending verb-continuation decision as a verb_prompt
-// event for the surface (rendered as a widget showing what's being asked about).
-func (o *Orchestrator) publishVerbPrompt(verb, sentence string) {
-	o.publish("VERB_PROMPT", state.ContentVerbPrompt, map[string]any{
-		"verb": verb, "sentence": sentence,
-	})
 }
 
 // maybeContinuePlan checks the model's own synthesized response for a stated

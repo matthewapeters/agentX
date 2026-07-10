@@ -128,8 +128,7 @@ type Orchestrator struct {
 	taskDecomp   scheduler.Decomposer
 	recDone    chan error
 	recSub     *state.Subscription
-	gate       approvalGate
-	verbGate   verbApprovalGate
+	gate       decisionGate
 	registry   *tools.Registry
 	policy     *tools.Policy
 	proposer   *tools.Proposer

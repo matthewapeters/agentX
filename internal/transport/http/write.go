@@ -76,7 +76,9 @@ func (s *Server) handlePrompt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }
 
-// handleApproval forwards a tool-approval decision to the orchestrator gate.
+// handleApproval forwards an interactive-decision string (tool approval,
+// verb-continuation approval, or any future kind — the orchestrator's shared
+// decision gate resolves whichever request is currently shown) to the orchestrator.
 func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(r) {
 		writeError(w, http.StatusUnauthorized, surfaces.CategoryAuth, "invalid or missing attach token")
@@ -91,26 +93,6 @@ func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.prov.Resolve(body.Decision)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "resolved"})
-}
-
-// handleVerbApproval forwards a verb-continuation decision to the orchestrator's
-// verb-approval gate — the same shape as handleApproval, for the distinct
-// stated-continuation-verb decision (see internal/runtime's verbApprovalGate).
-func (s *Server) handleVerbApproval(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(r) {
-		writeError(w, http.StatusUnauthorized, surfaces.CategoryAuth, "invalid or missing attach token")
-		return
-	}
-	var body approvalBody
-	if !decodeJSON(w, r, &body) {
-		return
-	}
-	if strings.TrimSpace(body.Decision) == "" {
-		writeError(w, http.StatusBadRequest, surfaces.CategoryValidation, "decision is required")
-		return
-	}
-	s.prov.ResolveVerb(body.Decision)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "resolved"})
 }
 

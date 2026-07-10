@@ -152,7 +152,21 @@ func (w *chatWorld) recordingSurfaceSized(width, height int) error {
 	return nil
 }
 
+// processingAwaiting feeds the same approval_request event the runtime
+// publishes alongside the awaiting_input transition, so scenarios exercise a
+// real navigable option list rather than an empty widget.
 func (w *chatWorld) processingAwaiting() error {
+	w.update(chat.EventMsg{
+		ContentType: state.ContentApprovalRequest,
+		Payload: map[string]any{
+			"prompt": "approve this?",
+			"options": []state.ApprovalOption{
+				{Label: "Approve for this session", Decision: "session"},
+				{Label: "Approve for all sessions", Decision: "global"},
+				{Label: "Deny", Decision: "deny"},
+			},
+		},
+	})
 	w.update(chat.ProcessingStateMsg{State: state.StateAwaitingInput, Phase: state.PhaseTool})
 	return nil
 }

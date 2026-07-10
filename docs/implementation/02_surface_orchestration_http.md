@@ -416,9 +416,13 @@ the endpoint contract.
   `GET /processing-state`. Empty text → `400 validation`. When the orchestrator is
   not accepting (`Accepting()` false) → `409 conflict`. (v1: an external surface
   cannot cancel an in-flight cycle; Stop remains an in-process chat affordance.)
-- `POST /tool/approval` (`{"decision":"approve_session|approve_global|deny"}`) →
-  `200 {"status":"resolved"}`; the decision is forwarded to the orchestrator's
-  approval gate (`Resolve`). Empty decision → `400 validation`.
+- `POST /tool/approval` (`{"decision":"<option's decision string>"}`, e.g.
+  `"session"`/`"global"`/`"deny"` for a tool approval or `"allow_once"`/
+  `"allow_always"`/`"deny_once"`/`"deny_always"` for a verb-continuation
+  approval) → `200 {"status":"resolved"}`; the decision is forwarded to the
+  orchestrator's shared decision gate (`Resolve`), which resolves whichever
+  interactive-decision request is currently shown — the endpoint is agnostic to
+  which kind that is. Empty decision → `400 validation`.
 - `POST /surface/{id}/shutdown` → `200 {"status":"stopped"}`; unknown id → `404`.
 - `POST /surface/{id}/command` → reserved; validates the surface is registered then
   returns `501 not_implemented` in v1 (there is no inbound channel to an external

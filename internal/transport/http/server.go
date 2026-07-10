@@ -35,7 +35,6 @@ type Provider interface {
 	// Write surface (TRN-3).
 	Submit(ctx context.Context, text string) error
 	Resolve(decision string)
-	ResolveVerb(decision string)
 	Accepting() bool
 
 	// History returns the persisted session event log for seeding a surface (SS-1).
@@ -85,7 +84,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /surface/register", s.handleRegister)
 	s.mux.HandleFunc("POST /prompt", s.handlePrompt)
 	s.mux.HandleFunc("POST /tool/approval", s.handleApproval)
-	s.mux.HandleFunc("POST /verb/approval", s.handleVerbApproval)
 	s.mux.HandleFunc("POST /surface/{id}/shutdown", s.handleShutdown)
 	s.mux.HandleFunc("POST /surface/{id}/command", s.handleCommand)
 	s.mux.HandleFunc("POST /model/switch", s.handleModelSwitch)
