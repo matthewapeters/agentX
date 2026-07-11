@@ -15,6 +15,7 @@ import (
 	"agentx/internal/llm/ollama"
 	"agentx/internal/prompting/cascade"
 	"agentx/internal/prompting/corpus"
+	"agentx/internal/prompting/digest"
 	"agentx/internal/prompting/pipeline"
 	"agentx/internal/prompting/reconcile"
 	"agentx/internal/prompting/task"
@@ -87,17 +88,66 @@ func (o *Orchestrator) buildTaskExecutor() {
 	// Confine execution to the working directory; a task that would operate outside
 	// it prompts the user through the existing interactive approval gate.
 	root, _ := os.Getwd()
-	approver := executor.ApproverFunc(func(ctx context.Context, d tools.Descriptor, args map[string]string, _ string) bool {
+	sessionID := o.id.ID
+	approver := executor.ApproverFunc(func(ctx context.Context, d tools.Descriptor, args map[string]string, reason string) bool {
 		v, err := o.RequestApproval(ctx, d, args, o.policy)
-		return err == nil && v.Decision == tools.Allow
+		allowed := err == nil && v.Decision == tools.Allow
+		if allowed {
+			o.persistReadGrantIfNeeded(d, args, reason)
+		}
+		return allowed
 	})
 	o.taskExec = executor.New(
 		o.proposer, o.registry, o.policy, o.runner,
 		executor.FSVerifier{Root: root},
 		executor.WithRoot(root),
 		executor.WithApprover(approver),
+		executor.WithReadGrants(liveReadGrants{store: o.store, sessionID: sessionID}),
 		executor.WithCallObserver(taskToolPublisher{o: o}),
 	)
+}
+
+// liveReadGrants adapts session.WMReadGrants to reload working memory on every check —
+// a grant persisted mid-session (via a fresh out-of-root read approval, above) must be
+// honored on the very next call, not just future executors built after a restart.
+type liveReadGrants struct {
+	store     *session.Store
+	sessionID string
+}
+
+func (g liveReadGrants) Allows(path string) bool {
+	wm, err := g.store.LoadWorkingMemory(g.sessionID)
+	if err != nil {
+		return false
+	}
+	return session.WMReadGrants{WM: wm}.Allows(path)
+}
+
+// persistReadGrantIfNeeded records a working-memory read grant when an approval was
+// granted specifically because the call's path escaped the confinement root
+// (reason == "outside working directory", set by executor.go's escapesRoot check) and the
+// call is read-only. An out-of-root read approval used to only widen tools.Policy's
+// exact-args allowlist — escapesRoot's override is independent of that allowlist, so it
+// re-forced approval on every later call under the same (or a sibling) path even after
+// "approve for this session"/"for all sessions". session.WMReadGrants (consulted via
+// liveReadGrants, above) exists specifically to suppress that override on a standing
+// grant; this is the write side. Never fires for a write/network tool, or for approval
+// granted for any other reason (e.g. a normal RequiresApproval call within root) —
+// matching WithReadGrants' own contract that it "never permits a mutating call". A
+// working-memory write failure is silently ignored, matching the read-side Facts
+// closure's best-effort precedent elsewhere in this file.
+func (o *Orchestrator) persistReadGrantIfNeeded(d tools.Descriptor, args map[string]string, reason string) {
+	if reason != "outside working directory" || d.Risk != tools.RiskRead {
+		return
+	}
+	p := args["path"]
+	if p == "" {
+		return
+	}
+	_ = o.mutateWorkingMemory(func(wm *session.WorkingMemory) error {
+		session.GrantReadPath(wm, p)
+		return nil
+	})
 }
 
 // taskToolPublisher streams executor call lifecycle to the bus, tagged with the owning
@@ -168,6 +218,7 @@ func (o *Orchestrator) buildDecomposition() {
 			}
 			return wm.Enabled()
 		},
+		History: o.recentDigest,
 	}
 }
 
@@ -527,4 +578,17 @@ func (o *Orchestrator) historyEvents() []state.Event {
 		})
 	}
 	return events
+}
+
+// recentDigest renders the bounded recent-turn digest (digestMaxTurns) used to ground the
+// primary route classifier and the plan decomposer in what was actually just said, not
+// just the bare new-turn text — witty-falcon: "proceed with the commands" reached both
+// with no way to resolve "the commands" to the cat calls the model had just narrated,
+// because neither call site saw conversation history at all. Locks o.mu itself, so callers
+// must not already hold it.
+func (o *Orchestrator) recentDigest() string {
+	o.mu.Lock()
+	events := o.historyEvents()
+	o.mu.Unlock()
+	return digest.Build(events, digestMaxTurns).Render()
 }

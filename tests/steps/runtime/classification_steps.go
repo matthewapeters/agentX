@@ -41,7 +41,7 @@ func (w *classifyWorld) modelReturns(raw *godog.DocString) error {
 		return raw.Content, nil
 	}
 	c := classify.New("", w.retries, chat)
-	w.verdict = c.Classify(context.Background(), "some prompt")
+	w.verdict = c.Classify(context.Background(), "some prompt", "")
 	return nil
 }
 

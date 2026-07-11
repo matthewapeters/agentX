@@ -431,7 +431,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 
 	route := ""
 	if classifyPrompt && classifier != nil {
-		verdict := classifier.Classify(ctx, text)
+		verdict := classifier.Classify(ctx, text, o.recentDigest())
 		route = string(verdict.Route)
 		o.publishEv("CLASSIFICATION", state.ContentClassification, map[string]any{
 			"route":     route,

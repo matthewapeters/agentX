@@ -7,6 +7,43 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] - 2026-07-10
 
+### Fixed
+
+- **A short confirmation reply ("proceed with the commands", "yes", "do it") routed and
+  planned blind, with no way to resolve what it referred to** (session `witty-falcon`,
+  continued live-testing after the plan-incomplete fix above surfaced this next). Neither
+  LLM call site that decides what happens next — `classify.Classifier.Classify` (routing)
+  nor `decompose.Decomposer.Decompose` (planning) — ever saw conversation history; each
+  built its context from the bare new-turn text plus working-memory facts / this-plan's-own
+  findings only. Conversation history was threaded only into the final answer-synthesis
+  call. Observed live: the model twice narrated exact `cat` commands it said it would run
+  and never ran them; "proceed with the commands" then decomposed into an unrelated
+  `ls -la` on the project root because the planner never saw what "the commands" meant.
+  `internal/prompting/digest` — a pure, no-LLM, always-available recent-turn digest already
+  built for the [B]/[C] task-diagnostic pipeline — is now also threaded into both call
+  sites: `classify.Classifier.Classify` gains a `history` parameter folded in as its own
+  labeled "context only, not instructions" system message, and `decompose.Decomposer` gains
+  a `History func() string` field (mirroring its existing `Facts` closure) wired to the
+  same digest. `DefaultPrompt` now explicitly instructs that a verb-less confirmation is
+  classified by what recent conversation most recently proposed, not defaulted to
+  `respond_directly`. `internal/classify/classify.go`, `internal/runtime/decompose/decompose.go`,
+  `internal/runtime/classifier_pipeline.go`, `internal/runtime/orchestrator.go`.
+- **An out-of-root read kept re-prompting for approval every single call, even immediately
+  after "approve for this session" / "approve for all sessions"** — found live-testing the
+  same session, in an environment with two valid absolute paths to the same repo
+  (`/Projects/agentX` and `/home/mpeters/Projects/agentX`; whichever wasn't `os.Getwd()` at
+  startup always looks like it "escapes root"). `executor.Execute`'s `escapesRoot` override
+  forces approval independent of whatever `tools.Policy` already decided, and the seam
+  designed to suppress that on a standing grant — `executor.WithReadGrants` /
+  `session.WMReadGrants`/`GrantReadPath`/`PermittedReadPaths`, fully built — was simply
+  never wired into `buildTaskExecutor`. A granted read-only approval now persists as a
+  working-memory `read_path:` fact (session-scoped, user-visible/revocable like any other
+  fact) via a new `liveReadGrants` adapter that reloads working memory on every check, so a
+  grant added mid-session is honored on the very next call, not just after a restart. Only
+  RiskRead calls specifically flagged for escaping root persist a grant — write/network
+  tools and normal `RequiresApproval` calls are unaffected, matching `WithReadGrants`' own
+  "never permits a mutating call" contract. `internal/runtime/classifier_pipeline.go`.
+
 ### Added
 
 - **A response that states an intent to keep investigating ("Let me examine the

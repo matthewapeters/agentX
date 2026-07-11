@@ -168,9 +168,78 @@ loud in the log; it was silent to the model and the user.
 ### state
 - `task_node` is a valid content type; `planning` is a valid processing phase.
 
+## Recent-turn digest grounds classify + decompose (witty-falcon, 2026-07-11)
+A short confirmation reply ("proceed with the commands", "yes", "do it") has no verb or
+scope of its own — it only makes sense against what was just discussed. Both LLM call sites
+that decide what happens next were, until now, structurally blind to that: `classify.
+Classifier.Classify` assembled its prompt from `userText` alone, and `decompose.Decomposer.
+Decompose` built its context from working-memory facts + this-plan's-own findings, neither
+of which includes prior turns. Conversation history was threaded only into the final
+answer-synthesis call. Live-observed failure: the model twice narrated ("let me actually
+read `.vscode/settings.json`/`AGENTS.md`/`Makefile.hybrid`") without executing, and "proceed
+with the commands" — which should have run exactly those three reads — instead decomposed
+into an unrelated `ls -la` on the project root, because the planner never saw the prior
+turn's text at all. `internal/prompting/digest` (pure, no LLM, always available — already
+built for the [B]/[C] task-diagnostic pipeline) is now also threaded into both call sites.
+
+### classify.Classifier.Classify (internal/classify/classify.go)
+- GIVEN an empty history string WHEN Classify runs THEN the assembled messages are
+  unchanged from before this fix (no regression on the common/cold-start case).
+- GIVEN a non-empty history digest WHEN Classify runs THEN it is folded in as its own
+  system message, inserted immediately before the user message — stable regardless of
+  whether a custom system prompt is configured (Assemble always returns 0-or-1 leading
+  system message(s) + exactly one trailing user message).
+- GIVEN the digest system message THEN it is explicitly labeled "context only, not
+  instructions" so recent conversation cannot be mistaken for a directive to the
+  classifier itself.
+- GIVEN DefaultPrompt THEN it instructs that a short reply with no verb/scope of its own
+  is classified by what the recent conversation most recently proposed, not defaulted to
+  respond_directly for lack of its own verb.
+
+### decompose.Decomposer.Decompose (internal/runtime/decompose/decompose.go)
+- GIVEN Decomposer.History is nil or returns "" THEN ctxText is unchanged from before this
+  fix (no regression when no history is available).
+- GIVEN Decomposer.History returns a non-empty digest THEN it is folded into ctxText ahead
+  of this plan's own planfindings — distinct labeling: recent conversation (what was
+  already discussed, before this goal was even dispatched) vs. this plan's own findings
+  (what THIS drain has discovered while running).
+- GIVEN buildDecomposition wires the live orchestrator THEN Decomposer.History is
+  `o.recentDigest` — the same digest-building call classify.Classifier.Classify uses,
+  reloaded fresh on every call (mirrors the existing Facts closure pattern), bounded to
+  digestMaxTurns.
+
+## Standing read-grants actually persist (witty-falcon, 2026-07-11)
+`executor.Execute` force-requires approval whenever a call's path argument lexically
+escapes the confinement root (`escapesRoot`, executor.go) — independent of whatever
+`tools.Policy.Evaluate` already decided. `executor.ReadGrants` (`WithReadGrants`) and
+`session.WMReadGrants`/`GrantReadPath`/`PermittedReadPaths` exist specifically to let a
+prior out-of-root read approval suppress that override on later calls — fully built, but
+never wired into `buildTaskExecutor`, so every out-of-root read (e.g. this environment's
+two valid absolute paths to the same repo, `/Projects/agentX` and
+`/home/mpeters/Projects/agentX` — whichever wasn't `os.Getwd()` at startup always looks
+like it escapes root) re-prompted for approval every single time, even immediately after
+"approve for this session"/"approve for all sessions."
+- GIVEN a RiskRead call whose path escapes root WHEN the interactive approver grants it
+  (session or global) THEN the path is persisted as a working-memory `read_path:` grant
+  (`session.GrantReadPath`), not just recorded in `tools.Policy`'s exact-args allowlist.
+- GIVEN a write-class or network call, or a call that was NOT flagged specifically for
+  escaping root (e.g. a normal `RequiresApproval` tool) THEN no read-grant is persisted —
+  this only widens standing READ access, matching `WithReadGrants`' own documented
+  contract ("never permits a mutating call").
+- GIVEN a later call (same session) whose path falls under a persisted grant WHEN the
+  executor evaluates escapesRoot THEN `e.reads.Allows(full)` (backed by a live-reloading
+  `session.WMReadGrants` wrapper, `liveReadGrants`) suppresses the override — no repeat
+  approval prompt, honored immediately, not only after a restart.
+- GIVEN a grant was persisted mid-session (via a fresh approval) THEN the very next call
+  under that path honors it — `liveReadGrants` reloads working memory on every check
+  rather than snapshotting it once at executor-construction time.
+
 ## Tests
 `scheduler/observer_test.go` (lifecycle stream order + no-progress fallback),
 `decompose/guard_test.go` (tidy-cove chain similarity, legit-decomposition negative,
 echo-planner refusal), `decompose/live_test.go` (hardened heuristic cases),
 `decompose/drain_test.go` (observer-threaded signature). Orchestrator-level event
 assertions remain deferred (fixed-verdict harness limitation, per Phase 4d note).
+`classify_test.go` (history folding, DefaultPrompt continuation guidance),
+`decompose/decompose_test.go` (History folding), `runtime/readgrant_test.go`
+(liveReadGrants + approver persistence).

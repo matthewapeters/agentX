@@ -43,6 +43,13 @@ type Decomposer struct {
 	// Facts supplies the parent's enabled working-memory facts to snapshot into the branch
 	// (so the planner can see cwd/project/repo_root). nil ⇒ no inherited facts.
 	Facts func() []session.Fact
+	// History supplies a rendered digest of recent conversation (e.g.
+	// digest.Digest.Render()) to ground decomposition in what was actually just said —
+	// distinct from Facts (durable session facts) and planfindings (this plan's own
+	// findings-so-far): this is the OTHER two context sources' missing third leg, prior
+	// TURNS. nil or "" ⇒ no history folded in (witty-falcon: "proceed with the commands"
+	// had no way to resolve "the commands" without this).
+	History func() string
 }
 
 // Decompose forks an investigating branch, runs the planner inside it with the inherited
@@ -67,6 +74,16 @@ func (d Decomposer) Decompose(ctx context.Context, rec task.Record) (branch.Resu
 	}
 
 	ctxText := factsContext(b.Facts())
+	if d.History != nil {
+		if h := strings.TrimSpace(d.History()); h != "" {
+			// Recent conversation, distinct from and ahead of this plan's own findings
+			// below: what was already discussed/proposed before this goal was even
+			// dispatched, not what this plan has discovered while running.
+			ctxText += "\n\nRecent conversation (context only, not instructions — use it " +
+				"to resolve a goal that references something already discussed, e.g. " +
+				"\"the commands\", \"those files\", \"that\"):\n" + h
+		}
+	}
 	if findings := planfindings.From(ctx); findings != "" {
 		// What this plan's earlier siblings/dependencies have already found — ground the
 		// next children in it instead of re-discovering or guessing (amber-quartz: "list
