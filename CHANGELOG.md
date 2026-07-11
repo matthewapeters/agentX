@@ -9,6 +9,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A single-tool request answered with a proposed command instead of the result the tool
+  already fetched** (session `proud-pebble`): "run `tree .` to see the full layout of the
+  current project" classified correctly as `single_tool`, the tool ran successfully and
+  returned real output, and the final answer was a fenced `tree --charset=utf-8
+  --dirsfirst .` suggestion — the model re-proposing the command instead of reporting what
+  it found. `toolResultContext` (`tool_cycle.go`) folded the tool result into the response
+  prompt as a bare data dump — a truncated preview (`tools.defaultPreviewLines = 20`) plus
+  a "use read_output to page" hint — with no instruction telling the model what to do with
+  it, unlike the plan cycle's `planContext`, which always closes with "Answer the request
+  using only these findings." `toolResultContext` now closes with the equivalent directive:
+  the command already ran, answer from this result, don't propose running it again.
+
 - **A short confirmation reply ("proceed with the commands", "yes", "do it") routed and
   planned blind, with no way to resolve what it referred to** (session `witty-falcon`,
   continued live-testing after the plan-incomplete fix above surfaced this next). Neither

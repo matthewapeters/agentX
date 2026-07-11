@@ -219,7 +219,12 @@ func toolResultText(res tools.Result) string {
 }
 
 // toolResultContext renders the tool outcome folded into the respond turn (preview
-// + ref only — never the full artifact).
+// + ref only — never the full artifact). Closes with an explicit directive (mirroring
+// plan_cycle.go's planContext: "Answer the request using only these findings.") — without
+// one, a truncated preview plus the paging hint below gave a small local model nothing
+// telling it to actually answer from the result rather than propose running the command
+// again (proud-pebble: "run tree ." got back a fenced `tree --charset=utf-8 --dirsfirst .`
+// suggestion instead of the tree the tool had already fetched).
 func toolResultContext(d tools.Descriptor, res tools.Result) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n\n[tool %s result — status %s, exit %d, %d lines]\n%s",
@@ -227,6 +232,8 @@ func toolResultContext(d tools.Descriptor, res tools.Result) string {
 	if res.Ref != "" {
 		fmt.Fprintf(&b, "\n(full output ref: %s; use read_output to page)", res.Ref)
 	}
+	b.WriteString("\n\nThe command above already ran. Answer the user's request using this " +
+		"result — do not propose running it (or any other command) again.")
 	return b.String()
 }
 

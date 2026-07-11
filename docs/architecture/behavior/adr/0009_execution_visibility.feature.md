@@ -234,6 +234,24 @@ like it escapes root) re-prompted for approval every single time, even immediate
   under that path honors it — `liveReadGrants` reloads working memory on every check
   rather than snapshotting it once at executor-construction time.
 
+## single_tool result context directs an answer (proud-pebble, 2026-07-11)
+The single_tool cycle's response-synthesis message (`toolResultContext`, tool_cycle.go) had
+no instruction telling the model what to do with the tool result it just folded in — unlike
+the plan cycle's `planContext`, which always closes with "Answer the request using only
+these findings." Live-observed: "run `tree .` to see the full layout of the current
+project" classified correctly as `single_tool`, the tool ran and returned real output
+(truncated to a 20-line preview, `tools.defaultPreviewLines`, plus a "use read_output to
+page" hint), and the final answer was a fenced `tree --charset=utf-8 --dirsfirst .`
+suggestion — the model proposing the command again instead of reporting what it found.
+### tool_cycle.toolResultContext
+- GIVEN a successful tool result WHEN folded into the respond turn THEN the message now
+  closes with an explicit directive: the command already ran; answer from this result;
+  do not propose running it (or any other command) again.
+- GIVEN a result with no artifact ref (nothing to page) THEN the directive is still present
+  — it does not depend on the paging hint.
+- GIVEN a denied call (`toolDeniedContext`) THEN it is unchanged — there is no result to
+  misinterpret as "go run something," so no directive was added there.
+
 ## Tests
 `scheduler/observer_test.go` (lifecycle stream order + no-progress fallback),
 `decompose/guard_test.go` (tidy-cove chain similarity, legit-decomposition negative,
@@ -242,4 +260,5 @@ echo-planner refusal), `decompose/live_test.go` (hardened heuristic cases),
 assertions remain deferred (fixed-verdict harness limitation, per Phase 4d note).
 `classify_test.go` (history folding, DefaultPrompt continuation guidance),
 `decompose/decompose_test.go` (History folding), `runtime/readgrant_test.go`
-(liveReadGrants + approver persistence).
+(liveReadGrants + approver persistence), `runtime/tool_cycle_test.go`
+(toolResultContext directive).
