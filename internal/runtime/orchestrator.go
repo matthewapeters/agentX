@@ -421,6 +421,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	if !ready {
 		return fmt.Errorf("orchestrator not accepting prompts")
 	}
+	o.refreshLiveFacts(ctx)
 
 	if classifyPrompt {
 		o.setProcessing(state.StateWorking, state.PhaseClassify)
@@ -621,6 +622,204 @@ func (o *Orchestrator) SetFactEnabled(key string, enabled bool) error {
 	})
 }
 
+// SetFactLive toggles whether a pinned fact re-runs its source tool before every
+// turn's context assembly (live) or stays a frozen snapshot (static) — the
+// working-memory surface's play/pause affordance (PD-WM-AF-008). It is an error
+// on a fact with no Source (only a pin-owned fact has a live/static state).
+// Turning live on immediately refreshes the fact once, so the toggle visibly does
+// something rather than waiting for the next turn.
+func (o *Orchestrator) SetFactLive(key string, live bool) error {
+	if live {
+		facts, err := o.WorkingMemory()
+		if err != nil {
+			return err
+		}
+		var src *session.ToolSource
+		found := false
+		for _, f := range facts {
+			if f.Key == key {
+				src, found = f.Source, true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("unknown fact %q", key)
+		}
+		if src == nil {
+			return fmt.Errorf("fact %q is not pinned to a tool source", key)
+		}
+		if !o.liveEligible(src) {
+			return fmt.Errorf("cannot set %q live: %q is not currently permitted without approval", key, src.Tool)
+		}
+	}
+	err := o.mutateWorkingMemory(func(wm *session.WorkingMemory) error {
+		for i := range wm.Facts {
+			if wm.Facts[i].Key != key {
+				continue
+			}
+			if wm.Facts[i].Source == nil {
+				return fmt.Errorf("fact %q is not pinned to a tool source", key)
+			}
+			wm.Facts[i].Live = live
+			return nil
+		}
+		return fmt.Errorf("unknown fact %q", key)
+	})
+	if err != nil {
+		return err
+	}
+	if live {
+		o.refreshLiveFacts(context.Background())
+	}
+	return nil
+}
+
+// liveEligible reports whether src's tool currently evaluates to policy Allow —
+// the gate both PinToolEvent(live=true) and SetFactLive(true) apply, so a live
+// pin never silently re-runs something that would otherwise need approval.
+func (o *Orchestrator) liveEligible(src *session.ToolSource) bool {
+	o.mu.Lock()
+	registry, policy := o.registry, o.policy
+	o.mu.Unlock()
+	if registry == nil || policy == nil {
+		return false
+	}
+	d, ok := registry.Lookup(src.Tool)
+	if !ok {
+		return false
+	}
+	return policy.Evaluate(d, src.Args).Decision == tools.Allow
+}
+
+// PinToolEvent copies a tool_result conversation element (by ordinal) into
+// working memory as a durable, pin-owned fact, and disables the source event's
+// context-surface participation so the same tool output is never represented
+// twice — once as a raw context element, once as a WM fact
+// (docs/ux/03_PANEL_DETAILS.md PD-CTX-AF-012 / PD-WM). live requires the source
+// tool to currently evaluate to policy Allow: a live pin must never silently
+// re-run something that would otherwise need approval, and it must never block a
+// turn on an approval prompt. It returns the new fact's key.
+func (o *Orchestrator) PinToolEvent(ordinal uint64, live bool) (string, error) {
+	hist, err := o.History()
+	if err != nil {
+		return "", err
+	}
+	var ev state.Event
+	found := false
+	for _, e := range hist {
+		if e.Ordinal == ordinal {
+			ev, found = e, true
+			break
+		}
+	}
+	if !found {
+		return "", fmt.Errorf("ordinal %d not found", ordinal)
+	}
+	if ev.ContentType != state.ContentToolResult {
+		return "", fmt.Errorf("ordinal %d is not a tool_result element", ordinal)
+	}
+
+	p, _ := ev.Payload.(map[string]any)
+	text, _ := p["text"].(string)
+	var src *session.ToolSource
+	if ev.ToolName != "" {
+		src = &session.ToolSource{Tool: ev.ToolName, Args: stringMapFrom(p["args"])}
+	}
+
+	if live {
+		if src == nil {
+			return "", fmt.Errorf("cannot pin live: ordinal %d has no tool source", ordinal)
+		}
+		if !o.liveEligible(src) {
+			return "", fmt.Errorf("cannot pin live: %q is not currently permitted without approval", src.Tool)
+		}
+	}
+
+	fact := session.Fact{
+		Key: pinFactKey(ev.ToolName, ordinal), Value: text, Owner: session.OwnerPin, Enabled: true,
+		Source: src, Live: live, SourceOrdinal: ordinal, PinnedAt: time.Now(),
+	}
+	if err := o.mutateWorkingMemory(func(wm *session.WorkingMemory) error {
+		wm.Facts = append(wm.Facts, fact)
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	if err := o.SetEventEnabled(ordinal, false); err != nil {
+		return fact.Key, err // fact created but disabling the source failed — key is still usable
+	}
+	return fact.Key, nil
+}
+
+// pinFactKey names the working-memory fact a Pin creates: the tool id plus the
+// source ordinal, so the same tool pinned twice from different turns gets
+// distinct keys and the name stays traceable back to its source event.
+func pinFactKey(tool string, ordinal uint64) string {
+	return fmt.Sprintf("pin_%s_%d", tool, ordinal)
+}
+
+// stringMapFrom coerces a JSON-decoded args value (map[string]any, string
+// leaves — state.Event.Payload always arrives this shape once round-tripped
+// through the durable log) into a map[string]string. Any non-string value or a
+// non-map input is dropped/nil respectively.
+func stringMapFrom(v any) map[string]string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, val := range m {
+		if s, ok := val.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
+// refreshLiveFacts re-runs every enabled, live, pin-owned fact's source tool and
+// updates its value before context assembly (PD-WM "pin live"), called once at
+// the top of runPrompt. A refresh failure (unknown/no-longer-permitted tool,
+// execution error) keeps the fact's stale value rather than failing the turn —
+// working memory degrades gracefully, the same posture as the
+// context-visualizer's unknown-window handling. All refreshed facts are batched
+// into one load/save pass.
+func (o *Orchestrator) refreshLiveFacts(ctx context.Context) {
+	o.mu.Lock()
+	registry, policy, runner := o.registry, o.policy, o.runner
+	o.mu.Unlock()
+	if registry == nil || runner == nil {
+		return // tools not built (ToolsEnabled off) — nothing to refresh
+	}
+	wm, err := o.store.LoadWorkingMemory(o.id.ID)
+	if err != nil {
+		return
+	}
+	changed := false
+	for i := range wm.Facts {
+		f := &wm.Facts[i]
+		if !f.Enabled || !f.Live || f.Source == nil {
+			continue
+		}
+		d, ok := registry.Lookup(f.Source.Tool)
+		if !ok {
+			continue
+		}
+		if policy != nil && policy.Evaluate(d, f.Source.Args).Decision != tools.Allow {
+			continue // no longer permitted (blacklist/approval changed since pinning) — leave stale
+		}
+		res, err := runner.Run(ctx, d, f.Source.Args)
+		if err != nil {
+			continue
+		}
+		f.Value = toolResultText(res)
+		f.RefreshedAt = time.Now()
+		changed = true
+	}
+	if changed {
+		_ = o.store.SaveWorkingMemory(o.id.ID, wm)
+	}
+}
+
 // mutateWorkingMemory loads, mutates, and persists working memory under the lock.
 func (o *Orchestrator) mutateWorkingMemory(fn func(*session.WorkingMemory) error) error {
 	o.mu.Lock()
@@ -792,9 +991,24 @@ func (o *Orchestrator) workingMemoryFacts() []prompting.Fact {
 	enabled := wm.Enabled()
 	facts := make([]prompting.Fact, 0, len(enabled))
 	for _, f := range enabled {
-		facts = append(facts, prompting.Fact{Key: f.Key, Value: f.Value})
+		facts = append(facts, prompting.Fact{Key: f.Key, Value: pinAnnotatedValue(f)})
 	}
 	return facts
+}
+
+// pinAnnotatedValue appends a static/live + age tag to a pinned fact's value, so
+// the model has the same staleness signal the working-memory surface shows the
+// user (docs/implementation/03_configuration_and_storage.md "Pinning to Working
+// Memory"). A plain user/agent fact's value is returned unchanged.
+func pinAnnotatedValue(f session.Fact) string {
+	if f.Owner != session.OwnerPin {
+		return f.Value
+	}
+	liveness := "static"
+	if f.Live {
+		liveness = "live"
+	}
+	return fmt.Sprintf("%s (pinned %s, age %s)", f.Value, liveness, f.Age().Round(time.Second))
 }
 
 // artifactStore returns the session's artifact store, tolerating a lookup failure by

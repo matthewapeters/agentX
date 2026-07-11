@@ -70,6 +70,18 @@ Feature: Output panel event rendering
     Then the output view contains "[ ]"
     And the output view contains "withheld"
 
+  # use-case: UC-OUTPUT-PIN-ELIGIBLE  (context surface: Pin-to-WM affordance, PD-CTX-AF-012)
+  # Only a flat (untagged) tool_result is eligible for Pin — a tool_call proposal
+  # (no useful WM content) and every other element kind are not.
+  Scenario: Only a flat tool_result is eligible to pin
+    Given an output panel sized 40 by 10
+    When a tool_result event for "list_dir" is applied
+    Then the selection is pin-eligible
+    When a tool_call event for "list_dir" is applied
+    Then the selection is not pin-eligible
+    When an agent_response event "hi" is applied
+    Then the selection is not pin-eligible
+
   # use-case: UC-OUTPUT-SUMMARY  (context surface: navigable summary)
   Scenario: Summary mode collapses elements by default
     Given an output panel sized 20 by 10

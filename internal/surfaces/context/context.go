@@ -64,10 +64,12 @@ func (m *Model) SetSize(width, height int) {
 	m.out.SetSize(width, max(0, height-1))
 }
 
-// Key handles navigation and the enable/disable toggle, mirroring the chat output
-// panel so the keys are consistent: PgUp/PgDn move the selection between elements,
-// Up/Down (k/j) scroll within the selected element, Enter expands/collapses it, and
-// space toggles whether a user/agent element participates in the agent's context.
+// Key handles navigation, the enable/disable toggle, and Pin, mirroring the chat
+// output panel so the keys are consistent: PgUp/PgDn move the selection between
+// elements, Up/Down (k/j) scroll within the selected element, Enter
+// expands/collapses it, space toggles whether a user/agent/tool element
+// participates in the agent's context (session-scoped), and p pins a selected
+// tool_result into working memory (durable — PD-CTX-AF-012 / PD-WM).
 func (m *Model) Key(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "pgup":
@@ -82,6 +84,8 @@ func (m *Model) Key(msg tea.KeyPressMsg) tea.Cmd {
 		m.out.ToggleSelected()
 	case " ", "space":
 		return m.toggleSelected()
+	case "p":
+		return m.pinSelected()
 	}
 	return nil
 }
@@ -102,6 +106,23 @@ func (m *Model) toggleSelected() tea.Cmd {
 	cl, token := m.cl, m.token
 	return func() tea.Msg {
 		_ = cl.SetEventEnabled(stdctx.Background(), token, ordinal, newEnabled)
+		return nil
+	}
+}
+
+// pinSelected copies the selected tool_result element into working memory as a
+// static pin (PD-CTX-AF-012) and disables it in context server-side, so the same
+// output is never represented twice. Live vs static is decided afterward in the
+// working-memory surface (play/pause, PD-WM-AF-008), not here — Pin always
+// starts static. It is a no-op for anything but a flat tool_result element.
+func (m *Model) pinSelected() tea.Cmd {
+	ordinal, ok := m.out.SelectedToolEvent()
+	if !ok || m.cl == nil {
+		return nil
+	}
+	cl, token := m.cl, m.token
+	return func() tea.Msg {
+		_, _ = cl.PinToolEvent(stdctx.Background(), token, ordinal, false)
 		return nil
 	}
 }

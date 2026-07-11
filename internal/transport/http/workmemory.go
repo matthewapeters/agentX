@@ -25,6 +25,12 @@ type wmEnabledBody struct {
 	Enabled bool   `json:"enabled"`
 }
 
+// wmLiveBody is the POST /working-memory/live payload.
+type wmLiveBody struct {
+	Key  string `json:"key"`
+	Live bool   `json:"live"`
+}
+
 // handleWorkingMemory returns the session's working-memory facts. It is a loopback
 // read, so it is not token-gated (consistent with the other GET endpoints).
 func (s *Server) handleWorkingMemory(w http.ResponseWriter, r *http.Request) {
@@ -101,4 +107,28 @@ func (s *Server) handleWMEnabled(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "updated", "key": body.Key, "enabled": body.Enabled})
+}
+
+// handleWMLive toggles whether a pinned fact re-runs its source tool before
+// every turn (live) or stays a frozen snapshot (static) — the working-memory
+// surface's play/pause affordance (PD-WM-AF-008). Refused on a fact with no
+// tool Source.
+func (s *Server) handleWMLive(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(r) {
+		writeError(w, http.StatusUnauthorized, surfaces.CategoryAuth, "invalid or missing attach token")
+		return
+	}
+	var body wmLiveBody
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Key) == "" {
+		writeError(w, http.StatusBadRequest, surfaces.CategoryValidation, "key is required")
+		return
+	}
+	if err := s.prov.SetFactLive(body.Key, body.Live); err != nil {
+		writeError(w, http.StatusBadRequest, surfaces.CategoryValidation, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "updated", "key": body.Key, "live": body.Live})
 }

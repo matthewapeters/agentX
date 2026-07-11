@@ -37,3 +37,18 @@ Feature: Working-memory CRUD over the transport
     Given a running transport server
     When the client toggles element 7 to enabled false
     Then the provider recorded a toggle for ordinal 7 enabled false
+
+  # use-case: UC-CTX-PIN-API  (Pin a tool_result into working memory, PD-CTX-AF-012 / PD-WM)
+  Scenario: The pin endpoint copies a tool_result into working memory and disables it
+    Given a running transport server
+    And a recorded tool_result event for tool "list_dir" valued "project listing"
+    When the client pins the last recorded element as static
+    Then reading working memory includes a pin-owned fact valued "project listing"
+    And the pin-source element is disabled in context
+
+  # use-case: UC-WM-LIVE-API  (play/pause a pinned fact, PD-WM-AF-008)
+  Scenario: The live endpoint toggles a pinned fact
+    Given a running transport server
+    And a recorded tool_result event for tool "list_dir" valued "project listing"
+    When the client pins the last recorded element as static
+    Then the client can set the pinned fact live over the transport

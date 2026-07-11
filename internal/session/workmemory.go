@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // Owner identifies who controls a working-memory fact. Bootstrap facts are
@@ -21,15 +22,52 @@ const (
 	OwnerUser Owner = "user"
 	// OwnerAgent marks a fact the agent maintains and may overwrite.
 	OwnerAgent Owner = "agent"
+	// OwnerPin marks a fact created by the context surface's Pin affordance
+	// (PD-CTX-AF-012 / PD-WM): a copy of a tool_result conversation element,
+	// carrying a Source so it can optionally be re-run (Live). See
+	// docs/implementation/03_configuration_and_storage.md "Pinning to Working
+	// Memory".
+	OwnerPin Owner = "pin"
 )
 
+// ToolSource identifies the tool call a pinned working-memory fact (Owner ==
+// OwnerPin) was copied from, so a "live" pin knows what to re-run.
+type ToolSource struct {
+	Tool string            `json:"tool"`
+	Args map[string]string `json:"args"`
+}
+
 // Fact is one working-memory entry. Disabled facts are retained on disk but
-// excluded from the assembled context.
+// excluded from the assembled context. A pinned fact (Owner == OwnerPin)
+// additionally carries Source and Live: Live re-runs Source before every turn's
+// context assembly (a "live" pin); false keeps the value frozen at PinnedAt (a
+// "static" pin). Source/Live/PinnedAt/RefreshedAt are meaningless (zero) on a
+// plain user/agent fact.
 type Fact struct {
 	Key     string `json:"key"`
 	Value   string `json:"value"`
 	Owner   Owner  `json:"owner"`
 	Enabled bool   `json:"enabled"`
+
+	Source        *ToolSource `json:"source,omitempty"`
+	Live          bool        `json:"live,omitempty"`
+	SourceOrdinal uint64      `json:"source_ordinal,omitempty"`
+	PinnedAt      time.Time   `json:"pinned_at"`
+	RefreshedAt   time.Time   `json:"refreshed_at"`
+}
+
+// Age reports how long ago a pinned fact's value was last known-current: since
+// RefreshedAt once a live fact has refreshed at least once, otherwise since
+// PinnedAt. Zero for a non-pinned fact (PinnedAt is the zero time).
+func (f Fact) Age() time.Duration {
+	if f.PinnedAt.IsZero() {
+		return 0
+	}
+	at := f.PinnedAt
+	if !f.RefreshedAt.IsZero() {
+		at = f.RefreshedAt
+	}
+	return time.Since(at)
 }
 
 // WorkingMemory is the ordered set of facts persisted as working_memory.json in

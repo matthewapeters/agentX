@@ -46,3 +46,33 @@ func (s *Server) handleEventEnabled(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "set", "ordinal": ordinal, "enabled": body.Enabled})
 }
+
+// eventPinBody is the POST /events/{ordinal}/pin payload.
+type eventPinBody struct {
+	Live bool `json:"live"`
+}
+
+// handleEventPin copies a tool_result conversation element into working memory
+// as a durable, pin-owned fact and disables it in context (PD-CTX-AF-012 /
+// PD-WM "Pin"). Mutations are token-gated.
+func (s *Server) handleEventPin(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(r) {
+		writeError(w, http.StatusUnauthorized, surfaces.CategoryAuth, "invalid or missing attach token")
+		return
+	}
+	ordinal, err := strconv.ParseUint(r.PathValue("ordinal"), 10, 64)
+	if err != nil || ordinal == 0 {
+		writeError(w, http.StatusBadRequest, surfaces.CategoryValidation, "invalid ordinal")
+		return
+	}
+	var body eventPinBody
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	key, err := s.prov.PinToolEvent(ordinal, body.Live)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, surfaces.CategoryValidation, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "pinned", "ordinal": ordinal, "key": key, "live": body.Live})
+}

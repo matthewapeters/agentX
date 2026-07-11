@@ -31,6 +31,9 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a thinking event "([^"]*)" is applied$`, w.applyThinking)
 	sc.Step(`^a classification event "([^"]*)" is applied$`, w.applyClassification)
 	sc.Step(`^a tool_call event for "([^"]*)" is applied$`, w.applyToolCall)
+	sc.Step(`^a tool_result event for "([^"]*)" is applied$`, w.applyToolResult)
+	sc.Step(`^the selection is pin-eligible$`, w.pinEligible)
+	sc.Step(`^the selection is not pin-eligible$`, w.pinNotEligible)
 	sc.Step(`^(\d+) numbered user events are applied$`, w.applyNumbered)
 	sc.Step(`^entry (\d+) is toggled$`, w.toggleEntry)
 	sc.Step(`^the panel scrolls up by (\d+)$`, w.scrollUp)
@@ -194,7 +197,29 @@ func (w *outputWorld) applyThinking(text string) error {
 }
 
 func (w *outputWorld) applyToolCall(tool string) error {
-	w.panel.Apply(state.Event{ContentType: state.ContentToolCall, ToolName: tool, Payload: map[string]any{"text": "args"}})
+	w.panel.Apply(state.Event{ContentType: state.ContentToolCall, ToolName: tool, Ordinal: 1, Payload: map[string]any{"text": "args"}})
+	return nil
+}
+
+func (w *outputWorld) applyToolResult(tool string) error {
+	w.panel.Apply(state.Event{ContentType: state.ContentToolResult, ToolName: tool, Ordinal: 1, Payload: map[string]any{"text": "result"}})
+	return nil
+}
+
+// pinEligible asserts whether the currently selected element is a flat
+// tool_result — the class of element the context surface's Pin affordance
+// (PD-CTX-AF-012) can act on (output.Model.SelectedToolEvent).
+func (w *outputWorld) pinEligible() error {
+	if _, ok := w.panel.SelectedToolEvent(); !ok {
+		return fmt.Errorf("expected the selection to be pin-eligible, it was not")
+	}
+	return nil
+}
+
+func (w *outputWorld) pinNotEligible() error {
+	if _, ok := w.panel.SelectedToolEvent(); ok {
+		return fmt.Errorf("expected the selection not to be pin-eligible, it was")
+	}
 	return nil
 }
 
