@@ -1,30 +1,55 @@
 layout {
-	pane split_direction="horizontal"{
-		pane split_direction="vertical" {
-			pane {
-				cwd "$PWD"
-				command "bash"
-				args "-c" "agentx --session $AX_SESSION_STRING"
-				close_on_exit true
-				focus true
-				borderless false
-				name "agentX"
+	tab name="agentX" focus="true" {
+		pane  { 
+			size 1
+			borderless true
+			plugin location="zellij:tab-bar" 
+		}
+		pane split_direction="horizontal"{
+			pane split_direction="vertical" {
+				pane {
+					cwd "$PWD"
+					command "bash"
+					args "-c" "agentx --session $AX_SESSION_STRING"
+					close_on_exit true
+					focus true
+					borderless false
+					name "agentX"
+				}
+				pane split_direction="horizontal" name="system"{
+					pane command="bash" name="context"{
+						args  "-c" "sleep 1 &&  agentx surface launch context --session $AX_SESSION_STRING"
+					}
+				
+					pane command="bash" name="context memory consumption"{
+						args "-c" "sleep 1 && agentx surface launch context-visualizer --session $AX_SESSION_STRING"
+					}
+					pane command="bash" name="working memory"{
+						args "-c" "sleep 1 && agentx surface launch working-memory --session $AX_SESSION_STRING"
+					}	
+				}
 			}
-			pane split_direction="horizontal" name="system"{
-				pane command="bash" name="context"{
-					args  "-c" "sleep 1 &&  agentx surface launch context --session $AX_SESSION_STRING"
-				}
-			
-				pane command="bash" name="context memory consumption"{
-					args "-c" "sleep 1 && agentx surface launch context-visualizer --session $AX_SESSION_STRING"
-				}
-				pane command="bash" name="working memory"{
-					args "-c" "sleep 1 && agentx surface launch working-memory --session $AX_SESSION_STRING"
-				}	
+			pane size=1 borderless=true {
+			    plugin location="zellij:status-bar"
 			}
 		}
-		pane size=1 borderless=true {
-		    plugin location="zellij:status-bar"
+	}
+	tab name="editor" {
+		pane  { 
+			size 1
+			borderless true
+			plugin location="zellij:tab-bar" 
 		}
+		pane name="editor" command="$EDITOR" {
+		}
+	}
+	tab name="terminal" {
+		pane  { 
+			size 1
+			borderless true
+			plugin location="zellij:tab-bar" 
+		}
+		pane name="terminal" command="bash"{
+		} 
 	}
 }
