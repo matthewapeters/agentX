@@ -25,6 +25,17 @@ Feature: Working memory persistence and bootstrap
     When bootstrap facts are seeded
     Then the "cwd" fact is still valued "/pinned" and disabled
 
+  Scenario: Bootstrap seeds live date and git-status pins, enabled by default
+    Given a fresh session with no working memory file
+    When bootstrap facts are seeded
+    Then the working memory has a pin-owned "pin_date" fact that is live and enabled
+    And the working memory has a pin-owned "pin_git_status" fact that is live and enabled
+
+  Scenario: Bootstrap seeds a static tree pin, disabled by default
+    Given a fresh session with no working memory file
+    When bootstrap facts are seeded
+    Then the working memory has a pin-owned "pin_tree" fact that is static and disabled
+
   Scenario: A missing working memory file loads as empty
     Given a fresh session with no working memory file
     When the working memory is loaded

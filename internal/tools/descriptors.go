@@ -35,6 +35,13 @@ func DefaultRegistry() *Registry {
 		{ID: "find_path", Command: "find", Argv: []string{"find", "{root}", "-name", "{name}"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "root", Kind: KindPath, Required: true}, {Name: "name", Kind: KindString, Required: true}}},
+		// date: no variable input, so Argv carries no "{name}" placeholder and Args is
+		// nil — BuildArgv only requires a placeholder's arg when the template uses one.
+		{ID: "date", Command: "date", Argv: []string{"date"},
+			Risk: RiskRead, TimeoutSeconds: 5},
+		{ID: "git_status", Command: "git", Argv: []string{"git", "-C", "{path}", "status"},
+			Risk: RiskRead, TimeoutSeconds: 30,
+			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
 		{ID: "read_output", Builtin: "read_output", Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "ref", Kind: KindString, Required: true}, {Name: "offset", Kind: KindInt}, {Name: "limit", Kind: KindInt}}},
 

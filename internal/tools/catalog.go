@@ -35,7 +35,10 @@ If none of the listed tools fits the request, reply:
 
 - read_file — return a file's contents. args: {"path": string}
 - list_dir — list a directory. args: {"path": string}
+- tree — show a directory's structure (depth-limited to 3, vendored dirs excluded). args: {"path": string}
 - find_path — find files by name under a directory. args: {"root": string, "name": string}
+- date — return the current date/time. args: none
+- git_status — show a directory's git working-tree status. args: {"path": string}
 - read_output — re-read a previous tool result stored in the session.
   args: {"ref": string, "offset": int (optional), "limit": int (optional)}
 

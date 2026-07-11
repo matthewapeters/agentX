@@ -38,6 +38,10 @@ If none of the listed tools fits the request, reply:
   args: `{"path": string}`
 - `find_path` — find files by name under a directory (name match only).
   args: `{"root": string, "name": string}`
+- `date` — return the current date/time.
+  args: none
+- `git_status` — show a directory's git working-tree status.
+  args: `{"path": string}`
 - `read_output` — re-read a previous tool result that was stored in the session
   (large outputs are not pasted into your context in full — see Notes).
   args: `{"ref": string, "offset": int (optional), "limit": int (optional)}`
