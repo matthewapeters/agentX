@@ -2045,6 +2045,40 @@ mutates through dedicated token-gated endpoints. Each fact renders as
 Mutations persist and take effect on the **next** prompt's assembled context (only
 enabled facts fold in). It is read-write but single-purpose: no prompt input.
 
+#### Pin (static / live)
+
+A **pinned** fact (`Owner == pin`) is one created by the context surface's Pin
+affordance (`p` on a selected tool-result, PD-CTX-AF-012) rather than typed by
+hand — the durable, curated counterpart to the context surface's plain
+enable/disable (PD-CTX-AF-011, which is session-scoped and applies to the exact
+past event, not a copy). A pinned fact carries its source tool + args, so it can
+be **re-run**, and one of two states:
+
+- **static** (default at pin time): a frozen snapshot. The value never changes
+  until the user edits or deletes it, exactly like a hand-typed fact.
+- **live**: re-run before every turn's context assembly (`refreshLiveFacts`), so
+  the value is always current — the mechanism for something like `tree .` or
+  `date` that should never go stale. Only a tool that currently evaluates to
+  policy `Allow` (no blacklist hit, no pending approval) can be set live; this
+  prevents an unattended re-run of something that would otherwise need a human's
+  sign-off, and avoids interrupting a turn on an approval prompt.
+
+**Toggle key `l`** flips a pinned fact between live (▶) and static (⏸) — the
+play/pause affordance — and immediately re-runs it once when switching to live,
+so the action visibly does something rather than waiting for the next turn. It is
+a no-op on a non-pinned fact. Each pinned fact's row shows its state and age
+(`▶ live, 4s` / `⏸ static, 2m`) — `Age()` is measured from the last successful
+refresh (live) or from when it was pinned (static), giving the user (and the
+model, via the same annotation folded into the assembled context — see
+`docs/implementation/03_configuration_and_storage.md`) a sense of how current the
+value is.
+
+**Unpinning** is the existing delete affordance (`d`) — no separate command. It
+removes the WM fact only; it does **not** re-enable the source context element
+(PD-CTX-AF-011/012) — that stays as the user left it. If the content is wanted
+back in context, the user re-enables the original element directly in the
+context surface.
+
 ### Affordance Inventory
 
 | Affordance | ID | Status |
@@ -2052,9 +2086,12 @@ enabled facts fold in). It is read-write but single-purpose: no prompt input.
 | List facts with enabled/disabled markers | PD-WM-AF-001 | ✅ |
 | Navigate the selection cursor (↑/↓, j/k) | PD-WM-AF-002 | ✅ |
 | Toggle enable/disable (space) | PD-WM-AF-003 | ✅ |
-| Delete the selected fact (d) | PD-WM-AF-004 | ✅ |
+| Delete the selected fact (d) — also the unpin affordance for a pinned fact | PD-WM-AF-004 | ✅ |
 | Add a fact (a → `key=value`, enter) | PD-WM-AF-005 | ✅ |
 | Edit the selected value (e) / cancel (esc) | PD-WM-AF-006 | ✅ |
+| A pinned fact's row shows its static/live state and age | PD-WM-AF-007 | ✅ |
+| Toggle a pinned fact live/static (`l`), refreshing once immediately on live | PD-WM-AF-008 | ✅ |
+| Setting a fact live is refused when its source tool is not currently policy-`Allow` | PD-WM-AF-009 | ✅ |
 
 ### Deferred (later slices)
 
@@ -2097,15 +2134,26 @@ at the bottom. Quitting (`Ctrl-C`/`q`) marks the surface stopped.
 A 🔧 tool-call or 📋 tool-result element (the flat, untagged `single_tool`-cycle
 kind — a call folded into a plan step's Task node is display-only, unaffected)
 starts **unchecked**: tool output normally scopes to the turn that produced it, so
-by default it does not carry forward. Checking it **pins** that call or result —
-the same enable/disable toggle, just applied to a content class that starts off —
-so its text folds into every subsequent turn's assembled context until it is
-unchecked again. This is the explicit mechanism for keeping a broad, reusable
-lookup (e.g. a `tree .` project listing) available across several turns without
-re-running the tool: there is no separate "pin" command, no implicit
-carry-forward, and no working-memory promotion step — checking the box in the
-context surface is the whole affordance. A pinned tool element's bytes are counted
-under the visualizer's `tools` 🔧 band (PD-CTXVIZ), which is otherwise always zero.
+by default it does not carry forward. Checking it is the same enable/disable
+toggle as a user/agent element — nothing special about the word — applied to a
+content class that starts off: its text folds into every subsequent turn's
+assembled context until it is unchecked again. This is a session-scoped, one-off
+inclusion of *that specific past event*; it is **not** the durable/curated
+mechanism (that's Pin, below). An enabled tool element's bytes are counted under
+the visualizer's `tools` 🔧 band (PD-CTXVIZ), which is otherwise always zero.
+
+A selected 📋 tool-result element (only `tool_result`, not `tool_call` — the
+result is the useful content) also has a distinct affordance: **`p` pins it to
+working memory** (PD-WM). Pinning copies the element into a durable WM fact and
+disables the source element here (`SetEventEnabled(ordinal, false)`), so the same
+output is never represented twice — once as a raw context element, once as a WM
+fact. Pin is a one-way handoff *out of* the context surface: the copy it creates
+is managed from the working-memory surface from then on (static/live, age,
+delete-to-unpin — PD-WM), not here. Unpinning does not restore the source
+element's checkbox; if the user wants the raw event back in context, they
+re-check it manually. See PD-WM's "Pin" affordances for the full design —
+enable/disable here is the session-scoped mechanism, Pin is the durable one, and
+they are deliberately different features that happen to share a source event.
 
 ### Affordance Inventory
 
@@ -2121,7 +2169,8 @@ under the visualizer's `tools` 🔧 band (PD-CTXVIZ), which is otherwise always 
 | User/agent/flat-tool-call/flat-tool-result elements toggle; others are display-only | PD-CTX-AF-008 | ✅ |
 | Complete agent responses only (no live `agent_delta` stream) | PD-CTX-AF-009 | ✅ |
 | Title strip (`context · <session>`) via the surface host | PD-CTX-AF-010 | ✅ |
-| Pin a tool-call/tool-result: checking it folds its text into every subsequent turn's context (not just the turn that produced it) until unchecked | PD-CTX-AF-011 | ✅ |
+| Enabling a tool-call/tool-result folds its text into every subsequent turn's context (not just the turn that produced it), until disabled | PD-CTX-AF-011 | ✅ |
+| Pin (`p`) a selected tool-result to working memory; disables it here (PD-WM) | PD-CTX-AF-012 | ✅ |
 
 ### Behavior contracts (GIVEN/WHEN/THEN)
 
@@ -2145,7 +2194,7 @@ Use-case: Non-toggleable element (PD-CTX-AF-008)
 - WHEN the user presses space
 - THEN nothing is toggled (thinking never enters context)
 
-Use-case: Pin a tool-result element (PD-CTX-AF-011)
+Use-case: Enable a tool-result element (PD-CTX-AF-011)
 
 - GIVEN a context surface with a selected, unchecked tool-result element from an
   earlier turn (e.g. a `tree .` listing)
@@ -2153,6 +2202,14 @@ Use-case: Pin a tool-result element (PD-CTX-AF-011)
 - THEN the checkbox flips to `[x]` and the toggle is sent to the orchestrator; the
   result's text folds into the assembled context on the next prompt and every
   prompt after, until the element is unchecked again
+
+Use-case: Pin a tool-result to working memory (PD-CTX-AF-012)
+
+- GIVEN a context surface with a selected tool-result element
+- WHEN the user presses `p`
+- THEN a working-memory fact is created from the element's text and the source
+  element's checkbox is unchecked (excluded from the next assembled context) — the
+  content now folds into context through the WM fact instead
 
 Use-case: Collapsed by default (PD-CTX-AF-003)
 
@@ -2185,10 +2242,12 @@ It is **strictly read-only**: it holds an event stream only for connection prese
 (SS-4) and performs no writes. The enable/disable-a-turn management affordance lives
 on the context pane (PD-CTX); the meter only *hints* at what to prune. Classes not
 yet fed into the assembled context (attachments, thinking today) render as zero
-rather than being hidden, so the legend stays complete. `tools` renders as zero too,
-until the context pane pins a tool-call/tool-result (PD-CTX-AF-011) — from then on
-its bar reflects the pinned bytes, same as any other class. Quitting (`Ctrl-C`/`q`)
-marks the surface stopped.
+rather than being hidden, so the legend stays complete. `tools` renders as zero
+too, until the context pane enables a tool-call/tool-result (PD-CTX-AF-011) —
+from then on its bar reflects those bytes, same as any other class. A tool
+element *pinned* to working memory (PD-CTX-AF-012 / PD-WM) instead counts under
+`working-memory`, not `tools` — Pin hands the content off to WM entirely.
+Quitting (`Ctrl-C`/`q`) marks the surface stopped.
 
 ### Affordance Inventory
 

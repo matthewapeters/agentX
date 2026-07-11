@@ -60,7 +60,7 @@ func (o *Orchestrator) toolsReady() bool {
 
 // toolPin carries the ordinals and rendered text of the tool_call/tool_result
 // events a single_tool cycle published, so recordTurn can register them as
-// pinnable context-history entries (initially disabled, like their checkbox)
+// toggleable context-history entries (initially disabled, like their checkbox)
 // alongside the turn's user/assistant elements. An entry with ordinal 0 was never
 // published (e.g. the approval-gated path publishes no separate 🔧 tool_call
 // widget — the approval request/decision audit trail stands in for it) and is
@@ -109,7 +109,7 @@ func (o *Orchestrator) runToolPhase(ctx context.Context, text string) (string, *
 	}
 
 	if verdict.Decision == tools.Deny {
-		pin.resultOrdinal, pin.resultText = o.publishToolResult(tools.Result{ToolID: d.ID, Status: "denied", Exit: -1, Preview: "denied: " + verdict.Reason})
+		pin.resultOrdinal, pin.resultText = o.publishToolResult(tools.Result{ToolID: d.ID, Status: "denied", Exit: -1, Preview: "denied: " + verdict.Reason}, prop.Args)
 		return toolDeniedContext(d, verdict.Reason), pin, true, nil
 	}
 
@@ -117,7 +117,7 @@ func (o *Orchestrator) runToolPhase(ctx context.Context, text string) (string, *
 	if err != nil {
 		res = tools.Result{ToolID: d.ID, Status: "error", Exit: -1, Preview: err.Error(), Stderr: err.Error()}
 	}
-	pin.resultOrdinal, pin.resultText = o.publishToolResult(res)
+	pin.resultOrdinal, pin.resultText = o.publishToolResult(res, prop.Args)
 	return toolResultContext(d, res), pin, true, nil
 }
 
@@ -204,10 +204,12 @@ func (o *Orchestrator) finishCycle(err error) error {
 
 // publishToolResult emits a tool_result event (rendered as the 📋 result widget;
 // persisted as the audit record). The model sees the preview + ref, not the full
-// artifact — unless the context surface pins this element, folding it into
-// subsequent turns too (see recordTurn/toolPin). It returns the event's ordinal
-// and rendered text for that registration.
-func (o *Orchestrator) publishToolResult(res tools.Result) (uint64, string) {
+// artifact — unless the context surface enables this element, folding it into
+// subsequent turns too (see recordTurn/toolPin), or pins it to working memory
+// (see Orchestrator.PinToolEvent). args is the tool's resolved argument map,
+// carried on the payload so a pin can later re-run the exact same call ("live").
+// It returns the event's ordinal and rendered text.
+func (o *Orchestrator) publishToolResult(res tools.Result, args map[string]string) (uint64, string) {
 	text := toolResultText(res)
 	ord := o.bus.Publish(state.Event{
 		Epoch:       time.Now().UnixMilli(),
@@ -223,6 +225,7 @@ func (o *Orchestrator) publishToolResult(res tools.Result) (uint64, string) {
 			"bytes":   res.Bytes,
 			"lines":   res.Lines,
 			"command": res.Command,
+			"args":    args,
 		},
 		Enabled:   state.DefaultEnabled(state.ContentToolResult),
 		ModelName: o.settings.OllamaModel,

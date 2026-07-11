@@ -201,6 +201,22 @@ func (m *Model) SetSelectedEnabled(enabled bool) {
 	m.refresh(false)
 }
 
+// SelectedToolEvent returns the selected element's ordinal when it is a flat
+// (untagged) tool_result widget — the class of element the context surface's Pin
+// affordance (PD-CTX-AF-012, docs/ux/03_PANEL_DETAILS.md PD-WM) can act on. A
+// tool_call widget, a plan-tagged tool_result folded into a Task node, or any
+// other selection is not pinnable; ok is false for those.
+func (m *Model) SelectedToolEvent() (ordinal uint64, ok bool) {
+	if m.selected < 0 || m.selected >= len(m.widgets) {
+		return 0, false
+	}
+	w := m.widgets[m.selected]
+	if w.kind != kindToolResult || w.ordinal == 0 {
+		return 0, false
+	}
+	return w.ordinal, true
+}
+
 // New returns an empty output panel backed by a viewport.
 func New() *Model {
 	vp := viewport.New()

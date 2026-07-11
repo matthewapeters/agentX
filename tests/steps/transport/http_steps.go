@@ -133,6 +133,54 @@ func (p *fakeProvider) SetFactEnabled(key string, enabled bool) error {
 	return nil
 }
 
+func (p *fakeProvider) SetFactLive(key string, live bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i := range p.wm.Facts {
+		if p.wm.Facts[i].Key != key {
+			continue
+		}
+		if p.wm.Facts[i].Source == nil {
+			return fmt.Errorf("fact %q is not pinned to a tool source", key)
+		}
+		p.wm.Facts[i].Live = live
+		return nil
+	}
+	return fmt.Errorf("unknown fact %q", key)
+}
+
+func (p *fakeProvider) PinToolEvent(ordinal uint64, live bool) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var ev state.Event
+	found := false
+	for _, e := range p.history {
+		if e.Ordinal == ordinal {
+			ev, found = e, true
+			break
+		}
+	}
+	if !found {
+		return "", fmt.Errorf("ordinal %d not found", ordinal)
+	}
+	if ev.ContentType != state.ContentToolResult {
+		return "", fmt.Errorf("ordinal %d is not a tool_result element", ordinal)
+	}
+	text := ""
+	if pl, ok := ev.Payload.(map[string]any); ok {
+		if t, ok := pl["text"].(string); ok {
+			text = t
+		}
+	}
+	key := fmt.Sprintf("pin_%s_%d", ev.ToolName, ordinal)
+	p.wm.Facts = append(p.wm.Facts, session.Fact{
+		Key: key, Value: text, Owner: session.OwnerPin, Enabled: true,
+		Source: &session.ToolSource{Tool: ev.ToolName}, Live: live, SourceOrdinal: ordinal, PinnedAt: time.Now(),
+	})
+	p.toggled = append(p.toggled, toggleRecord{ordinal: ordinal, enabled: false})
+	return key, nil
+}
+
 func (p *fakeProvider) ContextBreakdown() (session.ContextReport, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -171,6 +219,7 @@ type transportWorld struct {
 	tmpRoot        string             // temp session root for auto-discovery launch (SS-5)
 	wmErr          error              // last working-memory mutation error (SS-6)
 	presenceCancel context.CancelFunc // held presence stream (SS-4 / SS-6)
+	pinnedKey      string             // key of the fact the last Pin call created (PD-CTX-AF-012 / PD-WM)
 
 	prov2    *fakeProvider    // a second session, for multi-session resolution tests
 	httptst2 *httptest.Server //
@@ -302,6 +351,13 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the working-memory mutation is rejected as "([^"]*)"$`, w.wmRejected)
 	sc.Step(`^the client toggles element (\d+) to enabled (true|false)$`, w.toggleElement)
 	sc.Step(`^the provider recorded a toggle for ordinal (\d+) enabled (true|false)$`, w.providerToggled)
+
+	// Pin a tool_result into working memory, static/live (PD-CTX-AF-012 / PD-WM).
+	sc.Step(`^a recorded tool_result event for tool "([^"]*)" valued "([^"]*)"$`, w.recordToolResult)
+	sc.Step(`^the client pins the last recorded element as (static|live)$`, w.pinLastRecorded)
+	sc.Step(`^reading working memory includes a pin-owned fact valued "([^"]*)"$`, w.pinnedFactValued)
+	sc.Step(`^the pin-source element is disabled in context$`, w.pinnedSourceDisabled)
+	sc.Step(`^the client can set the pinned fact live over the transport$`, w.setPinnedLive)
 	sc.Step(`^the launch succeeds$`, w.launchSucceeds)
 	sc.Step(`^the launched surface kind is "([^"]*)"$`, w.launchedKind)
 	sc.Step(`^the launched surface appears in the registry$`, w.launchedInRegistry)
@@ -754,6 +810,61 @@ func (w *transportWorld) providerToggled(ordinal uint64, enabled string) error {
 		return nil
 	}
 	return fmt.Errorf("provider did not record toggle %+v; got %+v", want, w.prov.toggled)
+}
+
+// recordToolResult publishes a tool_result event (mirroring history, like
+// w.record does for a user_prompt) so a Pin scenario has something to pin.
+func (w *transportWorld) recordToolResult(tool, text string) error {
+	w.prov.publishRecorded(state.Event{
+		Epoch:       time.Now().UnixMilli(),
+		SessionID:   w.prov.sess.ID,
+		EventType:   "TOOL_RESULT",
+		ContentType: state.ContentToolResult,
+		ToolName:    tool,
+		Payload:     map[string]any{"text": text},
+	})
+	return nil
+}
+
+// lastRecordedOrdinal returns the most recently recorded event's ordinal.
+func (w *transportWorld) lastRecordedOrdinal() uint64 {
+	w.prov.mu.Lock()
+	defer w.prov.mu.Unlock()
+	if len(w.prov.history) == 0 {
+		return 0
+	}
+	return w.prov.history[len(w.prov.history)-1].Ordinal
+}
+
+func (w *transportWorld) pinLastRecorded(liveness string) error {
+	key, err := w.wmClient().PinToolEvent(context.Background(), w.token.Raw(), w.lastRecordedOrdinal(), liveness == "live")
+	if err != nil {
+		return err
+	}
+	w.pinnedKey = key
+	return nil
+}
+
+func (w *transportWorld) pinnedFactValued(want string) error {
+	f, err := w.wmFind(w.pinnedKey)
+	if err != nil {
+		return err
+	}
+	if f.Owner != session.OwnerPin {
+		return fmt.Errorf("fact %q owner = %q, want pin", f.Key, f.Owner)
+	}
+	if !strings.Contains(f.Value, want) {
+		return fmt.Errorf("pinned fact value = %q, want it to contain %q", f.Value, want)
+	}
+	return nil
+}
+
+func (w *transportWorld) pinnedSourceDisabled() error {
+	return w.providerToggled(w.lastRecordedOrdinal(), "false")
+}
+
+func (w *transportWorld) setPinnedLive() error {
+	return w.wmClient().SetFactLive(context.Background(), w.token.Raw(), w.pinnedKey, true)
 }
 
 func (w *transportWorld) postRegisterValid() error {

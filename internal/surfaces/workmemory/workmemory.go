@@ -130,6 +130,19 @@ func (m Model) deleteFact(key string) tea.Cmd {
 	}
 }
 
+// toggleLive flips a pinned fact between live (▶, re-run before every turn) and
+// static (⏸, frozen) — PD-WM-AF-008. The server refuses it on a fact with no
+// tool Source (a plain user/agent fact).
+func (m Model) toggleLive(key string, live bool) tea.Cmd {
+	cl, token := m.cl, m.opts.Token
+	return func() tea.Msg {
+		if err := cl.SetFactLive(context.Background(), token, key, live); err != nil {
+			return errMsg(err.Error())
+		}
+		return doneMsg{}
+	}
+}
+
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -186,6 +199,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "d", "x":
 		if f, ok := m.cur(); ok {
 			return m, m.deleteFact(f.Key)
+		}
+	case "l":
+		if f, ok := m.cur(); ok && f.Source != nil {
+			return m, m.toggleLive(f.Key, !f.Live)
 		}
 	case "a", "n":
 		m.mode = modeAdd
@@ -261,8 +278,15 @@ func (m Model) View() tea.View {
 			dot = "●"
 		}
 		owner := ""
-		if f.Owner == session.OwnerAgent {
+		switch f.Owner {
+		case session.OwnerAgent:
 			owner = " (agent)"
+		case session.OwnerPin:
+			state, mark := "static", "⏸"
+			if f.Live {
+				state, mark = "live", "▶"
+			}
+			owner = fmt.Sprintf(" (pin %s %s, %s)", mark, state, f.Age().Round(time.Second))
 		}
 		fmt.Fprintf(&b, "%s%s %s = %s%s\n", cursor, dot, f.Key, f.Value, owner)
 	}
@@ -271,7 +295,7 @@ func (m Model) View() tea.View {
 	if m.mode != modeList {
 		fmt.Fprintf(&b, "> %s█\n", string(m.buf))
 	} else {
-		b.WriteString("↑/↓ move · space toggle · a add · e edit · d delete · r refresh · q quit\n")
+		b.WriteString("↑/↓ move · space toggle · l live/static (pinned) · a add · e edit · d delete · r refresh · q quit\n")
 	}
 	if m.status != "" {
 		fmt.Fprintf(&b, "%s\n", clip(m.status, m.width))

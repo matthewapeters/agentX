@@ -16,47 +16,47 @@ import (
 	"agentx/internal/tools"
 )
 
-// toolPinWorld drives the pin affordance (PD-CTX-AF-011) end to end: it runs the
-// single_tool cycle so a tool_call/tool_result is published, toggles one of them
-// enabled (pinned) or disabled (unpinned) through the same orchestrator path the
-// context surface uses, and inspects a later turn's captured context plus the
-// context-breakdown "tools" class.
-type toolPinWorld struct {
-	dir           string
-	orc           *runtime.Orchestrator
-	captured      []prompting.Message
-	pinnedCallOrd uint64
-	pinnedResOrd  uint64
+// toolContextEnableWorld drives enabling a tool_call/tool_result element
+// (PD-CTX-AF-011) end to end: it runs the single_tool cycle so a
+// tool_call/tool_result is published, toggles one of them enabled or disabled
+// through the same orchestrator path the context surface uses, and inspects a
+// later turn's captured context plus the context-breakdown "tools" class.
+type toolContextEnableWorld struct {
+	dir            string
+	orc            *runtime.Orchestrator
+	captured       []prompting.Message
+	enabledCallOrd uint64
+	enabledResOrd  uint64
 }
 
-func registerToolPinSteps(sc *godog.ScenarioContext) {
-	w := &toolPinWorld{}
+func registerToolContextEnableSteps(sc *godog.ScenarioContext) {
+	w := &toolContextEnableWorld{}
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
 		if w.dir != "" {
 			_ = os.RemoveAll(w.dir)
 		}
-		*w = toolPinWorld{}
+		*w = toolContextEnableWorld{}
 		return ctx, err
 	})
 
 	sc.Step(`^an orchestrator that runs the "([^"]*)" tool, captures context, and answers "([^"]*)"$`, w.start)
-	sc.Step(`^the prompt "([^"]*)" runs the pinning tool cycle$`, w.runToolCycle)
-	sc.Step(`^the last tool result is pinned$`, w.pinLastResult)
-	sc.Step(`^the last tool result is unpinned$`, w.unpinLastResult)
-	sc.Step(`^the last tool call is pinned$`, w.pinLastCall)
-	sc.Step(`^the prompt "([^"]*)" is submitted for pinning$`, w.submit)
-	sc.Step(`^the pinning-turn context includes "([^"]*)"$`, w.capturedIncludes)
-	sc.Step(`^the pinning-turn context omits "([^"]*)"$`, w.capturedOmits)
-	sc.Step(`^the pinning context breakdown includes class "([^"]*)"$`, w.breakdownIncludesClass)
+	sc.Step(`^the prompt "([^"]*)" runs the enabling tool cycle$`, w.runToolCycle)
+	sc.Step(`^the last tool result is enabled$`, w.enableLastResult)
+	sc.Step(`^the last tool result is disabled$`, w.disableLastResult)
+	sc.Step(`^the last tool call is enabled$`, w.enableLastCall)
+	sc.Step(`^the prompt "([^"]*)" is submitted for enabling$`, w.submit)
+	sc.Step(`^the enabling-turn context includes "([^"]*)"$`, w.capturedIncludes)
+	sc.Step(`^the enabling-turn context omits "([^"]*)"$`, w.capturedOmits)
+	sc.Step(`^the enabling context breakdown includes class "([^"]*)"$`, w.breakdownIncludesClass)
 }
 
 // start wires an orchestrator whose classifier routes only the tool-running prompt
 // ("list the project") to single_tool; every other prompt answers directly, so a
-// follow-up turn's captured context reflects only pinned history — not a second
-// live tool call — isolating what the pin toggle actually controls.
-func (w *toolPinWorld) start(tool, reply string) error {
-	dir, err := os.MkdirTemp("", "agentx-toolpin-")
+// follow-up turn's captured context reflects only the enabled history — not a
+// second live tool call — isolating what the enable toggle actually controls.
+func (w *toolContextEnableWorld) start(tool, reply string) error {
+	dir, err := os.MkdirTemp("", "agentx-toolenable-")
 	if err != nil {
 		return err
 	}
@@ -85,17 +85,17 @@ func (w *toolPinWorld) start(tool, reply string) error {
 	return w.orc.Start()
 }
 
-func (w *toolPinWorld) runToolCycle(text string) error {
+func (w *toolContextEnableWorld) runToolCycle(text string) error {
 	return w.orc.Submit(context.Background(), text)
 }
 
-func (w *toolPinWorld) submit(text string) error {
+func (w *toolContextEnableWorld) submit(text string) error {
 	return w.orc.Submit(context.Background(), text)
 }
 
 // lastOrdinal polls the durable log (the recorder persists off the hot path) for
 // the most recent event of the given content type and returns its ordinal.
-func (w *toolPinWorld) lastOrdinal(ct state.ContentType) (uint64, error) {
+func (w *toolContextEnableWorld) lastOrdinal(ct state.ContentType) (uint64, error) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		hist, err := w.orc.History()
@@ -118,32 +118,32 @@ func (w *toolPinWorld) lastOrdinal(ct state.ContentType) (uint64, error) {
 	}
 }
 
-func (w *toolPinWorld) pinLastResult() error {
+func (w *toolContextEnableWorld) enableLastResult() error {
 	ord, err := w.lastOrdinal(state.ContentToolResult)
 	if err != nil {
 		return err
 	}
-	w.pinnedResOrd = ord
+	w.enabledResOrd = ord
 	return w.orc.SetEventEnabled(ord, true)
 }
 
-func (w *toolPinWorld) unpinLastResult() error {
-	if w.pinnedResOrd == 0 {
-		return fmt.Errorf("no tool result has been pinned to unpin")
+func (w *toolContextEnableWorld) disableLastResult() error {
+	if w.enabledResOrd == 0 {
+		return fmt.Errorf("no tool result has been enabled to disable")
 	}
-	return w.orc.SetEventEnabled(w.pinnedResOrd, false)
+	return w.orc.SetEventEnabled(w.enabledResOrd, false)
 }
 
-func (w *toolPinWorld) pinLastCall() error {
+func (w *toolContextEnableWorld) enableLastCall() error {
 	ord, err := w.lastOrdinal(state.ContentToolCall)
 	if err != nil {
 		return err
 	}
-	w.pinnedCallOrd = ord
+	w.enabledCallOrd = ord
 	return w.orc.SetEventEnabled(ord, true)
 }
 
-func (w *toolPinWorld) capturedText() string {
+func (w *toolContextEnableWorld) capturedText() string {
 	var b string
 	for _, m := range w.captured {
 		b += m.Role + ": " + m.Content + "\n"
@@ -151,21 +151,21 @@ func (w *toolPinWorld) capturedText() string {
 	return b
 }
 
-func (w *toolPinWorld) capturedIncludes(sub string) error {
+func (w *toolContextEnableWorld) capturedIncludes(sub string) error {
 	if !strings.Contains(w.capturedText(), sub) {
 		return fmt.Errorf("captured context omits %q; got:\n%s", sub, w.capturedText())
 	}
 	return nil
 }
 
-func (w *toolPinWorld) capturedOmits(sub string) error {
+func (w *toolContextEnableWorld) capturedOmits(sub string) error {
 	if strings.Contains(w.capturedText(), sub) {
 		return fmt.Errorf("captured context unexpectedly includes %q; got:\n%s", sub, w.capturedText())
 	}
 	return nil
 }
 
-func (w *toolPinWorld) breakdownIncludesClass(class string) error {
+func (w *toolContextEnableWorld) breakdownIncludesClass(class string) error {
 	report, err := w.orc.ContextBreakdown()
 	if err != nil {
 		return err

@@ -46,6 +46,9 @@ type Provider interface {
 	SetFact(key, value string) error
 	DeleteFact(key string) error
 	SetFactEnabled(key string, enabled bool) error
+	// SetFactLive toggles a pinned fact's live/static state (PD-WM "play/pause"),
+	// refusing on a fact with no tool Source.
+	SetFactLive(key string, live bool) error
 
 	// ContextBreakdown reports the assembled context window's composition by
 	// content class for the read-only context-visualizer surface (SS-7).
@@ -54,6 +57,11 @@ type Provider interface {
 	// SetEventEnabled toggles whether a conversation element (by ordinal) folds
 	// into the agent's upcoming context — the context surface's management path.
 	SetEventEnabled(ordinal uint64, enabled bool) error
+	// PinToolEvent copies a tool_result conversation element (by ordinal) into
+	// working memory as a durable, pin-owned fact and disables the source event's
+	// context-surface participation (PD-CTX-AF-012 / PD-WM). It returns the new
+	// fact's key.
+	PinToolEvent(ordinal uint64, live bool) (string, error)
 }
 
 // Server is the loopback HTTP/SSE transport for external surfaces.
@@ -93,12 +101,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /working-memory/set", s.handleWMSet)
 	s.mux.HandleFunc("POST /working-memory/delete", s.handleWMDelete)
 	s.mux.HandleFunc("POST /working-memory/enabled", s.handleWMEnabled)
+	s.mux.HandleFunc("POST /working-memory/live", s.handleWMLive)
 
 	// Context composition (read-only visualizer, SS-7).
 	s.mux.HandleFunc("GET /context", s.handleContext)
 
 	// Enable/disable a conversation element's context participation (context surface).
 	s.mux.HandleFunc("POST /events/{ordinal}/enabled", s.handleEventEnabled)
+	// Pin a tool_result element into working memory (PD-CTX-AF-012 / PD-WM).
+	s.mux.HandleFunc("POST /events/{ordinal}/pin", s.handleEventPin)
 }
 
 // Handler exposes the routes for in-process testing (httptest).

@@ -200,22 +200,62 @@ system-prompt, and approval events are display-only and never enter context —
 `single_tool`-cycle kind; a plan step's tagged call is unaffected) default
 **disabled**: their text already folds into the turn that produced them via the
 respond-turn context block (`toolResultContext`/`toolDeniedContext`), so nothing
-extra happens by default — but unlike thinking/classification, `enabled` on a tool
-event is **not** inert: flipping it on **pins** the element into every subsequent
-turn's assembled context too (`orchestrator.recordTurn`'s `toolPin` registration;
-sent to the model as a tagged user-role message — see `historyMessages`), until it
-is flipped off again. This is the only mechanism for carrying tool output past the
-turn it ran in; there is no separate working-memory promotion step.
+extra happens by default — but unlike thinking/classification, `enabled` on a
+tool event is **not** inert: flipping it on folds the element into every
+subsequent turn's assembled context too (`orchestrator.recordTurn`'s `toolPin`
+registration; sent to the model as a tagged user-role message — see
+`historyMessages`), until it is flipped off again.
+
+This is a **session-scoped** mechanism — it applies to *that exact past event*,
+toggled by hand, one at a time. It is deliberately distinct from **Pin** (below),
+which copies the element into working memory as a durable, potentially
+self-refreshing fact. The two do not compose automatically: pinning an event to
+WM disables it here (so the content is never represented twice), but re-enabling
+it here after that does not touch the WM copy, and deleting the WM copy does not
+re-enable it here. See `docs/ux/03_PANEL_DETAILS.md` PD-CTX-AF-011/012 and PD-WM.
 
 - The **context surface** is the management affordance: toggling an element
-  (space) flips its `enabled`. For a tool element this is the pin/unpin action.
+  (space) flips its `enabled`.
 - The orchestrator applies the toggle **in memory** (so the next prompt's context
   reflects it immediately) and **persists it in the element's event file** (so a
   re-attaching surface seeds the correct state). Because each element is a single
   event, this is a single-file rewrite.
-- A pinned tool element's bytes are reported under the `tools` class in
+- An enabled tool element's bytes are reported under the `tools` class in
   `Orchestrator.ContextBreakdown`, so the context-visualizer's `tools` 🔧 band
-  (otherwise always zero) reflects it.
+  (otherwise always zero) reflects it. A tool element pinned to WM instead counts
+  under `working-memory` (see below).
+
+## Pinning to Working Memory
+
+**Pin** (PD-CTX-AF-012 / PD-WM) is the durable, curated counterpart to plain
+`enabled`: pressing `p` on a selected `tool_result` element in the context
+surface copies it into a `session.Fact` (`Owner: pin`) and disables the source
+event (`SetEventEnabled(ordinal, false)`) so the content is represented exactly
+once, never twice.
+
+A pinned fact carries a `Source` (`{Tool, Args}`, captured from the `tool_result`
+event's payload) and a `Live bool`:
+
+- **static** (`Live: false`, the default at pin time): the value is a frozen
+  snapshot, edited/deleted like any other fact — never re-run.
+- **live** (`Live: true`, set from the working-memory surface's `l` play/pause
+  key, PD-WM-AF-008): re-run via `Orchestrator.refreshLiveFacts`, called once at
+  the top of every `runPrompt`, before `withContext` assembles the turn. A
+  refresh failure keeps the stale value rather than failing the turn (WM
+  degrades gracefully, the same posture as the context-visualizer's
+  unknown-window handling). Setting a fact live is refused unless
+  `policy.Evaluate(descriptor, args)` currently returns `Allow` for its source
+  tool — pin-live must never silently execute something that would otherwise
+  need approval, and it must never block a turn on an approval prompt.
+
+`Fact.Age()` (since the last successful refresh for a live fact, since `PinnedAt`
+for a static one) is folded into the value text sent to the model
+(`pinAnnotatedValue` in `orchestrator.go`), so the model has the same staleness
+signal the WM surface shows the user.
+
+**Unpinning** is the existing WM delete affordance — no separate command. It
+removes the fact only; it does not restore the source context event's `enabled`
+state, which the user controls independently in the context surface.
 
 ## Persistence Behavior
 

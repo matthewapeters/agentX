@@ -248,6 +248,42 @@ func (c *Client) SetFactEnabled(ctx context.Context, token, key string, enabled 
 	return c.postWM(ctx, token, "/working-memory/enabled", map[string]any{"key": key, "enabled": enabled})
 }
 
+// SetFactLive toggles a pinned fact's live/static state (POST /working-memory/live).
+func (c *Client) SetFactLive(ctx context.Context, token, key string, live bool) error {
+	return c.postWM(ctx, token, "/working-memory/live", map[string]any{"key": key, "live": live})
+}
+
+// PinToolEvent copies a tool_result conversation element (by ordinal) into
+// working memory as a durable fact and disables the source event in context
+// (POST /events/{ordinal}/pin). live requests a fact that re-runs its source
+// tool before each turn (refused server-side if the tool is not currently
+// permitted without approval); false pins a frozen snapshot. Returns the new
+// fact's key.
+func (c *Client) PinToolEvent(ctx context.Context, token string, ordinal uint64, live bool) (string, error) {
+	data, _ := json.Marshal(map[string]any{"live": live})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/events/%d/pin", c.endpoint, ordinal), bytes.NewReader(data))
+	if err != nil {
+		return "", &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", attachErrorFrom(resp)
+	}
+	var body struct {
+		Key string `json:"key"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", &AttachError{Category: "transport", Message: err.Error()}
+	}
+	return body.Key, nil
+}
+
 // postWM posts a token-authorized working-memory mutation.
 func (c *Client) postWM(ctx context.Context, token, path string, payload any) error {
 	data, _ := json.Marshal(payload)
