@@ -143,12 +143,13 @@ type Orchestrator struct {
 }
 
 // turnMsg is one conversation element in the in-memory context history: a user
-// prompt or a complete agent response. ordinal is the element's durable identity
-// (its source event's ordinal); enabled controls whether it folds into the next
-// prompt's assembled context (toggled from the context surface).
+// prompt, a complete agent response, or a pinned tool_call/tool_result. ordinal is
+// the element's durable identity (its source event's ordinal); enabled controls
+// whether it folds into the next prompt's assembled context (toggled from the
+// context surface — a "tool" entry starts disabled and is the pin affordance).
 type turnMsg struct {
 	ordinal uint64
-	role    string // "user" | "assistant"
+	role    string // "user" | "assistant" | "tool"
 	content string
 	enabled bool
 }
@@ -445,7 +446,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	// with the result folded in. A reserved route, disabled tools, or a no-tool
 	// proposal fall through to a normal answer.
 	if route == string(classify.SingleTool) && o.toolsReady() {
-		toolCtx, handled, terr := o.runToolPhase(ctx, text)
+		toolCtx, pin, handled, terr := o.runToolPhase(ctx, text)
 		if terr != nil {
 			// Interrupted while awaiting approval: end the cycle cleanly.
 			o.setProcessing(state.StateCompleted, state.PhaseNone)
@@ -454,7 +455,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 		if handled {
 			msgs := o.withContext(o.assembler.Assemble(text + toolCtx))
 			resp, respOrd, err := o.streamResponse(ctx, msgs, nil, false, ephemeral)
-			o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp)
+			o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp, pin)
 			return o.finishCycle(err)
 		}
 	}
@@ -484,7 +485,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 			if err == nil {
 				resp = o.maybeContinuePlan(ctx, route, text, rootID, planCtx, resp, doThink, ephemeral)
 			}
-			o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp)
+			o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp, nil)
 			return o.finishCycle(err)
 		}
 	}
@@ -496,7 +497,7 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 	fallback := o.withContext(o.assembler.Assemble(text))
 	resp, respOrd, err := o.streamResponse(ctx, messages, fallback, doThink, ephemeral)
 	o.maybeEmitTask(ctx, err, recordUserPrompt, userOrd, text, resp)
-	o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp)
+	o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp, nil)
 	return o.finishCycle(err)
 }
 
@@ -507,7 +508,14 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 // identity, so the context surface can toggle it. The bootstrap turn
 // (recordTurn=false, like its user-prompt event) is excluded: it engages the
 // session but is irrelevant to the user's intent. Hard failures are not recorded.
-func (o *Orchestrator) recordTurn(err error, record bool, userOrd uint64, userText string, respOrd uint64, response string) {
+//
+// pin (single_tool cycle only; nil otherwise) registers this turn's tool_call and
+// tool_result as pinnable entries too, ordered between the user prompt and the
+// answer (their real chronological place). They start disabled — matching their
+// checkbox and state.DefaultEnabled — so nothing changes until the context surface
+// pins one; from then on it folds into every subsequent turn's assembled context,
+// same as any other toggled-on element, until unpinned.
+func (o *Orchestrator) recordTurn(err error, record bool, userOrd uint64, userText string, respOrd uint64, response string, pin *toolPin) {
 	if !record {
 		return
 	}
@@ -519,6 +527,16 @@ func (o *Orchestrator) recordTurn(err error, record bool, userOrd uint64, userTe
 	if userText != "" {
 		o.history = append(o.history, turnMsg{ordinal: userOrd, role: "user", content: userText, enabled: true})
 	}
+	if pin != nil {
+		if pin.callOrdinal != 0 {
+			o.history = append(o.history, turnMsg{ordinal: pin.callOrdinal, role: "tool",
+				content: "[pinned tool call] " + pin.callText, enabled: state.DefaultEnabled(state.ContentToolCall)})
+		}
+		if pin.resultOrdinal != 0 {
+			o.history = append(o.history, turnMsg{ordinal: pin.resultOrdinal, role: "tool",
+				content: "[pinned tool result] " + pin.resultText, enabled: state.DefaultEnabled(state.ContentToolResult)})
+		}
+	}
 	if response != "" {
 		o.history = append(o.history, turnMsg{ordinal: respOrd, role: "assistant", content: response, enabled: true})
 	}
@@ -526,14 +544,22 @@ func (o *Orchestrator) recordTurn(err error, record bool, userOrd uint64, userTe
 
 // historyMessages returns the enabled prior-turn conversation history as assembler
 // messages — disabled elements (toggled off from the context surface) are withheld.
+// A pinned tool entry (role "tool") is sent as a user-role message: the safest
+// broadly-compatible representation for a hand-rolled (non-native-tool-calling)
+// chat loop, tagged so the model reads it as reference material, not user speech.
 func (o *Orchestrator) historyMessages() []prompting.Message {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	out := make([]prompting.Message, 0, len(o.history))
 	for _, h := range o.history {
-		if h.enabled {
-			out = append(out, prompting.Message{Role: h.role, Content: h.content})
+		if !h.enabled {
+			continue
 		}
+		role := h.role
+		if role == "tool" {
+			role = "user"
+		}
+		out = append(out, prompting.Message{Role: role, Content: h.content})
 	}
 	return out
 }
@@ -610,11 +636,12 @@ func (o *Orchestrator) mutateWorkingMemory(fn func(*session.WorkingMemory) error
 }
 
 // ContextBreakdown reports the composition of the session's standing context
-// window by content class (working memory, instructions, user, assistant) for the
-// read-only context-visualizer surface. Sizes are the exact bytes withContext
-// would assemble; the window is the model's context length. Content classes not
-// yet fed into context (attachments, thinking, tools) are omitted here and render
-// as zero on the surface.
+// window by content class (working memory, instructions, user, assistant, tools)
+// for the read-only context-visualizer surface. Sizes are the exact bytes
+// withContext would assemble; the window is the model's context length. "tools" is
+// only non-zero once the context surface has pinned a tool_call/tool_result
+// (PD-CTX-AF-011) — until then it renders as zero, like the other content classes
+// not yet fed into context (attachments, thinking).
 func (o *Orchestrator) ContextBreakdown() (session.ContextReport, error) {
 	comps := make([]session.ContextComponent, 0, 4)
 
@@ -630,14 +657,25 @@ func (o *Orchestrator) ContextBreakdown() (session.ContextReport, error) {
 			}
 		}
 	}
-	// Enabled conversation history, summed by role into user and assistant classes.
-	var userChars, asstChars int
-	for _, m := range o.historyMessages() {
-		switch m.Role {
+	// Enabled conversation history, summed by role into user/assistant/tools classes.
+	// Read from o.history directly (not historyMessages, which folds a pinned "tool"
+	// entry into a "user"-role message for the model) so a pin's bytes land in their
+	// own "tools" band rather than misattributed to "user".
+	o.mu.Lock()
+	hist := append([]turnMsg(nil), o.history...)
+	o.mu.Unlock()
+	var userChars, asstChars, toolChars int
+	for _, h := range hist {
+		if !h.enabled {
+			continue
+		}
+		switch h.role {
 		case "user":
-			userChars += len(m.Content)
+			userChars += len(h.content)
 		case "assistant":
-			asstChars += len(m.Content)
+			asstChars += len(h.content)
+		case "tool":
+			toolChars += len(h.content)
 		}
 	}
 	if userChars > 0 {
@@ -645,6 +683,9 @@ func (o *Orchestrator) ContextBreakdown() (session.ContextReport, error) {
 	}
 	if asstChars > 0 {
 		comps = append(comps, session.ContextComponent{Class: "assistant", Chars: asstChars})
+	}
+	if toolChars > 0 {
+		comps = append(comps, session.ContextComponent{Class: "tools", Chars: toolChars})
 	}
 
 	o.mu.Lock()

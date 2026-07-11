@@ -2082,17 +2082,30 @@ It deals only in **complete conversation elements**: it never receives the live
 finished `agent_response` element. Streaming is watched in the main window.
 
 Its **primary affordance is enable/disable** (not read-only): selecting a
-user-prompt or agent-response element and pressing **space** toggles whether that
-element participates in the agent's upcoming context. The toggle is sent to the
-orchestrator, which applies it in memory (effective on the next prompt) and persists
-it in the element's event file. Each toggleable element carries an **enabled
-checkbox to the left of its role emoji** — `[x]` when it is in context, `[ ]` when
-disabled (re-authoring PD-03-AF-007's message-enabled checkbox). The checkbox is
-deliberately independent of the selection border, so navigation and
-context-membership read as separate cues. Thinking/tool/classification elements are
-display-only and not toggleable, so they carry no checkbox. A one-line
-processing-state indicator sits at the bottom. Quitting (`Ctrl-C`/`q`) marks the
-surface stopped.
+user-prompt, agent-response, tool-call, or tool-result element and pressing
+**space** toggles whether that element participates in the agent's upcoming
+context. The toggle is sent to the orchestrator, which applies it in memory
+(effective on the next prompt) and persists it in the element's event file. Each
+toggleable element carries an **enabled checkbox to the left of its role emoji** —
+`[x]` when it is in context, `[ ]` when disabled (re-authoring PD-03-AF-007's
+message-enabled checkbox). The checkbox is deliberately independent of the
+selection border, so navigation and context-membership read as separate cues.
+Thinking/classification/system-prompt/approval elements are display-only and not
+toggleable, so they carry no checkbox. A one-line processing-state indicator sits
+at the bottom. Quitting (`Ctrl-C`/`q`) marks the surface stopped.
+
+A 🔧 tool-call or 📋 tool-result element (the flat, untagged `single_tool`-cycle
+kind — a call folded into a plan step's Task node is display-only, unaffected)
+starts **unchecked**: tool output normally scopes to the turn that produced it, so
+by default it does not carry forward. Checking it **pins** that call or result —
+the same enable/disable toggle, just applied to a content class that starts off —
+so its text folds into every subsequent turn's assembled context until it is
+unchecked again. This is the explicit mechanism for keeping a broad, reusable
+lookup (e.g. a `tree .` project listing) available across several turns without
+re-running the tool: there is no separate "pin" command, no implicit
+carry-forward, and no working-memory promotion step — checking the box in the
+context surface is the whole affordance. A pinned tool element's bytes are counted
+under the visualizer's `tools` 🔧 band (PD-CTXVIZ), which is otherwise always zero.
 
 ### Affordance Inventory
 
@@ -2105,9 +2118,10 @@ surface stopped.
 | Processing-state line reflects state · phase | PD-CTX-AF-005 | ✅ |
 | Enable/disable the selected element (space) → context inclusion | PD-CTX-AF-006 | ✅ |
 | Enabled checkbox (`[x]`/`[ ]`) left of the emoji, independent of selection | PD-CTX-AF-007 | ✅ |
-| Only user/agent elements toggle; others are display-only | PD-CTX-AF-008 | ✅ |
+| User/agent/flat-tool-call/flat-tool-result elements toggle; others are display-only | PD-CTX-AF-008 | ✅ |
 | Complete agent responses only (no live `agent_delta` stream) | PD-CTX-AF-009 | ✅ |
 | Title strip (`context · <session>`) via the surface host | PD-CTX-AF-010 | ✅ |
+| Pin a tool-call/tool-result: checking it folds its text into every subsequent turn's context (not just the turn that produced it) until unchecked | PD-CTX-AF-011 | ✅ |
 
 ### Behavior contracts (GIVEN/WHEN/THEN)
 
@@ -2130,6 +2144,15 @@ Use-case: Non-toggleable element (PD-CTX-AF-008)
 - GIVEN a context surface with a selected thinking element
 - WHEN the user presses space
 - THEN nothing is toggled (thinking never enters context)
+
+Use-case: Pin a tool-result element (PD-CTX-AF-011)
+
+- GIVEN a context surface with a selected, unchecked tool-result element from an
+  earlier turn (e.g. a `tree .` listing)
+- WHEN the user presses space
+- THEN the checkbox flips to `[x]` and the toggle is sent to the orchestrator; the
+  result's text folds into the assembled context on the next prompt and every
+  prompt after, until the element is unchecked again
 
 Use-case: Collapsed by default (PD-CTX-AF-003)
 
@@ -2161,8 +2184,10 @@ meter drops the percentages and the ghost band.
 It is **strictly read-only**: it holds an event stream only for connection presence
 (SS-4) and performs no writes. The enable/disable-a-turn management affordance lives
 on the context pane (PD-CTX); the meter only *hints* at what to prune. Classes not
-yet fed into the assembled context (attachments, thinking, tools today) render as
-zero rather than being hidden, so the legend stays complete. Quitting (`Ctrl-C`/`q`)
+yet fed into the assembled context (attachments, thinking today) render as zero
+rather than being hidden, so the legend stays complete. `tools` renders as zero too,
+until the context pane pins a tool-call/tool-result (PD-CTX-AF-011) — from then on
+its bar reflects the pinned bytes, same as any other class. Quitting (`Ctrl-C`/`q`)
 marks the surface stopped.
 
 ### Affordance Inventory

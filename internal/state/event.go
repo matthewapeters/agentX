@@ -65,8 +65,11 @@ var validContentTypes = map[ContentType]bool{
 
 // DefaultEnabled reports whether an event of the given content type participates
 // in assembled LLM context by default. User and agent turns (and attachments) are
-// on; thinking and tool events are retained but off (a later context surface may
-// toggle them on); classification/system/processing-state events are not context.
+// on. Thinking events are retained but off and stay inert when toggled (never
+// enter context). Tool-call/tool-result events are retained but off too, but
+// toggling one on is meaningful: the context surface uses it to pin the element
+// into every subsequent turn's context (docs/ux/03_PANEL_DETAILS.md PD-CTX-AF-011).
+// Classification/system/processing-state events are not context.
 func DefaultEnabled(ct ContentType) bool {
 	switch ct {
 	case ContentUserPrompt, ContentAgentResponse, ContentAttachments:

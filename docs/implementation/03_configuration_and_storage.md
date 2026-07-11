@@ -194,15 +194,28 @@ Initial content_type values:
 
 `enabled` on the envelope controls whether a conversation element participates in
 the **assembled LLM context** of subsequent turns (`runtime.withContext`).
-User-prompt and agent-response elements default enabled; thinking, tool, and
-classification events are display-only and never enter context.
+User-prompt and agent-response elements default enabled. Thinking, classification,
+system-prompt, and approval events are display-only and never enter context —
+`enabled` on them is inert. Tool-call and tool-result events (the flat, untagged
+`single_tool`-cycle kind; a plan step's tagged call is unaffected) default
+**disabled**: their text already folds into the turn that produced them via the
+respond-turn context block (`toolResultContext`/`toolDeniedContext`), so nothing
+extra happens by default — but unlike thinking/classification, `enabled` on a tool
+event is **not** inert: flipping it on **pins** the element into every subsequent
+turn's assembled context too (`orchestrator.recordTurn`'s `toolPin` registration;
+sent to the model as a tagged user-role message — see `historyMessages`), until it
+is flipped off again. This is the only mechanism for carrying tool output past the
+turn it ran in; there is no separate working-memory promotion step.
 
 - The **context surface** is the management affordance: toggling an element
-  (space) flips its `enabled`.
+  (space) flips its `enabled`. For a tool element this is the pin/unpin action.
 - The orchestrator applies the toggle **in memory** (so the next prompt's context
   reflects it immediately) and **persists it in the element's event file** (so a
   re-attaching surface seeds the correct state). Because each element is a single
   event, this is a single-file rewrite.
+- A pinned tool element's bytes are reported under the `tools` class in
+  `Orchestrator.ContextBreakdown`, so the context-visualizer's `tools` 🔧 band
+  (otherwise always zero) reflects it.
 
 ## Persistence Behavior
 

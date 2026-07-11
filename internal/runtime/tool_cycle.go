@@ -58,52 +58,67 @@ func (o *Orchestrator) toolsReady() bool {
 		o.policy != nil && o.registry != nil
 }
 
+// toolPin carries the ordinals and rendered text of the tool_call/tool_result
+// events a single_tool cycle published, so recordTurn can register them as
+// pinnable context-history entries (initially disabled, like their checkbox)
+// alongside the turn's user/assistant elements. An entry with ordinal 0 was never
+// published (e.g. the approval-gated path publishes no separate 🔧 tool_call
+// widget — the approval request/decision audit trail stands in for it) and is
+// skipped by recordTurn.
+type toolPin struct {
+	callOrdinal   uint64
+	callText      string
+	resultOrdinal uint64
+	resultText    string
+}
+
 // runToolPhase proposes one tool call, evaluates policy (prompting for approval
 // when required), executes the approved call, and publishes tool_call/tool_result.
-// It returns a context block to fold into the respond turn and whether a tool was
-// handled (false => answer directly). A non-nil error means the user interrupted
-// while awaiting approval.
-func (o *Orchestrator) runToolPhase(ctx context.Context, text string) (string, bool, error) {
+// It returns a context block to fold into the respond turn, the pinnable ordinals
+// for that call/result, and whether a tool was handled (false => answer directly).
+// A non-nil error means the user interrupted while awaiting approval.
+func (o *Orchestrator) runToolPhase(ctx context.Context, text string) (string, *toolPin, bool, error) {
 	o.setProcessing(state.StateWorking, state.PhaseTool)
 
 	prop, ok := o.proposer.Propose(ctx, text)
 	if !ok {
-		return "", false, nil // no tool chosen → answer directly
+		return "", nil, false, nil // no tool chosen → answer directly
 	}
 	d, found := o.registry.Lookup(prop.Tool)
 	if !found {
-		return "", false, nil // unknown/hallucinated tool → answer directly
+		return "", nil, false, nil // unknown/hallucinated tool → answer directly
 	}
 
+	pin := &toolPin{}
 	var verdict tools.Verdict
 	switch {
 	case o.settings.ToolReadOnly && d.Risk != tools.RiskRead:
 		verdict = tools.Verdict{Decision: tools.Deny, Reason: "read_only"}
-		o.publishToolCall(d, prop.Args)
+		pin.callOrdinal, pin.callText = o.publishToolCall(d, prop.Args)
 	default:
 		verdict = o.policy.Evaluate(d, prop.Args)
 		if verdict.Decision == tools.NeedsApproval {
 			v, err := o.RequestApproval(ctx, d, prop.Args, o.policy)
 			if err != nil {
-				return "", false, err // interrupted while awaiting
+				return "", nil, false, err // interrupted while awaiting
 			}
 			verdict = v
 		} else {
-			o.publishToolCall(d, prop.Args)
+			pin.callOrdinal, pin.callText = o.publishToolCall(d, prop.Args)
 		}
 	}
 
 	if verdict.Decision == tools.Deny {
-		o.publishToolResult(tools.Result{ToolID: d.ID, Status: "denied", Exit: -1, Preview: "denied: " + verdict.Reason})
-		return toolDeniedContext(d, verdict.Reason), true, nil
+		pin.resultOrdinal, pin.resultText = o.publishToolResult(tools.Result{ToolID: d.ID, Status: "denied", Exit: -1, Preview: "denied: " + verdict.Reason})
+		return toolDeniedContext(d, verdict.Reason), pin, true, nil
 	}
 
 	res, err := o.runner.Run(ctx, d, prop.Args)
 	if err != nil {
 		res = tools.Result{ToolID: d.ID, Status: "error", Exit: -1, Preview: err.Error(), Stderr: err.Error()}
 	}
-	o.publishToolResult(res)
-	return toolResultContext(d, res), true, nil
+	pin.resultOrdinal, pin.resultText = o.publishToolResult(res)
+	return toolResultContext(d, res), pin, true, nil
 }
 
 // streamResponse streams the answer for the assembled messages. When doThink is
@@ -189,16 +204,19 @@ func (o *Orchestrator) finishCycle(err error) error {
 
 // publishToolResult emits a tool_result event (rendered as the 📋 result widget;
 // persisted as the audit record). The model sees the preview + ref, not the full
-// artifact.
-func (o *Orchestrator) publishToolResult(res tools.Result) {
-	o.bus.Publish(state.Event{
+// artifact — unless the context surface pins this element, folding it into
+// subsequent turns too (see recordTurn/toolPin). It returns the event's ordinal
+// and rendered text for that registration.
+func (o *Orchestrator) publishToolResult(res tools.Result) (uint64, string) {
+	text := toolResultText(res)
+	ord := o.bus.Publish(state.Event{
 		Epoch:       time.Now().UnixMilli(),
 		SessionID:   o.id.ID,
 		EventType:   "TOOL_RESULT",
 		ContentType: state.ContentToolResult,
 		ToolName:    res.ToolID,
 		Payload: map[string]any{
-			"text":    toolResultText(res),
+			"text":    text,
 			"status":  res.Status,
 			"exit":    res.Exit,
 			"ref":     res.Ref,
@@ -206,8 +224,10 @@ func (o *Orchestrator) publishToolResult(res tools.Result) {
 			"lines":   res.Lines,
 			"command": res.Command,
 		},
+		Enabled:   state.DefaultEnabled(state.ContentToolResult),
 		ModelName: o.settings.OllamaModel,
 	})
+	return ord, text
 }
 
 func toolResultText(res tools.Result) string {

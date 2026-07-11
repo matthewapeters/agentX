@@ -78,9 +78,10 @@ type widget struct {
 	// without a manual scroll. A manual scroll up detaches it; scrolling back to the
 	// bottom re-attaches. See nits.md #2 / UC-WIDGET-STREAM-FOLLOW.
 	followTail bool
-	// ordinal is the source event's durable identity; toggleable marks a user or
-	// agent conversation element that the context surface can enable/disable;
-	// disabled means it is withheld from the agent's upcoming context.
+	// ordinal is the source event's durable identity; toggleable marks a user,
+	// agent, or (flat, untagged) tool-call/tool-result conversation element that
+	// the context surface can enable/disable; disabled means it is withheld from
+	// the agent's upcoming context. Pinning a tool element is this same toggle.
 	ordinal    uint64
 	toggleable bool
 	disabled   bool
@@ -172,8 +173,9 @@ func (m *Model) SetMarkdownRenderer(mode string) {
 }
 
 // SelectedToggleable returns the selected element's ordinal and current enabled
-// state when it is a user/agent conversation element the context surface can
-// toggle; ok is false otherwise (e.g. thinking/tool elements, or none selected).
+// state when it is a user/agent/tool-call/tool-result conversation element the
+// context surface can toggle; ok is false otherwise (e.g. thinking/classification
+// elements, or none selected).
 func (m *Model) SelectedToggleable() (ordinal uint64, enabled, ok bool) {
 	if m.selected < 0 || m.selected >= len(m.widgets) {
 		return 0, false, false
@@ -449,18 +451,22 @@ func (m *Model) Apply(ev state.Event) tea.Cmd {
 	case state.ContentToolCall:
 		// A call tagged with a plan step's task id folds into that Task node's own
 		// fields (ADR 0009 §9c redesign) — no separate widget. An untagged call
-		// (single_tool cycle) renders flat as before.
+		// (single_tool cycle) renders flat as before, and — like a user/agent
+		// element — carries an enabled checkbox: the context surface can pin it so
+		// it folds into subsequent turns' assembled context (PD-CTX-AF-011).
 		if tid := taskIDOf(ev); tid != "" && m.planFor(tid) != nil {
 			m.applyTaskToolEvent(ev, false)
 			return nil
 		}
-		m.add(&widget{kind: kindToolCall, title: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true, previewWhenCollapsed: true})
+		m.add(&widget{kind: kindToolCall, title: "🔧 " + ev.ToolName, body: eventText(ev), collapsible: true, previewWhenCollapsed: true,
+			ordinal: ev.Ordinal, toggleable: true, disabled: !ev.Enabled})
 	case state.ContentToolResult:
 		if tid := taskIDOf(ev); tid != "" && m.planFor(tid) != nil {
 			m.applyTaskToolEvent(ev, true)
 			return nil
 		}
-		m.add(&widget{kind: kindToolResult, title: "📋 result", body: eventText(ev), collapsible: true, collapsed: true})
+		m.add(&widget{kind: kindToolResult, title: "📋 result", body: eventText(ev), collapsible: true, collapsed: true,
+			ordinal: ev.Ordinal, toggleable: true, disabled: !ev.Enabled})
 	case state.ContentTaskPlan:
 		// A plan gets ONE live widget, created at the "started" snapshot — before any
 		// execution — and finalized by the "ended" snapshot (ADR 0009 §9c).
