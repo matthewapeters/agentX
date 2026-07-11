@@ -192,6 +192,14 @@ func plannerCatalog(reg *tools.Registry) string {
 	return b.String()
 }
 
+// askClarifyOptions is the fixed two-way choice offered when the classifier itself is
+// genuinely unsure whether a turn requested an action (reconcile.Ask) but produced a
+// concrete task record anyway — confirm before guessing, never silently drop it.
+var askClarifyOptions = []state.ApprovalOption{
+	{Label: "Yes, do it", Decision: "yes"},
+	{Label: "No, just chatting", Decision: "no"},
+}
+
 // maybeEmitTask runs the classifier over this turn and folds it with a response
 // classification ([C], always-on) into a route, then acts on it. It is a
 // best-effort observer: it runs only on a recorded turn, any classification error
@@ -272,8 +280,22 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 		o.publishTaskDiag(&res, respDecision, "decompose", fmt.Sprintf("%s (decomposer not wired): %s", route, why))
 		return
 	default:
-		o.publishTaskDiag(&res, respDecision, "skipped", fmt.Sprintf("reconciled to %s: %s", route, why))
-		return // None (pure conversation) / Ask (abstained)
+		// None (pure conversation) always stays silent — there is nothing to confirm. Ask
+		// (genuine classifier ambiguity) used to stay silent too, with no visible follow-up
+		// (reconcile.go: "which today has no visible follow-up — clever-raven-3") — dead
+		// end #3 alongside the plan-incomplete cases above. When there is a concrete task
+		// record to ask about, use the same decision gate tool-approval and verb-
+		// continuation already share instead of silently guessing or silently dropping it.
+		if route != reconcile.Ask || !hasTask || ex == nil {
+			o.publishTaskDiag(&res, respDecision, "skipped", fmt.Sprintf("reconciled to %s: %s", route, why))
+			return
+		}
+		if !o.resolveAskRoute(ctx, rec) {
+			o.publishTaskDiag(&res, respDecision, "skipped", fmt.Sprintf("%s: %s (declined)", route, why))
+			return
+		}
+		// Confirmed: fall through to the shared dispatch below, same as Reify/Redispatch/
+		// Verify.
 	}
 	if !hasTask {
 		o.publishTaskDiag(&res, respDecision, "skipped", fmt.Sprintf("%s but action produced no task record", route))
@@ -294,6 +316,17 @@ func (o *Orchestrator) maybeEmitTask(ctx context.Context, cycleErr error, record
 		"reason":   outcome.Reason,
 	})
 	o.publishTaskDiag(&res, respDecision, string(outcome.Status), fmt.Sprintf("%s → %s", route, outcome.Status))
+}
+
+// resolveAskRoute is maybeEmitTask's Ask-route branch, split out so the decision-gate
+// interaction is unit-testable without a live classifier pipeline: ask whether to proceed
+// with the task record the reconciler already built, rather than silently guessing or
+// silently dropping it. true only on an explicit "yes" with no error (ctx canceled, a
+// denial, or any other decision string all mean don't proceed).
+func (o *Orchestrator) resolveAskRoute(ctx context.Context, rec task.Record) bool {
+	dec, derr := o.RequestDecision(ctx, state.PhaseClarify,
+		fmt.Sprintf("Did you want me to %s?", rec.Goal), askClarifyOptions)
+	return derr == nil && dec == "yes"
 }
 
 // runDecomposition drains a compound goal through the scheduler in the background (so the
@@ -323,7 +356,22 @@ func (o *Orchestrator) runDecomposition(ctx context.Context, root task.Record, e
 	}
 	o.publish("TASK_PLAN", state.ContentTaskPlan, planSummary(root, outcome.Nodes, executed, err))
 
-	planCtx := planContext(cap.steps)
+	proceed, note, cerr := o.confirmPlanIncomplete(ctx, root, outcome.Nodes)
+	if cerr != nil {
+		// Interrupted while awaiting the clarify decision: end the background cycle
+		// cleanly, same as any other ctx cancellation here.
+		o.setProcessing(state.StateCompleted, state.PhaseNone)
+		return
+	}
+	if !proceed {
+		msgs := o.withContext(o.assembler.Assemble(root.Goal + planStoppedContext(root)))
+		resp, respOrd, rerr := o.streamResponse(ctx, msgs, nil, false, false)
+		o.recordTurn(rerr, true, 0, "", respOrd, resp)
+		o.finishCycle(rerr)
+		return
+	}
+
+	planCtx := planContext(cap.steps) + note
 	if strings.TrimSpace(planCtx) == "" {
 		// Nothing investigated successfully: no grounded follow-up to add. The task_plan's
 		// own "incomplete" error (if any) is the visible signal; close out the background

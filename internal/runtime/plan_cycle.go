@@ -209,7 +209,16 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text, rootID string) (s
 	}
 
 	o.publishPlan(root, out, len(cap.steps), derr)
-	planCtx := planContext(cap.steps)
+
+	proceed, note, cerr := o.confirmPlanIncomplete(ctx, root, out.Nodes)
+	if cerr != nil {
+		return "", false, cerr
+	}
+	if !proceed {
+		return planStoppedContext(root), true, nil
+	}
+
+	planCtx := planContext(cap.steps) + note
 	if strings.TrimSpace(planCtx) == "" {
 		return "", false, nil // nothing investigated → answer directly
 	}
@@ -226,16 +235,12 @@ func (o *Orchestrator) publishPlan(root task.Record, out decompose.PlanOutcome, 
 	o.publish("TASK_PLAN", state.ContentTaskPlan, payload)
 }
 
-// planSummary builds the terminal task_plan payload, deriving an "incomplete" error line
-// from the node statuses when the drain error alone would under-report.
-func planSummary(root task.Record, recs []task.Record, executed int, derr error) map[string]any {
-	nodes := make([]map[string]any, 0, len(recs))
-	var failed, abstained, neverRan int
+// incompleteNodes tallies a drained plan's non-Done statuses and collects a few example
+// goals worth surfacing to the user — a flat "4 never ran" count doesn't say what was
+// actually missed, and the missed node is often buried deep in the tree.
+func incompleteNodes(recs []task.Record) (failed, abstained, neverRan int, examples []string) {
+	const maxExamples = 3
 	for _, n := range recs {
-		nodes = append(nodes, map[string]any{
-			"task_id": n.ID, "goal": n.Goal, "status": string(n.Status), "deps": n.Deps,
-			"kind": string(n.Kind),
-		})
 		switch n.Status {
 		case task.Done:
 			// complete
@@ -243,10 +248,36 @@ func planSummary(root task.Record, recs []task.Record, executed int, derr error)
 			failed++
 		case task.Abstained:
 			abstained++
+			if len(examples) < maxExamples {
+				examples = append(examples, truncateGoal(n.Goal))
+			}
 		default: // proposed / ready / in_progress: stranded behind a failed/abstained dep
 			neverRan++
 		}
 	}
+	return failed, abstained, neverRan, examples
+}
+
+// truncateGoal caps a goal string for a compact clarify prompt.
+func truncateGoal(goal string) string {
+	const maxLen = 80
+	if len(goal) <= maxLen {
+		return goal
+	}
+	return goal[:maxLen] + "…"
+}
+
+// planSummary builds the terminal task_plan payload, deriving an "incomplete" error line
+// from the node statuses when the drain error alone would under-report.
+func planSummary(root task.Record, recs []task.Record, executed int, derr error) map[string]any {
+	nodes := make([]map[string]any, 0, len(recs))
+	for _, n := range recs {
+		nodes = append(nodes, map[string]any{
+			"task_id": n.ID, "goal": n.Goal, "status": string(n.Status), "deps": n.Deps,
+			"kind": string(n.Kind),
+		})
+	}
+	failed, abstained, neverRan, _ := incompleteNodes(recs)
 	payload := map[string]any{
 		"root": root.ID, "goal": root.Goal, "phase": "ended", "nodes": nodes,
 		"executed": executed,
@@ -260,6 +291,60 @@ func planSummary(root task.Record, recs []task.Record, executed int, derr error)
 			failed, abstained, neverRan, len(recs))
 	}
 	return payload
+}
+
+// planClarifyOptions is the fixed two-way choice offered when a drained plan didn't
+// finish: answer with the partial findings, or stop rather than let the model silently
+// paper over the gap.
+var planClarifyOptions = []state.ApprovalOption{
+	{Label: "Answer with what I found", Decision: "answer"},
+	{Label: "Stop here", Decision: "stop"},
+}
+
+// confirmPlanIncomplete asks the user how to proceed when a drained plan has any
+// failed/abstained/never-ran node — the scheduler's own NEEDS-CLARIFY state
+// (scheduler.go: a Step at max depth "fails to Ask") has nowhere else to surface, and
+// previously it didn't: the plan-incomplete signal reached only the task_plan event
+// (excluded from context), never the model's response prompt, so the model answered as
+// if nothing were missing (witty-falcon: a plan that never reached its file-write step
+// still got narrated back as "done"). A fully-done plan returns proceed=true with no
+// prompt — this only interrupts when something actually didn't finish. On "answer", note
+// is a context line grounding the response in the gap so the model cannot claim to have
+// completed steps that never ran. On "stop", proceed is false and the caller should use
+// planStoppedContext instead of planContext.
+func (o *Orchestrator) confirmPlanIncomplete(ctx context.Context, root task.Record, recs []task.Record) (proceed bool, note string, err error) {
+	failed, abstained, neverRan, examples := incompleteNodes(recs)
+	if failed+abstained+neverRan == 0 {
+		return true, "", nil
+	}
+	prompt := fmt.Sprintf(
+		"My plan for %q didn't fully complete — %d step(s) failed, %d abstained, %d never ran.",
+		root.Goal, failed, abstained, neverRan)
+	if len(examples) > 0 {
+		prompt += " Stuck on: " + strings.Join(examples, "; ") + "."
+	}
+	prompt += " Answer with what I found so far, or stop here?"
+
+	dec, derr := o.RequestDecision(ctx, state.PhaseClarify, prompt, planClarifyOptions)
+	if derr != nil {
+		return false, "", derr
+	}
+	if dec != "answer" {
+		return false, "", nil
+	}
+	note = fmt.Sprintf(
+		"\n\n[Plan incomplete: %d failed, %d abstained, %d never ran. Answer ONLY using the findings above — do not claim to have completed steps that never ran.]",
+		failed, abstained, neverRan)
+	return true, note, nil
+}
+
+// planStoppedContext grounds the response when the user chose to stop rather than have
+// the model answer over an incomplete plan (confirmPlanIncomplete) — mirrors
+// toolDeniedContext's shape (tool_cycle.go) for a declined action.
+func planStoppedContext(root task.Record) string {
+	return fmt.Sprintf(
+		"\n\n[Investigation of %q stopped at your request before finishing. Say what you'd like to do next rather than assuming it was completed.]",
+		root.Goal)
 }
 
 // planContext renders the executed steps and their findings as prompt context, so the

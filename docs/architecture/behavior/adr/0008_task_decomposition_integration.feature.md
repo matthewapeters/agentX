@@ -169,6 +169,23 @@ Scenario: ADR-0008-P4-003 Genuine ambiguity stays Ask, not Decompose
   Then the route is "ask"
 
 @integration
+Scenario: ADR-0008-P4-008 The Ask route confirms a concrete task record instead of dropping it
+  Witty-falcon RCA follow-up (2026-07-10): this route's own comment said "ask one clarifying
+  question rather than guess" (reconcile.go), but maybeEmitTask's default case only logged
+  "skipped: reconciled to ask" — dead end #3 alongside the plan-incomplete cases (see ADR
+  0009's plan-incomplete clarify gate). No question ever reached the user.
+  Given a turn reconciled to "ask" that still produced a concrete task record (hasTask)
+  And a task executor is wired
+  When maybeEmitTask handles the route
+  Then it calls RequestDecision (PhaseClarify) with "Did you want me to <goal>?" and the
+    "Yes, do it" / "No, just chatting" options — the same decision-gate seam RequestApproval
+    and the verb-continuation gate already use
+  And on "Yes, do it" it falls through into the same dispatch path as Reify/Redispatch/Verify
+    (task_proposed published, ex.Execute runs, task_result published)
+  And on "No, just chatting", a declined decision, or no task record at all, it stays silent
+    exactly as before — this only asks when there is something concrete to confirm
+
+@integration
 Scenario: ADR-0008-P4-004 The Decompose route seeds the scheduler and drains the plan
   Given a compound turn routed to "decompose"
   And a stub decomposer expanding the goal into atomic leaves "l1" and "l2"

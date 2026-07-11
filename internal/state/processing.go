@@ -35,12 +35,19 @@ const (
 	// hint/keymap (4-way: allow once/always, deny once/always) instead of the
 	// 3-way tool-approval one.
 	PhaseVerb Phase = "verb"
-	PhaseNone Phase = "none"
+	// PhaseClarify pauses the cycle in StateAwaitingInput for a clarifying question
+	// the runtime itself needs answered before it can proceed — a plan that drained
+	// with failed/abstained/never-ran nodes, or a classifier that abstained on
+	// whether the turn was actionable at all. Distinct from PhaseTool/PhaseVerb: this
+	// is the runtime asking, not a proposed effect awaiting approval (witty-falcon:
+	// the scheduler's own NEEDS-CLARIFY state had nowhere to surface).
+	PhaseClarify Phase = "clarify"
+	PhaseNone    Phase = "none"
 )
 
 var (
 	validStates = map[RunState]bool{StateIdle: true, StateWorking: true, StateCompleted: true, StateFailed: true, StateAwaitingInput: true}
-	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhasePlanning: true, PhaseVerb: true, PhaseNone: true}
+	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhasePlanning: true, PhaseVerb: true, PhaseClarify: true, PhaseNone: true}
 )
 
 // ProcessingState is the session-level processing-state payload

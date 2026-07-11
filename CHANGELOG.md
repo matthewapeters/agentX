@@ -83,6 +83,34 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A plan that hit the scheduler's recursion-depth bound, or a classifier that
+  genuinely couldn't tell whether a turn wanted an action, silently dropped the
+  question instead of asking it — and the model then narrated the missing work as
+  done** (session `witty-falcon`: a leaf step landed exactly on
+  `scheduler.DefaultMaxDepth`, was marked `Abstained` with zero elapsed time — no LLM
+  call, no reasoning, just the depth guard firing — which cascaded to strand its
+  parent, its grandparent, and the plan's actual file-write step; the "plan
+  incomplete" diagnostic reached only the `task_plan` event, which is excluded from
+  prompt context, so the model answered as if the plan had fully succeeded, including
+  a fabricated bash heredoc for a file it never wrote). The scheduler's own doc names
+  this the `NEEDS-CLARIFY (Ask)` state and its code comment says "bounded recursion →
+  clarify" — the clarify half was never wired up. Three call sites shared the same
+  dead-end shape and are all fixed the same way: route the gap through the existing
+  decision gate (`RequestDecision`, already shared by tool approval and
+  verb-continuation approval) instead of a silent log line. New
+  `Orchestrator.confirmPlanIncomplete` asks "answer with what I found" vs. "stop here"
+  when a drained plan (`runPlanPhase`, and its background twin `runDecomposition`) has
+  any failed/abstained/never-ran node, naming up to 3 example blocked goals; on
+  "answer" it appends an explicit anti-hallucination note to the response context
+  ("do not claim to have completed steps that never ran"); on "stop" the response is
+  grounded in a stopped-at-your-request note instead. Separately, `maybeEmitTask`'s
+  `reconcile.Ask` route — whose own doc comment says "ask one clarifying question
+  rather than guess" but whose code just logged `"skipped: reconciled to ask"` — now
+  calls the same gate (`resolveAskRoute`) when it has a concrete task record to
+  confirm, falling through to the normal dispatch path on "yes". New
+  `state.PhaseClarify` distinguishes this from tool/verb approval in the processing-
+  state stream. `internal/runtime/plan_cycle.go`, `classifier_pipeline.go`,
+  `internal/state/processing.go`.
 - **A finished plan permanently collapsed to just its root line, with no way to see
   the individual steps** (session `brave-fjord-2`). The liveness-propagating
   auto-collapse rule (previous entry) gated a node's children on it or a descendant

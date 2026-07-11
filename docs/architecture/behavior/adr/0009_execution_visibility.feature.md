@@ -77,6 +77,33 @@ is the cure; tidy-cove RCA 2026-07-07) and **9c plan widget + read-verify fix**
   (mellow-meadow: one failed leaf silently stranded five nodes). Both the plan cycle
   and the background Decompose route share this summary.
 
+## Plan-incomplete clarify gate (plan_cycle.go confirmPlanIncomplete)
+Witty-falcon (2026-07-10): a plan whose leaf hit `scheduler.DefaultMaxDepth` was marked
+Abstained, cascaded to strand its root, and the incomplete-plan diagnostic above landed only
+on the (context-excluded) task_plan event — never the model's response prompt. The model
+answered anyway, confidently narrating a file-write step that never ran. The diagnostic was
+loud in the log; it was silent to the model and the user.
+- GIVEN a drained plan whose nodes are all `done` WHEN confirmPlanIncomplete runs THEN it
+  returns immediately with no prompt — a clean plan never interrupts.
+- GIVEN a drained plan with any failed/abstained/never-ran node WHEN confirmPlanIncomplete
+  runs THEN it calls RequestDecision (PhaseClarify) with a prompt naming the counts and up
+  to 3 example blocked/abstained goals, and the same two-way options every such gate offers:
+  "Answer with what I found" / "Stop here" — the same decision-gate seam tool approval and
+  verb-continuation already use (internal/runtime/decision.go), not a new mechanism.
+- GIVEN the user picks "Answer with what I found" THEN the response context gets an explicit
+  incompleteness note ("Plan incomplete: N failed, N abstained, N never ran. Answer ONLY
+  using the findings above — do not claim to have completed steps that never ran.") appended
+  after the executed-steps findings, so the model cannot narrate over the gap.
+- GIVEN the user picks "Stop here" THEN no further findings-grounded answer is generated;
+  the response is grounded instead in a stopped-at-your-request note (planStoppedContext),
+  mirroring toolDeniedContext's shape for a declined tool call.
+- GIVEN the surface interrupts (ctx canceled) while the clarify decision is pending THEN
+  runPlanPhase / runDecomposition end the cycle cleanly, same as any other RequestDecision
+  call site.
+- GIVEN the background Decompose route (runDecomposition) THEN it shares the exact same
+  confirmPlanIncomplete gate as the foreground plan cycle (runPlanPhase) — one helper, two
+  call sites, no duplicated incomplete-plan logic.
+
 ## Spiral guard
 
 ### decompose.stripResultPlumbing / SimilarGoals (guard.go)

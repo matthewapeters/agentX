@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"agentx/internal/executor"
 	"agentx/internal/planfindings"
@@ -205,5 +206,189 @@ func TestCapturingExecFindingsConcurrentWithExecute(t *testing.T) {
 
 	if got := c.Findings(); strings.Count(got, "leaf ") != 20 {
 		t.Errorf("Findings after all leaves completed mentions %d leaves, want 20", strings.Count(got, "leaf "))
+	}
+}
+
+// TestIncompleteNodesAllDoneIsClean: a fully-done plan reports zero across the board and
+// no examples — the happy path confirmPlanIncomplete uses to skip the clarify prompt.
+func TestIncompleteNodesAllDoneIsClean(t *testing.T) {
+	recs := []task.Record{
+		{ID: "a", Goal: "a", Status: task.Done},
+		{ID: "b", Goal: "b", Status: task.Done},
+	}
+	failed, abstained, neverRan, examples := incompleteNodes(recs)
+	if failed != 0 || abstained != 0 || neverRan != 0 || len(examples) != 0 {
+		t.Fatalf("incompleteNodes(all done) = (%d,%d,%d,%v), want all zero", failed, abstained, neverRan, examples)
+	}
+}
+
+// TestIncompleteNodesCountsAndExamples reproduces the witty-falcon shape: one abstained
+// leaf blocking a chain of never-ran ancestors, and the abstained goal surfaced as an
+// example (not just a count) so the clarify prompt can name what got stuck.
+func TestIncompleteNodesCountsAndExamples(t *testing.T) {
+	recs := []task.Record{
+		{ID: "root", Goal: "root goal", Status: task.Proposed},
+		{ID: "a", Goal: "a", Status: task.Done},
+		{ID: "b", Goal: "check remaining .github files", Status: task.Abstained},
+		{ID: "c", Goal: "write the file", Status: task.Proposed},
+		{ID: "d", Goal: "d", Status: task.Failed},
+	}
+	failed, abstained, neverRan, examples := incompleteNodes(recs)
+	if failed != 1 || abstained != 1 || neverRan != 2 {
+		t.Fatalf("incompleteNodes = (failed=%d, abstained=%d, neverRan=%d), want (1,1,2)", failed, abstained, neverRan)
+	}
+	if len(examples) != 1 || examples[0] != "check remaining .github files" {
+		t.Errorf("examples = %v, want the abstained node's goal", examples)
+	}
+}
+
+// TestIncompleteNodesExamplesCapped: the clarify prompt stays compact even for a wide
+// plan with many abstained leaves.
+func TestIncompleteNodesExamplesCapped(t *testing.T) {
+	var recs []task.Record
+	for i := range 10 {
+		recs = append(recs, task.Record{ID: fmt.Sprintf("n%d", i), Goal: fmt.Sprintf("goal %d", i), Status: task.Abstained})
+	}
+	_, abstained, _, examples := incompleteNodes(recs)
+	if abstained != 10 {
+		t.Fatalf("abstained = %d, want 10", abstained)
+	}
+	if len(examples) != 3 {
+		t.Errorf("examples = %d, want capped at 3", len(examples))
+	}
+}
+
+// TestTruncateGoalCapsLength: a long goal is truncated with an ellipsis rather than
+// blowing up the clarify prompt.
+func TestTruncateGoalCapsLength(t *testing.T) {
+	long := strings.Repeat("x", 200)
+	got := truncateGoal(long)
+	if len(got) > 80+len("…") { // 80 bytes of goal + the (multi-byte) ellipsis rune
+		t.Errorf("truncateGoal length = %d, want capped at 80+len(ellipsis)", len(got))
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("truncateGoal(%d chars) = %q, want an ellipsis suffix", len(long), got)
+	}
+	if got2 := truncateGoal("short goal"); got2 != "short goal" {
+		t.Errorf("truncateGoal(short) = %q, want unchanged", got2)
+	}
+}
+
+// TestPlanStoppedContextMentionsGoal: the stopped-context note names the original goal so
+// the model's follow-up doesn't lose track of what was being investigated.
+func TestPlanStoppedContextMentionsGoal(t *testing.T) {
+	got := planStoppedContext(task.Record{Goal: "review the documentation"})
+	if !strings.Contains(got, "review the documentation") {
+		t.Errorf("planStoppedContext = %q, want it to mention the goal", got)
+	}
+	if !strings.Contains(got, "stopped") {
+		t.Errorf("planStoppedContext = %q, want it to say the investigation stopped", got)
+	}
+}
+
+// TestConfirmPlanIncompleteCleanPlanSkipsPrompt: a fully-done plan proceeds without
+// calling RequestDecision at all (no gate interaction to resolve) — the happy path must
+// never interrupt.
+func TestConfirmPlanIncompleteCleanPlanSkipsPrompt(t *testing.T) {
+	o := testOrchestrator()
+	root := task.Record{ID: "root", Goal: "review docs"}
+	recs := []task.Record{{ID: "root", Goal: "review docs", Status: task.Done}}
+
+	proceed, note, err := o.confirmPlanIncomplete(context.Background(), root, recs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !proceed || note != "" {
+		t.Fatalf("confirmPlanIncomplete(clean) = (%v, %q), want (true, \"\")", proceed, note)
+	}
+}
+
+// TestConfirmPlanIncompleteAnswerAppendsGroundingNote reproduces the witty-falcon fix
+// directly: an incomplete plan asks, and on "answer" returns a note that tells the model
+// not to claim the unexecuted steps happened.
+func TestConfirmPlanIncompleteAnswerAppendsGroundingNote(t *testing.T) {
+	o := testOrchestrator()
+	root := task.Record{ID: "task-936", Goal: "create docs_to_retire.md"}
+	recs := []task.Record{
+		{ID: "task-936", Goal: "create docs_to_retire.md", Status: task.Proposed},
+		{ID: "task-936-3-5-3", Goal: "check remaining .github files", Status: task.Abstained},
+		{ID: "task-936-fail", Goal: "a failed leaf", Status: task.Failed},
+	}
+
+	type result struct {
+		proceed bool
+		note    string
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		proceed, note, err := o.confirmPlanIncomplete(context.Background(), root, recs)
+		done <- result{proceed, note, err}
+	}()
+	for !o.gate.deliver("answer") {
+		time.Sleep(time.Millisecond)
+	}
+	r := <-done
+	if r.err != nil {
+		t.Fatalf("unexpected error: %v", r.err)
+	}
+	if !r.proceed {
+		t.Fatal("proceed = false, want true on \"answer\"")
+	}
+	if !strings.Contains(r.note, "1 failed, 1 abstained, 1 never ran") {
+		t.Errorf("note = %q, want it to report the counts (1 failed, 1 abstained, 1 never ran)", r.note)
+	}
+	if !strings.Contains(r.note, "do not claim") {
+		t.Errorf("note = %q, want an explicit anti-hallucination instruction", r.note)
+	}
+}
+
+// TestConfirmPlanIncompleteStopReturnsNoNote: choosing to stop returns proceed=false and
+// no grounding note — the caller (runPlanPhase/runDecomposition) is expected to use
+// planStoppedContext instead.
+func TestConfirmPlanIncompleteStopReturnsNoNote(t *testing.T) {
+	o := testOrchestrator()
+	root := task.Record{ID: "root", Goal: "goal"}
+	recs := []task.Record{{ID: "a", Goal: "a", Status: task.Abstained}}
+
+	type result struct {
+		proceed bool
+		note    string
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		proceed, note, err := o.confirmPlanIncomplete(context.Background(), root, recs)
+		done <- result{proceed, note, err}
+	}()
+	for !o.gate.deliver("stop") {
+		time.Sleep(time.Millisecond)
+	}
+	r := <-done
+	if r.err != nil {
+		t.Fatalf("unexpected error: %v", r.err)
+	}
+	if r.proceed || r.note != "" {
+		t.Fatalf("confirmPlanIncomplete(stop) = (%v, %q), want (false, \"\")", r.proceed, r.note)
+	}
+}
+
+// TestConfirmPlanIncompleteCtxCanceled: an interrupt while the clarify decision is
+// pending returns an error and proceed=false, mirroring RequestApproval/RequestDecision's
+// own ctx.Done() contract.
+func TestConfirmPlanIncompleteCtxCanceled(t *testing.T) {
+	o := testOrchestrator()
+	root := task.Record{ID: "root", Goal: "goal"}
+	recs := []task.Record{{ID: "a", Goal: "a", Status: task.Abstained}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	proceed, note, err := o.confirmPlanIncomplete(ctx, root, recs)
+	if err == nil {
+		t.Fatal("expected an error on a canceled context")
+	}
+	if proceed || note != "" {
+		t.Fatalf("confirmPlanIncomplete(canceled) = (%v, %q), want (false, \"\")", proceed, note)
 	}
 }
