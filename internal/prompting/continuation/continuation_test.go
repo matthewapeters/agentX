@@ -6,8 +6,11 @@ import (
 	"testing"
 )
 
-// TestDetectRealSessionExamples reproduces the exact two responses from session
-// amber-quartz that silently ended a turn instead of continuing.
+// TestDetectRealSessionExamples reproduces exact responses from sessions that
+// silently ended a turn instead of continuing: amber-quartz (intent restated as the
+// final sentence) and eager-otter (intent stated as the FIRST sentence, with
+// everything after it a narrated fenced-code pseudo-tool-call rather than real
+// content — the naive last-sentence split lands inside that fence and finds nothing).
 func TestDetectRealSessionExamples(t *testing.T) {
 	cases := []struct {
 		response string
@@ -20,6 +23,10 @@ func TestDetectRealSessionExamples(t *testing.T) {
 		{
 			"Let me dig into the actual source code to find concrete issues rather than relying on directory listings alone.",
 			"dig",
+		},
+		{
+			"Let me read the key documentation files to understand the project.\n\n```bash\ncat /home/mpeters/Projects/agentX/README.md\n```</think>\n\nReading README.md first — it's usually the primary entry point:\n\n```bash\nhead -200 /home/mpeters/Projects/agentX/README.md\n```",
+			"read",
 		},
 	}
 	for _, c := range cases {
@@ -45,13 +52,25 @@ func TestDetectShouldIAndShallI(t *testing.T) {
 	}
 }
 
-// TestDetectOnlyLastSentence: a "let me" phrase earlier in the response — not the
-// final sentence — must not trigger. Only the model's last word counts as a stated
-// forward intent.
-func TestDetectOnlyLastSentence(t *testing.T) {
+// TestDetectFirstSentenceAlsoTriggers: eager-otter showed a stated intent can be the
+// model's OPENING sentence, with nothing that follows ever restating or fulfilling
+// it (see TestDetectRealSessionExamples). So a "let me" in the first sentence must
+// trigger even when the last sentence doesn't restate it.
+func TestDetectFirstSentenceAlsoTriggers(t *testing.T) {
 	response := "Let me explain what I found. The bug is in the retry loop, which never terminates."
+	verb, _, ok := Detect(response)
+	if !ok || verb != "explain" {
+		t.Errorf("Detect(%q) = verb=%q ok=%v, want explain/true", response, verb, ok)
+	}
+}
+
+// TestDetectMiddleSentenceStillDoesNotTrigger: a "let me" phrase that is neither the
+// first nor the last sentence — a true rhetorical aside buried in the middle — must
+// still not trigger.
+func TestDetectMiddleSentenceStillDoesNotTrigger(t *testing.T) {
+	response := "Here's my plan. Let me explain what I found first. The bug is in the retry loop, which never terminates."
 	if _, _, ok := Detect(response); ok {
-		t.Error("an earlier 'let me' aside must not trigger when the final sentence doesn't restate it")
+		t.Error("a 'let me' aside in the middle sentence must not trigger when neither the first nor last sentence restates it")
 	}
 }
 

@@ -4,7 +4,9 @@
 // happen — the turn finalizes on `err == nil` alone, with no inspection of what the
 // response text actually says (sessions clever-raven-3, amber-quartz: the model
 // correctly recognized its own investigation was incomplete, said so, and the turn
-// just ended there).
+// just ended there; session eager-otter: the stated intent was the FIRST sentence,
+// not the last — everything after it was narrated pseudo-tool-call text, not a real
+// tool invocation, so the last sentence alone never caught it).
 //
 // Detection is a deliberately cheap, deterministic two-step process rather than
 // another LLM classification pass (matching this codebase's existing preference —
@@ -29,13 +31,27 @@ import (
 // list is checked on the single verb word, not the full phrasal verb).
 var trigger = regexp.MustCompile(`(?i)\b(?:let me|should i|shall i)\s+(\w+)`)
 
-// Detect looks for a stated continuation intent in the LAST sentence of response
-// only — not anywhere in the middle of the text — since that's what distinguishes
-// "I'm about to keep going" (the turn's final word) from a rhetorical aside earlier
-// in the explanation. Returns ok=false when no trigger phrase is found in that last
-// sentence.
+// Detect looks for a stated continuation intent in the LAST sentence of response,
+// then — if that comes up empty — the FIRST sentence, rather than anywhere in the
+// middle of the text. That's what distinguishes "I'm about to keep going" (the
+// turn's final word, or its opening declaration) from a rhetorical aside buried in
+// the middle of the explanation. Checking both ends catches both shapes seen in
+// practice: the model restates its intent as the last thing it says (clever-raven-3,
+// amber-quartz), or it opens with the intent and everything after is narrated
+// pseudo-action that never actually completes it (eager-otter — "Let me read the
+// key documentation files..." followed by a fenced code block instead of a real tool
+// call, so the literal last sentence is garbage from inside that fence). Returns
+// ok=false when neither end has a trigger phrase.
 func Detect(response string) (verb, sentence string, ok bool) {
-	sentence = lastSentence(response)
+	if verb, sentence, ok = detectInSentence(lastSentence(response)); ok {
+		return verb, sentence, ok
+	}
+	return detectInSentence(firstSentence(response))
+}
+
+// detectInSentence checks a single already-extracted sentence for the trigger
+// phrase, shared by both the last-sentence and first-sentence checks in Detect.
+func detectInSentence(sentence string) (verb, s string, ok bool) {
 	if sentence == "" {
 		return "", "", false
 	}
@@ -46,19 +62,38 @@ func Detect(response string) (verb, sentence string, ok bool) {
 	return strings.ToLower(m[1]), sentence, true
 }
 
-// lastSentence returns the last non-empty, trimmed sentence in s, splitting on
-// '.', '!', and '?'. A cheap heuristic, not a real sentence tokenizer — sufficient
-// for finding "the model's final sentence", which is all Detect needs.
-func lastSentence(s string) string {
+// sentences splits s into non-empty, trimmed sentences on '.', '!', and '?'. A
+// cheap heuristic, not a real sentence tokenizer — sufficient for finding "the
+// model's opening or final sentence", which is all Detect needs.
+func sentences(s string) []string {
 	parts := strings.FieldsFunc(s, func(r rune) bool {
 		return r == '.' || r == '!' || r == '?'
 	})
-	for i := len(parts) - 1; i >= 0; i-- {
-		if t := strings.TrimSpace(parts[i]); t != "" {
-			return t
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
 		}
 	}
-	return ""
+	return out
+}
+
+// firstSentence returns the first non-empty, trimmed sentence in s.
+func firstSentence(s string) string {
+	ss := sentences(s)
+	if len(ss) == 0 {
+		return ""
+	}
+	return ss[0]
+}
+
+// lastSentence returns the last non-empty, trimmed sentence in s.
+func lastSentence(s string) string {
+	ss := sentences(s)
+	if len(ss) == 0 {
+		return ""
+	}
+	return ss[len(ss)-1]
 }
 
 // LoadVerbs reads an allow/deny list file (one verb per line; blank lines and lines
