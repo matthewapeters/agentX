@@ -333,7 +333,7 @@ func (o *Orchestrator) runDecomposition(ctx context.Context, root task.Record, e
 	}
 	msgs := o.withContext(o.assembler.Assemble(root.Goal + planCtx))
 	resp, respOrd, rerr := o.streamResponse(ctx, msgs, nil, false, false)
-	o.recordTurn(rerr, true, 0, "", respOrd, resp)
+	o.recordTurn(rerr, true, 0, "", respOrd, resp, nil)
 	o.finishCycle(rerr)
 }
 

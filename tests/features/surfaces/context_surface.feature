@@ -72,3 +72,22 @@ Feature: Context viewer surface
     When the context surface applies a thinking "reasoning"
     And the context surface receives key "space"
     Then the context view does not contain "[ ]"
+
+  # use-case: PD-CTX-AF-011  (pin a tool_result)
+  # a tool result starts unpinned (unchecked) — its text already reached the model
+  # once, via the respond turn's own context block — but carries a checkbox because
+  # the context surface can pin it into every subsequent turn too.
+  Scenario: A tool result starts unchecked and can be pinned
+    Given a context surface sized 40 by 12
+    When the context surface applies a tool_result "project listing: a.go, b.go"
+    Then the context view contains "[ ]"
+    When the context surface receives key "space"
+    Then the context view contains "[x]"
+
+  # use-case: PD-CTX-AF-011  (pin a tool_call)
+  Scenario: A tool call starts unchecked and can be pinned
+    Given a context surface sized 40 by 12
+    When the context surface applies a tool_call "tree ."
+    Then the context view contains "[ ]"
+    When the context surface receives key "space"
+    Then the context view contains "[x]"

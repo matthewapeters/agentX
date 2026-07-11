@@ -25,6 +25,8 @@ func registerContextSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the context surface applies an agent_response "([^"]*)"$`, w.applyAgentResponse)
 	sc.Step(`^the context surface applies an ephemeral agent_response "([^"]*)"$`, w.applyEphemeral)
 	sc.Step(`^the context surface applies a thinking "([^"]*)"$`, w.applyThinking)
+	sc.Step(`^the context surface applies a tool_call "([^"]*)"$`, w.applyToolCall)
+	sc.Step(`^the context surface applies a tool_result "([^"]*)"$`, w.applyToolResult)
 	sc.Step(`^the context surface applies processing-state "([^"]*)" "([^"]*)"$`, w.applyProcessing)
 	sc.Step(`^the context view contains "([^"]*)"$`, w.viewContains)
 	sc.Step(`^the context view does not contain "([^"]*)"$`, w.viewNotContains)
@@ -83,6 +85,14 @@ func (w *contextWorld) applyEphemeral(text string) error {
 
 func (w *contextWorld) applyThinking(text string) error {
 	return w.applyContent("THINKING", state.ContentThinking, text)
+}
+
+func (w *contextWorld) applyToolCall(text string) error {
+	return w.applyContent("TOOL_CALL", state.ContentToolCall, text)
+}
+
+func (w *contextWorld) applyToolResult(text string) error {
+	return w.applyContent("TOOL_RESULT", state.ContentToolResult, text)
 }
 
 func (w *contextWorld) applyProcessing(runState, phase string) error {

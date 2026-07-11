@@ -39,6 +39,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerTransportLifecycleSteps(sc)
 	registerContextBreakdownSteps(sc)
 	registerContextToggleSteps(sc)
+	registerToolPinSteps(sc)
 	registerTaskClassifierSteps(sc)
 	registerTaskBranchSteps(sc)
 	registerTaskSchedulerSteps(sc)
