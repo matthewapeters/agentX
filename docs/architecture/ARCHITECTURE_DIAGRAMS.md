@@ -1,552 +1,219 @@
-# AgentX Tool System Architecture Diagrams
+# AgentX Architecture Diagrams
 
-## 1. COMPLETE TOOL EXECUTION FLOW
+Diagrams reflect the current Go/bubbletea implementation on `bubbletea`.
+For narrative context see `CLAUDE.md`, `docs/implementation/01_runtime_blueprint.md`,
+and the ADRs under `docs/architecture/adr/`.
+
+## 1. Client-Server / Surface Topology
 
 ```
-┌─────────────────┐
-│  User Input     │
-│   "Read file.go"│
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────────────────────────────┐
-│  Orchestrator                           │
-│  ├─ Capture user input                  │
-│  ├─ Build context from session history  │
-│  └─ Submit to LLMBridge                 │
-└────────┬────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────┐
-│  LLMBridge                              │
-│  └─ Stream response from model backend  │
-└────────┬────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────┐
-│  Ollama (model backend)                 │
-│  ├─ Classify / route prompt             │
-│  └─ Stream response chunks              │
-└────────┬────────────────────────────────┘
-         │
-    ┌────┴────────────────────────────────┐
-    │ ROUTE BASED ON PROMPT INTENT        │
-    └────┬────────────────┬──────────┬────┘
-         │                │          │
-    RESPOND_DIRECTLY  SINGLE_TOOL INVOKE_PLANNER
-         │                │          │
-         ▼                ▼          ▼
-    ┌────────────┐   ┌────────────┐  ┌──────────┐
-    │ STREAM LLM │   │ TOOL EXEC  │  │ PLANNING │
-    │  RESPONSE  │   │  + LOOP    │  │  + LOOP  │
-    └────────────┘   └────────────┘  └──────────┘
-         │                │          │
-         └────────┬───────┴──────────┘
-                  │
-                  ▼
-    ┌─────────────────────────────────────────┐
-    │  ResponseChunk stream                   │
-    ├─ THINKING chunks                        │
-    ├─ CONTENT chunks                         │
-    ├─ TOOL_CALL chunks                       │
-    ├─ TOOL_RESULT chunks                     │
-    ├─ ERROR chunks                           │
-    └─ DONE chunk                             │
-    └─────────────────────────────────────────┘
-         │
-         ▼
-    ┌──────────────────────────────────────────┐
-    │  SurfaceManager / Event Coordination     │
-    │  ├─ on_content()  → OutputSurface        │
-    │  ├─ on_thinking() → OutputSurface        │
-    │  ├─ on_tool_call() → ToolDispatcher      │
-    │  ├─ on_tool_result() → OutputSurface     │
-    │  └─ on_error()    → OutputSurface        │
-    └──────────┬───────────────────────────────┘
-               │
-         ┌─────┴───────┐
-         │ TOOL CALL?  │
-         └─────┬───────┘
-          YES  │  NO → surface renders response
-              │
-              ▼
-        ┌──────────────────────────────────┐
-        │ ToolDispatcher                   │
-        │ ├─ Store TOOL_CALL event         │
-        │ ├─ Evaluate policy               │
-        │ ├─ Execute tool (with approval)  │
-        │ ├─ Store TOOL_RESULT event       │
-        │ └─ Re-invoke LLMBridge          │
-        └──────────────────────────────────┘
-               │
-    ┌──────────┴──────────────────────────┐
-    │ EXECUTE TOOL                        │
-    └──────────┬──────────────────────────┘
-               │
-    ┌──────────┼──────────────┐
-    │          │              │
- LOCAL TOOLS   │          REMOTE TOOLS
-    │          │              │
-    ▼          ▼              ▼
-┌────────┐  ┌──────┐  ┌──────────────────┐
-│ LOCAL  │  │OTHER │  │ REMOTE TOOL      │
-│EXECUTOR│  │      │  │ EXECUTOR         │
-│        │  │      │  │ ├─ Code analysis  │
-│• read  │  │      │  │ ├─ API calls      │
-│• write │  │      │  │ └─ Compute        │
-│• list  │  │      │  │                  │
-│• search│  │      │  │                  │
-└────────┘  └──────┘  └──────────────────┘
-    │          │              │
-    └──────────┴──────────────┘
-               │
-               ▼
-        ┌────────────────┐
-        │ Result String  │
-        │ (tool output)  │
-        └────────────────┘
-               │
-               ▼
-        ┌────────────────────────────┐
-        │ Persist to session events  │
-        │ - TOOL_RESULT event JSON   │
-        │ - epoch + session_id       │
-        │ - tool name + output       │
-        └────────────────────────────┘
-               │
-               ▼
-        ┌────────────────────────────┐
-        │ Re-invoke LLMBridge with   │
-        │ updated context (agentic   │
-        │ loop continues until DONE) │
-        └────────────────────────────┘
+┌───────────────────────────────────────────┐         HTTP/SSE          ┌────────────────────┐
+│  agentx  (server + bundled chat surface)   │◄─────────────────────────►│  other surfaces     │
+│                                             │                          │  (separate processes,│
+│  internal/app        — composition/wiring  │                          │  launched via        │
+│  internal/runtime    — Orchestrator        │                          │  `agentx surface     │
+│  internal/transport/http — Provider/Server │                          │  launch <kind>`)      │
+│  internal/state      — Bus, event model    │                          │                       │
+│  internal/session    — identity, persistence│                         │  files · config ·     │
+│                                             │                          │  context ·            │
+│  internal/surfaces/chat  — output + input  │                          │  context-history ·    │
+│    panels, bundled with the server process │                          │  context-visualizer · │
+└───────────────────────────────────────────┘                          │  working-memory       │
+                                                                          └────────────────────┘
 ```
+
+The server holds canonical session/event state and exposes it over HTTP/SSE
+(`internal/transport/http`). Each surface is a separate client process that
+attaches with an ephemeral attach token; the surface registry
+(`internal/surfaces/registry.go`) is open-ended — new surface kinds attach
+without changing existing ones. Tool execution and approvals happen
+server-side regardless of which surface is attached.
 
 ---
 
-## 2. TOOL EXECUTION CONTEXT ROUTING
+## 2. Prompt Cycle: Classify → Route → Respond
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  Tool Execution Router                               │
-│  (ToolDispatcher / internal/tools)                   │
-└──────┬───────────────────────────────────────────────┘
-       │
-       ▼
-    ┌─────────────────────────┐
-    │ Tool Name?              │
-    └──┬───────────────┬──────┘
-       │               │
-  LOCAL TOOLS    REMOTE/REGISTERED TOOLS
-       │               │
-       ├─ read_file     ├─ code_analysis
-       ├─ write_file    ├─ find_symbols
-       ├─ list_dir      ├─ find_imports
-       ├─ get_file_info └─ (extensible)
-       └─ search_files
-       │
-       ▼
-    ┌─────────────────────────────────────────────┐
-    │ LocalToolExecutor (internal/tools)          │
-    │ ├─ Base path security check                 │
-    │ ├─ Policy evaluation (allow/confirm/deny)   │
-    │ ├─ Execute tool with timeout                │
-    │ ├─ Max output size enforcement              │
-    │ └─ Return result as structured response     │
-    └─────────────────────────────────────────────┘
-       │
-       │                  ┌──────────────────────────┐
-       │                  │ RemoteToolExecutor       │
-       │                  │ ├─ Tool descriptor lookup │
-       │                  │ ├─ Remote invocation      │
-       │                  │ └─ Format for display     │
-       │                  └──────────────────────────┘
-       │                      │
-       └──────────────────────┘
-       │
-       ▼
-    ┌─────────────────────────────────────────────┐
-    │ Tool Result                                 │
-    │ ├─ Success: tool output                     │
-    │ ├─ Error: error message                     │
-    │ ├─ Policy denied: rejection notice          │
-    │ └─ Timeout: timeout notice                  │
-    └─────────────────────────────────────────────┘
-```
-
----
-
-## 3. MESSAGE ROLE MAPPING FOR LLM
-
-```
-┌──────────────────────────────────────────────────────┐
-│ Message Role → LLM API Role Mapping                  │
-│ (session event → Ollama API format)                  │
-└──────────────────────────────────────────────────────┘
-
-Role.USER        → "user"
-Role.ASSISTANT   → "assistant"
-Role.SYSTEM      → "system"
-Role.THINKING    → "assistant"    (internal reasoning)
-Role.TOOL_CALL   → "assistant"    (model calls tool)
-Role.TOOL_RESULT → "user"         (tool result as input)
-
-Example conversation:
-
-1. User: "Read file.go"
-   {"role": "user", "content": "Read file.go"}
-
-2. Assistant: (LLM response) "I'll read the file"
-   {"role": "assistant", "content": "I'll read the file"}
-
-3. Tool Call: read_file("file.go")
-   Stored as: {"role": "assistant", "content": "<tool_call>"}
-
-4. Tool Result: "package main..."
-   Stored as: {"role": "user", "content": "package main..."}
-
-5. Re-invoke LLM with messages 1-4
-   {"messages": [1, 2, 3, 4], "model": "<configured model>"}
-   LLM reasons about tool output and responds or calls another tool
-```
-
----
-
-## 4. PROMPT ROUTING → EXECUTION
-
-```
-┌────────────────────────────────────────────────────┐
-│ Prompt Router                                      │
-│ (internal/prompting or LLMBridge classify step)    │
-└────────┬──────────────────────────────────────────┘
-         │
-         ▼
-    ┌─────────────────────────────────────────┐
-    │ PromptRoute:                             │
-    │ ├─ intent: (conversation | action | plan)│
-    │ ├─ needs_clarification: bool             │
-    │ └─ route: (direct | tool_use | planning) │
-    └────┬──────────────────────────────────────┘
-         │
-         ▼
-    ┌─────────────────────────────────────────┐
-    │ ROUTE OPTIONS                           │
-    └────┬────────┬────────────┬──────────────┘
-         │        │            │
-    RESPOND_  TOOL_USE   INVOKE_
-    DIRECTLY           PLANNER
-         │        │            │
-         ▼        ▼            ▼
-    ┌────┐   ┌────────┐   ┌──────────┐
-    │    │   │ TOOL   │   │ PLANNING │
-    │    │   │ EXEC   │   │ + DAG    │
-    │    │   │ LOOP   │   │ EXEC     │
-    └────┘   └────────┘   └──────────┘
-     STREAM   TOOL-USE    HIERARCHICAL
-    RESPONSE  AGENTIC     TASK
-              LOOP        EXECUTION
-
-Example Intent → Route Mapping:
-
-"conversation"   → respond_directly
-"simple_action"  → tool_use
-"complex_action" → invoke_planner
-```
-
----
-
-## 5. RESPONSE STREAM ARCHITECTURE
-
-```
-┌──────────────────────────────────────────────────┐
-│  Orchestrator (session handling)                 │
-└──┬───────────────────────────────────────────────┘
-   │
-   ▼
-┌──────────────────────────────────────────────────┐
-│ StreamCoordinator / Event Coordination Layer     │
-│   on_content       → OutputSurface               │
-│   on_thinking      → OutputSurface               │
-│   on_tool_call     → ToolDispatcher      ← KEY   │
-│   on_tool_result   → OutputSurface               │
-│   on_error         → OutputSurface               │
-│   on_done          → cleanup / persist           │
-└──┬───────────────────────────────────────────────┘
-   │
-   ▼
-┌──────────────────────────────────────────────────┐
-│  For each ResponseChunk from LLMBridge:          │
-│  coordinator.publish(chunk)                      │
-└──┬───────────────────────────────────────────────┘
-   │
-   ├─ CONTENT chunk
-   │  └─ OutputSurface displays text
-   │
-   ├─ THINKING chunk
-   │  └─ OutputSurface displays reasoning (collapsed)
-   │
-   ├─ TOOL_CALL chunk
-   │  └─ ToolDispatcher.execute(tool_name, tool_input)
-   │     ├─ Policy check
-   │     ├─ Execute tool
-   │     ├─ Persist TOOL_RESULT event
-   │     └─ Re-invoke LLMBridge with updated context
-   │
-   ├─ TOOL_RESULT chunk
-   │  └─ OutputSurface displays result
-   │
-   ├─ ERROR chunk
-   │  └─ OutputSurface displays error
-   │
-   └─ DONE chunk
-      └─ Stream complete; finalize session events
-
-Accumulators (per turn):
-├─ content_buffer: []string
-├─ thinking_buffer: []string
-├─ tool_calls: []ToolCall
-└─ tool_results: []ToolResult
-
-Final: persisted as JSON events under session store
-```
-
----
-
-## 6. CONTEXT AND MESSAGE PERSISTENCE
-
-```
-┌────────────────────────────────────────────────────┐
-│  Session Store (internal/session)                  │
-│  ├─ session_id (canonical internal ID)             │
-│  ├─ session_name (human-readable)                  │
-│  ├─ events: append-only JSON event files           │
-│  └─ Methods:                                       │
-│     ├─ AppendEvent(event)                          │
-│     ├─ EnabledEvents() → filtered for LLM          │
-│     └─ ToLLMMessages() → model API format          │
-└────┬──────────────────────────────────────────────┘
+User prompt
      │
      ▼
-┌────────────────────────────────────────────────────┐
-│  Event Types in Session                            │
-│                                                    │
-│  1. user_prompt: User input                        │
-│     role="user"                                    │
-│     content="Read file.go"                         │
-│                                                    │
-│  2. agent_response: LLM response                   │
-│     role="assistant"                               │
-│     content="Here's the file..."                   │
-│                                                    │
-│  3. thinking: LLM reasoning (if supported)         │
-│     role="thinking"                                │
-│     content="I need to read..."                    │
-│     enabled=false (hidden from LLM context)        │
-│                                                    │
-│  4. tool_call: Tool invocation                     │
-│     role="tool_call"                               │
-│     tool_name="read_file"                          │
-│     tool_input={"path": "file.go"}                 │
-│     enabled=true                                   │
-│                                                    │
-│  5. tool_result: Tool execution result             │
-│     role="tool_result"                             │
-│     tool_name="read_file"                          │
-│     content="package main..."                      │
-│     enabled=true                                   │
-│                                                    │
-│  6. processing_state: Orchestrator status          │
-│     metadata={phase, surface, ...}                 │
-│     enabled=false (internal)                       │
-│                                                    │
-└────────────────────────────────────────────────────┘
+Orchestrator.Submit (internal/runtime/orchestrator.go)
+     │
+     ▼
+classify (internal/classify) ──► route: one of
+     │
+     ├─ respond_directly ──────────────────────────► streamResponse ──► agent_response
+     │
+     ├─ single_tool ───────► runToolPhase (tool_cycle.go)
+     │                          │
+     │                          ├─ tools.Proposer.Propose  (pick one tool call)
+     │                          ├─ tools.Policy.Evaluate   (Allow | Deny | NeedsApproval)
+     │                          ├─ RequestApproval, if needed (see §3)
+     │                          ├─ tools.Executor.Run
+     │                          └─ tool_call / tool_result events published
+     │                          ▼
+     │                     fold result into context ──► streamResponse ──► agent_response
+     │
+     └─ invoke_planner ────► runPlanPhase (plan_cycle.go)
+                                │
+                                ├─ decompose.LLMPlanner.Plan — DAG of ≤5 nodes
+                                │   (task: a resolved tool call | step: coarse
+                                │    sub-goal, decomposed further on dispatch)
+                                ├─ scheduler drains the DAG, dependency-ordered,
+                                │   executing ready leaves (task_node events
+                                │   stream live as nodes dispatch/decompose/complete)
+                                └─ findings fold into context
+                                ▼
+                          streamResponse (may run one bounded verb-continuation
+                          round first — see maybeContinuePlan) ──► agent_response
+```
 
-Persistence Flow:
+`streamResponse` assembles the prompt (`internal/prompting`), calls the
+configured `Model.Chat` (`internal/llm/ollama` in production), and — when
+thinking is enabled — separates reasoning (`thinking` events) from the final
+answer, which streams as transient `agent_delta` events and is published once,
+complete, as `agent_response`.
 
-Event created
-├─ Append to session event log
-├─ Persist as epoch-prefixed JSON file
-├─ Publish to Event Coordination Layer
-└─ Available for context rebuild on next request
+---
 
-✅ Events ARE saved to disk
-✅ Events ARE loaded for session replay
-✅ Events ARE fed back to LLM in agentic loop (tool results → re-invoke)
+## 3. Interactive Decisions: The Shared Approval Gate
+
+```
+Any routine needing a user decision
+(tool-execution approval, verb-continuation approval, ...)
+     │
+     ▼
+Orchestrator.RequestDecision (internal/runtime/decision.go)
+     │
+     ├─ enqueue onto the shared decisionGate (internal/runtime/gate.go) —
+     │    a FIFO queue; concurrent requests of ANY kind serialize, one shown
+     │    at a time
+     ├─ if now at the front: publish an approval_request event
+     │    {prompt, options: [{label, decision}, ...]}, set
+     │    processing_state = awaiting_input
+     │
+     ▼
+Chat surface (internal/surfaces/chat) swaps a THIRD panel in between output
+and input — internal/surfaces/approval — bordered "AgentX Needs Your Input":
+a navigable list of the options above (↑/↓ or j/k moves the cursor, Enter
+confirms). Input stays visible but inert; the approval widget owns all keys
+until resolved.
+     │
+     ▼
+Bridge.Approve(decision string) ──► Orchestrator.Resolve ──► gate.deliver
+     │
+     ├─ the blocked RequestDecision call returns the decision string to its
+     │    caller (RequestApproval / RequestVerbApproval), which applies its
+     │    own kind-specific persistence (policy scope, verb allow/deny list)
+     └─ an approval_decision audit event is published: {prompt, chosen_label,
+          decision} — persisted like any event, but Enabled=false, so it is
+          excluded from assembled LLM context. The chat surface renders it as
+          a fixed-gray, one-line scrollback record.
+```
+
+The gate is generic (`gate[Req, Resp]`) — a third decision kind needs no new
+UI, only a caller that builds `{prompt, options}` and calls
+`RequestDecision`.
+
+---
+
+## 4. Tool Policy Evaluation
+
+```
+tools.Policy.Evaluate(descriptor, args)   (internal/tools/policy.go)
+     │
+     ├─ blacklist match?              ──► Deny (reason: blacklist / rule-specific)
+     ├─ already approved (session or  ──► Allow
+     │  global whitelist, keyed by
+     │  tool id + canonical args)?
+     ├─ descriptor.RequiresApproval?  ──► NeedsApproval  (→ RequestApproval, §3)
+     └─ else                          ──► Allow
+
+Read-only mode (agentx.toml [agentx.tools] read_only = true, default on):
+  any non-read-risk tool is denied outright in the single_tool cycle,
+  bypassing the approval gate entirely — a stricter, separate check in
+  tool_cycle.go, ahead of policy evaluation.
+
+Approval scopes:
+  session — in-memory only, this session
+  global  — persisted to ~/.config/agentx/agentx-tool-approvals.toml,
+            survives restarts, keyed by tool id + canonical args
 ```
 
 ---
 
-## 7. TOOL REGISTRY AND DISCOVERY
+## 5. Session Event Persistence
 
 ```
-┌────────────────────────────────────────────────────┐
-│  Tool Registry (internal/tools)                    │
-└────┬─────────────────────────────────────────────┘
-     │
-     ├─ BuiltinToolRegistry
-     │  └─ Registered by config (tools.toml):
-     │     ├─ read_file
-     │     ├─ write_file
-     │     ├─ list_directory
-     │     ├─ get_file_info
-     │     └─ search_files
-     │
-     ├─ RegisteredToolRegistry
-     │  └─ Loaded from tool descriptor files:
-     │     ├─ Code analysis tools
-     │     ├─ API integration tools
-     │     └─ (Extensible: new tool descriptors)
-     │
-     └─ PolicyEvaluator
-        ├─ Blacklist (always forbidden)
-        ├─ Session whitelist
-        ├─ Global whitelist
-        └─ Prompt user for approval on unknown
+Every published event (internal/state.Event) carries:
+  epoch, session_id, event_type, content_type, payload, enabled, ordinal, ...
 
-Methods:
-├─ Register(tool)
-├─ Get(name) → ToolDescriptor
-├─ ListDefinitions() → []ToolDefinition
-├─ GetEnabledTools() → filtered by policy
-├─ SetEnabled(name, bool)
-├─ EvaluatePolicy(cmd) → allow|confirm|deny
-└─ Execute(request) → ToolResponse
+ContentType (internal/state/event.go) includes:
+  user_prompt · system_prompt · classification · thinking · agent_delta*
+  agent_response · attachments · tool_call · tool_result · processing_state
+  task_proposed · task_result · task_diagnostic · task_plan · task_node
+  approval_request · approval_decision
 
-ToolDefinition Format (OpenAI-compatible):
+  * agent_delta is transient — never persisted, never sent to other surfaces;
+    only the complete agent_response is durable.
 
-{
-  "type": "function",
-  "function": {
-    "name": "read_file",
-    "description": "Read file contents",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "path": {"type": "string", "description": "..."}
-      },
-      "required": ["path"]
-    }
-  }
-}
+DefaultEnabled(content_type) decides whether an event folds into assembled
+LLM context by default:
+  true  → user_prompt, agent_response, attachments
+  false → everything else (persisted regardless, but excluded from context
+          unless explicitly toggled on via the context surface)
+
+internal/session.Store persists every non-agent_delta event as one JSON file
+under sessions/<id>/events/, independent of its Enabled flag — persistence
+and context-inclusion are orthogonal. internal/prompting/digest assembles
+context by filtering on Enabled at build time.
 ```
 
 ---
 
-## 8. DATA FLOW: FROM USER PROMPT TO CONTEXT STORAGE
+## 6. Key Package Cross-Reference
 
 ```
-User Prompt
-   │
-   ▼
-Orchestrator (internal/runtime)
-   │
-   ├─1. Create user_prompt event
-   │   └─ {role: user, content: prompt, epoch: now}
-   │
-   ├─2. Persist event
-   │   └─ session store append → disk
-   │
-   ├─3. Build LLM request
-   │   └─ messages = session.EnabledEvents().ToLLMMessages()
-   │      └─ Includes TOOL_RESULT as "user" role ✓
-   │
-   ├─4. Stream from LLMBridge → Ollama
-   │   └─ ResponseChunk iterator
-   │
-   ├─5. Publish chunks to Event Coordination Layer
-   │   └─ Per-subscriber delivery guaranteed
-   │
-   ├─6. On TOOL_CALL chunk
-   │   ├─ Persist tool_call event
-   │   ├─ Evaluate policy
-   │   ├─ Execute tool (with approval if required)
-   │   ├─ Persist tool_result event
-   │   └─ Re-invoke LLMBridge with updated context
-   │      └─ Agentic loop continues until DONE
-   │
-   ├─7. On CONTENT chunk
-   │   ├─ Buffer content
-   │   └─ Deliver to OutputSurface (streamed)
-   │
-   └─8. On DONE chunk
-       └─ Persist agent_response event
-          ├─ user_prompt event
-          ├─ tool_call events (if any)
-          ├─ tool_result events (if any)
-          ├─ agent_response event
-          └─ Ready for next turn
-```
+cmd/agentx/                    — runtime entrypoint (boots server + chat surface)
 
----
+internal/app/                  — composition: wires Orchestrator, Bridge, transport
+internal/runtime/              — Orchestrator: classify/route, tool_cycle.go,
+                                  plan_cycle.go, decision.go, gate.go,
+                                  classifier_pipeline.go
+internal/runtime/decompose/    — LLMPlanner: DAG decomposition
+internal/runtime/scheduler/    — dependency-ordered DAG execution
+internal/cli/                  — command-line parsing (`agentx`, `agentx surface
+                                  launch <kind>`, `agentx session new-name`)
 
-## KEY FILES CROSS-REFERENCE
+internal/transport/http/       — Provider interface + Server: HTTP/SSE endpoints
+                                  external surfaces attach to
+internal/surfaces/              — registry.go (open-ended surface kinds:
+                                  files, config, context, context-history,
+                                  context-visualizer, working-memory); chat/
+                                  (output + input panels, bundled with the
+                                  server); approval/ (the shared decision
+                                  widget, a third panel chat/ swaps in);
+                                  output/, input/ (chat's two panels); client/
+                                  (shared Bubble Tea host every independently
+                                  launched surface attaches through — seed →
+                                  live-stream → resize → quit); context/,
+                                  contextviz/, workmemory/ (dedicated surface
+                                  implementations); files and config are
+                                  simpler surfaces wired directly in
+                                  internal/cli/surface_launch.go
 
-```
-┌──────────────────────────────────────────┐
-│  Runtime Entrypoint                      │
-│  cmd/agentx/                             │
-│  └─ main.go (bootstrap + CLI wiring)     │
-└──────────────────────────────────────────┘
+internal/tools/                — Descriptor, Policy (blacklist/whitelist/
+                                  approval), Executor, Proposer
+internal/llm/ollama/           — Ollama streaming client, model listing,
+                                  context-length lookup
+internal/prompting/            — prompt assembly, digest (context filtering),
+                                  classify, continuation (stated-intent
+                                  detection), planner (DAG prompt/schema)
 
-┌──────────────────────────────────────────┐
-│  Orchestration                           │
-│  internal/app/      (composition)        │
-│  internal/runtime/  (lifecycle)          │
-│  internal/cli/      (command parsing)    │
-└──────────────────────────────────────────┘
-
-┌──────────────────────────────────────────┐
-│  Surface Transport                       │
-│  internal/transport/http/                │
-│  ├─ SSE event stream handlers            │
-│  ├─ Surface registration endpoints       │
-│  └─ Submit endpoint (/submit)            │
-└──────────────────────────────────────────┘
-
-┌──────────────────────────────────────────┐
-│  Surface Implementations                 │
-│  internal/surfaces/                      │
-│  ├─ output/  (OutputSurface)             │
-│  ├─ input/   (InputSurface)              │
-│  └─ system/  (SystemSurface)             │
-└──────────────────────────────────────────┘
-
-┌──────────────────────────────────────────┐
-│  Tool Execution                          │
-│  internal/tools/                         │
-│  ├─ Registry + descriptor loader         │
-│  ├─ Policy evaluator (allow/confirm/deny)│
-│  ├─ Local executor (file ops)            │
-│  └─ Remote executor (extensible)         │
-└──────────────────────────────────────────┘
-
-┌──────────────────────────────────────────┐
-│  LLM Integration                         │
-│  internal/llm/ollama/                    │
-│  ├─ Ollama streaming client              │
-│  ├─ Model listing (/api/tags)            │
-│  └─ Context length lookup (/api/show)    │
-└──────────────────────────────────────────┘
-
-┌──────────────────────────────────────────┐
-│  Prompt Assembly                         │
-│  internal/prompting/                     │
-│  ├─ Prompt stage pipeline                │
-│  └─ Procedural prompt loading            │
-└──────────────────────────────────────────┘
-
-┌──────────────────────────────────────────┐
-│  Session and Event Persistence           │
-│  internal/session/                       │
-│  ├─ Session identity (id + name)         │
-│  ├─ Append-only JSON event writer        │
-│  └─ Replay and context rebuild           │
-└──────────────────────────────────────────┘
-
-┌──────────────────────────────────────────┐
-│  Processing State                        │
-│  internal/state/                         │
-│  ├─ Canonical processing_state model     │
-│  └─ Event coordination layer (pub-sub)   │
-└──────────────────────────────────────────┘
+internal/session/               — session identity, append-only JSON event
+                                  persistence, replay
+internal/state/                 — Event/ContentType model, Bus (pub-sub),
+                                  ProcessingState
+internal/config/                — agentx.toml loading, seeded prompt/policy
+                                  files under ~/.config/agentx/
 ```
