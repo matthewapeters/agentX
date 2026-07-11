@@ -82,7 +82,17 @@ func (w *toolContextEnableWorld) start(tool, reply string) error {
 		runtime.WithProposer(proposer),
 		runtime.WithToolRunner(runner),
 	)
-	return w.orc.Start()
+	if err := w.orc.Start(); err != nil {
+		return err
+	}
+	// The live bootstrap pins (pin_date, pin_git_status; session.BootstrapFacts)
+	// would otherwise refresh through this scenario's single canned stubRunner on
+	// every turn, folding "project listing: a.go, b.go" into working memory
+	// regardless of the source tool — corrupting the captured-context
+	// include/omit assertions this suite exists to isolate.
+	_ = w.orc.DeleteFact("pin_date")
+	_ = w.orc.DeleteFact("pin_git_status")
+	return nil
 }
 
 func (w *toolContextEnableWorld) runToolCycle(text string) error {

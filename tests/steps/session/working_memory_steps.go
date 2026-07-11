@@ -53,6 +53,7 @@ func registerWorkingMemorySteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the working memory is saved and reloaded$`, w.saveAndReload)
 	sc.Step(`^the working memory context message is built$`, w.buildMessage)
 	sc.Step(`^the working memory has a "([^"]*)" fact owned by "([^"]*)" and enabled$`, w.factOwnedEnabled)
+	sc.Step(`^the working memory has a pin-owned "([^"]*)" fact that is (live|static) and (enabled|disabled)$`, w.pinFactState)
 	sc.Step(`^the "([^"]*)" fact is still valued "([^"]*)" and disabled$`, w.factValuedDisabled)
 	sc.Step(`^the working memory has (\d+) facts$`, w.factCount)
 	sc.Step(`^the context message includes "([^"]*)"$`, w.messageIncludes)
@@ -121,6 +122,28 @@ func (w *wmWorld) factOwnedEnabled(key, owner string) error {
 	}
 	if !f.Enabled {
 		return fmt.Errorf("fact %q is not enabled", key)
+	}
+	return nil
+}
+
+func (w *wmWorld) pinFactState(key, liveWord, enabledWord string) error {
+	f, ok := w.wm.Get(key)
+	if !ok {
+		return fmt.Errorf("fact %q not present", key)
+	}
+	if f.Owner != session.OwnerPin {
+		return fmt.Errorf("fact %q owner = %q, want %q", key, f.Owner, session.OwnerPin)
+	}
+	if f.Source == nil {
+		return fmt.Errorf("fact %q has no tool source", key)
+	}
+	wantLive := liveWord == "live"
+	if f.Live != wantLive {
+		return fmt.Errorf("fact %q live = %v, want %v", key, f.Live, wantLive)
+	}
+	wantEnabled := enabledWord == "enabled"
+	if f.Enabled != wantEnabled {
+		return fmt.Errorf("fact %q enabled = %v, want %v", key, f.Enabled, wantEnabled)
 	}
 	return nil
 }

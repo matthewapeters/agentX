@@ -184,12 +184,56 @@ func BootstrapFacts() []Fact {
 	if repoRoot != "" {
 		facts = append(facts, userFact("repo_root", repoRoot))
 	}
+	facts = append(facts,
+		// date: live by default — the agent should always see the current date/time
+		// rather than whatever was true when the session was created (nits.md #14's
+		// "sensitive to deadlines" example).
+		pinFact("pin_date", snapshotCommand("date"),
+			&ToolSource{Tool: "date"}, true, true),
+		// tree .: disabled by default (a full project listing is not always wanted in
+		// every turn's context) but seeded as a real static snapshot — mirroring
+		// tools.DefaultRegistry()'s "tree" descriptor argv — so it is immediately
+		// useful the moment the user enables it, not empty until a live refresh.
+		pinFact("pin_tree", snapshotCommand("tree", "-L", "3",
+			"-I", "node_modules|.git|vendor|__pycache__|.venv|dist|build|.next|target", "--", "."),
+			&ToolSource{Tool: "tree", Args: map[string]string{"path": "."}}, false, false),
+		// git status: live by default — the agent should always see the current
+		// working-tree state.
+		pinFact("pin_git_status", snapshotCommand("git", "-C", ".", "status"),
+			&ToolSource{Tool: "git_status", Args: map[string]string{"path": "."}}, true, true),
+	)
 	return facts
 }
 
 // userFact builds an enabled, user-owned fact.
 func userFact(key, value string) Fact {
 	return Fact{Key: key, Value: value, Owner: OwnerUser, Enabled: true}
+}
+
+// pinFact builds a pin-owned working-memory fact for a bootstrap WM item backed by
+// a curated tool (tools.DefaultRegistry), mirroring what Orchestrator.PinToolEvent
+// produces for a user-initiated pin. value is a snapshot captured at seed time so
+// the fact is immediately useful even before a live refresh, or before a user
+// enables a disabled/static pin.
+func pinFact(key, value string, source *ToolSource, live, enabled bool) Fact {
+	return Fact{
+		Key: key, Value: value, Owner: OwnerPin, Enabled: enabled,
+		Source: source, Live: live, PinnedAt: time.Now(),
+	}
+}
+
+// snapshotCommand runs argv and returns its trimmed stdout, or "" if the command
+// is unavailable or fails — bootstrap facts degrade gracefully rather than
+// blocking session creation (same posture as gitToplevel below).
+func snapshotCommand(argv ...string) string {
+	if len(argv) == 0 {
+		return ""
+	}
+	out, err := exec.Command(argv[0], argv[1:]...).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // gitToplevel returns the git repository root containing dir, or "" when dir is
