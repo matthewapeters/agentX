@@ -81,7 +81,7 @@ This section is the panel-level summary only.
 |------------|------------------|
 | Collapsible entries (user/thinking/tool-call/tool-result/assistant/error/notice), one-line header + bounded scrollable body | `06_OUTPUT_WIDGET.md` §Anatomy, §Canonical emoji set |
 | Plan widget (nested Step/Task tree, live status icons) | `06_OUTPUT_WIDGET.md` §Plan widget |
-| Logo banner — pinned, content-based collapse to "AgentX", rainbow-wave animation while working | `06_OUTPUT_WIDGET.md` §Logo banner |
+| Logo banner — pinned, content-based collapse to a one-row "AgentX - \<activity\>" label (`internal/surfaces/banner`), rainbow-wave animation while working | `06_OUTPUT_WIDGET.md` §Logo banner |
 | Launch-info widget (attach commands for peer surfaces) | `06_OUTPUT_WIDGET.md` §Launch-info widget |
 | Scroll/select keys (`j/k` scroll, `PgUp/PgDn` select, `Ctrl+O` expand) | hint row, `chat.go:629`; detailed in `06_OUTPUT_WIDGET.md` §Behaviour |
 
