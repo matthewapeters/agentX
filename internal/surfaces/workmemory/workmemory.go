@@ -35,10 +35,15 @@ const pollInterval = 2 * time.Second
 // surface is a quick-reference list, not a primary reading surface.
 const factMaxBody = 12
 
-// prefixWidth is the fixed display width of a fact row's cursor+enabled-dot+space
-// prefix ("› ● " / "  ○ "); continuation rows get this many blank columns instead, so
-// wrapped/expanded value text hangs aligned under the first row.
-const prefixWidth = 4
+// prefixWidth is the fixed display width of a fact row's
+// cursor+enabled-dot+live-mark+space prefix ("› ●▶ " / "  ○   "); continuation
+// rows get this many blank columns instead, so wrapped/expanded value text hangs
+// aligned under the first row. The live/static mark lives here — not in the
+// truncatable value/owner text — so it is never silently clipped away on a narrow
+// terminal or a long value: it is the one signal that must always be visible,
+// since it is the only thing that says "will this be re-run before the next
+// turn," which enabled/disabled (the dot) does not.
+const prefixWidth = 5
 
 // headerRows and footerRows are the fixed, never-scrolled chrome around the fact
 // list's viewport: title + blank line above; blank line + action/editor line +
@@ -469,7 +474,7 @@ func (m Model) renderFact(f session.Fact, selected bool) []string {
 	if f.Enabled {
 		dot = "●"
 	}
-	prefix := cursor + dot + " "
+	prefix := cursor + dot + liveMark(f) + " "
 	owner := ownerSuffix(f)
 	bodyW := m.bodyWidth()
 
@@ -510,18 +515,36 @@ func (m Model) renderFact(f session.Fact, selected bool) []string {
 	return rows
 }
 
+// liveMark is the fixed-prefix glyph distinguishing a pin's live/static state
+// (PD-WM-AF-007/008): ▶ re-run before every turn, ⏸ frozen since PinnedAt. It is
+// orthogonal to the enabled dot — pausing a pin (⏸) is not the same as disabling
+// it (○): a paused-but-enabled pin still folds its (frozen) value into context,
+// it just stops re-running. A non-pin fact gets a blank column here so every
+// row's key/value still starts at the same column regardless of owner.
+func liveMark(f session.Fact) string {
+	if f.Owner != session.OwnerPin {
+		return " "
+	}
+	if f.Live {
+		return "▶"
+	}
+	return "⏸"
+}
+
 // ownerSuffix renders a fact's owner annotation: none for a plain user fact, "
-// (agent)" for an agent-maintained one, or the pin static/live state and age.
+// (agent)" for an agent-maintained one, or the pin's static/live state and age.
+// The live/static glyph itself lives in the row's fixed prefix (liveMark), not
+// here, so it is never lost to truncation — this text is best-effort detail.
 func ownerSuffix(f session.Fact) string {
 	switch f.Owner {
 	case session.OwnerAgent:
 		return " (agent)"
 	case session.OwnerPin:
-		state, mark := "static", "⏸"
+		state := "static"
 		if f.Live {
-			state, mark = "live", "▶"
+			state = "live"
 		}
-		return fmt.Sprintf(" (pin %s %s, %s)", mark, state, f.Age().Round(time.Second))
+		return fmt.Sprintf(" (%s, %s)", state, f.Age().Round(time.Second))
 	}
 	return ""
 }

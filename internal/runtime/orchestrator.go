@@ -753,9 +753,12 @@ func (o *Orchestrator) PinToolEvent(ordinal uint64, live bool) (string, error) {
 
 // pinFactKey names the working-memory fact a Pin creates: the tool id plus the
 // source ordinal, so the same tool pinned twice from different turns gets
-// distinct keys and the name stays traceable back to its source event.
+// distinct keys and the name stays traceable back to its source event. No
+// "pin_" prefix: Owner already records that this fact is pin-owned, so
+// repeating it in the key would stutter (every WM fact this shape produces
+// is, by construction, a pin).
 func pinFactKey(tool string, ordinal uint64) string {
-	return fmt.Sprintf("pin_%s_%d", tool, ordinal)
+	return fmt.Sprintf("%s_%d", tool, ordinal)
 }
 
 // stringMapFrom coerces a JSON-decoded args value (map[string]any, string

@@ -188,18 +188,18 @@ func BootstrapFacts() []Fact {
 		// date: live by default — the agent should always see the current date/time
 		// rather than whatever was true when the session was created (nits.md #14's
 		// "sensitive to deadlines" example).
-		pinFact("pin_date", snapshotCommand("date"),
+		pinFact("date", snapshotCommand("date"),
 			&ToolSource{Tool: "date"}, true, true),
 		// tree .: disabled by default (a full project listing is not always wanted in
 		// every turn's context) but seeded as a real static snapshot — mirroring
 		// tools.DefaultRegistry()'s "tree" descriptor argv — so it is immediately
 		// useful the moment the user enables it, not empty until a live refresh.
-		pinFact("pin_tree", snapshotCommand("tree", "-L", "3",
+		pinFact("tree", snapshotCommand("tree", "-L", "3",
 			"-I", "node_modules|.git|vendor|__pycache__|.venv|dist|build|.next|target", "--", "."),
 			&ToolSource{Tool: "tree", Args: map[string]string{"path": "."}}, false, false),
 		// git status: live by default — the agent should always see the current
 		// working-tree state.
-		pinFact("pin_git_status", snapshotCommand("git", "-C", ".", "status"),
+		pinFact("git_status", snapshotCommand("git", "-C", ".", "status"),
 			&ToolSource{Tool: "git_status", Args: map[string]string{"path": "."}}, true, true),
 	)
 	return facts

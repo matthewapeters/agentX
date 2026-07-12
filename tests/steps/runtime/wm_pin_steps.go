@@ -132,14 +132,14 @@ func (w *wmPinWorld) startWith(tool, reply, blacklistPath string) error {
 	if err := w.orc.Start(); err != nil {
 		return err
 	}
-	// The live bootstrap pins (pin_date, pin_git_status; session.BootstrapFacts)
-	// would otherwise call the shared counterRunner on every refreshLiveFacts pass
+	// The live bootstrap pins ("date", "git_status"; session.BootstrapFacts) would
+	// otherwise call the shared counterRunner on every refreshLiveFacts pass
 	// before the scenario's own tool call, throwing off the exact "run N" counts
 	// these scenarios assert. They exercise a different tool entirely (date/git
 	// status, not counterRunner's tool), so dropping them here isolates the
 	// counting semantics this suite is actually testing.
-	_ = w.orc.DeleteFact("pin_date")
-	_ = w.orc.DeleteFact("pin_git_status")
+	_ = w.orc.DeleteFact("date")
+	_ = w.orc.DeleteFact("git_status")
 	return nil
 }
 

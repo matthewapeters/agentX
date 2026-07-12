@@ -21,8 +21,8 @@ Feature: Working-memory editor surface
       | size  | big   | false   |
     Then the working memory view shows "color = blue"
     And the working memory view shows "size = big"
-    And the working memory view shows "● color = blue"
-    And the working memory view shows "○ size = big"
+    And the working memory view shows "●  color = blue"
+    And the working memory view shows "○  size = big"
 
   # use-case: PD-WM-AF-002  (TC-M2-wm-006)
   Scenario: Navigates the selection cursor with PgUp/PgDn
