@@ -427,6 +427,15 @@ not a real-time high frame rate) so a long-running agent task doesn't impose
 continuous high-frequency rendering. It is a local rendering effect only —
 like the existing spinner, it is not a session event and is not persisted.
 
+**Foreground vs. background.** "Each cell renders" means different things
+for the two grids, because they're made of different glyphs. The full grid's
+`█` block characters fill their whole cell, so coloring the *foreground* is
+enough — the glyph itself is the visible swatch. The collapsed row's glyphs
+are ordinary letters and spaces, mostly empty space within their cell, so it
+instead colors the cell *background* and forces the glyph to black — the
+same "solid colored strip" result, reached the way that's actually visible
+for text rather than block art.
+
 ```gherkin
 GIVEN a freshly booted chat surface with the full logo banner set
 WHEN the surface renders
