@@ -24,6 +24,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"agentx/internal/state"
+	"agentx/internal/surfaces/scrollutil"
 )
 
 // defaultMaxBody is the fallback body-row cap before a widget scrolls in place.
@@ -602,7 +603,7 @@ func (m *Model) moveSelection(delta int) {
 	if len(m.widgets) == 0 {
 		return
 	}
-	m.selected = clampInt(m.selected+delta, 0, len(m.widgets)-1)
+	m.selected = scrollutil.ClampInt(m.selected+delta, 0, len(m.widgets)-1)
 	m.refresh(false)
 	m.scrollSelectedIntoView()
 }
@@ -649,7 +650,7 @@ func (m *Model) View() string {
 	offset := m.vp.YOffset()
 	for i := range lines {
 		if total > track {
-			lines[i] += scrollbarCell(i, offset, total, track)
+			lines[i] += scrollutil.ScrollbarCell(i, offset, total, track)
 		} else {
 			lines[i] += " "
 		}
@@ -765,7 +766,7 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 	}
 	innerW := m.contentWidth() - 2 - indentW
 	if innerW < 1 {
-		return []string{truncateWord(w.title, m.contentWidth())}
+		return []string{scrollutil.TruncateWord(w.title, m.contentWidth())}
 	}
 
 	// Style once (markdown → SGR) before wrapping, so the ANSI-aware wrap/pad math
@@ -787,7 +788,7 @@ func (m *Model) renderWidget(w *widget, selected bool) []string {
 	switch {
 	case w.collapsed:
 		if w.previewWhenCollapsed && w.body != "" {
-			rows = []string{padTo(collapsedPreview(body, innerW), innerW)}
+			rows = []string{scrollutil.PadTo(collapsedPreview(body, innerW), innerW)}
 		}
 	case w.body != "":
 		rows = m.renderBody(w, body, innerW)
@@ -821,7 +822,7 @@ func (m *Model) flatLine(w *widget, selected bool) string {
 	if b := oneLine(w.body); b != "" {
 		line += " · " + b
 	}
-	line = truncateWord(line, m.contentWidth())
+	line = scrollutil.TruncateWord(line, m.contentWidth())
 	code := m.inactive
 	if selected && m.focused {
 		code = m.active
@@ -837,45 +838,45 @@ func (m *Model) flatLine(w *widget, selected bool) string {
 // styling input.go's dimHint uses for non-content affordances. Used for the
 // approval-decision audit line, which should never draw attention.
 func grayLine(w *widget, width int) string {
-	return "\x1b[90m" + truncateWord(oneLine(w.body), width) + "\x1b[0m"
+	return "\x1b[90m" + scrollutil.TruncateWord(oneLine(w.body), width) + "\x1b[0m"
 }
 
 // collapsedPreview returns the first wrapped body line, marked with an ellipsis when
 // more content follows.
 func collapsedPreview(body string, innerW int) string {
-	lines := wrapLines(body, innerW)
+	lines := scrollutil.WrapLines(body, innerW)
 	if len(lines) == 0 {
 		return ""
 	}
 	if len(lines) == 1 {
 		return lines[0]
 	}
-	return truncateWord(lines[0], max(innerW-1, 0)) + "…"
+	return scrollutil.TruncateWord(lines[0], max(innerW-1, 0)) + "…"
 }
 
 // renderBody wraps and windows a widget body, adding a proportional scrollbar
 // column when the body exceeds the cap.
 func (m *Model) renderBody(w *widget, body string, innerW int) []string {
-	lines := wrapLines(body, innerW)
+	lines := scrollutil.WrapLines(body, innerW)
 	if len(lines) <= m.maxBody {
 		w.offset = 0
 		out := make([]string, len(lines))
 		for i, l := range lines {
-			out[i] = padTo(l, innerW)
+			out[i] = scrollutil.PadTo(l, innerW)
 		}
 		return out
 	}
 
 	// Over the cap: reserve a scrollbar column and window the body.
 	bodyW := innerW - 1
-	lines = wrapLines(body, bodyW)
+	lines = scrollutil.WrapLines(body, bodyW)
 	total := len(lines)
 	maxOffset := total - m.maxBody
 	if w.followTail {
 		// Streaming / bottom-pinned: track the growing tail so new text stays visible.
 		w.offset = maxOffset
 	} else {
-		w.offset = clampInt(w.offset, 0, maxOffset)
+		w.offset = scrollutil.ClampInt(w.offset, 0, maxOffset)
 		// Scrolled to the bottom edge: re-attach so further growth keeps following.
 		w.followTail = w.offset >= maxOffset
 	}
@@ -883,27 +884,9 @@ func (m *Model) renderBody(w *widget, body string, innerW int) []string {
 
 	out := make([]string, m.maxBody)
 	for i, l := range window {
-		out[i] = padTo(l, bodyW) + scrollbarCell(i, w.offset, total, m.maxBody)
+		out[i] = scrollutil.PadTo(l, bodyW) + scrollutil.ScrollbarCell(i, w.offset, total, m.maxBody)
 	}
 	return out
-}
-
-// scrollbarCell returns the scrollbar glyph for visible row i (thumb vs track),
-// sized proportionally to the visible fraction of the content.
-func scrollbarCell(i, offset, total, track int) string {
-	thumb := track * track / total
-	if thumb < 1 {
-		thumb = 1
-	}
-	span := total - track // max offset
-	top := 0
-	if span > 0 {
-		top = (track - thumb) * offset / span
-	}
-	if i >= top && i < top+thumb {
-		return "█"
-	}
-	return "░"
 }
 
 // boxify frames content rows (each already padded to innerW) in a box border;
@@ -950,7 +933,7 @@ func (m *Model) topBorder(title string, innerW int, tl, tr, h string, paint func
 	if title == "" || innerW-lead <= 0 {
 		return paint(tl + strings.Repeat(h, innerW) + tr)
 	}
-	t := truncateWord(title, innerW-lead)
+	t := scrollutil.TruncateWord(title, innerW-lead)
 	fill := innerW - lead - ansi.StringWidth(t)
 	if fill < 0 {
 		fill = 0
@@ -966,22 +949,6 @@ func oneLine(s string) string {
 		return s[:i]
 	}
 	return s
-}
-
-// truncateWord fits s to w display columns, breaking at a word boundary and
-// marking truncation with an ellipsis.
-func truncateWord(s string, w int) string {
-	if w <= 0 {
-		return ""
-	}
-	if ansi.StringWidth(s) <= w {
-		return s
-	}
-	first := oneLine(ansi.Wrap(s, w, " -"))
-	if ansi.StringWidth(first) <= w {
-		return first
-	}
-	return ansi.Truncate(first, w, "…")
 }
 
 // Tier-1 markdown emphasis rendered as terminal SGR — enough to make LLM markdown
@@ -1336,40 +1303,6 @@ func styleInline(s string) string {
 		i++
 	}
 	return b.String()
-}
-
-// wrapLines word-wraps s to w columns, preserving existing newlines.
-func wrapLines(s string, w int) []string {
-	if w <= 0 {
-		return strings.Split(s, "\n")
-	}
-	var out []string
-	for _, line := range strings.Split(s, "\n") {
-		out = append(out, strings.Split(ansi.Wrap(line, w, " -"), "\n")...)
-	}
-	return out
-}
-
-// padTo right-pads (or clips) s to exactly w display columns.
-func padTo(s string, w int) string {
-	width := ansi.StringWidth(s)
-	if width == w {
-		return s
-	}
-	if width > w {
-		return ansi.Truncate(s, w, "")
-	}
-	return s + strings.Repeat(" ", w-width)
-}
-
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }
 
 func eventText(ev state.Event) string {

@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"agentx/internal/state"
+	"agentx/internal/surfaces/scrollutil"
 )
 
 // Plan widget (ADR 0009 §9c): one live, mutable widget per plan root. It appears the
@@ -323,10 +324,10 @@ func (m *Model) renderPlanWidget(w *widget, selected bool) []string {
 	}
 	outerW := m.contentWidth() - 2
 	if outerW < 1 {
-		return []string{truncateWord(w.title, m.contentWidth())}
+		return []string{scrollutil.TruncateWord(w.title, m.contentWidth())}
 	}
 	if w.collapsed {
-		row := padTo(truncateWord(nodeTitle(root, ps.lastEpoch, ps), outerW), outerW)
+		row := scrollutil.PadTo(scrollutil.TruncateWord(nodeTitle(root, ps.lastEpoch, ps), outerW), outerW)
 		return m.boxifyStyled(w.title, []string{row}, outerW, nodeColor(root), selected)
 	}
 	live := ps.computeLiveness()
@@ -348,11 +349,11 @@ func (m *Model) renderPlanWidget(w *widget, selected bool) []string {
 	// The outer title is the plan's summary (progress counts), not the root's own
 	// status line — so, for parity with every other node (whose own status is always
 	// visible as its own box's title), the root's line is the first content row here.
-	rows := []string{padTo(truncateWord(nodeTitle(root, ps.lastEpoch, ps), outerW), outerW)}
+	rows := []string{scrollutil.PadTo(scrollutil.TruncateWord(nodeTitle(root, ps.lastEpoch, ps), outerW), outerW)}
 	rows = append(rows, m.drawNodeContent(root, ps, outerW, live)...)
 	if ps.ended && ps.errText != "" {
-		for _, l := range wrapLines("⚠ "+ps.errText, outerW) {
-			rows = append(rows, padTo(l, outerW))
+		for _, l := range scrollutil.WrapLines("⚠ "+ps.errText, outerW) {
+			rows = append(rows, scrollutil.PadTo(l, outerW))
 		}
 	}
 	return m.boxifyStyled(w.title, rows, outerW, nodeColor(root), selected)
@@ -367,7 +368,7 @@ func (m *Model) drawNode(id string, ps *planState, width int, live map[string]bo
 		return nil
 	}
 	if width < nodeBoxFloor {
-		return []string{padTo(truncateWord(glyph(n.status)+" "+n.goal, width), width)}
+		return []string{scrollutil.PadTo(scrollutil.TruncateWord(glyph(n.status)+" "+n.goal, width), width)}
 	}
 	innerW := width - 2
 	rows := m.drawNodeContent(n, ps, innerW, live)
@@ -387,7 +388,7 @@ func (m *Model) drawNodeContent(n *planNode, ps *planState, width int, live map[
 		if cmd == "" {
 			cmd = "(no command yet)"
 		}
-		rows = append(rows, padTo(sgrCode+truncateWord(cmd, width)+sgrReset, width))
+		rows = append(rows, scrollutil.PadTo(sgrCode+scrollutil.TruncateWord(cmd, width)+sgrReset, width))
 		if expanded && n.resultText != "" {
 			rows = append(rows, m.drawResultBox(n, width)...)
 		}
@@ -402,11 +403,11 @@ func (m *Model) drawNodeContent(n *planNode, ps *planState, width int, live map[
 			childW := width - nestMargin
 			var box []string
 			if childW < nodeBoxFloor {
-				box = []string{padTo(truncateWord(glyph(child.status)+" "+child.goal, width), width)}
+				box = []string{scrollutil.PadTo(scrollutil.TruncateWord(glyph(child.status)+" "+child.goal, width), width)}
 			} else {
 				box = m.drawNode(cid, ps, childW, live)
 				for i, l := range box {
-					box[i] = padTo(strings.Repeat(" ", nestMargin)+l, width)
+					box[i] = scrollutil.PadTo(strings.Repeat(" ", nestMargin)+l, width)
 				}
 			}
 			rows = append(rows, box...)
@@ -420,20 +421,20 @@ func (m *Model) drawNodeContent(n *planNode, ps *planState, width int, live map[
 // recursive rendering instead of a separate widget (ADR 0009 §9c redesign).
 func (m *Model) drawResultBox(n *planNode, width int) []string {
 	if width < nodeBoxFloor {
-		return []string{padTo(truncateWord("📋 "+oneLine(n.resultText), width), width)}
+		return []string{scrollutil.PadTo(scrollutil.TruncateWord("📋 "+oneLine(n.resultText), width), width)}
 	}
 	innerW := width - 2
-	lines := wrapLines(n.resultText, innerW)
+	lines := scrollutil.WrapLines(n.resultText, innerW)
 	truncated := len(lines) > maxResultLines
 	if truncated {
 		lines = lines[:maxResultLines]
 	}
 	rows := make([]string, len(lines))
 	for i, l := range lines {
-		rows[i] = padTo(l, innerW)
+		rows[i] = scrollutil.PadTo(l, innerW)
 	}
 	if truncated {
-		rows = append(rows, padTo(truncateWord("… see plans/<root>.json for the full result", innerW), innerW))
+		rows = append(rows, scrollutil.PadTo(scrollutil.TruncateWord("… see plans/<root>.json for the full result", innerW), innerW))
 	}
 	title := "📋 result"
 	if n.resultOutcome != "" {
@@ -441,7 +442,7 @@ func (m *Model) drawResultBox(n *planNode, width int) []string {
 	}
 	box := m.boxifyStyled(title, rows, innerW, "", false)
 	for i, l := range box {
-		box[i] = padTo(l, width)
+		box[i] = scrollutil.PadTo(l, width)
 	}
 	return box
 }

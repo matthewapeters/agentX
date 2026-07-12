@@ -2047,8 +2047,7 @@ enabled facts fold in). It is read-write but single-purpose: no prompt input.
 
 #### Scroll & Collapse
 
-**🚧 Planned** (see the "Improve WM layouts" implementation plan). The fact list
-is hosted in a scrollable viewport (`bubbles/v2/viewport`, the same primitive
+The fact list is hosted in a scrollable viewport (`bubbles/v2/viewport`, the same primitive
 `PD-01`'s TUI output panel uses — `docs/ux/06_OUTPUT_WIDGET.md`), with the
 rightmost column reserved as a transcript-scrollbar gutter shown whenever facts
 overflow the panel height. This surface fully mirrors the output panel's
@@ -2112,7 +2111,7 @@ context surface.
 | Affordance | ID | Status |
 |-----------|-----|--------|
 | List facts with enabled/disabled markers | PD-WM-AF-001 | ✅ |
-| Navigate the selection cursor (`PgUp`/`PgDn`, one fact per press) | PD-WM-AF-002 | 🚧 (was `↑/↓`/`j`/`k` — see PD-WM-AF-010) |
+| Navigate the selection cursor (`PgUp`/`PgDn`, one fact per press) | PD-WM-AF-002 | ✅ (was `↑/↓`/`j`/`k` — see PD-WM-AF-010) |
 | Toggle enable/disable (space) | PD-WM-AF-003 | ✅ |
 | Delete the selected fact (d) — also the unpin affordance for a pinned fact | PD-WM-AF-004 | ✅ |
 | Add a fact (a → `key=value`, enter) | PD-WM-AF-005 | ✅ |
@@ -2120,10 +2119,10 @@ context surface.
 | A pinned fact's row shows its static/live state and age | PD-WM-AF-007 | ✅ |
 | Toggle a pinned fact live/static (`l`), refreshing once immediately on live | PD-WM-AF-008 | ✅ |
 | Setting a fact live is refused when its source tool is not currently policy-`Allow` | PD-WM-AF-009 | ✅ |
-| Inner-scroll the selected fact's value (`↑/↓`, `j`/`k`) | PD-WM-AF-010 | 🚧 |
-| Expand/collapse the selected fact's multi-line value (Enter) | PD-WM-AF-011 | 🚧 |
-| Outer viewport auto-scrolls to keep the selection visible | PD-WM-AF-012 | 🚧 |
-| Transcript-style scrollbar in the reserved right gutter when facts overflow | PD-WM-AF-013 | 🚧 |
+| Inner-scroll the selected fact's value (`↑/↓`, `j`/`k`) | PD-WM-AF-010 | ✅ |
+| Expand/collapse the selected fact's multi-line value (Enter) | PD-WM-AF-011 | ✅ |
+| Outer viewport auto-scrolls to keep the selection visible | PD-WM-AF-012 | ✅ |
+| Transcript-style scrollbar in the reserved right gutter when facts overflow | PD-WM-AF-013 | ✅ |
 
 ### Behavior contracts (GIVEN/WHEN/THEN)
 
