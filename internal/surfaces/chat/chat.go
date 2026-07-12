@@ -11,6 +11,7 @@ import (
 
 	"agentx/internal/state"
 	"agentx/internal/surfaces/approval"
+	"agentx/internal/surfaces/banner"
 	"agentx/internal/surfaces/input"
 	"agentx/internal/surfaces/output"
 )
@@ -85,6 +86,7 @@ type Bridge struct {
 type Model struct {
 	width        int
 	height       int
+	banner       *banner.Model
 	output       *output.Model
 	input        *input.Model
 	// approval is a third panel inserted between output and input while
@@ -111,6 +113,7 @@ func New() Model {
 	out.SetTheme(defaultActive, defaultInactive)
 	out.SetFocus(false)
 	return Model{
+		banner:    banner.New(),
 		output:    out,
 		input:     input.New(),
 		approval:  approval.New(),
@@ -170,10 +173,6 @@ func (m Model) SetMaxInputLines(n int) { m.input.SetMaxHeight(n) }
 // else for the lightweight per-line scanner (ADR 0007).
 func (m Model) SetMarkdownRenderer(mode string) { m.output.SetMarkdownRenderer(mode) }
 
-// SetBanner sets the output panel's bootstrap logo banner (pinned above all
-// widgets); empty clears it.
-func (m Model) SetBanner(s string) { m.output.SetBanner(s) }
-
 // SetLaunchInfo installs the collapsed launch-info widget (attach commands for peer
 // surfaces) as the first output widget. names label the surfaces; commands are the
 // matching attach commands, reachable only via digit-copy; session names this
@@ -213,6 +212,9 @@ func (m Model) Output() *output.Model { return m.output }
 // Input returns the input panel.
 func (m Model) Input() *input.Model { return m.input }
 
+// Banner returns the pinned logo banner.
+func (m Model) Banner() *banner.Model { return m.banner }
+
 // Update implements tea.Model: it handles resize and the quit key, and routes
 // other keys to the focused panel (panel key handling lands in CHT-B3).
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -225,14 +227,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		prev := m.proc.State
 		m.proc = state.ProcessingState(msg)
 		m.input.SetStreaming(m.proc.State == state.StateWorking)
+		m.banner.SetLabel(bannerLabel(m.proc))
 		cmds := []tea.Cmd{m.listenProcessing()}
-		// Start the spinner when work begins; the TickMsg loop sustains it.
+		// Start the spinner and the banner's rainbow-wave animation when work
+		// begins; each sustains itself via its own TickMsg loop.
 		if m.proc.State == state.StateWorking && prev != state.StateWorking {
 			cmds = append(cmds, m.spinner.Tick)
+			if c := m.banner.SetAnimating(true); c != nil {
+				cmds = append(cmds, c)
+			}
 		}
-		// Cancel a pending chord once work ends.
+		// Cancel a pending chord and revert the banner to its static coloring
+		// once work ends.
 		if m.proc.State != state.StateWorking {
 			m.chordPending = false
+			m.banner.SetAnimating(false)
 		}
 		// The approval widget's height differs from the free-text input's; resize
 		// the input slot whenever a decision starts or stops being awaited.
@@ -260,16 +269,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+	case banner.TickMsg:
+		return m, m.banner.Tick(msg)
 	case EventMsg:
 		ev := state.Event(msg)
 		if ev.ContentType == state.ContentApprovalRequest {
 			if p, ok := ev.Payload.(map[string]any); ok {
 				prompt, _ := p["prompt"].(string)
 				m.approval.Set(prompt, state.DecodeApprovalOptions(p["options"]))
-				m.relayout()
 			}
 		}
 		cmd := m.output.Apply(ev)
+		// New content may cross the banner's collapse threshold, so re-derive
+		// layout (also covers the approval-request resize above).
+		m.relayout()
 		return m, tea.Batch(cmd, m.listenEvents())
 	case connTickMsg:
 		if m.bridge != nil && m.bridge.Connected != nil {
@@ -495,7 +508,12 @@ func (m Model) listenProcessing() tea.Cmd {
 // While awaiting an interactive decision, the approval widget is inserted as a
 // THIRD region between output and input — input stays visible (inert) rather
 // than being swapped out, so there is never a frame where neither the output
-// nor a bottom panel is rendered.
+// nor a bottom panel is rendered. The pinned logo banner is a FOURTH,
+// borderless region above the output panel (docs/ux/06_OUTPUT_WIDGET.md "Logo
+// banner") — carved out of the same height budget, never part of the output
+// viewport's scrollable content. relayout also re-checks the banner's
+// content-based collapse trigger on every call, since both a resize and new
+// output content can cross it.
 func (m *Model) relayout() {
 	innerW := m.width - 2
 	if innerW < 0 {
@@ -520,7 +538,18 @@ func (m *Model) relayout() {
 	if awaiting {
 		chrome += 2
 	}
-	outputHeight := m.height - chrome - inputH - approvalH
+
+	m.banner.SetWidth(innerW)
+	// The collapse trigger is measured against the output height available
+	// under the FULL-size banner, a fixed budget, so evaluating it doesn't
+	// move the goalposts once the banner has already collapsed.
+	budget := m.height - chrome - inputH - approvalH - m.banner.FullHeight()
+	if budget < 0 {
+		budget = 0
+	}
+	m.banner.MaybeCollapse(m.output.TotalContentLines(), budget)
+
+	outputHeight := m.height - chrome - inputH - approvalH - m.banner.Height()
 	if outputHeight < 0 {
 		outputHeight = 0
 	}
@@ -531,13 +560,17 @@ func (m *Model) relayout() {
 	m.input.SetSize(innerW, inputH)
 }
 
-// View implements tea.Model: a focus-bordered output panel, a status bar
-// (processing-state indicator), a context-sensitive hint row, an attention-
-// bordered approval panel (only while a decision is awaited), and a
-// focus-bordered input panel — input is always rendered, even while an
-// approval is pending (inert, since the approval widget captures the keys).
+// View implements tea.Model: the pinned logo banner, a focus-bordered output
+// panel, a status bar (processing-state indicator), a context-sensitive hint
+// row, an attention-bordered approval panel (only while a decision is
+// awaited), and a focus-bordered input panel — input is always rendered, even
+// while an approval is pending (inert, since the approval widget captures the
+// keys).
 func (m Model) View() tea.View {
 	rows := make([]string, 0, m.height)
+	if bv := m.banner.View(); bv != "" {
+		rows = append(rows, strings.Split(bv, "\n")...)
+	}
 	rows = append(rows, m.frame(m.output.View(), m.focus == focusOutput, false, "")...)
 	rows = append(rows, statusBar(m.proc, m.spinner.View(), m.width))
 	rows = append(rows, m.hintStrip())
@@ -657,6 +690,33 @@ func padLine(s string, width int) string {
 		return string(r[:width])
 	}
 	return s + strings.Repeat(" ", width-len(r))
+}
+
+// bannerLabel maps the current processing state to the text the pinned
+// banner's collapsed row shows after "AgentX - " (docs/ux/06_OUTPUT_WIDGET.md
+// "Logo banner"). Awaiting an interactive decision takes priority over phase
+// (the phase the run paused in isn't what the user needs to know right now);
+// within StateWorking, phase distinguishes what kind of work is happening.
+func bannerLabel(ps state.ProcessingState) string {
+	switch ps.State {
+	case state.StateWorking:
+		switch ps.Phase {
+		case state.PhaseThinking, state.PhaseClassify:
+			return "Thinking"
+		case state.PhaseTool:
+			return "Working"
+		case state.PhaseRespond:
+			return "Responding"
+		case state.PhasePlanning:
+			return "Planning"
+		default:
+			return "Working"
+		}
+	case state.StateAwaitingInput:
+		return "Needs Input"
+	default:
+		return "Your Local Agent"
+	}
 }
 
 // statusBar renders the processing-state indicator as a single full-width row

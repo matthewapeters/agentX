@@ -13,11 +13,25 @@ CMD_DIR  := ./cmd/agentx
 BIN_DIR  := bin
 BIN      := $(BIN_DIR)/agentx
 
-# Logo asset: authored source vs. the embedded copy under the command tree. The
-# build refreshes the copy whenever the source is newer so an edited logo is
-# re-embedded automatically (docs/implementation/09_makefile_and_quality_gate_contract.md).
-LOGO_SRC := logo/agentx.logo
-LOGO_DST := cmd/agentx/assets/agentx.logo
+# Logo asset: authored source (ANSI-colored text) vs. its build-time
+# conversion into Go source. cmd/logogen parses the ANSI escapes into a
+# structured (rune, xterm-256 color index) cell grid and generates LOGO_DST,
+# so internal/surfaces/banner never parses escape sequences at runtime and its
+# color-cycle animation is agnostic to the raw ANSI content — see
+# logo/README.md for the full pipeline and rationale. The banner's collapsed
+# row ("AgentX - <activity>", docs/ux/06_OUTPUT_WIDGET.md "Logo banner") is
+# NOT a generated asset — its text varies with what the agent is doing, so
+# internal/surfaces/banner synthesizes it at runtime instead.
+#
+# LOGOGEN_BIN must be built before LOGO_DST can be generated, and LOGO_DST
+# must exist before the rest of the application can be compiled (it defines
+# LogoGrid, which internal/surfaces/banner references) — the codegen tool is
+# therefore always built ahead of the application binary; see the rules below
+# and their placement before the `build` recipe runs.
+LOGO_SRC    := logo/agentx.logo
+LOGO_DST    := internal/surfaces/banner/logo_generated.go
+LOGOGEN_SRC := ./cmd/logogen
+LOGOGEN_BIN := $(BIN_DIR)/logogen
 
 # Default-config seed: baseline files installed into the user's config dir. The
 # packaging step named as "future work" in config/seed/README.md — copies each
@@ -90,11 +104,20 @@ build: $(LOGO_DST)
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) $(CMD_DIR)
 	@echo "agentx built at $(BIN)"
 
-# Refresh the embedded logo copy when the authored source changes. Make's
-# timestamp comparison drives "is it changed"; cmp avoids a no-op rewrite.
-$(LOGO_DST): $(LOGO_SRC)
+# Build the logo codegen tool. A plain file-target (not .PHONY) so Make only
+# rebuilds it when its sources change, same as any other compiled artifact.
+$(LOGOGEN_BIN): $(wildcard $(LOGOGEN_SRC)/*.go)
 	@mkdir -p $(dir $@)
-	@if ! cmp -s $< $@; then echo "Logo changed; updating $@"; cp $< $@; else touch $@; fi
+	$(GO) build -o $@ $(LOGOGEN_SRC)
+
+# Regenerate the logo's Go source when its authored ANSI source changes (or
+# the generator itself changed). Rendered to a .tmp file first and swapped in
+# only on a content diff, so an unchanged banner doesn't dirty the tree or
+# bust downstream build caching.
+$(LOGO_DST): $(LOGO_SRC) $(LOGOGEN_BIN)
+	@mkdir -p $(dir $@)
+	@$(LOGOGEN_BIN) -in $(LOGO_SRC) -out $@.tmp -pkg banner -var LogoGrid
+	@if ! cmp -s $@.tmp $@; then echo "Logo changed; regenerating $@"; mv $@.tmp $@; else rm -f $@.tmp; touch $@; fi
 
 clean:
 	@echo "Cleaning artifacts..."

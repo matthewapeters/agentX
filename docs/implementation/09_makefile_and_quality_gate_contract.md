@@ -37,13 +37,23 @@ Implementation note:
 
 ### Logo asset sync
 
-The application logo is authored in `logo/agentx.logo` (ANSI-colored text). The
-build embeds it into the binary from a copy under the command tree at
-`cmd/agentx/assets/agentx.logo`. The `build` target depends on that copy and
-refreshes it from `logo/agentx.logo` whenever the source is newer (Make's
-prerequisite/timestamp comparison), so an edited logo is re-embedded on the next
-build with no manual step. The embedded copy is committed so the build does not
-require the `logo/` source to be present.
+The application logo's full-size (pinned) form is authored in
+`logo/agentx.logo` (ANSI-colored text; see `logo/README.md`). The build
+converts it into Go source — `cmd/logogen` parses the ANSI escapes into a
+structured (rune, xterm-256 color index) cell grid and generates
+`internal/surfaces/banner/logo_generated.go`, which
+`internal/surfaces/banner/banner.go` renders and animates at runtime
+(pinning, content-based sticky collapse, rainbow-wave animation — see
+`docs/ux/06_OUTPUT_WIDGET.md` "Logo banner"). The `build` target depends on
+the generated file, which in turn depends on both `logo/agentx.logo` and
+`cmd/logogen`'s own sources (Make's prerequisite/timestamp comparison), so
+`cmd/logogen` is built and an edited logo is reconverted on the next build
+with no manual step — before the rest of the application compiles, since it
+references the generated grid. Both `logo/agentx.logo` and the generated file
+are committed so the build does not require the `logo/` source to be present.
+The banner's collapsed row (`AgentX - <activity>`) is not a generated asset —
+its text varies with what the agent is doing, so it is synthesized at
+runtime instead of at build time.
 
 ## Dependency Hygiene Contract
 

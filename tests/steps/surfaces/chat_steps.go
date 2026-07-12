@@ -7,9 +7,11 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/cucumber/godog"
 
 	"agentx/internal/state"
+	"agentx/internal/surfaces/banner"
 	"agentx/internal/surfaces/chat"
 )
 
@@ -48,6 +50,7 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a new chat surface sized (\d+) by (\d+)$`, w.newSurfaceSized)
 	sc.Step(`^the user types "([^"]*)" and submits$`, w.typesAndSubmits)
 	sc.Step(`^the chat output contains "([^"]*)"$`, w.chatOutputContains)
+	sc.Step(`^the chat output does not contain "([^"]*)"$`, w.chatOutputDoesNotContain)
 	sc.Step(`^the processing state becomes working in phase "([^"]*)"$`, w.processingWorking)
 	sc.Step(`^the chat status shows "([^"]*)"$`, w.statusShows)
 	sc.Step(`^a spinner tick advances the indicator$`, w.spinnerTickAdvances)
@@ -67,6 +70,12 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the approval decision is "([^"]*)"$`, w.approvalDecisionIs)
 	sc.Step(`^the chat input value is "([^"]*)"$`, w.chatInputValueIs)
 	sc.Step(`^the chat view shows the flash border color$`, w.viewHasFlashColor)
+	sc.Step(`^the banner region is (\d+) rows$`, w.bannerRows)
+	sc.Step(`^(\d+) numbered user events are applied to the chat surface$`, w.applyNumberedUserEvents)
+	sc.Step(`^the rendered view contains "([^"]*)"$`, w.viewContains)
+	sc.Step(`^the processing state becomes idle$`, w.processingIdle)
+	sc.Step(`^a banner tick changes the rendered banner$`, w.bannerTickChanges)
+	sc.Step(`^a banner tick does not change the rendered banner$`, w.bannerTickUnchanged)
 }
 
 func (w *chatWorld) chatInputValueIs(want string) error {
@@ -252,6 +261,13 @@ func (w *chatWorld) chatOutputContains(want string) error {
 	return nil
 }
 
+func (w *chatWorld) chatOutputDoesNotContain(unwanted string) error {
+	if strings.Contains(w.model.Output().View(), unwanted) {
+		return fmt.Errorf("chat output unexpectedly contains %q", unwanted)
+	}
+	return nil
+}
+
 func (w *chatWorld) newSurface() error {
 	w.model = chat.New()
 	w.cmd = nil
@@ -280,6 +296,62 @@ func (w *chatWorld) viewRows(want int) error {
 func (w *chatWorld) outputRows(want int) error {
 	if got := w.model.Output().Height(); got != want {
 		return fmt.Errorf("output region is %d rows, want %d", got, want)
+	}
+	return nil
+}
+
+func (w *chatWorld) bannerRows(want int) error {
+	if got := w.model.Banner().Height(); got != want {
+		return fmt.Errorf("banner region is %d rows, want %d", got, want)
+	}
+	return nil
+}
+
+func (w *chatWorld) applyNumberedUserEvents(n int) error {
+	for i := 1; i <= n; i++ {
+		w.update(chat.EventMsg{
+			ContentType: state.ContentUserPrompt,
+			Payload:     map[string]any{"text": fmt.Sprintf("msg-%02d", i)},
+		})
+	}
+	return nil
+}
+
+// viewContains checks the plain-text (ANSI-stripped) rendered view: the
+// banner colors every glyph individually (each letter carries its own escape
+// code), so a literal byte-contiguous substring check would never match
+// multi-character banner text like "AgentX".
+func (w *chatWorld) viewContains(want string) error {
+	if !strings.Contains(ansi.Strip(w.model.View().Content), want) {
+		return fmt.Errorf("rendered view does not contain %q", want)
+	}
+	return nil
+}
+
+func (w *chatWorld) processingIdle() error {
+	w.update(chat.ProcessingStateMsg{State: state.StateIdle})
+	return nil
+}
+
+// bannerTickChanges/bannerTickUnchanged assert whether the banner's own
+// TickMsg loop (started/stopped by StateWorking transitions, see
+// internal/surfaces/banner) actually alters the rendered banner — the same
+// "a tick changes the frame" check spinnerTickAdvances already uses for the
+// status spinner.
+func (w *chatWorld) bannerTickChanges() error {
+	before := w.model.View().Content
+	w.update(banner.TickMsg{})
+	if after := w.model.View().Content; after == before {
+		return fmt.Errorf("banner did not change on tick")
+	}
+	return nil
+}
+
+func (w *chatWorld) bannerTickUnchanged() error {
+	before := w.model.View().Content
+	w.update(banner.TickMsg{})
+	if after := w.model.View().Content; after != before {
+		return fmt.Errorf("banner changed on tick while not animating")
 	}
 	return nil
 }

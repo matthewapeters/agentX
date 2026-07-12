@@ -53,8 +53,6 @@ func registerOutputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the output view contains a scrollbar$`, w.hasScrollbar)
 	sc.Step(`^the output has a transcript scrollbar$`, w.hasTranscriptScrollbar)
 	sc.Step(`^the output has no transcript scrollbar$`, w.noTranscriptScrollbar)
-	sc.Step(`^the logo banner "([^"]*)" is set$`, w.setBanner)
-	sc.Step(`^the logo banner precedes "([^"]*)" in the output$`, w.bannerPrecedes)
 	sc.Step(`^the launch info is set for (\d+) surface kinds$`, w.setLaunchInfo)
 	sc.Step(`^launch widget 0 is expanded$`, w.expandLaunch)
 	sc.Step(`^the launch info widget is selected$`, w.selectLaunch)
@@ -333,11 +331,6 @@ func (w *outputWorld) hasScrollbar() error {
 	return nil
 }
 
-func (w *outputWorld) setBanner(s string) error {
-	w.panel.SetBanner(s)
-	return nil
-}
-
 // launchMarker identifies the launch-info widget header in the rendered view.
 const launchMarker = "Attach surfaces"
 
@@ -394,22 +387,6 @@ func (w *outputWorld) launchPrecedes(widgetText string) error {
 	}
 	if li >= wi {
 		return fmt.Errorf("launch info at %d does not precede widget %q at %d", li, widgetText, wi)
-	}
-	return nil
-}
-
-func (w *outputWorld) bannerPrecedes(widgetText string) error {
-	view := w.panel.View()
-	bi := strings.Index(view, "AGENTX-LOGO")
-	wi := strings.Index(view, widgetText)
-	if bi < 0 {
-		return fmt.Errorf("banner not found in output view")
-	}
-	if wi < 0 {
-		return fmt.Errorf("widget text %q not found in output view", widgetText)
-	}
-	if bi >= wi {
-		return fmt.Errorf("banner at %d does not precede widget %q at %d", bi, widgetText, wi)
 	}
 	return nil
 }

@@ -27,9 +27,6 @@ type Options struct {
 	// SessionName names the booted session (e.g. from --session). Empty generates
 	// the default adjective-noun name.
 	SessionName string
-	// Logo is the bootstrap banner shown as the first element of the output
-	// surface. Empty shows no banner.
-	Logo string
 }
 
 // shutdownTimeout bounds graceful shutdown.
@@ -226,7 +223,6 @@ func RunChat(ctx context.Context, opts Options) error {
 	surface.SetMaxInputLines(orc.Settings().InputMaxLines)
 	surface.SetMarkdownRenderer(orc.Settings().MarkdownRenderer)
 	surface.SetTheme(orc.Settings().ActiveBorderColor, orc.Settings().InactiveBorderColor)
-	surface.SetBanner(opts.Logo)
 
 	// When the transport is served, surface the attach commands as a collapsed
 	// launch-info widget (the chat runs in the alternate screen, so a printed hint

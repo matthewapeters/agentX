@@ -89,26 +89,12 @@ Feature: Output panel event rendering
     When an agent_response event "the quick brown fox jumps over the lazy dog" is applied
     Then the output view contains "…"
 
-  # use-case: UC-OUTPUT-BANNER  (docs/ux/06_OUTPUT_WIDGET.md "Logo banner")
-  Scenario: The logo banner renders as the first element before any event
-    Given an output panel sized 40 by 10
-    And the logo banner "AGENTX-LOGO" is set
-    Then the output view contains "AGENTX-LOGO"
-
-  # use-case: UC-OUTPUT-BANNER
-  # the banner stays above the first widget
-  Scenario: The logo banner precedes applied widgets
-    Given an output panel sized 40 by 10
-    And the logo banner "AGENTX-LOGO" is set
-    When a user_prompt event "hello there" is applied
-    Then the logo banner precedes "hello there" in the output
-
-  # use-case: UC-OUTPUT-BANNER
-  # variant: clipped to width, never wider than the panel
-  Scenario: A wide banner line is clipped to the panel width
-    Given an output panel sized 12 by 10
-    And the logo banner "0123456789ABCDEFGHIJ" is set
-    Then no output line is wider than 12
+  # Logo banner note: the banner used to render here, as the output panel's
+  # first scrollable line (UC-OUTPUT-BANNER). It has moved to a
+  # screen-pinned region owned by the chat surface — the output panel no
+  # longer has a banner concept at all. See
+  # tests/features/surfaces/chat_layout.feature and
+  # docs/ux/06_OUTPUT_WIDGET.md ("Logo banner").
 
   # use-case: UC-OUTPUT-LAUNCH  (docs/ux/06_OUTPUT_WIDGET.md "Launch-info widget")
   Scenario: Launch info renders collapsed as the first widget

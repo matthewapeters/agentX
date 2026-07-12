@@ -55,5 +55,5 @@ func run(args []string) error {
 		return cli.RunSurface(ctx, *cmd.Launch)
 	}
 
-	return app.RunChat(ctx, app.Options{Logo: logo, SessionName: cmd.SessionName})
+	return app.RunChat(ctx, app.Options{SessionName: cmd.SessionName})
 }

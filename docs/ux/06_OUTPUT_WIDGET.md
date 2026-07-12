@@ -355,35 +355,110 @@ parent/child containment distinct from sibling "waits-on" deps) is also persiste
 `internal/session/plans.go`) — the queryable, post-session-review companion to the
 live rendering and the append-only event log.
 
-## Logo banner (bootstrap)
+## Logo banner (pinned, collapsible, animated)
 
-The output panel renders an optional **logo banner** as the very first element of
-the transcript, above every widget. It is a pre-rendered, ANSI-colored block of
-text (the application logo) supplied at startup. Its purpose is a bootstrap-time
-visual signal that the application is running while the bootstrap prompt is being
-processed — it appears on the first render, before any response arrives, and then
-remains pinned at the top of the transcript for the session.
+The chat surface renders a **logo banner** in a fixed region above the output
+viewport — the same kind of screen-pinned region the input panel already
+occupies below it (chat surface `computeLayout`), not the first line of
+scrollable transcript content. The banner never scrolls: growing the
+transcript shrinks the output viewport's share of the remaining rows, exactly
+as it already does to make room for the input panel, but the banner itself is
+outside the scrollable region entirely. The banner is not a widget: it has no
+border, header, or selection, and it does not shift widget selection.
 
-The banner is rendered verbatim except that each line is clipped (ANSI-aware) to
-the current panel width, so its embedded color sequences are preserved while the
-art never soft-wraps into garbage on a narrow terminal. The banner is not a
-widget: it has no border, header, selection, or collapse, and it does not shift
-the widget selection or scroll-pinning behavior.
+The full-size banner's cell content is a build artifact, not raw ANSI text:
+`cmd/logogen` converts an authored ANSI-colored source (`logo/agentx.logo`)
+into a structured grid of `Cell{Rune, Color}` (rune + xterm-256 palette
+index) — see `logo/README.md`. The collapsed row is *not* a build artifact:
+its text varies with what the agent is currently doing, so
+`internal/surfaces/banner` synthesizes its cells at runtime instead (see
+"Collapsed row label" below), coloring them with the same left-to-right
+grayscale gradient `logo/coloriz.py` authors the full banner with. The surface
+picks which grid is active and how to color it without needing further input
+from the caller — it reacts to its own measured content height and to
+`RunState`/`Phase`.
 
-The banner content is the build artifact embedded from `logo/agentx.logo` (see
-`docs/implementation/09_makefile_and_quality_gate_contract.md` for the build-time
-sync); the surface is given the content at startup via `SetBanner`.
+### Collapse: content-based and sticky
+
+The banner starts full-size. It collapses to the single-row label the first
+time the applied transcript content's height — measured against the output
+viewport height available *under the full-size banner* (a fixed budget, so
+the trigger doesn't move once evaluated) — exceeds one screenful. Once
+collapsed, it stays collapsed for the rest of the session: later shrinking
+the transcript, or resizing the terminal taller, does not restore the full
+banner. There is no reverse transition.
+
+### Collapsed row label
+
+The collapsed row reads `AgentX - <activity>`, where `<activity>` tracks the
+run's current `state.RunState`/`state.Phase` (`internal/surfaces/chat`'s
+`bannerLabel`, re-evaluated on every processing-state change):
+
+| RunState | Phase | Label |
+|----------|-------|-------|
+| `Idle` / `Completed` / `Failed` | any | `Your Local Agent` |
+| `AwaitingInput` | any | `Needs Input` |
+| `Working` | `thinking`, `classify` | `Thinking` |
+| `Working` | `tool` | `Working` |
+| `Working` | `respond` | `Responding` |
+| `Working` | `planning` | `Planning` |
+
+`AwaitingInput` takes priority over phase — the user needs to know a decision
+is pending, not what phase the run paused in. The label is a purely local
+rendering choice: it is not a session event and is not persisted.
+
+### Color-cycle animation ("rainbow wave")
+
+Whichever grid is active (full or collapsed), the banner is subject to the
+same color treatment, keyed off `RunState`:
+
+- **Idle/Completed/Failed/AwaitingInput** — each cell renders with its
+  originally authored grayscale color, exactly as today.
+- **Working** — each cell's color animates as a rainbow hue that travels
+  left to right across the banner over time, modulated by that cell's
+  *original* grayscale value as its luminance (HSL: hue advances with column
+  position and elapsed time; lightness comes from the source gradient). The
+  banner's existing shading/shape is preserved — only hue is added and moves
+  — and it reverts to the static original the moment the run leaves
+  `StateWorking`.
+
+The animation ticks at a bounded, modest rate (on the order of 10 frames/sec,
+not a real-time high frame rate) so a long-running agent task doesn't impose
+continuous high-frequency rendering. It is a local rendering effect only —
+like the existing spinner, it is not a session event and is not persisted.
 
 ```gherkin
-GIVEN an output panel with a logo banner set
-WHEN the panel renders before any event is applied
-THEN the rendered transcript begins with the banner content
+GIVEN a freshly booted chat surface with the full logo banner set
+WHEN the surface renders
+THEN the banner occupies a fixed region above the output viewport
+  AND the banner is not part of the output viewport's scrollable content
 
-GIVEN an output panel with a logo banner set
-WHEN a user_prompt widget is applied
-THEN the banner still precedes the widget in the rendered transcript
+GIVEN an output panel whose applied transcript content height, measured
+      against the output viewport height available under the full-size
+      banner, exceeds one screenful
+WHEN the panel next renders
+THEN the banner collapses to a single row reading "AgentX - <activity>"
 
-GIVEN an output panel sized narrower than the banner's widest line
+GIVEN a banner that has collapsed
+WHEN the transcript later shrinks, or the terminal is resized taller
+THEN the banner remains collapsed for the rest of the session
+
+GIVEN a collapsed banner
+WHEN the run's state.RunState/state.Phase changes
+THEN the collapsed row's label updates to match (see the mapping table above)
+
+GIVEN the run state transitions to StateWorking
+WHEN the banner (full or collapsed) next renders
+THEN each cell's color animates as a left-to-right traveling rainbow hue,
+     modulated by that cell's original grayscale luminance, at a bounded
+     tick rate
+
+GIVEN the run state leaves StateWorking (Completed, Failed, Idle, or
+      AwaitingInput)
+WHEN the banner next renders
+THEN the banner returns to its static, original (non-animated) coloring
+
+GIVEN an output panel sized narrower than the active banner's widest line
 WHEN the panel renders the banner
 THEN no rendered line is wider than the panel width
 ```
