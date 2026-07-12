@@ -2045,6 +2045,34 @@ mutates through dedicated token-gated endpoints. Each fact renders as
 Mutations persist and take effect on the **next** prompt's assembled context (only
 enabled facts fold in). It is read-write but single-purpose: no prompt input.
 
+#### Scroll & Collapse
+
+**🚧 Planned** (see the "Improve WM layouts" implementation plan). The fact list
+is hosted in a scrollable viewport (`bubbles/v2/viewport`, the same primitive
+`PD-01`'s TUI output panel uses — `docs/ux/06_OUTPUT_WIDGET.md`), with the
+rightmost column reserved as a transcript-scrollbar gutter shown whenever facts
+overflow the panel height. This surface fully mirrors the output panel's
+established scroll/collapse taxonomy rather than inventing a new one, **including
+its keybinding split** — `↑/↓`/`j`/`k` are repurposed from cursor movement (their
+prior WM-only meaning) to **inner-scrolling the selected fact's value**, and
+`PgUp`/`PgDn` become the cursor-movement keys (moving the selection exactly one
+fact per press, matching the output panel's own `PgUp`/`PgDn` → `SelectUp`/
+`SelectDown` behavior, not a true page jump). This is a **breaking change** to
+this surface's previously-shipped `↑/↓` cursor binding, chosen deliberately for
+cross-surface consistency over preserving the old binding.
+
+A fact whose value word-wraps to more than one line (the `tree .`/multi-line
+case this fixes) renders **collapsed by default**: only its first wrapped line
+plus a `… (+N lines)` hint. Pressing **Enter** on the selected fact toggles it
+between collapsed and expanded (a no-op on a single-line fact); expanded, the
+value is capped to a per-fact row budget with its own scrollbar and inner-scroll
+via `↑/↓`/`j`/`k`, exactly like an over-cap output-panel widget body. Moving the
+selection (`PgUp`/`PgDn`) auto-scrolls the outer viewport to keep the newly
+selected fact visible, the same `scrollSelectedIntoView` behavior the output
+panel already has — no separate "jump to selection" key is needed. The owner/pin
+annotation (` (agent)` / ` (pin ▶ live, 4s)`) always stays anchored to the fact's
+first rendered row, never buried inside a wrapped or windowed body.
+
 #### Pin (static / live)
 
 A **pinned** fact (`Owner == pin`) is one created by the context surface's Pin
@@ -2084,7 +2112,7 @@ context surface.
 | Affordance | ID | Status |
 |-----------|-----|--------|
 | List facts with enabled/disabled markers | PD-WM-AF-001 | ✅ |
-| Navigate the selection cursor (↑/↓, j/k) | PD-WM-AF-002 | ✅ |
+| Navigate the selection cursor (`PgUp`/`PgDn`, one fact per press) | PD-WM-AF-002 | 🚧 (was `↑/↓`/`j`/`k` — see PD-WM-AF-010) |
 | Toggle enable/disable (space) | PD-WM-AF-003 | ✅ |
 | Delete the selected fact (d) — also the unpin affordance for a pinned fact | PD-WM-AF-004 | ✅ |
 | Add a fact (a → `key=value`, enter) | PD-WM-AF-005 | ✅ |
@@ -2092,6 +2120,61 @@ context surface.
 | A pinned fact's row shows its static/live state and age | PD-WM-AF-007 | ✅ |
 | Toggle a pinned fact live/static (`l`), refreshing once immediately on live | PD-WM-AF-008 | ✅ |
 | Setting a fact live is refused when its source tool is not currently policy-`Allow` | PD-WM-AF-009 | ✅ |
+| Inner-scroll the selected fact's value (`↑/↓`, `j`/`k`) | PD-WM-AF-010 | 🚧 |
+| Expand/collapse the selected fact's multi-line value (Enter) | PD-WM-AF-011 | 🚧 |
+| Outer viewport auto-scrolls to keep the selection visible | PD-WM-AF-012 | 🚧 |
+| Transcript-style scrollbar in the reserved right gutter when facts overflow | PD-WM-AF-013 | 🚧 |
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: A multi-line value collapses by default (PD-WM-AF-011)
+
+- GIVEN a working-memory surface with a fact whose value word-wraps to more than
+  one line (e.g. a pinned `tree .` snapshot)
+- WHEN the fact list renders
+- THEN the fact shows only its first wrapped line plus a `… (+N lines)` hint,
+  and its owner/pin annotation stays on that first line
+
+Use-case: Expand/collapse the selected fact (PD-WM-AF-011)
+
+- GIVEN a working-memory surface with a collapsed multi-line fact selected
+- WHEN the user presses Enter
+- THEN the fact expands to show its full value, capped to a per-fact row budget
+  with its own scrollbar when the value exceeds it
+- WHEN the user presses Enter again
+- THEN the fact re-collapses to its first-line preview
+
+Use-case: Enter on a single-line fact is a no-op (PD-WM-AF-011)
+
+- GIVEN a working-memory surface with a single-line-value fact selected
+- WHEN the user presses Enter
+- THEN nothing changes (there is nothing to expand)
+
+Use-case: Inner-scroll an expanded, over-cap fact (PD-WM-AF-010)
+
+- GIVEN a working-memory surface with an expanded fact whose value exceeds the
+  per-fact row budget
+- WHEN the user presses `↓`/`j`
+- THEN the fact's body window scrolls down by one row and a scrollbar thumb
+  reflects the new position
+
+Use-case: Cursor movement auto-scrolls the outer list (PD-WM-AF-002 / PD-WM-AF-012)
+
+- GIVEN a working-memory surface with more facts than fit in the panel height,
+  and the selection at the bottom edge of the visible window
+- WHEN the user presses `PgDn`
+- THEN the selection moves to the next fact and the outer viewport scrolls just
+  enough to keep it visible
+
+Use-case: Transcript scrollbar reflects overflow (PD-WM-AF-013)
+
+- GIVEN a working-memory surface whose facts (rendered, with any expansions)
+  exceed the panel height
+- WHEN the fact list renders
+- THEN the reserved right gutter column shows a proportional scrollbar thumb
+- GIVEN all facts fit within the panel height
+- WHEN the fact list renders
+- THEN the gutter column is blank (no thumb)
 
 ### Deferred (later slices)
 
