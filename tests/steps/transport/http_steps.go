@@ -172,7 +172,7 @@ func (p *fakeProvider) PinToolEvent(ordinal uint64, live bool) (string, error) {
 			text = t
 		}
 	}
-	key := fmt.Sprintf("pin_%s_%d", ev.ToolName, ordinal)
+	key := fmt.Sprintf("%s_%d", ev.ToolName, ordinal)
 	p.wm.Facts = append(p.wm.Facts, session.Fact{
 		Key: key, Value: text, Owner: session.OwnerPin, Enabled: true,
 		Source: &session.ToolSource{Tool: ev.ToolName}, Live: live, SourceOrdinal: ordinal, PinnedAt: time.Now(),
