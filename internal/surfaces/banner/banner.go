@@ -43,13 +43,16 @@ type Cell struct {
 	Color int16
 }
 
-// collapsedFirst and collapsedLast bound the left-to-right gradient the
-// collapsed row's text is colored with — the same values logo/coloriz.py
-// uses to author the full-size banner's grayscale ramp, so the collapsed
-// row's static (non-animated) look matches it.
+// grayDark and grayBright are the RGB gray levels the collapsed row's
+// left-to-right gradient interpolates between — chosen to match how
+// xterm-256's gray-ramp indices 232 (darkest) and 255 (brightest) actually
+// render, so the collapsed row's tone matches the full banner's authored
+// gradient. Interpolated in true-color (not quantized to the 24-step
+// xterm-256 gray ramp) so the gradient stays smooth and collision-free no
+// matter how long the label text is — see dynamicLuminance.
 const (
-	collapsedFirst = 255
-	collapsedLast  = 232
+	grayDark   = 8.0 / 255.0
+	grayBright = 238.0 / 255.0
 )
 
 // defaultLabel seeds the banner before the first SetLabel call — matching
@@ -190,12 +193,18 @@ func (m *Model) active() [][]Cell {
 	return m.full
 }
 
-// View renders the active grid, clipped (ANSI-aware) to the panel width.
+// View renders the active grid, clipped (ANSI-aware) to the panel width. The
+// collapsed row is rendered "dynamic": its gradient is computed fresh from
+// each cell's column position (dynamicLuminance) rather than a value stored
+// on the Cell, so it stays smooth and collision-free for any label length —
+// the full-size grid, whose row lengths are fixed at build time, keeps using
+// its authored per-cell Color.
 func (m *Model) View() string {
 	grid := m.active()
+	dynamic := m.collapsedSticky
 	lines := make([]string, len(grid))
 	for i, row := range grid {
-		lines[i] = m.renderRow(row)
+		lines[i] = m.renderRow(row, dynamic)
 	}
 	if m.width > 0 {
 		for i, l := range lines {
@@ -207,12 +216,19 @@ func (m *Model) View() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m *Model) renderRow(row []Cell) string {
+func (m *Model) renderRow(row []Cell, dynamic bool) string {
+	n := len(row)
 	var b strings.Builder
 	for col, c := range row {
+		lum := luminance(c.Color)
+		if dynamic {
+			lum = dynamicLuminance(col, n)
+		}
 		switch {
 		case m.animating:
-			writeTrueColor(&b, rainbowCell(c, col, m.frame))
+			writeTrueColor(&b, rainbowCell(lum, col, m.frame))
+		case dynamic:
+			writeTrueColor(&b, grayColor(lum))
 		case c.Color >= 0:
 			b.WriteString("\x1b[38;5;")
 			b.WriteString(strconv.Itoa(int(c.Color)))
@@ -220,7 +236,7 @@ func (m *Model) renderRow(row []Cell) string {
 		}
 		b.WriteRune(c.Rune)
 	}
-	if len(row) > 0 {
+	if n > 0 {
 		b.WriteString("\x1b[0m")
 	}
 	return b.String()
@@ -229,14 +245,14 @@ func (m *Model) renderRow(row []Cell) string {
 // rainbowCell computes the animated color for one cell: a hue that travels
 // left to right as frame advances (a traveling wave, C(col, frame) = f(col -
 // v*frame), moves in +col direction over time), at fixed high saturation,
-// with value taken from the cell's original grayscale luminance so the
+// with value taken from lum (the cell's grayscale luminance, 0..1) so the
 // banner's existing shading/shape survives the recolor.
-func rainbowCell(c Cell, col, frame int) colorful.Color {
+func rainbowCell(lum float64, col, frame int) colorful.Color {
 	hue := math.Mod(float64(col)*huePerColumn-float64(frame)*huePerFrame, 360)
 	if hue < 0 {
 		hue += 360
 	}
-	return colorful.Hsv(hue, 0.9, luminance(c.Color))
+	return colorful.Hsv(hue, 0.9, lum)
 }
 
 func luminance(colorIdx int16) float64 {
@@ -244,6 +260,27 @@ func luminance(colorIdx int16) float64 {
 		return 0.5
 	}
 	return float64(colorIdx-grayLo) / float64(grayHi-grayLo)
+}
+
+// dynamicLuminance is the left-to-right gradient position (1 = brightest, at
+// the first column, down to 0 = darkest, at the last) for a
+// runtime-synthesized row, computed fresh from the column index and the
+// row's actual length every render — never quantized into a fixed palette,
+// so it can't band or collide regardless of how long the text is (unlike
+// pre-computing a per-cell xterm-256 index, which only has 24 distinct gray
+// levels to work with).
+func dynamicLuminance(col, n int) float64 {
+	if n <= 1 {
+		return 1
+	}
+	return 1 - float64(col)/float64(n-1)
+}
+
+// grayColor renders lum (0..1) as a static true-color gray between grayDark
+// and grayBright — the collapsed row's non-animated color.
+func grayColor(lum float64) colorful.Color {
+	v := grayDark + lum*(grayBright-grayDark)
+	return colorful.Color{R: v, G: v, B: v}
 }
 
 func writeTrueColor(b *strings.Builder, c colorful.Color) {
@@ -257,20 +294,19 @@ func writeTrueColor(b *strings.Builder, c colorful.Color) {
 	b.WriteByte('m')
 }
 
-// buildLabelGrid synthesizes a one-row grid from text, colored with the same
-// left-to-right grayscale gradient logo/coloriz.py authors the full-size
-// banner with (linearly interpolated across the text's rune count), so the
-// collapsed row's static look matches the full banner's.
+// buildLabelGrid synthesizes a one-row grid from text. Unlike the full-size
+// grid's authored Cell.Color values, these cells carry no color at all —
+// their gradient is computed fresh at render time from column position
+// (dynamicLuminance/View), so it's never quantized to a fixed-length palette
+// and stays correct for whatever the current label's length happens to be.
 func buildLabelGrid(text string) [][]Cell {
 	runes := []rune(text)
-	n := len(runes)
-	if n == 0 {
+	if len(runes) == 0 {
 		return [][]Cell{{}}
 	}
-	step := float64(collapsedFirst-collapsedLast) / float64(n)
-	row := make([]Cell, n)
+	row := make([]Cell, len(runes))
 	for i, r := range runes {
-		row[i] = Cell{Rune: r, Color: int16(float64(collapsedFirst) - float64(i)*step)}
+		row[i] = Cell{Rune: r}
 	}
 	return [][]Cell{row}
 }
