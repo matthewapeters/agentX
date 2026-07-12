@@ -216,6 +216,17 @@ func (m *Model) View() string {
 	return strings.Join(lines, "\n")
 }
 
+// renderRow colors each cell of row and writes its rune. The full-size
+// grid's `█` block glyphs fill their whole cell, so coloring the *foreground*
+// makes each cell read as a solid swatch — that's how the pinned logo's
+// smooth-looking gradient/animation actually works. The collapsed row's
+// cells are ordinary letters (and spaces), which are mostly empty space
+// within their cell; foreground-coloring a thin letter stroke against the
+// terminal's default background would never read as a solid gradient bar the
+// way the block art does. So a dynamic row instead paints the gradient onto
+// the cell *background* and forces the glyph to black — the same visual
+// result (a solid colored strip) reached the other way, appropriate to what
+// each row is actually made of.
 func (m *Model) renderRow(row []Cell, dynamic bool) string {
 	n := len(row)
 	var b strings.Builder
@@ -225,10 +236,12 @@ func (m *Model) renderRow(row []Cell, dynamic bool) string {
 			lum = dynamicLuminance(col, n)
 		}
 		switch {
+		case m.animating && dynamic:
+			writeBackgroundColor(&b, rainbowCell(lum, col, m.frame))
 		case m.animating:
-			writeTrueColor(&b, rainbowCell(lum, col, m.frame))
+			writeForegroundColor(&b, rainbowCell(lum, col, m.frame))
 		case dynamic:
-			writeTrueColor(&b, grayColor(lum))
+			writeBackgroundColor(&b, grayColor(lum))
 		case c.Color >= 0:
 			b.WriteString("\x1b[38;5;")
 			b.WriteString(strconv.Itoa(int(c.Color)))
@@ -283,9 +296,27 @@ func grayColor(lum float64) colorful.Color {
 	return colorful.Color{R: v, G: v, B: v}
 }
 
-func writeTrueColor(b *strings.Builder, c colorful.Color) {
+// writeForegroundColor sets true-color foreground — for a `█` block cell
+// (the full-size banner), that's the whole cell's visible color.
+func writeForegroundColor(b *strings.Builder, c colorful.Color) {
+	writeSGRColor(b, "38", c)
+}
+
+// writeBackgroundColor sets true-color background plus a black foreground —
+// for a letter cell (the collapsed row), painting the gradient behind the
+// glyph rather than into its thin strokes is what makes it read as a solid
+// colored swatch instead of faint colored text on the terminal's default
+// background.
+func writeBackgroundColor(b *strings.Builder, c colorful.Color) {
+	writeSGRColor(b, "48", c)
+	b.WriteString("\x1b[38;2;0;0;0m")
+}
+
+func writeSGRColor(b *strings.Builder, kind string, c colorful.Color) {
 	r, g, bl := c.RGB255()
-	b.WriteString("\x1b[38;2;")
+	b.WriteString("\x1b[")
+	b.WriteString(kind)
+	b.WriteString(";2;")
 	b.WriteString(strconv.Itoa(int(r)))
 	b.WriteByte(';')
 	b.WriteString(strconv.Itoa(int(g)))
