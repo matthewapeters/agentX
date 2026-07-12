@@ -46,6 +46,7 @@ func registerExecSteps(sc *godog.ScenarioContext) {
 
 	// Executor (@integration)
 	sc.Step(`^a tool executor$`, w.newExecutor)
+	sc.Step(`^a tool executor with a (\d+) byte output cap$`, w.newExecutorWithByteCap)
 	sc.Step(`^a file "([^"]*)" containing "([^"]*)"$`, w.createFile)
 	sc.Step(`^the tool "([^"]*)" runs on that file$`, w.runOnFile)
 	sc.Step(`^the tool "([^"]*)" runs on a missing file$`, w.runOnMissing)
@@ -58,6 +59,7 @@ func registerExecSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the result preview contains "([^"]*)"$`, w.previewContains)
 	sc.Step(`^the result preview does not contain "([^"]*)"$`, w.previewNotContains)
 	sc.Step(`^the result reports (\d+) lines$`, w.reportsLines)
+	sc.Step(`^the result is marked truncated$`, w.resultIsTruncated)
 	sc.Step(`^the result has an artifact ref$`, w.hasRef)
 	sc.Step(`^reading the result output yields "([^"]*)"$`, w.readOutputYields)
 	sc.Step(`^reading the result output at offset (\d+) limit (\d+) yields "([^"]*)"$`, w.readOutputRangeYields)
@@ -81,9 +83,18 @@ func (w *execWorld) setup() error {
 		return err
 	}
 	w.art = art
-	// Small preview window so preview/paging behavior is observable in tests.
-	w.exec = tools.NewExecutor(art, 3, 0)
+	w.exec = tools.NewExecutor(art, 0)
 	w.reg = tools.DefaultRegistry()
+	return nil
+}
+
+// newExecutorWithByteCap builds an executor with a small maxBytes so capture
+// truncation (the one remaining, honestly-labeled safety net) is observable.
+func (w *execWorld) newExecutorWithByteCap(n int) error {
+	if err := w.setup(); err != nil {
+		return err
+	}
+	w.exec = tools.NewExecutor(w.art, n)
 	return nil
 }
 
@@ -226,6 +237,13 @@ func (w *execWorld) previewNotContains(unwanted string) error {
 func (w *execWorld) reportsLines(want int) error {
 	if w.res.Lines != want {
 		return fmt.Errorf("result reports %d lines, want %d", w.res.Lines, want)
+	}
+	return nil
+}
+
+func (w *execWorld) resultIsTruncated() error {
+	if !w.res.Truncated {
+		return fmt.Errorf("result not marked truncated")
 	}
 	return nil
 }

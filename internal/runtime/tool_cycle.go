@@ -36,7 +36,7 @@ func (o *Orchestrator) buildTools() error {
 		if err != nil {
 			return fmt.Errorf("tool artifacts: %w", err)
 		}
-		o.runner = tools.NewExecutor(art, 0, o.settings.ToolOutputMaxBytes)
+		o.runner = tools.NewExecutor(art, o.settings.ToolOutputMaxBytes)
 	}
 	if o.proposer == nil {
 		chat := func(ctx context.Context, msgs []prompting.Message) (string, error) {
@@ -203,8 +203,10 @@ func (o *Orchestrator) finishCycle(err error) error {
 }
 
 // publishToolResult emits a tool_result event (rendered as the 📋 result widget;
-// persisted as the audit record). The model sees the preview + ref, not the full
-// artifact — unless the context surface enables this element, folding it into
+// persisted as the audit record). The model sees the full captured result text
+// (res.Preview — never a truncated excerpt of it, see tools.Result's doc
+// comment) plus a ref it can use with read_output to re-read a specific window
+// — unless the context surface enables this element, folding it into
 // subsequent turns too (see recordTurn/toolPin), or pins it to working memory
 // (see Orchestrator.PinToolEvent). args is the tool's resolved argument map,
 // carried on the payload so a pin can later re-run the exact same call ("live").
@@ -241,14 +243,15 @@ func toolResultText(res tools.Result) string {
 	return head + "\n" + res.Preview
 }
 
-// toolResultContext renders the tool outcome folded into the respond turn (preview
-// + ref only — never the full artifact).
+// toolResultContext renders the tool outcome folded into the respond turn: the
+// full captured result text (never a truncated excerpt of it — see
+// tools.Result), plus a ref for re-reading a specific window via read_output.
 func toolResultContext(d tools.Descriptor, res tools.Result) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n\n[tool %s result — status %s, exit %d, %d lines]\n%s",
 		d.ID, res.Status, res.Exit, res.Lines, res.Preview)
 	if res.Ref != "" {
-		fmt.Fprintf(&b, "\n(full output ref: %s; use read_output to page)", res.Ref)
+		fmt.Fprintf(&b, "\n(artifact ref: %s; use read_output to re-read a specific window)", res.Ref)
 	}
 	return b.String()
 }

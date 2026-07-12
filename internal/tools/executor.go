@@ -19,8 +19,13 @@ type Artifacts interface {
 	Read(ref string, offset, limit int) ([]byte, error)
 }
 
-// Result is the structured outcome of a tool execution. The projection returned
-// to the model is Preview + Ref + metadata; the full output lives in the artifact.
+// Result is the structured outcome of a tool execution. Preview is the FULL
+// captured output text (never a further-truncated excerpt of it) — the only
+// thing that can shrink it below the process's real stdout is Truncated (the
+// maxBytes capture safety net), and that is always called out explicitly in
+// the text itself, never silently. Bounding the SIZE of a result is the tool
+// call's job (narrower commands, -maxdepth, rg over cat, ...), not something
+// the framework does after the fact by quietly clipping what it hands back.
 type Result struct {
 	ToolID    string
 	Command   string // rendered argv (for audit/display)
@@ -37,26 +42,19 @@ type Result struct {
 // Executor runs approved descriptors with argv/no-shell execution and persists
 // full output as session artifacts.
 type Executor struct {
-	art          Artifacts
-	previewLines int
-	maxBytes     int
+	art      Artifacts
+	maxBytes int
 }
 
-const (
-	defaultPreviewLines = 20
-	defaultMaxBytes     = 65536
-)
+const defaultMaxBytes = 65536
 
-// NewExecutor returns an executor writing artifacts to art. Non-positive limits
-// fall back to defaults.
-func NewExecutor(art Artifacts, previewLines, maxBytes int) *Executor {
-	if previewLines <= 0 {
-		previewLines = defaultPreviewLines
-	}
+// NewExecutor returns an executor writing artifacts to art. A non-positive
+// maxBytes falls back to the default.
+func NewExecutor(art Artifacts, maxBytes int) *Executor {
 	if maxBytes <= 0 {
 		maxBytes = defaultMaxBytes
 	}
-	return &Executor{art: art, previewLines: previewLines, maxBytes: maxBytes}
+	return &Executor{art: art, maxBytes: maxBytes}
 }
 
 // Run executes a descriptor with the given (already policy-approved) args. A
@@ -108,7 +106,10 @@ func (e *Executor) Run(ctx context.Context, d Descriptor, args map[string]string
 
 	data := out.buf.Bytes()
 	res.Lines = countLines(data)
-	res.Preview = previewOf(data, e.previewLines)
+	res.Preview = textOf(data)
+	if res.Truncated {
+		res.Preview += fmt.Sprintf("\n…(capture stopped at %d bytes — output_max_bytes limit; not the tool's full output. Narrow the command, e.g. rg/-maxdepth/head, rather than assuming this is complete)", e.maxBytes)
+	}
 	if ref, werr := e.art.Write(data); werr == nil {
 		res.Ref = ref
 	}
@@ -139,7 +140,7 @@ func (e *Executor) runBuiltin(d Descriptor, args map[string]string) (Result, err
 		}
 		res.Command = "read_output " + ref
 		res.Bytes, res.Lines = len(data), countLines(data)
-		res.Preview = previewOf(data, e.previewLines)
+		res.Preview = textOf(data)
 		res.Ref = ref // references the existing artifact; no new one is created
 		return res, nil
 	default:
@@ -194,15 +195,15 @@ func countLines(b []byte) int {
 	return n
 }
 
-func previewOf(b []byte, maxLines int) string {
+// textOf renders captured output as context/display text. It is the FULL
+// content — no line-count truncation — because bounding a result's size is
+// the tool call's job (a narrower command), not something this layer imposes
+// after the fact (see the Result doc comment).
+func textOf(b []byte) string {
 	if len(b) == 0 {
 		return ""
 	}
-	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
-	if len(lines) > maxLines {
-		return strings.Join(lines[:maxLines], "\n") + "\n…"
-	}
-	return strings.Join(lines, "\n")
+	return strings.TrimRight(string(b), "\n")
 }
 
 func capString(s string, max int) string {

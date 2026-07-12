@@ -111,8 +111,12 @@ policy, executor, artifact store.
   `read_output` is exposed as a read-tier descriptor so the model can page the artifact.
 - **Feature**: `tests/features/tools/tool_cycle.feature` (`@e2e`, stub executor)
 - **Done**: `classify → tool → respond` with deterministic event ordering
-  (`user_prompt → classification → tool_call → tool_result → agent_response`); preview+
-  ref injected; oversized output not buffered into context.
+  (`user_prompt → classification → tool_call → tool_result → agent_response`); result +
+  ref injected. *Revised 2026-07-12*: the original "preview + ref, never the full
+  artifact" design silently line-truncated durable facts too (RCA: session
+  `nimble-pebble-2`, see `CHANGELOG.md`); context now always carries the full captured
+  result, bounded only by `output_max_bytes`, and truncation is labeled, never silent.
+  See TOOL-6 for the recovery gate this opened up.
 - **Maps to**: AC-M3b-2, AC-M3b-4.
 
 ## TOOL-5 · Config, persisted policy, seeds · S
@@ -126,6 +130,28 @@ policy, executor, artifact store.
 - **Done**: tiers gate availability; policy persists across sessions; seeds mirror
   built-in defaults 1:1.
 - **Maps to**: AC-M3b-1.
+
+## TOOL-6 · Oversized-output recovery gate · S–M (Phase A) + M–L (Phase B) · post-M3b, RCA-driven
+- **Target**: `internal/runtime/` (`runToolPhase`), `internal/tools/` (`Proposer`,
+  Phase B only), `internal/config/`
+- **Deps**: TOOL-2 (executor truncation + honest labeling, already shipped), TOOL-3
+  (proves the `RequestDecision`/gate/`awaiting_input` shape this reuses)
+- **Behavior**: full design in
+  `docs/architecture/behavior/adr/0010_oversized_tool_output_recovery.feature.md`.
+  Summary: when `tools.Result.Truncated` (the `output_max_bytes` safety net triggered),
+  stop just publishing the labeled-but-partial result — offer a decision (reusing
+  `RequestDecision`, a new `state.PhaseOutputSize`, mirroring the continuation-verb
+  allow/deny/always shape): use the truncated result (once/always), re-run with a
+  ceiling-clamped larger cap (once/always, persisted per tool ID), or (Phase B) let the
+  agent self-refine the tool call (narrower command) before falling back to the human
+  menu. Not part of original M3b acceptance criteria — opened up by the
+  `nimble-pebble-2` RCA fix to TOOL-4/TOOL-2's truncation behavior.
+- **Feature**: `tests/features/tools/output_size_recovery.feature` (planned, not yet
+  written) — see the behavior doc's Tests section.
+- **Done**: not started. Phase A (decision gate) and Phase B (LLM refinement) are
+  separable; see the behavior doc's "Suggested delivery split" and open scope questions
+  (live-pin-refresh and plan-step interaction) before starting either.
+- **Maps to**: none (post-M3b addition; not required for original AC-M3b-1…4).
 
 ---
 

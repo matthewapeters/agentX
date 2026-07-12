@@ -331,17 +331,28 @@ later.
 
 ### Output artifacts and context shaping
 
-Tool output can be large; pasting it wholesale into the model context wastes tokens.
-So persistence and context-injection are **decoupled**:
+Bounding a tool result's size is the tool call's job (a narrower command — add
+`-maxdepth`, pipe through `rg`/`head`, scope the path), not something this layer
+does after the fact. A truncated-but-unlabeled result is a lie of omission: the
+model would be reasoning over partial data believing it saw the whole thing (RCA:
+session `nimble-pebble-2`, 2026-07-12 — a `tree` pin silently clipped to 22 of
+547 lines, header still claiming the full count, misled a planner into thinking
+the project had no Go source). So:
 
 - The executor writes the **full** stdout/stderr to a **session artifact**
   (`sessions/<id>/artifacts/<seq>.txt`) — persisted like any other session record.
-- The `tool_result` returned to the model is a **compact projection**: `exit`,
-  `status`, `bytes`, `line_count`, a short `preview`, and an opaque `ref`.
-- The respond turn injects only the preview + ref, never the full artifact.
-- The agent pulls more on demand via the `read_output` tool (`ref` + optional
-  offset/limit), paging the artifact instead of buffering it.
+- The `tool_result` returned to the model carries the **full** captured text
+  (`exit`, `status`, `bytes`, `line_count`, the full `preview` text, and an
+  opaque `ref`) — never a further-truncated excerpt of it.
+- The one exception is `output_max_bytes`, a capture-level safety net against a
+  truly runaway process (e.g. `cat` on a multi-GB file). When it triggers, the
+  result text says so explicitly (capped-at-N-bytes notice) — truncation is
+  always visible, never silent.
+- `read_output` (`ref` + optional offset/limit) lets the agent re-read a specific
+  window on demand — a convenience for large-but-fully-captured results, not a
+  workaround for a preview that hid something.
 
-The human sees the full output in the 📋 result widget (scrollable, capped by
-`max_widget_lines`); the model sees the preview + ref. One stored artifact, two
-projections. This generalizes to any bulky producer (planner, future experts).
+The human sees the same full output in the 📋 result widget (scrollable, capped
+by `max_widget_lines` for *display* only); the model sees the same text via
+`preview`. One stored artifact, one honest projection — this generalizes to any
+bulky producer (planner, future experts).

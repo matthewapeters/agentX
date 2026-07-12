@@ -67,8 +67,12 @@ If none of the listed tools fits the request, reply:
 - Arguments are schema-validated before execution; destructive or shell-escaping flags
   (e.g. `find -exec`/`-delete`, recursive force-delete) are rejected by policy.
 - Output is captured (stdout, stderr, exit code) and persisted to the session.
-- **Large outputs are not pasted into your context in full.** Each tool result you
-  receive is a compact preview (first lines + size) plus an opaque `ref`. When you
-  need more than the preview, call `read_output` with that `ref` (and an optional
-  line range) to page through the full result from the session.
+- **You receive the full captured output**, not an excerpt of it — plus an opaque
+  `ref`. Only a hard byte safety cap (`output_max_bytes`) can shrink what you see
+  below the command's real output, and if that happens it is always called out
+  explicitly in the result text itself. If a command might produce more than you
+  need, narrow it yourself (add `-maxdepth`, pipe through `rg`/`head`, scope the
+  path) rather than assuming the framework will trim it for you. Use `read_output`
+  with the `ref` (and an optional line range) to re-read a specific window when
+  useful.
 - Tiers are enabled progressively by configuration; read-only tools are available first.

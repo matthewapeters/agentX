@@ -5,7 +5,42 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - 2026-07-10
+## [Unreleased] - 2026-07-12
+
+### Fixed
+
+- **A live-refreshed working-memory pin (e.g. `tree`) was silently clipped to 20
+  lines on every refresh while its own header kept reporting the true line
+  count** (session `nimble-pebble-2`: a `tree` pin truncated to 22 of 547 lines
+  cut off before reaching `cmd/`, `internal/`, or `tests/` — the project's
+  actual Go source — misleading the planner into believing three separate
+  plans' "review the source code" step was satisfied by re-listing `docs/`).
+  `tools.Executor` previously re-truncated every captured result down to a
+  fixed line count (`previewLines`, default 20 — a cap meant for ephemeral chat
+  tool narration) before handing it to context, silently, regardless of whether
+  the result was a one-off answer or a durable pinned fact. Bounding a result's
+  *size* is the tool call's job (a narrower command — `-maxdepth`, `rg`/`head`,
+  a scoped path), not something the framework should impose after capture and
+  hide: a truncated-but-unlabeled result is a lie of omission, since the model
+  reasons over partial data believing it saw the whole thing. `tools.Result`
+  now always carries the **full** captured text; the only remaining truncation
+  point is `output_max_bytes` (a capture-level safety net against a genuinely
+  runaway process), and it is now always called out explicitly in the result
+  text (`"…(capture stopped at N bytes — output_max_bytes limit; not the
+  tool's full output. Narrow the command...")`) rather than silently.
+  `tools.NewExecutor` dropped its `previewLines` parameter entirely
+  (`NewExecutor(art, maxBytes)`); the tool-catalog prompt
+  (`config/seed/agentx-shell-commands.md`) and `docs/implementation/
+  04_llm_prompt_tooling_runtime.md` were corrected to stop telling the model
+  it only ever sees a preview. Regression coverage:
+  `tests/features/tools/executor.feature` ("output under the byte cap is
+  returned in full, not previewed" / "a specific window can still be paged
+  from the artifact on request" / "output exceeding the byte capture cap is
+  truncated with an explicit notice"). A follow-up is scoped but not yet
+  built: when `output_max_bytes` actually triggers, pause for user approval
+  (use the truncated result / allow a larger capture) or let the agent refine
+  the tool call itself (e.g. reach for `rg` over `cat`) instead of just
+  proceeding on a labeled-but-still-partial result.
 
 ### Added
 

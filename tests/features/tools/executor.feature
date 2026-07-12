@@ -4,7 +4,13 @@
 #
 # Behavior: the executor runs an approved descriptor as an argv vector (no shell),
 # captures stdout/stderr/exit, enforces a timeout, persists full output to a
-# session artifact, and returns a compact preview + ref.
+# session artifact, and returns the FULL captured text + ref — never a
+# further-truncated excerpt of it. Bounding a result's size is the tool call's
+# job (a narrower command); the only truncation the executor itself performs is
+# the output_max_bytes capture safety net, and that is always labeled honestly
+# in the result text, never silent (RCA: session nimble-pebble-2, 2026-07-12 —
+# a line-truncated preview whose header still claimed the untruncated count
+# misled a planner into thinking a `tree` pin covered directories it did not).
 
 @integration @arch:tool-executor
 Feature: Tool execution
@@ -46,11 +52,25 @@ Feature: Tool execution
     Then the result preview contains "$HOME"
 
   # use-case: UC-TOOL-EXEC
-  # variant: large-output-paged
-  Scenario: Large output is previewed and fully paged from the artifact
+  # variant: full-result-in-context
+  Scenario: Output under the byte cap is returned in full, not previewed
     Given a tool executor
     When a command emits 50 numbered lines
     Then the result reports 50 lines
     And the result preview contains "1"
-    And the result preview does not contain "50"
-    And reading the result output at offset 49 limit 1 yields "50"
+    And the result preview contains "50"
+
+  # use-case: UC-TOOL-EXEC
+  # variant: windowed-paging-still-available
+  Scenario: A specific window can still be paged from the artifact on request
+    Given a tool executor
+    When a command emits 50 numbered lines
+    Then reading the result output at offset 49 limit 1 yields "50"
+
+  # use-case: UC-TOOL-EXEC
+  # variant: byte-cap-truncation-labeled-honestly
+  Scenario: Output exceeding the byte capture cap is truncated with an explicit notice
+    Given a tool executor with a 16 byte output cap
+    When a command emits 50 numbered lines
+    Then the result is marked truncated
+    And the result preview contains "capture stopped at 16 bytes"
