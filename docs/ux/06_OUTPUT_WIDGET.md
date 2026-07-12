@@ -372,11 +372,12 @@ into a structured grid of `Cell{Rune, Color}` (rune + xterm-256 palette
 index) — see `logo/README.md`. The collapsed row is *not* a build artifact:
 its text varies with what the agent is currently doing, so
 `internal/surfaces/banner` synthesizes its cells at runtime instead (see
-"Collapsed row label" below), coloring them with the same left-to-right
-grayscale gradient `logo/coloriz.py` authors the full banner with. The surface
-picks which grid is active and how to color it without needing further input
-from the caller — it reacts to its own measured content height and to
-`RunState`/`Phase`.
+"Collapsed row label" below), padded with blank cells out to the full panel
+width — not just the label text's own length — so the row's gradient/
+animation spans edge to edge like a status bar, with the text sitting near
+the start. The surface picks which grid is active and how to color it
+without needing further input from the caller — it reacts to its own
+measured content height and to `RunState`/`Phase`.
 
 ### Collapse: content-based and sticky
 
@@ -434,7 +435,12 @@ enough — the glyph itself is the visible swatch. The collapsed row's glyphs
 are ordinary letters and spaces, mostly empty space within their cell, so it
 instead colors the cell *background* and forces the glyph to black — the
 same "solid colored strip" result, reached the way that's actually visible
-for text rather than block art.
+for text rather than block art. The gradient/hue's brightness (`V` in HSV,
+or the gray level when static) runs from pure white at the first column down
+to pure black at the last — and because the row is padded to the full panel
+width (not just the label text), that dark end falls in the padding past the
+visible text, so the text itself only ever sits in the bright portion and
+stays legible against black lettering regardless of how long the label is.
 
 ```gherkin
 GIVEN a freshly booted chat surface with the full logo banner set

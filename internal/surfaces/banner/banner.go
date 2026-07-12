@@ -43,17 +43,6 @@ type Cell struct {
 	Color int16
 }
 
-// grayDark and grayBright are the RGB gray levels the collapsed row's
-// left-to-right gradient interpolates between — chosen to match how
-// xterm-256's gray-ramp indices 232 (darkest) and 255 (brightest) actually
-// render, so the collapsed row's tone matches the full banner's authored
-// gradient. Interpolated in true-color (not quantized to the 24-step
-// xterm-256 gray ramp) so the gradient stays smooth and collision-free no
-// matter how long the label text is — see dynamicLuminance.
-const (
-	grayDark   = 8.0 / 255.0
-	grayBright = 238.0 / 255.0
-)
 
 // defaultLabel seeds the banner before the first SetLabel call — matching
 // the chat surface's initial state.StateIdle.
@@ -101,7 +90,7 @@ type Model struct {
 // fixed chrome region for.
 func New() *Model {
 	m := &Model{full: trimBlankRows(LogoGrid), label: defaultLabel}
-	m.collapsed = buildLabelGrid(m.collapsedText())
+	m.collapsed = buildLabelGrid(m.collapsedText(), m.width)
 	return m
 }
 
@@ -115,13 +104,25 @@ func (m *Model) SetLabel(label string) {
 		return
 	}
 	m.label = label
-	m.collapsed = buildLabelGrid(m.collapsedText())
+	m.collapsed = buildLabelGrid(m.collapsedText(), m.width)
 }
 
 func (m *Model) collapsedText() string { return "AgentX - " + m.label }
 
-// SetWidth sets the panel width lines are clipped to.
-func (m *Model) SetWidth(w int) { m.width = max(w, 0) }
+// SetWidth sets the panel width lines are clipped to. The collapsed row's
+// cells are also padded out to this width (buildLabelGrid), not just the
+// label text's own length: the row's background gradient/animation then
+// spans the full terminal width, so the visible text sits in the bright
+// portion near the start and the gradient's dark end falls past it, in the
+// padding — keeping the text readable regardless of label length.
+func (m *Model) SetWidth(w int) {
+	w = max(w, 0)
+	if w == m.width {
+		return
+	}
+	m.width = w
+	m.collapsed = buildLabelGrid(m.collapsedText(), m.width)
+}
 
 // Height returns the banner's current fixed row count: the full grid's row
 // count, or the collapsed grid's (today, 1) once collapsed.
@@ -289,11 +290,13 @@ func dynamicLuminance(col, n int) float64 {
 	return 1 - float64(col)/float64(n-1)
 }
 
-// grayColor renders lum (0..1) as a static true-color gray between grayDark
-// and grayBright — the collapsed row's non-animated color.
+// grayColor renders lum (0..1) as a true-color gray between pure black (0)
+// and pure white (1) — the collapsed row's non-animated background. See
+// buildLabelGrid for why the visible text stays near the white end even for
+// a long label: lum is computed from the row's full padded width, not the
+// text's own length.
 func grayColor(lum float64) colorful.Color {
-	v := grayDark + lum*(grayBright-grayDark)
-	return colorful.Color{R: v, G: v, B: v}
+	return colorful.Color{R: lum, G: lum, B: lum}
 }
 
 // writeForegroundColor sets true-color foreground — for a `█` block cell
@@ -325,19 +328,27 @@ func writeSGRColor(b *strings.Builder, kind string, c colorful.Color) {
 	b.WriteByte('m')
 }
 
-// buildLabelGrid synthesizes a one-row grid from text. Unlike the full-size
-// grid's authored Cell.Color values, these cells carry no color at all —
-// their gradient is computed fresh at render time from column position
+// buildLabelGrid synthesizes a one-row grid from text, padded with blank
+// (space) cells out to width so the row spans the full panel width rather
+// than just the text — see SetWidth for why. Unlike the full-size grid's
+// authored Cell.Color values, these cells carry no color at all — their
+// gradient is computed fresh at render time from column position
 // (dynamicLuminance/View), so it's never quantized to a fixed-length palette
-// and stays correct for whatever the current label's length happens to be.
-func buildLabelGrid(text string) [][]Cell {
+// and stays correct for whatever the current label's length and the current
+// terminal width happen to be.
+func buildLabelGrid(text string, width int) [][]Cell {
 	runes := []rune(text)
-	if len(runes) == 0 {
+	n := max(width, len(runes))
+	if n == 0 {
 		return [][]Cell{{}}
 	}
-	row := make([]Cell, len(runes))
-	for i, r := range runes {
-		row[i] = Cell{Rune: r}
+	row := make([]Cell, n)
+	for i := range row {
+		if i < len(runes) {
+			row[i] = Cell{Rune: runes[i]}
+		} else {
+			row[i] = Cell{Rune: ' '}
+		}
 	}
 	return [][]Cell{row}
 }
