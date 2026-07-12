@@ -25,15 +25,17 @@ Feature: Working-memory editor surface
     And the working memory view shows "○ size = big"
 
   # use-case: PD-WM-AF-002  (TC-M2-wm-006)
-  Scenario: Navigates the selection cursor
+  Scenario: Navigates the selection cursor with PgUp/PgDn
     Given a working memory surface
     And the surface loads:
       | key   | value | enabled |
       | color | blue  | true    |
       | size  | big   | false   |
     Then the working memory view highlights "color"
-    When the surface receives key "down"
+    When the surface receives key "pgdown"
     Then the working memory view highlights "size"
+    When the surface receives key "pgup"
+    Then the working memory view highlights "color"
 
   # use-case: PD-WM-AF-003  (TC-M2-wm-007)
   Scenario: Space toggles the selected fact (issues a command)
@@ -72,4 +74,68 @@ Feature: Working-memory editor surface
     And the surface types "x=y"
     And the surface receives key "esc"
     Then the working memory view does not show "x=y"
-    And the working memory view shows "↑/↓ move"
+    And the working memory view shows "pgup/pgdn move"
+
+  # use-case: PD-WM-AF-011
+  Scenario: A multi-line value collapses by default
+    Given a working memory surface
+    And the surface loads a fact "notes" with 5 lines of value
+    Then the working memory view shows "notes = line 1 … (+4 lines)"
+    And the working memory view does not show "line 5"
+
+  # use-case: PD-WM-AF-011
+  Scenario: Enter expands and re-collapses the selected multi-line fact
+    Given a working memory surface
+    And the surface loads a fact "notes" with 5 lines of value
+    When the surface receives key "enter"
+    Then the working memory view shows "line 5"
+    And the working memory view does not show "… (+4 lines)"
+    When the surface receives key "enter"
+    Then the working memory view shows "notes = line 1 … (+4 lines)"
+    And the working memory view does not show "line 5"
+
+  # use-case: PD-WM-AF-011
+  Scenario: Enter on a single-line fact is a no-op
+    Given a working memory surface
+    And the surface loads:
+      | key   | value | enabled |
+      | color | blue  | true    |
+    When the surface receives key "enter"
+    Then the working memory view shows "color = blue"
+
+  # use-case: PD-WM-AF-010
+  Scenario: An expanded fact over the per-fact cap shows a scrollbar and scrolls in place
+    Given a working memory surface
+    And the surface loads a fact "notes" with 20 lines of value
+    When the surface receives key "enter"
+    Then the working memory view shows "line 1"
+    And the working memory view shows "line 12"
+    And the working memory view does not show "line 13"
+    And the working memory view has a scrollbar
+    When the surface receives key "down"
+    Then the working memory view shows "line 13"
+    And the working memory view does not show "line 1 "
+
+  # use-case: PD-WM-AF-013
+  Scenario: The fact list shows a scrollbar when facts overflow the panel height
+    Given a working memory surface sized 40 by 10
+    And the surface loads 8 simple facts
+    Then the working memory view has a scrollbar
+
+  # use-case: PD-WM-AF-013
+  Scenario: No scrollbar when all facts fit the panel height
+    Given a working memory surface sized 40 by 10
+    And the surface loads 2 simple facts
+    Then the working memory view has no scrollbar
+
+  # use-case: PD-WM-AF-002 / PD-WM-AF-012
+  Scenario: PgDn keeps the newly selected fact visible past the fold
+    Given a working memory surface sized 40 by 10
+    And the surface loads 8 simple facts
+    Then the working memory view highlights "k1"
+    When the surface receives key "pgdown"
+    And the surface receives key "pgdown"
+    And the surface receives key "pgdown"
+    And the surface receives key "pgdown"
+    And the surface receives key "pgdown"
+    Then the working memory view highlights "k6"
