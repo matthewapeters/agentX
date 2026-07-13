@@ -190,6 +190,39 @@ policy, executor, artifact store.
   ("Prerequisite" section) for the full writeup; `CHANGELOG.md` 2026-07-13.
 - **Maps to**: none (bugfix to already-shipped AC-M3b-1/AC-M3b-2 reporting fidelity).
 
+## TOOL-8 · Planner prompt role separation + conditional directory-listing bias · S–M · RCA-driven · SHIPPED 2026-07-13
+- **Target**: `internal/prompting/planner/planner.go` (`Render` → `RenderSystem`/
+  `RenderUser`), `internal/runtime/decompose/live.go` (`Chat` type, `LLMPlanner.Plan`),
+  `internal/runtime/classifier_pipeline.go` (the `chat` closure), `config/seed/
+  agentx-planner.md`
+- **Deps**: none — a prompt-structure fix to the already-shipped ADR 0008 planner
+- **Behavior**: full design in
+  `docs/architecture/behavior/adr/0011_planner_prompt_role_separation.feature.md`.
+  Summary: session `vivid-beacon-2` — the planner produced a `list_dir` (`ls -la`) leaf
+  even though the full, accurate, untruncated 552-line working-memory `tree` fact was
+  already in its context. Root cause: (1) the planner call sends everything —
+  instructions, working memory, the goal — as a single flattened `role: "user"` message
+  (`decompose.Chat` is a flat-string seam), unlike the respond path's proper
+  `system`/`user` split (`prompting.Assembler.Assemble`); (2) within that flattened
+  string, the working-memory fact sits sandwiched between an instruction and the goal
+  ("lost in the middle"); (3) the instruction itself — "prefer a task that lists a
+  directory... before... reads one" — is unconditional, with no carve-out for "unless
+  already known." Fix: split the planner prompt into a real system message (durable
+  rules + tool catalog + the listing guidance, reworded conditionally) and a real user
+  message (working memory + goal + reply-format spec, adjacent with no instruction
+  between them) — mirroring `Assembler.Assemble`'s existing pattern, sent as genuine
+  `{role: "system"}`/`{role: "user"}` messages to Ollama's `/api/chat` (which applies the
+  model's own chat template per role) rather than text-label markers inside one message,
+  which would not engage that mechanism at all.
+- **Feature**: `internal/prompting/planner/render_test.go` (new) — partitioning +
+  conditional-wording regression guard; `internal/runtime/decompose/live_test.go`
+  updated for the new `Chat` signature (its only other call site).
+- **Done**: shipped. The mechanism (role separation, conditional wording) is verified by
+  structural tests; the harder-to-pin-down live-model regression case (does a real model
+  actually stop re-listing a known directory) was not attempted — see the behavior doc's
+  Tests section.
+- **Maps to**: none (prompt-quality fix, not an M3b acceptance criterion).
+
 ---
 
 ## Sequencing

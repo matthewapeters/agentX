@@ -9,6 +9,34 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The decomposition planner sent everything — durable rules, working memory, the
+  goal — as one flattened `role: "user"` message**, unlike the respond path's proper
+  `system`/`user` split (`prompting.Assembler.Assemble`) (TOOL-8; session
+  `vivid-beacon-2`: the planner produced a `list_dir` (`ls -la`) leaf even though the
+  full, accurate, untruncated 552-line working-memory `tree` fact was already in its
+  context). Three compounding issues: the missing role separation itself (Ollama applies
+  a model's chat template per message role — that's the actual mechanism that weights
+  "authoritative instructions" differently from "the task at hand"; a single flattened
+  string gets none of it, and neither would inserting text labels like `[SYSTEM]`/
+  `[DATA]` into that same string, since it's still just undifferentiated tokens to the
+  model); the working-memory fact sitting sandwiched between an instruction and the goal
+  within that flattened string ("lost in the middle"); and the instruction itself —
+  "prefer a task that lists a directory... before... reads one" — being unconditional,
+  with no carve-out for "unless already known." `decompose.Chat`'s signature changed
+  from a single `prompt string` to `(systemPrompt, userPrompt string)`;
+  `internal/prompting/planner`'s `Render` split into `RenderSystem`/`RenderUser`
+  (`DefaultPromptTemplate` now system-only, a new `DefaultUserTemplate` holds the
+  per-call scaffolding); the `chat` closure in `classifier_pipeline.go` now sends real
+  `{role: "system"}`/`{role: "user"}` messages; `agentx-planner.md`'s listing guidance is
+  now conditional. Regression coverage:
+  `internal/prompting/planner/render_test.go` (partitioning + a guard against
+  re-introducing the unconditional wording), `internal/runtime/decompose/live_test.go`
+  (system/user cross-contamination assertions). Design:
+  `docs/architecture/behavior/adr/0011_planner_prompt_role_separation.feature.md`. Not
+  attempted: a live-model regression test proving a real model actually stops re-listing
+  a known directory — the structural tests verify the mechanism, not a live model's
+  behavior.
+
 - **A plan's terminal report could not tell "the user/policy said no" apart from
   "this genuinely broke"** (TOOL-7; RCA `nimble-pebble-2` again — `task-565-1`'s
   denied `git_status` call was reported as indistinguishable from a crash: "1

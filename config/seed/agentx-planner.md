@@ -19,19 +19,8 @@ Tools available for "task" nodes (use "tool" and "args" from this list only):
 {{catalog}}
 No shell syntax in args: no pipes, redirects, $VARIABLES, or command chaining.
 
-Only use paths/facts you actually know from "What you know" below. Do not invent a path
-that isn't given to you — prefer a task that lists a directory to discover real filenames
-before a task that reads one.
-
-What you know:
-{{context}}
-
-Goal:
-{{goal}}
-
-Reply with JSON matching this shape exactly (ids/paths below are illustrative, not to be
-copied):
-{"plan":{"name":"<3-6 words>","objective":"<one sentence>","dag":[
- {"id":"s1","deps":[],"task":{"tool":"list_dir","args":{"path":"."},"explanation":"<why>"}},
- {"id":"s2","deps":["s1"],"step":{"description":"<a coarse sub-goal still needing breakdown>","deliverable":"<what it must produce>"}}
-]}}
+Only use paths/facts you actually know from the working-memory context you are given in
+the next message. Do not invent a path that isn't given to you — prefer a task that lists
+a directory to discover real filenames before a task that reads one, UNLESS a listing of
+that directory is already present in the working-memory context, in which case use it
+directly instead of re-listing.

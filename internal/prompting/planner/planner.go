@@ -29,12 +29,19 @@ import (
 	"agentx/internal/prompting/task"
 )
 
-// DefaultPromptTemplate is the built-in planner system prompt, used when no
+// DefaultPromptTemplate is the built-in planner SYSTEM prompt, used when no
 // agentx-planner.md is configured (config/seed/agentx-planner.md ships the same content
 // as the editable seed — this constant is only the fallback, mirroring
-// classify.DefaultPrompt). {{catalog}} is the compact tool catalog; {{goal}} is the
-// compound goal; {{context}} is the branch's investigation context (working memory +
-// read-tool findings so far).
+// classify.DefaultPrompt). {{catalog}} is the compact tool catalog. Durable,
+// call-independent behavioral rules only — working memory and the goal are the USER
+// message (DefaultUserTemplate below), never folded into this one. ADR 0011: the
+// planner used to render everything (rules + working memory + goal) into a single
+// flattened `role: "user"` message, unlike the respond path's proper system/user split
+// (prompting.Assembler.Assemble) — that lack of role separation, plus working memory
+// being sandwiched between an instruction and the goal ("lost in the middle"), plus the
+// listing-bias instruction below being unconditional, compounded into session
+// vivid-beacon-2: a `list_dir` leaf was generated even though the exact directory
+// listing it re-derived was already sitting in working memory.
 const DefaultPromptTemplate = `You are planning how to accomplish a compound goal by breaking it
 into a DAG of at most 5 nodes.
 
@@ -56,11 +63,22 @@ Tools available for "task" nodes (use "tool" and "args" from this list only):
 {{catalog}}
 No shell syntax in args: no pipes, redirects, $VARIABLES, or command chaining.
 
-Only use paths/facts you actually know from "What you know" below. Do not invent a path
-that isn't given to you — prefer a task that lists a directory to discover real filenames
-before a task that reads one.
+Only use paths/facts you actually know from the working-memory context you are given in
+the next message. Do not invent a path that isn't given to you — prefer a task that lists
+a directory to discover real filenames before a task that reads one, UNLESS a listing of
+that directory is already present in the working-memory context, in which case use it
+directly instead of re-listing.`
 
-What you know:
+// DefaultUserTemplate is the built-in planner USER message: per-call data (working
+// memory, the goal) and the reply-format spec — mechanical scaffolding, not tunable
+// guidance, so unlike DefaultPromptTemplate it has no externally-configurable
+// counterpart (ADR 0011). {{context}} is the branch's investigation context (working
+// memory + read-tool findings so far); {{goal}} is the compound goal. The reply-format
+// spec stays adjacent to the goal deliberately: recency right before generation is
+// wanted here (unlike the old layout's listing-bias instruction, whose recency ahead of
+// the goal was actively unhelpful), since the model should remember the exact output
+// shape right as it responds.
+const DefaultUserTemplate = `What you know:
 {{context}}
 
 Goal:
@@ -143,10 +161,17 @@ const planSchemaJSON = `{
     }}}
 }`
 
-// Render fills template (DefaultPromptTemplate, or the configured agentx-planner.md
-// content) for a goal, its investigation context, and the tool catalog.
-func Render(template, goal, context, catalog string) string {
-	r := strings.NewReplacer("{{goal}}", goal, "{{context}}", context, "{{catalog}}", catalog)
+// RenderSystem fills template (DefaultPromptTemplate, or the configured
+// agentx-planner.md content) for the tool catalog — the durable, call-independent
+// SYSTEM message (ADR 0011).
+func RenderSystem(template, catalog string) string {
+	return strings.ReplaceAll(template, "{{catalog}}", catalog)
+}
+
+// RenderUser fills template (DefaultUserTemplate) for a goal and its investigation
+// context — the per-call USER message (ADR 0011).
+func RenderUser(template, goal, context string) string {
+	r := strings.NewReplacer("{{goal}}", goal, "{{context}}", context)
 	return r.Replace(template)
 }
 

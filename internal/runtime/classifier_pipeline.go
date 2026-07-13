@@ -157,11 +157,14 @@ func (o *Orchestrator) buildDecomposition() {
 	}
 	client := ollama.New(o.settings.OllamaHost)
 	model := o.settings.OllamaModel
-	chat := func(ctx context.Context, prompt string, format json.RawMessage) (string, error) {
+	chat := func(ctx context.Context, systemPrompt, userPrompt string, format json.RawMessage) (string, error) {
 		return client.Complete(ctx, ollama.CompleteRequest{
-			Model:    model,
-			Messages: []ollama.Message{{Role: "user", Content: prompt}},
-			Format:   format,
+			Model: model,
+			Messages: []ollama.Message{
+				{Role: "system", Content: systemPrompt},
+				{Role: "user", Content: userPrompt},
+			},
+			Format: format,
 		})
 	}
 	sessionID := o.id.ID
