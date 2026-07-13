@@ -55,7 +55,8 @@ type Observer interface {
 	NodeDispatched(rec task.Record, depth int)
 	// NodeDecomposed fires when a decomposition lands: parent became a join over children.
 	NodeDecomposed(parent task.Record, children []task.Record)
-	// NodeCompleted fires when a node reaches a terminal status (done/failed/abstained).
+	// NodeCompleted fires when a node reaches a terminal status
+	// (done/failed/denied/abstained).
 	NodeCompleted(id string, status task.Status)
 }
 
@@ -246,13 +247,21 @@ func (s *Scheduler) work(ctx context.Context, rec task.Record, d int, done chan<
 }
 
 // execute drains a Task leaf through the executor and maps its outcome to a terminal
-// status.
+// status. Denied/NeedsApproval are a deliberate decision (policy blocked it, or the
+// user declined) — mapped to task.Denied, never task.Failed, so a plan's terminal
+// report can tell "someone said no" apart from "this is broken" (TOOL-7; the
+// nimble-pebble-2 RCA hit exactly this ambiguity). Phantom/NoTool/Failed are genuine
+// execution problems and stay task.Failed.
 func (s *Scheduler) execute(ctx context.Context, rec task.Record) task.Status {
 	out := s.executor.Execute(ctx, rec)
-	if out.Status == executor.Executed {
+	switch out.Status {
+	case executor.Executed:
 		return task.Done
+	case executor.Denied, executor.NeedsApproval:
+		return task.Denied
+	default:
+		return task.Failed
 	}
-	return task.Failed
 }
 
 // applyDecompose merges a branch's children into the graph and makes the parent a join:

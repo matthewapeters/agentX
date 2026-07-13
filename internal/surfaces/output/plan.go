@@ -94,6 +94,8 @@ func (m *Model) applyPlanEvent(ev state.Event) {
 			node.status = "done"
 		case "failed":
 			node.status = "failed"
+		case "denied":
+			node.status = "denied"
 		case "abstained":
 			node.status = "abstained"
 		}
@@ -164,6 +166,8 @@ func (m *Model) applyNodeEvent(ev state.Event) tea.Cmd {
 			n.status = "done"
 		case "abstained":
 			n.status = "abstained"
+		case "denied":
+			n.status = "denied"
 		default:
 			n.status = "failed"
 		}
@@ -478,7 +482,10 @@ func (ps *planState) computeLiveness() map[string]bool {
 	return live
 }
 
-// glyph maps a node status to its visual cue (ADR 0009 reqs 5–6).
+// glyph maps a node status to its visual cue (ADR 0009 reqs 5–6). "denied" is
+// distinct from "failed": a policy/user decision, not a bug (TOOL-7) — conflating
+// them was the exact ambiguity the nimble-pebble-2 RCA hit in the plan's terminal
+// report.
 func glyph(status string) string {
 	switch status {
 	case "running":
@@ -489,6 +496,8 @@ func glyph(status string) string {
 		return "✅"
 	case "failed":
 		return "❌"
+	case "denied":
+		return "🔒"
 	case "abstained":
 		return "⊘"
 	case "blocked":

@@ -82,6 +82,7 @@ func registerTaskSchedulerSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the decomposer expands "([^"]*)" into task leaves "([^"]*)" and "([^"]*)"$`, w.expandInto)
 	sc.Step(`^the executor reports every leaf executed$`, w.noopSched)
 	sc.Step(`^the executor reports "([^"]*)" failed$`, w.execFails)
+	sc.Step(`^the executor reports "([^"]*)" denied$`, w.execDenied)
 	sc.Step(`^a slot budget of (\d+)$`, w.slotBudget)
 	sc.Step(`^a plan of (\d+) task leaves with no dependencies$`, w.nTasks)
 	sc.Step(`^a max task depth of (\d+)$`, w.setMaxDepth)
@@ -159,6 +160,11 @@ func (w *schedWorld) expandInto(parent, g1, g2 string) error {
 
 func (w *schedWorld) execFails(id string) error {
 	w.exec.outcome[id] = executor.Failed
+	return nil
+}
+
+func (w *schedWorld) execDenied(id string) error {
+	w.exec.outcome[id] = executor.Denied
 	return nil
 }
 

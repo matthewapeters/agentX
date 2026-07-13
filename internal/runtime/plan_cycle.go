@@ -218,9 +218,10 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text, rootID string) (s
 
 // publishPlan records the drained plan (node goals, deps, final statuses) as the final
 // task_plan snapshot. Per-node progress was already streamed as task_node deltas; this is
-// the terminal summary. An incomplete plan — anything failed, abstained, or blocked
-// behind a failed dependency — is reported loudly, never silently (mellow-meadow: one
-// failed leaf silently stranded five nodes).
+// the terminal summary. An incomplete plan — anything failed, denied, abstained, or
+// stranded behind an unresolved dependency — is reported loudly, never silently
+// (mellow-meadow: one failed leaf silently stranded five nodes). Denied is counted
+// separately from failed: a policy/user decision is not a bug (TOOL-7).
 func (o *Orchestrator) publishPlan(root task.Record, out decompose.PlanOutcome, executed int, derr error) {
 	payload := planSummary(root, out.Nodes, executed, derr)
 	o.publish("TASK_PLAN", state.ContentTaskPlan, payload)
@@ -230,7 +231,7 @@ func (o *Orchestrator) publishPlan(root task.Record, out decompose.PlanOutcome, 
 // from the node statuses when the drain error alone would under-report.
 func planSummary(root task.Record, recs []task.Record, executed int, derr error) map[string]any {
 	nodes := make([]map[string]any, 0, len(recs))
-	var failed, abstained, neverRan int
+	var failed, denied, abstained, neverRan int
 	for _, n := range recs {
 		nodes = append(nodes, map[string]any{
 			"task_id": n.ID, "goal": n.Goal, "status": string(n.Status), "deps": n.Deps,
@@ -241,9 +242,11 @@ func planSummary(root task.Record, recs []task.Record, executed int, derr error)
 			// complete
 		case task.Failed:
 			failed++
+		case task.Denied:
+			denied++
 		case task.Abstained:
 			abstained++
-		default: // proposed / ready / in_progress: stranded behind a failed/abstained dep
+		default: // proposed / ready / in_progress: stranded behind an unresolved dep
 			neverRan++
 		}
 	}
@@ -254,10 +257,10 @@ func planSummary(root task.Record, recs []task.Record, executed int, derr error)
 	switch {
 	case derr != nil:
 		payload["error"] = derr.Error()
-	case failed+abstained+neverRan > 0:
+	case failed+denied+abstained+neverRan > 0:
 		payload["error"] = fmt.Sprintf(
-			"plan incomplete: %d failed, %d abstained, %d never ran (blocked behind them) of %d nodes",
-			failed, abstained, neverRan, len(recs))
+			"plan incomplete: %d failed, %d denied (needs approval), %d abstained, %d never ran (blocked behind them) of %d nodes",
+			failed, denied, abstained, neverRan, len(recs))
 	}
 	return payload
 }

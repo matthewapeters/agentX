@@ -5,9 +5,35 @@ All notable changes to AgentX are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - 2026-07-12
+## [Unreleased] - 2026-07-13
 
 ### Fixed
+
+- **A plan's terminal report could not tell "the user/policy said no" apart from
+  "this genuinely broke"** (TOOL-7; RCA `nimble-pebble-2` again — `task-565-1`'s
+  denied `git_status` call was reported as indistinguishable from a crash: "1
+  failed... of 3 nodes"). `scheduler.execute` (`internal/runtime/scheduler/
+  scheduler.go`) mapped every non-`Executed` `executor.Outcome` — a user's explicit
+  decline, a policy denial, a genuine timeout or crash — to the same `task.Failed`,
+  even though `executor.Outcome.Status` already distinguished `Denied`/
+  `NeedsApproval` from `Phantom`/`NoTool`/`Failed`. Added `task.Denied`
+  (`internal/prompting/task/task.go`) as its own terminal status, mapped from
+  `executor.Denied`/`executor.NeedsApproval`; `Phantom`/`NoTool`/`Failed` remain
+  `task.Failed`. The plan-completion error string
+  (`internal/runtime/plan_cycle.go`'s `planSummary`) now reports a separate
+  "N denied (needs approval)" bucket alongside failed/abstained/never-ran. The
+  plan widget (`internal/surfaces/output/plan.go`) renders a denied node with its
+  own 🔒 glyph, never the same ❌ as a real failure. Note: plan-step tool calls
+  already blocked correctly on the same approval gate as the interactive
+  single_tool cycle before this fix (`internal/executor/executor.go`'s `Execute`
+  calls the approver synchronously, sibling nodes keep running) — this fix is
+  purely about the terminal *status* fidelity once that decision resolves, not
+  about whether the plan waited for it. Regression coverage:
+  `tests/features/runtime/task_scheduler.feature` ("a denied leaf is distinguished
+  from a genuine failure") and
+  `internal/surfaces/output/plan_test.go`'s `TestDeniedNodeRendersDistinctFromFailed`.
+  Scoped design: `docs/architecture/behavior/adr/
+  0010_oversized_tool_output_recovery.feature.md` ("Prerequisite" section).
 
 - **A live-refreshed working-memory pin (e.g. `tree`) was silently clipped to 20
   lines on every refresh while its own header kept reporting the true line

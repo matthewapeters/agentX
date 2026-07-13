@@ -54,6 +54,12 @@ const (
 	Done Status = "done"
 	// Failed — execution errored or the effect could not be verified.
 	Failed Status = "failed"
+	// Denied — the command was blocked by policy or declined by the user; distinct
+	// from Failed (a genuine execution error) so plan reporting never conflates a
+	// deliberate decision with a bug (RCA: session nimble-pebble-2 — task-565-1's
+	// denied git_status call was indistinguishable from a crash in the plan's
+	// terminal report).
+	Denied Status = "denied"
 	// Cancelled — superseded by a later turn or explicitly withdrawn.
 	Cancelled Status = "cancelled"
 )

@@ -132,10 +132,12 @@ policy, executor, artifact store.
 - **Maps to**: AC-M3b-1.
 
 ## TOOL-6 · Oversized-output recovery gate · S–M (Phase A) + M–L (Phase B) · post-M3b, RCA-driven
-- **Target**: `internal/runtime/` (`runToolPhase`), `internal/tools/` (`Proposer`,
-  Phase B only), `internal/config/`
+- **Target**: `internal/runtime/` (`runToolPhase`, plan-leaf path in
+  `internal/executor/executor.go`), `internal/tools/` (`Proposer`, Phase B only),
+  `internal/config/`
 - **Deps**: TOOL-2 (executor truncation + honest labeling, already shipped), TOOL-3
-  (proves the `RequestDecision`/gate/`awaiting_input` shape this reuses)
+  (proves the `RequestDecision`/gate/`awaiting_input` shape this reuses), **TOOL-7**
+  (Phase A's `abort` path is meaningless without the `task.Blocked` distinction)
 - **Behavior**: full design in
   `docs/architecture/behavior/adr/0010_oversized_tool_output_recovery.feature.md`.
   Summary: when `tools.Result.Truncated` (the `output_max_bytes` safety net triggered),
@@ -150,8 +152,38 @@ policy, executor, artifact store.
   written) — see the behavior doc's Tests section.
 - **Done**: not started. Phase A (decision gate) and Phase B (LLM refinement) are
   separable; see the behavior doc's "Suggested delivery split" and open scope questions
-  (live-pin-refresh and plan-step interaction) before starting either.
+  (live-pin-refresh) before starting either. The plan-step-blocking open question was
+  retracted 2026-07-13 — plan leaves already block correctly on the approval gate today
+  (`internal/executor/executor.go:254-265`); `PhaseOutputSize` follows the same seam,
+  no special-casing.
 - **Maps to**: none (post-M3b addition; not required for original AC-M3b-1…4).
+
+## TOOL-7 · Distinguish "blocked on a decision" from "genuinely failed" in task.Status · S · pre-existing gap, RCA-driven · SHIPPED 2026-07-13
+- **Target**: `internal/prompting/task/task.go` (new `Status` value),
+  `internal/runtime/scheduler/scheduler.go` (`execute`'s outcome mapping),
+  `internal/runtime/plan_cycle.go` (plan-completion error string),
+  `internal/surfaces/output/plan.go` (widget glyph)
+- **Deps**: none — fixes already-shipped TOOL-3/TOOL-4 behavior
+- **Behavior**: `scheduler.execute` mapped every `executor.Outcome.Status` that isn't
+  `Executed` — `Denied`, `NeedsApproval`, `Phantom`, `NoTool`, `Failed` — to the same
+  `task.Failed`. A user's explicit decline (or a blacklist denial) is a fundamentally
+  different, meaningful outcome from a crash or bad exit code, but `task.Status` had no
+  value for it. This is exactly the ambiguity the `nimble-pebble-2` RCA hit:
+  `task-565-1`'s `git_status` call came back `outcome: "denied"`, but the plan's
+  terminal report just said "1 failed... of 3 nodes" — indistinguishable from a bug.
+  Added `task.Denied`; `scheduler.execute` maps `executor.Denied`/`executor.
+  NeedsApproval` to it, leaving `Phantom`/`NoTool`/`Failed` as `task.Failed`. The
+  plan-completion error string grew a fourth bucket ("...N denied (needs
+  approval)..."). The plan widget renders a denied node with its own 🔒 glyph, never
+  the same ❌ as a real failure.
+- **Feature**: `tests/features/runtime/task_scheduler.feature` — "A denied leaf is
+  distinguished from a genuine failure" (UC-RTSCHED-007b); native Go test
+  `TestDeniedNodeRendersDistinctFromFailed` in
+  `internal/surfaces/output/plan_test.go` for the widget glyph.
+- **Done**: shipped. See
+  `docs/architecture/behavior/adr/0010_oversized_tool_output_recovery.feature.md`
+  ("Prerequisite" section) for the full writeup; `CHANGELOG.md` 2026-07-13.
+- **Maps to**: none (bugfix to already-shipped AC-M3b-1/AC-M3b-2 reporting fidelity).
 
 ---
 

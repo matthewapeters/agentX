@@ -90,6 +90,21 @@ Feature: the scheduler drives a task DAG to completion
     And "c" does not reach status "done"
     And the scheduler terminates
 
+  # use-case: UC-RTSCHED-007b
+  # TOOL-7: a denied leaf (policy blocked it, or the user declined approval) is a
+  # deliberate decision, not a bug — it must not report as "failed" (RCA:
+  # nimble-pebble-2 — task-565-1's denied git_status call was indistinguishable
+  # from a crash in the plan's terminal report). Its sibling keeps running and
+  # completing normally: only the denied node itself is affected.
+  @unit
+  Scenario: A denied leaf is distinguished from a genuine failure
+    Given task leaves "a" and "b" with no dependencies
+    And the executor reports "a" denied
+    When the scheduler runs
+    Then "a" reaches status "denied"
+    And "a" does not reach status "failed"
+    And "b" reaches status "done"
+
   # use-case: UC-RTSCHED-008
   @unit
   Scenario: A step node at max depth is marked for clarification, not executed

@@ -127,24 +127,74 @@ room" is the same shape as "always allow this verb to continue."
    spec recommends pin refreshes always resolve as `use_truncated_once` silently (no
    gate), and only the interactive `single_tool` cycle gets the full menu. Needs an
    explicit "interactive vs. background" flag threaded to wherever this check lives.
-2. **Plan-step tool calls** (`buildTaskExecutor`'s shared proposer/executor) run
-   unattended and possibly in parallel; blocking a plan step on human approval is
-   likely wrong. Recommend defaulting plan-step truncation to `refine`-first-then-
-   `use_truncated_once`, never a blocking human prompt mid-plan. Needs a product decision,
-   not just an engineering default.
+2. ~~Plan-step tool calls... blocking a plan step on human approval is likely wrong~~ —
+   **retracted, 2026-07-13**. `executor.Execute` already blocks a plan leaf synchronously
+   on the exact same decision gate (`Orchestrator.RequestApproval`/`RequestDecision`) when
+   policy returns `NeedsApproval` (`internal/executor/executor.go:254-265`,
+   `internal/runtime/classifier_pipeline.go:83-101` wires the approver) — sibling nodes
+   keep running in parallel (`internal/runtime/scheduler.go:182`, one goroutine per node);
+   only the blocked node's goroutine waits. This is the proven pattern and `PhaseOutputSize`
+   should follow it exactly: block the plan leaf on the same gate, no special-casing for
+   "unattended" execution. See **Prerequisite** below for the real gap this surfaced.
 3. **Cap value for `expand_always`** — per-tool (recommended: a `find` on one path may
    legitimately need more room than a `cat` elsewhere) vs. one global bumped default.
 4. Whether the existing generic approval UI component can render this prompt as-is
    (byte counts in prose) or needs bespoke treatment (e.g. a size slider) — v1 should
    reuse the generic component; no new UI work assumed here.
 
+## Prerequisite (pre-existing gap, not new to this feature): task.Status can't tell "blocked on a decision" from "genuinely broken" — SHIPPED 2026-07-13 as TOOL-7
+
+Surfaced while correcting open question #2, 2026-07-13. `scheduler.execute`
+(`internal/runtime/scheduler/scheduler.go:250-256`, before the fix) was:
+
+```go
+func (s *Scheduler) execute(ctx context.Context, rec task.Record) task.Status {
+    out := s.executor.Execute(ctx, rec)
+    if out.Status == executor.Executed { return task.Done }
+    return task.Failed
+}
+```
+
+`executor.Outcome.Status` (`internal/executor/executor.go:78-102`) already distinguishes
+`Executed` / `Phantom` / `Denied` / `NeedsApproval` / `NoTool` / `Failed` — a user's
+explicit decline is a *different, meaningful* outcome from a crash, a bad exit code, or a
+timeout. But `task.Status` (`internal/prompting/task/task.go:41-56`, only
+`Proposed`/`Ready`/`Abstained`/`Done`/`Failed`) has no value for it, so `scheduler.execute`
+collapses all five non-`Executed` outcomes into the same `task.Failed`. This is exactly
+the ambiguity the `nimble-pebble-2` RCA hit: `task-565-1`'s `git_status` call came back
+`outcome: "denied"`, but the plan's terminal report just said "1 failed, 0 abstained, 1
+never ran... of 3 nodes" — nothing distinguished a policy decision from a bug. It is a
+**pre-existing bug in the already-shipped TOOL-3/TOOL-4 approval integration**,
+independent of whether TOOL-6 ever ships — and TOOL-6's `PhaseOutputSize` gate would
+inherit the identical collapse on its `abort` path without a fix.
+
+**Shipped fix**: added `task.Denied` meaning "did not complete because of an explicit
+policy/user decision — declined approval, denied by blacklist" — distinct from
+`task.Failed` (a genuine execution error: crash, unexpected non-zero exit, timeout,
+phantom no-op). `scheduler.execute` maps `executor.Denied`/`executor.NeedsApproval` to
+`task.Denied`; `Phantom`/`NoTool`/`Failed` remain `task.Failed`. The plan-completion
+error string (`"plan incomplete: N failed, M abstained, K never ran"`, seen in the RCA)
+grew a fourth bucket: `"...N denied (needs approval)..."`. The plan widget
+(`internal/surfaces/output/plan.go`) renders `task.Denied` with its own 🔒 glyph, never
+the same ❌ as `task.Failed` — the widget-layer switches had their own separate
+default-to-"failed" fallback that needed the same fix. Tracked as **TOOL-7** in
+`docs/build-plan/04_tool_runtime_backlog.md`, landed ahead of TOOL-6 Phase A per the
+dependency noted there (Phase A's `abort` option would otherwise inherit the same
+collapse this fixed).
+
 ## Suggested delivery split
 
+- **TOOL-7 (prerequisite, S) — SHIPPED 2026-07-13**: `task.Denied` status + the
+  `scheduler.execute` mapping fix + plan-completion error string update + widget
+  glyph. Fixed a real, already-shipped gap on its own merits (RCA-visible today)
+  independent of TOOL-6.
 - **Phase A** (S–M): decision gate only (`use_truncated_*`, `expand_*`, `abort`), reusing
   `RequestDecision` wholesale — new `state.PhaseOutputSize`, new persisted override
   file + loader (mirrors `continuation.LoadVerbs`/`AppendVerb` but with a numeric cap
-  instead of a bare verb), the absolute ceiling constant, wiring in `runToolPhase`. No
-  model changes.
+  instead of a bare verb), the absolute ceiling constant, wiring in both `runToolPhase`
+  and the plan-leaf path (`internal/executor/executor.go`'s `Execute`, alongside its
+  existing approval check — same gate, same seam, no plan/interactive special-casing
+  per the retracted open question #2 above). No model changes.
 - **Phase B** (M–L, do after A lands and the gate's shape is proven): `refine` +
   `Proposer.ProposeRefinement`, the bounded one-shot refinement guard, and the
   interaction with Phase A's menu (dropping `refine` after one failed attempt).

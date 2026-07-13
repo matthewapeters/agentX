@@ -192,6 +192,36 @@ func TestPlanWidgetHappyPathTitle(t *testing.T) {
 	}
 }
 
+// TestDeniedNodeRendersDistinctFromFailed (TOOL-7): a denied node — policy blocked it,
+// or the user declined approval — must render with its own glyph, never the same ❌ as
+// a genuine execution failure. Conflating the two in the widget is exactly the
+// ambiguity the nimble-pebble-2 RCA hit in the plan's terminal report.
+func TestDeniedNodeRendersDistinctFromFailed(t *testing.T) {
+	m := New()
+	m.SetSize(100, 40)
+	m.Apply(planEv(state.ContentTaskPlan, 1, map[string]any{
+		"root": "p", "goal": "g", "phase": "started",
+		"nodes": []any{map[string]any{"task_id": "p", "goal": "check status", "status": "proposed"}}}))
+	m.Apply(planEv(state.ContentTaskNode, 2, map[string]any{
+		"root": "p", "task_id": "p", "event": "dispatched", "goal": "check status", "depth": 0}))
+	m.Apply(planEv(state.ContentTaskNode, 3, map[string]any{
+		"root": "p", "task_id": "p", "event": "completed", "status": "denied"}))
+	ps := m.plans["p"]
+	if got := ps.nodes["p"].status; got != "denied" {
+		t.Fatalf("node status = %q, want denied", got)
+	}
+	if got := glyph(ps.nodes["p"].status); got == glyph("failed") {
+		t.Errorf("denied glyph %q must differ from failed glyph %q", got, glyph("failed"))
+	}
+	body := renderedPlanBody(m, ps)
+	if strings.Contains(body, "❌ check status") {
+		t.Errorf("denied node rendered with the failed glyph: %q", body)
+	}
+	if !strings.Contains(body, "🔒 check status") {
+		t.Errorf("denied glyph missing: %q", body)
+	}
+}
+
 // TestEndedPlanShowsFullStructure reproduces session brave-fjord-2: a real fast tool
 // call (ls/tree) dispatches and completes in single-digit milliseconds — no terminal
 // frame could ever render the brief "live" window — so without this, a finished plan
