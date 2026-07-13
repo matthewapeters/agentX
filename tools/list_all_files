@@ -1,0 +1,11 @@
+#! /bin/bash
+
+# tool to list all files under $1 matching pattern $2
+
+# EXAMPLE: Find all .go files in cmd:
+# list_all ./cmd *.go
+
+# EXAMPLE: Find all .md files in ./docs with a max recursive depth of 2
+# list_all ./docs *.md 2
+
+find $1 -maxdepth ${3:-100} -type f -name "${2:-*}"  |xargs ls -l 2>/dev/null|jc --ls

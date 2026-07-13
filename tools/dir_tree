@@ -1,0 +1,6 @@
+#! /bin/bash
+
+# tool for listing all directories below $1
+# output is in JSON
+
+find ${1:-.} -type d|jc --find
