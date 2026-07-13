@@ -207,4 +207,4 @@ near-term ("Family A") vs. future ("Family B") distinction.
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+No `LICENSE` file has been published for this repository yet.

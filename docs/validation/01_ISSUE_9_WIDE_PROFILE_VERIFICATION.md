@@ -2,6 +2,14 @@
 
 _Last updated: 2026-05-16 (v0.49.1)_
 
+> **⚠️ Historical — pre-Go-rewrite launcher.** This harness targets the retired shell
+> script launcher (a root-level `agentx` script wrapping `tmux new-session`/
+> `tmux resize-window`) and its Python unit tests. Neither exists on this branch: the
+> active entrypoint is the Go binary built from `cmd/agentx/` (see `CLAUDE.md`), which
+> does not manage tmux sessions itself — the user arranges surfaces with their own
+> multiplexer. Kept for its methodology and issue history, not as an executable
+> procedure against the current build.
+
 ## Background
 
 **Issue**: When `agentx` runs in headless mode (e.g., CI/CD, no DISPLAY), the default tmux pane width of 80 columns causes the 90-character startup hint to wrap. This wrapping creates text patterns that visually resemble an ENTER prompt signature (`"Press ENTER or type command to continue"`), producing false positives in validation evidence.
@@ -135,7 +143,7 @@ If all trials have `width=NA` and `session_present=0`:
 
 ### Integration with Issue Tracking
 
-This harness is referenced in [docs/ux/UX_ISSUES.md](../../ux/UX_ISSUES.md) under **Issue #9**. After running the verification:
+This harness is referenced in [docs/ux/UX_ISSUES.md](../ux/UX_ISSUES.md) under **Issue #9**. After running the verification:
 
 1. **For UAT**: Share the report markdown + CSV with the user to confirm the issue is visually gone
 2. **For CI/CD**: Integrate into release validation pipeline with `ISSUE9_TRIALS=3 ISSUE9_TMUX_WIDTH=200` as a smoke test
@@ -143,10 +151,8 @@ This harness is referenced in [docs/ux/UX_ISSUES.md](../../ux/UX_ISSUES.md) unde
 
 ### Source Code
 
-The script is maintained in two locations (synchronized):
-
-- **Active location**: [docs/validation/verify_issue9_wide.sh](verify_issue9_wide.sh)
-- **Launcher tests**: [tests/test_launch_vibe_shutdown.py](../../tests/test_launch_vibe_shutdown.py) includes unit tests for `AGENTX_TMUX_WIDTH` / `AGENTX_TMUX_HEIGHT` enforcement
+- **Script**: [docs/validation/verify_issue9_wide.sh](verify_issue9_wide.sh) (retired — targets the pre-Go-rewrite shell launcher; see the banner at the top of this document)
+- **Launcher tests**: the referenced Python unit tests (`tests/test_launch_vibe_shutdown.py`) do not exist on this branch; there is no direct Go/Godog successor for `AGENTX_TMUX_WIDTH` / `AGENTX_TMUX_HEIGHT` enforcement
 
 ### Maintenance Notes
 
@@ -186,4 +192,116 @@ printf "%s\n" "$RUN_DIR" > "$LAST_RUN_POINTER"
 
 printf "trial,width,height,enter_prompt,e486_any,e486_tmp,ready_hint,session_present\n" > "$SUMMARY_CSV"
 
-generate_report() {\n    local valid_trials\n    local enter_hits\n    local ready_hits\n    local verdict\n\n    valid_trials=\"$(awk -F, 'NR>1 && $2 != \"NA\" {count++} END {print count+0}' \"$SUMMARY_CSV\")\"\n    enter_hits=\"$(awk -F, 'NR>1 && $2 != \"NA\" && $4 == 1 {count++} END {print count+0}' \"$SUMMARY_CSV\")\"\n    ready_hits=\"$(awk -F, 'NR>1 && $2 != \"NA\" && $7 == 1 {count++} END {print count+0}' \"$SUMMARY_CSV\")\"\n\n    verdict=\"inconclusive\"\n    if [[ \"$valid_trials\" -gt 0 ]]; then\n        if [[ \"$enter_hits\" -gt 0 ]]; then\n            verdict=\"reproduced\"\n        else\n            verdict=\"not_reproduced\"\n        fi\n    fi\n\n    cat > \"$REPORT_MD\" <<EOF\n# Issue #9 Verification Report (Wide Profile)\n\n- Run directory: $RUN_DIR\n- Trials requested: $TRIALS\n- Valid trials (non-NA dimensions): $valid_trials\n- tmux geometry target: ${TMUX_WIDTH}x${TMUX_HEIGHT}\n- Startup timeout per trial: ${TIMEOUT_SEC}s\n- ENTER prompt hits (valid trials): $enter_hits\n- Ready hint hits (valid trials): $ready_hits\n- Verdict: $verdict\n\n## Summary CSV\n\n\\`\\`\\`\n$(cat \"$SUMMARY_CSV\")\n\\`\\`\\`\nEOF\n}\n\ntrap generate_report EXIT\n\nrun_trial() {\n    local trial=\"$1\"\n    local prestop=\"$RUN_DIR/trial_${trial}_prestop.log\"\n    local startlog=\"$RUN_DIR/trial_${trial}_start.log\"\n    local windows=\"$RUN_DIR/trial_${trial}_windows.txt\"\n    local sizes=\"$RUN_DIR/trial_${trial}_sizes.txt\"\n    local pane=\"$RUN_DIR/trial_${trial}_pane.txt\"\n    local stoplog=\"$RUN_DIR/trial_${trial}_stop.log\"\n\n    AGENTX_TMUX_WIDTH=\"$TMUX_WIDTH\" AGENTX_TMUX_HEIGHT=\"$TMUX_HEIGHT\" ./agentx stop > \"$prestop\" 2>&1 || true\n    AGENTX_TMUX_WIDTH=\"$TMUX_WIDTH\" AGENTX_TMUX_HEIGHT=\"$TMUX_HEIGHT\" timeout \"${TIMEOUT_SEC}s\" ./agentx > \"$startlog\" 2>&1 || true\n\n    local session_present=\"0\"\n    if tmux has-session -t \"$TMUX_SESSION\" 2>/dev/null; then\n        session_present=\"1\"\n        tmux list-windows -t \"$TMUX_SESSION\" > \"$windows\" 2>&1 || true\n        tmux list-panes -a -F '#{session_name}:#{window_name}.#{pane_index} #{pane_width}x#{pane_height}' > \"$sizes\" 2>&1 || true\n        tmux capture-pane -p -t \"$TMUX_SESSION:tui-chat.0\" -S -240 > \"$pane\" 2>&1 || true\n    else\n        printf \"NO_TMUX_SESSION\\\\n\" > \"$windows\"\n        printf \"NO_TMUX_SESSION\\\\n\" > \"$sizes\"\n        printf \"NO_TMUX_SESSION\\\\n\" > \"$pane\"\n    fi\n\n    local width=\"NA\"\n    local height=\"NA\"\n    if grep -q \"${TMUX_SESSION}:tui-chat.0\" \"$sizes\"; then\n        local size_token\n        size_token=\"$(awk -v s=\"$TMUX_SESSION\" '$1 ~ (\"^\" s \":tui-chat\\\\.0$\") {print $2; exit}' \"$sizes\")\"\n        if [[ -n \"$size_token\" ]]; then\n            width=\"${size_token%x*}\"\n            height=\"${size_token#*x}\"\n        fi\n    fi\n\n    local enter_sig=\"0\"\n    local e486_any_sig=\"0\"\n    local e486_tmp_sig=\"0\"\n    local ready_sig=\"0\"\n\n    grep -q \"Press ENTER or type command to continue\" \"$pane\" && enter_sig=\"1\" || true\n    grep -q \"E486:\" \"$pane\" && e486_any_sig=\"1\" || true\n    grep -q \"E486: Pattern not found: tmp\" \"$pane\" && e486_tmp_sig=\"1\" || true\n    grep -q \"AgentX TUI ready. Submit with <leader>s\" \"$pane\" && ready_sig=\"1\" || true\n\n    printf \"%s,%s,%s,%s,%s,%s,%s,%s\\\\n\" \\\n        \"$trial\" \"$width\" \"$height\" \"$enter_sig\" \"$e486_any_sig\" \"$e486_tmp_sig\" \"$ready_sig\" \"$session_present\" >> \"$SUMMARY_CSV\"\n\n    AGENTX_TMUX_WIDTH=\"$TMUX_WIDTH\" AGENTX_TMUX_HEIGHT=\"$TMUX_HEIGHT\" ./agentx stop > \"$stoplog\" 2>&1 || true\n}\n\nfor ((i = 1; i <= TRIALS; i++)); do\n    run_trial \"$i\"\ndone\n\nprintf \"RUN_DIR=%s\\\\n\" \"$RUN_DIR\"\nprintf \"SUMMARY=%s\\\\n\" \"$SUMMARY_CSV\"\nprintf \"REPORT=%s\\\\n\" \"$REPORT_MD\"\ncat \"$SUMMARY_CSV\"\n```\n\n## References\n\n- GitHub Issue: [matthewapeters/agentX#9](https://github.com/matthewapeters/agentX/issues/9)\n- Launcher source: [agentx](../../agentx) (lines implementing `AGENTX_TMUX_WIDTH`/`AGENTX_TMUX_HEIGHT`)\n- Launcher tests: [tests/test_launch_vibe_shutdown.py](../../tests/test_launch_vibe_shutdown.py) (`test_start_uses_configured_tmux_dimensions_for_new_session`)\n- Issue tracking: [docs/ux/UX_ISSUES.md § Issue #9](../../ux/UX_ISSUES.md)\n
+generate_report() {
+    local valid_trials
+    local enter_hits
+    local ready_hits
+    local verdict
+
+    valid_trials="$(awk -F, 'NR>1 && $2 != "NA" {count++} END {print count+0}' "$SUMMARY_CSV")"
+    enter_hits="$(awk -F, 'NR>1 && $2 != "NA" && $4 == 1 {count++} END {print count+0}' "$SUMMARY_CSV")"
+    ready_hits="$(awk -F, 'NR>1 && $2 != "NA" && $7 == 1 {count++} END {print count+0}' "$SUMMARY_CSV")"
+
+    verdict="inconclusive"
+    if [[ "$valid_trials" -gt 0 ]]; then
+        if [[ "$enter_hits" -gt 0 ]]; then
+            verdict="reproduced"
+        else
+            verdict="not_reproduced"
+        fi
+    fi
+
+    cat > "$REPORT_MD" <<EOF
+# Issue #9 Verification Report (Wide Profile)
+
+- Run directory: $RUN_DIR
+- Trials requested: $TRIALS
+- Valid trials (non-NA dimensions): $valid_trials
+- tmux geometry target: ${TMUX_WIDTH}x${TMUX_HEIGHT}
+- Startup timeout per trial: ${TIMEOUT_SEC}s
+- ENTER prompt hits (valid trials): $enter_hits
+- Ready hint hits (valid trials): $ready_hits
+- Verdict: $verdict
+
+## Summary CSV
+
+\`\`\`
+$(cat "$SUMMARY_CSV")
+\`\`\`
+EOF
+}
+
+trap generate_report EXIT
+
+run_trial() {
+    local trial="$1"
+    local prestop="$RUN_DIR/trial_${trial}_prestop.log"
+    local startlog="$RUN_DIR/trial_${trial}_start.log"
+    local windows="$RUN_DIR/trial_${trial}_windows.txt"
+    local sizes="$RUN_DIR/trial_${trial}_sizes.txt"
+    local pane="$RUN_DIR/trial_${trial}_pane.txt"
+    local stoplog="$RUN_DIR/trial_${trial}_stop.log"
+
+    AGENTX_TMUX_WIDTH="$TMUX_WIDTH" AGENTX_TMUX_HEIGHT="$TMUX_HEIGHT" ./agentx stop > "$prestop" 2>&1 || true
+    AGENTX_TMUX_WIDTH="$TMUX_WIDTH" AGENTX_TMUX_HEIGHT="$TMUX_HEIGHT" timeout "${TIMEOUT_SEC}s" ./agentx > "$startlog" 2>&1 || true
+
+    local session_present="0"
+    if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+        session_present="1"
+        tmux list-windows -t "$TMUX_SESSION" > "$windows" 2>&1 || true
+        tmux list-panes -a -F '#{session_name}:#{window_name}.#{pane_index} #{pane_width}x#{pane_height}' > "$sizes" 2>&1 || true
+        tmux capture-pane -p -t "$TMUX_SESSION:tui-chat.0" -S -240 > "$pane" 2>&1 || true
+    else
+        printf "NO_TMUX_SESSION\n" > "$windows"
+        printf "NO_TMUX_SESSION\n" > "$sizes"
+        printf "NO_TMUX_SESSION\n" > "$pane"
+    fi
+
+    local width="NA"
+    local height="NA"
+    if grep -q "${TMUX_SESSION}:tui-chat.0" "$sizes"; then
+        local size_token
+        size_token="$(awk -v s="$TMUX_SESSION" '$1 ~ ("^" s ":tui-chat\\.0$") {print $2; exit}' "$sizes")"
+        if [[ -n "$size_token" ]]; then
+            width="${size_token%x*}"
+            height="${size_token#*x}"
+        fi
+    fi
+
+    local enter_sig="0"
+    local e486_any_sig="0"
+    local e486_tmp_sig="0"
+    local ready_sig="0"
+
+    grep -q "Press ENTER or type command to continue" "$pane" && enter_sig="1" || true
+    grep -q "E486:" "$pane" && e486_any_sig="1" || true
+    grep -q "E486: Pattern not found: tmp" "$pane" && e486_tmp_sig="1" || true
+    grep -q "AgentX TUI ready. Submit with <leader>s" "$pane" && ready_sig="1" || true
+
+    printf "%s,%s,%s,%s,%s,%s,%s,%s\n" \
+        "$trial" "$width" "$height" "$enter_sig" "$e486_any_sig" "$e486_tmp_sig" "$ready_sig" "$session_present" >> "$SUMMARY_CSV"
+
+    AGENTX_TMUX_WIDTH="$TMUX_WIDTH" AGENTX_TMUX_HEIGHT="$TMUX_HEIGHT" ./agentx stop > "$stoplog" 2>&1 || true
+}
+
+for ((i = 1; i <= TRIALS; i++)); do
+    run_trial "$i"
+done
+
+printf "RUN_DIR=%s\n" "$RUN_DIR"
+printf "SUMMARY=%s\n" "$SUMMARY_CSV"
+printf "REPORT=%s\n" "$REPORT_MD"
+cat "$SUMMARY_CSV"
+```
+
+## References
+
+- GitHub Issue: [matthewapeters/agentX#9](https://github.com/matthewapeters/agentX/issues/9)
+- Launcher source: retired shell script, no longer present on this branch — the
+  `AGENTX_TMUX_WIDTH`/`AGENTX_TMUX_HEIGHT` handling it implemented has no successor in
+  the current Go binary (`cmd/agentx/`), which does not manage tmux sessions itself
+- Launcher tests: the referenced Python test (`tests/test_launch_vibe_shutdown.py`,
+  `test_start_uses_configured_tmux_dimensions_for_new_session`) does not exist on this
+  branch
+- Issue tracking: [docs/ux/UX_ISSUES.md § Issue #9](../ux/UX_ISSUES.md)
+

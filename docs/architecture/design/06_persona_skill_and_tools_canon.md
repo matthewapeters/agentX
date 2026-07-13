@@ -116,7 +116,7 @@ All runtime configuration and metadata for expertise and capabilities lives unde
 2. If skill does not exist, the task fails with reason code and returns to orchestrator for fallback/clarification.
 3. Required tools are validated against `.agentx/tools/` registry before skill dispatch.
 
-**Scope:** Capability/task bundles only. Individual tool implementations live elsewhere (Go tools, Python modules, etc.).
+**Scope:** Capability/task bundles only. Individual tool implementations live elsewhere.
 
 ### `.agentx/tools/` — Tool Reference Documentation (Authoritative)
 
@@ -345,7 +345,7 @@ func determineApplicableInstructions(personaID, taskClassification string) []str
 
 **Explicit Fingerprint Composition (Deterministic across languages):**
 
-All context fingerprints must be computed using this exact algorithm to ensure replay parity across Go, Python, and other implementations:
+All context fingerprints must be computed using this exact algorithm to ensure replay parity across any future implementation:
 
 ```
 Fingerprint(instructions, enabledMessages, workingMemory, seed) =

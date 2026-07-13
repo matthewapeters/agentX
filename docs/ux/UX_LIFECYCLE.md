@@ -2,14 +2,17 @@
 
 <!-- markdownlint-disable MD036 MD040 MD047 MD051 MD060 -->
 
-> **⚠️ Architecture migration (2026-06-26).** The traceability matrix below maps
-> affordances (PD-01…PD-17) to the prior single-window split-pane GUI. AgentX is now a
-> **client-server** app: the chat surface has **two panels (output + input)** and the
-> former "system" surface is now **multiple independent, separately launchable
-> surfaces**. During M2 each system-panel affordance is re-keyed to its standalone
-> surface; affordance IDs are preserved where possible. Treat surface/host columns as
-> **legacy** until migration. See
-> [`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md).
+> **⚠️ Architecture migration (2026-06-26), not yet reconciled.** The traceability
+> matrix below maps affordances (PD-01…PD-17) to the prior single-window split-pane
+> GUI. AgentX is now a **client-server** app: the chat surface has **two panels
+> (output + input)** and the former "system" surface is now **multiple independent,
+> separately launchable surfaces**. `03_PANEL_DETAILS.md` was rewritten to the current
+> implementation (2026-07-12) and its **"Retired affordances"** table maps each
+> legacy `PD-xx` ID below to its current disposition — consult that table when a row
+> here points at something that no longer exists. This matrix itself has not yet had
+> the same rewrite pass (tracked in `nits.md`); treat surface/host columns and any
+> row citing a nonexistent file/target as **stale** until that reconciliation lands.
+> See [`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md).
 
 _Last updated: 2026-06-01 (v0.85.0)_
 **Purpose**: Single source of truth for the complete lifecycle of every user-facing
@@ -144,8 +147,10 @@ Update this document to reflect what was built and tested.
 
 ### Applet Review Gate
 
-The hybrid runtime's system applets are treated as first-class UX surfaces even
-when they are implemented as runtime applets rather than GUI widgets.
+The current runtime's system applets — the independent, separately launchable
+surfaces (files, config, context, context-history, context-visualizer) — are treated
+as first-class UX surfaces even when they are implemented as TUI applets rather than
+GUI widgets.
 
 Before a parity claim is made for any system applet or startup topology change,
 the following must be true:
@@ -352,7 +357,7 @@ implements it and the test that validates it.  Status legend:
 | Overflow navigation keeps selected row visible in terminal viewport | PD-11-AF-011 | `filesystemWidgetState.ensureSelectionVisible()` + overflow render contract in `filesystemWidgetState.render()` | `filesystem_widget_test.go` | `TestFilesystemWidgetRender_OverflowOrientationAndSelectionVisibility` | ✅ |
 | Overflow navigation supports PageUp/PageDown/Home/End (or equivalent) | PD-11-AF-012 | `filesystemWidgetState.handleCommand()` (`pgup`/`pgdn`/`top`/`end`) | `filesystem_widget_test.go` | `TestFilesystemWidgetHandleCommand_PageNavigation` | ✅ |
 | Overflow status exposes visible range orientation (`showing X-Y of Z`) | PD-11-AF-013 | `filesystemWidgetState.render()` visible range header | `filesystem_widget_test.go` | `TestFilesystemWidgetRender_OverflowOrientationAndSelectionVisibility` | ✅ |
-| Files parity sign-off requires overflow-list executable evidence | PD-11-AF-014 | `hybrid-parity-gate` blocker gate execution path + filesystem widget contracts | `filesystem_widget_test.go`, `Makefile`, `tests/test_demo_system_panel_tour_headless.sh` | package-level tests + blocker gate evidence | ✅ |
+| Files parity sign-off requires overflow-list executable evidence | PD-11-AF-014 | filesystem widget contracts (the `hybrid-parity-gate` Makefile target and `tests/test_demo_system_panel_tour_headless.sh` this row originally cited no longer exist — stale, unreconciled) | `filesystem_widget_test.go` | package-level tests | ⚠️ |
 | TUI files applet supports arrow-key row navigation | PD-11-AF-015 | `normalizeFilesystemWidgetCommand()` maps `Up`/`Down` to row navigation | `filesystem_widget_test.go` | `TestNormalizeFilesystemWidgetCommand` | ✅ |
 | TUI files applet supports `Space` soft-select semantics with visible state | PD-11-AF-016 | `filesystemWidgetState.toggleSoftSelection()` + soft-select rendering + multi-action compatibility | `filesystem_widget_test.go` | `TestFilesystemWidgetHandleCommand_SoftSelectToggleVisibleInRender`, `TestFilesystemWidgetHandleCommand_AttachUsesSoftSelectedSetStatus`, `TestFilesystemWidgetHandleCommand_EditUsesSoftSelectedSetInViewOrder` | ✅ |
 | TUI files applet supports `Return` hard-select primary action semantics | PD-11-AF-017 | `filesystemWidgetState.activateSelection()` via `enter` command path | `filesystem_widget_test.go` | `TestFilesystemWidgetHandleCommand_ReturnHardSelectActivates` | ✅ |
@@ -475,12 +480,9 @@ Evidence expectations remain:
 | System applet suite (files/config/context-history/working-memory/context-visualizer) | `PD-18-AF-001..007` | `PD-18` | `system_applet_host_test.go`, `context_widget_test.go`, `core_system_renderer_test.go`, `tests/test_demo_system_panel_tour_headless.sh` | ⚠ Re-opened |
 | UAT-visible startup topology | `PD-18-AF-007` | `PD-18` | `config_startup_mode_test.go`, `core_tmux_startup_integration_test.go` | ✅ Closed |
 
-Active execution packet for first implementation slice:
-
-- `docs/architecture/system_applet_suite_slice1.md`
-
-Follow-up for PD-16 default-behavior migration is documented in
-`docs/ux/06_TUI_MIRROR.md` §12 (TUI-first default with `--gui` opt-in).
+Active execution packet for first implementation slice: `docs/architecture/system_applet_suite_slice1.md` and `docs/ux/06_TUI_MIRROR.md` §12 (PD-16 default-behavior migration,
+TUI-first default with `--gui` opt-in) were referenced here historically but neither
+file is present in this repo.
 
 ---
 

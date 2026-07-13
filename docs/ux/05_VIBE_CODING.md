@@ -193,7 +193,7 @@ sequenceDiagram
     participant TerminalRuntime
     participant OutputSurface
 
-    Orchestrator->>TerminalBridge: run_command("python -m pytest tests/", visible=True)
+    Orchestrator->>TerminalBridge: run_command("go test ./...", visible=True)
     TerminalBridge->>PermissionLayer: check_command(command)
     PermissionLayer->>PermissionLayer: prefix match → allow list
     PermissionLayer-->>TerminalBridge: decision=allowed
@@ -663,4 +663,4 @@ When `stdout` is available in the result payload, the first 100 characters are s
 | OQ-07 | Should path restriction apply to editor write calls too? Current design: no, EditorBridge trusts the path. Should be added for consistency. | Medium |
 | OQ-08 | Credential question — **Resolved**: Agent runs as the user. Safety is provided by the PermissionLayer which is user-configurable and toggleable. | Resolved |
 | OQ-09 | Session shutdown consistency — **Resolved**: Launcher exposes first-class lifecycle commands (`stop`, `status`, `recover-editor`, `restart`) with deterministic behaviour and tests. | Resolved |
-| OQ-10 | TUI mirror: surfacing the chat interface as an editor split — **Specced**: see `06_TUI_MIRROR.md` for the full plan. | Resolved → Spec |
+| OQ-10 | TUI mirror: surfacing the chat interface as an editor split — a `06_TUI_MIRROR.md` spec was referenced here historically but is not present in this repo. | Open |

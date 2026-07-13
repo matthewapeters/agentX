@@ -75,9 +75,9 @@ Repeat until all behaviours in the inventory are covered.
 
 ## Test Mapping
 
-| Affordance ID | Test file | Test class | Test function | Status |
-|---------------|-----------|------------|---------------|--------|
-| PD-XX-AF-001 | tests/test_<component>.py | Test<Component> | test_<behavior> | Planned / Passing |
+| Affordance ID | Feature file | Scenario | Step file / Go test | Status |
+|---------------|--------------|----------|----------------------|--------|
+| PD-XX-AF-001 | tests/features/<domain>/<component>.feature | `<behavior>` | tests/steps/<domain>/<component>_steps.go | Planned / Passing |
 
 ---
 

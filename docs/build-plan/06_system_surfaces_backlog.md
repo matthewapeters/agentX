@@ -137,7 +137,8 @@ before implementation, a Godog feature + steps under the tag scheme (+ `@ux:<id>
 - **Target**: `internal/surfaces/client/` (new), `internal/cli/` (launch-into-UI)
 - **Deps**: SS-1
 - **Source**: `01_runtime_blueprint.md` (Bubble Tea Adoption), `02` (Surface Model,
-  CLI launch), `06_TUI_MIRROR.md` (legacy, for affordance intent)
+  CLI launch); a `06_TUI_MIRROR.md` legacy affordance-intent doc was referenced here
+  historically but is not present in this repo
 - **Behavior**: a reusable Bubble Tea host that takes a registered attach
   (reusing TRN-5 `cli.Launch`) and a `SurfaceModel` (the per-surface contract:
   `Apply(state.Event)`, `SetProcessing(state.ProcessingState)`, `SetSize`, `View`,

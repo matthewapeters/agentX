@@ -77,5 +77,9 @@ When adding a new issue-specific verification harness:
 
 - **Issue tracking**: [docs/ux/UX_ISSUES.md](../ux/UX_ISSUES.md)
 - **UX specs**: [docs/ux/03_PANEL_DETAILS.md](../ux/03_PANEL_DETAILS.md)
-- **Launcher source**: [agentx](../../agentx)
-- **Launcher tests**: [tests/test_launch_vibe_shutdown.py](../../tests/test_launch_vibe_shutdown.py)
+
+> Note: [01_ISSUE_9_WIDE_PROFILE_VERIFICATION.md](01_ISSUE_9_WIDE_PROFILE_VERIFICATION.md)
+> targets a pre-Go-rewrite shell launcher and Python test suite that no longer exist on
+> this branch (see the banner at the top of that document); it is retained for its
+> methodology and issue history, not as an executable procedure against the current
+> `cmd/agentx/` Go binary.

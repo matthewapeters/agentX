@@ -63,6 +63,6 @@ Keep **architecture and UX specifications** in the parent `docs/` folder.
 
 ## See Also
 
-- [Parent Documentation](../README.md) — Architecture, UX, and system design
+- [Parent Documentation](../../README.md) — Architecture, UX, and system design
 - [AGENTS.md](../../AGENTS.md) — Runtime configuration and launch notes
 - [Makefile](../../Makefile) — Build and test commands

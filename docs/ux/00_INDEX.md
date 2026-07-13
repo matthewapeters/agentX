@@ -1,167 +1,48 @@
 # AgentX UX — Working Index
 
-> **⚠️ Architecture migration (2026-06-26).** These UX specs describe the prior
-> single-window split-pane GUI (OutputSurface left / SystemSurface right /
-> InputSurface bottom, PD-01…PD-17). AgentX is now a **client-server** app: the chat
-> surface has **two panels (output + input)** and the former "system" panel is now
-> **multiple independent, separately launchable surfaces** (files, config, context,
-> context-history, context-visualizer), arranged by the user via a multiplexer. These
-> docs are being migrated during M2 — treat the surface geometry below as legacy. See
-> [`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md).
-
-_Last updated: 2026-05-23 (v0.83.1)_
-
 > **This is the entry point for every UX work session — human or agent.**
-> Open this file first. It tells you exactly where things stand and what to do next.
+> Open this file first, then follow the links below for the detail you need.
 
-**Last updated**: 2026-05-23 (v0.83.1 — Pane-title alignment pass reviewed and UX gap chart refreshed)
-**Current version**: see `CHANGELOG.md`
+_Last updated: 2026-07-13_
 
-> **Numbering note (resolved)**: ToolPanel was erroneously assigned PD-10 in `03_PANEL_DETAILS.md`; the canonical PD-10 is ContextMeterWidget (per `UX_LIFECYCLE.md` with 7 tested affordances). ToolPanel is now **PD-13** in both files.
+AgentX is a Go **client-server** app (see `CLAUDE.md`): a core orchestration
+**server**, and **surfaces** as separate client processes attaching over HTTP/SSE.
+The chat surface has **two panels** (output + input); the former single "system"
+panel is now a set of **independent, separately launchable surfaces** (files,
+config, context, context-history, context-visualizer) that the user arranges via a
+terminal multiplexer. See
+[`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md)
+for the Family A (build now) vs. Family B (future) split.
 
----
+## Reconciliation status
+
+[`03_PANEL_DETAILS.md`](03_PANEL_DETAILS.md) was rewritten to the current
+implementation (2026-07-12) and is the authoritative per-surface reference. The
+other UX documents below are at varying points in that same migration — each
+carries its own banner stating whether it's reconciled or still describes the
+prior single-window split-pane GUI:
+
+| Document | Status |
+|----------|--------|
+| [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) | Reconciled — current implementation |
+| [UX_LIFECYCLE.md](UX_LIFECYCLE.md) | Not yet reconciled — traceability matrix still keyed to legacy `PD-xx` IDs; see its banner and `03_PANEL_DETAILS.md`'s "Retired affordances" table for the ID mapping |
+| [07_DEMO_MODE.md](07_DEMO_MODE.md) | Not yet reconciled — still targets the prior GUI |
+| [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md), [02_USER_FLOWS.md](02_USER_FLOWS.md) | Mixed — some diagrams predate the client-server split |
 
 ## How to Use This Page
 
 | You want to… | Go to |
 |--------------|-------|
-| Understand the full lifecycle process | [UX_LIFECYCLE.md §2](UX_LIFECYCLE.md#2-the-4-phase-lifecycle) |
-| Create or update a component cut-sheet | [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md) |
-| Find the affordance ID for a widget | [UX_LIFECYCLE.md §4 — Traceability Matrix](UX_LIFECYCLE.md#4-traceability-matrix-as-built) |
 | See a surface's widget details, state fields, diagrams | [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) |
+| Understand the affordance lifecycle and ID scheme | [UX_LIFECYCLE.md](UX_LIFECYCLE.md) |
+| Create or update a component cut-sheet | [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md) |
 | Understand the window layout and zone map | [01_MAIN_LAYOUT.md](01_MAIN_LAYOUT.md) |
 | Follow a user interaction end-to-end | [02_USER_FLOWS.md](02_USER_FLOWS.md) |
 | Vibe coding (editor + terminal integration) | [05_VIBE_CODING.md](05_VIBE_CODING.md) |
-| TUI mirror / hybrid pane contract (spec + plan) | [06_TUI_MIRROR.md](06_TUI_MIRROR.md) |
+| Output-panel widget contract (Plan widget, collapsing, etc.) | [06_OUTPUT_WIDGET.md](06_OUTPUT_WIDGET.md) |
 | Demo mode contract and harness plan | [07_DEMO_MODE.md](07_DEMO_MODE.md) |
-| Startup modes and launch switches (authoritative) | [../architecture/startup_modes.md](../architecture/startup_modes.md) |
-| TUI-default migration plan and docs impact list | [06_TUI_MIRROR.md §12](06_TUI_MIRROR.md#12-tui-first-migration-plan-planned) |
+| Report or look up a UX bug | [UX_ISSUES.md](UX_ISSUES.md) |
 | Tool/tooling backlog (non-UX) | [../tools/tools_issues.md](../tools/tools_issues.md) |
-| Run the UX review+enforce cycle (agent slash-command) | `/ux-review` in Copilot Chat |
-| See historical coverage notes and remaining-work synthesis | [UX_LIFECYCLE.md §7](UX_LIFECYCLE.md#7-historical-coverage-gaps-resolved) |
-| Detect spec/code/test drift | [UX_LIFECYCLE.md §5.4](UX_LIFECYCLE.md#54-detecting-drift-without-a-planned-change) |
-| Add a new surface/affordance (checklist) | [UX_LIFECYCLE.md §5.1](UX_LIFECYCLE.md#51-adding-a-new-affordance) |
-| Modify an existing affordance (checklist) | [UX_LIFECYCLE.md §5.2](UX_LIFECYCLE.md#52-modifying-an-existing-affordance) |
-| Remove an affordance (checklist) | [UX_LIFECYCLE.md §5.3](UX_LIFECYCLE.md#53-removing-an-affordance) |
-
----
-
-## Current Status Snapshot
-
-> **Agent**: when starting a session, update this table from `UX_LIFECYCLE.md §4`.
-> Run the drift-detection commands in `UX_LIFECYCLE.md §5.4` and record the result here.
-
-| Surface | Fully Tested ✅ | Partial ⚠️ | Spec Only 📝 | Gap ❌ |
-|-------|:--------------:|:----------:|:------------:|:------:|
-| PD-01 OutputSurface | 9 | 1 | 0 | 0 |
-| PD-02 InputSurface | 9 | 3 | 0 | 0 |
-| PD-03 SystemSurface — Context | 7 | 0 | 0 | 0 |
-| PD-03 SystemSurface — Working Memory | 4 | 1 | 0 | 0 |
-| PD-04 ModelSelector | 4 | 0 | 0 | 0 |
-| PD-05 PlanView | 6 | 0 | 0 | 0 |
-| PD-06 ResynthesisDialog | 5 | 0 | 0 | 0 |
-| PD-07 SettingsSurface | 2 | 1 | 0 | 0 |
-| PD-08 ContextRenderer | 4 | 0 | 0 | 0 |
-| PD-09 CollapsibleSection | 4 | 0 | 0 | 0 |
-| PD-10 ContextMeterWidget | 7 | 0 | 0 | 0 |
-| PD-11 FileBrowser | 10 | 0 | 0 | 0 |
-| PD-12 StatusTab | 11 | 0 | 0 | 0 |
-| PD-13 ToolPanel | 0 | 0 | 2 | 0 |
-| PD-14 Editor Integration | 3 | 0 | 6 | 0 |
-| PD-15 Terminal Integration | 8 | 0 | 0 | 0 |
-| PD-16 TuiMirror | 8 | 0 | 0 | 0 |
-| PD-17 DemoMode | 10 | 0 | 3 | 0 |
-
-**Totals**: 112 ✅ · 6 ⚠️ · 11 📝 · 0 ❌
-
----
-
-## Priority Work Queue
-
-> Ordered by risk (high-visibility affordances with no test coverage first).
-> When picking up work, take the **top unchecked item**.
-
-- [/] **PD-02-AF-005..007** — Attachment chip: render, remove, clear-all
-- [/] **PD-03-AF-007** — Message enabled checkbox wired to `message.enabled`
-- [/] **PD-03-AF-011..014** — Working Memory callbacks (toggle, delete, promote, add)
-- [/] **PD-07-AF-002..003** — Settings collapse state + restart-required icon
-- [/] **PD-02-AF-002** — Shift+Enter inserts newline
-- [/] **PD-12: StatusTab** — implemented: donut + break button relocated, `StreamingController` phase events wired (11 affordances ✅)
-- [/] **PD-15-AF-003..004** — active terminal indicator and kill-pane action wiring in GUI/tool-result rows
-- [/] **PD-04-AF-004** — ModelSelector refresh button
-- [/] **PD-05-AF-004** — Re-synth button in synthesis block
-- [/] **PD-05-AF-005** — Export button in plan tab toolbar
-- [/] **PD-05-AF-006** — Node status icon reflects task state
-- [/] **PD-01-AF-010** — Output surface right-click copy context menu (Wayland-safe)
-- [/] **PD-02-AF-008..012** — Input surface right-click context menu: popup, Copy/Paste visibility, Copy action, Paste action
-- [/] **PD-16 (TuiMirror)** — implemented: config + NullGUI path, bridge I/O, launcher lifecycle, and traceability/test reconciliation completed
-- [/] **PD-17-AF-004** — Split demo left workspace into story-browser top pane + prompt bottom pane ✓ completed 2026-05-22
-- [ ] **PD-16 migration (planned)** — invert launcher default to TUI-first, add `--gui` opt-in path, and reconcile docs/ux artifacts per `06_TUI_MIRROR.md §12.6`
-
----
-
-## Agile Process: How a UX Change Flows
-
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  SESSION START                                                           │
-│  1. Open this file (00_INDEX.md)                                         │
-│  2. Check Status Snapshot — note any pre-existing ⚠️ or ❌              │
-│  3. Pick top item from Priority Work Queue                               │
-└────────────────────────┬─────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│  SPECIFY                                                                 │
-│  - Write/update affordance in 03_PANEL_DETAILS.md                       │
-│  - Assign PD-XX-AF-NNN if new                                            │
-│  - Update ASCII/Mermaid diagram                                          │
-│  - Add row to UX_LIFECYCLE.md §4 (status: 📝)                           │
-│  - Commit: "spec(PD-XX): ..."                                            │
-└────────────────────────┬─────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│  GHERKIN FIRST                                                           │
-│  - Write GIVEN/WHEN/THEN in test docstring                               │
-│  - Include [PD-XX-AF-NNN] in docstring                                   │
-│  - Write assertions that will FAIL against current code                  │
-│  - Run tests → confirm they fail (red)                                   │
-└────────────────────────┬─────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│  CODE                                                                    │
-│  - Implement minimum code to pass the failing tests                      │
-│  - Reference affordance ID in source docstring                           │
-│  - Run tests → all green, no regressions                                 │
-└────────────────────────┬─────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│  RECONCILE                                                               │
-│  - Update UX_LIFECYCLE.md §4 status → ✅                                │
-│  - Remove from Priority Work Queue                                       │
-│  - Bump version + update CHANGELOG.md                                    │
-│  - Commit: "ux(PD-XX): ..."                                              │
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Quick Drift Check
-
-Run this at the start of any UX session to identify gaps immediately:
-
-```bash
-# IDs in tests but missing from UX_LIFECYCLE.md
-grep -rho 'PD-[0-9]\+-AF-[0-9]\+' tests/ | sort -u > /tmp/tested.txt
-grep -oh 'PD-[0-9]\+-AF-[0-9]\+' docs/ux/UX_LIFECYCLE.md | sort -u > /tmp/specced.txt
-echo "=== Tested but not in matrix ==="
-comm -23 /tmp/tested.txt /tmp/specced.txt
-echo "=== In matrix but no tests yet ==="
-comm -13 /tmp/tested.txt /tmp/specced.txt
-```
 
 ---
 
@@ -170,17 +51,16 @@ comm -13 /tmp/tested.txt /tmp/specced.txt
 ```
 docs/ux/
 ├── 00_INDEX.md                        ← YOU ARE HERE — session entry point
-├── README.md                          ← Overview and navigation guide
+├── README.md                          ← Overview and quick-reference tables
 ├── UX_LIFECYCLE.md                    ← Lifecycle rules, affordance IDs, traceability matrix
 ├── 01_MAIN_LAYOUT.md                  ← Window zones, geometry
 ├── 02_USER_FLOWS.md                   ← End-to-end user interaction flows (Mermaid)
 ├── 03_PANEL_DETAILS.md                ← Per-surface: affordance tables, state fields, diagrams
 ├── 04_COMPONENT_CUT_SHEET_TEMPLATE.md ← Blank template for new component cut-sheets
+├── 05_VIBE_CODING.md                  ← Editor + terminal integration UX contract
+├── 06_OUTPUT_WIDGET.md                ← Output-panel widget contract
 ├── 07_DEMO_MODE.md                    ← Demo mode UX contract and implementation plan
 └── UX_ISSUES.md                       ← Bug-tracking log for user-reported UX defects
-
-.github/prompts/
-└── ux-review.prompt.md      ← /ux-review slash command (8-phase TDD review loop)
 ```
 
 ---
@@ -191,11 +71,9 @@ docs/ux/
 |-------|------|
 | Affordance ID format | `PD-<panel>-AF-<NNN>` (zero-padded three digits) |
 | Spec freeze | Spec must be committed before code changes |
-| Gherkin oracle | GIVEN/WHEN/THEN drives assertions; update Gherkin first, code second |
-| Regression gate | No commit if a test that previously passed now fails |
-| Coverage floor | Unit test coverage must stay ≥ 98% |
-| Source docstring | Must contain `[PD-XX-AF-NNN]` for every affordance implemented |
-| Test docstring | Must contain `[PD-XX-AF-NNN]` and Gherkin use-case |
+| Behavior contract | Every touched function requires a GIVEN/WHEN/THEN behavior doc before implementation (`CLAUDE.md` key invariants) |
+| Test tagging | Godog tests use the `@unit`, `@integration`, `@functional`, `@e2e` tag scheme |
+| Regression gate | `make all` must pass before merge; no commit if a previously-passing test now fails |
 
 ---
 
@@ -206,7 +84,8 @@ Use this exact sequence for every new UX requirement.
 1. Start spec-first in [03_PANEL_DETAILS.md](03_PANEL_DETAILS.md) using
     [04_COMPONENT_CUT_SHEET_TEMPLATE.md](04_COMPONENT_CUT_SHEET_TEMPLATE.md).
 2. If new behavior is introduced, assign new `PD-XX-AF-NNN` IDs.
-3. Add or update traceability row(s) in [UX_LIFECYCLE.md](UX_LIFECYCLE.md#4-traceability-matrix-as-built) with `📝` status.
-4. Write/update Gherkin scenarios in tests before code changes.
-5. Run tests red, implement code, run tests green.
-6. Reconcile matrix status to `✅` and update this index status snapshot.
+3. Write the GIVEN/WHEN/THEN behavior doc and the corresponding Godog scenario
+   before code changes.
+4. Run tests red, implement code, run tests green.
+5. Update the affected surface's section in `03_PANEL_DETAILS.md` and, once
+   reconciled, its row in `UX_LIFECYCLE.md`.

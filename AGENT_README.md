@@ -1,7 +1,9 @@
 
 ## Changes are to be made in accordance to documents
 
-Refer to `./docs/AGENT_README.md`
+Refer to [`CLAUDE.md`](CLAUDE.md) for the canonical project guide (architecture,
+commands, key invariants) and [`00_START_HERE.md`](00_START_HERE.md) for the full
+documentation reading path.
 
 ## Apply Changes to Code After Documents Are Updated
 Follow this process when applying changes:
