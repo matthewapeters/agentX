@@ -53,6 +53,10 @@ type Tools struct {
 	ReadOnly       *bool `toml:"read_only"`
 	TimeoutSeconds int   `toml:"timeout_seconds"`
 	OutputMaxBytes int   `toml:"output_max_bytes"`
+	// AbsoluteMaxBytes bounds the oversized-output recovery gate's "capture more"
+	// choice (TOOL-6): no interactive choice or remembered per-tool preference can
+	// ask for more than this, however large the tool's real output turns out to be.
+	AbsoluteMaxBytes int `toml:"absolute_max_bytes"`
 }
 
 // Thinking is the [agentx.thinking] table. Enabled requests model reasoning
@@ -170,6 +174,17 @@ func (c Config) ToolOutputMaxBytes() int {
 	return 65536
 }
 
+// ToolOutputAbsoluteMaxBytes is the hard ceiling the oversized-output recovery
+// gate's "capture more" choice (once or remembered) is clamped to (default 2 MiB —
+// large enough for almost any legitimate command's real output, small enough to
+// bound worst-case memory/context impact). See TOOL-6.
+func (c Config) ToolOutputAbsoluteMaxBytes() int {
+	if c.Agentx.Tools.AbsoluteMaxBytes > 0 {
+		return c.Agentx.Tools.AbsoluteMaxBytes
+	}
+	return 2097152
+}
+
 // ThinkingEnabled reports whether the respond phase requests model reasoning.
 // Absent config defaults to true.
 func (c Config) ThinkingEnabled() bool {
@@ -278,22 +293,22 @@ func isAllDigits(s string) bool {
 
 // namedColors maps friendly color names to SGR foreground parameters (ANSI 256).
 var namedColors = map[string]string{
-	"black":        "38;5;0",
-	"red":          "38;5;1",
-	"green":        "38;5;2",
-	"yellow":       "38;5;3",
-	"blue":         "38;5;4",
-	"magenta":      "38;5;5",
-	"cyan":         "38;5;6",
-	"white":        "38;5;7",
-	"bright cyan":  "38;5;14",
-	"brightcyan":   "38;5;14",
-	"gray":         "38;5;245",
-	"grey":         "38;5;245",
-	"dark gray":    "38;5;240",
-	"darkgray":     "38;5;240",
-	"dark grey":    "38;5;240",
-	"darkgrey":     "38;5;240",
+	"black":       "38;5;0",
+	"red":         "38;5;1",
+	"green":       "38;5;2",
+	"yellow":      "38;5;3",
+	"blue":        "38;5;4",
+	"magenta":     "38;5;5",
+	"cyan":        "38;5;6",
+	"white":       "38;5;7",
+	"bright cyan": "38;5;14",
+	"brightcyan":  "38;5;14",
+	"gray":        "38;5;245",
+	"grey":        "38;5;245",
+	"dark gray":   "38;5;240",
+	"darkgray":    "38;5;240",
+	"dark grey":   "38;5;240",
+	"darkgrey":    "38;5;240",
 }
 
 // Built-in defaults for the tuning tables.
@@ -339,10 +354,11 @@ func Default() Config {
 				InactiveBorder: defaultInactiveBorder,
 			},
 			Tools: Tools{
-				Enabled:        boolPtr(true),
-				ReadOnly:       boolPtr(true),
-				TimeoutSeconds: 30,
-				OutputMaxBytes: 65536,
+				Enabled:          boolPtr(true),
+				ReadOnly:         boolPtr(true),
+				TimeoutSeconds:   30,
+				OutputMaxBytes:   65536,
+				AbsoluteMaxBytes: 2097152,
 			},
 			Transport: Transport{
 				Enabled:   boolPtr(true),
@@ -445,6 +461,14 @@ func (p Paths) ContinuationVerbsAllowedPath() string {
 // (~/.config/agentx/agentx-continuation-verbs-denied.md). Starts empty.
 func (p Paths) ContinuationVerbsDeniedPath() string {
 	return filepath.Join(p.configDir(), "agentx-continuation-verbs-denied.md")
+}
+
+// ToolOutputOverridesPath is the persisted per-tool oversized-output recovery
+// decisions (TOOL-6): an "always" choice on the output-size prompt is remembered
+// here so future truncations from that tool skip the prompt
+// (~/.config/agentx/agentx-tool-output-overrides.toml).
+func (p Paths) ToolOutputOverridesPath() string {
+	return filepath.Join(p.configDir(), "agentx-tool-output-overrides.toml")
 }
 
 // ReadPromptFile reads an optional Markdown prompt file, returning its trimmed

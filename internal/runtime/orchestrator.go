@@ -95,6 +95,14 @@ type Settings struct {
 	// ToolOutputMaxBytes caps captured tool output before truncation (full output
 	// still persists to the artifact). <=0 uses the executor default.
 	ToolOutputMaxBytes int
+	// ToolOutputOverridesPath persists per-tool oversized-output recovery decisions
+	// (TOOL-6): an "always" choice is remembered here. Empty disables persistence
+	// (an "always" decision behaves like "once").
+	ToolOutputOverridesPath string
+	// ToolOutputAbsoluteMaxBytes is the hard ceiling the recovery gate's "capture
+	// more" choice is clamped to, regardless of interactive choice or remembered
+	// preference. <=0 uses the config default (2 MiB).
+	ToolOutputAbsoluteMaxBytes int
 	// TransportEnabled serves the HTTP/SSE transport alongside the in-process chat
 	// so external surfaces can attach. When false, the runtime stays in-process.
 	TransportEnabled bool
@@ -111,29 +119,30 @@ type Settings struct {
 type Orchestrator struct {
 	settings Settings
 
-	store      *session.Store
-	id         session.Identity
-	bus        *state.Bus
-	proc       *state.ProcessingPublisher
-	token      surfaces.AttachToken
-	surfaceReg *surfaces.Registry
-	server     *transporthttp.Server
-	endpoint   string
-	serveDone  chan error
-	model        Model
-	assembler    *prompting.Assembler
-	classifier   *classify.Classifier
-	taskPipeline *pipeline.Pipeline
-	taskExec     taskExecutor
-	taskDecomp   scheduler.Decomposer
-	recDone    chan error
-	recSub     *state.Subscription
-	gate       decisionGate
-	registry   *tools.Registry
-	policy     *tools.Policy
-	proposer   *tools.Proposer
-	runner     ToolRunner
-	planTrees  *planTreeRegistry
+	store           *session.Store
+	id              session.Identity
+	bus             *state.Bus
+	proc            *state.ProcessingPublisher
+	token           surfaces.AttachToken
+	surfaceReg      *surfaces.Registry
+	server          *transporthttp.Server
+	endpoint        string
+	serveDone       chan error
+	model           Model
+	assembler       *prompting.Assembler
+	classifier      *classify.Classifier
+	taskPipeline    *pipeline.Pipeline
+	taskExec        taskExecutor
+	taskDecomp      scheduler.Decomposer
+	recDone         chan error
+	recSub          *state.Subscription
+	gate            decisionGate
+	registry        *tools.Registry
+	policy          *tools.Policy
+	proposer        *tools.Proposer
+	runner          ToolRunner
+	outputOverrides *tools.OutputOverrides
+	planTrees       *planTreeRegistry
 
 	mu        sync.Mutex
 	started   bool

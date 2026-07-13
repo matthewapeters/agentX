@@ -24,6 +24,7 @@ type policyWorld struct {
 // InitializeScenario registers the tools-domain steps.
 func InitializeScenario(sc *godog.ScenarioContext) {
 	registerExecSteps(sc)
+	registerOutputSizeSteps(sc)
 
 	w := &policyWorld{}
 

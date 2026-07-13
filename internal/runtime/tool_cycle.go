@@ -38,6 +38,13 @@ func (o *Orchestrator) buildTools() error {
 		}
 		o.runner = tools.NewExecutor(art, o.settings.ToolOutputMaxBytes)
 	}
+	if o.outputOverrides == nil {
+		overrides, err := tools.LoadOutputOverrides(o.settings.ToolOutputOverridesPath)
+		if err != nil {
+			return err
+		}
+		o.outputOverrides = tools.NewOutputOverrides(overrides)
+	}
 	if o.proposer == nil {
 		chat := func(ctx context.Context, msgs []prompting.Message) (string, error) {
 			return o.model.Chat(ctx, o.settings.OllamaModel, msgs, func(string) {}, nil)
@@ -116,6 +123,18 @@ func (o *Orchestrator) runToolPhase(ctx context.Context, text string) (string, *
 	res, err := o.runner.Run(ctx, d, prop.Args)
 	if err != nil {
 		res = tools.Result{ToolID: d.ID, Status: "error", Exit: -1, Preview: err.Error(), Stderr: err.Error()}
+	}
+	if err == nil && res.Truncated {
+		newRes, ok, derr := o.RequestOutputSizeDecision(ctx, d, prop.Args, res)
+		if derr != nil {
+			return "", pin, false, derr // interrupted while awaiting
+		}
+		if !ok {
+			deniedRes := tools.Result{ToolID: d.ID, Status: "denied", Exit: -1, Preview: "denied: output truncated, not used"}
+			pin.resultOrdinal, pin.resultText = o.publishToolResult(deniedRes, prop.Args)
+			return toolDeniedContext(d, "output truncated, not used"), pin, true, nil
+		}
+		res = newRes
 	}
 	pin.resultOrdinal, pin.resultText = o.publishToolResult(res, prop.Args)
 	return toolResultContext(d, res), pin, true, nil

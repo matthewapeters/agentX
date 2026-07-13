@@ -66,6 +66,23 @@ func (f ApproverFunc) Approve(ctx context.Context, d tools.Descriptor, args map[
 	return f(ctx, d, args, reason)
 }
 
+// OutputSizeDecider resolves what to do with a result the runner's output_max_bytes
+// safety net truncated (TOOL-6): accept it, re-run with a larger cap, or abort
+// (ok=false, treated like a policy denial). The orchestrator backs this with the
+// same interactive decision gate tool-approval uses; a nil OutputSizeDecider means
+// a truncated result is used as-is, unchanged — today's behavior before TOOL-6.
+type OutputSizeDecider interface {
+	DecideOutputSize(ctx context.Context, d tools.Descriptor, args map[string]string, res tools.Result) (tools.Result, bool)
+}
+
+// OutputSizeDeciderFunc adapts a function to the OutputSizeDecider interface.
+type OutputSizeDeciderFunc func(ctx context.Context, d tools.Descriptor, args map[string]string, res tools.Result) (tools.Result, bool)
+
+// DecideOutputSize implements OutputSizeDecider.
+func (f OutputSizeDeciderFunc) DecideOutputSize(ctx context.Context, d tools.Descriptor, args map[string]string, res tools.Result) (tools.Result, bool) {
+	return f(ctx, d, args, res)
+}
+
 // ReadGrants reports whether a resolved absolute path has a standing read grant, so a
 // read outside the confinement root need not prompt again. It is how a session-scoped
 // "allow reads under X" approval (persisted in working memory) is honored on later
@@ -115,15 +132,16 @@ type CallObserver interface {
 
 // Executor drains task records into verified tool calls.
 type Executor struct {
-	proposer Proposer
-	registry Registry
-	gate     Gate
-	runner   Runner
-	verify   Verifier
-	root     string       // working directory calls are confined to ("" = no boundary)
-	approve  Approver     // grants calls that need approval (policy or confinement)
-	reads    ReadGrants   // standing out-of-root read grants (nil = none)
-	observer CallObserver // per-call visibility seam (nil = silent)
+	proposer   Proposer
+	registry   Registry
+	gate       Gate
+	runner     Runner
+	verify     Verifier
+	root       string            // working directory calls are confined to ("" = no boundary)
+	approve    Approver          // grants calls that need approval (policy or confinement)
+	reads      ReadGrants        // standing out-of-root read grants (nil = none)
+	observer   CallObserver      // per-call visibility seam (nil = silent)
+	sizeDecide OutputSizeDecider // resolves output_max_bytes truncation (nil = use as-is)
 }
 
 // Option configures an Executor.
@@ -151,6 +169,12 @@ func WithReadGrants(g ReadGrants) Option {
 // WithCallObserver attaches the per-call visibility seam (nil is allowed = silent).
 func WithCallObserver(obs CallObserver) Option {
 	return func(e *Executor) { e.observer = obs }
+}
+
+// WithOutputSizeDecider supplies the oversized-output recovery seam (TOOL-6).
+// Without it, a truncated result is used as-is, unchanged (pre-TOOL-6 behavior).
+func WithOutputSizeDecider(d OutputSizeDecider) Option {
+	return func(e *Executor) { e.sizeDecide = d }
 }
 
 // New builds an executor from its collaborators.
@@ -216,9 +240,10 @@ func resolvedProposal(rec task.Record) (tools.Proposal, bool) {
 
 // Execute drains one task record: it uses a pre-resolved tool call when the record carries
 // one (a planner-produced Task), otherwise proposes a concrete tool call for the task's
-// goal, gates it through policy, runs it, and verifies the effect. A denied or
-// approval-pending call does not run; a run whose effect fails verification is
-// reported as Phantom, never as done.
+// goal, gates it through policy, runs it, resolves any output_max_bytes truncation
+// (TOOL-6), and verifies the effect. A denied or approval-pending call does not run; a
+// truncated result declined at the size-decision seam is Denied, same as a policy
+// decline; a run whose effect fails verification is reported as Phantom, never as done.
 func (e *Executor) Execute(ctx context.Context, rec task.Record) Outcome {
 	prop, ok := resolvedProposal(rec)
 	if !ok {
@@ -267,6 +292,13 @@ func (e *Executor) Execute(ctx context.Context, rec task.Record) Outcome {
 	res, err := e.runner.Run(ctx, d, prop.Args)
 	if err != nil {
 		return finish(Outcome{Status: Failed, Result: res, Reason: err.Error()})
+	}
+	if res.Truncated && e.sizeDecide != nil {
+		newRes, ok := e.sizeDecide.DecideOutputSize(ctx, d, prop.Args, res)
+		if !ok {
+			return finish(Outcome{Status: Denied, Reason: "declined: output truncated"})
+		}
+		res = newRes
 	}
 	if !e.verify.Verify(d, prop.Args, res) {
 		return finish(Outcome{Status: Phantom, Result: res, Reason: "effect not verified"})

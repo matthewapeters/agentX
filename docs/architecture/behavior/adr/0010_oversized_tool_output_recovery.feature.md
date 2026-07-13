@@ -1,10 +1,11 @@
 # Behavior — Oversized Tool Output Recovery (post-`output_max_bytes` decision point)
 
-Status: **PROPOSED — scoped, not yet built**. Follow-up to the `nimble-pebble-2` RCA fix
-(0009-adjacent; see `CHANGELOG.md` "Fixed" entry dated 2026-07-12 and
-`internal/tools/executor.go`). That fix made truncation honest (labeled, never silent)
-but still just *proceeds* on a partial result. This spec covers what happens instead of
-silently proceeding.
+Status: **Phase A SHIPPED 2026-07-13** (see `CHANGELOG.md`). Phase B (LLM
+self-refinement, the `refine` option) remains proposed, not yet built. Follow-up to the
+`nimble-pebble-2` RCA fix (0009-adjacent; see `CHANGELOG.md` "Fixed" entry dated
+2026-07-12 and `internal/tools/executor.go`). That fix made truncation honest (labeled,
+never silent) but still just *proceeded* on a partial result; Phase A adds the decision
+point instead of silently proceeding.
 
 ## Problem
 
@@ -188,23 +189,36 @@ collapse this fixed).
   `scheduler.execute` mapping fix + plan-completion error string update + widget
   glyph. Fixed a real, already-shipped gap on its own merits (RCA-visible today)
   independent of TOOL-6.
-- **Phase A** (S–M): decision gate only (`use_truncated_*`, `expand_*`, `abort`), reusing
-  `RequestDecision` wholesale — new `state.PhaseOutputSize`, new persisted override
-  file + loader (mirrors `continuation.LoadVerbs`/`AppendVerb` but with a numeric cap
-  instead of a bare verb), the absolute ceiling constant, wiring in both `runToolPhase`
-  and the plan-leaf path (`internal/executor/executor.go`'s `Execute`, alongside its
-  existing approval check — same gate, same seam, no plan/interactive special-casing
-  per the retracted open question #2 above). No model changes.
+- **Phase A (S–M) — SHIPPED 2026-07-13**: decision gate (`use_truncated_*`,
+  `expand_*`, `abort`), reusing `RequestDecision` wholesale. Shipped exactly as
+  scoped: `state.PhaseOutputSize` (`internal/state/processing.go`);
+  `tools.OutputOverride`/`OutputOverrides` + `LoadOutputOverrides`/
+  `SaveOutputOverrides` (`internal/tools/output_overrides.go`, mirroring
+  `policy_store.go`'s `ApprovalEntry`/`Load`/`SaveApprovals` shape rather than the
+  continuation package's flat verb-list, since it carries a numeric cap);
+  `Config.ToolOutputAbsoluteMaxBytes` (default 2 MiB) as the ceiling;
+  `Orchestrator.RequestOutputSizeDecision` + `applyOutputOverride`/
+  `expandCapture`/`persistOutputOverride` (`internal/runtime/output_size.go`);
+  wired into `runToolPhase` (`internal/runtime/tool_cycle.go`) and the plan-leaf
+  path via a new `executor.OutputSizeDecider` seam
+  (`internal/executor/executor.go`'s `Execute`, alongside its existing `Approver`
+  check) wired in `buildTaskExecutor`
+  (`internal/runtime/classifier_pipeline.go`) — no plan/interactive
+  special-casing, per the retracted open question #2 above. No model changes.
 - **Phase B** (M–L, do after A lands and the gate's shape is proven): `refine` +
   `Proposer.ProposeRefinement`, the bounded one-shot refinement guard, and the
   interaction with Phase A's menu (dropping `refine` after one failed attempt).
+  Not started.
 
-## Tests (to write alongside Phase A / B, not yet written)
+## Tests
 
 - `tests/features/tools/output_size_recovery.feature` (`@integration`,
-  `@arch:output-size-recovery`): the four Phase-A resolutions, the ceiling clamp, and the
-  "remembered override still visibly labeled" case.
-- `tests/features/tools/output_size_recovery.feature` additions for Phase B: refine
-  succeeds narrower; refine still truncates → escalates to human menu without `refine`.
-- Unit coverage for `continuation`-style load/append helpers backing the new override
-  file, mirroring `internal/prompting/continuation`'s existing test shape.
+  `@arch:output-size-recovery`) + `tests/steps/tools/output_size_recovery_steps.go`:
+  all seven Phase-A scenarios — use-truncated once/always (with the remembered-
+  preference note verified), expand once/always (same), abort, an interrupted
+  request, and the ceiling clamp (a persisted, deliberately oversized cap is
+  still bounded by the configured absolute ceiling). Runs real `seq` commands
+  through real (small-capped, then larger-capped) executors rather than stubbing
+  `tools.Result`, so the byte/line arithmetic is genuinely exercised.
+- Phase B additions (not yet written): refine succeeds narrower; refine still
+  truncates → escalates to human menu without `refine`.

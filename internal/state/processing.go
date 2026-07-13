@@ -35,12 +35,18 @@ const (
 	// hint/keymap (4-way: allow once/always, deny once/always) instead of the
 	// 3-way tool-approval one.
 	PhaseVerb Phase = "verb"
-	PhaseNone Phase = "none"
+	// PhaseOutputSize pauses the cycle in StateAwaitingInput for an oversized-tool-
+	// output decision (TOOL-6): a tool result was truncated by the output_max_bytes
+	// safety net and no remembered per-tool preference applies — distinct from
+	// PhaseTool since this is a post-execution decision (the call already ran),
+	// not a pre-execution approval, and offers its own option set.
+	PhaseOutputSize Phase = "output_size"
+	PhaseNone       Phase = "none"
 )
 
 var (
 	validStates = map[RunState]bool{StateIdle: true, StateWorking: true, StateCompleted: true, StateFailed: true, StateAwaitingInput: true}
-	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhasePlanning: true, PhaseVerb: true, PhaseNone: true}
+	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhasePlanning: true, PhaseVerb: true, PhaseOutputSize: true, PhaseNone: true}
 )
 
 // ProcessingState is the session-level processing-state payload

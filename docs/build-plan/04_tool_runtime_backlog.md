@@ -131,13 +131,14 @@ policy, executor, artifact store.
   built-in defaults 1:1.
 - **Maps to**: AC-M3b-1.
 
-## TOOL-6 · Oversized-output recovery gate · S–M (Phase A) + M–L (Phase B) · post-M3b, RCA-driven
+## TOOL-6 · Oversized-output recovery gate · S–M (Phase A) + M–L (Phase B) · post-M3b, RCA-driven · Phase A SHIPPED 2026-07-13
 - **Target**: `internal/runtime/` (`runToolPhase`, plan-leaf path in
   `internal/executor/executor.go`), `internal/tools/` (`Proposer`, Phase B only),
   `internal/config/`
 - **Deps**: TOOL-2 (executor truncation + honest labeling, already shipped), TOOL-3
   (proves the `RequestDecision`/gate/`awaiting_input` shape this reuses), **TOOL-7**
-  (Phase A's `abort` path is meaningless without the `task.Blocked` distinction)
+  (shipped — Phase A's `abort` path needed the `task.Denied` distinction to be
+  meaningful, not just `task.Failed`)
 - **Behavior**: full design in
   `docs/architecture/behavior/adr/0010_oversized_tool_output_recovery.feature.md`.
   Summary: when `tools.Result.Truncated` (the `output_max_bytes` safety net triggered),
@@ -148,14 +149,18 @@ policy, executor, artifact store.
   agent self-refine the tool call (narrower command) before falling back to the human
   menu. Not part of original M3b acceptance criteria — opened up by the
   `nimble-pebble-2` RCA fix to TOOL-4/TOOL-2's truncation behavior.
-- **Feature**: `tests/features/tools/output_size_recovery.feature` (planned, not yet
-  written) — see the behavior doc's Tests section.
-- **Done**: not started. Phase A (decision gate) and Phase B (LLM refinement) are
-  separable; see the behavior doc's "Suggested delivery split" and open scope questions
-  (live-pin-refresh) before starting either. The plan-step-blocking open question was
-  retracted 2026-07-13 — plan leaves already block correctly on the approval gate today
-  (`internal/executor/executor.go:254-265`); `PhaseOutputSize` follows the same seam,
-  no special-casing.
+- **Feature**: `tests/features/tools/output_size_recovery.feature` +
+  `tests/steps/tools/output_size_recovery_steps.go` — seven scenarios (UC-OUTSIZE
+  001–007), see the behavior doc's Tests section.
+- **Done**: Phase A shipped 2026-07-13 — decision gate, persisted per-tool
+  overrides, absolute-ceiling clamp, wired into both the interactive cycle and
+  plan leaves via a shared `executor.OutputSizeDecider` seam. Phase B (LLM
+  self-refinement) not started; see the behavior doc's "Suggested delivery
+  split" and the remaining open scope questions (live-pin-refresh) before
+  starting it. The plan-step-blocking open question was retracted 2026-07-13 —
+  plan leaves already block correctly on the approval gate today
+  (`internal/executor/executor.go:254-265`); `PhaseOutputSize` follows the same
+  seam, no special-casing.
 - **Maps to**: none (post-M3b addition; not required for original AC-M3b-1…4).
 
 ## TOOL-7 · Distinguish "blocked on a decision" from "genuinely failed" in task.Status · S · pre-existing gap, RCA-driven · SHIPPED 2026-07-13

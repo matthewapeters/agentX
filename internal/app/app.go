@@ -120,6 +120,8 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ContinuationVerbsAllowedPath: paths.ContinuationVerbsAllowedPath(),
 		ContinuationVerbsDeniedPath:  paths.ContinuationVerbsDeniedPath(),
 		ToolOutputMaxBytes:           cfg.ToolOutputMaxBytes(),
+		ToolOutputOverridesPath:      paths.ToolOutputOverridesPath(),
+		ToolOutputAbsoluteMaxBytes:   cfg.ToolOutputAbsoluteMaxBytes(),
 		TransportEnabled:             cfg.TransportEnabled(),
 		TransportHost:                cfg.TransportHost(),
 		TransportPortStart:           transportStart,

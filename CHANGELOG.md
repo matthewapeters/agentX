@@ -70,6 +70,32 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A truncated tool result (the `output_max_bytes` safety net triggered) now
+  triggers a decision instead of silently proceeding on the partial result**
+  (TOOL-6 Phase A, the direct follow-up to the truncation-honesty fix above).
+  Reuses the same interactive decision gate tool-approval and verb-continuation
+  already use (`Orchestrator.RequestDecision`) — a new `state.PhaseOutputSize`
+  offers five choices: use the truncated result (once/always), re-run with a
+  larger, ceiling-clamped capture (once/always), or abort. An "always" choice
+  persists per tool id to `~/.config/agentx/agentx-tool-output-overrides.toml`
+  (`tools.OutputOverride`/`LoadOutputOverrides`/`SaveOutputOverrides`,
+  `internal/tools/output_overrides.go`) — a later truncation from the same tool
+  resolves without re-prompting, its applied choice still stated in the result
+  text (never a silent swap). The "capture more" choice can never exceed a
+  configured absolute ceiling (`[agentx.tools] absolute_max_bytes`, default
+  2 MiB), whatever was requested or remembered. Wired into both the interactive
+  `single_tool` cycle (`runToolPhase`) and plan-leaf execution via a new
+  `executor.OutputSizeDecider` seam (`internal/executor/executor.go`, alongside
+  the existing `Approver` check) — no special-casing between the two; plan
+  leaves already blocked correctly on the analogous approval gate before this
+  change, so the same seam was reused rather than inventing a second one.
+  Regression coverage: `tests/features/tools/output_size_recovery.feature`
+  (seven scenarios, running real commands through real small- then
+  larger-capped executors). Design:
+  `docs/architecture/behavior/adr/0010_oversized_tool_output_recovery.feature.md`.
+  Not yet built: Phase B, letting the agent self-refine the tool call (a
+  narrower command) as an alternative to asking the human.
+
 - **A response that states an intent to keep investigating ("Let me examine the
   source code...", "Should I check the config?") now actually continues instead of
   silently ending the turn** (sessions clever-raven-3, amber-quartz: the model

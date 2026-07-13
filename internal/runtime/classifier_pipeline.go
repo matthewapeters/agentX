@@ -91,11 +91,23 @@ func (o *Orchestrator) buildTaskExecutor() {
 		v, err := o.RequestApproval(ctx, d, args, o.policy)
 		return err == nil && v.Decision == tools.Allow
 	})
+	// TOOL-6: plan leaves resolve oversized output through the same decision gate
+	// as the interactive cycle — no special-casing for unattended execution (a
+	// retracted earlier assumption; plan leaves already block correctly on the
+	// approval gate above, and this follows the identical seam).
+	sizeDecider := executor.OutputSizeDeciderFunc(func(ctx context.Context, d tools.Descriptor, args map[string]string, res tools.Result) (tools.Result, bool) {
+		newRes, ok, err := o.RequestOutputSizeDecision(ctx, d, args, res)
+		if err != nil {
+			return tools.Result{}, false
+		}
+		return newRes, ok
+	})
 	o.taskExec = executor.New(
 		o.proposer, o.registry, o.policy, o.runner,
 		executor.FSVerifier{Root: root},
 		executor.WithRoot(root),
 		executor.WithApprover(approver),
+		executor.WithOutputSizeDecider(sizeDecider),
 		executor.WithCallObserver(taskToolPublisher{o: o}),
 	)
 }

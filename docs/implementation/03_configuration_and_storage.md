@@ -92,6 +92,7 @@ enabled          = true               # master switch for tool execution
 read_only        = true               # only read/search tools until the loop is proven
 timeout_seconds  = 30                 # per-command execution timeout
 output_max_bytes = 65536              # output cap before truncation (full output → artifact)
+absolute_max_bytes = 2097152           # ceiling on the oversized-output recovery gate's "capture more" (TOOL-6)
 ```
 
 - Unknown keys are ignored by the decoder; absent values fall back to the defaults
