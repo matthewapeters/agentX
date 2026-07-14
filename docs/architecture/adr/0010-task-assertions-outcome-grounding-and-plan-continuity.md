@@ -66,41 +66,63 @@ it:
 
 ## Decision
 
-### 1. Every node declares a falsifiable assertion, not just a goal
+### 1. Every node declares a battery of orthogonal, falsifiable assertions — not one claim
 
-`taskPayload` and `stepPayload` (`internal/prompting/planner/planner.go`) and `task.Record`
-(`internal/prompting/task/task.go`) gain a required field:
+A single boolean claim per node is a cliff edge: any ambiguity in that one claim forces the
+whole node to a trit with nothing to reason about. `taskPayload`/`stepPayload`
+(`internal/prompting/planner/planner.go`) and `task.Record`
+(`internal/prompting/task/task.go`) instead gain a **battery**:
 
 ```go
 // task.Record
-Assertion string `json:"assertion"` // a checkable claim this node's result must satisfy
+type Assertion struct {
+    Claim string            `json:"claim"` // one falsifiable, orthogonal dimension
+    Check *MechanicalCheck  `json:"check,omitempty"` // §6, optional
+}
+Assertions []Assertion `json:"assertions"` // ≥1, planner-declared
 ```
 
-A **Task**'s assertion is checked against its own tool result once it executes (e.g.
-"README.md is present in the repo root"). A **Step**'s assertion is checked against the
-synthesis of its children once they resolve (e.g. "the source tree's existing feature
-coverage has been identified") — this is what finally gives a Step's `Deliverable` field
-(already present, currently only planner guidance text — planner.go:112) a use: the
-deliverable states what the assertion is checked against.
+**Orthogonal, not redundant** — this is a different lever from §2's fan-out vote, and the
+prompt must teach the difference explicitly: voting asks the *same* question multiple times
+for confidence against model noise; a battery asks *different* questions for coverage
+against the goal's real dimensions. "README.md is present," "README.md mentions
+installation," and "README.md mentions a license" are three orthogonal claims about one
+goal; three rephrasings of "is README.md present" are not a battery, they're a vote, and
+the planner prompt should reject the latter the same way it rejects an echoed goal
+(`SimilarGoals`).
 
-`Explanation` (Task) and `Deliverable` (Step) are **not replaced**. Assertion sits
-alongside them: explanation is "why," the goal is "what," assertion is "how we'll know it
-worked." Collapsing them would lose the pre-hoc justification the pre-execution widget
-(ADR 0009 §9c) already shows the user before a node runs.
+A node with one genuinely single-dimensional goal (`"confirm the file exists"`) still gets
+a battery of one — this isn't forcing multiplicity where none is warranted.
+
+**A soft cap (default 4, tunable) bounds battery size** — not primarily for cost (§2/§7
+below explicitly deprioritize cost relative to durability), but because an unbounded
+battery is a plan-quality smell in its own right: kitchen-sinking every conceivable check
+rather than choosing the claims that actually matter is worse signal, not better, and
+crowds out the synthesis judgment (§2) with noise.
 
 **Enforcement reuses the existing degrade-on-violation mechanism**, not new machinery. The
 typed-node amendment already established the pattern for "the planner must declare
 something at generation time, and a violation gets one retry then degrades"
 (`kind` in `planner.Parse`; `SimilarGoals`'s echo check in
-`internal/runtime/decompose/decompose.go`'s `attemptPlan`). A missing or non-falsifiable
-assertion is one more checked violation in that same loop: named in the retry prompt
-(`decompose.go:80`, `"Your previous attempt was invalid: %s. Fix this and reply again."`),
-demoted to a single execute attempt on a second failure — never a third attempt, never a
-silent pass-through with no assertion at all.
+`internal/runtime/decompose/decompose.go`'s `attemptPlan`). An empty battery, a
+non-falsifiable claim, or claims that collapse to rephrasings of each other (echo-check,
+generalized from goals to claims) are all violations in that same loop: named in the retry
+prompt (`decompose.go:80`), demoted to a single execute attempt against a single-claim
+battery on a second failure — never a third attempt, never a silent pass-through with no
+assertion at all.
+
+`Explanation` (Task) and `Deliverable` (Step) are **not replaced**. The battery sits
+alongside them: explanation is "why," the goal is "what," the battery is "how we'll know,
+along which dimensions." Collapsing them would lose the pre-hoc justification the
+pre-execution widget (ADR 0009 §9c) already shows the user before a node runs.
 
 ### 2. Outcome grounding is a mechanical precondition gating an inference judgment
 
-A node's assertion is evaluated against its result in exactly one of three outcomes:
+Everything in this section evaluates **one claim** from the node's battery (§1) at a time.
+Folding the battery's several claim-outcomes into the node's own terminal status is a
+separate step, described after the per-claim mechanism below.
+
+Each claim is evaluated against the node's result in exactly one of three outcomes:
 
 - **satisfied** — positive evidence confirms the assertion.
 - **refuted** — positive evidence confirms the assertion is false. A clean negative result
@@ -144,20 +166,46 @@ rationale, and `abstained` is never self-reported — it *emerges* from the ense
   never be promoted to a confident negative, a **non-quorum vote can never be promoted to a
   confident verdict**.
 
-This does raise the cost of the inference path from one call to up to three, run within
-the same shared slot budget ADR 0008 already established (fan-out width clamped to slot
-count, no independent pool) — making §6's mechanical fast-path a harder requirement to
-land before this ships broadly, not a nice-to-have. See Consequences.
+This does raise the cost of the inference path from one call to up to three per claim, run
+within the same shared slot budget ADR 0008 already established (fan-out width clamped to
+slot count, no independent pool). Earlier drafts of this ADR treated that as a cost that
+*must* be offset by §6's mechanical fast-path before shipping broadly. **That framing is
+revised below** — the user has explicitly prioritized accuracy and durability over speed,
+so §6 remains a valuable optimization but is no longer a gate. See Consequences.
 
-**This redefines what `Done`/`Failed`/`Abstained` mean for a Task node.** Today
-`Scheduler.execute` derives status purely from `executor.Outcome.Status`
+**Folding a battery into the node's terminal status is a synthesis judgment, not a
+mechanical rule — except the one unambiguous case.** A per-claim mechanical/vote result is
+still a narrow, grounded fact about *one dimension*; deciding what a *mixed* battery means
+for the node as a whole is exactly the kind of call this project wants an LLM reasoning
+over multiple sources of evidence for, not a hardcoded fold:
+
+- **All claims `satisfied`** — the one case that stays mechanical, no extra call: the node
+  is `Done`. There is nothing ambiguous to reason about in a clean sweep.
+- **Anything mixed** (any `refuted`, any `abstained`, or both) — the full battery (every
+  claim, its outcome, its rationale) is handed to a **synthesis judgment**: a further LLM
+  call that decides the node's terminal status *and* what happens next — proceed as `Done`
+  with the gap noted, treat as `Failed` and hand off to reconsideration (§3), or `Abstained`
+  and retry the specific claim(s) that were inconclusive. This is the concrete mechanism
+  behind "greater dimensionality for the synthesis": one refuted claim among four satisfied
+  ones does not mechanically cliff the node to `Failed` the way a single-assertion design
+  would — it becomes a judgment call informed by the other three, which is a strictly more
+  durable outcome than an all-or-nothing gate.
+- **The synthesis judgment does not get to re-litigate an individual claim.** It reasons
+  over the *aggregate* meaning of already-grounded per-claim outcomes; it cannot promote a
+  claim that was itself never evidenced, or override a `refuted` claim's grounding — that
+  would silently undo the mechanical precondition above. Its authority is over "what does
+  this pattern of evidence mean for the node," never "what did this one check actually
+  show."
+
+**This redefines what `Done`/`Failed`/`Abstained` mean for a Task node**, now as the output
+of a two-stage pipeline rather than a direct status mapping. Today `Scheduler.execute`
+derives status purely from `executor.Outcome.Status`
 (`executor.Executed → task.Done`, `Denied/NeedsApproval → task.Denied`,
-default → `task.Failed`). This ADR inserts the assertion judgment between "executed" and
-the terminal status: `executor.Executed` no longer maps straight to `task.Done` — it maps
-to *evaluate the assertion*, whose outcome then supplies the terminal status
-(`satisfied → Done`, `refuted → Failed`, `abstained → Abstained`). `Denied`/`NeedsApproval`
-are unaffected — a policy decision is orthogonal to evidence and stays exactly as it is
-today (TOOL-7's distinction holds).
+default → `task.Failed`). This ADR inserts, between "executed" and the terminal status:
+per-claim grounding (mechanical or fan-out vote, above) → battery fold (mechanical
+short-circuit or synthesis judgment, above) → terminal status. `Denied`/`NeedsApproval` are
+unaffected — a policy decision is orthogonal to evidence and stays exactly as it is today
+(TOOL-7's distinction holds).
 
 `Abstained` already exists as a task status, but today it is purely a *classification*-time
 concept — *"classification was not confident enough (scattered vote)"* (task.go:46-47).
@@ -168,34 +216,46 @@ way), just at different pipeline stages. `PlanTreeNode.Status`
 for exactly this reason — this ADR is the first thing to actually route into it on
 purpose.
 
-`PlanTreeNode` gains the assertion and the judge's grounds:
+`PlanTreeNode` gains the battery's recorded results and the fold's own rationale:
 
 ```go
 // PlanTreeNode
-Assertion string `json:"assertion,omitempty"`
-Rationale string `json:"rationale,omitempty"` // judge's evidence-grounded explanation
+type AssertionResult struct {
+    Claim     string `json:"claim"`
+    Outcome   string `json:"outcome"` // satisfied | refuted | abstained
+    Rationale string `json:"rationale,omitempty"`
+}
+Assertions []AssertionResult `json:"assertions,omitempty"` // per-claim, as evaluated
+Rationale  string            `json:"rationale,omitempty"`  // the fold/synthesis's own explanation
 ```
 
-A root or Step node's `Status` **rolls up** from its children instead of freezing at
-`"decomposed"`: any child `failed` → parent `failed` (once its own assertion is evaluated
-against the partial synthesis); any child `abstained` and none `failed` → parent
-`abstained`; all children `done` → parent's own assertion is evaluated against the
-synthesis, per above.
+A root or Step node's `Status` **rolls up** from its children's already-folded terminal
+statuses instead of freezing at `"decomposed"`: any child `failed` → parent `failed` (its
+own battery evaluated against the partial synthesis); any child `abstained` and none
+`failed` → parent `abstained`; all children `done` → parent's own battery evaluated against
+the synthesis, per this section.
 
 ### 3. Only a refutation licenses rework — resolving OQ2
 
 This is the guardrail the user raised directly, made structural rather than advisory:
 
-- **`refuted`** → the reconsider/iterate loop may run: the node's assertion, its command,
-  its result, and the judge's rationale are fed back to the planner to revise the
+- **`refuted`** (node-level, per §2's fold) → the reconsider/iterate loop may run: the
+  node's full battery — every claim, its outcome, its rationale, not just the one(s) that
+  refuted — and the synthesis fold's own rationale are fed back to the planner to revise the
   *approach*. This is the "OQ2: does the parent re-decompose with the failure as context"
-  question — answered yes, but gated strictly on `refuted`, never on `abstained`.
-- **`abstained`** → may only trigger a retry of the *same assertion's evidence-gathering*
-  (same objective, a different check method) — never a plan rewrite, never a claim about
-  system state. Bounded retry (budget TBD, Open Questions below); on exhaustion, the node
-  becomes a terminal, user-visible escalation rather than the session simply stopping the
-  way `clever-otter`'s did. No new terminal state is needed — `abstained` already is one;
-  what was missing was anything downstream of it.
+  question — answered yes, but gated strictly on `refuted`, never on `abstained`. The retry
+  prompt carries explicit self-challenge framing (§7), not just the failure restated —
+  "here is what held and what didn't, across N dimensions; is this still the best approach,
+  or is there a fundamentally different one?" — rather than nudging the planner toward
+  patching the same shape.
+- **`abstained`** → may only trigger a retry of the *specific claim(s)* that were
+  inconclusive, evidence-gathering only (same objective, a different check method) — never
+  a plan rewrite, never a claim about system state. Claims that already resolved
+  (`satisfied`/`refuted`) in the same battery are not re-run. Bounded retry (budget TBD,
+  Open Questions below); on exhaustion, the node becomes a terminal, user-visible escalation
+  rather than the session simply stopping the way `clever-otter`'s did. No new terminal
+  state is needed — `abstained` already is one; what was missing was anything downstream of
+  it.
 
 ### 4. Plan continuity becomes a curated Working Memory entry — resolving OQ6, realizing 9e
 
@@ -336,37 +396,90 @@ its way into the vocabulary, whether eligibility should eventually be declared p
 of relying on every check-author to know that), and how a new kind's execution logic gets
 tested before it's trusted to run unattended. None of that is resolved by this ADR.
 
+### 7. Decomposition-time self-challenge — the highest-leverage lever, and upstream of all of it
+
+Everything in §1–§6 is remediation: it makes a plan's *execution* legible and gives mixed
+evidence a fair hearing instead of a cliff-edge verdict. None of it reduces how often a
+plan needed rescuing in the first place. The most durable way to avoid an early bail-out is
+not to need one — a decomposition that considered and rejected a weaker approach up front
+produces fewer `refuted` batteries downstream than one that committed to the first shape
+that came to mind. This section is deliberately upstream of, and complementary to, the
+grounding machinery above rather than a replacement for it — prevention alongside
+remediation, not instead of it.
+
+Two concrete insertion points, both structured and bounded (per this project's
+context-curation discipline — a free-form "think it over" instruction produces prose, not
+a usable signal):
+
+- **At decomposition** (`planner.go`'s `DefaultPromptTemplate`/`DefaultUserTemplate`), the
+  plan JSON gains one small required field alongside the existing `name`/`objective`:
+
+  ```json
+  {"plan": {"name": "...", "objective": "...",
+    "alternative_considered": "<one sentence: a different approach and why this one was preferred>",
+    "dag": [...]}}
+  ```
+
+  This is the "on the other hand" the user asked for, made concrete enough to validate
+  (non-empty, distinct from `objective` — same enforcement style as §1's battery, one more
+  check in `attemptPlan`'s existing violation loop) rather than trusting an unstructured
+  self-critique actually happened.
+- **At reconsideration** (§3's `refuted` retry), the regenerated prompt is explicitly framed
+  as a challenge, not a patch request: given the full battery (what held, what didn't, and
+  why), the planner is asked whether a fundamentally different approach — not a retried
+  command — would succeed, before it is allowed to simply resubmit the same shape with
+  different arguments. Structurally this reuses the identical retry mechanism as every
+  other violation in this ADR (`decompose.go:80`'s regenerated-context pattern); what
+  changes is the framing text fed into that regeneration, not the machinery.
+
+This section does not propose a new mechanism so much as a new *obligation* on two prompts
+that already exist. Its cost is one field's worth of generation at decomposition time and
+no change at all to the retry loop's call count — cheap relative to §1/§2's battery and
+vote costs, and arguably higher-leverage than either, since it acts before any of that
+machinery is needed.
+
 ### Architecture — insertion points
 
-- `internal/prompting/planner/planner.go` — `taskPayload`/`stepPayload` gain `Assertion`;
-  `DefaultPromptTemplate`/`DefaultUserTemplate` teach it with a worked example, same
-  pattern as the Kind amendment's Step-vs-Task worked example.
-- `internal/runtime/decompose/decompose.go` — `attemptPlan` gains an assertion-presence/
-  falsifiability check alongside `SimilarGoals`, feeding the existing one-retry-then-degrade
-  loop.
+- `internal/prompting/planner/planner.go` — `taskPayload`/`stepPayload` gain `Assertions`
+  (battery) and the plan JSON gains `alternative_considered` (§7);
+  `DefaultPromptTemplate`/`DefaultUserTemplate` teach both with worked examples, same
+  pattern as the Kind amendment's Step-vs-Task worked example — including a negative
+  example distinguishing an orthogonal battery from a redundant one (§1).
+- `internal/runtime/decompose/decompose.go` — `attemptPlan` gains battery-shape checks
+  (non-empty, non-redundant, capped) and an `alternative_considered`-presence check
+  alongside `SimilarGoals`, feeding the existing one-retry-then-degrade loop.
 - `internal/runtime/scheduler/scheduler.go` — `Scheduler.execute` (currently
-  executor-status → task-status, direct) gains the judgment step between "executed" and
-  "terminal status": first an eligible `MechanicalCheck` (§6) if present, else the
-  fan-out judge (§2). A new collaborator interface, `AssertionJudge`, sits next to the
-  existing `Oracle`/`Decomposer`/`Executor` seams the Kind amendment retired the first of:
+  executor-status → task-status, direct) gains a two-stage judgment between "executed" and
+  "terminal status": per-claim grounding (an eligible `MechanicalCheck` (§6) if present,
+  else the fan-out judge), then the battery fold (mechanical short-circuit on all-satisfied,
+  else a synthesis judgment) (§2). Two new collaborator interfaces sit next to the existing
+  `Oracle`/`Decomposer`/`Executor` seams the Kind amendment retired the first of:
 
   ```go
   type AssertionJudge interface {
-      Judge(ctx context.Context, assertion string, result executor.Outcome) (
-          outcome task.Status, rationale string, err error)
+      Judge(ctx context.Context, claim string, result executor.Outcome) (
+          outcome, rationale string, err error) // per-claim
+  }
+
+  type BatteryFold interface {
+      Fold(ctx context.Context, results []session.AssertionResult) (
+          status task.Status, rationale string, err error) // node-level
   }
   ```
 
-  Its implementation wraps `fanout.Pool.Fold` with `fanout.NewMajorityVote` (§2) — no new
-  voting primitive, only a new `fanout.Invoker`/prompt for this call shape.
+  Both wrap `fanout.Pool.Fold` — `AssertionJudge` with `fanout.NewMajorityVote` (§2),
+  `BatteryFold` as a single synthesis call in the mixed case (no vote needed there; the
+  reasoning is over already-grounded claims, not raw evidence). No new voting primitive,
+  only new `fanout.Invoker`/prompt shapes for each.
 
-- `internal/session/plans.go` — `PlanTreeNode` gains `Assertion`, `Rationale`; root/Step
-  rollup logic per §2.
+- `internal/session/plans.go` — `PlanTreeNode` gains `Assertions []AssertionResult`,
+  `Rationale`; root/Step rollup logic per §2.
 - `internal/session/workmemory.go` — `Fact` gains `Plan *PlanRef` and `ExpiresAt`;
   `WorkingMemory.Enabled()` filters expired facts.
-- `internal/prompting/task/task.go` — `Record` gains `Assertion`; `Status.Failed`'s doc
-  comment is corrected to drop the "or the effect could not be verified" clause (that's
-  `Abstained`'s job now), matching the precedent already set for `Denied`.
+- `internal/prompting/task/task.go` — `Record` gains `Assertions []Assertion`;
+  `Status.Failed`'s doc comment is corrected to drop the "or the effect could not be
+  verified" clause (that's `Abstained`'s job now), matching the precedent already set for
+  `Denied`.
 - ADR 0009's status-cue set (`⊘` currently covers both `blocked` and `abstained` — ADR
   0009 line 34-35) needs to split: `abstained`-with-retry-budget-remaining is distinct
   from `abstained`-exhausted-and-escalated, and neither is the same as a node genuinely
@@ -386,23 +499,35 @@ Positive:
   used for pins; and `internal/llm/fanout`'s quorum/abstain-threshold voting, already
   tuned and load-bearing for the action classifier — the judge is a new *caller* of it,
   not new voting machinery.
-- Makes plan intent legible to the user in plan-objective terms ("what must be true"), not
-  system-call terms — the assertion text is a strictly more informative pre/post-execution
-  label than the raw command already shown in ADR 0009's widget.
+- Makes plan intent legible to the user in plan-objective terms ("what must be true, along
+  which dimensions") not system-call terms — the battery is a strictly more informative
+  pre/post-execution label than the raw command already shown in ADR 0009's widget.
 - Bounded WM growth: a plan's context-surface footprint is a regenerated summary string
   plus a pointer, never the raw tree — cannot repeat `task-2513.json`'s 59KB inlining.
+- Mixed evidence gets a real judgment call instead of a cliff-edge rule (§2), and weak
+  decompositions get challenged before they're committed to (§7) — both aimed directly at
+  the durability concern that prompted this revision: a plan is now less likely to bail out
+  on one ambiguous data point when the rest of its evidence still supports progress.
+
+**Explicit reprioritization (2026-07-14):** earlier drafts of this ADR treated per-node LLM
+cost as something to minimize and offset. The user has since stated plainly that accuracy
+and durability (a plan making forward progress rather than bailing out early and wasting
+the work already done) matter more than speed here. This changes what several trade-offs
+below mean: they are now accepted costs in service of that goal, not defects to be
+engineered away before shipping.
 
 Trade-offs:
 
-- **Reintroduces per-node LLM calls the Kind amendment specifically removed — and as a
-  3-call vote, not a single call, it is a larger reintroduction than a first read
-  suggests** (the amendment retired the atomicity Oracle for a real latency win — "roughly
-  half of `mellow-meadow`'s per-node ~10s was oracle voting"). This is not the same
-  call — it buys grounded correctness on a judgment that a single self-reported answer
-  can't be trusted for, not a guess at atomicity — but the cost is real, shares the same
-  slot budget as everything else (no independent pool), and **must** be offset by the
-  mechanical fast-path (§6/Phased step 4) landing before this ships broadly, not as an
-  optional follow-on.
+- **Reintroduces per-node LLM calls the Kind amendment specifically removed, and compounds
+  them further than a single judge call would** (the amendment retired the atomicity
+  Oracle for a real latency win — "roughly half of `mellow-meadow`'s per-node ~10s was
+  oracle voting"). A node with a 4-claim battery, each claim requiring inference, each
+  voted 2-of-3, plus a synthesis fold on a mixed result, is on the order of 12-13 calls —
+  not the single call a first read of §1 might suggest. Per the reprioritization above,
+  this is now an accepted cost, not a defect: it buys grounded correctness and durable
+  forward progress on judgments a single self-reported answer can't be trusted for. §6's
+  mechanical fast-path remains valuable as an optimization but is **no longer a gate** on
+  shipping this broadly — it can land after, not before.
 - `task.Status` (8 values, task.go) and `PlanTreeNode.Status` (6 values, plans.go) are
   already two separate, not-quite-aligned enums; this ADR adds meaning to `abstained` in
   both without unifying them. Reconciling the two enums is explicitly out of scope here
@@ -413,32 +538,42 @@ Trade-offs:
 
 ## Phased Build Plan
 
-1. **Assertion field + generation-time enforcement.** `Record`/`taskPayload`/
-   `stepPayload` gain `Assertion`; `planner.Parse` and `decompose.go`'s `attemptPlan` treat
-   a missing/non-falsifiable assertion as a violation under the existing retry-then-degrade
-   loop. No judgment yet — this phase only makes assertions mandatory and visible.
-2. **Outcome grounding.** `AssertionJudge` collaborator, backed by a `fanout.Pool` +
-   `MajorityVote` (§2), wired into `Scheduler.execute`; `task.Status`/`PlanTreeNode.Status`
-   semantics updated per §2. Two behavior docs are the highest-value contracts to pin here,
-   mirroring how ADR 0008 called out its own state machine as the priority: the
-   mechanical-precondition rule (a broken check must never produce `refuted`) and the
-   vote's non-quorum-never-promotes-to-a-verdict rule (the same guarantee, one layer up).
-3. **Rollup + reconsider/abstain guardrail.** Root/Step status rollup; the `refuted`→
-   reconsider vs. `abstained`→recheck-only branch (§3); bounded retry + escalation on
-   `abstained` exhaustion.
-4. **Mechanical fast-path.** Skip the judge call when an assertion is checkable directly
-   from the executing tool's own exit/output shape — the cost mitigation the trade-offs
-   section requires before this ships broadly, not an optional nice-to-have.
-5. **WM plan continuity.** `Fact.Plan`/`PlanRef`, curated summary regeneration on rollup
+0. **Decomposition self-challenge (§7).** `alternative_considered` in the plan JSON,
+   validated by `attemptPlan`; the `refuted`-retry prompt reframed as a challenge, not a
+   patch request. Cheapest phase, no new call-count, and upstream of everything else —
+   moved first since prevention is the highest-leverage lever for durability.
+1. **Battery field + generation-time enforcement.** `Record`/`taskPayload`/`stepPayload`
+   gain `Assertions` (§1); `planner.Parse` and `decompose.go`'s `attemptPlan` treat an
+   empty, non-falsifiable, redundant, or over-cap battery as a violation under the existing
+   retry-then-degrade loop. No judgment yet — this phase only makes batteries mandatory and
+   visible.
+2. **Per-claim outcome grounding.** `AssertionJudge` collaborator, backed by a
+   `fanout.Pool` + `MajorityVote` (§2), evaluated once per claim in the battery.
+3. **Battery fold.** `BatteryFold` collaborator: mechanical short-circuit on all-satisfied,
+   else a synthesis judgment over the full per-claim result set, wired into
+   `Scheduler.execute`; `task.Status`/`PlanTreeNode.Status` semantics updated per §2. Three
+   behavior docs are the highest-value contracts to pin here, mirroring how ADR 0008 called
+   out its own state machine as the priority: the mechanical-precondition rule (a broken
+   check must never produce `refuted`), the vote's non-quorum-never-promotes-to-a-verdict
+   rule, and the fold's cannot-re-litigate-a-claim rule (§2) — three instances of the same
+   guarantee at three layers.
+4. **Rollup + reconsider/abstain guardrail.** Root/Step status rollup; the `refuted`→
+   reconsider vs. `abstained`→recheck-only branch (§3), reconsideration now carrying the
+   full battery and the §0 challenge framing; bounded retry + escalation on `abstained`
+   exhaustion.
+5. **Mechanical fast-path (optional optimization, not a gate).** Skip the per-claim judge
+   call when a claim's `MechanicalCheck` (§6) is eligible. No longer required before the
+   phases above ship — see Consequences' reprioritization note.
+6. **WM plan continuity.** `Fact.Plan`/`PlanRef`, curated summary regeneration on rollup
    change, `ExpiresAt` implemented and enforced in `WorkingMemory.Enabled()`. Realizes ADR
    0009 Phase 9e.
-6. **Widget + status-cue split.** ADR 0009 §9c's glyph set gains distinct cues for
-   blocked / abstained-retrying / abstained-escalated, and renders the assertion text
-   (not just the goal) as the node's user-facing objective line.
+7. **Widget + status-cue split.** ADR 0009 §9c's glyph set gains distinct cues for
+   blocked / abstained-retrying / abstained-escalated, and renders the battery (not just
+   the goal) as the node's user-facing objective — which claims held, which didn't.
 
 Every phase's touched functions need a GIVEN/WHEN/THEN behavior doc before implementation,
-per repo invariant — phase 2's judgment rule and phase 3's guardrail are the two contracts
-most worth writing first, since they are exactly the two places a bug reintroduces the
+per repo invariant — phase 3's fold rule and phase 4's guardrail are the two contracts most
+worth writing first, since they are exactly the two places a bug reintroduces the
 `clever-otter` failure mode.
 
 ## Open Questions
@@ -463,3 +598,17 @@ most worth writing first, since they are exactly the two places a bug reintroduc
    whether assertion judgment should share that exact tuning or needs its own — the two
    calls are answering different kinds of questions (turn classification vs. evidence
    grounding) — is an empirical/product question, not decided here.
+6. **Battery size default/cap.** §1 proposes 4 as a starting soft cap; no data yet on
+   whether that's too tight (forcing genuinely multi-dimensional goals into an
+   under-specified battery) or too loose (inviting noise). Tune empirically.
+7. **Fold-invocation threshold.** §2's mechanical short-circuit only fires on a *clean
+   sweep* (all-satisfied); everything else — even "3 satisfied, 1 abstained, 0 refuted" —
+   pays for a synthesis call. Whether some mixed patterns are unambiguous enough to also
+   mechanically short-circuit (and if so, which) is deliberately left to tuning, not
+   decided here, so as not to quietly reintroduce the cliff-edge rule §2 was written to
+   remove.
+8. **`alternative_considered` enforcement strength.** §7 validates presence and
+   non-duplication of `objective`, the same bar as an assertion claim — it does not (and
+   likely cannot, without inference of its own) validate that the alternative was a
+   *genuine* one rather than a token gesture at the field. Whether that's good enough, or
+   needs its own lightweight check, is open.
