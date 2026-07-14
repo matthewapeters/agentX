@@ -94,6 +94,19 @@ the planner prompt should reject the latter the same way it rejects an echoed go
 A node with one genuinely single-dimensional goal (`"confirm the file exists"`) still gets
 a battery of one — this isn't forcing multiplicity where none is warranted.
 
+**Orthogonal wording is not the same thing as orthogonal evidence, and this matters most
+on Task leaves.** Every claim in a Task node's battery is checked against the *same single*
+`executor.Outcome` — one command, one output. If that one execution is wrong (stale read,
+wrong path, truncated output), every claim is polluted by the same root cause at once, and
+a mixed result across claims (say, 2 satisfied, 1 refuted) can look like informative partial
+evidence to §2's synthesis fold when it's actually one failure wearing three costumes. Real
+evidential diversity — genuinely independent evidence, not just independently-worded
+questions about one artifact — mostly lives at the **Step** level, where different children
+run different tool calls and a battery checked against their combined synthesis draws on
+several actually-independent executions. Task-node batteries should therefore stay small
+and are inherently weaker evidence than a comparably-sized Step-node battery; this asymmetry
+is real and this ADR does not paper over it with uniform treatment.
+
 **A soft cap (default 4, tunable) bounds battery size** — not primarily for cost (§2/§7
 below explicitly deprioritize cost relative to durability), but because an unbounded
 battery is a plan-quality smell in its own right: kitchen-sinking every conceivable check
@@ -151,10 +164,17 @@ uncertainty is exactly the thing that isn't trustworthy on its own. Instead, eac
 invocation answers a **binary** verdict only (`satisfied` | `refuted`) with a short
 rationale, and `abstained` is never self-reported — it *emerges* from the ensemble:
 
-- `fanout.Contract{RequireFields: []string{"verdict", "rationale"}, MaxWords: 40}` keeps
+- `fanout.Contract{RequireFields: []string{"rationale", "verdict"}, MaxWords: 40}` keeps
   each invocation's prompt and output small and structured — a tight, narrowly-scoped call
   (assertion + tool result only, per this project's context-curation discipline), not a
   free-form judgment. A malformed response is quarantined out of the vote, not counted.
+  **Field order is deliberate, not stylistic:** `rationale` is required before `verdict` so
+  the reasoning is generated before the answer it's supposed to justify. Under autoregressive
+  decoding, a field emitted *after* the verdict cannot have caused it — it's confabulated
+  justification for an answer already committed to, not the reasoning that produced it. This
+  is a general rule this ADR applies everywhere it asks a model for both an answer and its
+  reasoning (the battery fold below, and §7's `alternative_considered` — already ordered
+  correctly, before `dag`, precisely for this reason): **reasoning precedes verdict, always.**
 - `fanout.NewMajorityVote(WithQuorum(3), WithAbstainBelow(2.0/3.0))` — the same aggregator
   shape already tuned for the action classifier (3-of-4 → 2-of-3 supermajority,
   `abstain_below`, per ADR 0008's context). A 2-of-3 agreement yields `satisfied`/`refuted`;
@@ -168,10 +188,21 @@ rationale, and `abstained` is never self-reported — it *emerges* from the ense
 
 This does raise the cost of the inference path from one call to up to three per claim, run
 within the same shared slot budget ADR 0008 already established (fan-out width clamped to
-slot count, no independent pool). Earlier drafts of this ADR treated that as a cost that
-*must* be offset by §6's mechanical fast-path before shipping broadly. **That framing is
-revised below** — the user has explicitly prioritized accuracy and durability over speed,
-so §6 remains a valuable optimization but is no longer a gate. See Consequences.
+slot count, no independent pool). Earlier drafts of this ADR treated §6's mechanical
+fast-path as a *cost* offset — required before shipping broadly, purely to keep the call
+count down. **That framing was wrong, and revising it toward "optional, cost isn't the
+constraint" (as an earlier draft of this section did) was wrong in the opposite direction.**
+The vote does not fully substitute for a mechanical check no matter how many calls it
+spends: three invocations of the same model, varied only by temperature/seed, are
+correlated samples of one model's beliefs, not independent witnesses — a supermajority
+measures the model's *confidence*, not the claim's *truth*. If the model has a systematic
+misunderstanding, all three votes agree on the same wrong answer, and `AbstainBelow`
+catches disagreement, not shared error. A mechanical check has no such failure mode — it's
+grounded in the tool's actual output, not the model's self-consistency. **§6 is therefore
+preferred whenever eligible for evidential-strength reasons, independent of cost or
+speed** — it is not an optimization to defer, and re-litigating it as one (as this ADR
+briefly did) is exactly the kind of naive epistemology this revision exists to correct. See
+Consequences and §6.
 
 **Folding a battery into the node's terminal status is a synthesis judgment, not a
 mechanical rule — except the one unambiguous case.** A per-claim mechanical/vote result is
@@ -180,7 +211,13 @@ for the node as a whole is exactly the kind of call this project wants an LLM re
 over multiple sources of evidence for, not a hardcoded fold:
 
 - **All claims `satisfied`** — the one case that stays mechanical, no extra call: the node
-  is `Done`. There is nothing ambiguous to reason about in a clean sweep.
+  is `Done`. **This assumes the battery is complete, not just individually correct — and
+  only the battery's structure (non-empty, non-redundant, under cap, §1) is validated at
+  generation time, never its sufficiency.** A clean sweep is 100% pass rate on a test suite
+  that might not cover what actually mattered about the goal; "accuracy trumps speed" is the
+  stated priority here, and silently trusting all-green is the one place this design still
+  defaults to speed. This is accepted for v1 (Open Questions) but should carry a visible
+  coverage signal (battery size vs. goal complexity) rather than being trusted unconditionally.
 - **Anything mixed** (any `refuted`, any `abstained`, or both) — the full battery (every
   claim, its outcome, its rationale) is handed to a **synthesis judgment**: a further LLM
   call that decides the node's terminal status *and* what happens next — proceed as `Done`
@@ -241,13 +278,21 @@ This is the guardrail the user raised directly, made structural rather than advi
 
 - **`refuted`** (node-level, per §2's fold) → the reconsider/iterate loop may run: the
   node's full battery — every claim, its outcome, its rationale, not just the one(s) that
-  refuted — and the synthesis fold's own rationale are fed back to the planner to revise the
-  *approach*. This is the "OQ2: does the parent re-decompose with the failure as context"
-  question — answered yes, but gated strictly on `refuted`, never on `abstained`. The retry
-  prompt carries explicit self-challenge framing (§7), not just the failure restated —
-  "here is what held and what didn't, across N dimensions; is this still the best approach,
-  or is there a fundamentally different one?" — rather than nudging the planner toward
-  patching the same shape.
+  refuted — and the synthesis fold's own rationale are fed back to the planner to revise
+  **the approach, the assertion, or both.** This is the "OQ2: does the parent re-decompose
+  with the failure as context" question — answered yes, but gated strictly on `refuted`,
+  never on `abstained`. The retry prompt carries explicit self-challenge framing (§7), not
+  just the failure restated — "here is what held and what didn't, across N dimensions; is
+  this still the best approach, or is there a fundamentally different one?"
+  **Assertion revision is a deliberate addition, not an oversight-fix:** a `refuted` result
+  can mean the approach was wrong, but it can just as easily mean the *claim* was
+  mis-specified (too narrow a phrasing, checking for the wrong signal of success) — retrying
+  different approaches against a flawed yardstick burns the retry budget on the wrong
+  problem, which undermines durability rather than protecting it. This is guarded against
+  becoming goalpost-moving: a revised claim must state *why* the original was wrong (not
+  merely that it was inconvenient), both versions stay in the durable record (ADR 0009
+  visibility), and the revised claim is validated by the same generation-time checks (§1) as
+  any new one.
 - **`abstained`** → may only trigger a retry of the *specific claim(s)* that were
   inconclusive, evidence-gathering only (same objective, a different check method) — never
   a plan rewrite, never a claim about system state. Claims that already resolved
@@ -516,6 +561,17 @@ the work already done) matter more than speed here. This changes what several tr
 below mean: they are now accepted costs in service of that goal, not defects to be
 engineered away before shipping.
 
+**Self-review correction (2026-07-14, same day):** applying this ADR's own standard back
+onto itself surfaced that the reprioritization above had been mis-applied to §6
+specifically. §6's mechanical fast-path was demoted to "optional, since cost isn't the
+constraint" — but that's cost-framed reasoning answering an evidential-strength question. A
+fan-out vote's three calls are correlated samples of one model's beliefs (same model, same
+context, varied only by temperature/seed) — supermajority agreement measures the model's
+*confidence*, not the claim's *truth*, and cannot catch a systematic misunderstanding the
+same way a mechanical check grounded in real tool output can. **§6 is preferred whenever
+eligible on evidential grounds, independent of cost** — corrected in §2/§6 directly; noted
+here so the correction isn't lost among the trade-offs it touches.
+
 Trade-offs:
 
 - **Reintroduces per-node LLM calls the Kind amendment specifically removed, and compounds
@@ -526,8 +582,14 @@ Trade-offs:
   not the single call a first read of §1 might suggest. Per the reprioritization above,
   this is now an accepted cost, not a defect: it buys grounded correctness and durable
   forward progress on judgments a single self-reported answer can't be trusted for. §6's
-  mechanical fast-path remains valuable as an optimization but is **no longer a gate** on
-  shipping this broadly — it can land after, not before.
+  mechanical fast-path reduces this cost where eligible, but — per the self-review
+  correction above — it should still be pursued for what it's worth as *evidence*, not
+  deferred as a mere latency optimization.
+- **The fan-out vote is a weaker evidential guarantee than its "2-of-3 supermajority"
+  framing suggests.** It catches disagreement from sampling variance; it does not catch a
+  systematic model error, since correlated calls fail the same way together. This is a real,
+  unresolved limitation of the inference path, not fully mitigated by voting alone (Open
+  Questions).
 - `task.Status` (8 values, task.go) and `PlanTreeNode.Status` (6 values, plans.go) are
   already two separate, not-quite-aligned enums; this ADR adds meaning to `abstained` in
   both without unifying them. Reconciling the two enums is explicitly out of scope here
@@ -535,6 +597,9 @@ Trade-offs:
 - The retry budget for `abstained` re-checks needs a real number, not "bounded" — picking
   it wrong repeats either `clever-otter`'s silent stall (too low/no escalation) or a new
   spiral (too high, no escalation ceiling).
+- A battery on a Task leaf shares one evidentiary root (§1) — mixed results across an
+  "orthogonal" battery can be one failure wearing several costumes, not genuine partial
+  evidence, and the synthesis fold (§2) has no way to detect that from inside the pipeline.
 
 ## Phased Build Plan
 
@@ -547,27 +612,30 @@ Trade-offs:
    empty, non-falsifiable, redundant, or over-cap battery as a violation under the existing
    retry-then-degrade loop. No judgment yet — this phase only makes batteries mandatory and
    visible.
-2. **Per-claim outcome grounding.** `AssertionJudge` collaborator, backed by a
-   `fanout.Pool` + `MajorityVote` (§2), evaluated once per claim in the battery.
+2. **Per-claim outcome grounding — mechanical first, always, by preference not economy.**
+   For each claim: an eligible `MechanicalCheck` (§6) is tried before any inference call,
+   because it is stronger evidence, not because it's cheaper. Only when no eligible
+   mechanical check exists does the `AssertionJudge` collaborator (backed by a
+   `fanout.Pool` + `MajorityVote`, §2) run. This ordering was mis-scoped as a later,
+   optional optimization in an earlier draft (Consequences' self-review correction) —
+   corrected here to be part of the base grounding path from the start, not a phase-5
+   add-on.
 3. **Battery fold.** `BatteryFold` collaborator: mechanical short-circuit on all-satisfied,
    else a synthesis judgment over the full per-claim result set, wired into
-   `Scheduler.execute`; `task.Status`/`PlanTreeNode.Status` semantics updated per §2. Three
+   `Scheduler.execute`; `task.Status`/`PlanTreeNode.Status` semantics updated per §2. Four
    behavior docs are the highest-value contracts to pin here, mirroring how ADR 0008 called
    out its own state machine as the priority: the mechanical-precondition rule (a broken
    check must never produce `refuted`), the vote's non-quorum-never-promotes-to-a-verdict
-   rule, and the fold's cannot-re-litigate-a-claim rule (§2) — three instances of the same
-   guarantee at three layers.
+   rule, the fold's cannot-re-litigate-a-claim rule, and the reasoning-precedes-verdict
+   field-order rule (§2) — four instances of one guarantee at different layers.
 4. **Rollup + reconsider/abstain guardrail.** Root/Step status rollup; the `refuted`→
-   reconsider vs. `abstained`→recheck-only branch (§3), reconsideration now carrying the
-   full battery and the §0 challenge framing; bounded retry + escalation on `abstained`
-   exhaustion.
-5. **Mechanical fast-path (optional optimization, not a gate).** Skip the per-claim judge
-   call when a claim's `MechanicalCheck` (§6) is eligible. No longer required before the
-   phases above ship — see Consequences' reprioritization note.
-6. **WM plan continuity.** `Fact.Plan`/`PlanRef`, curated summary regeneration on rollup
+   reconsider vs. `abstained`→recheck-only branch (§3, including the assertion-revision
+   branch and its goalpost-moving guard), reconsideration now carrying the full battery and
+   the §0 challenge framing; bounded retry + escalation on `abstained` exhaustion.
+5. **WM plan continuity.** `Fact.Plan`/`PlanRef`, curated summary regeneration on rollup
    change, `ExpiresAt` implemented and enforced in `WorkingMemory.Enabled()`. Realizes ADR
    0009 Phase 9e.
-7. **Widget + status-cue split.** ADR 0009 §9c's glyph set gains distinct cues for
+6. **Widget + status-cue split.** ADR 0009 §9c's glyph set gains distinct cues for
    blocked / abstained-retrying / abstained-escalated, and renders the battery (not just
    the goal) as the node's user-facing objective — which claims held, which didn't.
 
@@ -593,11 +661,16 @@ worth writing first, since they are exactly the two places a bug reintroduces th
    Genuinely still open within that: vocabulary growth/governance (who adds a new `Kind`,
    whether eligibility should eventually be declared per-tool on `Descriptor`), and how a
    new kind's execution logic gets validated before it runs unattended.
-5. **Vote quorum/threshold tuning.** §2 starts from the action classifier's existing
-   2-of-3-of-3 shape (`WithQuorum(3)`, `AbstainBelow(2.0/3.0)`) as the obvious reuse, but
-   whether assertion judgment should share that exact tuning or needs its own — the two
-   calls are answering different kinds of questions (turn classification vs. evidence
-   grounding) — is an empirical/product question, not decided here.
+5. **Vote quorum/threshold tuning — likely wrong as a reused default, not a neutral choice.**
+   §2 starts from the action classifier's existing 2-of-3-of-3 shape (`WithQuorum(3)`,
+   `AbstainBelow(2.0/3.0)`) as the obvious reuse, but that tuning was fit for turn-type
+   classification, a task LLMs are comparatively well-calibrated on. Assertion judgment is
+   grounded factual verification, a domain where LLMs are more prone to *confident,
+   correlated* error — exactly the failure mode voting alone doesn't catch (Consequences'
+   self-review correction). Reusing the classifier's tuning is a reasonable starting
+   implementation, but it should be treated as an unvalidated hypothesis biased toward more
+   abstaining (safe: costs a retry) until it's empirically checked, not assumed safe because
+   it worked for a different call.
 6. **Battery size default/cap.** §1 proposes 4 as a starting soft cap; no data yet on
    whether that's too tight (forcing genuinely multi-dimensional goals into an
    under-specified battery) or too loose (inviting noise). Tune empirically.
@@ -612,3 +685,13 @@ worth writing first, since they are exactly the two places a bug reintroduces th
    likely cannot, without inference of its own) validate that the alternative was a
    *genuine* one rather than a token gesture at the field. Whether that's good enough, or
    needs its own lightweight check, is open.
+9. **Battery completeness/coverage.** §2's clean-sweep shortcut only validates a battery's
+   *structure* at generation time, never whether it's actually sufficient for the goal — an
+   all-satisfied battery can still under-cover what the goal needed checked. No coverage
+   heuristic is specified here (battery size vs. goal complexity was floated in §2 as a
+   direction, not a design).
+10. **This section's own findings are a single, unchecked pass.** The 2026-07-14 self-review
+    (Consequences, and the corrections threaded through §1–§3/§6) was produced by one
+    reasoning pass over the existing design, not cross-examined by a second one — the same
+    correlated-single-call weakness named in Finding 1 above applies to this review itself.
+    Treat its corrections as plausible and evidenced, not as independently verified.
