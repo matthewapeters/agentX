@@ -212,7 +212,9 @@ Operational implications:
    datapoint: `action=query@0.95`, `response=abstained{produced:2,executed:1,neither:1}`.
 2. **Re-decomposition on failure.** When an atomic leaf fails, does its parent re-decompose
    with the failure as context, or does the plan surface the failure? Prior doc leans
-   re-synthesis; this ADR defers.
+   re-synthesis; this ADR defers. **Resolved by ADR 0010:** only a `refuted` assertion
+   outcome (real evidence of failure) licenses re-decomposition; an `abstained` outcome
+   (inconclusive evidence) may only retry the check, never rework the plan.
 3. **Dynamic/TBD steps.** The prior doc's TBD steps (resolve a step after its prerequisites
    complete) fit naturally as NEEDS-DECOMPOSE nodes whose expansion is deferred until deps
    are `done`. Adopt as-is, or require concrete steps up front? Leaning adopt.
@@ -475,6 +477,9 @@ Trade-offs:
 6. **Promotion policy.** What decides a Task's `Results()` gets written to WM with a TTL —
    an explicit planner-declared flag (`"cacheable": true`), a fixed allowlist of goal
    shapes, or a later heuristic? Deferred; needs product input before building.
+   **Resolved by ADR 0010:** promotion is gated on assertion outcome, not goal shape — a
+   plan's WM entry updates only on `satisfied`/`refuted` (evidenced conclusions), never on
+   `abstained`; `ExpiresAt` (this amendment's field) is set at plan-close time.
 7. **Retry-prompt shape.** The one-retry-on-violation path needs the specific violation
    (">5 children" / "missing kind" / "echoes parent") fed back into the regenerated
    prompt — a small `Render` variant, not a new template. Implementation detail, not

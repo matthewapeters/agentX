@@ -96,7 +96,9 @@ the queryable snapshot.
   stop-cancels-plan. Not yet built (the concurrent-approval-queue fix, vivid-raven, was
   a necessary precursor, already landed separately).
 - **9e — context surface representation**: plan as context item, findings manageable.
-  Not yet built.
+  Not yet built. **Designed in ADR 0010**: a plan's rolled-up status becomes a curated,
+  bounded `session.Fact` (`Key: "plan:<name>"`), not the raw plan tree — the mechanism
+  that also closes ADR 0008 OQ2/OQ6.
 
 ## Consequences
 
