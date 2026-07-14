@@ -253,7 +253,8 @@ way), just at different pipeline stages. `PlanTreeNode.Status`
 for exactly this reason — this ADR is the first thing to actually route into it on
 purpose.
 
-`PlanTreeNode` gains the battery's recorded results and the fold's own rationale:
+`PlanTreeNode` gains the battery's recorded results and the fold's own rationale — as an
+**attempt**, not a single flat record, because §3 gives a node more than one:
 
 ```go
 // PlanTreeNode
@@ -262,45 +263,139 @@ type AssertionResult struct {
     Outcome   string `json:"outcome"` // satisfied | refuted | abstained
     Rationale string `json:"rationale,omitempty"`
 }
-Assertions []AssertionResult `json:"assertions,omitempty"` // per-claim, as evaluated
-Rationale  string            `json:"rationale,omitempty"`  // the fold/synthesis's own explanation
+
+// Attempt is one full pass at a node: its own Kind, its own command-or-children, its own
+// battery and fold outcome. A node normally has exactly one; §3 is what gives it a second.
+type Attempt struct {
+    Kind       string            `json:"kind"` // "task" | "step", this attempt's own type
+    Command    string            `json:"command,omitempty"`
+    Children   []string          `json:"children,omitempty"` // if kind == step
+    Assertions []AssertionResult `json:"assertions,omitempty"`
+    Rationale  string            `json:"rationale,omitempty"` // the fold's own explanation
+    Outcome    string            `json:"outcome"` // done | failed | abstained | superseded
+}
+Attempts []Attempt `json:"attempts"` // ≥1; the last entry is authoritative for scheduling
 ```
 
 A root or Step node's `Status` **rolls up** from its children's already-folded terminal
-statuses instead of freezing at `"decomposed"`: any child `failed` → parent `failed` (its
-own battery evaluated against the partial synthesis); any child `abstained` and none
-`failed` → parent `abstained`; all children `done` → parent's own battery evaluated against
-the synthesis, per this section.
+statuses (their latest attempt's outcome) instead of freezing at `"decomposed"`: any child
+`failed` → parent `failed` (its own battery evaluated against the partial synthesis); any
+child `abstained` and none `failed` → parent `abstained`; all children `done` → parent's own
+battery evaluated against the synthesis, per this section. §3 is what a node does *before*
+handing a `failed` verdict upward.
 
-### 3. Only a refutation licenses rework — resolving OQ2
+### 3. Reconsideration is a typed re-decompose, not a side-channel — resolving OQ2 for real
 
-This is the guardrail the user raised directly, made structural rather than advisory:
+**This section replaces an earlier draft that got the right guardrail (only `refuted`
+licenses rework) but the wrong mechanism** (a vague "fed back to the planner to revise the
+approach," which never specified which node, which call, or what shape the revision could
+take). That vagueness wasn't a writing gap — it was hiding a real architectural hole,
+surfaced by treating this ADR's own standard as something to check the design against, not
+just apply forward: ADR 0008's scheduler states plainly that **`DONE`/`FAILED` are
+terminal** (0008 §3, "terminal; unblocks dependents") — no edge leads back out of `Failed`.
+A Task, once typed, "never decomposes... there is no decompose operation for a Task to
+call" (0008 amendment). So when reconsideration's honest answer to a `refuted` result is
+"this wasn't atomic, it needs to be broken down" — not "retry the same shape of command" —
+the previous design had nowhere for that signal to go. It would have been silently
+flattened into a same-kind retry regardless of what the synthesis actually concluded.
 
-- **`refuted`** (node-level, per §2's fold) → the reconsider/iterate loop may run: the
-  node's full battery — every claim, its outcome, its rationale, not just the one(s) that
-  refuted — and the synthesis fold's own rationale are fed back to the planner to revise
-  **the approach, the assertion, or both.** This is the "OQ2: does the parent re-decompose
-  with the failure as context" question — answered yes, but gated strictly on `refuted`,
-  never on `abstained`. The retry prompt carries explicit self-challenge framing (§7), not
-  just the failure restated — "here is what held and what didn't, across N dimensions; is
-  this still the best approach, or is there a fundamentally different one?"
-  **Assertion revision is a deliberate addition, not an oversight-fix:** a `refuted` result
-  can mean the approach was wrong, but it can just as easily mean the *claim* was
-  mis-specified (too narrow a phrasing, checking for the wrong signal of success) — retrying
-  different approaches against a flawed yardstick burns the retry budget on the wrong
-  problem, which undermines durability rather than protecting it. This is guarded against
-  becoming goalpost-moving: a revised claim must state *why* the original was wrong (not
-  merely that it was inconvenient), both versions stay in the durable record (ADR 0009
-  visibility), and the revised claim is validated by the same generation-time checks (§1) as
-  any new one.
-- **`abstained`** → may only trigger a retry of the *specific claim(s)* that were
-  inconclusive, evidence-gathering only (same objective, a different check method) — never
-  a plan rewrite, never a claim about system state. Claims that already resolved
-  (`satisfied`/`refuted`) in the same battery are not re-run. Bounded retry (budget TBD,
-  Open Questions below); on exhaustion, the node becomes a terminal, user-visible escalation
-  rather than the session simply stopping the way `clever-otter`'s did. No new terminal
-  state is needed — `abstained` already is one; what was missing was anything downstream of
-  it.
+This is the same failure shape ADR 0008 already diagnosed and fixed once, one layer up: *"A
+scattering turn... is the classifier telling us the goal is not atomic... Today that signal
+dead-ends at Ask"* — the motivation for adding a `Decompose` route instead of always
+falling to `Ask`. The fix here is the same move, applied to reconsideration instead of
+initial classification: **don't invent a second mechanism for "the approach needs to
+change" — reuse the one that already exists for exactly that.**
+
+**The mechanism: `refuted` licenses exactly one more call to `Decomposer.Decompose`, on the
+failed node itself, informed by its own battery as context — and its result is typed
+normally**, through the same grammar §1/ADR 0008 already use for every other node:
+
+- If the result comes back `kind: "task"` — a revised command, possibly a revised assertion
+  battery (§1) — the node retries as before. This is the "simple fix" case the earlier draft
+  only partially described.
+- If the result comes back `kind: "step"` — the node **promotes**: it decomposes into ≤5
+  children exactly as any Step would, through the existing `applyDecompose` parent-as-join
+  path (0008 amendment) — no new graph mechanism, the node just becomes a join over the
+  children it turns out it actually needed. This is the case the earlier draft had no room
+  for at all.
+
+A **Step**'s own `refuted` outcome (its assertion checked against its children's synthesis
+came back false) reconsiders the same way: one more `Decompose` call on the Step's own goal,
+now informed by what the discarded child set's synthesis revealed. The old children are not
+deleted — they're marked `superseded` in the node's prior `Attempt` (§2) and stay in the
+durable record for audit (ADR 0009), but the live child set going forward is the new
+attempt's. This unifies "a Task was under-decomposed" and "a Step's decomposition was wrong"
+into the same operation: re-invoke `Decompose`, once, with the failure as context, accept
+whatever typed shape it returns.
+
+**`alternative_considered` (§7) is not a separate discipline bolted onto this — it's
+inherited for free**, because reconsideration *is* a `Decompose` call, and every `Decompose`
+call already goes through the planner prompt that requires it. The self-challenge framing
+("is this still the best approach, or a fundamentally different one?") and any assertion
+revision both land as ordinary fields of the same regenerated `Attempt`, validated by the
+same generation-time checks (§1) as any first attempt — assertion revision was previously
+described as a special guarded case; it no longer needs to be one, since both prior and
+revised versions are simply `Attempts[0]` and `Attempts[1]`, kept side by side by
+construction.
+
+**Bounded, not open-ended — every node gets at most one reconsideration, ever.** A node with
+`len(Attempts) == 1` and a `refuted` fold may reconsider; a node already on its second
+attempt (`len(Attempts) == 2`) that folds `refuted` again does not reconsider a third
+time — it degrades to a terminal `Failed`, which rolls up to its parent exactly as §2
+already specifies. This is the same "at most one retry + one execute attempt, per node,
+ever" anti-spiral guarantee the 0008 amendment already established for decomposition
+violations, now covering reconsideration too, not a new risk surface.
+
+**No separate "escalate to the parent" mechanism is needed — it falls out of composing two
+rules that already exist.** A permanently-`Failed` child rolls up per §2; the parent's own
+battery, evaluated against a synthesis that now includes that permanent failure, will
+plausibly also fold `refuted` — and the parent, on its own `Attempts[0]`, is then entitled to
+its own single reconsideration, which re-decomposes *all* of its children, not just the one
+that failed (the case the "wrong sibling assumptions" scenario needs). Because a Step only
+folds once every child has reached a terminal state (the existing parent-as-join semantics,
+unchanged), the parent's reconsideration naturally waits for the full child set to settle
+before firing — no eager mid-flight re-planning while siblings are still running. Escalation
+is just this same per-node rule recursing up the tree, level by level, exactly as far as it
+needs to and no further.
+
+**Termination is provable by the same argument ADR 0008's original recursion already
+used.** Each node consumes at most one reconsideration, each reconsideration is itself a
+`Decompose` call bounded by the existing ≤5-children cap and consumes one unit of the
+existing `max_task_depth` budget (a promoted node's children count at `depth+1`, same as any
+Step's). Total additional work is therefore bounded by (existing bounded tree size) × (one
+extra attempt per node) — still finite, by the same induction that already bounds the
+un-reconsidered tree. Reconsideration can at most double the plan's total work; it cannot
+spiral.
+
+```
+node folds refuted (Attempts == 1)
+        │
+        ▼
+  Decompose(node, context = failed battery + rationale)   ← same call as original planning
+        │
+   ┌────┴────┐
+   ▼         ▼
+kind:task  kind:step
+   │          │
+ retry    promote: applyDecompose (parent-as-join, unchanged)
+   │          │
+   └────┬─────┘
+        ▼
+  re-fold (§2) ── satisfied-sweep → Done (terminal)
+              └── refuted again (Attempts == 2) → Failed (terminal) → rolls up (§2)
+                                                       │
+                                          parent's own fold, informed by this failure,
+                                          may itself reconsider once — same rule, one level up
+```
+
+**What this does *not* change:** `abstained` still only licenses a retry of the *specific
+claim(s)* that were inconclusive — evidence-gathering, never a `Decompose` call, never a
+plan rewrite. That guardrail from the earlier draft was correct and stays: bounded retry
+(budget TBD, Open Questions); on exhaustion, the node becomes a terminal, user-visible
+escalation rather than the session simply stopping the way `clever-otter`'s did. `Abstained`
+means "we don't know," and re-decomposing on "we don't know" would be exactly the
+overreach §2's mechanical precondition exists to prevent — only a real refutation, not an
+absence of evidence, licenses restructuring the plan.
 
 ### 4. Plan continuity becomes a curated Working Memory entry — resolving OQ6, realizing 9e
 
@@ -517,8 +612,20 @@ machinery is needed.
   reasoning is over already-grounded claims, not raw evidence). No new voting primitive,
   only new `fanout.Invoker`/prompt shapes for each.
 
-- `internal/session/plans.go` — `PlanTreeNode` gains `Assertions []AssertionResult`,
-  `Rationale`; root/Step rollup logic per §2.
+- `internal/runtime/scheduler/scheduler.go` (§3) — `Scheduler.work`/`execute` gain the
+  reconsideration edge: a `refuted` fold on a node with `len(Attempts) == 1` calls
+  `s.decomposer.Decompose(ctx, rec)` (the same `Decomposer` seam Steps already use, not a
+  new one) with the failed `Attempt` injected as context via the existing
+  `planfindings`-style channel (`internal/runtime/decompose/decompose.go`'s
+  `findings := planfindings.From(ctx)`). The result's `Kind` (task or step) is handled
+  exactly as `s.work` already handles any node's `Kind` — no branch needs to know it's
+  looking at a reconsideration rather than a first decomposition.
+- `internal/runtime/decompose/decompose.go` — `Decomposer.Decompose` must accept being
+  called on a node whose prior `Kind` was `task` (today it's only invoked on `KindStep`
+  nodes); the failed node's goal + battery becomes the context injected alongside
+  `factsContext`, the same way sibling `planfindings` already are.
+- `internal/session/plans.go` — `PlanTreeNode.Assertions`/`Rationale` (§2) become
+  `Attempts []Attempt` (§2/§3); root/Step rollup logic reads the latest attempt.
 - `internal/session/workmemory.go` — `Fact` gains `Plan *PlanRef` and `ExpiresAt`;
   `WorkingMemory.Enabled()` filters expired facts.
 - `internal/prompting/task/task.go` — `Record` gains `Assertions []Assertion`;
@@ -553,6 +660,13 @@ Positive:
   decompositions get challenged before they're committed to (§7) — both aimed directly at
   the durability concern that prompted this revision: a plan is now less likely to bail out
   on one ambiguous data point when the rest of its evidence still supports progress.
+- **A `refuted` node can restructure itself instead of dying at a terminal wall (§3).**
+  `Failed` was, and structurally still is everywhere else in ADR 0008, a dead end — this ADR
+  adds exactly one bounded exit from it: reconsideration as a typed re-decompose, reusing
+  the exact `Decompose` grammar and `applyDecompose` join mechanics ADR 0008 already built,
+  rather than a new bespoke retry channel. This is the most direct answer yet to "the plan
+  is more likely to move forward and make progress than bail out early" — it's a structural
+  guarantee, not another layer of evidence-gathering on top of the same dead end.
 
 **Explicit reprioritization (2026-07-14):** earlier drafts of this ADR treated per-node LLM
 cost as something to minimize and offset. The user has since stated plainly that accuracy
@@ -600,6 +714,17 @@ Trade-offs:
 - A battery on a Task leaf shares one evidentiary root (§1) — mixed results across an
   "orthogonal" battery can be one failure wearing several costumes, not genuine partial
   evidence, and the synthesis fold (§2) has no way to detect that from inside the pipeline.
+- **§3's reconsideration doubles the plan's worst-case size, provably but not for free.**
+  Every node can now consume up to 2× the decompose/execute work it could before (its own
+  attempt, plus one reconsideration, itself bounded by the same ≤5-children/`max_task_depth`
+  caps). Termination is proven (§3), but a pathological plan that reconsiders at every level
+  is meaningfully more expensive than one that never needs to, and there is no budget yet
+  that caps *how much* of the plan is allowed to be mid-reconsideration at once versus
+  progressing normally (Open Questions).
+- `Decomposer.Decompose` gains a second caller shape (a previously-executed `Task` node,
+  not only a `Step` awaiting its first expansion) — a real, if small, widening of that
+  seam's contract that the Kind amendment didn't anticipate when it drew `Step`/`Task` as a
+  clean two-way split with no notion of a node changing kind mid-life.
 
 ## Phased Build Plan
 
@@ -628,21 +753,30 @@ Trade-offs:
    check must never produce `refuted`), the vote's non-quorum-never-promotes-to-a-verdict
    rule, the fold's cannot-re-litigate-a-claim rule, and the reasoning-precedes-verdict
    field-order rule (§2) — four instances of one guarantee at different layers.
-4. **Rollup + reconsider/abstain guardrail.** Root/Step status rollup; the `refuted`→
-   reconsider vs. `abstained`→recheck-only branch (§3, including the assertion-revision
-   branch and its goalpost-moving guard), reconsideration now carrying the full battery and
-   the §0 challenge framing; bounded retry + escalation on `abstained` exhaustion.
-5. **WM plan continuity.** `Fact.Plan`/`PlanRef`, curated summary regeneration on rollup
+4. **Rollup + abstain guardrail.** Root/Step status rollup (§2); `abstained`'s
+   specific-claim-only retry (§3); bounded retry + escalation on `abstained` exhaustion.
+5. **Reconsideration as typed re-decompose (§3) — the structural core of this revision.**
+   `PlanTreeNode.Attempts`; `Decomposer.Decompose` accepting a previously-executed node as a
+   caller; the scheduler's new `refuted`+`len(Attempts)==1` edge back into `Decompose`,
+   routing its typed result through the existing `Kind` dispatch and `applyDecompose` join
+   path unchanged. This is the phase that actually closes the "linear flow vs. iterative
+   LLM behavior" gap this ADR started this revision to fix — it depends on phases 1-4 (a
+   node needs a real `refuted` fold before it has anything to reconsider from) but is not
+   itself optional the way §6's fast-path is. Two behavior docs matter most here: the
+   bounded-to-one-reconsideration rule, and the parent-reconsiders-only-after-full-join rule
+   (§3) — both are what keep this provably terminating instead of a new spiral risk.
+6. **WM plan continuity.** `Fact.Plan`/`PlanRef`, curated summary regeneration on rollup
    change, `ExpiresAt` implemented and enforced in `WorkingMemory.Enabled()`. Realizes ADR
    0009 Phase 9e.
-6. **Widget + status-cue split.** ADR 0009 §9c's glyph set gains distinct cues for
-   blocked / abstained-retrying / abstained-escalated, and renders the battery (not just
-   the goal) as the node's user-facing objective — which claims held, which didn't.
+7. **Widget + status-cue split.** ADR 0009 §9c's glyph set gains distinct cues for
+   blocked / abstained-retrying / abstained-escalated / reconsidering-in-place /
+   promoted-from-a-failed-attempt, and renders the battery (not just the goal) as the node's
+   user-facing objective — which claims held, which didn't, and which attempt this is.
 
 Every phase's touched functions need a GIVEN/WHEN/THEN behavior doc before implementation,
-per repo invariant — phase 3's fold rule and phase 4's guardrail are the two contracts most
-worth writing first, since they are exactly the two places a bug reintroduces the
-`clever-otter` failure mode.
+per repo invariant — phase 3's fold rule and phase 5's reconsideration/termination rules are
+the three contracts most worth writing first, since they are exactly the places a bug
+reintroduces either the `clever-otter` failure mode or an unbounded spiral.
 
 ## Open Questions
 
@@ -695,3 +829,22 @@ worth writing first, since they are exactly the two places a bug reintroduces th
     reasoning pass over the existing design, not cross-examined by a second one — the same
     correlated-single-call weakness named in Finding 1 above applies to this review itself.
     Treat its corrections as plausible and evidenced, not as independently verified.
+11. **Plan-wide reconsideration budget.** §3 bounds *each node* to one reconsideration, but
+    nothing bounds how many nodes across a *whole plan* may be reconsidering concurrently —
+    a plan whose evidence is uniformly weak could have every leaf reconsider once, doubling
+    total work exactly at the worst possible time (per-node cost is already ~12-13 calls,
+    §2). Whether that needs a plan-level throttle, or is acceptable given the explicit
+    speed/durability reprioritization, is open.
+12. **Does a promoted node's own children inherit a fresh reconsideration budget, or share
+    the parent's spent one?** §3 states each node gets one reconsideration; it doesn't say
+    whether a Task-promoted-to-Step's new children are "new nodes" (full budget) or somehow
+    constrained by the promotion having already happened once at that position in the tree.
+    The termination proof holds either way (children are still bounded by depth/branching),
+    but the *practical* retry-cost implications differ and aren't worked out here.
+13. **Visibility cost of `Attempts`.** §2's `PlanTreeNode.Attempts` keeps every prior
+    attempt (including superseded Step children) in the durable record for audit — good for
+    ADR 0009's visibility requirement, but a heavily-reconsidered plan could regrow the same
+    59KB-inlining risk (`task-2513.json`) this ADR was written to close, just via attempt
+    history instead of raw tool output. Superseded attempts likely need the same
+    pointer-not-inline treatment §4's WM summary already applies to the live tree, but that
+    isn't specified here.
