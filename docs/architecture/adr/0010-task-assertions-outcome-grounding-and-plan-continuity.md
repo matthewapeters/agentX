@@ -117,10 +117,37 @@ inconclusive result licenses a false claim about system state.
 
 Judgment itself may require inference (most assertions do — "confirm X is present" is
 mechanical, "confirm the README explains installation clearly" is not), so this is a real
-LLM call, not free. A phased mechanical fast-path is scoped in Phased Build Plan step 4 to
-bound the cost: an assertion checkable directly from the tool's own exit code/output
-(`grep`/`find`/`test`-shaped checks) skips the judge call entirely, since the execution
-*is* the check.
+LLM cost, not free. A phased mechanical fast-path is scoped in §6/Phased Build Plan step 4
+to bound that cost: an assertion with an eligible `MechanicalCheck` (§6) skips the judge
+entirely, since the execution *is* the check.
+
+**When inference is required, it is not one call — it is a fan-out vote, reusing
+`internal/llm/fanout` rather than inventing new voting infrastructure.** A single judge
+call self-reporting "satisfied / refuted / abstained" has the same failure mode as the
+rejected self-declared-mechanical boolean in §6: an LLM's single-shot self-assessed
+uncertainty is exactly the thing that isn't trustworthy on its own. Instead, each
+invocation answers a **binary** verdict only (`satisfied` | `refuted`) with a short
+rationale, and `abstained` is never self-reported — it *emerges* from the ensemble:
+
+- `fanout.Contract{RequireFields: []string{"verdict", "rationale"}, MaxWords: 40}` keeps
+  each invocation's prompt and output small and structured — a tight, narrowly-scoped call
+  (assertion + tool result only, per this project's context-curation discipline), not a
+  free-form judgment. A malformed response is quarantined out of the vote, not counted.
+- `fanout.NewMajorityVote(WithQuorum(3), WithAbstainBelow(2.0/3.0))` — the same aggregator
+  shape already tuned for the action classifier (3-of-4 → 2-of-3 supermajority,
+  `abstain_below`, per ADR 0008's context). A 2-of-3 agreement yields `satisfied`/`refuted`;
+  a split vote, or too many quarantined/malformed responses, yields
+  `Decision{Abstained: true}` structurally — not because any single call said "I don't
+  know," but because the ensemble couldn't agree. This is a strictly harder-to-game
+  implementation of "insufficient evidence" than trusting one call's self-assessment, and
+  it mirrors §2's own mechanical precondition one layer up: just as a broken check can
+  never be promoted to a confident negative, a **non-quorum vote can never be promoted to a
+  confident verdict**.
+
+This does raise the cost of the inference path from one call to up to three, run within
+the same shared slot budget ADR 0008 already established (fan-out width clamped to slot
+count, no independent pool) — making §6's mechanical fast-path a harder requirement to
+land before this ships broadly, not a nice-to-have. See Consequences.
 
 **This redefines what `Done`/`Failed`/`Abstained` mean for a Task node.** Today
 `Scheduler.execute` derives status purely from `executor.Outcome.Status`
@@ -224,6 +251,91 @@ ExpiresAt *time.Time `json:"expires_at,omitempty"` // nil = no expiry
 `WorkingMemory.Enabled()` (workmemory.go:142) filters expired facts at read time; nothing
 else needs to change to make expiry effective.
 
+### 6. A mechanical check vocabulary — first cut, not a closed question
+
+The fast-path in §2/Phase 4 needs a way to decide, per node, whether the judge call can be
+skipped. Two shapes were considered:
+
+- **Always infer**, with a tight judge prompt (intent + tool call/result + assertion →
+  up/down). Safe, but pays an LLM call on every node — it doesn't address the cost §2/
+  Consequences flags as needing an offset.
+- **The planner self-declares** a node "mechanical" or "inferred" as a trusted boolean.
+  Rejected: a false "mechanical" means *nothing checks it* — silent, and strictly worse
+  than always inferring, since it looks grounded without being grounded.
+
+The way out is not a more-accurate classifier; it's removing the boolean's ability to be
+*trusted* at all. The planner doesn't get to assert "this is mechanical" — it has to
+produce an actually-executable predicate, and the system runs it or doesn't, deterministically:
+
+```go
+// MechanicalCheck is an optional, planner-emitted predicate over a Task's raw
+// executor.Outcome. Presence is a claim, not a trust grant — the fast path only fires
+// if Kind is recognized and every field it references exists on the tool's Outcome
+// shape. Anything that fails to parse or doesn't apply falls through to AssertionJudge
+// automatically; a bad or unparseable Check costs one extra inference call, never a
+// silently ungrounded pass.
+type MechanicalCheck struct {
+    Kind string `json:"kind"` // "exit_status" | "stderr_class" | "line_count" | "pattern_match"
+
+    WantExit *int `json:"want_exit,omitempty"` // exit_status
+
+    // stderr_class — a closed vocabulary for *why* a nonzero exit happened, so a real
+    // negative (not_found) is distinguishable from an inconclusive one (permission_denied,
+    // timeout, other) without inference. This is what makes §2's mechanical precondition
+    // ("only a check that executed cleanly may refute") actually implementable for tools
+    // whose informative signal *is* a nonzero exit — read_file (cat) and list_dir (ls)
+    // both fail with "No such file or directory" on a legitimate absence, which is real
+    // evidence, not an error to abstain on.
+    WantClass string `json:"want_class,omitempty"` // "not_found" | "permission_denied" | "other"
+
+    // line_count / pattern_match — evaluated against stdout or stderr text.
+    Stream       string `json:"stream,omitempty"` // "stdout" (default) | "stderr"
+    Pattern      string `json:"pattern,omitempty"` // RE2 syntax (Go-safe, no backtracking)
+    MinMatches   *int   `json:"min_matches,omitempty"`
+    MaxMatches   *int   `json:"max_matches,omitempty"`
+    ExactMatches *int   `json:"exact_matches,omitempty"`
+}
+```
+
+`task.Record`/`taskPayload` gain `Check *MechanicalCheck json:"check,omitempty"` alongside
+`Assertion` — optional; its absence just means "always infer for this node," the safe
+default.
+
+**Grounded against the actual catalog** (`internal/tools/descriptors.go`), not proposed in
+the abstract:
+
+- `exit_status` is universal — every tool's `executor.Outcome` carries one.
+- `find_path` (`find {root} -name {name}`) returns exit 0 with **empty stdout** on zero
+  matches — GNU `find` does not error on "nothing found." A presence/absence assertion
+  against it is a `line_count` check (`max_matches: 0` for absence), **not**
+  `stderr_class` — the tool's own success/failure semantics don't line up with the
+  assertion's semantics, and a check that assumed otherwise would silently misfire. This
+  is exactly the kind of edge the vocabulary has to get right per-tool, not just per-kind.
+- `read_file` (`cat`) and `list_dir` (`ls -la`) do error on a genuine absence
+  (`No such file or directory`), so `stderr_class: not_found` applies to them.
+- `pattern_match` against file *content* only works today by pairing it with `read_file`
+  (run `read_file`, apply the pattern to its stdout) — it cannot search *across* files,
+  because **the current catalog has no content-search tool** (`find_path` matches
+  filenames only). A `grep`-shaped descriptor is a prerequisite for that class of
+  assertion to be mechanically checkable at all, not a vocabulary gap — this ADR doesn't
+  scope adding one, but Phase 4 should note it as a real, named limitation rather than
+  something the vocabulary can paper over.
+
+**The finite-vocabulary-vs-long-tail tension is real and unresolved here — this is a first
+cut, not a closed design.** A handful of kinds cover the catalog's read-only tools
+reasonably; they will not cover everything a planner reasonably wants to assert, and the
+temptation will be to keep adding kinds indefinitely. The reason this is safe to leave
+open rather than solved up front: **every kind the vocabulary doesn't yet support is
+already handled correctly — by falling through to inference.** The vocabulary's
+completeness is a cost lever, not a correctness requirement; it can ship with four kinds
+and grow strictly additively, one at a time, each new kind only ever making *more* nodes
+eligible for the cheap path, never changing what a missing/unrecognized kind does (falls
+through, same as today). What's still genuinely open: who decides when a new `Kind` earns
+its way into the vocabulary, whether eligibility should eventually be declared per-tool on
+`Descriptor` itself (so `find_path` could assert "I don't support `stderr_class`" instead
+of relying on every check-author to know that), and how a new kind's execution logic gets
+tested before it's trusted to run unattended. None of that is resolved by this ADR.
+
 ### Architecture — insertion points
 
 - `internal/prompting/planner/planner.go` — `taskPayload`/`stepPayload` gain `Assertion`;
@@ -234,7 +346,8 @@ else needs to change to make expiry effective.
   loop.
 - `internal/runtime/scheduler/scheduler.go` — `Scheduler.execute` (currently
   executor-status → task-status, direct) gains the judgment step between "executed" and
-  "terminal status." A new collaborator interface, `AssertionJudge`, sits next to the
+  "terminal status": first an eligible `MechanicalCheck` (§6) if present, else the
+  fan-out judge (§2). A new collaborator interface, `AssertionJudge`, sits next to the
   existing `Oracle`/`Decomposer`/`Executor` seams the Kind amendment retired the first of:
 
   ```go
@@ -243,6 +356,9 @@ else needs to change to make expiry effective.
           outcome task.Status, rationale string, err error)
   }
   ```
+
+  Its implementation wraps `fanout.Pool.Fold` with `fanout.NewMajorityVote` (§2) — no new
+  voting primitive, only a new `fanout.Invoker`/prompt for this call shape.
 
 - `internal/session/plans.go` — `PlanTreeNode` gains `Assertion`, `Rationale`; root/Step
   rollup logic per §2.
@@ -264,10 +380,12 @@ Positive:
 - Closes ADR 0008 OQ2 and OQ6 with a mechanism, not just a policy statement — and both
   answers fall out of the *same* tri-state judgment rather than needing separate designs.
 - Fulfills `task.Done`'s own doc comment ("effect verified") for the first time.
-- Extends, rather than replaces, three patterns already trusted in this codebase: the
+- Extends, rather than replaces, four patterns already trusted in this codebase: the
   Kind amendment's declare-at-generation-time + degrade-on-violation loop; the
-  Denied/Failed evidence-vs-decision split (TOOL-7); and the Fact sidecar pattern already
-  used for pins.
+  Denied/Failed evidence-vs-decision split (TOOL-7); the Fact sidecar pattern already
+  used for pins; and `internal/llm/fanout`'s quorum/abstain-threshold voting, already
+  tuned and load-bearing for the action classifier — the judge is a new *caller* of it,
+  not new voting machinery.
 - Makes plan intent legible to the user in plan-objective terms ("what must be true"), not
   system-call terms — the assertion text is a strictly more informative pre/post-execution
   label than the raw command already shown in ADR 0009's widget.
@@ -276,11 +394,15 @@ Positive:
 
 Trade-offs:
 
-- **Reintroduces a per-node LLM call the Kind amendment specifically removed** (it retired
-  the atomicity Oracle for a real latency win — "roughly half of `mellow-meadow`'s per-node
-  ~10s was oracle voting"). This is not the same call — it buys grounded correctness, not a
-  guess at atomicity — but the cost is real and must be offset by the mechanical fast-path
-  (Phased step 4), not deferred indefinitely.
+- **Reintroduces per-node LLM calls the Kind amendment specifically removed — and as a
+  3-call vote, not a single call, it is a larger reintroduction than a first read
+  suggests** (the amendment retired the atomicity Oracle for a real latency win — "roughly
+  half of `mellow-meadow`'s per-node ~10s was oracle voting"). This is not the same
+  call — it buys grounded correctness on a judgment that a single self-reported answer
+  can't be trusted for, not a guess at atomicity — but the cost is real, shares the same
+  slot budget as everything else (no independent pool), and **must** be offset by the
+  mechanical fast-path (§6/Phased step 4) landing before this ships broadly, not as an
+  optional follow-on.
 - `task.Status` (8 values, task.go) and `PlanTreeNode.Status` (6 values, plans.go) are
   already two separate, not-quite-aligned enums; this ADR adds meaning to `abstained` in
   both without unifying them. Reconciling the two enums is explicitly out of scope here
@@ -295,11 +417,12 @@ Trade-offs:
    `stepPayload` gain `Assertion`; `planner.Parse` and `decompose.go`'s `attemptPlan` treat
    a missing/non-falsifiable assertion as a violation under the existing retry-then-degrade
    loop. No judgment yet — this phase only makes assertions mandatory and visible.
-2. **Outcome grounding.** `AssertionJudge` collaborator + `Scheduler.execute` rewritten to
-   route through it; `task.Status`/`PlanTreeNode.Status` semantics updated per §2. Behavior
-   doc for the mechanical-precondition rule specifically (a broken check must never produce
-   `refuted`) — this is the highest-value contract to pin, mirroring how ADR 0008 called
-   out its own state machine as the priority.
+2. **Outcome grounding.** `AssertionJudge` collaborator, backed by a `fanout.Pool` +
+   `MajorityVote` (§2), wired into `Scheduler.execute`; `task.Status`/`PlanTreeNode.Status`
+   semantics updated per §2. Two behavior docs are the highest-value contracts to pin here,
+   mirroring how ADR 0008 called out its own state machine as the priority: the
+   mechanical-precondition rule (a broken check must never produce `refuted`) and the
+   vote's non-quorum-never-promotes-to-a-verdict rule (the same guarantee, one layer up).
 3. **Rollup + reconsider/abstain guardrail.** Root/Step status rollup; the `refuted`→
    reconsider vs. `abstained`→recheck-only branch (§3); bounded retry + escalation on
    `abstained` exhaustion.
@@ -330,8 +453,13 @@ most worth writing first, since they are exactly the two places a bug reintroduc
    new `Ask`-route question (ADR 0008's existing escalation path) or a distinct
    plan-level UI affordance? Leaning `Ask` — reuses an existing, understood mechanism —
    but not decided here.
-4. **Mechanical-fast-path classification.** Phase 4 needs a rule for *when* an assertion
-   qualifies for the no-judge-call path — declared by the planner at generation time
-   (a `"checkable": true` flag, mirroring the amendment's deferred `"cacheable"` idea for
-   promotion) or inferred from the tool descriptor's shape at evaluation time. Deferred to
-   phase 4 design, not decided here.
+4. **Mechanical-fast-path classification.** First cut in §6: the planner emits an optional
+   `MechanicalCheck`, trusted only if it parses and applies — never a trusted label.
+   Genuinely still open within that: vocabulary growth/governance (who adds a new `Kind`,
+   whether eligibility should eventually be declared per-tool on `Descriptor`), and how a
+   new kind's execution logic gets validated before it runs unattended.
+5. **Vote quorum/threshold tuning.** §2 starts from the action classifier's existing
+   2-of-3-of-3 shape (`WithQuorum(3)`, `AbstainBelow(2.0/3.0)`) as the obvious reuse, but
+   whether assertion judgment should share that exact tuning or needs its own — the two
+   calls are answering different kinds of questions (turn classification vs. evidence
+   grounding) — is an empirical/product question, not decided here.
