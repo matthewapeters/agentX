@@ -52,6 +52,23 @@ type Settings struct {
 	// PlannerPrompt is the decomposition-planner system prompt (from
 	// ~/.config/agentx/agentx-planner.md). Empty uses planner.DefaultPromptTemplate.
 	PlannerPrompt string
+	// PlannerThinkingBudget bounds the decomposition planner's own Complete-based
+	// reasoning phase (ADR 0012 Phase 1), independent of ThinkingBudget below (which
+	// governs the streaming respond path only). <=0 disables — the default.
+	PlannerThinkingBudget time.Duration
+	// WavefrontClassifyPrompt is the wavefront classify system prompt (from
+	// ~/.config/agentx/agentx-wavefront-classify.md). Empty uses
+	// wavefront.DefaultClassifyPromptTemplate. ADR 0012 Phase 2 — not yet consumed by
+	// any runtime path (the wavefront engine itself lands in a later phase).
+	WavefrontClassifyPrompt string
+	// WavefrontSynthesisPrompt is the wavefront synthesis system prompt (from
+	// ~/.config/agentx/agentx-wavefront-synthesis.md). Empty uses
+	// wavefront.DefaultSynthesisPromptTemplate. ADR 0012 Phase 2.
+	WavefrontSynthesisPrompt string
+	// WavefrontSummaryPrompt is the wavefront output-summarization system prompt
+	// (from ~/.config/agentx/agentx-wavefront-summary.md). Empty uses
+	// wavefront.DefaultSummaryPromptTemplate. ADR 0012 Phase 2.
+	WavefrontSummaryPrompt string
 	// MaxWidgetLines is the output-widget body-row cap surfaced to the chat UI.
 	MaxWidgetLines int
 	// InputMaxLines caps how tall the input panel grows before it scrolls.
@@ -134,6 +151,10 @@ type Orchestrator struct {
 	taskPipeline    *pipeline.Pipeline
 	taskExec        taskExecutor
 	taskDecomp      scheduler.Decomposer
+	// outputSummarizer condenses an oversized captured finding (ADR 0012 §6, Phase 3);
+	// nil until buildDecomposition wires it, and capturingExec degrades to plain
+	// truncation when nil, same posture as a nil artifactReader.
+	outputSummarizer summarizeFunc
 	recDone         chan error
 	recSub          *state.Subscription
 	gate            decisionGate

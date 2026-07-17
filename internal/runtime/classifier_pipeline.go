@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -157,15 +158,17 @@ func (o *Orchestrator) buildDecomposition() {
 	}
 	client := ollama.New(o.settings.OllamaHost)
 	model := o.settings.OllamaModel
+	plannerThinkingBudget := o.settings.PlannerThinkingBudget
 	chat := func(ctx context.Context, systemPrompt, userPrompt string, format json.RawMessage) (string, error) {
-		return client.Complete(ctx, ollama.CompleteRequest{
+		req := ollama.CompleteRequest{
 			Model: model,
 			Messages: []ollama.Message{
 				{Role: "system", Content: systemPrompt},
 				{Role: "user", Content: userPrompt},
 			},
 			Format: format,
-		})
+		}
+		return completeWithThinkingBudget(ctx, client, req, plannerThinkingBudget)
 	}
 	sessionID := o.id.ID
 	o.taskDecomp = decompose.Decomposer{
@@ -184,6 +187,35 @@ func (o *Orchestrator) buildDecomposition() {
 			return wm.Enabled()
 		},
 	}
+	// Reuses the same client/model as the planner above — ADR 0012 §6, Phase 3.
+	o.outputSummarizer = newOutputSummarizer(client, model, o.settings.WavefrontSummaryPrompt)
+}
+
+// completeWithThinkingBudget runs req against client with reasoning bounded by budget
+// (ADR 0012 Phase 1). budget <= 0 disables thinking entirely — req is sent unmodified
+// and behavior is byte-identical to a plain client.Complete call, which is the default
+// until an operator opts in. budget > 0 sets req.Think and races the call against a
+// budget-scoped child context; if the call has not returned when the budget elapses and
+// the parent ctx is still live, it is retried exactly once on ctx with Think forced off.
+// Unlike the streaming Chat path's budget dance (tool_cycle.go), there is no partial
+// content to preserve here — a budget timeout always means "restart without thinking,"
+// never "cut thinking short and keep going." Package-level (not a method) so a later
+// wavefront classifier can reuse it against its own budget setting without depending on
+// *Orchestrator.
+func completeWithThinkingBudget(ctx context.Context, client *ollama.Client, req ollama.CompleteRequest, budget time.Duration) (string, error) {
+	if budget <= 0 {
+		return client.Complete(ctx, req)
+	}
+	req.Think = true
+	budgetCtx, cancel := context.WithTimeout(ctx, budget)
+	out, err := client.Complete(budgetCtx, req)
+	cancel()
+	if err != nil && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		noThink := req
+		noThink.Think = false
+		return client.Complete(ctx, noThink)
+	}
+	return out, err
 }
 
 // plannerCatalog renders a compact, drift-proof tool list for the planner prompt: id +

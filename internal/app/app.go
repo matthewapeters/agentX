@@ -82,6 +82,18 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 	if err != nil {
 		return nil, err
 	}
+	wavefrontClassifyPrompt, err := config.ReadPromptFile(paths.WavefrontClassifyPath())
+	if err != nil {
+		return nil, err
+	}
+	wavefrontSynthesisPrompt, err := config.ReadPromptFile(paths.WavefrontSynthesisPath())
+	if err != nil {
+		return nil, err
+	}
+	wavefrontSummaryPrompt, err := config.ReadPromptFile(paths.WavefrontSummaryPath())
+	if err != nil {
+		return nil, err
+	}
 	// Optional fan-group prompt corpus (~/.config/agentx/prompts.toml). Absent leaves
 	// the experimental task classifier off. The config dir is derived from an existing
 	// prompt-file path so no new config accessor is needed.
@@ -103,6 +115,10 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ClassificationRetries:        cfg.ClassificationRetries(),
 		PromptCorpus:                 promptCorpus,
 		PlannerPrompt:                plannerPrompt,
+		PlannerThinkingBudget:        time.Duration(cfg.PlannerThinkingBudgetSeconds()) * time.Second,
+		WavefrontClassifyPrompt:      wavefrontClassifyPrompt,
+		WavefrontSynthesisPrompt:     wavefrontSynthesisPrompt,
+		WavefrontSummaryPrompt:       wavefrontSummaryPrompt,
 		MaxWidgetLines:               cfg.MaxWidgetLines(),
 		InputMaxLines:                cfg.InputMaxLines(),
 		MarkdownRenderer:             cfg.MarkdownRenderer(),

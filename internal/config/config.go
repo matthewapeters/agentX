@@ -67,6 +67,12 @@ type Thinking struct {
 	Enabled           *bool          `toml:"enabled"`
 	TimeBudgetSeconds int            `toml:"time_budget_seconds"`
 	Routes            ThinkingRoutes `toml:"routes"`
+	// PlannerTimeBudgetSeconds bounds the decomposition planner's own Complete-based
+	// reasoning phase (ADR 0012 Phase 1), independent of TimeBudgetSeconds above (which
+	// governs the streaming respond path only). <= 0 disables thinking for planner
+	// Complete calls entirely — the default, so existing behavior is unchanged unless
+	// explicitly configured.
+	PlannerTimeBudgetSeconds int `toml:"planner_time_budget_seconds"`
 }
 
 // ThinkingRoutes enables/disables thinking per classification route (pointers so
@@ -201,6 +207,15 @@ func (c Config) ThinkingTimeBudgetSeconds() int {
 		return defaultThinkingBudgetSeconds
 	}
 	return c.Agentx.Thinking.TimeBudgetSeconds
+}
+
+// PlannerThinkingBudgetSeconds bounds the decomposition planner's own Complete-based
+// reasoning phase (ADR 0012 Phase 1), independent of ThinkingTimeBudgetSeconds. Unlike
+// that method, there is no positive default here: <= 0 (including an absent config key)
+// disables thinking for planner Complete calls entirely, so existing behavior is
+// byte-identical until an operator opts in explicitly.
+func (c Config) PlannerThinkingBudgetSeconds() int {
+	return c.Agentx.Thinking.PlannerTimeBudgetSeconds
 }
 
 // ThinkingRoutes returns the per-route thinking enables, resolved against the
@@ -432,6 +447,24 @@ func (p Paths) ShellCommandsPath() string {
 // rules can be tuned without a rebuild (ADR 0008 amendment).
 func (p Paths) PlannerPath() string {
 	return filepath.Join(p.configDir(), "agentx-planner.md")
+}
+
+// WavefrontClassifyPath is the wavefront classify system-prompt file
+// (~/.config/agentx/agentx-wavefront-classify.md) — ADR 0012 Phase 2.
+func (p Paths) WavefrontClassifyPath() string {
+	return filepath.Join(p.configDir(), "agentx-wavefront-classify.md")
+}
+
+// WavefrontSynthesisPath is the wavefront synthesis system-prompt file
+// (~/.config/agentx/agentx-wavefront-synthesis.md) — ADR 0012 Phase 2.
+func (p Paths) WavefrontSynthesisPath() string {
+	return filepath.Join(p.configDir(), "agentx-wavefront-synthesis.md")
+}
+
+// WavefrontSummaryPath is the wavefront output-summarization system-prompt file
+// (~/.config/agentx/agentx-wavefront-summary.md) — ADR 0012 Phase 2.
+func (p Paths) WavefrontSummaryPath() string {
+	return filepath.Join(p.configDir(), "agentx-wavefront-summary.md")
 }
 
 // ToolBlacklistPath is the persisted command-policy blacklist

@@ -145,7 +145,11 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 // CompleteRequest is a non-streaming, optionally schema-constrained completion.
 // Unlike Chat it returns the whole message at once and supports per-request
 // sampling options (Temperature, Seed) and Format (a JSON schema for constrained
-// decoding). It is the request shape the classifier fan-out uses.
+// decoding). It is the request shape the classifier fan-out and the decomposition
+// planner use. Think requests reasoning, same as ChatRequest.Think — budget/retry
+// policy for it is deliberately not here; see ADR 0012 Phase 1 (it lives at the
+// orchestrator layer, mirroring how Chat's own budget dance lives in tool_cycle.go,
+// not in this client).
 type CompleteRequest struct {
 	Model       string
 	Messages    []Message
@@ -153,6 +157,7 @@ type CompleteRequest struct {
 	Seed        int
 	Format      json.RawMessage // JSON schema; nil leaves output unconstrained
 	NumCtx      int
+	Think       bool
 }
 
 // Complete runs a single non-streaming chat completion and returns the assembled
@@ -173,6 +178,9 @@ func (c *Client) Complete(ctx context.Context, req CompleteRequest) (string, err
 		"model":    req.Model,
 		"messages": req.Messages,
 		"stream":   false,
+	}
+	if req.Think {
+		payload["think"] = true
 	}
 	if len(options) > 0 {
 		payload["options"] = options
