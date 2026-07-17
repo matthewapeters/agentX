@@ -1,10 +1,29 @@
 # Behavior — Orchestrator Wiring for Wavefront (ADR 0012 Phase 8)
 
-Status: **Proposed**, implementation in progress. Realizes ADR 0012's Phased Build
-Plan (amendment) step 8. Lower-risk than Phase 7 — mostly plumbing already-built
-pieces (`wavefront.Classifier`, `wavefront.Scheduler`, `wavefront.CondenseFunc`)
-into the orchestrator the same way `buildDecomposition` already does for the
-continuous engine.
+Status: **Implemented** (2026-07-17). Realizes ADR 0012's Phased Build Plan
+(amendment) step 8. Lower-risk than Phase 7 — mostly plumbing already-built pieces
+(`wavefront.Classifier`, `wavefront.Scheduler`, `wavefront.CondenseFunc`) into the
+orchestrator the same way `buildDecomposition` already does for the continuous
+engine.
+
+Built exactly as scoped below. Tests: `internal/runtime/wavefront_cycle_test.go`
+(new) covers `wavefrontPlanContext`'s four scenarios and a regression guard on
+`newCompleteChat`'s format pass-through. `go build`/`go vet`/full suite/`-race`
+across `internal/...` all clean.
+
+**Investigation note, recorded so it isn't re-litigated:** the full combined Godog
+suite (`go test ./tests/suites/...`, all four `@unit`/`@integration`/`@functional`/
+`@e2e` tags in one process) was observed failing intermittently with `signal:
+killed` and no diagnostic output during this phase's work. Bisected carefully
+(including one instance of accidentally discarding uncommitted work via an unsafe
+`git checkout <commit> -- .` mid-investigation, recovered by re-applying the same
+edits from session context — a reminder to `git status`/commit before any checkout
+that touches tracked files, not just before destructive resets). The same
+intermittent failure reproduces identically on the pre-session baseline commit (4
+runs, 3 failures, same ~30s timing, same silent kill) — confirming this is a
+pre-existing, environmental issue (most likely a memory ceiling in the sandboxed
+execution environment that the full 4-suite run sometimes exceeds under system
+load), unrelated to any ADR 0012 phase. Not fixed here; out of scope for this ADR.
 
 ## Design
 
