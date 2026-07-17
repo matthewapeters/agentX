@@ -83,10 +83,10 @@ What does this project's README say about how to run it?
 ----
 
 RESPONSE:
-[
+{"classification": [
 {"KNOW": {"name": "README.md exists at the project root", "value": "true — seen in the directory listing already in WORKING MEMORY"}},
 {"NEED": {"name": "contents of README.md", "command": {"tool": "read_file", "args": {"path": "/home/example/demo-project/README.md"}}}}
-]
+]}
 
 Note what this example does NOT do: it does not include a KNOW item claiming to already
 know the README's contents, and it does not invent a "run instructions" NEED naming a
@@ -94,16 +94,28 @@ file or section it has not confirmed exists — that would be exactly the kind o
 prompt exists to prevent.`
 
 // DefaultClassifyUserTemplate is the built-in wavefront classify USER message:
-// per-call data (working memory, the question) — mechanical scaffolding, not
-// tunable guidance, so unlike DefaultClassifyPromptTemplate it has no seed-file
-// counterpart (mirrors planner.DefaultUserTemplate's same choice, ADR 0011).
+// per-call data (working memory, the question) plus the reply-format spec —
+// mechanical scaffolding, not tunable guidance, so unlike
+// DefaultClassifyPromptTemplate it has no seed-file counterpart (mirrors
+// planner.DefaultUserTemplate's same choice, ADR 0011). The reply-format spec stays
+// adjacent to the question deliberately, same rationale as planner.DefaultUserTemplate:
+// recency right before generation is wanted here, so the model remembers the exact
+// output shape right as it responds.
 const DefaultClassifyUserTemplate = `WORKING MEMORY:
 {{wm}}
 
 QUESTION:
 ----
 {{question}}
-----`
+----
+
+Reply with JSON matching this shape exactly (names/values below are illustrative,
+not to be copied):
+{"classification": [
+ {"KNOW": {"name": "<precise name>", "value": "<fact or synthesis, from WORKING MEMORY only>"}},
+ {"NEED": {"name": "<precise name>", "command": {"tool": "<tool id>", "args": {"<arg>": "<value>"}}}},
+ {"NEED": {"name": "<precise name>"}}
+]}`
 
 // DefaultSynthesisPromptTemplate is the built-in wavefront synthesis SYSTEM prompt
 // (config/seed/agentx-wavefront-synthesis.md ships the same content). Used once a

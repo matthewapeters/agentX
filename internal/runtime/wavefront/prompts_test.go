@@ -60,6 +60,17 @@ func TestRenderSummaryUser(t *testing.T) {
 	}
 }
 
+// Regression guard: the classify response is object-wrapped ({"classification": [...]})
+// so it reuses jsonx.FirstObject unchanged, like every other JSON-producing call in
+// this codebase — not a bare array, which would need a second, parallel
+// fence-stripping mechanism just for this one prompt.
+func TestClassifyUserTemplateWrapsResponseInObject(t *testing.T) {
+	usr := RenderClassifyUser(DefaultClassifyUserTemplate, "wm", "q")
+	if !strings.Contains(usr, `"classification"`) {
+		t.Error("classify user template's reply-format spec must wrap the array under a \"classification\" key")
+	}
+}
+
 // Regression guard: the classify prompt must never let a NEED's command reference a
 // value it hasn't actually got yet — this is the hallucination gap ADR 0012 exists to
 // close, and the wording that prevents it must not silently erode.

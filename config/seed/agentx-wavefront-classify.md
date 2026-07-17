@@ -60,10 +60,10 @@ What does this project's README say about how to run it?
 ----
 
 RESPONSE:
-[
+{"classification": [
 {"KNOW": {"name": "README.md exists at the project root", "value": "true — seen in the directory listing already in WORKING MEMORY"}},
 {"NEED": {"name": "contents of README.md", "command": {"tool": "read_file", "args": {"path": "/home/example/demo-project/README.md"}}}}
-]
+]}
 
 Note what this example does NOT do: it does not include a KNOW item claiming to already
 know the README's contents, and it does not invent a "run instructions" NEED naming a
