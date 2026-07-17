@@ -769,11 +769,31 @@ summarization) are unchanged and already shipped.
    Behavior doc:
    `docs/architecture/behavior/adr/0012_scheduler_value_error_wiring.feature.md`.
 6. **`Classifier` + `LLMClassifier`.** Unchanged in substance from the original step
-   5 — the KNOW/NEED contract, schema-constrained prompt, parse path.
+   5 — the KNOW/NEED contract, schema-constrained prompt, parse path. **Implemented**
+   — also corrected two Phase-2 prompt gaps found while building this phase's
+   consumer (object-wrapped wire shape reusing `jsonx.FirstObject` unchanged; an
+   explicit reply-format spec in the user template). Behavior doc:
+   `docs/architecture/behavior/adr/0012_wavefront_classifier.feature.md`.
+7a. **Extract output-summarization ownership into `wavefront`, out of `plan_cycle.go`.**
+   Prep step, see the same-day addendum below for why this is necessary (not just
+   tidy) before step 7: `internal/runtime` already imports
+   `internal/runtime/wavefront` (for the Phase-2 prompt scaffolding, since Phase 3)
+   — so `wavefront` cannot import `internal/runtime` back, ever, without a cycle.
+   Phase 3's summarization mechanics (`outputSummaryThreshold`,
+   `outputSummaryTargetChars`, the condense/truncate logic) move from
+   `plan_cycle.go` into `wavefront` as `OutputSummaryThreshold`,
+   `OutputSummaryTargetChars`, `TruncateFindings`, `CondenseFunc`, `NewCondenser` —
+   co-located with the prompt templates they already render. `plan_cycle.go`'s
+   `capturingExec`/`newOutputSummarizer` become thin callers. Behavior-preserving:
+   Phase 3's existing tests move and must pass unchanged.
 7. **`wavefront.Scheduler`.** Continuous dispatch mirroring `scheduler.Scheduler`'s
    skeleton (§4 above); merge-time convergence via normalized-name existence check
-   (§3); `Value`/`Error`/`Seq` population reusing the exact discipline step 5 proved
-   out. No round, no `maxRounds`. Highest-risk phase; behavior doc first:
+   (§3) for open-value Needs only (command-valued Needs execute unconditionally,
+   per the same-day addendum's scope reduction); `Value`/`Error`/`Seq` population
+   reusing the exact discipline step 5 proved out; per-node lifecycle per the
+   same-day addendum's `classified`/`awaitingResolution` generalization of
+   `scheduler.go`'s existing `dispatched`/`decomposed` pair. No round, no
+   `maxRounds`. Highest-risk phase; behavior doc first:
    `docs/architecture/behavior/adr/0012_wavefront_scheduler.feature.md`.
 8. **Orchestrator wiring.** `wavefront_cycle.go`, the `WavefrontEnabled` branch in
    `runPlanPhase`, settings plumbing end to end. (Unchanged from original step 7.)
@@ -792,3 +812,58 @@ New:
 8. **Hand-off protocol.** If/when interleaving is pursued, does control pass at Step
    boundaries only (matching the continuous engine's existing `Decomposer` seam), or
    something finer-grained? Unscoped for the same reason as (7).
+
+### Addendum (2026-07-17, same day): Phase 7 scheduler design — node lifecycle, scope reduction, summarization ownership
+
+Worked out ahead of writing `wavefront.Scheduler`, in response to the question "what
+in Phase 7 is genuinely risky, and is any of it dissolved by something already
+built" — three findings, all resolved before code.
+
+**1. A wavefront node's lifecycle looked like it needed three async stages; it
+needs the same two `scheduler.go` already has.** A question can (a) get classified,
+(b) if it spawned open Needs, wait on them exactly like a Step's join, and (c) once
+those resolve, still need a self-match-or-synthesize check. That looked like a third
+state the continuous engine never has. It isn't one: a node with *zero* spawned
+Needs and no self-match is in exactly the same position as a node whose Needs have
+*all* resolved — both are "`Ready()` again, not yet resolved, needs one more
+check." So the state is the same pair `scheduler.go` already tracks
+(`dispatched`/`decomposed`), renamed for wavefront (`classified`/
+`awaitingResolution`) and generalized by exactly one change: instead of
+`decomposed[id]` resolving for free once `Ready()` again, wavefront's join branch
+resolves via a self-match check that's sometimes free (a Know already matches, no
+call) and sometimes needs one bounded synthesis call (§4's fallback) — itself
+tracked the same "at most once" way `classified` already is, so it cannot be
+re-triggered. No new state machine; the existing one generalized by one optional
+step.
+
+**2. Command-valued Need convergence is deferred — it's a performance question, not
+a correctness one.** The original §3/§4 design implied every Need, command-valued or
+not, goes through the existence-check/convergence dance before acting. Re-examined
+against actual stakes: two branches independently proposing the identical tool call
+both succeed and produce the same value if both run — wasteful, never wrong. Only
+open-value Need convergence is load-bearing for correctness (it's what keeps the
+graph from filling with duplicate sub-trees for the same *unresolved* question). Per
+"accuracy first, then performance," command-valued Needs execute directly and
+unconditionally in this build — no pre-registration, no in-flight-execution
+bookkeeping. Revisit as a real optimization once there's usage data showing
+duplicate tool calls are common enough to matter (ties to Open Question 7's
+eval-harness dependency).
+
+**3. `wavefront` cannot import `internal/runtime` — already true today, not a
+future Phase 8 concern — so Phase 3's summarization logic needs to move, not just
+get reused.** Checked directly: `internal/runtime/plan_cycle.go` has imported
+`internal/runtime/wavefront` since Phase 3 (for the Phase 2 prompt scaffolding). Go
+forbids the reverse import regardless of when wavefront's own code would call it, so
+`wavefront.Scheduler`'s command-execution path cannot call into
+`plan_cycle.go`'s `outputSummaryThreshold`/`condense`/`truncateFindings` as they
+stand — those are unreachable from `wavefront`, cycle or not. Since `Value`/`Error`
+living directly on `task.Record` (Phase 4/5) also means wavefront never needed
+`capturingExec`'s parallel bookkeeping in the first place — a resolved command's
+result just writes onto its node's `Value` — the real fix is moving Phase 3's
+summarization *mechanics* into `wavefront` itself, co-located with the prompt
+templates they already render (which live there already), and having
+`plan_cycle.go` become a thin caller instead of the owner. This is the one piece of
+this addendum that touches already-shipped code — scoped as its own step (7a)
+before step 7, mirroring how step 5's continuous-engine refactor was itself scoped
+ahead of needing it, with Phase 3's existing tests required to pass unchanged after
+the move.
