@@ -27,6 +27,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"agentx/internal/executor"
 	"agentx/internal/prompting/task"
@@ -126,10 +127,12 @@ const (
 )
 
 type workDone struct {
-	id     string
-	kind   workKind
-	status task.Status   // for doneExecute
-	result branch.Result // for doneDecompose
+	id      string
+	kind    workKind
+	status  task.Status   // for doneExecute
+	value   string        // for doneExecute (Done) — ADR 0012 amendment
+	errText string        // for doneExecute (Failed) and doneError — ADR 0012 amendment
+	result  branch.Result // for doneDecompose
 }
 
 // Run drives the graph to a terminal state: every node is done, failed, marked for
@@ -159,7 +162,11 @@ func (s *Scheduler) Run(ctx context.Context) error {
 					continue
 				}
 				if decomposed[id] {
-					s.setStatus(id, task.Done) // join complete: children are all done
+					// join complete: children are all done. Value/Error both stay empty —
+					// there is no per-node synthesis text for a Step yet (ADR 0010's judge
+					// phases are what will eventually supply one; setStatus must not invent
+					// placeholder text in the meantime).
+					s.setStatus(id, task.Done, "", "")
 					progressed = true
 					continue
 				}
@@ -202,13 +209,13 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		delete(inflight, wd.id)
 		switch wd.kind {
 		case doneExecute:
-			s.setStatus(wd.id, wd.status)
+			s.setStatus(wd.id, wd.status, wd.value, wd.errText)
 		case doneDecompose:
 			s.applyDecompose(wd, depth, decomposed)
 		case doneAsk:
-			s.setStatus(wd.id, task.Abstained)
+			s.setStatus(wd.id, task.Abstained, "", "") // bounded-recursion clarify: nothing to report yet
 		case doneError:
-			s.setStatus(wd.id, task.Failed)
+			s.setStatus(wd.id, task.Failed, "", wd.errText)
 		}
 	}
 }
@@ -219,7 +226,8 @@ func (s *Scheduler) Run(ctx context.Context) error {
 func (s *Scheduler) work(ctx context.Context, rec task.Record, d int, done chan<- workDone) {
 	switch rec.Kind {
 	case task.KindTask:
-		done <- workDone{id: rec.ID, kind: doneExecute, status: s.execute(ctx, rec)}
+		status, value, errText := s.execute(ctx, rec)
+		done <- workDone{id: rec.ID, kind: doneExecute, status: status, value: value, errText: errText}
 	case task.KindStep:
 		if d >= s.maxDepth {
 			done <- workDone{id: rec.ID, kind: doneAsk} // bounded recursion → clarify
@@ -231,36 +239,42 @@ func (s *Scheduler) work(ctx context.Context, rec task.Record, d int, done chan<
 			// planner's declared cap/shape violated even under schema constraint). The
 			// node executes as a Task for one attempt rather than recurse — the
 			// anti-spiral fallback.
-			done <- workDone{id: rec.ID, kind: doneExecute, status: s.execute(ctx, rec)}
+			status, value, errText := s.execute(ctx, rec)
+			done <- workDone{id: rec.ID, kind: doneExecute, status: status, value: value, errText: errText}
 			return
 		}
 		if err != nil {
-			done <- workDone{id: rec.ID, kind: doneError}
+			done <- workDone{id: rec.ID, kind: doneError, errText: fmt.Sprintf("decompose failed: %v", err)}
 			return
 		}
 		done <- workDone{id: rec.ID, kind: doneDecompose, result: res}
 	default:
 		// A node reaching the scheduler without a valid declared Kind is a producer bug
 		// (every node — root included — must carry one); fail loudly rather than guess.
-		done <- workDone{id: rec.ID, kind: doneError}
+		done <- workDone{id: rec.ID, kind: doneError, errText: fmt.Sprintf("node has no valid Kind (got %q)", rec.Kind)}
 	}
 }
 
 // execute drains a Task leaf through the executor and maps its outcome to a terminal
-// status. Denied/NeedsApproval are a deliberate decision (policy blocked it, or the
-// user declined) — mapped to task.Denied, never task.Failed, so a plan's terminal
-// report can tell "someone said no" apart from "this is broken" (TOOL-7; the
-// nimble-pebble-2 RCA hit exactly this ambiguity). Phantom/NoTool/Failed are genuine
-// execution problems and stay task.Failed.
-func (s *Scheduler) execute(ctx context.Context, rec task.Record) task.Status {
+// status plus the durable Value/Error text for that transition (ADR 0012 amendment).
+// Denied/NeedsApproval are a deliberate decision (policy blocked it, or the user
+// declined) — mapped to task.Denied, never task.Failed, so a plan's terminal report
+// can tell "someone said no" apart from "this is broken" (TOOL-7; the
+// nimble-pebble-2 RCA hit exactly this ambiguity) — and, deliberately scoped, Denied
+// carries neither Value nor Error: Record.Error means "set once Status becomes
+// Failed," and a denial's reason already reaches the user via the approval UI and
+// capturingExec; widening Error to cover Denied too is a reasonable future step, not
+// decided here. Phantom/NoTool/Failed are genuine execution problems, stay
+// task.Failed, and carry the executor's Reason as Error.
+func (s *Scheduler) execute(ctx context.Context, rec task.Record) (status task.Status, value, errText string) {
 	out := s.executor.Execute(ctx, rec)
 	switch out.Status {
 	case executor.Executed:
-		return task.Done
+		return task.Done, out.Result.Preview, ""
 	case executor.Denied, executor.NeedsApproval:
-		return task.Denied
+		return task.Denied, "", ""
 	default:
-		return task.Failed
+		return task.Failed, "", out.Reason
 	}
 }
 
@@ -274,7 +288,7 @@ func (s *Scheduler) applyDecompose(wd workDone, depth map[string]int, decomposed
 			continue
 		}
 		if err := s.graph.Add(c); err != nil {
-			s.setStatus(wd.id, task.Failed)
+			s.setStatus(wd.id, task.Failed, "", err.Error())
 			return
 		}
 		depth[c.ID] = depth[wd.id] + 1
@@ -283,7 +297,7 @@ func (s *Scheduler) applyDecompose(wd workDone, depth map[string]int, decomposed
 	parent, _ := s.graph.Node(wd.id)
 	parent.Deps = append(parent.Deps, childIDs...)
 	if err := s.graph.Update(parent); err != nil {
-		s.setStatus(wd.id, task.Failed)
+		s.setStatus(wd.id, task.Failed, "", err.Error())
 		return
 	}
 	decomposed[wd.id] = true
@@ -300,13 +314,20 @@ func (s *Scheduler) applyDecompose(wd workDone, depth map[string]int, decomposed
 
 // setStatus rewrites a node's status in place (deps unchanged, so Update re-validation is
 // a no-op) and notifies the observer — every terminal transition flows through here.
-// Main-loop only.
-func (s *Scheduler) setStatus(id string, st task.Status) {
+// Main-loop only. value/errText (ADR 0012 amendment) are written unconditionally,
+// including as empty strings — a transition with nothing to report (a join-complete
+// Done, an Abstained) must clear any stale text rather than leave a prior value
+// dangling. Every node is dispatched, and so has setStatus called, at most once
+// (ErrStalled's own guarantee), so this never overwrites a real value with a blank
+// one in practice.
+func (s *Scheduler) setStatus(id string, st task.Status, value, errText string) {
 	rec, ok := s.graph.Node(id)
 	if !ok {
 		return
 	}
 	rec.Status = st
+	rec.Value = value
+	rec.Error = errText
 	_ = s.graph.Update(rec)
 	if s.observer != nil {
 		s.observer.NodeCompleted(id, st)
