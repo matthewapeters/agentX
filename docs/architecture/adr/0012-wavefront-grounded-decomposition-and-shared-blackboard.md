@@ -1,0 +1,526 @@
+# ADR 0012 — Wavefront-Grounded Decomposition and the Shared Blackboard
+
+Status: Proposed
+Date: 2026-07-16
+Deciders: AgentX architecture owners
+Depends on: ADR 0008 (recursive task decomposition + DAG scheduler, incl. 2026-07-07
+typed-node amendment), ADR 0009 (plan & tool execution visibility), ADR 0010 (task
+assertions, outcome grounding, plan continuity)
+Extends (does not supersede): ADR 0008. See "Relationship to ADR 0008" below — this is
+not a reversal of the Kind-at-generation-time amendment, and the two mechanisms are
+meant to run side by side, not replace one another.
+
+**Numbering note:** several files in this codebase (`planner.go`, `render_test.go`,
+`decompose/live.go`) already cite "ADR 0011" for the system/user prompt role
+separation decision, and its behavior doc
+(`docs/architecture/behavior/adr/0011_planner_prompt_role_separation.feature.md`)
+exists on disk — but no `0011-*.md` file exists in this folder. That decision shipped
+without its ADR ever being written down. This document is numbered 0012 to avoid
+colliding with that already-spoken-for slot; backfilling 0011 is a separate, smaller
+piece of work not undertaken here.
+
+## Context
+
+### The observed failure
+
+AgentX's decompose path (ADR 0008, as amended) produces plans that hallucinate: a
+`Task` node reads a file that was never confirmed to exist, and the plan's final
+answer is synthesized from that hallucinated read. This is not a tuning problem in the
+prompt text — it is a structural gap in how a plan's arguments get decided.
+
+`planner.Parse` (`internal/prompting/planner/planner.go:236-245`) binds every `Task`
+node's `args` to literal strings **at plan-generation time**, inside the single model
+call that also declares the node's `deps`. A dependency edge (`task.Graph.Ready()`,
+`internal/prompting/task/graph.go:161-180`) gates **when** the scheduler dispatches a
+node; nothing in `internal/executor` or `internal/prompting/task` binds a node's args
+to a dependency's actual result. A plan can legally — and in practice does — contain:
+
+```
+s1: task(list_dir ".")
+s2: task(cat_file "main.py"), deps: ["s1"]
+```
+
+`s2`'s path was decided in the same model call that decided to run `s1`, before `s1`
+had produced anything. The `deps` edge makes this *look* like "discover, then read" —
+the scheduler genuinely waits for `s1` before running `s2` — but no re-grounding
+happens between those two decisions. If the real entry point is `cmd/agentx/main.go`,
+`s2` was always going to hallucinate `main.py`, and no guard in the current design
+catches it, because nothing here repeats or echoes — the existing `SimilarGoals`
+guard (`internal/runtime/decompose/guard.go`) and the typed-node amendment's
+degrade-on-violation rule both exist to catch a *spiral*. A single confident,
+ungrounded guess on the first pass isn't a spiral. It's the failure mode neither
+mechanism was built to catch.
+
+### A companion investigation
+
+A proof-of-concept in a sibling repository (`../totAlX`, reviewed alongside this ADR —
+not vendored, not a dependency, purely a design reference) runs a structurally
+different kind of decomposition against the same local Ollama substrate. Its
+discipline: classify every open question into KNOW (already known, or derivable by
+synthesis from what's known) and NEED (not known — either a further open question, or
+a command that can resolve it), execute only what resolves against **currently
+verified** facts, merge the real results into a shared Working Memory, and only then
+classify the next wave. Its own transcripts show the self-correction this produces: a
+guessed path (`cat .../README.md`) failed loudly in round 1; round 2's decision was
+grounded in the real `ls -la` output already sitting in Working Memory from round 1,
+and it read the file that actually existed. No node in that design can commit to an
+argument it hasn't verified, because "not yet verified" and "ready to act on" are
+different node states, not different phrasings of the same JSON array.
+
+totAlX's own methodology notes (its README) document real, working lessons worth
+importing selectively — round-synchronized grounding, a shared blackboard with
+convergence, chain-aware output summarization in place of truncation, and the finding
+that reasoning/"thinking" cost dominates latency far more than prompt size. It also
+has real weaknesses agentX should not import: no schema-constrained decoding (fragile
+fence-stripping and JSON-repair loops agentX's `Format`-constrained `Complete` already
+avoids), fragile string-identity naming discipline (agentX's mechanically-namespaced
+child IDs avoid this entirely), and — checked directly against its own transcript — an
+inconsistent worked example in its own system prompt that shows a command's result as
+already known in the same response that proposes running the command, which is an
+instance of the exact hallucination pattern this ADR exists to close. This ADR takes
+the grounding discipline, not the implementation.
+
+### Relationship to ADR 0008 — extension, not reversal
+
+The 2026-07-07 typed-node amendment retired a per-node atomicity Oracle. Every named
+incident behind that retirement — `tidy-cove` (ten re-plannings of the same `ls -la`),
+`mellow-meadow`, `amber-quartz` ("list the project root" generated three separate
+times because a decompose call couldn't see what an earlier step had already found),
+`vivid-beacon-2` (a listing re-derived even though it was already in Working Memory) —
+is a call that produced **no new verified information**: an echo, a repeat, or a call
+that ignored evidence already in hand. The amendment's actual target was never "fewer
+calls" as an end in itself; it was calls that don't advance the plan.
+
+State the test the amendment was already gesturing at, explicitly, as the principle
+this ADR extends rather than departs from:
+
+> **A call is judged by whether it is expected to yield new verified evidence, not by
+> whether it is "another call."**
+
+A wave-classify call under this ADR only fires after the previous wave's real command
+results have been merged into the blackboard, so it always has strictly more grounding
+than the call before it — it cannot repeat, because its inputs changed. That is not
+the failure category the amendment retired the Oracle for; it is the category the
+amendment's Kind-declaration alone still leaves open (a confident guess on the first,
+only pass). No part of the typed-node amendment is undone here: `Kind` (Step vs. Task),
+the ≤5-children cap, the one-retry-then-degrade rule, and `SimilarGoals` all keep
+governing the existing continuous scheduler exactly as they do today. This ADR adds a
+second, alternative decomposition engine that a plan can run under instead — selected
+by settings, not a replacement of the first.
+
+### The blackboard is a convergence mechanism, not a cost optimization
+
+When independent branches of the same plan hinge on common data, sharing what's
+discovered doesn't just save a call — it raises the odds that *some* branch converges
+on a correct answer, including letting a branch that fails leave real evidence behind
+for a sibling. What's already built gets most of the way there for **completed** work:
+`internal/planfindings` (`Source func() string`, read fresh on every call) gives any
+later decompose call in the same plan-drain live visibility into every already-completed
+leaf, success or failure — `capturingExec.Execute` (`internal/runtime/plan_cycle.go:61-73`)
+appends every outcome unconditionally, so a failed guess is already usable negative
+evidence for siblings today.
+
+What's missing is convergence across branches that are **concurrently in flight** —
+two `Step` nodes dispatched at once, each forking an isolated branch, neither visible
+to the other until one finishes. This is the gap totAlX's `THINGS TO BE CONSIDERED`
+list closes: a currently-open, not-yet-resolved question that a second branch can
+notice and converge onto instead of independently re-deriving.
+
+**Scope of the pool, resolved by direct product input (not re-litigated here):** the
+knowledge pool is scoped to one plan-drain — matching `capturingExec`'s existing
+lifetime exactly. This is deliberately narrower than "persist across turns." A manual
+override already exists and already solves that broader case: a user can pin a task
+result to Working Memory from the context surface
+(`internal/session/workmemory.go`, `internal/surfaces/workmemory`), outside any plan
+machinery. Building automatic cross-drain persistence here would duplicate a path that
+already works and is under the user's control. The one hard constraint this places on
+the design below: the new blackboard is strictly additive alongside `branch.Fork`'s
+existing `Facts()` seeding (`internal/runtime/decompose/decompose.go:60-64`) and must
+never shadow or intercept a pinned fact's path into that seed.
+
+## Decision
+
+Introduce **wavefront-grounded decomposition** as a second decomposition engine,
+implemented as a new package, selectable per session/settings alongside the existing
+continuous scheduler (ADR 0008) — not a modification of it.
+
+### 1. `internal/runtime/wavefront` — a new, self-contained package
+
+Sibling to `internal/runtime/decompose` and `internal/runtime/scheduler`, not nested
+inside either. It reuses rather than re-implements:
+
+- `task.Graph` (`internal/prompting/task/graph.go`) **as-is** — `Add`, `Update`,
+  `Ready()`, dangling-dep and cycle protection all carry over unchanged. A "leaf" for
+  wavefront purposes is `Ready()` filtered to nodes not yet classified in the current
+  round — a thin, round-local map the wavefront scheduler tracks itself, the same way
+  `scheduler.Scheduler` already tracks `dispatched`/`inflight` locally
+  (`internal/runtime/scheduler/scheduler.go:143-149`). **No new graph type and no
+  mutating prune are needed** — `task.Graph` stays the append-only event-fold it's
+  documented as (`graph.go:10-19`); "resolved and no longer a candidate" is a
+  `Status` read, not a removal. This is materially less work than it looked like
+  before checking: the graph substrate the scheduler already has is sufficient.
+- `scheduler.Executor` (`internal/runtime/scheduler/scheduler.go:76-79`) — the exact
+  same interface, same tool registry, same policy/approval gate. Immediate command
+  resolution under wavefront calls `Execute` through this seam, unchanged. "The tools
+  list is used as currently used in AgentX" is satisfied by reusing the type, not by
+  re-describing it.
+- `plannerCatalog` (`internal/runtime/classifier_pipeline.go:189-`) — the same
+  drift-proof tool catalog rendering, reused verbatim for the new classify prompt's
+  tool list.
+- `branch.Fork`'s existing session-fact seeding (`internal/runtime/decompose/decompose.go:60-64`)
+  — the "start from what's already known globally" requirement (cwd, project,
+  repo_root) is already built; the blackboard below only adds the plan-scoped,
+  round-accumulated layer on top.
+- `decompose.Chat` (`internal/runtime/decompose/live.go:17`) — the same
+  system/user-role `Chat` func type, so the new `Classifier` implementation is
+  constructed the same way `LLMPlanner` is, against the same Ollama client.
+
+### 2. The `Classifier` contract — wavefront's sibling to `Planner`
+
+```go
+// Know is a fact the model already has or can synthesize from the blackboard.
+type Know struct{ Name, Value string }
+
+// Need is something required but not yet known. A non-empty Command resolves it
+// immediately and deterministically via the executor; an empty Command makes it a
+// new open question — a child node for the next round.
+type Need struct{ Name, Command string }
+
+type Result struct {
+    Knows []Know
+    Needs []Need
+}
+
+// Classifier asks, for one open question against the current blackboard: what do we
+// already know or can synthesize, and what's still needed? Unlike Planner.Plan, this
+// never resolves a downstream argument that depends on a not-yet-executed sibling —
+// a Need's Command, when present, must be answerable from wm alone.
+type Classifier interface {
+    Classify(ctx context.Context, wm, question string) (Result, error)
+}
+```
+
+`LLMClassifier` (the production implementation) renders a new system/user template
+pair under `planner.PlanSchema`-style JSON-schema-constrained decoding (reusing
+`internal/jsonx` for fence-tolerant parsing as a backstop, same as `planner.Parse`) —
+this is the one place agentX's design is strictly better-founded than totAlX's: totAlX
+has no schema constraint on this call at all and defensively strips markdown fences;
+agentX's `Complete` already supports `Format`, so the KNOW/NEED shape is constrained,
+not just requested in prose.
+
+### 3. The blackboard — per-drain, live, with in-flight convergence
+
+```go
+// Blackboard is one plan-drain's shared, mutable fact store plus its list of
+// currently-open (not yet resolved) questions, for cross-branch convergence. Scoped
+// to exactly one drain's lifetime — never persisted past it. Seeded from the same
+// branch.Facts() session snapshot decompose.Decomposer already uses.
+type Blackboard struct {
+    mu          sync.Mutex
+    facts       map[string]string
+    considering map[string]string // normalized name -> owning node id
+}
+
+func (b *Blackboard) Know(name, value string)
+func (b *Blackboard) Get(name string) (string, bool)
+// Consider registers name as being worked on by nodeID. If another node already
+// claimed the identical (normalized) name, it returns that node's id and false —
+// the caller converges its edge onto the existing node instead of creating a
+// duplicate, exactly totAlX's THINGS TO BE CONSIDERED convergence.
+func (b *Blackboard) Consider(name, nodeID string) (owner string, isNew bool)
+func (b *Blackboard) Resolve(name string) // drops it from "considering" once known
+func (b *Blackboard) Render() string      // facts as prompt text for the next Classify call
+```
+
+Mutex-guarded for the same reason `capturingExec` already is: wavefront dispatches a
+round's leaves concurrently (up to `slots`), and results merge back on completion.
+Unlike `capturingExec`, whose `Findings()` only reflects **completed** steps,
+`Consider`/`considering` is read and written by branches that are still **in flight** —
+this is the actual gap being closed, not a restatement of what `planfindings` already
+does.
+
+### 4. The wavefront scheduler — round-synchronized, not continuous
+
+```go
+type Scheduler struct {
+    graph      *task.Graph
+    board      *Blackboard
+    classifier Classifier
+    executor   scheduler.Executor // the existing interface, reused
+    slots      int
+    maxDepth   int
+    maxRounds  int
+}
+
+func (s *Scheduler) Run(ctx context.Context, root task.Record) (Outcome, error)
+```
+
+One round: compute this round's leaves (`Ready()`, not yet classified this pass),
+dispatch `Classify` for each concurrently (bounded by `slots`), collect every result,
+execute every command-bearing `Need` immediately through `executor.Execute`, merge all
+real `Know`s and command results into the blackboard **only after the whole round's
+work has returned** — deliberately synchronous at the round boundary, unlike the
+continuous scheduler's immediate slot-backfill. A `Need` with no command either
+converges onto an existing `considering` entry (edge added, no new node) or becomes a
+new child node with a dependency edge back to its parent. The round terminates the
+plan when a `Know`'s normalized name matches the root's own normalized goal
+(`normalize`: trim, collapse whitespace, casefold — the same discipline totAlX
+documents as necessary even for a compliant model); if the root's own leaves are
+exhausted with no such match, one dedicated schema-free synthesis call runs (see
+§6), mirroring totAlX's two-phase decompose-then-synthesize fix — but note **agentX's
+Task/Step split already prevents the specific bug that fix was patching** (a plan node
+never both proposes an action and claims to have already answered in the same
+response), so this call exists to produce the final answer, not to recover a silently
+discarded one.
+
+**Termination is the productive/unproductive test made operational, not a bare
+counter.** A round that yields zero new `Know`s and zero successfully-executed `Need`s
+across every leaf it dispatched is `scheduler.ErrNoProgress` — reusing the existing
+exported error rather than minting a duplicate, since it is the identical signal: this
+call/round did not advance the plan. `maxRounds` and `maxDepth` remain as backstops
+(matching totAlX's own `MAX_ITERATIONS`/`MAX_DEPTH`, and the continuous scheduler's
+`DefaultMaxDepth`), never the primary stop condition — accuracy-first per the guiding
+principle: a plan should stop because it stopped learning, not because it hit a count.
+
+### 5. Immediate command execution reuses the executor and its guardrails as-is
+
+A command-bearing `Need` is not a new kind of tool call — it dispatches through
+`scheduler.Executor.Execute` exactly like a `Task` node does today, under the same
+policy gate, approval flow, and workdir confinement (ADR 0008 §1, ADR 0009 §2). There
+is no separate, weaker allowlist to build (totAlX's own regex allowlist is a strictly
+worse mechanism than what agentX already has: agentX's model sees the actual permitted
+tool catalog and cannot propose a disallowed command in the first place, rather than
+guessing and getting silently blocked post-hoc, which wastes a round every time it
+happens — visible directly in totAlX's own transcripts).
+
+### 6. Output summarization replaces truncation for oversized findings
+
+Independent of wavefront specifically, but motivated by the same grounding standard
+and applicable to both decomposition engines: `plan_cycle.go`'s `findingsLines`/
+`midDrainFindingsLines` (`internal/runtime/plan_cycle.go:31,79`) currently cap oversized
+tool output by straight prefix truncation (`firstLines`). This is the same failure
+class as the `lively-raven` incident already named in that file's own comments (a
+`tree` call's real structure discarded to its first ~20 alphabetical entries, the model
+concluding "Python-based" from what survived). Add a chain-aware, schema-free
+summarization call — general-to-specific question chain as context, targeted at the
+most specific item only, truncation kept strictly as the last-resort fallback if
+summarization itself fails after retries. This is a direct, small port of totAlX's
+`summarize_output`, and it benefits the existing continuous scheduler's findings
+pipeline as much as wavefront's — it is not gated behind picking one engine over the
+other.
+
+### 7. Reasoning effort, constrained for fast rounds
+
+`ollama.CompleteRequest` (`internal/llm/ollama/ollama.go:149-156`) currently has no
+`Think` field at all — only `Temperature`, `Seed`, `Format`, `NumCtx`. The respond
+path's `ThinkingEnabled`/`ThinkingBudget`/`ThinkingRoutes` machinery
+(`internal/runtime/orchestrator.go:62-73`) already exists and is strictly better than
+what totAlX had to work with (a hard timer via `time.AfterFunc`, not an unreliable
+soft "keep reasoning under N characters" prompt instruction) — it is simply not wired
+to `Complete`, the call `LLMPlanner`/`LLMClassifier`/the classifier fan-out all use.
+Add `Think bool` to `CompleteRequest`, threaded the same way `Temperature`/`Seed`
+already are (`Complete`'s `options` map), and give wavefront its own budget setting
+(`WavefrontThinkingBudget`) rather than silently inheriting the respond path's —
+wavefront's classify rounds are the highest round-trip-count path in the system, and
+totAlX's controlled measurement (>25x wall-time difference from this one flag, prompt
+size and server load held constant) makes this the single highest-leverage lever
+available for wavefront's actual latency. A reasoning-budget instruction in the new
+classify prompt is a reasonable belt-and-suspenders addition, but per totAlX's own
+finding it must not be relied on alone — the hard timer is the mechanism that matters.
+
+### 8. Prompts as seed config files, mirroring the existing convention exactly
+
+New seed files under `config/seed/`, following `agentx-planner.md`'s existing
+load/override/fallback pattern (`Settings.PlannerPrompt` → `planner.DefaultPromptTemplate`):
+
+- `agentx-wavefront-classify.md` — the KNOW/NEED system prompt (rules + tool catalog
+  placeholder), analogous to `DefaultPromptTemplate`.
+- `agentx-wavefront-synthesis.md` — the schema-free "answer from the blackboard"
+  prompt (§4's fallback synthesis call).
+- `agentx-wavefront-summary.md` — the chain-aware output-summarization prompt (§6).
+
+Each gets a `Settings` field (`WavefrontClassifyPrompt`, etc.), loaded and defaulted
+the same way `PlannerPrompt`/`ThinkingPrompt` already are in `internal/app/app.go` and
+`internal/config`. No new loading mechanism — this is the existing one, applied three
+more times.
+
+### 9. Selection: a second engine, not a switch inside the first
+
+`runPlanPhase` (`internal/runtime/plan_cycle.go:183`) gains a settings-gated branch: a
+new `Settings.WavefrontEnabled bool` (default `false`) routes to a new
+`runWavefrontPhase`, constructed in a new `internal/runtime/wavefront_cycle.go`
+mirroring `buildDecomposition`'s construction of today's `decompose.Decomposer` —
+same `client.Complete` (now `Think`-capable per §7), same `plannerCatalog`, same
+`o.taskExec`. Both engines coexist behind the same orchestrator entry point; a session
+runs one or the other, never both on the same plan. This is what makes "A/B testing
+prompts, settings" structural rather than a separate harness: swapping
+`WavefrontEnabled`, or pointing `WavefrontClassifyPrompt` at a variant file, is the
+entire mechanism. `decompose.DrainPlan`'s existing documented shape — "no bus, no I/O
+... unit-testable" (`internal/runtime/decompose/drain.go:31-33`) — is mirrored by
+wavefront's `Scheduler.Run`, so both are replayable against a fixed goal corpus by a
+thin test harness with no product-code changes required to add that harness later.
+
+### Open decision point: does wavefront need its own dedicated synthesis call?
+
+§4's fallback synthesis call (used when no `Know` matches the root verbatim) is
+wavefront-local. Separately, once a plan drains, its findings currently fold into the
+**general respond call**'s prompt via `planContext` (`plan_cycle.go:270-288`) — a
+single line of instruction ("Answer the request using only these findings") competing
+for compliance against whatever else that assembled prompt carries (session history,
+tool catalog awareness, etc.), rather than a dedicated, single-purpose call the way
+totAlX's `synthesize_answer` is. Recommended default: wavefront's `Outcome` still
+renders into the same `capturedStep`-compatible shape and reuses `planContext`/the
+general respond call, for consistency with the existing engine and to avoid a second
+code path for the same job. Whether to instead give wavefront a dedicated, always-on
+schema-free final-answer call is left as an Open Question below rather than decided
+here — it trades one more real LLM call for cleaner single-purpose grounding, and
+should be evaluated with the eval harness (Phase 4) rather than assumed.
+
+## Architecture — insertion points
+
+- **New:** `internal/runtime/wavefront/` — `blackboard.go`, `classifier.go`,
+  `scheduler.go`, `live.go` (the `LLMClassifier`/`Chat`-based production
+  implementation, mirroring `decompose/live.go`'s split from `decompose/decompose.go`).
+- **New:** `internal/runtime/wavefront_cycle.go` — `runWavefrontPhase`, construction
+  wiring mirroring `buildDecomposition` (`classifier_pipeline.go:154-187`).
+- **Changed:** `internal/llm/ollama/ollama.go` — `CompleteRequest` gains `Think bool`;
+  `Complete`'s `options` map gains the `think` key conditionally, same pattern as
+  `temperature`/`seed`/`num_ctx` (lines 161-170).
+- **Changed:** `internal/runtime/orchestrator.go` — `Settings` gains
+  `WavefrontEnabled`, `WavefrontMaxRounds`, `WavefrontThinkingBudget`,
+  `WavefrontClassifyPrompt`, `WavefrontSynthesisPrompt`, `WavefrontSummaryPrompt`.
+- **Changed:** `internal/runtime/plan_cycle.go` — `runPlanPhase` gains the
+  `WavefrontEnabled` branch; `findingsLines`-based truncation (`firstLines`) is
+  replaced by the summarization call from §6, benefiting both engines.
+- **Changed:** `internal/app/app.go`, `internal/config` — load/default the three new
+  seed files, same pattern as `plannerPrompt`/`thinkingPrompt`.
+- **New:** `config/seed/agentx-wavefront-classify.md`,
+  `agentx-wavefront-synthesis.md`, `agentx-wavefront-summary.md`.
+- **Unchanged, reused as-is:** `internal/prompting/task` (Graph, Record, Kind,
+  Status), `internal/runtime/scheduler` (Executor interface, ErrNoProgress),
+  `internal/runtime/branch` (Fork, Facts snapshotting), `internal/tools` (registry,
+  policy, catalog rendering), `internal/session/workmemory.go` (pin path — explicitly
+  not touched; see Context).
+- **Documentation:** `docs/implementation/08_go_module_layout.md`'s `internal/runtime`
+  bullet gains a one-line mention of the new sibling subpackage — no new top-level
+  folder, no new directory *pattern* (it is structurally identical to the existing
+  `decompose`/`scheduler` siblings), so the Change Control process for a new top-level
+  folder does not apply.
+
+## Consequences
+
+Positive:
+
+- Closes the hallucinated-argument gap directly: no wavefront `Need` with a command
+  can be emitted without the literal value already being in the blackboard, because
+  the classify call only ever sees currently-verified facts — there is no JSON shape
+  in which "resolve this later" and "resolve this now with a guessed literal" can be
+  confused, the same way Task/Step already made "propose an action" and "claim an
+  answer" structurally distinct.
+- Extends ADR 0008's own stated principle (calls must be productive) rather than
+  reopening its trade-offs; the generalized `ErrNoProgress` termination is a sharper,
+  more accuracy-first stop condition than a bare iteration cap, consistent with
+  "accuracy first, then performance."
+- The blackboard's in-flight convergence closes a gap `planfindings` structurally
+  cannot (visibility into work that hasn't completed yet), and does so without any
+  new persistence layer — the scope is exactly what already exists, per direct product
+  decision, and the existing manual pin path remains the sole mechanism for anything
+  that must outlive a drain.
+- Runs as a genuine second engine behind the same entry point, not a fork of the
+  existing scheduler's internals — the continuous scheduler, its tests, and ADR
+  0008/0010's guarantees are untouched. A regression in wavefront cannot corrupt the
+  existing path, and either can be selected per session for direct comparison.
+- Output summarization (§6) fixes a failure mode (`lively-raven`) already named and
+  already hit in production, independent of which decomposition engine is active.
+
+Trade-offs:
+
+- **Round-synchronization costs concurrency efficiency relative to the continuous
+  scheduler.** The continuous scheduler backfills a freed slot immediately with
+  whatever's next-ready, regardless of "wave"; wavefront blocks an entire round on its
+  slowest member before starting the next. totAlX's own numbers show this cost is
+  real, not hypothetical — its `parallel(batch=1)` run (113s) was slower than
+  `sequential(batch=1)` (69s) on an identical goal, purely from one straggler's
+  reasoning length. This is accepted deliberately: grounding correctness is sequenced
+  before dispatch efficiency, per the stated principle. A staggered-release variant
+  (advance a lane once its own dependency chain clears, without waiting for the whole
+  round) is a legitimate later optimization, scoped out here — see Open Questions.
+- Two decomposition engines mean two things to reason about, test, and keep in sync
+  with the tool registry/policy layer as it evolves — real, ongoing maintenance
+  surface, not a one-time cost.
+- The blackboard's `Consider`/convergence mechanism adds a genuinely new kind of
+  cross-goroutine coordination beyond what `capturingExec` needed (append-only,
+  read-after-write); it needs its own concurrency tests, not a reuse of the existing
+  ones.
+- A wavefront round's classify calls are real LLM calls, gated only by whether they're
+  expected to be productive — this is by design, not a regression, but it means
+  wavefront's total call count on a given goal is not obviously lower than the
+  continuous scheduler's, and should be measured, not assumed.
+
+## Phased Build Plan
+
+1. **Reasoning-effort plumbing (no wavefront dependency).** `CompleteRequest.Think`,
+   `Complete`'s options-map wiring, a `Settings.WavefrontThinkingBudget`-shaped knob
+   proven out first against the *existing* planner/classifier `Complete` call sites
+   (cheap, immediately useful regardless of what follows). Behavior doc:
+   `docs/architecture/behavior/adr/0012_complete_thinking_control.feature.md`.
+2. **Seed-file prompt templating.** The three new `agentx-wavefront-*.md` files, their
+   `Settings` fields, load/default wiring — no runtime behavior yet, just the
+   scaffolding proven against the existing `PlannerPrompt` pattern.
+3. **Output summarization (§6).** Independent of wavefront; replaces `firstLines`
+   truncation in `plan_cycle.go` with the chain-aware summarize call. Ships and is
+   verifiable on its own, benefits the existing engine immediately.
+4. **Blackboard.** `wavefront.Blackboard` — `Know`/`Get`/`Consider`/`Resolve`/`Render`,
+   seeded from `branch.Facts()`, concurrency-tested for the in-flight `Consider` race
+   specifically (two goroutines racing to claim the same normalized name). Behavior
+   doc: `docs/architecture/behavior/adr/0012_blackboard_convergence.feature.md`.
+5. **`Classifier` + `LLMClassifier`.** The KNOW/NEED contract, schema-constrained
+   prompt, parse path (reusing `internal/jsonx` as backstop). Unit-testable with a
+   stub `Classifier`, same posture as `decompose.Planner`'s test doubles.
+6. **`wavefront.Scheduler`.** The round loop over `task.Graph` — leaf computation,
+   concurrent dispatch bounded by `slots`, round-boundary merge, generalized
+   `scheduler.ErrNoProgress` termination, `maxRounds`/`maxDepth` backstops, fallback
+   synthesis call. This is the highest-risk, highest-value phase; behavior doc first:
+   `docs/architecture/behavior/adr/0012_wavefront_scheduler.feature.md`, mirroring how
+   ADR 0008 called out its own state machine as the priority contract to pin.
+7. **Orchestrator wiring.** `wavefront_cycle.go`, the `WavefrontEnabled` branch in
+   `runPlanPhase`, settings plumbing end to end.
+8. **Eval harness.** A thin runner (Godog suite or `cmd/` tool) replaying a fixed goal
+   corpus through both engines, logging outcome/round-or-node-count/latency —
+   `decompose.DrainPlan` and `wavefront.Scheduler.Run`'s shared "no bus, no I/O"
+   shape (§9) is what makes this cheap once phases 1-7 land, not before.
+
+Every phase's touched functions need a GIVEN/WHEN/THEN behavior doc before
+implementation, per repo invariant — phases 4 and 6 are the two contracts most worth
+writing first, since they are where a bug would reintroduce either the hallucination
+failure this ADR exists to close, or a new, wavefront-specific stall.
+
+## Open Questions
+
+1. **Dedicated wavefront synthesis call.** §"Open decision point" above — reuse
+   `planContext`/the general respond call (recommended default) vs. an always-on
+   schema-free final-answer call unique to wavefront. Evaluate with the Phase 8 eval
+   harness rather than deciding now.
+2. **`maxRounds` value.** Needs a real number, the same way ADR 0010 left the
+   `abstained`-retry budget as product judgment rather than architecture. totAlX used
+   25 against a much shallower, unconstrained-schema tree; agentX's schema-constrained
+   classify calls likely converge faster per round, but this needs measurement against
+   the eval harness, not a ported constant.
+3. **Staggered round release.** A round need not be strict lockstep — a lane whose own
+   dependency chain clears early could, in principle, start its next classify call
+   without waiting for a slower sibling lane, recovering some of the continuous
+   scheduler's efficiency without losing the grounding guarantee (each lane still only
+   ever sees its own real, completed upstream results). Scoped out of this ADR
+   deliberately — ship strict round-sync first, measure the actual cost, then decide
+   if this is worth the added complexity.
+4. **Retry-prompt shape for classify violations.** Mirrors ADR 0008's Open Question 7
+   (never resolved as architecture, still an implementation detail): the specific
+   violation (missing `name`, a `Need` with a command that isn't in the tool catalog)
+   needs to be fed back into a regenerated prompt, not just a generic "invalid, retry."
+5. **Does a `Need`'s command ever need multi-step shell syntax?** totAlX's own
+   allowlist is regex-based and rejects shell control flow entirely (pipes,
+   conditionals) — agentX's existing planner prompt already forbids this
+   (`planner.go:64`, "no shell syntax in args"). Wavefront should inherit the same
+   constraint by construction (the tool catalog it's shown has no shell-string
+   parameter shape to begin with), but this should be confirmed, not assumed, once
+   the catalog rendering is reused in Phase 5.

@@ -1,6 +1,6 @@
 # AgentX ADR Index
 
-Last updated: 2026-07-06
+Last updated: 2026-07-16
 Owner: Architecture
 
 This folder captures architecture decisions for orchestration design, rollout sequencing, and quality governance. These ADRs are implementation-oriented and aligned with:
@@ -21,6 +21,12 @@ This folder captures architecture decisions for orchestration design, rollout se
 - [0008 - Recursive Task Decomposition and the DAG Scheduler](0008-recursive-task-decomposition-and-dag-scheduler.md) — realizes `invoke_planner`; supersedes the eager `run_subtask` model
 - [0009 - Plan & Tool Execution Visibility and Control](0009-plan-and-tool-execution-visibility.md) — all tool execution user-visible: streamed plan events, approval/abort, plan JSON persistence, Context surface
 - [0010 - Task Assertions, Outcome Grounding, and Plan Continuity in Working Memory](0010-task-assertions-outcome-grounding-and-plan-continuity.md) — every node's result is judged against a declared assertion (satisfied/refuted/abstained); resolves ADR 0008 OQ2/OQ6 and realizes ADR 0009 Phase 9e
+- [0012 - Wavefront-Grounded Decomposition and the Shared Blackboard](0012-wavefront-grounded-decomposition-and-shared-blackboard.md) — a second, round-synchronized decomposition engine (`internal/runtime/wavefront`) selectable alongside ADR 0008's continuous scheduler; closes the hallucinated-plan-argument gap by never letting a node's tool args be decided ahead of the evidence they depend on. Extends, does not supersede, ADR 0008.
+
+**Numbering gap:** "ADR 0011" (system/user prompt role separation in the planner) is
+cited throughout the codebase and has a behavior doc on disk, but no `0011-*.md` file
+was ever written in this folder. Not backfilled as part of adding 0012 — noted here so
+the gap isn't mistaken for a missing link, and remains available as a small follow-up.
 
 ## Reading Order
 

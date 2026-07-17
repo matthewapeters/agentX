@@ -77,6 +77,11 @@ internal/app:
 internal/runtime:
 
 - Runtime lifecycle, supervision, and shutdown flow.
+- `internal/runtime/decompose` and `internal/runtime/scheduler` — ADR 0008's
+  continuous, per-node decomposition engine.
+- `internal/runtime/wavefront` — ADR 0012's round-synchronized decomposition engine,
+  a sibling alternative to `decompose`/`scheduler`, selected per session via settings.
+  Not a new top-level folder or directory pattern; same siblinghood as the two above.
 
 internal/cli:
 
