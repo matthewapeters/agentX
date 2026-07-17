@@ -18,8 +18,9 @@ import (
 // Phase 1 of ADR 0008. Behavior contract:
 // docs/architecture/behavior/adr/0008_task_dag_substrate.feature.md.
 type Graph struct {
-	nodes map[string]Record // id -> latest record (latest event wins)
-	order []string          // ids in first-seen order, for deterministic iteration
+	nodes   map[string]Record // id -> latest record (latest event wins)
+	order   []string          // ids in first-seen order, for deterministic iteration
+	nextSeq int               // next Record.Seq to assign on Add (ADR 0012 amendment)
 }
 
 // Integrity errors, refused at admission so the projection stays a well-formed DAG.
@@ -43,6 +44,11 @@ func NewGraph() *Graph {
 // node (dangling edge), or a self-edge. Because deps must already exist — nodes are
 // admitted in dependency order — a fresh node has no inbound edges and so cannot
 // close a cycle on Add; the cycle check is shared with Update for uniformity.
+//
+// Add assigns rec.Seq itself (overwriting whatever the caller set, if anything) —
+// ADR 0012 amendment: a node's growth position is graph-authoritative, never
+// caller-supplied, so a serialized graph's growth order can never be gamed or left
+// inconsistent by a careless caller.
 func (g *Graph) Add(rec Record) error {
 	if _, ok := g.nodes[rec.ID]; ok {
 		return fmt.Errorf("%w: %s", ErrDuplicateID, rec.ID)
@@ -50,6 +56,8 @@ func (g *Graph) Add(rec Record) error {
 	if err := g.validate(rec); err != nil {
 		return err
 	}
+	rec.Seq = g.nextSeq
+	g.nextSeq++
 	g.nodes[rec.ID] = rec
 	g.order = append(g.order, rec.ID)
 	return nil
@@ -59,13 +67,21 @@ func (g *Graph) Add(rec Record) error {
 // The node must already exist; dep integrity is re-checked so a lifecycle event that
 // re-points deps cannot introduce a dangling edge or a cycle. First-seen order is
 // preserved, keeping iteration deterministic across replays.
+//
+// Update always re-inherits the existing node's Seq, discarding whatever Seq (if
+// any) the incoming record carries — ADR 0012 amendment. Seq means "when this node
+// was first admitted," not "when it was last touched"; a status-transition Update
+// carrying a zero-value Record.Seq (the common case — callers are not expected to
+// set it) must never silently reset a node's growth position back to 0.
 func (g *Graph) Update(rec Record) error {
-	if _, ok := g.nodes[rec.ID]; !ok {
+	existing, ok := g.nodes[rec.ID]
+	if !ok {
 		return fmt.Errorf("%w: %s", ErrUnknownNode, rec.ID)
 	}
 	if err := g.validate(rec); err != nil {
 		return err
 	}
+	rec.Seq = existing.Seq
 	g.nodes[rec.ID] = rec
 	return nil
 }

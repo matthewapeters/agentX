@@ -84,6 +84,22 @@ type Record struct {
 	Params     map[string]any `json:"params,omitempty"`
 	Deps       []string       `json:"deps"`
 	Provenance Provenance     `json:"provenance"`
+	// Value is the node's resolved fact or answer text, set once Status becomes
+	// Done. Makes the graph a complete, serializable record of what was learned —
+	// not just what was attempted — with no separate structure to keep in sync
+	// (ADR 0012 amendment). Engine-agnostic: populated by whichever engine's
+	// processing actually produced a resolved value for this node, under the same
+	// rule either way.
+	Value string `json:"value,omitempty"`
+	// Error is the failure reason, set once Status becomes Failed. Persisted
+	// alongside Value so a failed node's graph entry shows *why*, not just *that*
+	// (ADR 0012 amendment).
+	Error string `json:"error,omitempty"`
+	// Seq is the node's position in the graph's growth — assigned once by
+	// Graph.Add at admission and never touched by Graph.Update, independent of
+	// Deps depth or dispatch concurrency (ADR 0012 amendment). Never set by a
+	// caller directly; Graph owns it.
+	Seq int `json:"seq"`
 }
 
 // FromAction turns an action-classifier decision into a proposed task record.
