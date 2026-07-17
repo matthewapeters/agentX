@@ -213,6 +213,12 @@ func (p *planObserver) NodeCompleted(id string, status task.Status) {
 // drain a second, distinct plan tree for the SAME turn without colliding with the first
 // round's root id.
 func (o *Orchestrator) runPlanPhase(ctx context.Context, text, rootID string) (string, bool, error) {
+	// ADR 0012: a second, round-free decomposition engine selectable alongside this
+	// one — runWavefrontPhase returns the identical (context, handled, error)
+	// contract, so callers of runPlanPhase never need to know which engine ran.
+	if o.settings.WavefrontEnabled && o.wavefrontClassifier != nil {
+		return o.runWavefrontPhase(ctx, text, rootID)
+	}
 	o.setProcessing(state.StateWorking, state.PhasePlanning)
 
 	root := task.Record{

@@ -129,6 +129,7 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		ActiveBorderColor:            cfg.ActiveBorderColor(),
 		InactiveBorderColor:          cfg.InactiveBorderColor(),
 		ToolsEnabled:                 cfg.ToolsEnabled(),
+		WavefrontEnabled:             cfg.WavefrontEnabled(),
 		ToolReadOnly:                 cfg.ToolReadOnly(),
 		ToolCatalog:                  toolCatalog,
 		ToolBlacklistPath:            paths.ToolBlacklistPath(),

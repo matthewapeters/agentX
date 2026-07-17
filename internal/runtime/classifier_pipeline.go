@@ -193,7 +193,17 @@ func (o *Orchestrator) buildDecomposition() {
 	// the prompt templates they render); this just adapts client.Complete to
 	// wavefront's Chat shape. No thinking budget: summarization runs with Think
 	// unset, always (ADR 0012 §7 — schema-free, nothing structured to break).
-	summarizeChat := func(ctx context.Context, systemPrompt, userPrompt string, format json.RawMessage) (string, error) {
+	o.outputSummarizer = wavefront.NewCondenser(newCompleteChat(client, model), o.settings.WavefrontSummaryPrompt)
+}
+
+// newCompleteChat builds a wavefront.Chat-shaped closure backed by client/model,
+// passing format straight through unmodified — schema-constrained when the caller
+// supplies one (classify), schema-free when it doesn't (synthesis, summarization).
+// Shared by buildDecomposition's summarizer wiring and buildWavefront (ADR 0012
+// Phase 8) rather than duplicated, since both need exactly this shape and differ
+// only in which template/schema they pass per call.
+func newCompleteChat(client *ollama.Client, model string) wavefront.Chat {
+	return func(ctx context.Context, systemPrompt, userPrompt string, format json.RawMessage) (string, error) {
 		return client.Complete(ctx, ollama.CompleteRequest{
 			Model: model,
 			Messages: []ollama.Message{
@@ -203,7 +213,26 @@ func (o *Orchestrator) buildDecomposition() {
 			Format: format,
 		})
 	}
-	o.outputSummarizer = wavefront.NewCondenser(summarizeChat, o.settings.WavefrontSummaryPrompt)
+}
+
+// buildWavefront wires ADR 0012's second decomposition engine — the classifier and
+// the shared Chat closure the future scheduler also uses for its schema-free
+// synthesis calls. Gated on Settings.WavefrontEnabled (an unused engine costs
+// nothing when off) and on the same executor availability buildDecomposition
+// requires. No-op if already built or a classifier was injected (tests). Caller
+// holds o.mu.
+func (o *Orchestrator) buildWavefront() {
+	if o.wavefrontClassifier != nil || o.taskExec == nil || !o.settings.WavefrontEnabled {
+		return
+	}
+	client := ollama.New(o.settings.OllamaHost)
+	chat := newCompleteChat(client, o.settings.OllamaModel)
+	o.wavefrontClassifier = wavefront.LLMClassifier{
+		Chat:     chat,
+		Template: o.settings.WavefrontClassifyPrompt,
+		Catalog:  plannerCatalog(o.registry),
+	}
+	o.wavefrontChat = chat
 }
 
 // completeWithThinkingBudget runs req against client with reasoning bounded by budget

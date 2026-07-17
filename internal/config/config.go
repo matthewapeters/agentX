@@ -33,6 +33,14 @@ type Agentx struct {
 	Thinking       Thinking       `toml:"thinking"`
 	Tools          Tools          `toml:"tools"`
 	Transport      Transport      `toml:"transport"`
+	Wavefront      Wavefront      `toml:"wavefront"`
+}
+
+// Wavefront is the [agentx.wavefront] table (ADR 0012). Enabled is a pointer so an
+// absent key defaults off — an experimental second decomposition engine should
+// never activate silently for an existing deployment.
+type Wavefront struct {
+	Enabled *bool `toml:"enabled"`
 }
 
 // Transport is the [agentx.transport] table configuring the HTTP/SSE endpoint
@@ -167,6 +175,10 @@ func (c Config) MarkdownRenderer() string {
 
 // ToolsEnabled reports whether the single_tool execution cycle is on (default on).
 func (c Config) ToolsEnabled() bool { return boolOr(c.Agentx.Tools.Enabled, true) }
+
+// WavefrontEnabled reports whether ADR 0012's round-free decomposition engine
+// drains invoke_planner plans instead of the continuous engine (default off).
+func (c Config) WavefrontEnabled() bool { return boolOr(c.Agentx.Wavefront.Enabled, false) }
 
 // ToolReadOnly reports whether execution is restricted to read-risk tools
 // (default on — the rollout default).

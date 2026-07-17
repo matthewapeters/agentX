@@ -95,6 +95,9 @@ type Settings struct {
 	InactiveBorderColor string
 	// ToolsEnabled turns on the single_tool execution cycle.
 	ToolsEnabled bool
+	// WavefrontEnabled routes invoke_planner plans through ADR 0012's round-free
+	// decomposition engine instead of the continuous engine (default off).
+	WavefrontEnabled bool
 	// ToolReadOnly restricts execution to read-risk tools (the rollout default).
 	ToolReadOnly bool
 	// ToolCatalog is the LLM-facing tool catalog injected into the proposal prompt
@@ -156,6 +159,14 @@ type Orchestrator struct {
 	// nil until buildDecomposition wires it, and capturingExec degrades to plain
 	// truncation when nil, same posture as a nil artifactReader.
 	outputSummarizer wavefront.CondenseFunc
+	// wavefrontClassifier/wavefrontChat back ADR 0012's second decomposition engine
+	// (Phase 8); nil until buildWavefront wires them (gated on Settings.WavefrontEnabled
+	// — an unused engine costs nothing). wavefrontChat serves both the classifier's
+	// schema-constrained calls and the scheduler's schema-free synthesis calls — the
+	// same closure, since Format is just a per-call parameter, not two closures
+	// differing only in whether they set one.
+	wavefrontClassifier wavefront.Classifier
+	wavefrontChat        wavefront.Chat
 	recDone         chan error
 	recSub          *state.Subscription
 	gate            decisionGate
@@ -272,6 +283,7 @@ func (o *Orchestrator) Start() error {
 	o.buildTaskExecutor()
 	// Decomposition (Decompose route) needs the classifier + executor; build it last.
 	o.buildDecomposition()
+	o.buildWavefront()
 
 	recorder := o.store.Recorder(id.ID)
 	sub := o.bus.Subscribe()
