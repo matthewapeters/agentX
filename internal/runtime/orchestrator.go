@@ -12,6 +12,7 @@ import (
 	"agentx/internal/prompting"
 	"agentx/internal/prompting/pipeline"
 	"agentx/internal/runtime/scheduler"
+	"agentx/internal/runtime/wavefront"
 	"agentx/internal/session"
 	"agentx/internal/state"
 	"agentx/internal/surfaces"
@@ -154,7 +155,7 @@ type Orchestrator struct {
 	// outputSummarizer condenses an oversized captured finding (ADR 0012 §6, Phase 3);
 	// nil until buildDecomposition wires it, and capturingExec degrades to plain
 	// truncation when nil, same posture as a nil artifactReader.
-	outputSummarizer summarizeFunc
+	outputSummarizer wavefront.CondenseFunc
 	recDone         chan error
 	recSub          *state.Subscription
 	gate            decisionGate

@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"agentx/internal/executor"
-	"agentx/internal/llm/ollama"
 	"agentx/internal/planfindings"
 	"agentx/internal/prompting/task"
 	"agentx/internal/runtime/decompose"
@@ -39,27 +38,6 @@ type artifactReader interface {
 	Read(ref string, offset, limit int) ([]byte, error)
 }
 
-// outputSummaryThreshold is the character length above which a captured step's real
-// findings are summarized rather than used as-is (ADR 0012 §6, Phase 3) — most tool
-// output is small and stays under this, matching totAlX's own "common case" design.
-// A character count, not a line count: a single very long line (a minified file, a
-// raw JSON blob) can blow this budget while still being "one line" under
-// findingsLines' 200-line read window — the two caps address different failure
-// shapes and both stay in place. Ported from totAlX's own measurement as an
-// illustrative starting point, not a tuned agentX constant.
-const outputSummaryThreshold = 2000
-
-// outputSummaryTargetChars is the requested size of a summarized finding (guidance
-// handed to the model, not a hard cap) and the size a fallback truncation is cut to.
-const outputSummaryTargetChars = 1200
-
-// summarizeFunc condenses text (a step's real, oversized findings) toward
-// outputSummaryTargetChars, given the general-to-specific chain of questions that led
-// to it (root goal first, the step's own goal last when they differ) — targeted at
-// the most specific item only, per ADR 0012 §6. A nil summarizeFunc falls back to
-// plain truncation in capturingExec.condense.
-type summarizeFunc func(ctx context.Context, chain []string, text string) (string, error)
-
 // capturingExec wraps the task executor to record every leaf outcome as the scheduler
 // drains a plan, so the plan cycle can fold the real findings into the answer. The
 // scheduler runs Execute on worker goroutines, so it locks.
@@ -73,8 +51,10 @@ type capturingExec struct {
 	// to summarize when a step's real output needs condensing (ADR 0012 §6).
 	rootGoal string
 	// summarize condenses oversized findings; nil falls back to plain truncation, same
-	// degrade-gracefully posture as a nil reader above.
-	summarize summarizeFunc
+	// degrade-gracefully posture as a nil reader above. The condensation mechanics
+	// themselves live in wavefront (Phase 7a) — this package only builds the chain and
+	// calls in.
+	summarize wavefront.CondenseFunc
 	mu        sync.Mutex
 	steps     []capturedStep
 }
@@ -84,7 +64,7 @@ type capturedStep struct {
 	outcome executor.Outcome
 	// findings is what actually reaches the synthesis prompt: up to findingsLines of the
 	// real result, read back from the artifact store (not the UI's tight preview),
-	// summarized down from that if it exceeded outputSummaryThreshold.
+	// summarized down from that if it exceeded wavefront.OutputSummaryThreshold.
 	findings string
 }
 
@@ -96,7 +76,7 @@ func (c *capturingExec) Execute(ctx context.Context, rec task.Record) executor.O
 			findings = strings.TrimSpace(string(data))
 		}
 	}
-	if len(findings) > outputSummaryThreshold {
+	if len(findings) > wavefront.OutputSummaryThreshold {
 		findings = c.condense(ctx, rec.Goal, findings)
 	}
 	c.mu.Lock()
@@ -107,70 +87,21 @@ func (c *capturingExec) Execute(ctx context.Context, rec task.Record) executor.O
 
 // condense summarizes oversized findings via c.summarize, chain-aware (root goal then
 // this step's own goal — the "most specific" item summarize must target, per ADR 0012
-// §6), falling back to plain truncation if summarize is nil or the call itself fails —
-// worse than a targeted summary, but strictly better than letting an unbounded payload
-// back into the findings pipeline (the lively-raven failure mode this path closes).
+// §6), falling back to plain truncation if summarize is nil — worse than a targeted
+// summary, but strictly better than letting an unbounded payload back into the
+// findings pipeline (the lively-raven failure mode this path closes). c.summarize
+// itself (wavefront.CondenseFunc) already degrades to wavefront.TruncateFindings
+// internally on a failed/empty call, so this only needs its own fallback for the
+// nil case.
 func (c *capturingExec) condense(ctx context.Context, goal, text string) string {
-	if c.summarize != nil {
-		chain := []string{c.rootGoal}
-		if goal != c.rootGoal {
-			chain = append(chain, goal)
-		}
-		if summary, err := c.summarize(ctx, chain, text); err == nil {
-			if summary = strings.TrimSpace(summary); summary != "" {
-				return fmt.Sprintf("[summarized from %d chars] %s", len(text), summary)
-			}
-		}
+	if c.summarize == nil {
+		return wavefront.TruncateFindings(text)
 	}
-	return truncateFindings(text)
-}
-
-// truncateFindings is the last-resort fallback when summarization is unavailable or
-// fails: a prefix cut, positionally arbitrary (may cut off exactly the part that
-// mattered) but strictly better than an unbounded payload reaching every subsequent
-// call in the plan. Rune-safe: a naive byte-index slice can split a multi-byte UTF-8
-// rune at the boundary and produce invalid text.
-func truncateFindings(text string) string {
-	runes := []rune(text)
-	if len(runes) <= outputSummaryTargetChars {
-		return text
+	chain := []string{c.rootGoal}
+	if goal != c.rootGoal {
+		chain = append(chain, goal)
 	}
-	kept := string(runes[:outputSummaryTargetChars])
-	return fmt.Sprintf("%s... [truncated, %d more chars]", kept, len(runes)-outputSummaryTargetChars)
-}
-
-// newOutputSummarizer builds a summarizeFunc backed by client/model (ADR 0012 §6),
-// reusing Phase 2's wavefront summary prompt scaffolding — the first real consumer of
-// it. template overrides wavefront.DefaultSummaryPromptTemplate when non-empty
-// (Settings.WavefrontSummaryPrompt). Runs with Think unset: this is schema-free plain
-// prose with nothing structured to break, exactly the case ADR 0012 §7 says is safe
-// (and preferable, for speed) to run without reasoning.
-func newOutputSummarizer(client *ollama.Client, model, template string) summarizeFunc {
-	sysTemplate := template
-	if sysTemplate == "" {
-		sysTemplate = wavefront.DefaultSummaryPromptTemplate
-	}
-	return func(ctx context.Context, chain []string, text string) (string, error) {
-		sys := wavefront.RenderSummarySystem(sysTemplate, outputSummaryTargetChars)
-		usr := wavefront.RenderSummaryUser(wavefront.DefaultSummaryUserTemplate, renderChain(chain), text)
-		return client.Complete(ctx, ollama.CompleteRequest{
-			Model: model,
-			Messages: []ollama.Message{
-				{Role: "system", Content: sys},
-				{Role: "user", Content: usr},
-			},
-		})
-	}
-}
-
-// renderChain numbers a general-to-specific question chain for the summarization
-// prompt's user message, matching totAlX's own "1. ... 2. ..." chain format.
-func renderChain(chain []string) string {
-	var b strings.Builder
-	for i, step := range chain {
-		fmt.Fprintf(&b, "%d. %s\n", i+1, step)
-	}
-	return strings.TrimRight(b.String(), "\n")
+	return c.summarize(ctx, chain, text)
 }
 
 // midDrainFindingsLines caps how much of each step's findings feed BACK into later

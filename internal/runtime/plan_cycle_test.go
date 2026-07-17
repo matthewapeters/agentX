@@ -7,11 +7,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"unicode/utf8"
 
 	"agentx/internal/executor"
 	"agentx/internal/planfindings"
 	"agentx/internal/prompting/task"
+	"agentx/internal/runtime/wavefront"
 	"agentx/internal/tools"
 )
 
@@ -179,15 +179,16 @@ func TestWithComposedFindingsWithPriorSource(t *testing.T) {
 }
 
 // TestCapturingExecBelowThresholdSkipsSummarizer: the common case (ADR 0012 §6) —
-// findings under outputSummaryThreshold are stored as-is, with no summarizer call at
-// all, so a nil-but-tracked summarizer surfaces as never having been invoked.
+// findings under wavefront.OutputSummaryThreshold are stored as-is, with no
+// summarizer call at all, so a tracked summarizer surfaces as never having been
+// invoked.
 func TestCapturingExecBelowThresholdSkipsSummarizer(t *testing.T) {
 	var calls int
-	summarize := func(ctx context.Context, chain []string, text string) (string, error) {
+	summarize := func(ctx context.Context, chain []string, text string) string {
 		calls++
-		return "should not be called", nil
+		return "should not be called"
 	}
-	small := strings.Repeat("x", outputSummaryThreshold-1)
+	small := strings.Repeat("x", wavefront.OutputSummaryThreshold-1)
 	out := executor.Outcome{Status: executor.Executed, Result: tools.Result{Preview: small}}
 	c := &capturingExec{inner: stubTaskExec{out: out}, rootGoal: "g", summarize: summarize}
 	c.Execute(context.Background(), task.Record{ID: "t1", Goal: "g"})
@@ -201,17 +202,17 @@ func TestCapturingExecBelowThresholdSkipsSummarizer(t *testing.T) {
 }
 
 // TestCapturingExecAboveThresholdSummarizes: oversized findings trigger exactly one
-// summarizer call, chain-aware, and the result is stored with a disclosed provenance
-// prefix — never silently indistinguishable from the raw text (ADR 0012 §6).
+// summarizer call, chain-aware, and its result (already disclosed/condensed by
+// wavefront.CondenseFunc) is stored as-is (ADR 0012 §6).
 func TestCapturingExecAboveThresholdSummarizes(t *testing.T) {
 	var gotChain []string
 	var gotText string
-	summarize := func(ctx context.Context, chain []string, text string) (string, error) {
+	summarize := func(ctx context.Context, chain []string, text string) string {
 		gotChain = chain
 		gotText = text
-		return "condensed version", nil
+		return "[summarized from N chars] condensed version"
 	}
-	big := strings.Repeat("x", outputSummaryThreshold+1)
+	big := strings.Repeat("x", wavefront.OutputSummaryThreshold+1)
 	out := executor.Outcome{Status: executor.Executed, Result: tools.Result{Preview: big}}
 	c := &capturingExec{inner: stubTaskExec{out: out}, rootGoal: "top-level goal", summarize: summarize}
 	c.Execute(context.Background(), task.Record{ID: "t1", Goal: "specific step goal"})
@@ -223,8 +224,8 @@ func TestCapturingExecAboveThresholdSummarizes(t *testing.T) {
 		t.Errorf("chain = %v, want %v (general to specific)", gotChain, want)
 	}
 	got := c.steps[0].findings
-	if !strings.HasPrefix(got, "[summarized from") || !strings.Contains(got, "condensed version") {
-		t.Errorf("findings = %q, want a disclosed summary", got)
+	if got != "[summarized from N chars] condensed version" {
+		t.Errorf("findings = %q, want the summarizer's result stored verbatim", got)
 	}
 }
 
@@ -232,11 +233,11 @@ func TestCapturingExecAboveThresholdSummarizes(t *testing.T) {
 // question, the chain must not repeat the same goal twice.
 func TestCapturingExecRootStepCollapsesChainToOneItem(t *testing.T) {
 	var gotChain []string
-	summarize := func(ctx context.Context, chain []string, text string) (string, error) {
+	summarize := func(ctx context.Context, chain []string, text string) string {
 		gotChain = chain
-		return "condensed", nil
+		return "condensed"
 	}
-	big := strings.Repeat("x", outputSummaryThreshold+1)
+	big := strings.Repeat("x", wavefront.OutputSummaryThreshold+1)
 	out := executor.Outcome{Status: executor.Executed, Result: tools.Result{Preview: big}}
 	c := &capturingExec{inner: stubTaskExec{out: out}, rootGoal: "same goal", summarize: summarize}
 	c.Execute(context.Background(), task.Record{ID: "t1", Goal: "same goal"})
@@ -246,29 +247,13 @@ func TestCapturingExecRootStepCollapsesChainToOneItem(t *testing.T) {
 	}
 }
 
-// TestCapturingExecSummarizerErrorFallsBackToTruncation: a failing summarizer must
-// never lose the finding entirely — it degrades to plain truncation, disclosed as
-// such (ADR 0012 §6's last-resort fallback).
-func TestCapturingExecSummarizerErrorFallsBackToTruncation(t *testing.T) {
-	summarize := func(ctx context.Context, chain []string, text string) (string, error) {
-		return "", fmt.Errorf("model unavailable")
-	}
-	big := strings.Repeat("x", outputSummaryThreshold+1)
-	out := executor.Outcome{Status: executor.Executed, Result: tools.Result{Preview: big}}
-	c := &capturingExec{inner: stubTaskExec{out: out}, rootGoal: "g", summarize: summarize}
-	c.Execute(context.Background(), task.Record{ID: "t1", Goal: "g"})
-
-	got := c.steps[0].findings
-	if !strings.Contains(got, "[truncated,") {
-		t.Errorf("findings = %q, want a disclosed truncation fallback", got)
-	}
-}
-
 // TestCapturingExecNilSummarizerFallsBackToTruncation: no summarizer wired at all
 // (the degrade-gracefully posture already established for a nil artifactReader)
-// behaves identically to a failing one.
+// falls back to wavefront.TruncateFindings directly — a failing/empty summarizer
+// call is wavefront.NewCondenser's own responsibility now (see
+// internal/runtime/wavefront/summarize_test.go), not capturingExec's.
 func TestCapturingExecNilSummarizerFallsBackToTruncation(t *testing.T) {
-	big := strings.Repeat("x", outputSummaryThreshold+1)
+	big := strings.Repeat("x", wavefront.OutputSummaryThreshold+1)
 	out := executor.Outcome{Status: executor.Executed, Result: tools.Result{Preview: big}}
 	c := &capturingExec{inner: stubTaskExec{out: out}, rootGoal: "g"} // summarize left nil
 	c.Execute(context.Background(), task.Record{ID: "t1", Goal: "g"})
@@ -276,26 +261,6 @@ func TestCapturingExecNilSummarizerFallsBackToTruncation(t *testing.T) {
 	got := c.steps[0].findings
 	if !strings.Contains(got, "[truncated,") {
 		t.Errorf("findings = %q, want a disclosed truncation fallback", got)
-	}
-}
-
-// TestTruncateFindingsIsRuneSafe: a naive byte-index slice can split a multi-byte
-// UTF-8 rune at the truncation boundary and produce invalid text — regression guard.
-func TestTruncateFindingsIsRuneSafe(t *testing.T) {
-	text := strings.Repeat("€", outputSummaryTargetChars+10) // 3-byte rune in UTF-8
-	got := truncateFindings(text)
-	if !utf8.ValidString(got) {
-		t.Fatalf("truncateFindings produced invalid UTF-8: %q", got)
-	}
-	if !strings.Contains(got, "[truncated,") {
-		t.Errorf("truncateFindings = %q, want a truncation marker", got)
-	}
-}
-
-func TestTruncateFindingsBelowTargetIsUnchanged(t *testing.T) {
-	text := "short text"
-	if got := truncateFindings(text); got != text {
-		t.Errorf("truncateFindings(%q) = %q, want unchanged", text, got)
 	}
 }
 

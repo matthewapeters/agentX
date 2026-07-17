@@ -22,6 +22,7 @@ import (
 	"agentx/internal/runtime/branch"
 	"agentx/internal/runtime/decompose"
 	"agentx/internal/runtime/scheduler"
+	"agentx/internal/runtime/wavefront"
 	"agentx/internal/session"
 	"agentx/internal/state"
 	"agentx/internal/tools"
@@ -187,8 +188,22 @@ func (o *Orchestrator) buildDecomposition() {
 			return wm.Enabled()
 		},
 	}
-	// Reuses the same client/model as the planner above — ADR 0012 §6, Phase 3.
-	o.outputSummarizer = newOutputSummarizer(client, model, o.settings.WavefrontSummaryPrompt)
+	// Reuses the same client/model as the planner above — ADR 0012 §6. The
+	// condensation mechanics themselves live in wavefront (Phase 7a, co-located with
+	// the prompt templates they render); this just adapts client.Complete to
+	// wavefront's Chat shape. No thinking budget: summarization runs with Think
+	// unset, always (ADR 0012 §7 — schema-free, nothing structured to break).
+	summarizeChat := func(ctx context.Context, systemPrompt, userPrompt string, format json.RawMessage) (string, error) {
+		return client.Complete(ctx, ollama.CompleteRequest{
+			Model: model,
+			Messages: []ollama.Message{
+				{Role: "system", Content: systemPrompt},
+				{Role: "user", Content: userPrompt},
+			},
+			Format: format,
+		})
+	}
+	o.outputSummarizer = wavefront.NewCondenser(summarizeChat, o.settings.WavefrontSummaryPrompt)
 }
 
 // completeWithThinkingBudget runs req against client with reasoning bounded by budget
