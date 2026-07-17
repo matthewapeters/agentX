@@ -1,6 +1,7 @@
 # ADR 0012 — Wavefront-Grounded Decomposition and the Shared Blackboard
 
-Status: Proposed
+Status: Proposed; **amended 2026-07-17** (graph-as-blackboard, continuous
+convergence, engine interleaving noted as future — see amendment at the end)
 Date: 2026-07-16
 Deciders: AgentX architecture owners
 Depends on: ADR 0008 (recursive task decomposition + DAG scheduler, incl. 2026-07-07
@@ -524,3 +525,270 @@ failure this ADR exists to close, or a new, wavefront-specific stall.
    constraint by construction (the tool catalog it's shown has no shell-string
    parameter shape to begin with), but this should be confirmed, not assumed, once
    the catalog rendering is reused in Phase 5.
+
+---
+
+## Amendment (2026-07-17): Graph-as-Blackboard, Continuous Convergence, and Engine Interleaving as a Deliberately Open Future
+
+**Supersedes:** §3 ("The blackboard — per-drain, live, with in-flight convergence")
+and §4's round-synchronized dispatch model, in favor of a simpler mechanism that
+needs neither a standalone data structure nor a wave boundary; §9's "a session runs
+one or the other, never both on the same plan" framing, loosened to a stated,
+deliberately deferred future direction rather than a structural limit. The
+Consequences section's round-sync-vs-continuous-efficiency trade-off no longer
+applies — there is no round to pay that cost for. Open Question 2 (`maxRounds`
+value) is retired as moot. Original §1, §2, §5, §6, §7, §8 and the Phased Build Plan
+steps 1-3 (already shipped) are unaffected and left as written below.
+
+### Context for the amendment
+
+Working through Phase 4's design before writing code surfaced that two things
+originally scoped as necessary — a standalone `Blackboard` type with its own
+`considering` map, and round-synchronized (bulk-synchronous) dispatch — were solving
+problems a simpler mechanism already solves, once examined closely:
+
+1. **Registration is consideration.** If a node's proposal only becomes real once
+   it's registered against `task.Graph`, and every graph write already happens
+   through the continuous scheduler's existing single-writer discipline ("the graph
+   is mutated only on the main loop goroutine," `scheduler.go:14-17`), two branches
+   concurrently proposing the same fact don't need a separate atomic `Consider()`
+   primitive to resolve the race — whichever's merge step reaches the lock first
+   creates the node; the second, moments later, finds it already there (an existence
+   check by normalized name, the same shape `applyDecompose`'s existing
+   `if _, exists := s.graph.Node(c.ID); exists { continue }` already has, just keyed
+   differently) and links its own edge to it instead.
+2. **Grounding never depended on round boundaries.** The rule that actually prevents
+   hallucination — a classify call may only propose a command whose arguments are
+   already true in its own snapshot at dispatch time — is a property of one call, not
+   of scheduling cadence. Round-synchronization (wait for a whole wave before
+   starting the next) was totAlX's mechanism for achieving this, not a requirement of
+   the mechanism itself. Once separated out, wavefront's dispatch can be continuous —
+   mirroring the existing scheduler's dispatch/channel/single-threaded-merge/
+   dispatched-at-most-once loop exactly — without paying the concurrency-efficiency
+   cost totAlX's own numbers already showed (`parallel(batch=1)` slower than
+   `sequential(batch=1)`, purely from one straggler).
+
+Separately, extending `task.Record` to carry a resolved node's value durably (rather
+than a parallel blackboard structure) raised a question worth settling explicitly:
+should the two engines populate that value differently? They shouldn't, and there is
+no structural reason for them to. `task.Record` is already the one shared structure
+of record for both; the two engines differ in dispatch and merge *logic* (Kind-XOR
+dispatch vs. heterogeneous classify responses; no dedup needed vs. name-based
+convergence), never in what a resolved node's value or failure reason *means*.
+Treating them differently was hesitation about touching already-proven code in
+`scheduler.go`, not a real design constraint — and that code has already absorbed a
+comparably-sized change once before (ADR 0010's assertion-judgment insertion).
+
+### Decision
+
+**1. No standalone `Blackboard` type.** What was scoped as `wavefront.Blackboard`
+(`facts`/`considering` maps, `Know`/`Get`/`Consider`/`Resolve`/`Render`) is retired
+before being built. "Working memory" for a classify prompt is a pure rendering
+function over `task.Graph.Nodes()`, filtered to `Status == Done`, formatted
+`{Goal}: {Value}`. "Currently being considered" is the same query, filtered to
+still-open nodes instead. Nothing is cached or duplicated outside the graph.
+
+**2. `task.Record` gains `Value`, `Error`, and `Seq` — shared, engine-agnostic
+fields:**
+
+```go
+// Value is the node's resolved fact or answer text, set once Status becomes Done.
+// Makes the graph a complete, serializable record of what was learned — not just
+// what was attempted — with no separate structure to keep in sync. Populated by
+// whichever engine's processing actually produced a resolved value for this node
+// (a Task's tool result today; a Step's synthesis-of-children once ADR 0010's judge
+// phases supply one) — never engine-specific in meaning, only in which engine had
+// something to write.
+Value string `json:"value,omitempty"`
+
+// Error is the failure reason, set once Status becomes Failed. Persisted alongside
+// Value so a failed node's graph entry shows *why*, not just *that* — closing a
+// real, pre-existing gap: today neither engine's Failed transitions carry the
+// reason onto the durable record, only into ephemeral bookkeeping
+// (executor.Outcome, discarded graph.Add/Update errors).
+Error string `json:"error,omitempty"`
+
+// Seq is the node's position in the graph's growth — a monotonic counter Graph.Add
+// assigns at admission and Graph.Update never touches, independent of Deps depth or
+// dispatch concurrency. Lets a serialized graph show its own growth over time, not
+// just its final shape.
+Seq int `json:"seq"`
+```
+
+`Graph.Add` assigns `Seq` (`rec.Seq = g.nextSeq; g.nextSeq++`) — never
+caller-supplied, so ordering is authoritative by construction. `Graph.Update`
+explicitly re-inherits the existing node's `Seq` before storing
+(`rec.Seq = g.nodes[rec.ID].Seq`) — a status-transition update carrying a
+zero-value `Record.Seq` must never silently reset a node's growth position back to
+0. This needs its own regression test; it is exactly the kind of one-line omission
+that would silently corrupt history months later.
+
+**3. Convergence is a merge-time existence check, not a separate mechanism.**
+Wavefront's merge step, on receiving a proposed Need with no command, normalizes its
+name and scans currently-open graph nodes for a match (the same query as §1's
+"considering" render) before deciding to `Add` a new node or wire an edge onto the
+existing one. This runs single-threaded, at the same point graph mutation already
+happens — no new lock, no new data structure.
+
+**4. Wavefront's scheduler is continuous, not round-synchronized — a separate type,
+mirroring `scheduler.Scheduler`'s skeleton, not a generalization of it.** Dispatch
+whatever's `Ready()` and not yet classified, up to the slot budget; results return
+over a channel whenever each call actually finishes; a single-threaded merge step
+(per §3) applies each completion as it arrives. Kept as a genuinely separate type
+from `scheduler.Scheduler` — copying the proven concurrency pattern deliberately
+rather than generalizing the original to take a pluggable per-node handler — so a
+wavefront regression cannot touch the continuous engine's already-proven dispatch
+loop. The one place per-node logic is real, new work, not a simplification: a
+classify response is heterogeneous (some Needs execute immediately, some spawn
+children, a Know may self-resolve the node) in a way `Kind`-XOR dispatch never is.
+
+**5. Termination needs no bespoke mechanism.** Depth cap × per-node children cap
+bounds total node count, hence total dispatches; each node is classified at most
+once (mirroring `ErrStalled`'s existing "dispatched at most once" guarantee); a node
+resolved purely by convergence is not re-dispatched, and its parent's join either
+completes when siblings resolve or the branch stalls the same way an over-depth Step
+already fails to `Ask` today. `Settings.WavefrontMaxRounds` and Open Question 2 are
+retired — there is no round to bound.
+
+**6. §9's engine selection is a starting simplification, not a structural limit.**
+The original text — "a session runs one or the other, never both on the same plan"
+— describes the first cut this ADR's Phased Build Plan actually builds, not a
+ceiling. See "Future direction" below.
+
+### Continuous-engine refactor this creates — captured explicitly, scoped as its own phase
+
+Wiring `Value`/`Error` onto every terminal transition is real work in `scheduler.go`,
+not a byproduct of the schema change, and must not be left half-done:
+
+- `Scheduler.execute` currently returns only a `task.Status`, discarding
+  `executor.Outcome`'s result text and failure reason entirely once mapped. It needs
+  to surface both so the caller can write them onto the record.
+- `workDone` (`scheduler.go`'s internal struct) carries no error/value payload today
+  — `doneError` is dispatched with nothing but `id`; the actual error from
+  `s.decomposer.Decompose` is dropped on the floor in `s.work`'s `default` branch of
+  the Kind switch, too. This needs a new field threaded through the struct and every
+  site that constructs one.
+- `applyDecompose`'s two failure branches (`graph.Add` and `graph.Update` returning
+  an error) both currently do `s.setStatus(wd.id, task.Failed)` with the real error
+  (`ErrDuplicateID`/`ErrDanglingDep`/`ErrCycle`/etc.) discarded immediately after
+  being checked. Both need to carry that text onto the record.
+- `setStatus` itself needs a variant (or an added parameter) that also writes
+  `Value`/`Error` before calling `graph.Update`, not just `Status`.
+
+None of this changes `Status` derivation, dispatch order, or any concurrency
+guarantee — it is additive at the observable-behavior level, matching the discipline
+every prior extension to this scheduler has followed. But it is a real, multi-site
+touch to proven code, not a one-line change, and it deserves its own phase with full
+regression coverage (`scheduler_test.go`, `guard_test.go`, `node_test.go` all passing
+unchanged, plus new tests asserting `Value`/`Error` land correctly on every failure
+path) before wavefront ever depends on the same discipline. Doing it here, first,
+against the smaller and better-understood engine, is also the same "prove
+infrastructure on the existing call site before wavefront needs it" sequencing Phase
+1 already used for reasoning-budget plumbing.
+
+### Future direction: conditional and interleaved engine selection (explicitly not scoped, explicitly not foreclosed)
+
+There is a real possibility that the right unit of engine selection is neither "once
+per session" nor even "once per plan," but something narrower and dynamic — routing
+individual sub-problems to whichever engine suits their nature, and for a
+sufficiently complex problem, alternating passes of each within a single plan's
+lifetime (gather grounded facts, decompose efficiently over what's now solid, gather
+again for what the decomposition surfaced as unknown, synthesize, repeat).
+
+This ADR does not design that mechanism — a selection policy ("what makes a
+sub-problem suited to which engine") and an explicit hand-off protocol are real,
+unscoped work. But nothing in the design above forecloses it, and the
+schema-unification decision in §2 is what makes it *feasible* rather than merely
+imaginable:
+
+- Because both engines read and write the same `task.Record`/`task.Graph`, a node
+  one engine produced is immediately legible to the other's dispatch loop with no
+  translation step. Interleaving two engines with divergent schemas would need a
+  translation boundary every time control passed between them; unifying the schema
+  removes that boundary entirely.
+- `task.Record.Provenance.Source` (already populated — `decompose.go` already tags
+  planner-produced nodes `"planner"`) already carries per-node engine attribution for
+  free. A future router deciding "hand this branch to wavefront, that one to the
+  continuous engine" needs exactly this signal, and it costs nothing new to have it —
+  wavefront's future nodes need only tag `Source: "wavefront"` consistently.
+- The continuous engine's `Decomposer` interface already accepts an inherited-facts
+  snapshot at fork time (`branch.Fork`'s `Facts()`). A plausible concrete mechanism
+  for "gather, then decompose" — not designed here, just noted as evidence the seam
+  already exists — is wavefront grounding a Step's context first, then handing that
+  same Step to the continuous engine's decomposer for efficient one-shot breakdown
+  now that its inputs are verified, rather than either engine owning a Step
+  exclusively end to end.
+
+Recorded here so the Phased Build Plan below is read as a first, deliberately simple
+cut — two complete, independently useful engines sharing one schema — not as a
+decision that the two must stay permanently separate.
+
+### Consequences (amendment)
+
+Positive:
+
+- Eliminates an entire data structure (`Blackboard`) and the synchronization surface
+  between it and the graph before either was built.
+- Removes the round-sync-vs-continuous-efficiency trade-off from the original
+  Consequences section entirely, rather than accepting it — wavefront gets the
+  continuous engine's dispatch efficiency and totAlX's grounding discipline, not a
+  choice between them.
+- `Value`/`Error`/`Seq` fix a real, pre-existing gap in the continuous engine's
+  persisted plan output (a failed node's *reason* is not durable today), independent
+  of wavefront ever shipping.
+- Directly enables the future interleaving direction at no extra design cost now — a
+  consequence of the schema-unification decision, not a separate investment.
+
+Trade-offs:
+
+- The continuous-engine refactor is real, multi-site work against already-proven
+  code (`scheduler.go`), not free — mitigated by scoping it as its own phase with
+  full regression coverage before anything depends on it.
+- Two engines sharing one schema means a future interleaving/hand-off mechanism, if
+  built, has to reason about a graph that may contain nodes from both engines' merge
+  logic simultaneously — not a problem today (each plan-drain still selects one
+  engine), but worth naming as complexity the "Future direction" section defers, not
+  eliminates.
+
+### Phased Build Plan (amendment) — supersedes original steps 4 onward
+
+Steps 1-3 (reasoning-effort plumbing, seed-file prompt templating, output
+summarization) are unchanged and already shipped.
+
+4. **`task.Record`/`task.Graph` schema: `Value`, `Error`, `Seq`.** Additive fields
+   only; `Graph.Add` assigns `Seq`, `Graph.Update` preserves it (dedicated regression
+   test). No engine wiring yet — this phase only makes the fields exist and behave
+   correctly in isolation. Behavior doc:
+   `docs/architecture/behavior/adr/0012_record_value_error_seq.feature.md`.
+5. **Wire `Value`/`Error` into the continuous engine.** The `scheduler.go` refactor
+   named above — `workDone` gains an error/value payload, `setStatus`'s variant
+   writes it, every `task.Failed`/relevant `task.Done` transition site threads real
+   text through instead of discarding it. Full regression pass on existing scheduler
+   tests plus new tests per failure path. Proves the population discipline on the
+   smaller, better-understood engine before wavefront needs the same pattern.
+   Behavior doc:
+   `docs/architecture/behavior/adr/0012_scheduler_value_error_wiring.feature.md`.
+6. **`Classifier` + `LLMClassifier`.** Unchanged in substance from the original step
+   5 — the KNOW/NEED contract, schema-constrained prompt, parse path.
+7. **`wavefront.Scheduler`.** Continuous dispatch mirroring `scheduler.Scheduler`'s
+   skeleton (§4 above); merge-time convergence via normalized-name existence check
+   (§3); `Value`/`Error`/`Seq` population reusing the exact discipline step 5 proved
+   out. No round, no `maxRounds`. Highest-risk phase; behavior doc first:
+   `docs/architecture/behavior/adr/0012_wavefront_scheduler.feature.md`.
+8. **Orchestrator wiring.** `wavefront_cycle.go`, the `WavefrontEnabled` branch in
+   `runPlanPhase`, settings plumbing end to end. (Unchanged from original step 7.)
+9. **Eval harness.** Unchanged from original step 8.
+
+### Open Questions (amendment)
+
+Retired: Open Question 2 (`maxRounds` value) — no round exists to bound.
+
+New:
+
+7. **Engine-selection policy.** What makes a sub-problem "suited" to wavefront vs.
+   the continuous engine, and what triggers a hand-off mid-plan? Explicitly unscoped
+   (see "Future direction" above) — needs real usage data from both engines running
+   independently first.
+8. **Hand-off protocol.** If/when interleaving is pursued, does control pass at Step
+   boundaries only (matching the continuous engine's existing `Decomposer` seam), or
+   something finer-grained? Unscoped for the same reason as (7).
