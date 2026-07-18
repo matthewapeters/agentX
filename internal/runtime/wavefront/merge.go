@@ -6,12 +6,24 @@ import (
 	"strings"
 
 	"agentx/internal/prompting/task"
+	"agentx/internal/runtime/scheduler"
 )
 
 // applyClassify processes a completed classify response for node id: folds Knows
 // (this is also the self-match mechanism — see findExistingNode, no separate check
 // exists), registers/converges Needs, and decides id's own fate — resolved now, or
 // awaiting its (possibly just-grown) deps. Main-loop only.
+//
+// Surface visibility (ADR 0012 amendment, 2026-07-17): every freshly created child
+// is reported to the observer via the same NodeDecomposed callback the continuous
+// engine uses, so the output/context plan widget's nested-box recursion — which
+// only ever descends into a node's recorded Children — actually has children to
+// descend into for a wavefront plan. Before this, wavefront never called
+// NodeDecomposed at all, so no node past the root ever rendered: a real, previously
+// unnoticed gap, not a design choice. A converged Need (wired onto an
+// already-existing node instead of a fresh one) is reported separately via
+// NodeConverged, since it is not this node's decomposition containment — see
+// ConvergenceObserver's doc comment.
 func (s *Scheduler) applyClassify(id string, depth map[string]int, result Result, awaiting map[string]bool) {
 	for _, know := range result.Knows {
 		if s.registerOrConvergeKnow(know) == id {
@@ -24,8 +36,26 @@ func (s *Scheduler) applyClassify(id string, depth map[string]int, result Result
 	}
 
 	childIdx := 0
+	var fresh []task.Record
 	for _, need := range result.Needs {
-		s.registerOrConvergeNeed(id, depth[id]+1, need, depth, &childIdx)
+		childID, isNew := s.registerOrConvergeNeed(id, depth[id]+1, need, depth, &childIdx)
+		if childID == "" {
+			continue
+		}
+		child, ok := s.graph.Node(childID)
+		if !ok {
+			continue
+		}
+		if isNew {
+			fresh = append(fresh, child)
+		} else if co, ok := s.observer.(scheduler.ConvergenceObserver); ok {
+			co.NodeConverged(id, child)
+		}
+	}
+	if len(fresh) > 0 && s.observer != nil {
+		if rec, ok := s.graph.Node(id); ok {
+			s.observer.NodeDecomposed(rec, fresh)
+		}
 	}
 
 	rec, ok := s.graph.Node(id)
@@ -77,40 +107,54 @@ func (s *Scheduler) registerOrConvergeKnow(know Know) string {
 // task.Graph's existing, already-tested validate — this one Need is simply
 // skipped, never wired, and does not fail the parent (ADR 0012 §5; mirrors
 // totAlX's "reject rather than wiring the edge, continue"). Main-loop only.
-func (s *Scheduler) registerOrConvergeNeed(parentID string, childDepth int, need Need, depth map[string]int, childIdx *int) {
+//
+// Returns the wired child's id (empty when nothing was wired — an unrepresentable
+// Need, a self-reference, an already-present edge, or a rejected cycle) and
+// whether that child was freshly created (isNew) as opposed to an existing node
+// the edge converged onto — the caller (applyClassify) uses this to decide between
+// reporting NodeDecomposed (fresh) and NodeConverged (converged), so a wavefront
+// plan's surface rendering can tell "my own new child" apart from "a reference to
+// work already in flight elsewhere" (ADR 0012 amendment, surface-visibility
+// follow-up).
+func (s *Scheduler) registerOrConvergeNeed(parentID string, childDepth int, need Need, depth map[string]int, childIdx *int) (string, bool) {
 	var childID string
+	isNew := false
 	if need.Command != nil {
 		childID = s.nextChildID(parentID, childIdx)
 		if err := s.graph.Add(newCommandRecord(childID, need)); err != nil {
-			return
+			return "", false
 		}
 		depth[childID] = childDepth
+		isNew = true
 	} else {
 		if existing, ok := findExistingNode(s.graph, need.Name); ok {
 			childID = existing.ID
 		} else {
 			childID = s.nextChildID(parentID, childIdx)
 			if err := s.graph.Add(newQuestionRecord(childID, need.Name)); err != nil {
-				return
+				return "", false
 			}
 			depth[childID] = childDepth
+			isNew = true
 		}
 	}
 
 	if childID == "" || childID == parentID {
-		return // an empty/unrepresentable Need, or a Need naming its own parent
+		return "", false // an empty/unrepresentable Need, or a Need naming its own parent
 	}
 	parent, ok := s.graph.Node(parentID)
 	if !ok || slices.Contains(parent.Deps, childID) {
-		return // already a dep — nothing to add (this is also the convergence case:
-		// two Needs in the same response naming the same thing wire to it once)
+		return "", false // already a dep — nothing to add (this is also the
+		// convergence case: two Needs in the same response naming the same thing
+		// wire to it once, and only the first is reported)
 	}
 	parent.Deps = append(parent.Deps, childID)
 	if err := s.graph.Update(parent); err != nil {
 		// task.ErrCycle (converging onto parentID's own ancestor) or another
 		// integrity error — skip this one Need rather than failing the whole node.
-		return
+		return "", false
 	}
+	return childID, isNew
 }
 
 // newCommandRecord builds a task.KindTask child record for a command-valued Need,

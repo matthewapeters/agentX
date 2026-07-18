@@ -196,11 +196,33 @@ func (p *planObserver) NodeDecomposed(parent task.Record, children []task.Record
 	p.o.planTrees.decomposed(p.root, parent, children, p.o.store, p.o.id.ID)
 }
 
-func (p *planObserver) NodeCompleted(id string, status task.Status) {
-	p.o.publish("TASK_NODE", state.ContentTaskNode, map[string]any{
+func (p *planObserver) NodeCompleted(id string, status task.Status, value, errText string) {
+	payload := map[string]any{
 		"root": p.root, "task_id": id, "event": "completed", "status": string(status),
+	}
+	if value != "" {
+		payload["value"] = value
+	}
+	if errText != "" {
+		payload["error"] = errText
+	}
+	p.o.publish("TASK_NODE", state.ContentTaskNode, payload)
+	p.o.planTrees.completed(p.root, id, status, value, errText, p.o.store, p.o.id.ID)
+}
+
+// NodeConverged implements scheduler.ConvergenceObserver (ADR 0012 §3 amendment):
+// wavefront's merge step folded a new dependency edge from parentID onto an
+// already-existing node instead of creating a fresh child. The continuous engine
+// never calls this (its decomposition is strictly parent-as-join), so this is
+// wavefront-only in practice, but lives on the same shared planObserver rather
+// than a second type — the same "one collaborator, both engines" posture the rest
+// of this file already follows for NodeDispatched/NodeCompleted.
+func (p *planObserver) NodeConverged(parentID string, existing task.Record) {
+	p.o.publish("TASK_NODE", state.ContentTaskNode, map[string]any{
+		"root": p.root, "task_id": parentID, "event": "converged",
+		"converges_onto": existing.ID, "goal": existing.Goal,
 	})
-	p.o.planTrees.completed(p.root, id, status, p.o.store, p.o.id.ID)
+	p.o.planTrees.converged(p.root, parentID, existing.ID, p.o.store, p.o.id.ID)
 }
 
 // runPlanPhase drains an imperative through the decomposition scheduler before the model

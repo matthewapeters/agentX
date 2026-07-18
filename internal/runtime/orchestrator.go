@@ -804,6 +804,56 @@ func pinFactKey(tool string, ordinal uint64) string {
 	return fmt.Sprintf("%s_%d", tool, ordinal)
 }
 
+// PinPlanNode copies a plan node's own resolved Value into working memory as a
+// durable, pin-owned fact with no tool Source (ADR 0012 amendment, surface-
+// visibility follow-up) — the counterpart to PinToolEvent for a node with no
+// backing tool call at all (a Step, e.g. a wavefront Know: its Value comes from
+// the classify response's own Knows or the fallback synthesis call, never the
+// executor). Reads the node's current goal/value straight from the durable plan
+// tree (the same authoritative source PinToolEvent reads via o.History(), not
+// whatever text a client last rendered), so it is refused, not silently pinned
+// empty, once the node has nothing resolved yet. Unlike PinToolEvent, there is no
+// live option: a Source-less fact has nothing to re-run, so it can only ever be
+// static (mirrors PD-WM-AF-009's existing policy-Allow-only-live refusal, applied
+// here at pin time instead of toggle time since there is no tool at all to gate
+// on). It returns the new fact's key.
+func (o *Orchestrator) PinPlanNode(root, nodeID string) (string, error) {
+	goal, value, _, ok := o.planTrees.node(root, nodeID)
+	if !ok {
+		return "", fmt.Errorf("plan %q node %q not found", root, nodeID)
+	}
+	if strings.TrimSpace(value) == "" {
+		return "", fmt.Errorf("node %q has no resolved value to pin", nodeID)
+	}
+	fact := session.Fact{
+		Key: pinNodeFactKey(goal, nodeID), Value: value, Owner: session.OwnerPin,
+		Enabled: true, PinnedAt: time.Now(),
+	}
+	if err := o.mutateWorkingMemory(func(wm *session.WorkingMemory) error {
+		wm.Facts = append(wm.Facts, fact)
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	return fact.Key, nil
+}
+
+// pinNodeFactKey names the working-memory fact a plan-node Pin creates: the
+// node's own goal text (human-readable, unlike pinFactKey's tool+ordinal shape,
+// since a Step's goal already reads as the fact's name — "the project's dominant
+// language" is a better WM key than an opaque node id) plus the node id for
+// uniqueness, mirroring pinFactKey's "readable part + unique part" shape.
+func pinNodeFactKey(goal, nodeID string) string {
+	s := strings.ToLower(strings.Join(strings.Fields(goal), "-"))
+	if len(s) > 40 {
+		s = s[:40]
+	}
+	if s == "" {
+		return nodeID
+	}
+	return s + "_" + nodeID
+}
+
 // stringMapFrom coerces a JSON-decoded args value (map[string]any, string
 // leaves — state.Event.Payload always arrives this shape once round-tripped
 // through the durable log) into a map[string]string. Any non-string value or a

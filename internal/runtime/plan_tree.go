@@ -95,12 +95,48 @@ func (r *planTreeRegistry) decomposed(root string, parent task.Record, children 
 	r.persist(root, store, sessionID)
 }
 
-func (r *planTreeRegistry) completed(root, id string, status task.Status, store *session.Store, sessionID string) {
+func (r *planTreeRegistry) completed(root, id string, status task.Status, value, errText string, store *session.Store, sessionID string) {
 	r.mu.Lock()
 	t := r.ensureTree(root, "")
 	n := ensureNode(t, id)
 	n.Status = string(status)
+	n.Value = value
+	n.Error = errText
 	n.CompletedAt = time.Now().UnixMilli()
+	r.mu.Unlock()
+	r.persist(root, store, sessionID)
+}
+
+// node returns a snapshot of one node's durable goal/value/error, for
+// PinPlanNode (ADR 0012 amendment, surface-visibility follow-up) — the
+// authoritative server-side source of what a Step's resolved Value actually is,
+// mirroring how PinToolEvent re-reads its source from o.History() rather than
+// trusting whatever text the client last rendered.
+func (r *planTreeRegistry) node(root, id string) (goal, value, errText string, ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.trees[root]
+	if !ok {
+		return "", "", "", false
+	}
+	n, ok := t.Nodes[id]
+	if !ok {
+		return "", "", "", false
+	}
+	return n.Goal, n.Value, n.Error, true
+}
+
+// converged records that parentID's classify response wired an additional
+// dependency edge onto existingID instead of creating a fresh child (ADR 0012
+// §3). existingID must already have its own node (it was found via
+// findExistingNode, i.e. already added to the graph) — ensureNode here is
+// defensive, not expected to create a new entry in practice.
+func (r *planTreeRegistry) converged(root, parentID, existingID string, store *session.Store, sessionID string) {
+	r.mu.Lock()
+	t := r.ensureTree(root, "")
+	p := ensureNode(t, parentID)
+	p.ConvergesTo = append(p.ConvergesTo, existingID)
+	ensureNode(t, existingID)
 	r.mu.Unlock()
 	r.persist(root, store, sessionID)
 }

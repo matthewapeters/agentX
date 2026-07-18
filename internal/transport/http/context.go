@@ -76,3 +76,28 @@ func (s *Server) handleEventPin(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "pinned", "ordinal": ordinal, "key": key, "live": body.Live})
 }
+
+// handlePlanNodePin copies a plan node's own resolved value into working memory
+// as a durable, pin-owned fact (ADR 0012 amendment) — the counterpart to
+// handleEventPin for a node with no backing tool_result event at all (a Step,
+// e.g. a wavefront Know). Mutations are token-gated. No request body: unlike
+// handleEventPin, there is no live option (a Source-less fact has nothing to
+// re-run — see PinPlanNode's doc comment).
+func (s *Server) handlePlanNodePin(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(r) {
+		writeError(w, http.StatusUnauthorized, surfaces.CategoryAuth, "invalid or missing attach token")
+		return
+	}
+	root := r.PathValue("root")
+	node := r.PathValue("node")
+	if root == "" || node == "" {
+		writeError(w, http.StatusBadRequest, surfaces.CategoryValidation, "root and node are required")
+		return
+	}
+	key, err := s.prov.PinPlanNode(root, node)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, surfaces.CategoryValidation, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "pinned", "root": root, "node": node, "key": key})
+}

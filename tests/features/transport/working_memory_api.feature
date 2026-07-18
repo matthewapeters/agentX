@@ -52,3 +52,25 @@ Feature: Working-memory CRUD over the transport
     And a recorded tool_result event for tool "list_dir" valued "project listing"
     When the client pins the last recorded element as static
     Then the client can set the pinned fact live over the transport
+
+  # use-case: UC-CTX-PIN-NODE-API (Pin a plan node's own resolved value, ADR 0012
+  # amendment — a Step/Know has no tool_result event to pin via /events/{ordinal}/pin)
+  Scenario: The plan-node pin endpoint copies a resolved Step's value into working memory
+    Given a running transport server
+    And plan "w" node "w-1" resolved to "Go" for goal "the project's dominant language"
+    When the client pins plan "w" node "w-1"
+    Then reading working memory includes a pin-owned fact valued "Go"
+
+  Scenario: Pinning an unresolved plan node is refused
+    Given a running transport server
+    When pinning plan "w" node "missing" fails
+
+  # A plan-node pin has no tool Source to ever re-run (PinPlanNode's doc comment;
+  # mirrors PD-WM-AF-009's existing policy-Allow-only-live refusal, applied here at
+  # pin time instead of toggle time since there is no tool to gate on at all).
+  Scenario: A plan-node pin can never be set live
+    Given a running transport server
+    And plan "w" node "w-1" resolved to "Go" for goal "the project's dominant language"
+    And the client pins plan "w" node "w-1"
+    When the client tries to set the pinned fact live over the transport
+    Then the attempt is refused as not pinned to a tool source

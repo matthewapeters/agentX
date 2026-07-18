@@ -284,6 +284,35 @@ func (c *Client) PinToolEvent(ctx context.Context, token string, ordinal uint64,
 	return body.Key, nil
 }
 
+// PinPlanNode copies a plan node's own resolved value (no backing tool call — a
+// Step, e.g. a wavefront Know) into working memory as a durable fact (POST
+// /plans/{root}/nodes/{node}/pin, ADR 0012 amendment). Unlike PinToolEvent there
+// is no live option: a Source-less fact has nothing to re-run. Returns the new
+// fact's key.
+func (c *Client) PinPlanNode(ctx context.Context, token, root, nodeID string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s/plans/%s/nodes/%s/pin", c.endpoint, root, nodeID), nil)
+	if err != nil {
+		return "", &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", attachErrorFrom(resp)
+	}
+	var body struct {
+		Key string `json:"key"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", &AttachError{Category: "transport", Message: err.Error()}
+	}
+	return body.Key, nil
+}
+
 // postWM posts a token-authorized working-memory mutation.
 func (c *Client) postWM(ctx context.Context, token, path string, payload any) error {
 	data, _ := json.Marshal(payload)

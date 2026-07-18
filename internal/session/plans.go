@@ -43,6 +43,25 @@ type PlanTreeNode struct {
 	ResultText    string `json:"result_text,omitempty"`
 	ResultOutcome string `json:"result_outcome,omitempty"`
 	ResultRef     string `json:"result_ref,omitempty"`
+
+	// Value/Error mirror task.Record's own fields (ADR 0012 amendment) at the
+	// moment this node reached a terminal status: a Step's resolved fact/answer, or
+	// either kind's failure reason. Distinct from Command/ResultText/ResultOutcome/
+	// ResultRef, which come from a Task's tagged tool_call/tool_result events —
+	// a Step (e.g. a wavefront Know) has no such event backing it at all, so this is
+	// the only place its resolved text is ever durable.
+	Value string `json:"value,omitempty"`
+	Error string `json:"error,omitempty"`
+
+	// ConvergesTo holds the ids of already-existing nodes this node's own classify
+	// response wired an additional dependency edge onto, instead of creating a new
+	// child (ADR 0012 §3's convergence — wavefront-only in practice, since the
+	// continuous engine's decomposition is strictly parent-as-join). Distinct from
+	// Children: a converged id is NOT this node's decomposition containment, and
+	// still appears as some other node's Children entry (or as a top-level entry
+	// with no owner, for a free-standing incidental fact) — this is only the
+	// reference annotation, never double-ownership.
+	ConvergesTo []string `json:"converges_to,omitempty"`
 }
 
 // Plans persists decomposition plan snapshots under a session's plans/ directory —

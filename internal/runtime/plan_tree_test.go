@@ -57,12 +57,15 @@ func TestPlanTreeRegistryDispatchDecomposeComplete(t *testing.T) {
 		t.Errorf("child1 status after its own dispatch = %q, want dispatched", tree.Nodes["task-1-1"].Status)
 	}
 
-	r.completed("task-1", "task-1-1", task.Done, store, id.ID)
+	r.completed("task-1", "task-1-1", task.Done, "42", "", store, id.ID)
 	if got := tree.Nodes["task-1-1"].Status; got != string(task.Done) {
 		t.Errorf("child1 status after completion = %q, want %q", got, task.Done)
 	}
 	if tree.Nodes["task-1-1"].CompletedAt == 0 {
 		t.Error("child1 CompletedAt not set")
+	}
+	if got := tree.Nodes["task-1-1"].Value; got != "42" {
+		t.Errorf("child1 Value after completion = %q, want %q", got, "42")
 	}
 
 	// The completed leaf's own Children/Deps from decompose must be untouched by NodeCompleted.

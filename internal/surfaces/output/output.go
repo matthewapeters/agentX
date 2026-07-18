@@ -202,10 +202,12 @@ func (m *Model) SetSelectedEnabled(enabled bool) {
 }
 
 // SelectedToolEvent returns the selected element's ordinal when it is a flat
-// (untagged) tool_result widget — the class of element the context surface's Pin
-// affordance (PD-CTX-AF-012, docs/ux/03_PANEL_DETAILS.md PD-WM) can act on. A
-// tool_call widget, a plan-tagged tool_result folded into a Task node, or any
-// other selection is not pinnable; ok is false for those.
+// (untagged) tool_result widget — one of the two classes of element the context
+// surface's Pin affordance (PD-CTX-AF-012, docs/ux/03_PANEL_DETAILS.md PD-WM) can
+// act on; the other is a plan node's own result/value, via SelectedPlanNode below
+// (ADR 0012 amendment — lifts the plan-node pin exclusion this doc comment used to
+// describe). A tool_call widget, or any other selection, is not pinnable; ok is
+// false for those.
 func (m *Model) SelectedToolEvent() (ordinal uint64, ok bool) {
 	if m.selected < 0 || m.selected >= len(m.widgets) {
 		return 0, false
@@ -215,6 +217,89 @@ func (m *Model) SelectedToolEvent() (ordinal uint64, ok bool) {
 		return 0, false
 	}
 	return w.ordinal, true
+}
+
+// PlanNodePin describes what pinning the active node inside a selected plan
+// widget would do (ADR 0012 amendment, surface-visibility follow-up). A Task
+// node's arrived tool_result reuses the existing ordinal-keyed pin path
+// (PinToolEvent) — HasOrdinal true. A node with a resolved Value but no backing
+// tool call (a Step, e.g. a wavefront Know) has no ordinal to pin by at all —
+// HasValue true instead, for the value-keyed path (PinNodeValue).
+type PlanNodePin struct {
+	RootID     string
+	NodeID     string
+	Goal       string
+	Ordinal    uint64
+	HasOrdinal bool
+	Value      string
+	HasValue   bool
+}
+
+// SelectedPlanNode returns pin info for the node-level cursor (Tab/Shift+Tab, see
+// ActiveNodeNext/Prev) inside the selected plan widget; ok is false when the
+// selected widget isn't a plan, or its active node has nothing pinnable yet
+// (dispatched but not yet resolved).
+func (m *Model) SelectedPlanNode() (PlanNodePin, bool) {
+	ps := m.selectedPlanState()
+	if ps == nil {
+		return PlanNodePin{}, false
+	}
+	n := ps.nodes[ps.activeNode]
+	if n == nil {
+		return PlanNodePin{}, false
+	}
+	out := PlanNodePin{RootID: ps.rootID, NodeID: n.id, Goal: n.goal}
+	switch {
+	case n.resultOrdinal != 0:
+		out.Ordinal, out.HasOrdinal = n.resultOrdinal, true
+	case n.value != "":
+		out.Value, out.HasValue = n.value, true
+	default:
+		return PlanNodePin{}, false
+	}
+	return out, true
+}
+
+// selectedPlanState returns the planState for the selected top-level widget when
+// it is a plan widget, defaulting a freshly-selected plan's node cursor to its
+// root. Returns nil for any other selection.
+func (m *Model) selectedPlanState() *planState {
+	if m.selected < 0 || m.selected >= len(m.widgets) {
+		return nil
+	}
+	w := m.widgets[m.selected]
+	if w.kind != kindPlan {
+		return nil
+	}
+	ps := m.plans[w.planRoot]
+	if ps != nil && ps.activeNode == "" {
+		ps.activeNode = ps.rootID
+	}
+	return ps
+}
+
+// ActiveNodeNext/ActiveNodePrev move the node-level pin cursor (the "›" prefix in
+// a plan widget's nested boxes) to the next/previous node in display order —
+// Tab/Shift+Tab in the context surface (ADR 0012 amendment). A no-op when the
+// selected top-level widget isn't a plan.
+func (m *Model) ActiveNodeNext() { m.moveActiveNode(1) }
+func (m *Model) ActiveNodePrev() { m.moveActiveNode(-1) }
+
+func (m *Model) moveActiveNode(delta int) {
+	ps := m.selectedPlanState()
+	if ps == nil || len(ps.order) == 0 {
+		return
+	}
+	idx := 0
+	for i, id := range ps.order {
+		if id == ps.activeNode {
+			idx = i
+			break
+		}
+	}
+	idx = (idx + delta + len(ps.order)) % len(ps.order)
+	ps.activeNode = ps.order[idx]
+	m.refresh(false)
 }
 
 // New returns an empty output panel backed by a viewport.

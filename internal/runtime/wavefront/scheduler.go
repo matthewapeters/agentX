@@ -303,6 +303,6 @@ func (s *Scheduler) setStatus(id string, st task.Status, value, errText string) 
 	rec.Error = errText
 	_ = s.graph.Update(rec)
 	if s.observer != nil {
-		s.observer.NodeCompleted(id, st)
+		s.observer.NodeCompleted(id, st, value, errText)
 	}
 }

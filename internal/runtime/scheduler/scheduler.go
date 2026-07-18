@@ -57,8 +57,31 @@ type Observer interface {
 	// NodeDecomposed fires when a decomposition lands: parent became a join over children.
 	NodeDecomposed(parent task.Record, children []task.Record)
 	// NodeCompleted fires when a node reaches a terminal status
-	// (done/failed/denied/abstained).
-	NodeCompleted(id string, status task.Status)
+	// (done/failed/denied/abstained), carrying the same value/errText setStatus just
+	// wrote onto the record (ADR 0012 amendment, surface-visibility follow-up) — a
+	// Step's resolved fact or a leaf's failure reason is otherwise durable on
+	// task.Record but invisible to every observer-fed surface (live widget, plan
+	// JSON), which is a real gap, not an intentional omission: Value/Error already
+	// exist on the record (ADR 0012 §"Graph-as-Blackboard" amendment), this just
+	// finishes wiring them out to the boundary that already carries every other
+	// per-node fact.
+	NodeCompleted(id string, status task.Status, value, errText string)
+}
+
+// ConvergenceObserver is an optional extension to Observer for an engine whose
+// merge step can fold a new dependency edge onto an already-existing node instead
+// of creating a fresh child. The continuous engine's decomposition is strictly
+// parent-as-join (ADR 0009 amendment: "no cross-branch dependency edges are
+// structurally possible") and never needs this; wavefront.Scheduler's merge step
+// does (ADR 0012 §3's convergence), and type-asserts its own Observer for it, so an
+// Observer that doesn't implement it (a bare stub, e.g. in a test) simply never
+// receives these calls — this is Go's standard optional-interface pattern (mirrors
+// io.ReaderFrom), not a change to the base Observer contract.
+type ConvergenceObserver interface {
+	// NodeConverged fires when parentID gains existing as an additional dependency
+	// edge instead of a freshly created child — existing already had its own
+	// identity in the graph (possibly still unresolved) before this edge was added.
+	NodeConverged(parentID string, existing task.Record)
 }
 
 // Option configures a Scheduler.
@@ -330,6 +353,6 @@ func (s *Scheduler) setStatus(id string, st task.Status, value, errText string) 
 	rec.Error = errText
 	_ = s.graph.Update(rec)
 	if s.observer != nil {
-		s.observer.NodeCompleted(id, st)
+		s.observer.NodeCompleted(id, st, value, errText)
 	}
 }

@@ -62,6 +62,10 @@ type Provider interface {
 	// context-surface participation (PD-CTX-AF-012 / PD-WM). It returns the new
 	// fact's key.
 	PinToolEvent(ordinal uint64, live bool) (string, error)
+	// PinPlanNode copies a plan node's own resolved Value (no backing tool call —
+	// a Step, e.g. a wavefront Know) into working memory as a durable, pin-owned
+	// fact (ADR 0012 amendment). It returns the new fact's key.
+	PinPlanNode(root, nodeID string) (string, error)
 }
 
 // Server is the loopback HTTP/SSE transport for external surfaces.
@@ -110,6 +114,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /events/{ordinal}/enabled", s.handleEventEnabled)
 	// Pin a tool_result element into working memory (PD-CTX-AF-012 / PD-WM).
 	s.mux.HandleFunc("POST /events/{ordinal}/pin", s.handleEventPin)
+	// Pin a plan node's own resolved value into working memory (ADR 0012 amendment
+	// — a Step/Know has no tool_result event to pin via the route above).
+	s.mux.HandleFunc("POST /plans/{root}/nodes/{node}/pin", s.handlePlanNodePin)
 }
 
 // Handler exposes the routes for in-process testing (httptest).

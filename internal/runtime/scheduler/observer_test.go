@@ -19,8 +19,14 @@ func (r *recObserver) NodeDispatched(rec task.Record, depth int) {
 func (r *recObserver) NodeDecomposed(parent task.Record, children []task.Record) {
 	r.events = append(r.events, fmt.Sprintf("decompose:%s→%d", parent.ID, len(children)))
 }
-func (r *recObserver) NodeCompleted(id string, status task.Status) {
+func (r *recObserver) NodeCompleted(id string, status task.Status, value, errText string) {
 	r.events = append(r.events, fmt.Sprintf("complete:%s=%s", id, status))
+	if value != "" {
+		r.events = append(r.events, fmt.Sprintf("value:%s=%s", id, value))
+	}
+	if errText != "" {
+		r.events = append(r.events, fmt.Sprintf("error:%s=%s", id, errText))
+	}
 }
 
 type oneSplit struct{}

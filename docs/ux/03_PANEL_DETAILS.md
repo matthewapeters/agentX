@@ -303,6 +303,14 @@ removes the WM fact only; it does **not** re-enable the source context element
 back in context, the user re-enables the original element directly in the
 context surface.
 
+**Value-sourced pins are static-only (ADR 0012 amendment).** A pin created from
+a plan Step's own resolved value (PD-CTX-AF-014 — a decomposition engine's
+synthesized fact, not a tool call, e.g. a wavefront Know) has no `ToolSource` at
+all: there is nothing to re-run. It is a normal pinned fact in every other way
+(editable, deletable, shows age from `PinnedAt`), but pressing `l` on it is a
+no-op — the same refusal PD-WM-AF-009 already applies to a tool that isn't
+currently policy-`Allow`, extended to the case of no tool at all.
+
 ### Affordance Inventory
 
 | Affordance | ID | Status |
@@ -320,8 +328,17 @@ context surface.
 | Expand/collapse the selected fact's multi-line value (Enter) | PD-WM-AF-011 | ✅ |
 | Outer viewport auto-scrolls to keep the selection visible | PD-WM-AF-012 | ✅ |
 | Transcript-style scrollbar in the reserved right gutter when facts overflow | PD-WM-AF-013 | ✅ |
+| Setting a fact live is refused when it has no tool source at all (a plan-node value pin, ADR 0012 amendment) | PD-WM-AF-014 | ✅ |
 
 ### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: A value-sourced pin can never go live (PD-WM-AF-014)
+
+- GIVEN a working-memory fact pinned from a plan Step's own resolved value
+  (PD-CTX-AF-014), which carries no `ToolSource`
+- WHEN the user selects it and presses `l`
+- THEN nothing happens — the same refusal PD-WM-AF-009 applies to a non-`Allow`
+  tool, applied here because there is no tool at all to re-run
 
 Use-case: A multi-line value collapses by default (PD-WM-AF-011)
 
@@ -436,6 +453,24 @@ re-check it manually. See PD-WM's "Pin" affordances for the full design —
 enable/disable here is the session-scoped mechanism, Pin is the durable one, and
 they are deliberately different features that happen to share a source event.
 
+**Pinning inside a plan (ADR 0012 amendment).** A call folded into a plan step's
+Task node stays display-only for the enable/disable checkbox above — that part is
+unchanged — but its own result, and a Step's own resolved value (a decomposition
+engine's synthesized fact, not a tool call — e.g. a wavefront Know), are pinnable
+too, via a node-level cursor inside the plan widget rather than the flat checkbox
+model: `Tab`/`Shift+Tab` move the cursor to the next/previous node while the plan
+widget is selected (rendered as a `›` prefix on the active node's title — see
+`06_OUTPUT_WIDGET.md` §"Wavefront plans, Step values, and convergence"), and `p`
+pins whatever the cursor is currently on:
+
+- On a Task (or command-resolved) node whose result has arrived, `p` pins it
+  exactly like a flat tool-result — same durable fact shape, same disable-the-
+  source behavior.
+- On a Step with a resolved value and no tool call behind it, `p` builds the WM
+  fact directly from the node's own goal/value (there is no source event to
+  disable). See PD-WM's "Pin" section for why such a fact can never go live.
+- On a node with nothing resolved yet, `p` is a no-op.
+
 ### Affordance Inventory
 
 | Affordance | ID | Status |
@@ -452,6 +487,8 @@ they are deliberately different features that happen to share a source event.
 | Title strip (`context · <session>`) via the surface host | PD-CTX-AF-010 | ✅ |
 | Enabling a tool-call/tool-result folds its text into every subsequent turn's context (not just the turn that produced it), until disabled | PD-CTX-AF-011 | ✅ |
 | Pin (`p`) a selected tool-result to working memory; disables it here (PD-WM) | PD-CTX-AF-012 | ✅ |
+| `Tab`/`Shift+Tab` move the node-level pin cursor inside a selected plan widget | PD-CTX-AF-013 | ✅ |
+| `p` pins the plan-node cursor's current node (Task result or Step value) to working memory (ADR 0012 amendment) | PD-CTX-AF-014 | ✅ |
 
 ### Behavior contracts (GIVEN/WHEN/THEN)
 
@@ -497,6 +534,34 @@ Use-case: Collapsed by default (PD-CTX-AF-003)
 - GIVEN a context surface
 - WHEN any element arrives
 - THEN it renders collapsed until the user expands it
+
+Use-case: Node-level pin cursor navigation (PD-CTX-AF-013)
+
+- GIVEN a context surface with a plan widget selected
+- WHEN the user presses `Tab`
+- THEN the pin cursor moves to the next node in the plan and its title shows the
+  `›` prefix (no other node's does)
+- WHEN the user presses `Shift+Tab`
+- THEN the cursor moves to the previous node instead
+- GIVEN any other element is selected (not a plan widget)
+- WHEN the user presses `Tab` or `Shift+Tab`
+- THEN nothing happens
+
+Use-case: Pin a plan node's result or value (PD-CTX-AF-014, ADR 0012 amendment)
+
+- GIVEN a plan widget is selected and the pin cursor is on a Task node whose
+  result has arrived
+- WHEN the user presses `p`
+- THEN a working-memory fact is created from the node's result, exactly like
+  pinning a flat tool-result
+- GIVEN the pin cursor is instead on a Step node with a resolved value and no
+  backing tool call (e.g. a wavefront Know)
+- WHEN the user presses `p`
+- THEN a working-memory fact is created directly from the node's goal/value —
+  there is no source event to disable
+- GIVEN the pin cursor is on a node with nothing resolved yet
+- WHEN the user presses `p`
+- THEN nothing happens
 
 ---
 

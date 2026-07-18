@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/spinner"
@@ -44,6 +45,32 @@ type planNode struct {
 	command       string
 	resultText    string
 	resultOutcome string
+	// resultOrdinal is the source tool_result event's durable ordinal (ADR 0012
+	// amendment, surface-visibility follow-up) — captured so a Task node's result
+	// can be pinned via the existing ordinal-keyed PinToolEvent path, the same one
+	// a flat (untagged) tool_result already uses. Zero (Ordinal 0 is never a valid
+	// event ordinal — ordinals are 1-based) means no result has arrived yet.
+	resultOrdinal uint64
+
+	// value/errText mirror task.Record's own fields (ADR 0012 amendment) once this
+	// node reaches a terminal status. Unlike command/resultText — which arrive via a
+	// separate task_id-tagged tool_call/tool_result event pair and only ever apply
+	// to a Task — value/errText arrive directly on the task_node "completed" delta
+	// and are the *only* source of resolved content for a Step (a wavefront Know has
+	// no tool call behind it at all). A Task node can carry both: value/errText from
+	// its own completion, resultText from the executor's tagged result — in
+	// practice they describe the same outcome, and resultText renders (it already
+	// carries the collapsible-box treatment); value/errText exist so a Step has
+	// somewhere to put the same information.
+	value   string
+	errText string
+
+	// convergesTo holds the ids of already-existing nodes this node's own classify
+	// response wired an additional dependency edge onto, instead of creating a new
+	// child (ADR 0012 §3's convergence, wavefront-only). Rendered as a short
+	// reference annotation, never as a duplicate nested box — the referenced node's
+	// own box, if any, is drawn wherever its actual owner is.
+	convergesTo []string
 
 	// spin is this node's own independent spinner, live only while status ==
 	// "running" — each concurrently-running node animates on its own (not in
@@ -62,6 +89,15 @@ type planState struct {
 	executed  int
 	errText   string
 	w         *widget
+
+	// activeNode is the node-level pin cursor (ADR 0012 amendment, surface-
+	// visibility follow-up): which node Tab/Shift+Tab has navigated to, within
+	// ps.order (flat, depth-agnostic — simplest useful order). Meaningful, and
+	// rendered (the "›" cursor prefix), only while this plan's own widget is the
+	// selected top-level widget — moving the outer selection away doesn't reset it,
+	// so returning to this widget resumes where the cursor was left. Defaults to
+	// the root on first render.
+	activeNode string
 }
 
 // applyPlanEvent folds a task_plan snapshot (phase "started" creates the widget before any
@@ -172,6 +208,22 @@ func (m *Model) applyNodeEvent(ev state.Event) tea.Cmd {
 			n.status = "failed"
 		}
 		n.completedAt = ev.Epoch
+		n.value = str(p["value"])
+		n.errText = str(p["error"])
+	case "converged":
+		target := str(p["converges_onto"])
+		if target == "" || target == id {
+			break
+		}
+		// ensure gives the target a display goal even if its own dispatched/
+		// completed event hasn't arrived yet (a converged reference can race the
+		// referenced node's own first event) — enrich-only, matching every other
+		// ensure call site.
+		ps.ensure(target, str(p["goal"]), "", 0)
+		parent := ps.ensure(id, "", "", 0)
+		if !slices.Contains(parent.convergesTo, target) {
+			parent.convergesTo = append(parent.convergesTo, target)
+		}
 	}
 	m.renderPlan(ps)
 	return cmd
@@ -285,12 +337,20 @@ func nodeColor(n *planNode) string {
 // has sibling dependencies captured at decompose time (the tree's real DAG shape is a
 // parent-as-join tree with no cross-branch edges, so this short annotation — not a
 // literal graph edge — is enough to convey ordering within one Step's children).
-func nodeTitle(n *planNode, now int64, ps *planState) string {
+// nodeTitle renders n's own status line. cursor prepends the "›" pin-target
+// marker (ADR 0012 amendment) — true only while the owning plan widget is itself
+// selected AND n is its current active node (Tab/Shift+Tab), so the marker never
+// appears on a widget the user isn't "inside."
+func nodeTitle(n *planNode, now int64, ps *planState, cursor bool) string {
 	g := glyph(n.status)
 	if n.status == "running" && n.spin != nil {
 		g = n.spin.View() // independent per-node animation, not a static ⏳
 	}
-	t := g + " " + n.goal + planTiming(n, now)
+	prefix := ""
+	if cursor {
+		prefix = "› "
+	}
+	t := prefix + g + " " + n.goal + planTiming(n, now)
 	if len(n.waitsOn) == 0 {
 		return t
 	}
@@ -331,7 +391,7 @@ func (m *Model) renderPlanWidget(w *widget, selected bool) []string {
 		return []string{scrollutil.TruncateWord(w.title, m.contentWidth())}
 	}
 	if w.collapsed {
-		row := scrollutil.PadTo(scrollutil.TruncateWord(nodeTitle(root, ps.lastEpoch, ps), outerW), outerW)
+		row := scrollutil.PadTo(scrollutil.TruncateWord(nodeTitle(root, ps.lastEpoch, ps, selected && ps.activeNode == root.id), outerW), outerW)
 		return m.boxifyStyled(w.title, []string{row}, outerW, nodeColor(root), selected)
 	}
 	live := ps.computeLiveness()
@@ -353,8 +413,8 @@ func (m *Model) renderPlanWidget(w *widget, selected bool) []string {
 	// The outer title is the plan's summary (progress counts), not the root's own
 	// status line — so, for parity with every other node (whose own status is always
 	// visible as its own box's title), the root's line is the first content row here.
-	rows := []string{scrollutil.PadTo(scrollutil.TruncateWord(nodeTitle(root, ps.lastEpoch, ps), outerW), outerW)}
-	rows = append(rows, m.drawNodeContent(root, ps, outerW, live)...)
+	rows := []string{scrollutil.PadTo(scrollutil.TruncateWord(nodeTitle(root, ps.lastEpoch, ps, selected && ps.activeNode == root.id), outerW), outerW)}
+	rows = append(rows, m.drawNodeContent(root, ps, outerW, live, selected)...)
 	if ps.ended && ps.errText != "" {
 		for _, l := range scrollutil.WrapLines("⚠ "+ps.errText, outerW) {
 			rows = append(rows, scrollutil.PadTo(l, outerW))
@@ -365,8 +425,10 @@ func (m *Model) renderPlanWidget(w *widget, selected bool) []string {
 
 // drawNode returns id's complete boxed rendering — its own title/color/border — at
 // exactly width display columns (borders included). Below nodeBoxFloor it degrades to
-// a single flat line instead of a garbled, too-narrow box.
-func (m *Model) drawNode(id string, ps *planState, width int, live map[string]bool) []string {
+// a single flat line instead of a garbled, too-narrow box. selected propagates the
+// owning widget's top-level selection so the "›" pin-cursor (ADR 0012 amendment)
+// only ever renders inside a widget the user is actually inside.
+func (m *Model) drawNode(id string, ps *planState, width int, live map[string]bool, selected bool) []string {
 	n := ps.nodes[id]
 	if n == nil {
 		return nil
@@ -375,15 +437,18 @@ func (m *Model) drawNode(id string, ps *planState, width int, live map[string]bo
 		return []string{scrollutil.PadTo(scrollutil.TruncateWord(glyph(n.status)+" "+n.goal, width), width)}
 	}
 	innerW := width - 2
-	rows := m.drawNodeContent(n, ps, innerW, live)
-	return m.boxifyStyled(nodeTitle(n, ps.lastEpoch, ps), rows, innerW, nodeColor(n), false)
+	rows := m.drawNodeContent(n, ps, innerW, live, selected)
+	return m.boxifyStyled(nodeTitle(n, ps.lastEpoch, ps, selected && ps.activeNode == n.id), rows, innerW, nodeColor(n), false)
 }
 
 // drawNodeContent returns id's content rows (no box of its own): a Task always shows
 // its resolved command in reverse video, even collapsed — only the result is what
 // collapsing hides; a Step shows each child recursively, in order, only while live
-// (liveness-propagating auto-collapse — ADR 0009 §9c redesign, user spec).
-func (m *Model) drawNodeContent(n *planNode, ps *planState, width int, live map[string]bool) []string {
+// (liveness-propagating auto-collapse — ADR 0009 §9c redesign, user spec). A Step
+// with a resolved value/error (a wavefront Know, or a failed open question — ADR
+// 0012 amendment) shows it the same way a Task shows its result: hidden while
+// collapsed, a boxed excerpt while expanded.
+func (m *Model) drawNodeContent(n *planNode, ps *planState, width int, live map[string]bool, selected bool) []string {
 	var rows []string
 	expanded := live[n.id]
 
@@ -396,6 +461,8 @@ func (m *Model) drawNodeContent(n *planNode, ps *planState, width int, live map[
 		if expanded && n.resultText != "" {
 			rows = append(rows, m.drawResultBox(n, width)...)
 		}
+	} else if expanded && (n.value != "" || n.errText != "") {
+		rows = append(rows, m.drawValueBox(n, width)...)
 	}
 
 	if expanded {
@@ -409,12 +476,19 @@ func (m *Model) drawNodeContent(n *planNode, ps *planState, width int, live map[
 			if childW < nodeBoxFloor {
 				box = []string{scrollutil.PadTo(scrollutil.TruncateWord(glyph(child.status)+" "+child.goal, width), width)}
 			} else {
-				box = m.drawNode(cid, ps, childW, live)
+				box = m.drawNode(cid, ps, childW, live, selected)
 				for i, l := range box {
 					box[i] = scrollutil.PadTo(strings.Repeat(" ", nestMargin)+l, width)
 				}
 			}
 			rows = append(rows, box...)
+		}
+		for _, target := range n.convergesTo {
+			goal := target
+			if t := ps.nodes[target]; t != nil && t.goal != "" {
+				goal = t.goal
+			}
+			rows = append(rows, scrollutil.PadTo(scrollutil.TruncateWord("↳ converges onto: "+goal, width), width))
 		}
 	}
 	return rows
@@ -424,11 +498,32 @@ func (m *Model) drawNodeContent(n *planNode, ps *planState, width int, live map[
 // collapsible sub-widget the user's spec asked for, now folded into the Task's own
 // recursive rendering instead of a separate widget (ADR 0009 §9c redesign).
 func (m *Model) drawResultBox(n *planNode, width int) []string {
+	return m.drawTextBox("📋 result", n.resultOutcome, n.resultText, width)
+}
+
+// drawValueBox renders a Step's resolved value or failure reason (ADR 0012
+// amendment) the same way drawResultBox renders a Task's — a wavefront Know has no
+// tool call behind it, so its Value is the only content it has to show. Error takes
+// precedence when both are somehow set (setStatus writes them together, but a
+// stale value from an earlier partial state should never outrank a real failure).
+func (m *Model) drawValueBox(n *planNode, width int) []string {
+	if n.errText != "" {
+		return m.drawTextBox("⚠ error", "", n.errText, width)
+	}
+	return m.drawTextBox("🧩 value", "", n.value, width)
+}
+
+// drawTextBox is the shared rendering for a nested, collapsible-when-oversized text
+// box one level deeper than its owning node — titleBase names what kind of content
+// this is (result/value/error), outcome is an optional short annotation appended to
+// the title (a Task's executor outcome; empty for a Step's value/error, which has
+// no separate outcome concept).
+func (m *Model) drawTextBox(titleBase, outcome, text string, width int) []string {
 	if width < nodeBoxFloor {
-		return []string{scrollutil.PadTo(scrollutil.TruncateWord("📋 "+oneLine(n.resultText), width), width)}
+		return []string{scrollutil.PadTo(scrollutil.TruncateWord(titleBase+" "+oneLine(text), width), width)}
 	}
 	innerW := width - 2
-	lines := scrollutil.WrapLines(n.resultText, innerW)
+	lines := scrollutil.WrapLines(text, innerW)
 	truncated := len(lines) > maxResultLines
 	if truncated {
 		lines = lines[:maxResultLines]
@@ -440,9 +535,9 @@ func (m *Model) drawResultBox(n *planNode, width int) []string {
 	if truncated {
 		rows = append(rows, scrollutil.PadTo(scrollutil.TruncateWord("… see plans/<root>.json for the full result", innerW), innerW))
 	}
-	title := "📋 result"
-	if n.resultOutcome != "" {
-		title += " · " + n.resultOutcome
+	title := titleBase
+	if outcome != "" {
+		title += " · " + outcome
 	}
 	box := m.boxifyStyled(title, rows, innerW, "", false)
 	for i, l := range box {
@@ -616,6 +711,7 @@ func (m *Model) applyTaskToolEvent(ev state.Event, isResult bool) {
 	if isResult {
 		n.resultText = eventText(ev)
 		n.resultOutcome = resultOutcome(ev)
+		n.resultOrdinal = ev.Ordinal
 	} else {
 		n.command = eventText(ev)
 	}

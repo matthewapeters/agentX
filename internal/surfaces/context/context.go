@@ -68,8 +68,11 @@ func (m *Model) SetSize(width, height int) {
 // output panel so the keys are consistent: PgUp/PgDn move the selection between
 // elements, Up/Down (k/j) scroll within the selected element, Enter
 // expands/collapses it, space toggles whether a user/agent/tool element
-// participates in the agent's context (session-scoped), and p pins a selected
-// tool_result into working memory (durable — PD-CTX-AF-012 / PD-WM).
+// participates in the agent's context (session-scoped), p pins a selected
+// tool_result — or, inside a selected plan widget, the active node's own
+// result/value (durable — PD-CTX-AF-012 / PD-WM, ADR 0012 amendment) — into
+// working memory, and Tab/Shift+Tab move the node-level pin cursor within a
+// selected plan widget (a no-op on any other selection).
 func (m *Model) Key(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "pgup":
@@ -86,6 +89,10 @@ func (m *Model) Key(msg tea.KeyPressMsg) tea.Cmd {
 		return m.toggleSelected()
 	case "p":
 		return m.pinSelected()
+	case "tab":
+		m.out.ActiveNodeNext()
+	case "shift+tab":
+		m.out.ActiveNodePrev()
 	}
 	return nil
 }
@@ -110,12 +117,18 @@ func (m *Model) toggleSelected() tea.Cmd {
 	}
 }
 
-// pinSelected copies the selected tool_result element into working memory as a
-// static pin (PD-CTX-AF-012) and disables it in context server-side, so the same
-// output is never represented twice. Live vs static is decided afterward in the
-// working-memory surface (play/pause, PD-WM-AF-008), not here — Pin always
-// starts static. It is a no-op for anything but a flat tool_result element.
+// pinSelected copies the selected tool_result element — or, when a plan widget
+// is selected, its active node's own result/value (ADR 0012 amendment) — into
+// working memory as a static pin (PD-CTX-AF-012) and disables the source event in
+// context server-side where one exists, so the same output is never represented
+// twice. Live vs static is decided afterward in the working-memory surface (play/
+// pause, PD-WM-AF-008; a value-sourced pin has no Source to ever go live at all —
+// see PinPlanNode's doc comment), not here — Pin always starts static. It is a
+// no-op for a selection with nothing pinnable.
 func (m *Model) pinSelected() tea.Cmd {
+	if pin, ok := m.out.SelectedPlanNode(); ok {
+		return m.pinPlanNode(pin)
+	}
 	ordinal, ok := m.out.SelectedToolEvent()
 	if !ok || m.cl == nil {
 		return nil
@@ -125,6 +138,32 @@ func (m *Model) pinSelected() tea.Cmd {
 		_, _ = cl.PinToolEvent(stdctx.Background(), token, ordinal, false)
 		return nil
 	}
+}
+
+// pinPlanNode dispatches a plan node's own pin: a Task's arrived tool_result
+// reuses the existing ordinal-keyed path (PinToolEvent, same as a flat
+// tool_result); a Step's resolved Value with no backing tool call goes through
+// PinPlanNode instead.
+func (m *Model) pinPlanNode(pin output.PlanNodePin) tea.Cmd {
+	if m.cl == nil {
+		return nil
+	}
+	cl, token := m.cl, m.token
+	switch {
+	case pin.HasOrdinal:
+		ordinal := pin.Ordinal
+		return func() tea.Msg {
+			_, _ = cl.PinToolEvent(stdctx.Background(), token, ordinal, false)
+			return nil
+		}
+	case pin.HasValue:
+		root, nodeID := pin.RootID, pin.NodeID
+		return func() tea.Msg {
+			_, _ = cl.PinPlanNode(stdctx.Background(), token, root, nodeID)
+			return nil
+		}
+	}
+	return nil
 }
 
 // View renders the output body above a processing-state line.

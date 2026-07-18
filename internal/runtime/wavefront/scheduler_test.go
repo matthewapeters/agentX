@@ -5,14 +5,47 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"agentx/internal/executor"
 	"agentx/internal/prompting/task"
+	"agentx/internal/runtime/scheduler"
 	"agentx/internal/tools"
 )
+
+// recObserver records lifecycle callbacks in call order (main-loop only, so no
+// locking needed) and implements both scheduler.Observer and the optional
+// scheduler.ConvergenceObserver — the ADR 0012 amendment's surface-visibility fix
+// depends on wavefront actually calling both.
+type recObserver struct {
+	dispatched []string
+	decomposed []string // "parent→child1,child2"
+	completed  []string // "id=status:value/error"
+	converged  []string // "parent→existing"
+}
+
+func (r *recObserver) NodeDispatched(rec task.Record, depth int) {
+	r.dispatched = append(r.dispatched, rec.ID)
+}
+
+func (r *recObserver) NodeDecomposed(parent task.Record, children []task.Record) {
+	ids := make([]string, len(children))
+	for i, c := range children {
+		ids[i] = c.ID
+	}
+	r.decomposed = append(r.decomposed, fmt.Sprintf("%s→%s", parent.ID, strings.Join(ids, ",")))
+}
+
+func (r *recObserver) NodeCompleted(id string, status task.Status, value, errText string) {
+	r.completed = append(r.completed, fmt.Sprintf("%s=%s:%s%s", id, status, value, errText))
+}
+
+func (r *recObserver) NodeConverged(parentID string, existing task.Record) {
+	r.converged = append(r.converged, fmt.Sprintf("%s→%s", parentID, existing.ID))
+}
 
 type stubClassifierFn func(ctx context.Context, wm, question string) (Result, error)
 
@@ -211,6 +244,61 @@ func TestCrossBranchConvergence(t *testing.T) {
 		t.Errorf("'project language' classified %d times, want exactly 1 (converged across branches)", langClassifyCalls)
 	}
 }
+
+// TestObserverSeesDecomposeAndConverge is the ADR 0012 amendment's regression: before
+// it, wavefront never called NodeDecomposed at all, so no node past the root ever
+// nested in the output/context plan widget — this locks in that every freshly
+// created child is reported via NodeDecomposed (the same callback the continuous
+// engine uses, so the existing widget needs no new event type), and a Need that
+// converges onto an already-existing node is reported separately via
+// NodeConverged, never folded into NodeDecomposed's children list.
+func TestObserverSeesDecomposeAndConverge(t *testing.T) {
+	g := newGraph(t, "review the project")
+	classify := stubClassifierFn(func(_ context.Context, _, question string) (Result, error) {
+		switch question {
+		case "review the project":
+			return Result{Needs: []Need{{Name: "branch A"}, {Name: "branch B"}}}, nil
+		case "branch A":
+			return Result{Needs: []Need{{Name: "project language"}}}, nil
+		case "branch B":
+			return Result{Needs: []Need{{Name: "project language"}}}, nil
+		case "project language":
+			return Result{Knows: []Know{{Name: question, Value: "Go"}}}, nil
+		}
+		t.Fatalf("unexpected question: %q", question)
+		return Result{}, nil
+	})
+	synth := func(context.Context, string, string, json.RawMessage) (string, error) { return "done", nil }
+	obs := &recObserver{}
+	s := New(g, "review the project", classify, synth, "", stubExecutor{}, 4, 3, WithObserver(obs))
+	if err := runAndWait(t, s); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if !slices.Contains(obs.decomposed, "root→root-1,root-2") {
+		t.Errorf("root's fresh children never reported via NodeDecomposed: %v", obs.decomposed)
+	}
+	// Exactly one of branch A/branch B created "project language" fresh; the other
+	// converged onto it — never both, and never as a second NodeDecomposed entry.
+	freshLang := containsSuffix(obs.decomposed, "-1")
+	if !freshLang {
+		t.Errorf("neither branch reported a fresh 'project language' child via NodeDecomposed: %v", obs.decomposed)
+	}
+	if len(obs.converged) != 1 {
+		t.Fatalf("converged = %v, want exactly one NodeConverged call", obs.converged)
+	}
+}
+
+func containsSuffix(ss []string, suffix string) bool {
+	for _, s := range ss {
+		if strings.HasSuffix(s, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+var _ scheduler.ConvergenceObserver = (*recObserver)(nil)
 
 // TestCycleGuardSkipsSelfReferentialNeed: a Need naming its own parent's goal
 // verbatim (totAlX's documented self-echo failure) is skipped, not wired — caught

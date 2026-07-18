@@ -867,3 +867,187 @@ this addendum that touches already-shipped code — scoped as its own step (7a)
 before step 7, mirroring how step 5's continuous-engine refactor was itself scoped
 ahead of needing it, with Phase 3's existing tests required to pass unchanged after
 the move.
+
+## Amendment (2026-07-17): Surface Visibility — Chat Output, Context, Working Memory
+
+**Status: Implemented.** A design for this surface work was drafted earlier the
+same day, before Phases 7-9 (the wavefront scheduler, orchestrator wiring) existed
+to build it against — that draft assumed the original round-synchronized,
+standalone-`Blackboard` design the "Graph-as-Blackboard, Continuous Convergence"
+amendment above superseded (rounds, a `🧠 blackboard` sub-widget, `wavefront_round`/
+`wavefront_node` content types). This amendment replaces it with what the shipped,
+continuous, graph-as-blackboard engine actually needed and what was actually built.
+
+### The gap, found by reading the shipped engine against the shipped widget
+
+`wavefront.Scheduler` (Phase 7) never called `scheduler.Observer.NodeDecomposed` —
+only `NodeDispatched` and `NodeCompleted`. The output/context plan widget's nested-
+box recursion (`internal/surfaces/output/plan.go`, ADR 0009 §9c) only ever descends
+into a node's recorded `children`, and `children` is populated *exclusively* by the
+`"decomposed"` event handler. The practical result, confirmed by reading the code
+rather than assumed: **a wavefront plan rendered as its root box and nothing
+else**, regardless of how many Know/Need nodes were dispatched, executed, and
+resolved underneath it — the exact "no visibility into ToT progress" gap the
+original design task set out to close, except worse than a UX gap: it was a
+latent rendering bug in already-shipped code that happened to have no observable
+symptom yet, because nothing had exercised the wavefront path through a live
+surface until this pass looked for it.
+
+Two further, smaller gaps, found the same way:
+
+- `NodeCompleted(id, status)` never carried the `Value`/`Error` the "Graph-as-
+  Blackboard" amendment had just added to `task.Record` (Phase 4) and wired into
+  `setStatus` (Phase 5) — so even a node that *did* render had nothing to show for
+  a Step's resolved fact (a Know has no tool call behind it at all; `Value` is its
+  only content).
+- Convergence (a Need's edge folding onto an already-existing node instead of
+  creating a child, §3 above) is structurally a second parent referencing one
+  child — exactly the cross-branch edge the plan widget's tree-shaped rendering
+  (ADR 0009 amendment: "no cross-branch dependency edges are structurally
+  possible") cannot express as a second nested box without either duplicating the
+  node's content or breaking the recursion's tree assumption.
+
+A fourth, pre-existing gap (not wavefront-specific, but sharpened by it):
+`output.Model.SelectedToolEvent` explicitly excluded any plan-tagged tool_result
+from Pin — "a plan-tagged tool_result folded into a Task node... is not pinnable."
+Only the auto-generated `plan:<name>` rollup Fact (ADR 0010 §4) ever reached
+Working Memory; no individual finding inside a plan did, for either engine.
+
+### Decision
+
+**1. No new content types.** `NodeDecomposed`'s existing wire shape (`TASK_NODE`
+`"decomposed"`, `children: [{task_id, goal, deps, kind}]`) is reused as-is —
+`applyClassify` (`internal/runtime/wavefront/merge.go`) now collects the *freshly
+created* children from a classify response's Needs and reports them the same way
+the continuous engine reports a real decomposition. This was simpler than the
+original draft's two-new-`ContentType` proposal because the shipped schema
+unification (§2 above: `Value`/`Error`/`Kind` all mean the same thing regardless
+of which engine wrote them) means the existing `task_plan`/`task_node` wire shape
+already fits wavefront's nodes exactly — Know/open-Need/command-Need are just
+`KindStep`/`KindTask` records like any other, not a third shape needing a third
+event type.
+
+**2. `NodeCompleted` gains `value, errText string`.** `scheduler.Observer`'s
+signature changes to `NodeCompleted(id string, status task.Status, value, errText
+string)`, both engines' `setStatus` pass what they already write onto the record,
+and `planObserver` folds them into the `task_node` `"completed"` payload and into
+`session.PlanTreeNode` (which gains matching `Value`/`Error` fields). The output
+widget's `planNode` gains the same two fields, and a Step with a resolved
+value/error now renders it the same way a Task renders its result — a collapsible
+box one level deeper (`🧩 value` / `⚠ error`), reusing the existing result-box
+machinery (generalized to `drawTextBox`, parameterized by title/outcome/text
+instead of reading `resultText`/`resultOutcome` directly).
+
+**3. Convergence is a new optional `ConvergenceObserver` interface, not a
+`NodeDecomposed` overload.** `scheduler.ConvergenceObserver` (`NodeConverged
+(parentID string, existing task.Record)`) sits next to `Observer`, following Go's
+standard optional-interface pattern (`io.ReaderFrom`) rather than growing the base
+contract every consumer must implement — the continuous engine's decomposition is
+strictly parent-as-join and never needs it. `wavefront.Scheduler` type-asserts its
+own observer for it. `planObserver` implements it, publishing a `task_node`
+`"converged"` event (`{task_id: <parent>, converges_onto: <existing>, goal:
+<existing's goal>}`); the widget renders it as a one-line `↳ converges onto:
+<goal>` annotation on the *converging* node, never a duplicate nested box — the
+referenced node's own content stays exactly where its real (first) owner drew it,
+preserving the tree-shaped recursion untouched. `session.PlanTreeNode` gains a
+matching `ConvergesTo []string` for the persisted-tree counterpart.
+
+**4. Plan-node pinning: a node-level cursor inside the plan widget, not a new
+selection model.** Pin (`p`, PD-CTX-AF-012) already worked at the granularity of
+one top-level widget; a plan is one widget with many nodes inside it, none of them
+independently selectable. Rather than inventing a per-surface sub-widget selection
+framework, the plan widget gained a minimal node-level cursor (`planState
+.activeNode`, `output.Model.ActiveNodeNext`/`ActiveNodePrev` — `Tab`/`Shift+Tab` in
+the context surface, free keys in both surfaces' existing keymaps) that only
+moves, and only renders (the `›` prefix on the active node's title), while its
+owning plan widget is the selected top-level widget. `SelectedPlanNode()` reports
+what pinning the active node would do:
+
+- A Task/command-Need node whose tagged `tool_result` has arrived already carries
+  a real event ordinal (captured into `planNode.resultOrdinal`, previously
+  discarded) — it reuses the **existing** `PinToolEvent(ordinal, live)` path
+  unchanged. Checking the actual server-side contract confirmed this needed no
+  server change at all: `PinToolEvent` only ever required `ContentType ==
+  ContentToolResult`, and a task-tagged tool_result already satisfies that — the
+  old exclusion comment described a client-side selection gap, not a real server
+  restriction.
+- A Step/Know node has no tool call behind it at all — no ordinal exists to pin
+  by. A new path, `PinPlanNode(root, nodeID)`, reads the node's current
+  `goal`/`value` from the durable plan-tree registry (the same authoritative
+  server-side source `PinToolEvent` already reads via `o.History()`, not
+  whatever text a client last rendered) and constructs a `session.Fact` directly.
+  New transport: `POST /plans/{root}/nodes/{node}/pin`, `Client.PinPlanNode`,
+  `Provider.PinPlanNode`.
+
+**5. A value-sourced pin can never go live — enforced by construction, not a new
+check.** `PinPlanNode`'s `session.Fact` sets no `Source` (there is no tool to
+re-run). The existing live-toggle refusal (`SetFactLive`: "fact is not pinned to a
+tool source" when `Source == nil`) and the working-memory surface's existing
+client-side guard (`case "l": if f.Source != nil { ... }`, PD-WM-AF-009's pattern)
+both already gate on exactly this — no new gating logic was needed, only a test
+locking in that the existing gate actually covers this new fact shape.
+
+### Architecture — insertion points (as built)
+
+- `internal/runtime/scheduler/scheduler.go` — `Observer.NodeCompleted` gains
+  `value, errText string`; new `ConvergenceObserver` interface.
+- `internal/runtime/wavefront/merge.go` — `applyClassify`/
+  `registerOrConvergeNeed` report fresh children via `NodeDecomposed` and
+  converged edges via `NodeConverged` (type-asserted).
+- `internal/runtime/wavefront/scheduler.go`, `internal/runtime/scheduler
+  /scheduler.go` — both `setStatus` implementations pass `value, errText` to
+  `NodeCompleted`.
+- `internal/runtime/plan_cycle.go` — `planObserver.NodeCompleted` folds
+  value/errText into the event payload; new `planObserver.NodeConverged`.
+- `internal/runtime/plan_tree.go` — `completed` gains `value, errText`; new
+  `converged` and `node` (read accessor for `PinPlanNode`) methods.
+- `internal/session/plans.go` — `PlanTreeNode` gains `Value`, `Error`,
+  `ConvergesTo`.
+- `internal/runtime/orchestrator.go` — new `PinPlanNode`, `pinNodeFactKey`.
+- `internal/transport/http/{server,context,client}.go` — new
+  `POST /plans/{root}/nodes/{node}/pin` route + `Provider`/`Client` methods.
+- `internal/surfaces/output/{output,plan}.go` — `planNode` gains
+  `value`/`errText`/`convergesTo`/`resultOrdinal`; `drawResultBox` generalized to
+  `drawTextBox` (shared by Task results and Step values); new `SelectedPlanNode`,
+  `ActiveNodeNext`/`ActiveNodePrev`, `selectedPlanState`; `nodeTitle` gains the
+  `›` cursor prefix.
+- `internal/surfaces/context/context.go` — `Key` gains `tab`/`shift+tab`;
+  `pinSelected` tries `SelectedPlanNode` before the flat-tool-result path.
+- Behavior: `docs/architecture/behavior/adr/0012_surface_visibility.feature.md`.
+
+### Consequences (amendment)
+
+Positive:
+
+- Fixes a real rendering bug in already-shipped code (wavefront nodes never
+  nested), not just an enhancement — found by reading the engine and widget
+  together rather than assumed from the original design pass.
+- The pin-exclusion fix benefits the continuous engine equally; it was never
+  wavefront-specific, only surfaced as urgent by wavefront's per-node grounding
+  being the whole point of the engine.
+- No new content types, no new widget kind, no new selection framework — every
+  piece reuses an existing mechanism (`NodeDecomposed`'s wire shape, `PinToolEvent`
+  and its exact server contract, PD-WM-AF-009's existing live-gate), consistent
+  with this ADR's own repeated preference for reuse over parallel machinery.
+
+Trade-offs:
+
+- `ConvergenceObserver` is one more optional interface a future `Observer`
+  implementer needs to know might exist, even though the base contract didn't
+  change — a small ongoing discoverability cost, accepted for not forcing every
+  `Observer` (including test stubs that will never see wavefront) to implement a
+  method they can't produce a meaningful value for.
+- The node-level pin cursor is a second, independent selection concept living
+  inside one top-level widget selection — a real (if small) new mental model for
+  a user navigating a plan, not free.
+
+### Open Questions (amendment, continued)
+
+9. **Node cursor order.** `ActiveNodeNext`/`Prev` walk `planState.order` (flat,
+   depth-agnostic — simplest to implement first). A depth-first walk matching the
+   widget's own visual nesting may be more intuitive once there is real usage to
+   evaluate against; deferred, not decided here.
+10. **Owner-side convergence annotation.** Same open question the original design
+    pass raised: whether the *converged-onto* node should also show "N other
+    lanes reference this," not just the converging side. Still deferred to real
+    transcripts, not decided here.

@@ -46,6 +46,10 @@ type fakeProvider struct {
 	wm           session.WorkingMemory
 	ctxReport    session.ContextReport
 	toggled      []toggleRecord
+	// planNodes seeds PinPlanNode lookups: root -> nodeID -> (goal, value), the
+	// fake's stand-in for the real Orchestrator's durable plan-tree registry
+	// (ADR 0012 amendment).
+	planNodes map[string]map[string][2]string
 }
 
 // toggleRecord captures a SetEventEnabled call for assertion.
@@ -178,6 +182,24 @@ func (p *fakeProvider) PinToolEvent(ordinal uint64, live bool) (string, error) {
 		Source: &session.ToolSource{Tool: ev.ToolName}, Live: live, SourceOrdinal: ordinal, PinnedAt: time.Now(),
 	})
 	p.toggled = append(p.toggled, toggleRecord{ordinal: ordinal, enabled: false})
+	return key, nil
+}
+
+func (p *fakeProvider) PinPlanNode(root, nodeID string) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	nodes, ok := p.planNodes[root]
+	if !ok {
+		return "", fmt.Errorf("plan %q not found", root)
+	}
+	gv, ok := nodes[nodeID]
+	if !ok || gv[1] == "" {
+		return "", fmt.Errorf("node %q has no resolved value to pin", nodeID)
+	}
+	key := fmt.Sprintf("%s_%s", gv[0], nodeID)
+	p.wm.Facts = append(p.wm.Facts, session.Fact{
+		Key: key, Value: gv[1], Owner: session.OwnerPin, Enabled: true, PinnedAt: time.Now(),
+	})
 	return key, nil
 }
 
@@ -358,6 +380,14 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^reading working memory includes a pin-owned fact valued "([^"]*)"$`, w.pinnedFactValued)
 	sc.Step(`^the pin-source element is disabled in context$`, w.pinnedSourceDisabled)
 	sc.Step(`^the client can set the pinned fact live over the transport$`, w.setPinnedLive)
+
+	// Pin a plan node's own resolved value into working memory (ADR 0012 amendment
+	// — a Step/Know has no tool_result event to pin via the route above).
+	sc.Step(`^plan "([^"]*)" node "([^"]*)" resolved to "([^"]*)" for goal "([^"]*)"$`, w.recordPlanNodeValue)
+	sc.Step(`^the client pins plan "([^"]*)" node "([^"]*)"$`, w.pinPlanNode)
+	sc.Step(`^pinning plan "([^"]*)" node "([^"]*)" fails$`, w.pinPlanNodeFails)
+	sc.Step(`^the client tries to set the pinned fact live over the transport$`, w.tryPinnedLive)
+	sc.Step(`^the attempt is refused as not pinned to a tool source$`, w.pinnedLiveRefused)
 	sc.Step(`^the launch succeeds$`, w.launchSucceeds)
 	sc.Step(`^the launched surface kind is "([^"]*)"$`, w.launchedKind)
 	sc.Step(`^the launched surface appears in the registry$`, w.launchedInRegistry)
@@ -861,6 +891,57 @@ func (w *transportWorld) pinnedFactValued(want string) error {
 
 func (w *transportWorld) pinnedSourceDisabled() error {
 	return w.providerToggled(w.lastRecordedOrdinal(), "false")
+}
+
+// recordPlanNodeValue seeds the fake provider's plan-node lookup (ADR 0012
+// amendment) so a plan-node pin scenario has something to pin — the fake's
+// stand-in for the real Orchestrator's durable plan-tree registry.
+func (w *transportWorld) recordPlanNodeValue(root, nodeID, value, goal string) error {
+	w.prov.mu.Lock()
+	defer w.prov.mu.Unlock()
+	if w.prov.planNodes == nil {
+		w.prov.planNodes = map[string]map[string][2]string{}
+	}
+	if w.prov.planNodes[root] == nil {
+		w.prov.planNodes[root] = map[string][2]string{}
+	}
+	w.prov.planNodes[root][nodeID] = [2]string{goal, value}
+	return nil
+}
+
+func (w *transportWorld) pinPlanNode(root, nodeID string) error {
+	key, err := w.wmClient().PinPlanNode(context.Background(), w.token.Raw(), root, nodeID)
+	if err != nil {
+		return err
+	}
+	w.pinnedKey = key
+	return nil
+}
+
+func (w *transportWorld) pinPlanNodeFails(root, nodeID string) error {
+	_, err := w.wmClient().PinPlanNode(context.Background(), w.token.Raw(), root, nodeID)
+	if err == nil {
+		return fmt.Errorf("pinning plan %q node %q unexpectedly succeeded", root, nodeID)
+	}
+	return nil
+}
+
+// tryPinnedLive attempts to set the last-pinned fact live, stashing any error for
+// pinnedLiveRefused rather than failing the step immediately — mirrors how wmErr
+// is used elsewhere in this file for a mutation expected to be refused.
+func (w *transportWorld) tryPinnedLive() error {
+	w.wmErr = w.wmClient().SetFactLive(context.Background(), w.token.Raw(), w.pinnedKey, true)
+	return nil
+}
+
+func (w *transportWorld) pinnedLiveRefused() error {
+	if w.wmErr == nil {
+		return fmt.Errorf("setting the plan-node pin live unexpectedly succeeded")
+	}
+	if !strings.Contains(w.wmErr.Error(), "not pinned to a tool source") {
+		return fmt.Errorf("live-set error = %q, want it to mention 'not pinned to a tool source'", w.wmErr)
+	}
+	return nil
 }
 
 func (w *transportWorld) setPinnedLive() error {

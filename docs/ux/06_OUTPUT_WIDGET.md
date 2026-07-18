@@ -355,6 +355,78 @@ parent/child containment distinct from sibling "waits-on" deps) is also persiste
 `internal/session/plans.go`) — the queryable, post-session-review companion to the
 live rendering and the append-only event log.
 
+### Wavefront plans, Step values, and convergence (ADR 0012 amendment)
+
+AgentX's second decomposition engine (`internal/runtime/wavefront`, ADR 0012) is
+**round-free and reuses this exact widget** — it is not a separate widget kind.
+A wavefront plan's Know/open-Need/command-Need nodes are ordinary `KindStep`/
+`KindTask` records dispatched through the same `NodeDispatched`/`NodeDecomposed`/
+`NodeCompleted` observer callbacks the continuous engine uses, so everything
+above (nesting, liveness, collapse, timing) applies unchanged. Three additions,
+specific to what wavefront's nodes can carry that a continuous-engine node
+today does not:
+
+**A Step's resolved value or failure reason renders like a Task's result.** A
+wavefront Know has no tool call behind it at all — its `Value` (or `Error`) is
+its only content. Once such a Step is expanded, its value renders in a
+collapsible `🧩 value` box (or `⚠ error`, taking precedence if both are somehow
+set) one level deeper — the same `drawTextBox` machinery a Task's `📋 result`
+box already uses, generalized rather than duplicated.
+
+```gherkin
+GIVEN a Step node (any engine) with a non-empty resolved Value and no Error
+WHEN it is expanded
+THEN a "🧩 value" box renders one level deeper, capped at maxResultLines like a
+     Task's result
+
+GIVEN a Step node with a non-empty Error
+WHEN it is expanded
+THEN it shows "⚠ error" instead of "🧩 value"
+```
+
+**Convergence renders as a reference annotation, never a duplicate box.**
+Wavefront's merge step can fold a Need's edge onto an already-existing node
+instead of creating a child (ADR 0012 §3) — a genuine cross-branch reference the
+tree-shaped recursion above cannot express as a second nested box without either
+duplicating content or breaking the "tree, not general graph" rendering model.
+Instead, the *converging* node's content gains one line:
+
+```gherkin
+GIVEN parent P's classify response converges a Need onto an already-existing
+      node E (found elsewhere in the graph, not created fresh)
+WHEN the plan widget renders P expanded
+THEN P's content includes "↳ converges onto: <E's goal>"
+  AND E's own box — wherever its real, first owner rendered it — is unaffected;
+      E's content is never drawn a second time under P
+```
+
+**A node-level pin cursor, for Context-surface Pin only.** A plan is one
+top-level widget with many nodes inside it; pinning an individual node's
+result/value (PD-CTX-AF-012, ADR 0012 amendment) needed *some* way to select one.
+Rather than a new sub-widget selection framework, the plan widget gained a
+minimal cursor — `Tab`/`Shift+Tab` in the context surface move it forward/back
+through the plan's nodes (flat order, depth-agnostic) — that only exists, and
+only renders (a `›` prefix on the active node's own title line), while the
+owning plan widget is itself the selected top-level widget:
+
+```gherkin
+GIVEN a plan widget that is not the currently selected top-level widget
+WHEN Tab/Shift+Tab is pressed
+THEN nothing moves — the cursor only exists "inside" a selected plan widget
+
+GIVEN a plan widget becomes selected for the first time
+WHEN its node cursor is read
+THEN it defaults to the plan's root node
+
+GIVEN the plan widget is selected and its cursor is on some node N
+WHEN the widget renders
+THEN N's title shows the "›" prefix, and no other node's does
+```
+
+See `docs/ux/03_PANEL_DETAILS.md` §PD-CTX for what pressing `p` does with the
+cursor's current node, and §PD-WM for how the resulting pin behaves once it
+reaches working memory.
+
 ## Logo banner (pinned, collapsible, animated)
 
 The chat surface renders a **logo banner** in a fixed region above the output

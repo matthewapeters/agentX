@@ -276,6 +276,155 @@ func TestEndedPlanShowsFullStructure(t *testing.T) {
 	}
 }
 
+// TestWavefrontStepValueRenders drives a wavefront-shaped plan: a Step (a "Know",
+// task.KindStep with no tool call behind it) resolves via the task_node "completed"
+// delta's value field, not a tagged tool_result — before the ADR 0012 amendment this
+// was completely invisible (NodeCompleted never carried it). It must render like a
+// Task's result once the node is expanded.
+func TestWavefrontStepValueRenders(t *testing.T) {
+	m := New()
+	m.SetSize(100, 40)
+	m.Apply(planEv(state.ContentTaskPlan, 1, map[string]any{
+		"root": "w", "goal": "what language is this project", "phase": "started",
+		"nodes": []any{map[string]any{"task_id": "w", "goal": "what language is this project", "status": "proposed"}}}))
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w", "event": "dispatched", "goal": "what language is this project", "kind": "step", "depth": 0}))
+	// A wavefront classify response spawns one fresh open-value Need (kind "step") —
+	// this is the NodeDecomposed call applyClassify now fires (ADR 0012 amendment);
+	// without it, "language" would never nest under the root at all.
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w", "event": "decomposed", "kind": "step", "children": []any{
+			map[string]any{"task_id": "w-1", "goal": "language", "kind": "step", "deps": []any{}}}}))
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w-1", "event": "dispatched", "goal": "language", "kind": "step", "depth": 1}))
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w-1", "event": "completed", "status": "done", "value": "Go"}))
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w", "event": "completed", "status": "done", "value": "Go"}))
+
+	ps := m.plans["w"]
+	m.Apply(planEv(state.ContentTaskPlan, 1, map[string]any{
+		"root": "w", "goal": "what language is this project", "phase": "ended", "executed": 0,
+		"nodes": []any{
+			map[string]any{"task_id": "w", "status": "done"},
+			map[string]any{"task_id": "w-1", "status": "done"},
+		}}))
+	body := renderedPlanBody(m, ps)
+	if !strings.Contains(body, "language") {
+		t.Fatalf("wavefront Step child never nested under the root: %q", body)
+	}
+	if !strings.Contains(body, "🧩 value") || !strings.Contains(body, "Go") {
+		t.Errorf("a Step's resolved value must render like a Task's result: %q", body)
+	}
+}
+
+// TestWavefrontConvergenceAnnotates drives a second parent's Need converging onto an
+// already-existing node (ADR 0012 §3): the converging parent must show a reference
+// annotation, and the converged-onto node's own box must not be duplicated under the
+// second parent — its content stays wherever its real owner (first parent) is.
+func TestWavefrontConvergenceAnnotates(t *testing.T) {
+	m := New()
+	m.SetSize(100, 40)
+	m.Apply(planEv(state.ContentTaskPlan, 1, map[string]any{
+		"root": "w", "goal": "root question", "phase": "started",
+		"nodes": []any{map[string]any{"task_id": "w", "goal": "root question", "status": "proposed"}}}))
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w", "event": "decomposed", "kind": "step", "children": []any{
+			map[string]any{"task_id": "w-1", "goal": "branch A", "kind": "step", "deps": []any{}},
+			map[string]any{"task_id": "w-2", "goal": "branch B", "kind": "step", "deps": []any{}},
+		}}))
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w-1", "event": "decomposed", "kind": "step", "children": []any{
+			map[string]any{"task_id": "w-1-1", "goal": "the project's dominant language", "kind": "step", "deps": []any{}}}}))
+	// w-2 also needs "the project's dominant language" — its classify response
+	// converges onto w-1-1 instead of creating a duplicate node.
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w-2", "event": "converged",
+		"converges_onto": "w-1-1", "goal": "the project's dominant language"}))
+
+	m.Apply(planEv(state.ContentTaskPlan, 1, map[string]any{
+		"root": "w", "goal": "root question", "phase": "ended", "executed": 0,
+		"nodes": []any{
+			map[string]any{"task_id": "w", "status": "done"}, map[string]any{"task_id": "w-1", "status": "done"},
+			map[string]any{"task_id": "w-2", "status": "done"}, map[string]any{"task_id": "w-1-1", "status": "done"},
+		}}))
+	ps := m.plans["w"]
+	body := renderedPlanBody(m, ps)
+	if !strings.Contains(body, "↳ converges onto: the project's dominant language") {
+		t.Errorf("converging parent missing its reference annotation: %q", body)
+	}
+	if strings.Count(body, "the project's dominant language") != 2 {
+		t.Errorf("converged node must render once under its real owner plus one annotation, not be duplicated as its own box under both: %q", body)
+	}
+}
+
+// TestSelectedPlanNodeNavigationAndPin drives the node-level pin cursor (ADR 0012
+// amendment): Tab/Shift+Tab-equivalent navigation only operates while the plan
+// widget is the selected top-level widget, and SelectedPlanNode reports the right
+// pin target — a Task's arrived tool_result via its ordinal, a Step's resolved
+// Value when it has no backing tool call at all.
+func TestSelectedPlanNodeNavigationAndPin(t *testing.T) {
+	m := New()
+	m.SetSize(100, 40)
+	m.Apply(planEv(state.ContentTaskPlan, 1, map[string]any{
+		"root": "w", "goal": "review", "phase": "started",
+		"nodes": []any{map[string]any{"task_id": "w", "goal": "review", "status": "proposed"}}}))
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w", "event": "decomposed", "kind": "step", "children": []any{
+			map[string]any{"task_id": "w-1", "goal": "list files", "kind": "task", "deps": []any{}},
+			map[string]any{"task_id": "w-2", "goal": "language", "kind": "step", "deps": []any{}},
+		}}))
+	m.Apply(state.Event{Epoch: 1, Ordinal: 7, ContentType: state.ContentToolResult, ToolName: "list_dir",
+		Payload: map[string]any{"text": "cmd/ internal/", "task_id": "w-1", "outcome": "executed"}})
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w-2", "event": "completed", "status": "done", "value": "Go"}))
+	m.Apply(planEv(state.ContentTaskPlan, 1, map[string]any{
+		"root": "w", "goal": "review", "phase": "ended", "executed": 1,
+		"nodes": []any{
+			map[string]any{"task_id": "w", "status": "done"},
+			map[string]any{"task_id": "w-1", "status": "done"},
+			map[string]any{"task_id": "w-2", "status": "done"},
+		}}))
+
+	// The plan widget isn't selected yet (nothing has been selected in this fresh
+	// Model) — no active node, nothing pinnable.
+	if _, ok := m.SelectedPlanNode(); ok {
+		t.Fatal("SelectedPlanNode must be false before the plan widget is selected")
+	}
+
+	// Select the plan widget (it's the only one) and confirm the cursor defaults to
+	// the root, then navigate to each child in turn.
+	m.selected = 0
+	if pin, ok := m.SelectedPlanNode(); ok {
+		t.Errorf("root has nothing pinnable yet, got %+v", pin)
+	}
+	m.ActiveNodeNext() // root → w-1
+	pin, ok := m.SelectedPlanNode()
+	if !ok || !pin.HasOrdinal || pin.Ordinal != 7 || pin.NodeID != "w-1" {
+		t.Errorf("w-1 pin = %+v, ok=%v, want HasOrdinal ordinal=7", pin, ok)
+	}
+	m.ActiveNodeNext() // w-1 → w-2
+	pin, ok = m.SelectedPlanNode()
+	if !ok || pin.HasOrdinal || !pin.HasValue || pin.Value != "Go" || pin.NodeID != "w-2" {
+		t.Errorf("w-2 pin = %+v, ok=%v, want HasValue value=Go", pin, ok)
+	}
+	m.ActiveNodePrev() // w-2 → w-1, back to the ordinal-backed node
+	if pin, ok := m.SelectedPlanNode(); !ok || pin.NodeID != "w-1" {
+		t.Errorf("ActiveNodePrev did not return to w-1: %+v ok=%v", pin, ok)
+	}
+
+	// The "›" cursor renders on the active node, nowhere else — only while the
+	// plan widget itself is drawn as selected (renderedPlanBody always renders
+	// unselected, for the other tests sharing it, so render directly here).
+	body := strings.Join(m.renderWidget(m.plans["w"].w, true), "\n")
+	if !strings.Contains(body, "› ✅ list files") {
+		t.Errorf("active-node cursor missing from w-1's title: %q", body)
+	}
+	if strings.Contains(body, "› ✅ language") {
+		t.Errorf("cursor must not also show on a non-active node: %q", body)
+	}
+}
+
 // TestPerNodeSpinnerLifecycle drives two concurrent dispatches and verifies each gets
 // its own independently-routed, independently-ticking spinner (ADR 0009 §9c redesign
 // — not the old shared/lockstep single spinner), and that neither leaks once its node
