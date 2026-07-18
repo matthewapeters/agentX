@@ -52,6 +52,15 @@ func (s *Scheduler) applyClassify(id string, depth map[string]int, result Result
 			co.NodeConverged(id, child)
 		}
 	}
+	for _, t := range result.Tools {
+		childID, _ := s.registerTool(id, depth[id]+1, t, depth, &childIdx)
+		if childID == "" {
+			continue
+		}
+		if child, ok := s.graph.Node(childID); ok {
+			fresh = append(fresh, child)
+		}
+	}
 	if len(fresh) > 0 && s.observer != nil {
 		if rec, ok := s.graph.Node(id); ok {
 			s.observer.NodeDecomposed(rec, fresh)
@@ -99,48 +108,49 @@ func (s *Scheduler) registerOrConvergeKnow(know Know) string {
 	return id
 }
 
-// registerOrConvergeNeed wires need onto parentID's Deps — either a brand-new
-// child (command-valued Needs always, deferred dedup per the ADR 0012 addendum; or
-// open-value Needs with no existing match) or an edge onto an existing node found
-// via findExistingNode (open-value Needs only). A convergence that would close a
-// cycle (the existing node is one of parentID's own ancestors) is rejected by
-// task.Graph's existing, already-tested validate — this one Need is simply
-// skipped, never wired, and does not fail the parent (ADR 0012 §5; mirrors
-// totAlX's "reject rather than wiring the edge, continue"). Main-loop only.
-//
-// Returns the wired child's id (empty when nothing was wired — an unrepresentable
-// Need, a self-reference, an already-present edge, or a rejected cycle) and
-// whether that child was freshly created (isNew) as opposed to an existing node
-// the edge converged onto — the caller (applyClassify) uses this to decide between
-// reporting NodeDecomposed (fresh) and NodeConverged (converged), so a wavefront
-// plan's surface rendering can tell "my own new child" apart from "a reference to
-// work already in flight elsewhere" (ADR 0012 amendment, surface-visibility
-// follow-up).
+// registerOrConvergeNeed wires an open-value Need onto parentID's Deps — either a
+// brand-new child (no existing match) or an edge onto an existing node found via
+// findExistingNode. A convergence that would close a cycle (the existing node is
+// one of parentID's own ancestors) is rejected by task.Graph's existing,
+// already-tested validate — this one Need is simply skipped, never wired, and
+// does not fail the parent (ADR 0012 §5; mirrors totAlX's "reject rather than
+// wiring the edge, continue"). Main-loop only.
 func (s *Scheduler) registerOrConvergeNeed(parentID string, childDepth int, need Need, depth map[string]int, childIdx *int) (string, bool) {
-	var childID string
-	isNew := false
-	if need.Command != nil {
-		childID = s.nextChildID(parentID, childIdx)
-		if err := s.graph.Add(newCommandRecord(childID, need)); err != nil {
-			return "", false
-		}
-		depth[childID] = childDepth
-		isNew = true
-	} else {
-		if existing, ok := findExistingNode(s.graph, need.Name); ok {
-			childID = existing.ID
-		} else {
-			childID = s.nextChildID(parentID, childIdx)
-			if err := s.graph.Add(newQuestionRecord(childID, need.Name)); err != nil {
-				return "", false
-			}
-			depth[childID] = childDepth
-			isNew = true
-		}
+	if existing, ok := findExistingNode(s.graph, need.Name); ok {
+		return s.wireChild(parentID, existing.ID, childDepth, false, depth)
 	}
+	childID := s.nextChildID(parentID, childIdx)
+	if err := s.graph.Add(newQuestionRecord(childID, need.Name)); err != nil {
+		return "", false
+	}
+	return s.wireChild(parentID, childID, childDepth, true, depth)
+}
 
+// registerTool wires a resolved Tool onto parentID's Deps as a brand-new child —
+// always fresh, deferred dedup per the ADR 0012 addendum, never converged onto an
+// existing node the way an open-value Need can be. Main-loop only.
+func (s *Scheduler) registerTool(parentID string, childDepth int, t Tool, depth map[string]int, childIdx *int) (string, bool) {
+	childID := s.nextChildID(parentID, childIdx)
+	if err := s.graph.Add(newCommandRecord(childID, t)); err != nil {
+		return "", false
+	}
+	return s.wireChild(parentID, childID, childDepth, true, depth)
+}
+
+// wireChild adds childID as a dependency of parentID, the shared tail end of both
+// registerOrConvergeNeed and registerTool.
+//
+// Returns the wired child's id (empty when nothing was wired — an
+// unrepresentable child, a self-reference, an already-present edge, or a
+// rejected cycle) and whether that child was freshly created (isNew) as opposed
+// to an existing node the edge converged onto — the caller (applyClassify) uses
+// this to decide between reporting NodeDecomposed (fresh) and NodeConverged
+// (converged), so a wavefront plan's surface rendering can tell "my own new
+// child" apart from "a reference to work already in flight elsewhere" (ADR 0012
+// amendment, surface-visibility follow-up).
+func (s *Scheduler) wireChild(parentID, childID string, childDepth int, isNew bool, depth map[string]int) (string, bool) {
 	if childID == "" || childID == parentID {
-		return "", false // an empty/unrepresentable Need, or a Need naming its own parent
+		return "", false // an empty/unrepresentable child, or one naming its own parent
 	}
 	parent, ok := s.graph.Node(parentID)
 	if !ok || slices.Contains(parent.Deps, childID) {
@@ -151,25 +161,28 @@ func (s *Scheduler) registerOrConvergeNeed(parentID string, childDepth int, need
 	parent.Deps = append(parent.Deps, childID)
 	if err := s.graph.Update(parent); err != nil {
 		// task.ErrCycle (converging onto parentID's own ancestor) or another
-		// integrity error — skip this one Need rather than failing the whole node.
+		// integrity error — skip this one child rather than failing the whole node.
 		return "", false
+	}
+	if isNew {
+		depth[childID] = childDepth
 	}
 	return childID, isNew
 }
 
-// newCommandRecord builds a task.KindTask child record for a command-valued Need,
+// newCommandRecord builds a task.KindTask child record for a resolved Tool,
 // matching planner.Parse's exact task-node shape ({"tool","args"} under Params) so
 // the same executor/catalog path handles both engines' resolved calls identically.
-func newCommandRecord(id string, need Need) task.Record {
-	args := make(map[string]any, len(need.Command.Args))
-	for k, v := range need.Command.Args {
+func newCommandRecord(id string, t Tool) task.Record {
+	args := make(map[string]any, len(t.Command.Args))
+	for k, v := range t.Command.Args {
 		args[k] = v
 	}
 	return task.Record{
-		ID: id, Goal: need.Name, Type: task.Query, Kind: task.KindTask,
+		ID: id, Goal: t.Name, Type: task.Query, Kind: task.KindTask,
 		Status: task.Proposed, Deps: []string{},
-		Params:     map[string]any{"tool": need.Command.Tool, "args": args},
-		Provenance: task.Provenance{Source: "wavefront", Origin: "need"},
+		Params:     map[string]any{"tool": t.Command.Tool, "args": args},
+		Provenance: task.Provenance{Source: "wavefront", Origin: "tool"},
 	}
 }
 

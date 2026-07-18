@@ -115,7 +115,7 @@ func TestSelfMatchResolvesDirectly(t *testing.T) {
 	}
 }
 
-// TestCommandNeedExecutesAndUnblocksParent: a command-valued Need executes via the
+// TestCommandNeedExecutesAndUnblocksParent: a resolved Tool executes via the
 // injected Executor; its Value feeds the parent's eventual synthesis call once the
 // parent has no self-match of its own.
 func TestCommandNeedExecutesAndUnblocksParent(t *testing.T) {
@@ -126,8 +126,8 @@ func TestCommandNeedExecutesAndUnblocksParent(t *testing.T) {
 		if question != "what does this project do?" {
 			t.Fatalf("unexpected classify question: %q", question)
 		}
-		return Result{Needs: []Need{
-			{Name: "contents of README.md", Command: &Command{Tool: "read_file", Args: map[string]string{"path": "README.md"}}},
+		return Result{Tools: []Tool{
+			{Name: "contents of README.md", Command: Command{Tool: "read_file", Args: map[string]string{"path": "README.md"}}},
 		}}, nil
 	})
 	exec := stubExecutor{out: executor.Outcome{Status: executor.Executed, Result: tools.Result{Preview: "a demo project"}}}
@@ -150,13 +150,13 @@ func TestCommandNeedExecutesAndUnblocksParent(t *testing.T) {
 	}
 	child, ok := g.Node("root-1")
 	if !ok {
-		t.Fatal("command-Need child node not found")
+		t.Fatal("Tool child node not found")
 	}
 	if child.Kind != task.KindTask || child.Status != task.Done || child.Value != "a demo project" {
 		t.Errorf("child = %+v, want KindTask/Done/'a demo project'", child)
 	}
-	if child.Provenance.Source != "wavefront" || child.Provenance.Origin != "need" {
-		t.Errorf("child.Provenance = %+v, want Source=wavefront/Origin=need", child.Provenance)
+	if child.Provenance.Source != "wavefront" || child.Provenance.Origin != "tool" {
+		t.Errorf("child.Provenance = %+v, want Source=wavefront/Origin=tool", child.Provenance)
 	}
 }
 

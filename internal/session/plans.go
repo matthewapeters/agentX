@@ -67,10 +67,10 @@ type PlanTreeNode struct {
 	// created (set once by dispatched()/decomposed(), never touched by completed()
 	// — same lifecycle as Goal/Kind). Source names which engine produced the node
 	// ("wavefront" | "planner", empty for either engine's own plan root); Origin
-	// names the classification move ("know" | "need" | "step" | "action", empty
-	// for a plan root). Together they make a plan's post-hoc review artifact self-
-	// describing: which engine ran, and whether its shape is a chain-of-thought
-	// decomposition (step/action nodes) or a tree-of-thought search (know/need
+	// names the classification move ("know" | "need" | "tool" | "step" | "action",
+	// empty for a plan root). Together they make a plan's post-hoc review artifact
+	// self-describing: which engine ran, and whether its shape is a chain-of-thought
+	// decomposition (step/action nodes) or a tree-of-thought search (know/need/tool
 	// nodes, especially alongside ConvergesTo edges) — previously only visible on
 	// the live event stream, never in the durable plans/<rootID>.json snapshot.
 	Source string `json:"source,omitempty"`

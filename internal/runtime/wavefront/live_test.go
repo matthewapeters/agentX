@@ -19,7 +19,7 @@ func TestLLMClassifierRendersAndParses(t *testing.T) {
 		sawFormat = format
 		return `{"classification": [
 			{"KNOW": {"name": "language", "value": "Go"}},
-			{"NEED": {"name": "entry point", "command": {"tool": "read_file", "args": {"path": "cmd/agentx/main.go"}}}}
+			{"TOOL": {"name": "entry point", "tool": "read_file", "args": {"path": "cmd/agentx/main.go"}}}
 		]}`, nil
 	}
 	c := LLMClassifier{Chat: chat, Catalog: "- read_file: args {path} (read)\n"}
@@ -47,8 +47,8 @@ func TestLLMClassifierRendersAndParses(t *testing.T) {
 	if len(res.Knows) != 1 || res.Knows[0].Value != "Go" {
 		t.Fatalf("Knows = %+v, want one {language, Go}", res.Knows)
 	}
-	if len(res.Needs) != 1 || res.Needs[0].Command == nil || res.Needs[0].Command.Tool != "read_file" {
-		t.Fatalf("Needs = %+v, want one resolved read_file command", res.Needs)
+	if len(res.Tools) != 1 || res.Tools[0].Command.Tool != "read_file" {
+		t.Fatalf("Tools = %+v, want one resolved read_file command", res.Tools)
 	}
 }
 

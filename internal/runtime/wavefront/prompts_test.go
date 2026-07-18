@@ -71,11 +71,20 @@ func TestClassifyUserTemplateWrapsResponseInObject(t *testing.T) {
 	}
 }
 
-// Regression guard: the classify prompt must never let a NEED's command reference a
+// Regression guard: the classify prompt must never let a TOOL's command reference a
 // value it hasn't actually got yet — this is the hallucination gap ADR 0012 exists to
 // close, and the wording that prevents it must not silently erode.
 func TestClassifyPromptForbidsGuessedCommandArgs(t *testing.T) {
-	if !strings.Contains(DefaultClassifyPromptTemplate, "never from a fact you expect another NEED to") {
+	if !strings.Contains(DefaultClassifyPromptTemplate, "never from a fact you expect another item in this same response to produce") {
 		t.Error("classify prompt no longer states the no-guessed-arguments rule")
+	}
+}
+
+// Regression guard: the classify prompt must require every argument a tool needs, not
+// just some of them — the incomplete-args gap that let list_dir/tree calls through with
+// no "path" and get silently denied before any approval prompt.
+func TestClassifyPromptRequiresCompleteToolArgs(t *testing.T) {
+	if !strings.Contains(DefaultClassifyPromptTemplate, "supply every argument the\ntool requires") {
+		t.Error("classify prompt no longer states the complete-arguments rule")
 	}
 }

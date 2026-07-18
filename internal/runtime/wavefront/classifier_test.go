@@ -2,10 +2,10 @@ package wavefront
 
 import "testing"
 
-func TestParseKnowAndNeedItems(t *testing.T) {
+func TestParseKnowNeedAndToolItems(t *testing.T) {
 	data := []byte(`{"classification": [
 		{"KNOW": {"name": "language", "value": "Go"}},
-		{"NEED": {"name": "contents of main.go", "command": {"tool": "read_file", "args": {"path": "cmd/agentx/main.go"}}}},
+		{"TOOL": {"name": "contents of main.go", "tool": "read_file", "args": {"path": "cmd/agentx/main.go"}}},
 		{"NEED": {"name": "how the CLI is invoked"}}
 	]}`)
 	res, err := Parse(data)
@@ -15,40 +15,37 @@ func TestParseKnowAndNeedItems(t *testing.T) {
 	if len(res.Knows) != 1 || res.Knows[0].Name != "language" || res.Knows[0].Value != "Go" {
 		t.Fatalf("Knows = %+v, want one {language, Go}", res.Knows)
 	}
-	if len(res.Needs) != 2 {
-		t.Fatalf("Needs = %d, want 2", len(res.Needs))
+	if len(res.Tools) != 1 {
+		t.Fatalf("Tools = %d, want 1", len(res.Tools))
 	}
-	commandNeed := res.Needs[0]
-	if commandNeed.Command == nil {
-		t.Fatal("first Need's Command is nil, want a resolved command")
+	tool := res.Tools[0]
+	if tool.Command.Tool != "read_file" || tool.Command.Args["path"] != "cmd/agentx/main.go" {
+		t.Errorf("Command = %+v, want read_file with path cmd/agentx/main.go", tool.Command)
 	}
-	if commandNeed.Command.Tool != "read_file" || commandNeed.Command.Args["path"] != "cmd/agentx/main.go" {
-		t.Errorf("Command = %+v, want read_file with path cmd/agentx/main.go", commandNeed.Command)
-	}
-	openNeed := res.Needs[1]
-	if openNeed.Command != nil {
-		t.Errorf("second Need's Command = %+v, want nil (open question)", openNeed.Command)
+	if len(res.Needs) != 1 || res.Needs[0].Name != "how the CLI is invoked" {
+		t.Fatalf("Needs = %+v, want one open question", res.Needs)
 	}
 }
 
-func TestParseRejectsBothOrNeitherOfKnowNeed(t *testing.T) {
+func TestParseRejectsMoreOrFewerThanOneOfKnowNeedTool(t *testing.T) {
 	cases := []string{
 		`{"classification": [{}]}`,
 		`{"classification": [{"KNOW": {"name": "a", "value": "b"}, "NEED": {"name": "c"}}]}`,
+		`{"classification": [{"NEED": {"name": "c"}, "TOOL": {"name": "d", "tool": "read_file", "args": {}}}]}`,
 	}
 	for _, data := range cases {
 		if _, err := Parse([]byte(data)); err == nil {
-			t.Errorf("Parse(%s) succeeded, want an error (both/neither of KNOW/NEED)", data)
+			t.Errorf("Parse(%s) succeeded, want an error (not exactly one of KNOW/NEED/TOOL)", data)
 		}
 	}
 }
 
-func TestParseRejectsCommandWithNoTool(t *testing.T) {
+func TestParseRejectsToolWithNoTool(t *testing.T) {
 	data := []byte(`{"classification": [
-		{"NEED": {"name": "x", "command": {"tool": "", "args": {}}}}
+		{"TOOL": {"name": "x", "tool": "", "args": {}}}
 	]}`)
 	if _, err := Parse(data); err == nil {
-		t.Error("Parse succeeded for a command-valued NEED with no tool, want an error")
+		t.Error("Parse succeeded for a TOOL with no tool id, want an error")
 	}
 }
 
@@ -56,6 +53,7 @@ func TestParseRejectsEmptyName(t *testing.T) {
 	cases := []string{
 		`{"classification": [{"KNOW": {"name": "", "value": "x"}}]}`,
 		`{"classification": [{"NEED": {"name": ""}}]}`,
+		`{"classification": [{"TOOL": {"name": "", "tool": "read_file", "args": {}}}]}`,
 	}
 	for _, data := range cases {
 		if _, err := Parse([]byte(data)); err == nil {
@@ -81,7 +79,7 @@ func TestParseEmptyClassificationIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if len(res.Knows) != 0 || len(res.Needs) != 0 {
+	if len(res.Knows) != 0 || len(res.Needs) != 0 || len(res.Tools) != 0 {
 		t.Errorf("Result = %+v, want empty", res)
 	}
 }

@@ -81,12 +81,12 @@ type Provenance struct {
 	// Origin names the classification move that produced this node, distinct
 	// from Source (which engine) and Kind (execution mechanics: does this node
 	// run a command, or get classified/decomposed further). One of "know" /
-	// "need" (wavefront) or "step" / "action" (the continuous engine's
+	// "need" / "tool" (wavefront) or "step" / "action" (the continuous engine's
 	// planner), empty for either engine's own plan root. This is the field that
 	// makes a plan's solving *strategy* legible from its serialized form: a plan
 	// built entirely from step/action nodes is a chain-of-thought decomposition;
-	// one built from know/need nodes (especially with ConvergesTo edges) is a
-	// tree-of-thought search that branched and converged (ADR 0012).
+	// one built from know/need/tool nodes (especially with ConvergesTo edges) is
+	// a tree-of-thought search that branched and converged (ADR 0012).
 	Origin string `json:"origin,omitempty"`
 }
 
