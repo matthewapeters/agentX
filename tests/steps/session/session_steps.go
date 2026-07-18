@@ -16,9 +16,10 @@ import (
 	"agentx/internal/session"
 )
 
-// adjNounForm matches a default-style session name, allowing an optional numeric
-// collision suffix (e.g. "brave-otter" or "brave-otter-2").
-var adjNounForm = regexp.MustCompile(`^[a-z]+-[a-z]+(-[0-9]+)?$`)
+// adjNounForm matches a default-style session name — adjective-participial-noun
+// (internal/session/names.go's defaultNamer) — allowing an optional numeric
+// collision suffix (e.g. "brave-running-otter" or "brave-running-otter-2").
+var adjNounForm = regexp.MustCompile(`^[a-z]+-[a-z]+-[a-z]+(-[0-9]+)?$`)
 
 type sessionWorld struct {
 	dir      string
