@@ -41,4 +41,4 @@ absolute_max_bytes = 2097152  # hard ceiling on the oversized-output recovery ga
 # proposing it (closes a hallucination gap the original engine doesn't guard
 # against). Off by default: the original engine (ADR 0008) keeps running
 # invoke_planner plans until you opt in here.
-enabled = false
+enabled = true
