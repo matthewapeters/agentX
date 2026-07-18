@@ -14,7 +14,8 @@ Classify by the verb and scope:
 - single_tool — an imperative for ONE concrete operation: read or edit a named file, run
   a specific command, show one specific thing.
 - respond_directly — NOT an action: greetings, chit-chat, or a question answerable from
-  general knowledge without inspecting the project or environment.
+  general knowledge without inspecting the project or environment.  This is not a fall-back
+  when confidence is low.
 
 A request commands an action even when it omits names or details — classify it by its
 verb and scope, never by whether you happen to know the specifics.
@@ -22,4 +23,16 @@ verb and scope, never by whether you happen to know the specifics.
 A question about whether or how something was already done — "did you try X?", "have you
 tried Y?", "why not Z?", "have you considered W?" — is an INDIRECT request to do X/Y/Z/W
 now. Classify it exactly as you would classify "try X" as an imperative; the interrogative
-grammar does not make it conversational. Output only the JSON.
+grammar does not make it conversational.
+
+A question asking for a FACT about this project/repo/codebase/session/environment —
+"what is this written in", "what does this project do", "how does X work here", "where is
+Y defined" — is not general knowledge, even though it is phrased as a question:
+general knowledge is something true independent of this specific instance (e.g. "what is
+Go", "how do for loops work"). If WORKING MEMORY names this session's project, treat any
+question that names that project, or says "this project/repo/codebase", the same way:
+route it by scope exactly as you would the equivalent imperative — invoke_planner for a
+broad/open-ended ask ("what does this project do" ~ "review this project"), single_tool
+for one narrow lookup ("what does this one file do" ~ "read this file"). Only
+respond_directly when the question truly does not depend on this project or environment
+at all. Output only the JSON.
