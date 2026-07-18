@@ -13,6 +13,7 @@ import (
 	"agentx/internal/surfaces/client"
 	contextsurface "agentx/internal/surfaces/context"
 	"agentx/internal/surfaces/contextviz"
+	"agentx/internal/surfaces/logs"
 	"agentx/internal/surfaces/workmemory"
 	transporthttp "agentx/internal/transport/http"
 )
@@ -280,6 +281,12 @@ func surfaceModelFor(kind string, res LaunchResult, sessionName string) (client.
 			title += " · " + sessionName
 		}
 		return contextsurface.New(transporthttp.NewClient(res.Endpoint), res.Token), title, true
+	case "logs":
+		title := "logs"
+		if sessionName != "" {
+			title += " · " + sessionName
+		}
+		return logs.New(), title, true
 	default:
 		return nil, "", false
 	}

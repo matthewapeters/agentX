@@ -46,14 +46,15 @@ are two kinds:
   `internal/surfaces/chat/chat.go` (`relayout`, `View`).
 - **System surfaces** — independent processes, each launched separately
   (`agentx surface launch <kind>`) and attaching with an ephemeral token. The
-  registry (`internal/surfaces/registry.go:47-53`) knows seven kinds — `chat`
-  plus six external ones:
+  registry (`internal/surfaces/registry.go:47-54`) knows eight kinds — `chat`
+  plus seven external ones:
 
   | Kind | Package | Status |
   |------|---------|--------|
   | `context` | `internal/surfaces/context` | ✅ Implemented — [PD-CTX](#pd-ctx--context-surface-tui) |
   | `context-visualizer` | `internal/surfaces/contextviz` | ✅ Implemented — [PD-CTXVIZ](#pd-ctxviz--context-visualizer-tui) |
   | `working-memory` | `internal/surfaces/workmemory` | ✅ Implemented — [PD-WM](#pd-wm--working-memory-editor-tui) |
+  | `logs` | `internal/surfaces/logs` | ✅ Implemented — [PD-LOGS](#pd-logs--logtrace-surface) |
   | `files` | — | 📝 Registered, not yet implemented — [PD-FILES](#pd-files-registered-not-yet-implemented) |
   | `config` | — | 📝 Registered, not yet implemented — [PD-CONFIG](#pd-config-registered-not-yet-implemented) |
   | `context-history` | — | 📝 Registered, not yet implemented — [PD-CTXHIST](#pd-ctxhist-registered-not-yet-implemented) |
@@ -65,10 +66,9 @@ are two kinds:
   There is also a checked-in **`ax` launcher** (`/ax`, repo root) that boots
   all of the above together: it mints a session name and runs
   `zellij --layout ~/.config/agentx/agentx.kdl`, whose tracked source is
-  `config/seed/agentx.kdl` — currently three tabs (`agentX`: chat plus a
+  `config/seed/agentx.kdl` — four tabs (`agentX`: chat plus a
   `context`/`context-visualizer`/`working-memory` pane column; `editor`;
-  `terminal`). [PD-LOGS](#pd-logs--logtrace-surface-proposed) proposes adding
-  a fourth tab here.
+  `terminal`; `logs`, added by [PD-LOGS](#pd-logs--logtrace-surface)).
 
 ---
 
@@ -690,23 +690,28 @@ needed before implementation.
 
 ---
 
-## PD-LOGS — Log/Trace Surface (proposed)
+## PD-LOGS — Log/Trace Surface
 
-> **Proposed, not yet built.** `logs` is not a known launchable kind —
-> `internal/surfaces/registry.go:46-54`'s `knownKinds` map has exactly seven
-> entries (`chat`, `files`, `config`, `context`, `context-history`,
-> `context-visualizer`, `working-memory`), no `logs`. Nothing in the
-> checked-in `ax` launcher (`config/seed/agentx.kdl`) opens a logs tab either.
-> The retired Tkinter build did have a "Logs widget" (`UX_LIFECYCLE.md` §4,
-> traceability row for `PD-17`/`e2e-logs-001`), but that was DemoMode's own
-> diagnostics-capture artifact viewer (`docs/ux/07_DEMO_MODE.md`
-> `PD-17-AF-006`), unrelated to reviewing session/runtime activity — there is
-> no real precedent to re-author here. This section is a fresh spec, written
-> in response to a request to let the user review backend functionality by
-> browsing the current session's logs.
+> **Implemented.** `logs` is a known launchable kind
+> (`internal/surfaces/registry.go:46-55`), backed by `internal/surfaces/logs`
+> — a `client.SurfaceModel` (the same shared host framework `context` uses)
+> — and wired into `internal/cli/surface_launch.go`'s `surfaceModelFor` and a
+> fourth `config/seed/agentx.kdl` tab. Godog coverage:
+> `tests/features/surfaces/logs_surface.feature` /
+> `tests/steps/surfaces/logs_steps.go`. Built per
+> `docs/build-plan/06_system_surfaces_backlog.md` Phase G (SS-8 host
+> input-capture mode, SS-9 the surface itself).
 >
-> **Implementation scoped**: `docs/build-plan/06_system_surfaces_backlog.md`
-> Phase G (SS-8 host input-capture mode, SS-9 the logs surface itself).
+> There was no prior precedent to re-author: the retired Tkinter build did
+> have a "Logs widget" (`UX_LIFECYCLE.md` §4, traceability row for
+> `PD-17`/`e2e-logs-001`), but that was DemoMode's own diagnostics-capture
+> artifact viewer (`docs/ux/07_DEMO_MODE.md` `PD-17-AF-006`), unrelated to
+> reviewing session/runtime activity. This section is a fresh spec, written
+> in response to a request to let the user review backend functionality by
+> browsing the current session's logs, then implemented in the same
+> conversation — the **Implementation approaches** section below is kept
+> as the decision record for why option B (a native surface) was chosen
+> over piping `less` through a plain zellij pane.
 
 ### Purpose
 
@@ -721,22 +726,22 @@ event, append-only, under `<session-dir>/events/`, and `Recorder.Load()`
 pure *read* layer on data that already exists — no event-model or persistence
 work is required to build it.
 
-### Required affordances
+### Affordance Inventory
 
-Per this document's own contract rule (line 22-25 above), these are specified
-independent of delivery technology — see **Implementation approaches** below
-for two ways to satisfy them.
+Per this document's own contract rule (line 22-25 above), these were
+specified independent of delivery technology — see **Implementation
+approaches** below for the decision record on how they're satisfied.
 
-| Affordance | ID |
-|---|---|
-| Full-tab placement — a dedicated zellij tab, not a shared pane column, so the view gets real screen real estate | PD-LOGS-AF-001 |
-| Live streaming — new events appear as they're recorded, equivalent to `tail -f` | PD-LOGS-AF-002 |
-| Incremental vi-style search (`/pattern`, `?pattern`, `n`/`N` to cycle matches) | PD-LOGS-AF-003 |
-| Regex pattern support (vi/sed-style), not just literal substring matching | PD-LOGS-AF-004 |
-| Matches are visually highlighted, not just jumped to | PD-LOGS-AF-005 |
-| Line-wrapping — long lines wrap to the pane width; no horizontal scroll required | PD-LOGS-AF-006 |
-| Vim-style jump to top (`gg`) / bottom (`G`) of the buffer | PD-LOGS-AF-007 |
-| Strictly read-only — no affordance can write to, truncate, or reorder the underlying event files, and no escape hatch reaches a shell or an editor's save/write path | PD-LOGS-AF-008 |
+| Affordance | ID | Status |
+|---|---|---|
+| Full-tab placement — a dedicated zellij tab, not a shared pane column, so the view gets real screen real estate | PD-LOGS-AF-001 | ✅ (`config/seed/agentx.kdl` `logs` tab — a layout fact, no unit-level test, same treatment as `context-visualizer`'s) |
+| Live streaming — new events appear as they're recorded, equivalent to `tail -f` | PD-LOGS-AF-002 | ✅ |
+| Incremental vi-style search (`/pattern`, `?pattern`, `n`/`N` to cycle matches) | PD-LOGS-AF-003 | ✅ |
+| Regex pattern support (vi/sed-style), not just literal substring matching | PD-LOGS-AF-004 | ✅ (Go `regexp`/RE2 — no backreferences, unlike sed's BRE) |
+| Matches are visually highlighted, not just jumped to | PD-LOGS-AF-005 | ✅ |
+| Line-wrapping — long lines wrap to the pane width; no horizontal scroll required | PD-LOGS-AF-006 | ✅ |
+| Vim-style jump to top (`gg`) / bottom (`G`) of the buffer | PD-LOGS-AF-007 | ✅ |
+| Strictly read-only — no affordance can write to, truncate, or reorder the underlying event files, and no escape hatch reaches a shell or an editor's save/write path | PD-LOGS-AF-008 | ✅ (no transport dependency at all — see `internal/surfaces/logs.New`) |
 
 ### Implementation approaches considered
 
@@ -772,7 +777,7 @@ PD-LOGS-AF-008 is structural rather than something to enforce.
   `config/seed/agentx.kdl`. Days, not weeks. Kept here as the cheap fallback
   if B's LOE proves too high in practice.
 
-**B — Native Bubbletea surface (`internal/surfaces/logs`), matching `context`. Chosen for v1.**
+**B — Native Bubbletea surface (`internal/surfaces/logs`), matching `context`. Chosen and implemented.**
 A proper registered surface, and specifically a `client.SurfaceModel`
 (`internal/surfaces/client`) — the same shared host framework `context`
 already uses (SS-2/SS-3 in `docs/build-plan/06_system_surfaces_backlog.md`):
@@ -834,7 +839,8 @@ it's disproportionate to pursue:
 
 ### Recommendation
 
-**Decision: ship B.** Option A's LOE advantage doesn't outweigh the gap it
+**Decision: ship B (built — see the "Implemented" note at the top of this section).**
+Option A's LOE advantage doesn't outweigh the gap it
 leaves in PD-LOGS-AF-008: it can't stop `q` (or any other `less` exit key)
 from surfacing a raw, unrestricted shell in a pane the user has every reason
 to treat as inert output. A surface-owned pager closes that gap by
