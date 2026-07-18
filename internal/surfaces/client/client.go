@@ -45,6 +45,14 @@ type SurfaceModel interface {
 	Key(msg tea.KeyPressMsg) tea.Cmd
 	// View renders the surface body to its current size.
 	View() string
+	// CapturesKeys reports whether the surface is capturing free-form text input
+	// right now (e.g. a search-pattern prompt). While true, the host stops
+	// treating "q" as a quit key and forwards it to Key like any other
+	// character, so a captured pattern may contain a literal "q" (SS-8).
+	// Ctrl-C always quits regardless of this — a hard-abort that stays
+	// reachable even mid-capture, so a governed surface is never
+	// unrecoverable.
+	CapturesKeys() bool
 }
 
 // EventMsg carries one live session event to the host.
@@ -98,7 +106,7 @@ func (h Host) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case streamClosedMsg:
 		return h, tea.Quit
 	case tea.KeyPressMsg:
-		if isQuit(msg) {
+		if h.isQuit(msg) {
 			if h.shutdown != nil {
 				h.shutdown()
 			}
@@ -152,10 +160,16 @@ func (h Host) innerHeight() int {
 	return h.height - 1
 }
 
-func isQuit(msg tea.KeyPressMsg) bool {
+// isQuit reports whether msg is the quit key given the surface's current
+// input-capture state (SS-8). Ctrl-C always quits, even mid-capture; "q"
+// quits only when the surface isn't capturing free-form text, since a
+// captured search pattern may contain a literal "q".
+func (h Host) isQuit(msg tea.KeyPressMsg) bool {
 	switch msg.String() {
-	case "ctrl+c", "q":
+	case "ctrl+c":
 		return true
+	case "q":
+		return !h.surface.CapturesKeys()
 	}
 	return false
 }

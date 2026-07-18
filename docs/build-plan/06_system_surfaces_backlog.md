@@ -182,6 +182,116 @@ SS-1 (history + client tail) ─ SS-2 (framework host) ─ SS-3 (context surface
 Critical path is linear: the surface needs the framework, which needs the
 hydrate-then-tail client.
 
+---
+
+## Phase G — Logs surface (M2+)
+
+Scope: a searchable, live-tailing viewer over the full session event log —
+`docs/ux/03_PANEL_DETAILS.md` PD-LOGS. Decided against a `less`-in-a-zellij-pane
+v1 (rejected: no governance over the pane once `q` is pressed — see PD-LOGS'
+"Implementation approaches" §A) in favor of a native `client.SurfaceModel`,
+same family as SS-3's context surface. Reuses SS-1/SS-2 as-is (disk seed +
+cursor-resumed live stream, `client.Host` lifecycle) — no transport or
+persistence changes.
+
+### SS-8 · Host input-capture mode · S
+
+- **Target**: `internal/surfaces/client/client.go`; `internal/surfaces/context/context.go` (one-line interface conformance)
+- **Deps**: SS-2 (already landed)
+- **Source**: this scoping — no prior doc. `client.Host.Update` currently
+  intercepts `q`/`ctrl+c` as a global quit for every `SurfaceModel`
+  (`isQuit`, `client.go:155-161`) before the key ever reaches
+  `surface.Key`. That's fine for every `SurfaceModel` built so far because
+  none of them capture free-form text — but PD-LOGS' `/pattern` search does,
+  and "q" is a plausible character inside a search pattern (e.g. `/request`).
+  As written, typing it would quit the whole surface mid-search.
+- **Behavior**: add a `CapturesKeys() bool` method to the `SurfaceModel`
+  interface. When the current surface returns `true`, `Host.Update` skips the
+  `"q"` branch of `isQuit` and forwards the key untouched to `surface.Key`;
+  `ctrl+c` still always quits, unconditionally — a hard-abort escape hatch
+  that works even mid-search-input, so a governed surface is never
+  unrecoverable. `context.Model` (the only existing `SurfaceModel`) gets a
+  trivial `func (m *Model) CapturesKeys() bool { return false }` to keep
+  satisfying the interface; its behavior is unchanged.
+- **Feature**: extend `tests/features/surfaces/surface_client.feature`
+  (`@functional @arch:surface-client`) with a scenario: a `CapturesKeys()==true`
+  double receives `"q"` as an ordinary key while capturing, and `ctrl+c` still
+  quits it.
+- **Done**: `context.Model` unaffected (`make all` green, existing
+  `context_surface.feature` scenarios unchanged); a capturing double proves
+  `"q"` reaches `Key` and `ctrl+c` still quits.
+
+### SS-9 · Logs surface · M
+
+- **Target**: `internal/surfaces/logs/` (new — `logs.go` model, `format.go`
+  event→row rendering, `search.go` regex search/highlight/nav),
+  `internal/surfaces/registry.go` (`knownKinds["logs"]`),
+  `internal/cli/surface_launch.go` (`surfaceModelFor` case `"logs"`),
+  `config/seed/agentx.kdl` (new `logs` tab), `docs/ux/UX_LIFECYCLE.md`
+  (traceability row)
+- **Deps**: SS-8
+- **Source**: `docs/ux/03_PANEL_DETAILS.md` PD-LOGS (PD-LOGS-AF-001..008 +
+  GIVEN/WHEN/THEN contracts — already written)
+- **Behavior**:
+  1. `logs.Model` implements `client.SurfaceModel`. `Apply(ev state.Event)`
+     formats each event to one logical (pre-wrap) line via `formatEvent` —
+     `time.UnixMilli(ev.Epoch).Format("15:04:05.000")`, `ev.ContentType`,
+     `ev.ToolName` when set, then a payload summary — and appends it to an
+     internal entry buffer. Unlike the context surface, this view does **not**
+     skip `ev.Ephemeral` events: it's a full activity log, not a conversation
+     view.
+  2. `SetSize(w, h)` recomputes the wrapped display lines for the new width
+     via `scrollutil.WrapLines`; scroll-position/scrollbar math reuses
+     `scrollutil.ClampInt`/`ScrollbarCell`/`PadTo` — the same primitives
+     `output`/`workmemory` already share, no new wrap or scrollbar code.
+  3. Auto-follow: while the scroll offset sits at the bottom, `Apply` keeps it
+     pinned to the new bottom as events arrive (PD-LOGS-AF-002, the `tail -f`
+     affordance); once the user scrolls up, new events still append to the
+     buffer but the viewport doesn't jump — standard pager convention.
+  4. `Key` handles `j`/`down`, `k`/`up` (line), `ctrl+d`/`ctrl+u` (half page),
+     `pgdown`/`pgup` (full page), `g` `g` (`gg`, jump top — a one-shot
+     pending-key flag reset on any other key), `G` (jump bottom, re-arms
+     auto-follow), `/` and `?` (enter search-input mode, remembering
+     direction), `n`/`N` (next/prev match, wrapping at the buffer ends),
+     `esc` (clear the active search highlight, or cancel in-progress input).
+     `CapturesKeys()` returns `true` exactly while `/`/`?` input is active
+     (consumes SS-8).
+  5. Search: pattern compiled with Go `regexp` (RE2 — the PD-LOGS-AF-004
+     caveat already documents no backreference support); matches are computed
+     over the *wrapped* display lines so highlighting and `n`/`N` line up with
+     what's on screen. `View()` renders the visible slice plus a footer:
+     `/pattern` while typing, `<match>/<total> matches` plus key hints
+     (`/ search · n/N next/prev · gg/G top/bottom · q quit`) otherwise — same
+     footer convention `contextviz` already uses.
+  6. Wire-up: `registry.go`'s `knownKinds["logs"] = true`; a `case "logs":` in
+     `surfaceModelFor` returning `logs.New(...)` with title `"logs"` (+
+     session suffix per `LaunchTitleSession`, matching every other surface);
+     a fourth `config/seed/agentx.kdl` tab running
+     `agentx surface launch logs --session $AX_SESSION_STRING`.
+- **Feature**: `tests/features/surfaces/logs_surface.feature`
+  (`@functional @ux:PD-LOGS`), steps in `tests/steps/surfaces/logs_steps.go`
+  mirroring `context_visualizer_steps.go`'s shape (build a `logs.Model`,
+  `Apply` synthetic `state.Event`s, feed key presses, assert on `View()`)
+  — one scenario per PD-LOGS-AF-002..008 (PD-LOGS-AF-001, full-tab placement,
+  is a layout fact with no unit-level assertion, same treatment
+  `context-visualizer`'s screen-real-estate affordance already gets).
+- **Done**: applied events render as wrapped, timestamped lines; new events
+  auto-follow until the user scrolls; `/pattern` and `?pattern` search
+  highlights every match and `n`/`N` cycles them; `gg`/`G` jump to the buffer
+  ends; `q`/`ctrl+c` quits cleanly, and mid-search-input only `ctrl+c` quits
+  (`q` is a literal character); `make all` green.
+
+### Sequencing
+
+```
+SS-8 (host input-capture mode) ─ SS-9 (logs surface) ─ INTEGRATION
+```
+
+Linear: the surface's search-input mode needs SS-8 before it can safely use
+`"q"` inside a pattern.
+
+---
+
 ## Future surfaces (out of scope for this slice)
 
 Each reuses the SS-2 framework; each is its own increment with re-authored TUI specs.
@@ -193,6 +303,7 @@ Each reuses the SS-2 framework; each is its own increment with re-authored TUI s
 | Context-history | (new) | session-list + reload-from-log (ties to CTX-1 follow-up) |
 | Context-visualizer (done, SS-7) | PD-10 ContextMeterWidget / PD-08 | read-only context-window accounting by content class; measured against the model's context length (`/api/show` → `num_ctx`). Enable/disable is **not** here — it belongs to the context pane (PD-CTX); the meter only hints. See PD-CTXVIZ. |
 | Working-memory editor | PD-03 (Working Memory) | working_memory.json read/edit over the transport |
+| Log/trace surface (scoped, Phase G above) | (new — no legacy precedent; see PD-LOGS) | search/highlight/nav over the full event log; `client.Host` gains input-capture mode (SS-8) |
 
 Also deferred: surface→surface coordination, attachment chips, plan/DAG visualizer,
 and any Family-B orchestration surfaces.

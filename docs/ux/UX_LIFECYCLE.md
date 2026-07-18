@@ -479,6 +479,7 @@ Evidence expectations remain:
 | Logs widget | `PD-17` (`e2e-logs-001`) | `PD-17` | `demo_harness_test.go`, `tests/test_demo_ux_use_cases_headless.sh` | ✅ Closed |
 | System applet suite (files/config/context-history/working-memory/context-visualizer) | `PD-18-AF-001..007` | `PD-18` | `system_applet_host_test.go`, `context_widget_test.go`, `core_system_renderer_test.go`, `tests/test_demo_system_panel_tour_headless.sh` | ⚠ Re-opened |
 | UAT-visible startup topology | `PD-18-AF-007` | `PD-18` | `config_startup_mode_test.go`, `core_tmux_startup_integration_test.go` | ✅ Closed |
+| Log/trace surface — session-event viewer (distinct from the retired "Logs widget" row above, which was DemoMode's own diagnostics-capture artifact viewer) | `PD-LOGS-AF-002..008` (AF-001, full-tab placement, is a layout fact with no unit-level test, same as `context-visualizer`'s) | `PD-LOGS` | `tests/steps/surfaces/logs_steps.go`, `tests/features/surfaces/logs_surface.feature` (`docs/build-plan/06_system_surfaces_backlog.md` Phase G, SS-8/SS-9) | ✅ Tested |
 
 Active execution packet for first implementation slice: `docs/architecture/system_applet_suite_slice1.md` and `docs/ux/06_TUI_MIRROR.md` §12 (PD-16 default-behavior migration,
 TUI-first default with `--gui` opt-in) were referenced here historically but neither

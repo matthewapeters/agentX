@@ -46,14 +46,15 @@ are two kinds:
   `internal/surfaces/chat/chat.go` (`relayout`, `View`).
 - **System surfaces** — independent processes, each launched separately
   (`agentx surface launch <kind>`) and attaching with an ephemeral token. The
-  registry (`internal/surfaces/registry.go:47-53`) knows seven kinds — `chat`
-  plus six external ones:
+  registry (`internal/surfaces/registry.go:47-54`) knows eight kinds — `chat`
+  plus seven external ones:
 
   | Kind | Package | Status |
   |------|---------|--------|
   | `context` | `internal/surfaces/context` | ✅ Implemented — [PD-CTX](#pd-ctx--context-surface-tui) |
   | `context-visualizer` | `internal/surfaces/contextviz` | ✅ Implemented — [PD-CTXVIZ](#pd-ctxviz--context-visualizer-tui) |
   | `working-memory` | `internal/surfaces/workmemory` | ✅ Implemented — [PD-WM](#pd-wm--working-memory-editor-tui) |
+  | `logs` | `internal/surfaces/logs` | ✅ Implemented — [PD-LOGS](#pd-logs--logtrace-surface) |
   | `files` | — | 📝 Registered, not yet implemented — [PD-FILES](#pd-files-registered-not-yet-implemented) |
   | `config` | — | 📝 Registered, not yet implemented — [PD-CONFIG](#pd-config-registered-not-yet-implemented) |
   | `context-history` | — | 📝 Registered, not yet implemented — [PD-CTXHIST](#pd-ctxhist-registered-not-yet-implemented) |
@@ -61,6 +62,13 @@ are two kinds:
   The registry is open-ended: new kinds attach without changing existing
   surfaces. There is no tabbed "system panel" anymore — each surface is its
   own process, arranged by the user via a terminal multiplexer.
+
+  There is also a checked-in **`ax` launcher** (`/ax`, repo root) that boots
+  all of the above together: it mints a session name and runs
+  `zellij --layout ~/.config/agentx/agentx.kdl`, whose tracked source is
+  `config/seed/agentx.kdl` — four tabs (`agentX`: chat plus a
+  `context`/`context-visualizer`/`working-memory` pane column; `editor`;
+  `terminal`; `logs`, added by [PD-LOGS](#pd-logs--logtrace-surface)).
 
 ---
 
@@ -679,6 +687,238 @@ No `internal/surfaces/context-history` package exists yet. Earlier planning
 deterministic truncation, but that was never built against the current
 architecture, so it isn't restated here as settled behavior — a fresh spec is
 needed before implementation.
+
+---
+
+## PD-LOGS — Log/Trace Surface
+
+> **Implemented.** `logs` is a known launchable kind
+> (`internal/surfaces/registry.go:46-55`), backed by `internal/surfaces/logs`
+> — a `client.SurfaceModel` (the same shared host framework `context` uses)
+> — and wired into `internal/cli/surface_launch.go`'s `surfaceModelFor` and a
+> fourth `config/seed/agentx.kdl` tab. Godog coverage:
+> `tests/features/surfaces/logs_surface.feature` /
+> `tests/steps/surfaces/logs_steps.go`. Built per
+> `docs/build-plan/06_system_surfaces_backlog.md` Phase G (SS-8 host
+> input-capture mode, SS-9 the surface itself).
+>
+> There was no prior precedent to re-author: the retired Tkinter build did
+> have a "Logs widget" (`UX_LIFECYCLE.md` §4, traceability row for
+> `PD-17`/`e2e-logs-001`), but that was DemoMode's own diagnostics-capture
+> artifact viewer (`docs/ux/07_DEMO_MODE.md` `PD-17-AF-006`), unrelated to
+> reviewing session/runtime activity. This section is a fresh spec, written
+> in response to a request to let the user review backend functionality by
+> browsing the current session's logs, then implemented in the same
+> conversation — the **Implementation approaches** section below is kept
+> as the decision record for why option B (a native surface) was chosen
+> over piping `less` through a plain zellij pane.
+
+### Purpose
+
+Let the user review backend/session activity — every persisted `state.Event`
+(`user_prompt`, `tool_call`, `tool_result`, `task_plan`, `task_node`,
+`approval_request`/`approval_decision`, `thinking`, `classification`, etc.,
+see `internal/state/event.go:9-55`) — as a searchable, scrollable, continuously
+updating stream, instead of reading raw per-event JSON files by hand. The data
+already exists: `internal/session/recorder.go` persists one JSON file per
+event, append-only, under `<session-dir>/events/`, and `Recorder.Load()`
+(`recorder.go:66-92`) already returns them in stable order. This surface is a
+pure *read* layer on data that already exists — no event-model or persistence
+work is required to build it.
+
+### Affordance Inventory
+
+Per this document's own contract rule (line 22-25 above), these were
+specified independent of delivery technology — see **Implementation
+approaches** below for the decision record on how they're satisfied.
+
+| Affordance | ID | Status |
+|---|---|---|
+| Full-tab placement — a dedicated zellij tab, not a shared pane column, so the view gets real screen real estate | PD-LOGS-AF-001 | ✅ (`config/seed/agentx.kdl` `logs` tab — a layout fact, no unit-level test, same treatment as `context-visualizer`'s) |
+| Live streaming — new events appear as they're recorded, equivalent to `tail -f` | PD-LOGS-AF-002 | ✅ |
+| Incremental vi-style search (`/pattern`, `?pattern`, `n`/`N` to cycle matches) | PD-LOGS-AF-003 | ✅ |
+| Regex pattern support (vi/sed-style), not just literal substring matching | PD-LOGS-AF-004 | ✅ (Go `regexp`/RE2 — no backreferences, unlike sed's BRE) |
+| Matches are visually highlighted, not just jumped to | PD-LOGS-AF-005 | ✅ |
+| Line-wrapping — long lines wrap to the pane width; no horizontal scroll required | PD-LOGS-AF-006 | ✅ |
+| Vim-style jump to top (`gg`) / bottom (`G`) of the buffer | PD-LOGS-AF-007 | ✅ |
+| Strictly read-only — no affordance can write to, truncate, or reorder the underlying event files, and no escape hatch reaches a shell or an editor's save/write path | PD-LOGS-AF-008 | ✅ (no transport dependency at all — see `internal/surfaces/logs.New`) |
+
+### Implementation approaches considered
+
+**A — CLI formatter piped into `less`, hosted as a plain zellij pane. Considered, not chosen for v1.**
+Add an `agentx logs [--session <id>] [--follow]` subcommand that calls
+`Recorder.Load()`, formats each `state.Event` as one line (e.g.
+`epoch  content_type  [tool_name]  summary`), and either prints once or, with
+`--follow`, watches the events directory for newly-written files and streams
+them as they land. Run it as a fourth `config/seed/agentx.kdl` tab:
+`agentx logs --session $AX_SESSION_STRING --follow | less +F -R`.
+
+All eight affordances above fall out for free, because they're native `less`
+behavior: `/pattern` / `?pattern` / `n` / `N` with highlighted matches, `g` /
+`G` for top/bottom, wrapped lines by default (no `-S`), and `+F` for a
+`tail -f`-equivalent follow mode that drops into ordinary paging the instant
+the user presses a movement key. `less` has no write path at all, so
+PD-LOGS-AF-008 is structural rather than something to enforce.
+
+- Does **not** require a `registry.go`/`internal/surfaces` entry — it's a CLI
+  subcommand plus a zellij pane, not an HTTP/SSE-attached surface.
+- Caveat: `less` search regex is POSIX ERE-ish (via the system `regcomp`),
+  close to but not byte-identical to `sed`'s BRE — fine for pattern search,
+  just don't expect every `sed`-specific construct to carry over.
+- **Rejected for v1**: `less`/zellij impose no governance over the pane once
+  it's open. Pressing `q` (or any of `less`'s other exit paths) doesn't close
+  a governed surface — it drops the user into a bare interactive shell,
+  sitting in a tab labeled "logs," with no read-only boundary at all. That's
+  a materially worse failure mode than anything option C's vim-escape-hatch
+  concern raised: it's not a hard-to-lock-down editor, it's an *unrestricted*
+  shell one keystroke away, indistinguishable from the rest of the ax layout.
+- LOE: **Low** — one new CLI subcommand (reuses `Recorder.Load()` plus a small
+  formatter and a directory-watch loop for `--follow`), one new tab in
+  `config/seed/agentx.kdl`. Days, not weeks. Kept here as the cheap fallback
+  if B's LOE proves too high in practice.
+
+**B — Native Bubbletea surface (`internal/surfaces/logs`), matching `context`. Chosen and implemented.**
+A proper registered surface, and specifically a `client.SurfaceModel`
+(`internal/surfaces/client`) — the same shared host framework `context`
+already uses (SS-2/SS-3 in `docs/build-plan/06_system_surfaces_backlog.md`):
+`Apply(state.Event)` folds each event into an internal line buffer,
+`scrollutil` (`internal/surfaces/scrollutil` — already shared by `output` and
+`workmemory`) supplies wrap/scrollbar math, and a hand-built `/pattern` search
+overlay (Go `regexp`, highlighted matches) adds `n`/`N`, `gg`/`G`,
+`ctrl-d`/`ctrl-u` paging on top. Live tail is natural since the host already
+seeds from disk and resumes the session's live SSE stream by cursor — no new
+transport work.
+
+One real gap surfaced by scoping this: `client.Host` currently treats `"q"`
+as an unconditional global quit before a key ever reaches the surface
+(`client.go:155-161`), which would swallow `"q"` typed inside a search
+pattern. Closing it is a small, isolated shared-framework change (see the
+backlog's SS-8) — not a reason to reconsider option B, but worth flagging as
+its own task rather than discovering it mid-implementation.
+
+- Pro: consistent with the client-server surface model (this repo's core
+  architecture — see `CLAUDE.md`), works without zellij or any multiplexer,
+  and can render events with structural understanding (e.g. collapsing a
+  `tool_call`/`tool_result` pair into one block) instead of one flat text
+  line per event.
+- Pro (deciding factor): the surface governs its own exit path. `q`/`Ctrl-C`
+  stops the surface the same way it stops every other AgentX surface
+  (`PD-CTXVIZ`'s "Quitting (`Ctrl-C`/`q`) marks the surface stopped" —
+  `03_PANEL_DETAILS.md:598` — is the precedent to match). There is no key
+  sequence that lands the user in a shell, because no shell is embedded — the
+  process either renders the log view or exits cleanly. This is a strictly
+  stronger read-only guarantee than option A's, not just a different one.
+- Pro: room to grow deliberately — content-type filtering, per-class color
+  (reusing the emoji/color vocabulary `PD-CTXVIZ` already established),
+  collapsing tool call/result pairs, jumping straight to a specific
+  correlation/task/node id — none of which `less` piping could ever offer,
+  since it has no knowledge of `state.Event` structure.
+- Con: reimplements search/highlight/navigation that `less` already provides,
+  and Go's `regexp` (RE2) doesn't support backreferences, so "sed-style"
+  search is *more* approximate here than in option A, not less.
+- LOE: **Medium** — comparable to `PD-CTXVIZ`'s build, roughly 1-2 weeks for a
+  solid v1, all net-new TUI code.
+
+**C — Embed vim/neovim in a read-only mode inside the pane. Considered, not recommended.**
+This was the "slick" option raised alongside the exact right concern: how do
+you stop the user from saving, or exiting into a shell? That concern is why
+it's disproportionate to pursue:
+
+- Plain `vim -R` is not actually safe — `:w!` force-writes, `:!<cmd>` and
+  `:r !<cmd>` reach an arbitrary shell, `Ctrl-Z` suspends. Locking it down
+  needs restricted mode (`vim -Z -R -u NONE`) plus remapped `:q` / `:wq` /
+  `ZZ`, and correctness then depends on those flags being reproduced exactly
+  on every launch — a fragile safety boundary to maintain.
+- A genuinely safe embedding means driving Neovim over its msgpack-RPC API
+  (`nvim --embed`) as a library and translating grid updates into the pane's
+  rendering — effectively building a small Neovim GUI client from scratch.
+- Either path costs materially more than A or B while buying nothing A
+  doesn't already provide — `less` already has vi-style search/navigation and
+  zero write path by construction. Shelved as a "someday" idea, not a v1
+  candidate.
+
+### Recommendation
+
+**Decision: ship B (built — see the "Implemented" note at the top of this section).**
+Option A's LOE advantage doesn't outweigh the gap it
+leaves in PD-LOGS-AF-008: it can't stop `q` (or any other `less` exit key)
+from surfacing a raw, unrestricted shell in a pane the user has every reason
+to treat as inert output. A surface-owned pager closes that gap by
+construction — there's no shell to fall through to — and buys room for
+structure-aware rendering and filtering that piping flat text through `less`
+never could. Option A stays documented above as the cheap fallback if B's
+LOE turns out to be materially higher than estimated. Option C remains
+shelved per the reasoning above.
+
+`logs` becomes an eighth entry in `internal/surfaces/registry.go`'s
+`knownKinds`, gets an `internal/surfaces/logs` package following the
+`contextviz` package's shape (HTTP/SSE attach, `agentx surface launch logs`),
+and — same as `context`/`context-visualizer`/`working-memory` today — the
+user places it in their own zellij tab via `config/seed/agentx.kdl` (a
+dedicated fourth tab, per PD-LOGS-AF-001) rather than the surface owning tab
+placement itself.
+
+### Open questions
+
+- **OQ-LOGS-02** — Verbosity of one log line per event: full JSON payload
+  inline, a truncated summary with a way to expand, or per-content-type
+  formatting (e.g. `tool_call` shows `tool_name` + args, `thinking` shows the
+  first N characters)?
+- **OQ-LOGS-03** — Live-tail transport: the session's existing SSE event
+  stream (consistent with how `context` seeds+subscribes today) versus a
+  poll against `Recorder.Load()` (simpler, matches `context-visualizer`'s 2 s
+  poll, but doesn't reuse the live bus)?
+- **OQ-LOGS-04** — Should the vim-style search/nav keys (`/`, `?`, `n`, `N`,
+  `g`, `G`, `ctrl-d`/`ctrl-u`) be verified against the project's zellij
+  keymap audit (`docs/reference/zellij/options.md`)? That audit only checked
+  AgentX's existing bindings (`Alt+f`, `Ctrl+o`) for collisions — low risk
+  (none are zellij default-mode shortcuts) but unconfirmed for a new set of
+  bindings.
+- **OQ-LOGS-05** — Scope of "eventual customization" for v1 versus later:
+  candidates are content-type filtering/toggling (reusing the
+  `DefaultEnabled`-adjacent on/off vocabulary from `PD-CTX`), per-class color
+  keyed to `PD-CTXVIZ`'s emoji legend, and jump-to-correlation/task/node-id.
+  None of these block a v1 ship; flagged so `internal/surfaces/logs` is
+  structured (e.g. one `state.Event` → one renderable row, not a
+  pre-flattened string) to make adding them later cheap rather than a rewrite.
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+Use-case: Full-tab placement (PD-LOGS-AF-001)
+
+- GIVEN the user launches `ax`
+- WHEN the zellij session opens
+- THEN a dedicated "logs" tab exists, sized to the full terminal, alongside `agentX`/`editor`/`terminal`
+
+Use-case: Live streaming (PD-LOGS-AF-002)
+
+- GIVEN the logs tab is open and scrolled to the bottom of the stream
+- WHEN a new session event is recorded (e.g. a tool call)
+- THEN the new line appears without the user taking any action, same as `tail -f`
+
+Use-case: Search and highlight (PD-LOGS-AF-003 / PD-LOGS-AF-005)
+
+- GIVEN a logs buffer containing multiple `tool_result` lines
+- WHEN the user types `/tool_result` and presses Enter
+- THEN the view jumps to the next match and every match in the buffer is visually highlighted
+
+Use-case: Line wrap (PD-LOGS-AF-006)
+
+- GIVEN a line longer than the pane's width (e.g. a large `tool_result` payload)
+- WHEN it renders
+- THEN it wraps onto additional visual lines rather than being cut off or requiring horizontal scroll
+
+Use-case: Vim-style jump (PD-LOGS-AF-007)
+
+- GIVEN the user is mid-buffer
+- WHEN they press `g` twice (`gg`) or `G`
+- THEN the view jumps to the first or last line of the buffer respectively
+
+Use-case: Read-only (PD-LOGS-AF-008)
+
+- GIVEN the logs surface
+- WHEN the user presses `q` or `Ctrl-C`
+- THEN the surface process stops cleanly (same contract as `PD-CTXVIZ-AF-007`) — no shell, editor, or write path is ever reachable, because none is embedded
 
 ---
 

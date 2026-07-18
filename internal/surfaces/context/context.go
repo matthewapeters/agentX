@@ -166,6 +166,10 @@ func (m *Model) pinPlanNode(pin output.PlanNodePin) tea.Cmd {
 	return nil
 }
 
+// CapturesKeys reports whether the surface is capturing free-form text input.
+// The context surface has no text-entry mode, so this is always false (SS-8).
+func (m *Model) CapturesKeys() bool { return false }
+
 // View renders the output body above a processing-state line.
 func (m *Model) View() string {
 	return m.out.View() + "\n" + m.statusLine()

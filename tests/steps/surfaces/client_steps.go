@@ -13,19 +13,21 @@ import (
 
 // fakeSurface is a SurfaceModel that records the host's calls.
 type fakeSurface struct {
-	applied int
-	width   int
-	height  int
-	keys    []string
+	applied   int
+	width     int
+	height    int
+	keys      []string
+	capturing bool
 }
 
-func (f *fakeSurface) Apply(state.Event)       { f.applied++ }
-func (f *fakeSurface) SetSize(w, h int)        { f.width = w; f.height = h }
+func (f *fakeSurface) Apply(state.Event) { f.applied++ }
+func (f *fakeSurface) SetSize(w, h int)  { f.width = w; f.height = h }
 func (f *fakeSurface) Key(msg tea.KeyPressMsg) tea.Cmd {
 	f.keys = append(f.keys, msg.String())
 	return nil
 }
-func (f *fakeSurface) View() string            { return "" }
+func (f *fakeSurface) View() string       { return "" }
+func (f *fakeSurface) CapturesKeys() bool { return f.capturing }
 
 type clientWorld struct {
 	fake           *fakeSurface
@@ -48,8 +50,11 @@ func registerClientSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the surface has applied (\d+) events$`, w.applied)
 	sc.Step(`^the surface size is (\d+) by (\d+)$`, w.surfaceSize)
 	sc.Step(`^the surface shutdown was requested$`, w.shutdownRequested)
+	sc.Step(`^the surface shutdown was not requested$`, w.shutdownNotRequested)
 	sc.Step(`^the host signals quit$`, w.signalsQuit)
+	sc.Step(`^the host does not signal quit$`, w.doesNotSignalQuit)
 	sc.Step(`^the surface received key "([^"]*)"$`, w.receivedKey)
+	sc.Step(`^the surface is capturing keys$`, w.capturingKeys)
 }
 
 func makeClientEvent(ordinal uint64) state.Event {
@@ -112,6 +117,10 @@ func (w *clientWorld) windowSize(width, height int) error {
 }
 
 func (w *clientWorld) keyPress(key string) error {
+	if key == "ctrl+c" {
+		w.update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+		return nil
+	}
 	w.update(tea.KeyPressMsg{Code: rune(key[0])})
 	return nil
 }
@@ -137,6 +146,13 @@ func (w *clientWorld) shutdownRequested() error {
 	return nil
 }
 
+func (w *clientWorld) shutdownNotRequested() error {
+	if w.shutdownCalled {
+		return fmt.Errorf("surface shutdown was requested, want not requested")
+	}
+	return nil
+}
+
 func (w *clientWorld) signalsQuit() error {
 	if w.lastCmd == nil {
 		return fmt.Errorf("host produced no command")
@@ -144,6 +160,24 @@ func (w *clientWorld) signalsQuit() error {
 	if _, ok := w.lastCmd().(tea.QuitMsg); !ok {
 		return fmt.Errorf("host did not signal quit")
 	}
+	return nil
+}
+
+// doesNotSignalQuit asserts the key was forwarded to the surface instead of
+// being treated as quit: the host's only command after a forwarded key is
+// whatever fakeSurface.Key returns (nil here), never a tea.QuitMsg.
+func (w *clientWorld) doesNotSignalQuit() error {
+	if w.lastCmd == nil {
+		return nil
+	}
+	if _, ok := w.lastCmd().(tea.QuitMsg); ok {
+		return fmt.Errorf("host signaled quit, want the key forwarded to the surface")
+	}
+	return nil
+}
+
+func (w *clientWorld) capturingKeys() error {
+	w.fake.capturing = true
 	return nil
 }
 
