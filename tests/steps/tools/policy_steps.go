@@ -33,7 +33,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		w.dir = ""
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a tool policy$`, w.newPolicy)

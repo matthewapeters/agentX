@@ -36,7 +36,7 @@ func registerPersistenceSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = persistenceWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a session with a recorder$`, w.sessionWithRecorder)

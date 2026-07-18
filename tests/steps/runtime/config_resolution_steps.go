@@ -44,7 +44,7 @@ func registerConfigSteps(sc *godog.ScenarioContext) {
 		if w.dir != "" {
 			_ = os.RemoveAll(w.dir)
 		}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a deployment config with ollama_model "([^"]*)"$`, w.aDeploymentConfigWithModel)

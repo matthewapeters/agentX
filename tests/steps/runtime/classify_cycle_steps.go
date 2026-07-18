@@ -29,7 +29,7 @@ func registerClassifyCycleSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = classifyCycleWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a started orchestrator that classifies as "([^"]*)" and replies "([^"]*)"$`, w.started)

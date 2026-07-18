@@ -48,7 +48,7 @@ func registerApprovalSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = approvalWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a started orchestrator with a tool policy$`, w.started)

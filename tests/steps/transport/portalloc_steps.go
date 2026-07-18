@@ -43,7 +43,7 @@ func registerPortSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = portWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a discovered free port$`, w.discoverPort)

@@ -27,7 +27,7 @@ func registerLifecycleSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = lifecycleWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^orchestrator settings with a temp session root$`, w.settings)

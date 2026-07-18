@@ -32,7 +32,7 @@ func registerPromptCancelSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = promptCancelWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a started orchestrator with a stub model that blocks until canceled$`, w.startedBlocking)

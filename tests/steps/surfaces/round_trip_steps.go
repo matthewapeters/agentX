@@ -35,7 +35,7 @@ func registerRoundTripSteps(sc *godog.ScenarioContext) {
 			w.procCancel()
 		}
 		*w = roundTripWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a chat surface wired to a stub runtime$`, w.wiredSurface)

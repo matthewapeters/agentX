@@ -47,7 +47,7 @@ func registerTaskClassifierSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = taskClassifierWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^the task executor reports "([^"]*)"$`, w.executorReports)

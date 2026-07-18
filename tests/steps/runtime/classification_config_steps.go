@@ -25,7 +25,7 @@ func registerClassificationConfigSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = classifyConfigWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a freshly resolved configuration$`, w.freshConfig)

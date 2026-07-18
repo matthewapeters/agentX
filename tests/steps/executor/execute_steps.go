@@ -95,7 +95,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 		if w.fsRoot != "" {
 			_ = os.RemoveAll(w.fsRoot)
 		}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a proposer that proposes tool "([^"]*)"$`, w.proposesTool)

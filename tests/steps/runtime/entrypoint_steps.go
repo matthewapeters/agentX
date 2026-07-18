@@ -33,7 +33,7 @@ func registerEntrypointSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = entrypointWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^the arguments "([^"]*)" are parsed$`, w.parseArgs)

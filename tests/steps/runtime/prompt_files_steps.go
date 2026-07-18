@@ -33,7 +33,7 @@ func registerPromptFilesSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = promptFilesWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a started orchestrator with instructions "([^"]*)" and a capturing model$`, w.startInstructions)

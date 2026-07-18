@@ -21,7 +21,7 @@ func registerClassificationSteps(sc *godog.ScenarioContext) {
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
 		*w = classifyWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a classifier with retries (\d+)$`, w.classifierWithRetries)

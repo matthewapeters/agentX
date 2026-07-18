@@ -27,7 +27,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
 		*w = corpusWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a corpus with a "([^"]*)" fan-group of width (\d+) quorum (\d+)$`, w.corpusWithGroup)

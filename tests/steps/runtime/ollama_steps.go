@@ -32,7 +32,7 @@ func registerOllamaSteps(sc *godog.ScenarioContext) {
 			w.server.Close()
 		}
 		*w = ollamaWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a stub Ollama server that streams "([^"]*)" then "([^"]*)"$`, w.serverStreams)

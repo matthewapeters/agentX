@@ -54,7 +54,7 @@ func registerIdentitySteps(sc *godog.ScenarioContext) {
 		if w.dir != "" {
 			_ = os.RemoveAll(w.dir)
 		}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^an empty session root$`, w.emptyRoot)

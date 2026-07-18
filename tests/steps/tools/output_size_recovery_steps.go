@@ -66,7 +66,7 @@ func registerOutputSizeSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = outputSizeWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a started orchestrator with a small output cap and a large absolute cap$`, func() error { return w.started(5000) })

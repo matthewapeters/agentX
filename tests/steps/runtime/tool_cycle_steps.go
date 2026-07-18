@@ -37,7 +37,7 @@ func registerToolCycleSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = toolCycleWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a started orchestrator that runs the "([^"]*)" tool and replies "([^"]*)"$`, w.startRunsTool)

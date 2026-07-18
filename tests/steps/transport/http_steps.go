@@ -289,7 +289,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 			w.presenceCancel()
 		}
 		*w = transportWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a running transport server$`, w.serverNamed("calm-otter"))

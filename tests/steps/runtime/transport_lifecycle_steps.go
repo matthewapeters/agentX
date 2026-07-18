@@ -54,7 +54,7 @@ func registerTransportLifecycleSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = tlWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a running orchestrator serving the transport$`, w.serving)

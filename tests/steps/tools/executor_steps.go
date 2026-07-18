@@ -35,7 +35,7 @@ func registerExecSteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = execWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	// Artifact store (@unit)

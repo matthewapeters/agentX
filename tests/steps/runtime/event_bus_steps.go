@@ -27,7 +27,7 @@ func registerStateSteps(sc *godog.ScenarioContext) {
 		w.subs = nil
 		w.bus = nil
 		w.proc = nil
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a running event bus$`, w.runningBus)

@@ -22,7 +22,7 @@ func registerDigestSteps(sc *godog.ScenarioContext) {
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
 		*w = digestWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a user turn "([^"]*)"$`, w.userTurn)

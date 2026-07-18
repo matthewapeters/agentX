@@ -37,7 +37,7 @@ func registerInvokerSteps(sc *godog.ScenarioContext) {
 			w.server.Close()
 		}
 		*w = invokerWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^an invoker whose model returns '([^']*)'$`, w.invokerReturns)

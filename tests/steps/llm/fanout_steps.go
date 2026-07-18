@@ -94,7 +94,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 			w.envRestore()
 		}
 		*w = fanoutWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	// --- pool construction ---

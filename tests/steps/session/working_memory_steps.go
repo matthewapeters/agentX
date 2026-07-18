@@ -41,7 +41,7 @@ func registerWorkingMemorySteps(sc *godog.ScenarioContext) {
 			_ = os.RemoveAll(w.dir)
 		}
 		w.dir = ""
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a fresh session with no working memory file$`, w.freshSession)

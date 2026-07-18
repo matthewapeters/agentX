@@ -61,7 +61,7 @@ func registerCascadeSteps(sc *godog.ScenarioContext) {
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
 		*w = cascadeWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a "triage" cascade group$`, w.triageGroup)
