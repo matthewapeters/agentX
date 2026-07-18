@@ -132,13 +132,27 @@ func (s *Store) usedNames() (map[string]bool, error) {
 	return used, nil
 }
 
+// writeJSON writes v to path via a temp-file-then-rename (same pattern as
+// Plans.Write) rather than a direct os.WriteFile: on the same filesystem,
+// os.Rename is atomic, so a concurrent reader (Recorder.Load listing the
+// events directory while Recorder.Write persists the next event, or
+// LoadWorkingMemory racing SaveWorkingMemory) always sees either the old file
+// or the fully-written new one, never a truncated/partial one. A direct
+// os.WriteFile makes the file visible (0 bytes, then partially written) the
+// moment it's created, which readJSON's json.Unmarshal reports as "unexpected
+// end of JSON input" if it wins that race — observed intermittently in the
+// wm_pin integration scenarios before this fix.
 func writeJSON(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", path, err)
 	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("replace %s: %w", path, err)
 	}
 	return nil
 }
