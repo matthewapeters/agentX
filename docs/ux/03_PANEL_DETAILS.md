@@ -704,6 +704,9 @@ needed before implementation.
 > no real precedent to re-author here. This section is a fresh spec, written
 > in response to a request to let the user review backend functionality by
 > browsing the current session's logs.
+>
+> **Implementation scoped**: `docs/build-plan/06_system_surfaces_backlog.md`
+> Phase G (SS-8 host input-capture mode, SS-9 the logs surface itself).
 
 ### Purpose
 
@@ -769,12 +772,24 @@ PD-LOGS-AF-008 is structural rather than something to enforce.
   `config/seed/agentx.kdl`. Days, not weeks. Kept here as the cheap fallback
   if B's LOE proves too high in practice.
 
-**B — Native Bubbletea surface (`internal/surfaces/logs`), matching `context` / `context-visualizer` / `working-memory`. Chosen for v1.**
-A proper registered surface: attaches over HTTP/SSE like every other system
-surface, uses `bubbles/viewport` for scroll and line-wrap, and a hand-built
-`/pattern` search overlay (Go `regexp`, lipgloss-highlighted matches), plus
-`n`/`N`, `gg`/`G`, `ctrl-d`/`ctrl-u` paging. Live tail is natural since the
-surface already receives the session's SSE stream.
+**B — Native Bubbletea surface (`internal/surfaces/logs`), matching `context`. Chosen for v1.**
+A proper registered surface, and specifically a `client.SurfaceModel`
+(`internal/surfaces/client`) — the same shared host framework `context`
+already uses (SS-2/SS-3 in `docs/build-plan/06_system_surfaces_backlog.md`):
+`Apply(state.Event)` folds each event into an internal line buffer,
+`scrollutil` (`internal/surfaces/scrollutil` — already shared by `output` and
+`workmemory`) supplies wrap/scrollbar math, and a hand-built `/pattern` search
+overlay (Go `regexp`, highlighted matches) adds `n`/`N`, `gg`/`G`,
+`ctrl-d`/`ctrl-u` paging on top. Live tail is natural since the host already
+seeds from disk and resumes the session's live SSE stream by cursor — no new
+transport work.
+
+One real gap surfaced by scoping this: `client.Host` currently treats `"q"`
+as an unconditional global quit before a key ever reaches the surface
+(`client.go:155-161`), which would swallow `"q"` typed inside a search
+pattern. Closing it is a small, isolated shared-framework change (see the
+backlog's SS-8) — not a reason to reconsider option B, but worth flagging as
+its own task rather than discovering it mid-implementation.
 
 - Pro: consistent with the client-server surface model (this repo's core
   architecture — see `CLAUDE.md`), works without zellij or any multiplexer,
