@@ -269,6 +269,10 @@ func (o *Orchestrator) Start() error {
 			return o.model.Chat(ctx, o.settings.OllamaModel, msgs, func(string) {}, nil)
 		}
 		o.classifier = classify.New(o.settings.ClassificationPrompt, o.settings.ClassificationRetries, chat)
+		// Ground every classification in cwd/project facts so a fact-question about "this
+		// project" can be recognized as such instead of misread as general knowledge
+		// (quiet-frustrating-maple).
+		o.classifier.Facts = o.workingMemoryFacts
 	}
 	// Presence-gated experimental task classifier: built only when a prompt corpus
 	// is configured (or one was injected for tests).

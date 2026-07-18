@@ -65,7 +65,8 @@ Classify by the verb and scope:
 - single_tool — an imperative for ONE concrete operation: read or edit a named file, run
   a specific command, show one specific thing.
 - respond_directly — NOT an action: greetings, chit-chat, or a question answerable from
-  general knowledge without inspecting the project or environment.
+  general knowledge without inspecting the project or environment.  This is not a fall-back
+  when confidence is low.
 
 A request commands an action even when it omits names or details — classify it by its
 verb and scope, never by whether you happen to know the specifics.
@@ -73,7 +74,19 @@ verb and scope, never by whether you happen to know the specifics.
 A question about whether or how something was already done — "did you try X?", "have you
 tried Y?", "why not Z?", "have you considered W?" — is an INDIRECT request to do X/Y/Z/W
 now. Classify it exactly as you would classify "try X" as an imperative; the interrogative
-grammar does not make it conversational. Output only the JSON.`
+grammar does not make it conversational.
+
+A question asking for a FACT about this project/repo/codebase/session/environment —
+"what is this written in", "what does this project do", "how does X work here", "where is
+Y defined" — is not general knowledge, even though it is phrased as a question:
+general knowledge is something true independent of this specific instance (e.g. "what is
+Go", "how do for loops work"). If WORKING MEMORY names this session's project, treat any
+question that names that project, or says "this project/repo/codebase", the same way:
+route it by scope exactly as you would the equivalent imperative — invoke_planner for a
+broad/open-ended ask ("what does this project do" ~ "review this project"), single_tool
+for one narrow lookup ("what does this one file do" ~ "read this file"). Only
+respond_directly when the question truly does not depend on this project or environment
+at all. Output only the JSON.`
 
 // ChatFunc runs a non-streaming chat completion for the assembled messages and
 // returns the full response text.
@@ -84,6 +97,14 @@ type Classifier struct {
 	assembler *prompting.Assembler
 	chat      ChatFunc
 	retries   int
+	// Facts supplies grounding working-memory facts (cwd/project/repo_root) folded into
+	// every classify call as their own system message — context curation (CLAUDE.md):
+	// without this, the classifier has no way to recognize "the agentX project" as *this*
+	// session's project and can misread a fact-question about it as general knowledge,
+	// skipping investigation entirely (quiet-frustrating-maple). Mirrors
+	// tools.Proposer.Facts. nil ⇒ no grounding, matching the prior ungrounded behavior.
+	// Set post-construction since the source is session-stable, not per-call.
+	Facts func() []prompting.Fact
 }
 
 // New returns a Classifier using prompt as the classification system prompt
@@ -102,7 +123,7 @@ func New(prompt string, retries int, chat ChatFunc) *Classifier {
 // unparseable/invalid verdict up to the configured budget, then falls back to
 // respond_directly so the cycle always resolves.
 func (c *Classifier) Classify(ctx context.Context, userText string) Verdict {
-	messages := c.assembler.Assemble(userText)
+	messages := insertFacts(c.assembler.Assemble(userText), c.Facts)
 	for attempt := 0; attempt <= c.retries; attempt++ {
 		raw, err := c.chat(ctx, messages)
 		if err != nil {
@@ -116,6 +137,30 @@ func (c *Classifier) Classify(ctx context.Context, userText string) Verdict {
 		}
 	}
 	return Verdict{Route: RespondDirectly, Rationale: "classification fallback"}
+}
+
+// insertFacts folds a working-memory facts message (if getFacts is non-nil and produces
+// any) between the assembler's system message and the user message — same shape as
+// tools.insertFacts. Assemble always returns at most one leading system message, so the
+// insertion point is simple: right after it (or at the front, if there's no system
+// message at all).
+func insertFacts(msgs []prompting.Message, getFacts func() []prompting.Fact) []prompting.Message {
+	if getFacts == nil {
+		return msgs
+	}
+	factMsg, ok := prompting.WorkingMemoryMessage(getFacts())
+	if !ok {
+		return msgs
+	}
+	at := 0
+	if len(msgs) > 0 && msgs[0].Role == "system" {
+		at = 1
+	}
+	out := make([]prompting.Message, 0, len(msgs)+1)
+	out = append(out, msgs[:at]...)
+	out = append(out, factMsg)
+	out = append(out, msgs[at:]...)
+	return out
 }
 
 // Parse extracts the first balanced JSON object from raw (tolerating surrounding

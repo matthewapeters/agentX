@@ -9,6 +9,31 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The request-type classifier had no grounding in the session's project/cwd, so a
+  direct fact-question about the local project ("what is the agentX project written in,
+  and what does it do?") could be misread as general knowledge and routed
+  `respond_directly`, skipping investigation entirely** (session `quiet-frustrating-maple`:
+  the first turn classified as `respond_directly` — "general knowledge question, no
+  action required" — and the model then guessed a Rust/`Cargo.toml` layout for what is
+  actually a Go project; a rephrased second turn that spelled out `repo_root`/`cwd`
+  explicitly in the prompt text classified correctly as `invoke_planner`). Two
+  compounding issues, mirroring `tools.Proposer`'s earlier `clever-raven-3` fix: `classify.
+  Classifier.Classify` sent only the system prompt plus the raw user text — no working
+  memory, no history, ever — so the classifier had no way to recognize "agentX" as *this*
+  session's project rather than an unknown external name; and `agentx-classification.md`'s
+  routing rules were framed entirely around imperative mood ("an imperative to DO work"),
+  with the only interrogative carve-out covering "did you try X?"-style questions about
+  prior actions, not fact-seeking questions about the local project. Fixed both: added a
+  `Classifier.Facts func() []prompting.Fact` seam (wired to `o.workingMemoryFacts` in
+  `orchestrator.go`, same as the proposer) that folds a working-memory system message into
+  every classify call via a new `insertFacts` helper; and added an explicit rule to the
+  classification prompt (`config/seed/agentx-classification.md`, `classify.DefaultPrompt`)
+  routing fact-questions about "this project/repo/codebase" by scope, the same as the
+  equivalent imperative would be routed, rather than defaulting to `respond_directly`.
+  Regression coverage: `internal/classify/classify_test.go`
+  (`TestClassifyGroundsInFacts`, `TestClassifyUngroundedWithoutFacts`,
+  `TestInsertFactsNoLeadingSystem`).
+
 - **The decomposition planner sent everything — durable rules, working memory, the
   goal — as one flattened `role: "user"` message**, unlike the respond path's proper
   `system`/`user` split (`prompting.Assembler.Assemble`) (TOOL-8; session
