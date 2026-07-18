@@ -29,11 +29,16 @@ func registerContextToggleSteps(sc *godog.ScenarioContext) {
 	w := &contextToggleWorld{}
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
+		if w.orc != nil {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_ = w.orc.Shutdown(shutCtx)
+			cancel()
+		}
 		if w.dir != "" {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = contextToggleWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^an orchestrator that captures context and answers "([^"]*)"$`, w.start)

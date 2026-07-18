@@ -51,11 +51,24 @@ func registerWMPinSteps(sc *godog.ScenarioContext) {
 	w := &wmPinWorld{}
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
+		// Every other runtime-domain step file shuts its orchestrator down here
+		// (approval_steps.go, tool_cycle_steps.go, etc.) — this one didn't, leaking
+		// each scenario's recorder goroutine and bus subscription (Orchestrator.Start,
+		// orchestrator.go:292) for the rest of the test binary's life. Harmless in
+		// isolation, but the accumulation across ~100+ scenarios in a full
+		// @integration run was making later, unrelated scenarios intermittently slow
+		// enough to trip go test's suite-wide timeout — this is what made
+		// "Toggling a pin back to static stops refreshing it" flaky.
+		if w.orc != nil {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_ = w.orc.Shutdown(shutCtx)
+			cancel()
+		}
 		if w.dir != "" {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = wmPinWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^an orchestrator that runs the "([^"]*)" counting tool and answers "([^"]*)"$`, w.start)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/cucumber/godog"
 
@@ -26,11 +27,16 @@ func registerContextBreakdownSteps(sc *godog.ScenarioContext) {
 	w := &contextBreakdownWorld{}
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
+		if w.orc != nil {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_ = w.orc.Shutdown(shutCtx)
+			cancel()
+		}
 		if w.dir != "" {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = contextBreakdownWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^an orchestrator for context breakdown with instructions "([^"]*)" answering "([^"]*)" with context window (\d+)$`, w.start)

@@ -33,11 +33,16 @@ func registerToolContextEnableSteps(sc *godog.ScenarioContext) {
 	w := &toolContextEnableWorld{}
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
+		if w.orc != nil {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_ = w.orc.Shutdown(shutCtx)
+			cancel()
+		}
 		if w.dir != "" {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = toolContextEnableWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^an orchestrator that runs the "([^"]*)" tool, captures context, and answers "([^"]*)"$`, w.start)

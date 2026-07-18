@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/cucumber/godog"
 
@@ -22,11 +23,16 @@ func registerModelReadinessSteps(sc *godog.ScenarioContext) {
 	w := &readinessWorld{}
 
 	sc.After(func(ctx context.Context, _ *godog.Scenario, err error) (context.Context, error) {
+		if w.orc != nil {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_ = w.orc.Shutdown(shutCtx)
+			cancel()
+		}
 		if w.dir != "" {
 			_ = os.RemoveAll(w.dir)
 		}
 		*w = readinessWorld{}
-		return ctx, err
+		return ctx, nil
 	})
 
 	sc.Step(`^a started orchestrator with model "([^"]*)" that is ready$`, w.startedReady)
