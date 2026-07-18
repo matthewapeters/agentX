@@ -737,7 +737,7 @@ for two ways to satisfy them.
 
 ### Implementation approaches considered
 
-**A — CLI formatter piped into `less`, hosted as a plain zellij pane. Recommended for v1.**
+**A — CLI formatter piped into `less`, hosted as a plain zellij pane. Considered, not chosen for v1.**
 Add an `agentx logs [--session <id>] [--follow]` subcommand that calls
 `Recorder.Load()`, formats each `state.Event` as one line (e.g.
 `epoch  content_type  [tool_name]  summary`), and either prints once or, with
@@ -753,16 +753,23 @@ the user presses a movement key. `less` has no write path at all, so
 PD-LOGS-AF-008 is structural rather than something to enforce.
 
 - Does **not** require a `registry.go`/`internal/surfaces` entry — it's a CLI
-  subcommand plus a zellij pane, not an HTTP/SSE-attached surface. Flagged as
-  an open question below.
+  subcommand plus a zellij pane, not an HTTP/SSE-attached surface.
 - Caveat: `less` search regex is POSIX ERE-ish (via the system `regcomp`),
   close to but not byte-identical to `sed`'s BRE — fine for pattern search,
   just don't expect every `sed`-specific construct to carry over.
+- **Rejected for v1**: `less`/zellij impose no governance over the pane once
+  it's open. Pressing `q` (or any of `less`'s other exit paths) doesn't close
+  a governed surface — it drops the user into a bare interactive shell,
+  sitting in a tab labeled "logs," with no read-only boundary at all. That's
+  a materially worse failure mode than anything option C's vim-escape-hatch
+  concern raised: it's not a hard-to-lock-down editor, it's an *unrestricted*
+  shell one keystroke away, indistinguishable from the rest of the ax layout.
 - LOE: **Low** — one new CLI subcommand (reuses `Recorder.Load()` plus a small
   formatter and a directory-watch loop for `--follow`), one new tab in
-  `config/seed/agentx.kdl`. Days, not weeks.
+  `config/seed/agentx.kdl`. Days, not weeks. Kept here as the cheap fallback
+  if B's LOE proves too high in practice.
 
-**B — Native Bubbletea surface (`internal/surfaces/logs`), matching `context` / `context-visualizer` / `working-memory`.**
+**B — Native Bubbletea surface (`internal/surfaces/logs`), matching `context` / `context-visualizer` / `working-memory`. Chosen for v1.**
 A proper registered surface: attaches over HTTP/SSE like every other system
 surface, uses `bubbles/viewport` for scroll and line-wrap, and a hand-built
 `/pattern` search overlay (Go `regexp`, lipgloss-highlighted matches), plus
@@ -774,6 +781,18 @@ surface already receives the session's SSE stream.
   and can render events with structural understanding (e.g. collapsing a
   `tool_call`/`tool_result` pair into one block) instead of one flat text
   line per event.
+- Pro (deciding factor): the surface governs its own exit path. `q`/`Ctrl-C`
+  stops the surface the same way it stops every other AgentX surface
+  (`PD-CTXVIZ`'s "Quitting (`Ctrl-C`/`q`) marks the surface stopped" —
+  `03_PANEL_DETAILS.md:598` — is the precedent to match). There is no key
+  sequence that lands the user in a shell, because no shell is embedded — the
+  process either renders the log view or exits cleanly. This is a strictly
+  stronger read-only guarantee than option A's, not just a different one.
+- Pro: room to grow deliberately — content-type filtering, per-class color
+  (reusing the emoji/color vocabulary `PD-CTXVIZ` already established),
+  collapsing tool call/result pairs, jumping straight to a specific
+  correlation/task/node id — none of which `less` piping could ever offer,
+  since it has no knowledge of `state.Event` structure.
 - Con: reimplements search/highlight/navigation that `less` already provides,
   and Go's `regexp` (RE2) doesn't support backreferences, so "sed-style"
   search is *more* approximate here than in option A, not less.
@@ -800,31 +819,47 @@ it's disproportionate to pursue:
 
 ### Recommendation
 
-Ship **A** first. It satisfies every required affordance with the least new
-code and the strongest read-only guarantee, by delegating to a tool already
-built for exactly this job. Revisit **B** only if the surface needs to work
-without zellij, or needs structure-aware rendering that a flat `less` stream
-can't express.
+**Decision: ship B.** Option A's LOE advantage doesn't outweigh the gap it
+leaves in PD-LOGS-AF-008: it can't stop `q` (or any other `less` exit key)
+from surfacing a raw, unrestricted shell in a pane the user has every reason
+to treat as inert output. A surface-owned pager closes that gap by
+construction — there's no shell to fall through to — and buys room for
+structure-aware rendering and filtering that piping flat text through `less`
+never could. Option A stays documented above as the cheap fallback if B's
+LOE turns out to be materially higher than estimated. Option C remains
+shelved per the reasoning above.
+
+`logs` becomes an eighth entry in `internal/surfaces/registry.go`'s
+`knownKinds`, gets an `internal/surfaces/logs` package following the
+`contextviz` package's shape (HTTP/SSE attach, `agentx surface launch logs`),
+and — same as `context`/`context-visualizer`/`working-memory` today — the
+user places it in their own zellij tab via `config/seed/agentx.kdl` (a
+dedicated fourth tab, per PD-LOGS-AF-001) rather than the surface owning tab
+placement itself.
 
 ### Open questions
 
-- **OQ-LOGS-01** — Does a CLI-command-in-a-zellij-tab count as a "surface"
-  for this repo's purposes, or should even v1 register through
-  `internal/surfaces` for architectural consistency, at the cost of the LOE
-  savings above?
 - **OQ-LOGS-02** — Verbosity of one log line per event: full JSON payload
   inline, a truncated summary with a way to expand, or per-content-type
   formatting (e.g. `tool_call` shows `tool_name` + args, `thinking` shows the
   first N characters)?
-- **OQ-LOGS-03** — `--follow` implementation: poll the events directory
-  (simple, matches this codebase's other poll-based surfaces like
-  `context-visualizer`'s 2 s poll) or `fsnotify` (lower latency, one more
-  dependency)?
-- **OQ-LOGS-04** — Should the zellij `g`/`G`/`n`/`N`/`/` keys used by `less`
-  be verified empirically against the project's zellij keymap audit
-  (`docs/reference/zellij/options.md`)? That audit only checked AgentX's own
-  bindings (`Alt+f`, `Ctrl+o`) for collisions, not `less`'s vi-style keys —
-  low risk (none are zellij default-mode shortcuts) but unconfirmed.
+- **OQ-LOGS-03** — Live-tail transport: the session's existing SSE event
+  stream (consistent with how `context` seeds+subscribes today) versus a
+  poll against `Recorder.Load()` (simpler, matches `context-visualizer`'s 2 s
+  poll, but doesn't reuse the live bus)?
+- **OQ-LOGS-04** — Should the vim-style search/nav keys (`/`, `?`, `n`, `N`,
+  `g`, `G`, `ctrl-d`/`ctrl-u`) be verified against the project's zellij
+  keymap audit (`docs/reference/zellij/options.md`)? That audit only checked
+  AgentX's existing bindings (`Alt+f`, `Ctrl+o`) for collisions — low risk
+  (none are zellij default-mode shortcuts) but unconfirmed for a new set of
+  bindings.
+- **OQ-LOGS-05** — Scope of "eventual customization" for v1 versus later:
+  candidates are content-type filtering/toggling (reusing the
+  `DefaultEnabled`-adjacent on/off vocabulary from `PD-CTX`), per-class color
+  keyed to `PD-CTXVIZ`'s emoji legend, and jump-to-correlation/task/node-id.
+  None of these block a v1 ship; flagged so `internal/surfaces/logs` is
+  structured (e.g. one `state.Event` → one renderable row, not a
+  pre-flattened string) to make adding them later cheap rather than a rewrite.
 
 ### Behavior contracts (GIVEN/WHEN/THEN)
 
@@ -860,9 +895,9 @@ Use-case: Vim-style jump (PD-LOGS-AF-007)
 
 Use-case: Read-only (PD-LOGS-AF-008)
 
-- GIVEN the logs surface, however it's implemented
-- WHEN the user attempts any write/save action available to the underlying tool
-- THEN no event file is modified, truncated, or reordered — for option A this holds because `less` has no write path; a future option-C fallback would need to prove the same under restricted mode
+- GIVEN the logs surface
+- WHEN the user presses `q` or `Ctrl-C`
+- THEN the surface process stops cleanly (same contract as `PD-CTXVIZ-AF-007`) — no shell, editor, or write path is ever reachable, because none is embedded
 
 ---
 
