@@ -393,6 +393,9 @@ func Default() Config {
 				PortStart: defaultTransportPortStart,
 				PortEnd:   defaultTransportPortEnd,
 			},
+			Wavefront: Wavefront{
+				Enabled: boolPtr(false),
+			},
 		},
 	}
 }

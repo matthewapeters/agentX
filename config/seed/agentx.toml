@@ -34,3 +34,11 @@ read_only        = true     # only read-risk tools run; writes/network need appr
 timeout_seconds  = 30       # per-command execution timeout
 output_max_bytes = 65536    # output cap before truncation (full output → artifact)
 absolute_max_bytes = 2097152  # hard ceiling on the oversized-output recovery gate's "capture more"
+
+[agentx.wavefront]
+# ADR 0012: a second, experimental decomposition engine for invoke_planner plans —
+# round-free, grounds every tool-call argument in already-verified facts before
+# proposing it (closes a hallucination gap the original engine doesn't guard
+# against). Off by default: the original engine (ADR 0008) keeps running
+# invoke_planner plans until you opt in here.
+enabled = false
