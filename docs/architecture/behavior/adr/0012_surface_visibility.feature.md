@@ -6,7 +6,8 @@ Surface Visibility — Chat Output, Context, Working Memory".
 Built exactly as scoped below. Tests:
 `internal/runtime/wavefront/scheduler_test.go` (`TestObserverSeesDecomposeAndConverge`),
 `internal/surfaces/output/plan_test.go` (`TestWavefrontStepValueRenders`,
-`TestWavefrontConvergenceAnnotates`, `TestSelectedPlanNodeNavigationAndPin`),
+`TestWavefrontConvergenceAnnotates`, `TestSelectedPlanNodeNavigationAndPin`,
+`TestWavefrontSourceTag`),
 `internal/runtime/plan_tree_test.go` (extended `completed` call),
 `internal/runtime/scheduler/observer_test.go` (extended `recObserver`),
 `tests/features/transport/working_memory_api.feature` (three new scenarios: the
@@ -190,3 +191,26 @@ THEN  pressing "l" is a client-side no-op — it never even reaches the server
   `tests/steps/transport/http_steps.go` — three new scenarios exercising the
   real HTTP round trip: `PinPlanNode` success, refusal on an unresolved node,
   and refusal to ever set a plan-node pin live.
+
+## Addendum — the "🌊" provenance tag (ADR 0012, same-day addendum)
+
+`task.Record.Provenance.Source` already distinguished wavefront-produced nodes
+(`"wavefront"`) from the continuous engine's (`"planner"`, or empty for its own
+root) — it just never reached the wire or the widget.
+
+```
+GIVEN a node whose Provenance.Source is "wavefront"
+WHEN NodeDispatched/NodeDecomposed fires for it, or a task_plan snapshot
+     includes it
+THEN the published payload carries "source": "wavefront"
+  AND the widget's node gains that source
+  AND its title line renders a "🌊 " tag immediately before the status glyph
+
+GIVEN a node whose Provenance.Source is "planner" or empty
+WHEN it renders
+THEN no "🌊" tag appears
+```
+
+Test: `internal/surfaces/output/plan_test.go`'s `TestWavefrontSourceTag` — a
+wavefront root and wavefront child both show the tag; a `"planner"`-sourced
+sibling in the same plan does not.

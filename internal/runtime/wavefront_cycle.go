@@ -30,7 +30,7 @@ func (o *Orchestrator) runWavefrontPhase(ctx context.Context, text, rootID strin
 		"root": root.ID, "goal": root.Goal, "phase": "started",
 		"nodes": []map[string]any{{
 			"task_id": root.ID, "goal": root.Goal, "status": string(root.Status),
-			"deps": root.Deps, "kind": string(root.Kind),
+			"deps": root.Deps, "kind": string(root.Kind), "source": root.Provenance.Source,
 		}},
 	})
 

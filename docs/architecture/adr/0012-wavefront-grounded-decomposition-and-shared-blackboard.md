@@ -1051,3 +1051,23 @@ Trade-offs:
     pass raised: whether the *converged-onto* node should also show "N other
     lanes reference this," not just the converging side. Still deferred to real
     transcripts, not decided here.
+
+### Addendum (2026-07-17, same day): the "🌊" provenance tag
+
+The original design pass's chat widget draft (before the round-synchronized
+design was superseded) proposed a "🌊" glyph as the whole wavefront widget's
+title. That widget never got built — see the amendment above — but the
+underlying signal it was reaching for (which engine produced a given node) was
+real and already free: `task.Record.Provenance.Source` is `"wavefront"` for
+every node wavefront's merge step creates (`internal/runtime/wavefront/merge.go`,
+`wavefront_cycle.go`'s root), `"planner"` for the continuous engine's planner-
+produced children, and empty for the continuous engine's own root — it just
+never reached the wire. `NodeDispatched`/`NodeDecomposed`'s payloads and the
+`task_plan` "started"/"ended" snapshots (`planSummary`, shared by both engines)
+now include `"source"`; the widget's `planNode` gains a matching field and
+`nodeTitle` prepends a `"🌊 "` tag when it reads `"wavefront"`. Deliberately
+per-node rather than reviving a plan-level title marker: it is the signal that
+stays meaningful if the "Future direction" section's interleaved/mixed-
+provenance plans are ever built, at no cost while every plan still selects one
+engine exclusively. Test: `internal/surfaces/output/plan_test.go`'s
+`TestWavefrontSourceTag`.
