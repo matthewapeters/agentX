@@ -178,7 +178,7 @@ func (p *planObserver) NodeDispatched(rec task.Record, depth int) {
 	p.o.publish("TASK_NODE", state.ContentTaskNode, map[string]any{
 		"root": p.root, "task_id": rec.ID, "event": "dispatched",
 		"goal": rec.Goal, "depth": depth, "kind": string(rec.Kind),
-		"source": rec.Provenance.Source,
+		"source": rec.Provenance.Source, "origin": rec.Provenance.Origin,
 	})
 	p.o.planTrees.dispatched(p.root, rec, p.o.store, p.o.id.ID)
 }
@@ -188,7 +188,7 @@ func (p *planObserver) NodeDecomposed(parent task.Record, children []task.Record
 	for _, c := range children {
 		kids = append(kids, map[string]any{
 			"task_id": c.ID, "goal": c.Goal, "deps": c.Deps, "kind": string(c.Kind),
-			"source": c.Provenance.Source,
+			"source": c.Provenance.Source, "origin": c.Provenance.Origin,
 		})
 	}
 	p.o.publish("TASK_NODE", state.ContentTaskNode, map[string]any{
@@ -227,6 +227,29 @@ func (p *planObserver) NodeConverged(parentID string, existing task.Record) {
 	p.o.planTrees.converged(p.root, parentID, existing.ID, p.o.store, p.o.id.ID)
 }
 
+// engineContinuous and engineWavefront name the two decomposition engines
+// selectedEngine can return — used both as the routing predicate's result and,
+// via task.Provenance.Source, as the value stamped onto every node the chosen
+// engine produces (empty string for the continuous engine's own plan root,
+// mirroring the existing asymmetry — see selectedEngine's doc comment).
+const (
+	engineContinuous = "planner"
+	engineWavefront  = "wavefront"
+)
+
+// selectedEngine is runPlanPhase's routing decision, pulled out to its own named,
+// directly testable predicate: a session investigating "does this look like the
+// wavefront problem solver" (brave-lantern, 2026-07-17) had no automated way to
+// confirm the engine actually selected matched Settings.WavefrontEnabled — only
+// downstream artifacts (config file, binary provenance) to reason about it from.
+// See TestSelectedEngineRouting.
+func selectedEngine(wavefrontEnabled bool, classifier wavefront.Classifier) string {
+	if wavefrontEnabled && classifier != nil {
+		return engineWavefront
+	}
+	return engineContinuous
+}
+
 // runPlanPhase drains an imperative through the decomposition scheduler before the model
 // answers: it decomposes the goal into a plan, executes the leaves (real read tools), and
 // returns the plan + findings as context to ground the response. This is the wiring that
@@ -240,7 +263,7 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text, rootID string) (s
 	// ADR 0012: a second, round-free decomposition engine selectable alongside this
 	// one — runWavefrontPhase returns the identical (context, handled, error)
 	// contract, so callers of runPlanPhase never need to know which engine ran.
-	if o.settings.WavefrontEnabled && o.wavefrontClassifier != nil {
+	if selectedEngine(o.settings.WavefrontEnabled, o.wavefrontClassifier) == engineWavefront {
 		return o.runWavefrontPhase(ctx, text, rootID)
 	}
 	o.setProcessing(state.StateWorking, state.PhasePlanning)
@@ -259,7 +282,8 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text, rootID string) (s
 		"root": root.ID, "goal": root.Goal, "phase": "started",
 		"nodes": []map[string]any{{
 			"task_id": root.ID, "goal": root.Goal, "status": string(root.Status),
-			"deps": root.Deps, "kind": string(root.Kind), "source": root.Provenance.Source,
+			"deps": root.Deps, "kind": string(root.Kind),
+			"source": root.Provenance.Source, "origin": root.Provenance.Origin,
 		}},
 	})
 	cap := &capturingExec{
@@ -300,7 +324,7 @@ func planSummary(root task.Record, recs []task.Record, executed int, derr error)
 	for _, n := range recs {
 		nodes = append(nodes, map[string]any{
 			"task_id": n.ID, "goal": n.Goal, "status": string(n.Status), "deps": n.Deps,
-			"kind": string(n.Kind), "source": n.Provenance.Source,
+			"kind": string(n.Kind), "source": n.Provenance.Source, "origin": n.Provenance.Origin,
 		})
 		switch n.Status {
 		case task.Done:

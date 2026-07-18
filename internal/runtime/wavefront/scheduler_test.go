@@ -106,6 +106,13 @@ func TestSelfMatchResolvesDirectly(t *testing.T) {
 	if len(root.Deps) != 0 {
 		t.Errorf("root.Deps = %v, want empty (self-resolved, no children)", root.Deps)
 	}
+	// A self-match resolves root directly — no fresh node is created, so root
+	// keeps whatever Provenance newGraph gave it (none here); Origin only gets
+	// stamped "know" on a Know that creates a NEW node (registerOrConvergeKnow's
+	// no-match branch), not on this self-resolving match.
+	if root.Provenance.Origin != "" {
+		t.Errorf("root.Provenance.Origin = %q, want empty (self-match, not a fresh know node)", root.Provenance.Origin)
+	}
 }
 
 // TestCommandNeedExecutesAndUnblocksParent: a command-valued Need executes via the
@@ -148,6 +155,9 @@ func TestCommandNeedExecutesAndUnblocksParent(t *testing.T) {
 	if child.Kind != task.KindTask || child.Status != task.Done || child.Value != "a demo project" {
 		t.Errorf("child = %+v, want KindTask/Done/'a demo project'", child)
 	}
+	if child.Provenance.Source != "wavefront" || child.Provenance.Origin != "need" {
+		t.Errorf("child.Provenance = %+v, want Source=wavefront/Origin=need", child.Provenance)
+	}
 }
 
 // TestOpenNeedSpawnsChildClassifiedInTurn: an open-value Need with no existing
@@ -181,6 +191,9 @@ func TestOpenNeedSpawnsChildClassifiedInTurn(t *testing.T) {
 	child, ok := g.Node("root-1")
 	if !ok || child.Kind != task.KindStep || child.Status != task.Done || child.Value != "Go" {
 		t.Fatalf("child = %+v, want KindStep/Done/Go", child)
+	}
+	if child.Provenance.Source != "wavefront" || child.Provenance.Origin != "need" {
+		t.Errorf("child.Provenance = %+v, want Source=wavefront/Origin=need (an open-value Need is still a need, not a know, until it resolves)", child.Provenance)
 	}
 }
 

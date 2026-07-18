@@ -22,8 +22,10 @@ func TestPlanTreeRegistryDispatchDecomposeComplete(t *testing.T) {
 	r.dispatched("task-1", root, store, id.ID)
 
 	children := []task.Record{
-		{ID: "task-1-1", Goal: "list files", Kind: task.KindTask, Type: task.Command, Deps: nil},
-		{ID: "task-1-2", Goal: "read docs", Kind: task.KindTask, Type: task.Query, Deps: []string{"task-1-1"}},
+		{ID: "task-1-1", Goal: "list files", Kind: task.KindTask, Type: task.Command, Deps: nil,
+			Provenance: task.Provenance{Source: "planner", Origin: "action"}},
+		{ID: "task-1-2", Goal: "read docs", Kind: task.KindTask, Type: task.Query, Deps: []string{"task-1-1"},
+			Provenance: task.Provenance{Source: "wavefront", Origin: "need"}},
 	}
 	r.decomposed("task-1", root, children, store, id.ID)
 
@@ -49,6 +51,23 @@ func TestPlanTreeRegistryDispatchDecomposeComplete(t *testing.T) {
 	child2 := tree.Nodes["task-1-2"]
 	if child2 == nil || len(child2.Deps) != 1 || child2.Deps[0] != "task-1-1" {
 		t.Errorf("child2.Deps = %v, want [task-1-1] — sibling waits-on must not be conflated with Children", child2.Deps)
+	}
+
+	// Source/Origin mirror each child's own Provenance at decompose time — the
+	// signal that makes a durable plan snapshot self-describing about which
+	// engine produced a node and whether it's a chain-of-thought (step/action) or
+	// tree-of-thought (know/need) move, not just the live event stream (ADR 0012).
+	if child1.Source != "planner" || child1.Origin != "action" {
+		t.Errorf("child1 Source/Origin = %q/%q, want planner/action", child1.Source, child1.Origin)
+	}
+	if child2.Source != "wavefront" || child2.Origin != "need" {
+		t.Errorf("child2 Source/Origin = %q/%q, want wavefront/need", child2.Source, child2.Origin)
+	}
+	// The root carries no Provenance in this test (mirroring the continuous
+	// engine's own plan root in production) — Source/Origin must stay empty
+	// rather than default to some stray non-zero value.
+	if parent.Source != "" || parent.Origin != "" {
+		t.Errorf("root Source/Origin = %q/%q, want empty/empty", parent.Source, parent.Origin)
 	}
 
 	// A leaf's own dispatch must not re-parent it: Children/Deps set by decompose stay put.

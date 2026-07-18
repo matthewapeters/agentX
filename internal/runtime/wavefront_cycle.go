@@ -24,13 +24,14 @@ func (o *Orchestrator) runWavefrontPhase(ctx context.Context, text, rootID strin
 	root := task.Record{
 		ID: rootID, Goal: text, Type: task.Query, Kind: task.KindStep,
 		Status: task.Proposed, Deps: []string{},
-		Provenance: task.Provenance{Source: "wavefront"},
+		Provenance: task.Provenance{Source: engineWavefront},
 	}
 	o.publish("TASK_PLAN", state.ContentTaskPlan, map[string]any{
 		"root": root.ID, "goal": root.Goal, "phase": "started",
 		"nodes": []map[string]any{{
 			"task_id": root.ID, "goal": root.Goal, "status": string(root.Status),
-			"deps": root.Deps, "kind": string(root.Kind), "source": root.Provenance.Source,
+			"deps": root.Deps, "kind": string(root.Kind),
+			"source": root.Provenance.Source, "origin": root.Provenance.Origin,
 		}},
 	})
 

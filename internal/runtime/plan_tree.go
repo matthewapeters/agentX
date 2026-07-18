@@ -61,6 +61,7 @@ func (r *planTreeRegistry) dispatched(root string, rec task.Record, store *sessi
 	}
 	n := ensureNode(t, rec.ID)
 	n.Goal, n.Kind, n.Status = rec.Goal, string(rec.Kind), "dispatched"
+	n.Source, n.Origin = rec.Provenance.Source, rec.Provenance.Origin
 	if rec.Kind == task.KindTask {
 		n.Type = string(rec.Type)
 	}
@@ -80,10 +81,12 @@ func (r *planTreeRegistry) decomposed(root string, parent task.Record, children 
 	t := r.ensureTree(root, "")
 	p := ensureNode(t, parent.ID)
 	p.Status = "decomposed"
+	p.Source, p.Origin = parent.Provenance.Source, parent.Provenance.Origin
 	kids := make([]string, 0, len(children))
 	for _, c := range children {
 		n := ensureNode(t, c.ID)
 		n.Goal, n.Kind, n.Status, n.Deps = c.Goal, string(c.Kind), "pending", c.Deps
+		n.Source, n.Origin = c.Provenance.Source, c.Provenance.Origin
 		if c.Kind == task.KindTask {
 			n.Type = string(c.Type)
 		}

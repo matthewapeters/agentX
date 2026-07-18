@@ -91,7 +91,7 @@ func (s *Scheduler) registerOrConvergeKnow(know Know) string {
 	rec := task.Record{
 		ID: id, Goal: know.Name, Type: task.Query, Kind: task.KindStep,
 		Status: task.Done, Value: know.Value,
-		Provenance: task.Provenance{Source: "wavefront"},
+		Provenance: task.Provenance{Source: "wavefront", Origin: "know"},
 	}
 	if err := s.graph.Add(rec); err != nil {
 		return "" // defensively skip a genuinely unrepresentable fact rather than crash
@@ -169,7 +169,7 @@ func newCommandRecord(id string, need Need) task.Record {
 		ID: id, Goal: need.Name, Type: task.Query, Kind: task.KindTask,
 		Status: task.Proposed, Deps: []string{},
 		Params:     map[string]any{"tool": need.Command.Tool, "args": args},
-		Provenance: task.Provenance{Source: "wavefront"},
+		Provenance: task.Provenance{Source: "wavefront", Origin: "need"},
 	}
 }
 
@@ -179,7 +179,7 @@ func newQuestionRecord(id, goal string) task.Record {
 	return task.Record{
 		ID: id, Goal: goal, Type: task.Query, Kind: task.KindStep,
 		Status: task.Proposed, Deps: []string{},
-		Provenance: task.Provenance{Source: "wavefront"},
+		Provenance: task.Provenance{Source: "wavefront", Origin: "need"},
 	}
 }
 

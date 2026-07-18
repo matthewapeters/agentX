@@ -241,7 +241,7 @@ func Parse(parentID string, data []byte) (Plan, error) {
 				ID: id, Goal: n.Task.Explanation, Type: task.Query, Kind: task.KindTask,
 				Status: task.Proposed, Deps: deps,
 				Params:     map[string]any{"tool": n.Task.Tool, "args": args},
-				Provenance: task.Provenance{Source: "planner"},
+				Provenance: task.Provenance{Source: "planner", Origin: "action"},
 			}
 		case n.Step != nil:
 			if strings.TrimSpace(n.Step.Description) == "" {
@@ -251,7 +251,7 @@ func Parse(parentID string, data []byte) (Plan, error) {
 				ID: id, Goal: n.Step.Description, Type: task.Query, Kind: task.KindStep,
 				Status: task.Proposed, Deps: deps,
 				Params:     map[string]any{"deliverable": n.Step.Deliverable},
-				Provenance: task.Provenance{Source: "planner"},
+				Provenance: task.Provenance{Source: "planner", Origin: "step"},
 			}
 		}
 		records = append(records, rec)

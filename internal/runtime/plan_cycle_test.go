@@ -295,3 +295,40 @@ func TestCapturingExecFindingsConcurrentWithExecute(t *testing.T) {
 		t.Errorf("Findings after all leaves completed mentions %d leaves, want 20", strings.Count(got, "leaf "))
 	}
 }
+
+// stubClassifier satisfies wavefront.Classifier without ever being called —
+// TestSelectedEngineRouting only exercises the presence/absence check, not a
+// real classify round-trip.
+type stubClassifier struct{}
+
+func (stubClassifier) Classify(context.Context, string, string) (wavefront.Result, error) {
+	return wavefront.Result{}, nil
+}
+
+// TestSelectedEngineRouting pins runPlanPhase's routing decision directly: a
+// session investigating "does this look like the wavefront problem solver"
+// (brave-lantern, 2026-07-17) had no automated way to confirm which engine a
+// given Settings.WavefrontEnabled value actually selects — only downstream
+// artifacts (the deployed config, the binary's embedded build info) to reason
+// about it from after the fact. This closes that gap: the routing predicate
+// itself, not a full plan drain, is what's under test.
+func TestSelectedEngineRouting(t *testing.T) {
+	cases := []struct {
+		name             string
+		wavefrontEnabled bool
+		classifier       wavefront.Classifier
+		want             string
+	}{
+		{"enabled with a live classifier selects wavefront", true, stubClassifier{}, engineWavefront},
+		{"enabled but no classifier built falls back to continuous", true, nil, engineContinuous},
+		{"disabled with a classifier present still falls back to continuous", false, stubClassifier{}, engineContinuous},
+		{"disabled with no classifier is continuous", false, nil, engineContinuous},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := selectedEngine(c.wavefrontEnabled, c.classifier); got != c.want {
+				t.Errorf("selectedEngine(%v, classifier=%v) = %q, want %q", c.wavefrontEnabled, c.classifier != nil, got, c.want)
+			}
+		})
+	}
+}

@@ -1071,3 +1071,58 @@ stays meaningful if the "Future direction" section's interleaved/mixed-
 provenance plans are ever built, at no cost while every plan still selects one
 engine exclusively. Test: `internal/surfaces/output/plan_test.go`'s
 `TestWavefrontSourceTag`.
+
+### Addendum (2026-07-17, later same day): engine-selection observability, Origin, and the durable snapshot
+
+Prompted by reviewing session `brave-lantern`: the "🌊" tag closed the *live*
+widget/event gap, but three related observability holes remained, found by
+re-auditing the actual wire/serialization code rather than assuming the tag
+was sufficient:
+
+1. **No test pinned the routing decision itself.** `runPlanPhase` picked an
+   engine via an inline `if o.settings.WavefrontEnabled && o.wavefrontClassifier
+   != nil` with no test asserting that a given `Settings.WavefrontEnabled`
+   value actually produces the expected engine. Fixed by extracting the
+   decision into a named predicate, `selectedEngine(wavefrontEnabled bool,
+   classifier wavefront.Classifier) string` (`internal/runtime/plan_cycle.go`,
+   returning the new `engineContinuous`/`engineWavefront` constants), and
+   `TestSelectedEngineRouting` (`plan_cycle_test.go`) table-testing all four
+   enabled/classifier combinations directly — no full plan drain required.
+2. **`Provenance.Source` never reached the durable plan snapshot.** The "🌊"
+   addendum wired `source` into the live `TASK_NODE`/`TASK_PLAN` events and the
+   widget, but `internal/session/plans.go`'s `PlanTreeNode` — the
+   `plans/<rootID>.json` file a session leaves behind for post-hoc review, the
+   exact artifact inspected for `brave-lantern` — still had no such field, and
+   `plan_tree.go`'s `dispatched`/`decomposed` methods never copied
+   `rec.Provenance` onto it. Fixed: `PlanTreeNode` gained `Source`/`Origin`
+   fields (both `omitempty`), populated at the same two call sites that already
+   set `Goal`/`Kind`/`Status`.
+3. **Engine attribution alone doesn't show *how* a plan solved its problem.**
+   `Provenance.Source` says which engine produced a node, but a wavefront Know
+   and a wavefront Need both read `"wavefront"` — indistinguishable from the
+   serialized form alone, and the continuous engine's Step/Task split wasn't
+   tagged at all beyond `Kind` (which is about execution mechanics, not
+   strategy). Fixed by giving `Provenance` a second field, `Origin`, naming the
+   classification move itself: `"know"` / `"need"` (wavefront, set at
+   `wavefront/merge.go`'s three record-construction sites) or `"step"` /
+   `"action"` (the continuous engine, set at `planner.go`'s two record-
+   construction sites), empty for either engine's own plan root. `Origin` rides
+   the same wire `Source` now uses — `TASK_NODE`/`TASK_PLAN` payloads and
+   `PlanTreeNode` — so a plan's serialized shape is now legible as a strategy,
+   not just an engine name: a run built entirely from `step`/`action` nodes is
+   a chain-of-thought decomposition; one built from `know`/`need` nodes
+   (especially alongside `ConvergesTo` edges) is a tree-of-thought search that
+   branched and converged.
+
+Deliberately did not touch the output widget further — the "🌊" tag already
+answers "which engine" visually; `Origin` is a serialization-layer concern
+(distinguishing *how* a plan reasoned, for review/tooling/tests), not a new
+glyph requirement.
+
+Tests: `TestSelectedEngineRouting` (`internal/runtime/plan_cycle_test.go`),
+extended `TestPlanTreeRegistryDispatchDecomposeComplete`
+(`internal/runtime/plan_tree_test.go`, asserts `Source`/`Origin` land in
+`PlanTreeNode`), extended `TestCommandNeedExecutesAndUnblocksParent` /
+`TestOpenNeedSpawnsChildClassifiedInTurn` / `TestSelfMatchResolvesDirectly`
+(`internal/runtime/wavefront/scheduler_test.go`, asserts `Origin` on
+wavefront-produced records).

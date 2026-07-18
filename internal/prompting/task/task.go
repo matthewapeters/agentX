@@ -67,10 +67,27 @@ const (
 // Provenance records how a task was classified, so a decision is answerable from
 // the event log.
 type Provenance struct {
-	Source     string         `json:"source"` // turn | response | reconciler
+	// Source is overloaded by convention across two unrelated call sites: the
+	// action classifier stamps "turn" | "response" | "reconciler" (FromAction,
+	// below); the two decomposition engines instead stamp which one produced the
+	// node — "wavefront" (internal/runtime/wavefront/merge.go) or "planner"
+	// (internal/prompting/planner/planner.go), empty for either engine's own
+	// plan root. Never both meanings on the same record in practice, since a
+	// decomposition child is never also an action-classifier output.
+	Source     string         `json:"source"`
 	Escalated  bool           `json:"escalated"`
 	Confidence float64        `json:"confidence"`
 	Spread     map[string]int `json:"spread,omitempty"`
+	// Origin names the classification move that produced this node, distinct
+	// from Source (which engine) and Kind (execution mechanics: does this node
+	// run a command, or get classified/decomposed further). One of "know" /
+	// "need" (wavefront) or "step" / "action" (the continuous engine's
+	// planner), empty for either engine's own plan root. This is the field that
+	// makes a plan's solving *strategy* legible from its serialized form: a plan
+	// built entirely from step/action nodes is a chain-of-thought decomposition;
+	// one built from know/need nodes (especially with ConvergesTo edges) is a
+	// tree-of-thought search that branched and converged (ADR 0012).
+	Origin string `json:"origin,omitempty"`
 }
 
 // Record is a durable, DAG-node-shaped task. Its current state is the latest event

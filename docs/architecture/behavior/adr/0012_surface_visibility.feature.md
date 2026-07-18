@@ -214,3 +214,50 @@ THEN no "🌊" tag appears
 Test: `internal/surfaces/output/plan_test.go`'s `TestWavefrontSourceTag` — a
 wavefront root and wavefront child both show the tag; a `"planner"`-sourced
 sibling in the same plan does not.
+
+## Addendum — engine-selection routing, Origin, and the durable snapshot (ADR 0012, later same-day addendum)
+
+Prompted by reviewing session `brave-lantern`: the engine actually selected
+for a plan invocation had no test pinning it to `Settings.WavefrontEnabled`,
+`Provenance.Source` never reached the durable `plans/<rootID>.json` snapshot
+(only the live wire/widget), and `Source` alone can't distinguish a wavefront
+Know from a wavefront Need, or the continuous engine's Step from its Task —
+the signal needed to observe *how* a plan solved its problem (chain-of-thought
+step/action chain vs. tree-of-thought know/need branch-and-converge), not just
+which engine ran it.
+
+```
+GIVEN Settings.WavefrontEnabled and a live wavefront classifier
+WHEN runPlanPhase decides which engine to run
+THEN selectedEngine(true, classifier) returns "wavefront"
+  AND selectedEngine(false, classifier) returns "planner"
+  AND selectedEngine(true, nil) returns "planner" (no classifier built — the
+      buildWavefront() gate never fired, so there is nothing to route to)
+
+GIVEN a node with Provenance{Source: "wavefront", Origin: "need"} (or "know")
+ WHEN it dispatches or decomposes
+ THEN the TASK_NODE/TASK_PLAN payload carries "source" and "origin"
+  AND the durable PlanTreeNode (plans/<rootID>.json) carries the same
+      Source/Origin — not just the live event stream
+
+GIVEN a continuous-engine node built by planner.go
+ WHEN it is a Task record
+ THEN Provenance.Origin is "action"
+ WHEN it is a Step record
+ THEN Provenance.Origin is "step"
+
+GIVEN a wavefront node built by wavefront/merge.go
+ WHEN it comes from registerOrConvergeKnow creating a fresh node
+ THEN Provenance.Origin is "know"
+ WHEN it comes from registerOrConvergeNeed (command- or open-valued)
+ THEN Provenance.Origin is "need"
+ WHEN a Know instead resolves an EXISTING node via self-match
+ THEN no new record is created, so no Origin is stamped by this path
+```
+
+Tests: `TestSelectedEngineRouting` (`internal/runtime/plan_cycle_test.go`);
+extended `TestPlanTreeRegistryDispatchDecomposeComplete`
+(`internal/runtime/plan_tree_test.go`); extended
+`TestCommandNeedExecutesAndUnblocksParent`,
+`TestOpenNeedSpawnsChildClassifiedInTurn`, `TestSelfMatchResolvesDirectly`
+(`internal/runtime/wavefront/scheduler_test.go`).
