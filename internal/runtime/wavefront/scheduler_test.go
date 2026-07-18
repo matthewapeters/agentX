@@ -57,6 +57,22 @@ type stubExecutor struct{ out executor.Outcome }
 
 func (e stubExecutor) Execute(context.Context, task.Record) executor.Outcome { return e.out }
 
+// stubValidator rejects any Tool call missing a "path" argument — a minimal
+// stand-in for *tools.Registry.Validate/Describe that doesn't require pulling
+// in a real registry just to exercise classifyWithRetry's control flow.
+type stubValidator struct{}
+
+func (stubValidator) Validate(tool string, args map[string]string) error {
+	if args["path"] == "" {
+		return fmt.Errorf("missing required argument %q", "path")
+	}
+	return nil
+}
+
+func (stubValidator) Describe(tool string) string {
+	return tool + "(path required)"
+}
+
 func runAndWait(t *testing.T, s *Scheduler) error {
 	t.Helper()
 	done := make(chan error, 1)
@@ -157,6 +173,95 @@ func TestCommandNeedExecutesAndUnblocksParent(t *testing.T) {
 	}
 	if child.Provenance.Source != "wavefront" || child.Provenance.Origin != "tool" {
 		t.Errorf("child.Provenance = %+v, want Source=wavefront/Origin=tool", child.Provenance)
+	}
+}
+
+// TestToolRetrySucceedsOnSecondAttempt: an invalid Tool proposal (missing its
+// required "path") is retried with feedback naming exactly what was wrong, and
+// the retry's question carries the original question verbatim plus that
+// feedback — never a replacement for the original context.
+func TestToolRetrySucceedsOnSecondAttempt(t *testing.T) {
+	g := newGraph(t, "what does this project do?")
+	var classifyCalls int
+	var sawRetryQuestion string
+	classify := stubClassifierFn(func(_ context.Context, _, question string) (Result, error) {
+		classifyCalls++
+		if classifyCalls == 1 {
+			return Result{Tools: []Tool{
+				{Name: "contents of README.md", Command: Command{Tool: "read_file", Args: map[string]string{}}},
+			}}, nil
+		}
+		sawRetryQuestion = question
+		return Result{Tools: []Tool{
+			{Name: "contents of README.md", Command: Command{Tool: "read_file", Args: map[string]string{"path": "README.md"}}},
+		}}, nil
+	})
+	exec := stubExecutor{out: executor.Outcome{Status: executor.Executed, Result: tools.Result{Preview: "a demo project"}}}
+	synth := func(_ context.Context, _, usr string, _ json.RawMessage) (string, error) {
+		return "This project is a demo.", nil
+	}
+	s := New(g, "what does this project do?", classify, synth, "", exec, 4, 3, WithValidator(stubValidator{}))
+	if err := runAndWait(t, s); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if classifyCalls != 2 {
+		t.Fatalf("classify called %d times, want exactly 2 (one retry)", classifyCalls)
+	}
+	if !strings.Contains(sawRetryQuestion, "what does this project do?") {
+		t.Errorf("retry question lost the original question: %q", sawRetryQuestion)
+	}
+	if !strings.Contains(sawRetryQuestion, "read_file") || !strings.Contains(sawRetryQuestion, "missing required argument") {
+		t.Errorf("retry question missing the specific failure feedback: %q", sawRetryQuestion)
+	}
+	root, _ := g.Node("root")
+	if root.Status != task.Done || root.Value != "This project is a demo." {
+		t.Fatalf("root = %+v, want Done via synthesis", root)
+	}
+}
+
+// TestToolRetryExhaustedDemotesToOpenNeed: a Tool that stays invalid across
+// every retry is not silently dropped (the calm-fjord-2 gap, one layer up) — it
+// is demoted to an open Need instead, so the information it was chasing
+// survives into the graph as a fresh question rather than vanishing.
+func TestToolRetryExhaustedDemotesToOpenNeed(t *testing.T) {
+	g := newGraph(t, "what does this project do?")
+	var classifyCalls int
+	classify := stubClassifierFn(func(_ context.Context, _, question string) (Result, error) {
+		classifyCalls++
+		switch {
+		case strings.HasPrefix(question, "what does this project do?"):
+			return Result{Tools: []Tool{
+				{Name: "contents of README.md", Command: Command{Tool: "read_file", Args: map[string]string{}}},
+			}}, nil
+		case question == "contents of README.md":
+			return Result{Knows: []Know{{Name: question, Value: "a demo project, per README"}}}, nil
+		}
+		t.Fatalf("unexpected classify question: %q", question)
+		return Result{}, nil
+	})
+	synth := func(_ context.Context, _, usr string, _ json.RawMessage) (string, error) {
+		if !strings.Contains(usr, "a demo project") {
+			t.Errorf("synthesis prompt missing resolved child fact: %q", usr)
+		}
+		return "This project is a demo.", nil
+	}
+	s := New(g, "what does this project do?", classify, synth, "", stubExecutor{}, 4, 3, WithValidator(stubValidator{}))
+	if err := runAndWait(t, s); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if want := maxToolRetries + 2; classifyCalls != want { // maxToolRetries+1 for root, +1 for the demoted child
+		t.Fatalf("classify called %d times, want %d", classifyCalls, want)
+	}
+	child, ok := g.Node("root-1")
+	if !ok {
+		t.Fatal("demoted child node not found")
+	}
+	if child.Kind != task.KindStep {
+		t.Errorf("child.Kind = %v, want KindStep (demoted to an open Need, not wired as a Tool)", child.Kind)
+	}
+	root, _ := g.Node("root")
+	if root.Status != task.Done || root.Value != "This project is a demo." {
+		t.Fatalf("root = %+v, want Done via synthesis", root)
 	}
 }
 

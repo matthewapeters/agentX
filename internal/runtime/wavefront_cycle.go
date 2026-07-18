@@ -43,6 +43,10 @@ func (o *Orchestrator) runWavefrontPhase(ctx context.Context, text, rootID strin
 		o.taskExec, decompose.DefaultSlots, decompose.DefaultMaxDepth,
 		wavefront.WithObserver(&planObserver{o: o, root: root.ID}),
 		wavefront.WithCondenser(o.outputSummarizer),
+		// o.registry is guaranteed non-nil here: runWavefrontPhase only runs once
+		// o.taskExec is set, which buildTaskExecutor only does after
+		// o.toolsReady() (requires o.registry != nil) has passed.
+		wavefront.WithValidator(o.registry),
 	)
 	rerr := s.Run(ctx)
 	if ctx.Err() != nil {

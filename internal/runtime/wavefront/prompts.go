@@ -9,6 +9,7 @@
 package wavefront
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -199,6 +200,23 @@ func RenderClassifySystem(template, catalog string) string {
 func RenderClassifyUser(template, wm, question string) string {
 	r := strings.NewReplacer("{{wm}}", wm, "{{question}}", question)
 	return r.Replace(template)
+}
+
+// RenderToolRetryFeedback formats one or more invalid TOOL proposals into the
+// feedback block a classify retry appends to the original question: what was
+// proposed, exactly why it was rejected, and the tool's full contract, so the
+// model can correct the call or fall back to NEED instead of guessing again
+// blind. The original question and working memory are never altered by this —
+// it is additive text the caller appends, so a retry always sees its full
+// original context plus, on top of it, what specifically failed last time.
+func RenderToolRetryFeedback(failures []ToolFailure) string {
+	var b strings.Builder
+	b.WriteString("\n\n[Your previous response had invalid TOOL call(s). Reclassify this exact question again, " +
+		"fixing these — or use NEED instead if you don't actually have the missing value yet:]\n")
+	for _, f := range failures {
+		fmt.Fprintf(&b, "- TOOL %q (tool %q) is malformed: %s. Tool contract: %s.\n", f.Name, f.Tool, f.Err, f.Contract)
+	}
+	return b.String()
 }
 
 // RenderSynthesisUser fills template (DefaultSynthesisUserTemplate) for the

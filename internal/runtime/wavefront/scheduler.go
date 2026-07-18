@@ -38,6 +38,10 @@ type Scheduler struct {
 	slots    int
 	maxDepth int
 	observer scheduler.Observer // reused type; nil ⇒ silent
+	// validator checks a proposed Tool's args against its tool's contract before
+	// it is wired into the graph (classifyWithRetry). nil disables validation
+	// entirely — every Tool is trusted as-is, the pre-validation behavior.
+	validator ToolValidator
 
 	dispatchOrder []string
 	peak          int
@@ -60,6 +64,14 @@ func WithObserver(obs scheduler.Observer) Option {
 // artifactReader/summarizer elsewhere in this codebase.
 func WithCondenser(c CondenseFunc) Option {
 	return func(s *Scheduler) { s.condense = c }
+}
+
+// WithValidator attaches tool-contract validation for resolved Tool proposals
+// (classifyWithRetry). Omitted ⇒ every Tool is trusted as-is, the
+// pre-validation behavior — this is what let calm-fjord-2's incomplete
+// list_dir/tree calls reach the executor and be silently denied.
+func WithValidator(v ToolValidator) Option {
+	return func(s *Scheduler) { s.validator = v }
 }
 
 // New builds a Scheduler over g, which must already contain its single root node
@@ -219,7 +231,7 @@ func (s *Scheduler) work(ctx context.Context, rec task.Record, depth int, wm str
 			done <- workDone{id: rec.ID, kind: doneAsk}
 			return
 		}
-		result, err := s.classifier.Classify(ctx, wm, rec.Goal)
+		result, err := s.classifyWithRetry(ctx, wm, rec.Goal)
 		if err != nil {
 			done <- workDone{id: rec.ID, kind: doneError, errText: fmt.Sprintf("classify failed: %v", err)}
 			return
@@ -228,6 +240,78 @@ func (s *Scheduler) work(ctx context.Context, rec task.Record, depth int, wm str
 	default:
 		done <- workDone{id: rec.ID, kind: doneError, errText: fmt.Sprintf("node has no valid Kind (got %q)", rec.Kind)}
 	}
+}
+
+// maxToolRetries bounds how many times classifyWithRetry re-asks the same
+// question after an invalid TOOL proposal before giving up — a model that
+// cannot self-correct in a couple of tries shouldn't stall the whole node.
+const maxToolRetries = 2
+
+// classifyWithRetry calls Classify, and — when s.validator rejects one or more
+// proposed Tools' args — retries up to maxToolRetries times with the same wm
+// and a question augmented by exactly what was wrong (RenderToolRetryFeedback).
+// wm and the base question are never mutated or replaced: every retry sees its
+// full original context plus, additively, what failed last time — never a
+// narrower or summarized substitute for it. A nil s.validator disables this
+// entirely (Classify's result passes straight through).
+//
+// Once retries are exhausted, any Tool still invalid is not silently dropped —
+// that would reintroduce the calm-fjord-2 gap one layer up, just before the
+// executor instead of inside it. It is folded into an equivalent open Need
+// instead (demoteInvalidTools), so the information it was chasing stays live
+// for a later round rather than vanishing without a trace.
+func (s *Scheduler) classifyWithRetry(ctx context.Context, wm, question string) (Result, error) {
+	if s.validator == nil {
+		return s.classifier.Classify(ctx, wm, question)
+	}
+	q := question
+	for attempt := 0; ; attempt++ {
+		result, err := s.classifier.Classify(ctx, wm, q)
+		if err != nil {
+			return Result{}, err
+		}
+		bad := s.invalidTools(result.Tools)
+		if len(bad) == 0 {
+			return result, nil
+		}
+		if attempt >= maxToolRetries {
+			return demoteInvalidTools(result, bad), nil
+		}
+		q = question + RenderToolRetryFeedback(bad)
+	}
+}
+
+// invalidTools validates each of proposed against s.validator, returning a
+// ToolFailure for every one that fails.
+func (s *Scheduler) invalidTools(proposed []Tool) []ToolFailure {
+	var bad []ToolFailure
+	for _, t := range proposed {
+		if err := s.validator.Validate(t.Command.Tool, t.Command.Args); err != nil {
+			bad = append(bad, ToolFailure{
+				Name: t.Name, Tool: t.Command.Tool, Err: err,
+				Contract: s.validator.Describe(t.Command.Tool),
+			})
+		}
+	}
+	return bad
+}
+
+// demoteInvalidTools returns a copy of result with every Tool named in bad
+// converted to an open Need instead — see classifyWithRetry's doc comment.
+func demoteInvalidTools(result Result, bad []ToolFailure) Result {
+	badNames := make(map[string]bool, len(bad))
+	for _, f := range bad {
+		badNames[f.Name] = true
+	}
+	out := Result{Knows: result.Knows, Needs: append([]Need(nil), result.Needs...)}
+	for _, t := range result.Tools {
+		if badNames[t.Name] {
+			out.Needs = append(out.Needs, Need{Name: t.Name})
+			continue
+		}
+		out.Tools = append(out.Tools, t)
+	}
+	return out
 }
 
 // execute drains a command-Need leaf through the executor and maps its outcome to

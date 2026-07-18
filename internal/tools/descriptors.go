@@ -1,6 +1,10 @@
 package tools
 
-import "sort"
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
 
 // Registry is a lookup of curated tool descriptors by id.
 type Registry struct {
@@ -89,4 +93,41 @@ func (r *Registry) Available(readOnly bool) []Descriptor {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// Validate checks a proposed call to tool against its descriptor's argument
+// contract, returning nil when args satisfies it and otherwise a specific,
+// human-readable reason (unknown tool, or Descriptor.Validate's own "missing
+// required argument %q" / "unknown argument %q" text). Callers that need to
+// tell a proposing model exactly what was wrong — not just that something
+// was — can use this error text as-is.
+func (r *Registry) Validate(tool string, args map[string]string) error {
+	d, ok := r.Lookup(tool)
+	if !ok {
+		return fmt.Errorf("unknown tool %q", tool)
+	}
+	return d.Validate(args)
+}
+
+// Describe renders tool's argument contract compactly (e.g.
+// "list_dir(path required)"), for feedback to a model that proposed an invalid
+// call — "" for an unknown tool, so a caller can distinguish "no args" from
+// "not a real tool".
+func (r *Registry) Describe(tool string) string {
+	d, ok := r.Lookup(tool)
+	if !ok {
+		return ""
+	}
+	if len(d.Args) == 0 {
+		return fmt.Sprintf("%s takes no arguments", tool)
+	}
+	parts := make([]string, len(d.Args))
+	for i, a := range d.Args {
+		req := "optional"
+		if a.Required {
+			req = "required"
+		}
+		parts[i] = fmt.Sprintf("%s %s", a.Name, req)
+	}
+	return fmt.Sprintf("%s(%s)", tool, strings.Join(parts, ", "))
 }

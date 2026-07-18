@@ -268,17 +268,33 @@ func completeWithThinkingBudget(ctx context.Context, client *ollama.Client, req 
 // agentx-shell-commands.md's markdown catalog — that file also carries the proposer's
 // "how to reply" framing, which would conflict with the planner's own reply-shape
 // instructions; a nil registry (tools disabled) renders an empty catalog.
+//
+// Required arguments are marked with a trailing "*" (legend on the last line) — the
+// catalog is every proposing model's only view of each tool's contract, so which
+// arguments are mandatory must be legible right here, not left implicit and
+// discovered only when an incomplete call is later rejected (the calm-fjord-2 gap:
+// list_dir/tree calls missing "path" reached policy evaluation and were silently
+// denied, with no distinction visible between "forbidden" and "incomplete").
 func plannerCatalog(reg *tools.Registry) string {
 	if reg == nil {
 		return "(no tools available)"
 	}
 	var b strings.Builder
+	any := false
 	for _, d := range reg.Available(false) {
+		any = true
 		names := make([]string, len(d.Args))
 		for i, a := range d.Args {
-			names[i] = a.Name
+			if a.Required {
+				names[i] = a.Name + "*"
+			} else {
+				names[i] = a.Name
+			}
 		}
 		fmt.Fprintf(&b, "- %s: args {%s} (%s)\n", d.ID, strings.Join(names, ", "), d.Risk)
+	}
+	if any {
+		b.WriteString("* = required argument; every call must supply all of a tool's required arguments.\n")
 	}
 	return b.String()
 }

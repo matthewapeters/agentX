@@ -60,6 +60,32 @@ type Classifier interface {
 	Classify(ctx context.Context, wm, question string) (Result, error)
 }
 
+// ToolValidator checks a proposed Tool's args against its tool's contract before
+// the call is wired into the graph, and can describe that contract for retry
+// feedback to the classifying model. *tools.Registry satisfies this interface
+// structurally (Validate/Describe), so the scheduler depends only on this
+// narrow seam rather than importing internal/tools directly. A nil
+// ToolValidator (the Scheduler zero value) disables validation entirely —
+// every Tool is trusted as-is, matching pre-validation behavior.
+type ToolValidator interface {
+	// Validate returns nil when args satisfies tool's contract, otherwise a
+	// specific, human-readable reason (e.g. `missing required argument "path"`).
+	Validate(tool string, args map[string]string) error
+	// Describe renders tool's contract compactly (e.g. "list_dir(path required)"),
+	// or "" for a tool it doesn't recognize.
+	Describe(tool string) string
+}
+
+// ToolFailure is one Tool proposal from a classify response that failed
+// ToolValidator.Validate, paired with why and its tool's full contract — the
+// input to RenderToolRetryFeedback (prompts.go).
+type ToolFailure struct {
+	Name     string // the Tool item's own "name"
+	Tool     string
+	Err      error
+	Contract string
+}
+
 // Wire shapes for the model's JSON reply.
 
 type knowPayload struct {
