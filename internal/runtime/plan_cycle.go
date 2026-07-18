@@ -178,6 +178,7 @@ func (p *planObserver) NodeDispatched(rec task.Record, depth int) {
 	p.o.publish("TASK_NODE", state.ContentTaskNode, map[string]any{
 		"root": p.root, "task_id": rec.ID, "event": "dispatched",
 		"goal": rec.Goal, "depth": depth, "kind": string(rec.Kind),
+		"source": rec.Provenance.Source,
 	})
 	p.o.planTrees.dispatched(p.root, rec, p.o.store, p.o.id.ID)
 }
@@ -187,6 +188,7 @@ func (p *planObserver) NodeDecomposed(parent task.Record, children []task.Record
 	for _, c := range children {
 		kids = append(kids, map[string]any{
 			"task_id": c.ID, "goal": c.Goal, "deps": c.Deps, "kind": string(c.Kind),
+			"source": c.Provenance.Source,
 		})
 	}
 	p.o.publish("TASK_NODE", state.ContentTaskNode, map[string]any{
@@ -257,7 +259,7 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text, rootID string) (s
 		"root": root.ID, "goal": root.Goal, "phase": "started",
 		"nodes": []map[string]any{{
 			"task_id": root.ID, "goal": root.Goal, "status": string(root.Status),
-			"deps": root.Deps, "kind": string(root.Kind),
+			"deps": root.Deps, "kind": string(root.Kind), "source": root.Provenance.Source,
 		}},
 	})
 	cap := &capturingExec{
@@ -298,7 +300,7 @@ func planSummary(root task.Record, recs []task.Record, executed int, derr error)
 	for _, n := range recs {
 		nodes = append(nodes, map[string]any{
 			"task_id": n.ID, "goal": n.Goal, "status": string(n.Status), "deps": n.Deps,
-			"kind": string(n.Kind),
+			"kind": string(n.Kind), "source": n.Provenance.Source,
 		})
 		switch n.Status {
 		case task.Done:

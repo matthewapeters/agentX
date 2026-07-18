@@ -72,6 +72,15 @@ type planNode struct {
 	// own box, if any, is drawn wherever its actual owner is.
 	convergesTo []string
 
+	// source mirrors task.Record.Provenance.Source ("wavefront", "planner", or
+	// "" for the continuous engine's own root) — which engine's merge step
+	// produced this node. Rendered as a small 🌊 tag (nodeTitle) so a node's
+	// origin is visible per-node, not just per-plan: today one plan-drain always
+	// selects a single engine, but ADR 0012's "Future direction" section leaves
+	// interleaved/mixed-provenance plans open, and this is the signal that would
+	// make that legible without any further wiring.
+	source string
+
 	// spin is this node's own independent spinner, live only while status ==
 	// "running" — each concurrently-running node animates on its own (not in
 	// lockstep), routed by Model.spinIndex keyed on the spinner's own unique ID.
@@ -123,6 +132,9 @@ func (m *Model) applyPlanEvent(ev state.Event) {
 			continue
 		}
 		node := ps.ensure(id, str(nm["goal"]), str(nm["kind"]), 0)
+		if src := str(nm["source"]); src != "" {
+			node.source = src
+		}
 		// Snapshot statuses refine what deltas already told us; never regress a
 		// terminal glyph back to pending.
 		switch str(nm["status"]) {
@@ -168,6 +180,9 @@ func (m *Model) applyNodeEvent(ev state.Event) tea.Cmd {
 	switch str(p["event"]) {
 	case "dispatched":
 		n := ps.ensure(id, str(p["goal"]), str(p["kind"]), intOf(p["depth"]))
+		if src := str(p["source"]); src != "" {
+			n.source = src
+		}
 		n.status = "running"
 		n.dispatchedAt = ev.Epoch
 		cmd = m.startSpin(n)
@@ -186,6 +201,9 @@ func (m *Model) applyNodeEvent(ev state.Event) tea.Cmd {
 			}
 			child := ps.ensure(cid, str(cm["goal"]), str(cm["kind"]), parent.depth+1)
 			child.parentID = id
+			if src := str(cm["source"]); src != "" {
+				child.source = src
+			}
 			for _, dep := range anySlice(cm["deps"]) {
 				if ds, ok := dep.(string); ok {
 					child.waitsOn = append(child.waitsOn, ds)
@@ -349,6 +367,9 @@ func nodeTitle(n *planNode, now int64, ps *planState, cursor bool) string {
 	prefix := ""
 	if cursor {
 		prefix = "› "
+	}
+	if n.source == "wavefront" {
+		prefix += "🌊 "
 	}
 	t := prefix + g + " " + n.goal + planTiming(n, now)
 	if len(n.waitsOn) == 0 {

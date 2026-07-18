@@ -427,6 +427,28 @@ See `docs/ux/03_PANEL_DETAILS.md` §PD-CTX for what pressing `p` does with the
 cursor's current node, and §PD-WM for how the resulting pin behaves once it
 reaches working memory.
 
+**A "🌊" tag marks which nodes wavefront actually produced.** Every `task.Record`
+already carries `Provenance.Source` ("wavefront", "planner", or empty for the
+continuous engine's own root) — this was always there, just never surfaced. A
+node's own title line shows a "🌊 " tag immediately before its status glyph when
+`Provenance.Source == "wavefront"`; a continuous-engine node shows nothing extra.
+This is deliberately per-node, not a single plan-level marker: today one
+plan-drain always selects one engine (so a whole wavefront plan's nodes all show
+the tag), but ADR 0012's "Future direction" section leaves interleaved, mixed-
+provenance plans open as later work — the per-node signal is what would make
+that legible without any further wiring, at no cost today.
+
+```gherkin
+GIVEN a node whose Provenance.Source is "wavefront"
+WHEN its title renders
+THEN it shows "🌊 " immediately before the status glyph
+
+GIVEN a node whose Provenance.Source is "planner" or empty (the continuous
+      engine's own root, or nodes from a future non-wavefront source)
+WHEN its title renders
+THEN no "🌊" tag appears
+```
+
 ## Logo banner (pinned, collapsible, animated)
 
 The chat surface renders a **logo banner** in a fixed region above the output

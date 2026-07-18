@@ -358,6 +358,44 @@ func TestWavefrontConvergenceAnnotates(t *testing.T) {
 	}
 }
 
+// TestWavefrontSourceTag: a node whose task.Record.Provenance.Source is
+// "wavefront" shows the "🌊" tag on its own title line; a continuous-engine
+// node (empty/other source) does not — the per-node signal ADR 0012's "Future
+// direction" section anticipates for a plan that eventually mixes both
+// engines' nodes, even though today one plan-drain always selects a single
+// engine.
+func TestWavefrontSourceTag(t *testing.T) {
+	m := New()
+	m.SetSize(100, 40)
+	m.Apply(planEv(state.ContentTaskPlan, 1, map[string]any{
+		"root": "w", "goal": "review", "phase": "started",
+		"nodes": []any{map[string]any{"task_id": "w", "goal": "review", "status": "proposed", "source": "wavefront"}}}))
+	m.Apply(planEv(state.ContentTaskNode, 1, map[string]any{
+		"root": "w", "task_id": "w", "event": "decomposed", "kind": "step", "children": []any{
+			map[string]any{"task_id": "w-1", "goal": "wavefront finding", "kind": "step", "deps": []any{}, "source": "wavefront"},
+			map[string]any{"task_id": "w-2", "goal": "continuous finding", "kind": "task", "deps": []any{}, "source": "planner"},
+		}}))
+	m.Apply(planEv(state.ContentTaskPlan, 1, map[string]any{
+		"root": "w", "goal": "review", "phase": "ended", "executed": 0,
+		"nodes": []any{
+			map[string]any{"task_id": "w", "status": "done"},
+			map[string]any{"task_id": "w-1", "status": "done"},
+			map[string]any{"task_id": "w-2", "status": "done"},
+		}}))
+
+	ps := m.plans["w"]
+	body := renderedPlanBody(m, ps)
+	if !strings.Contains(body, "🌊 ✅ review") {
+		t.Errorf("wavefront root missing its 🌊 tag: %q", body)
+	}
+	if !strings.Contains(body, "🌊 ✅ wavefront finding") {
+		t.Errorf("wavefront child missing its 🌊 tag: %q", body)
+	}
+	if strings.Contains(body, "🌊 ✅ continuous finding") {
+		t.Errorf("a planner-sourced node must not show the 🌊 tag: %q", body)
+	}
+}
+
 // TestSelectedPlanNodeNavigationAndPin drives the node-level pin cursor (ADR 0012
 // amendment): Tab/Shift+Tab-equivalent navigation only operates while the plan
 // widget is the selected top-level widget, and SelectedPlanNode reports the right
