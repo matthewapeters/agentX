@@ -62,14 +62,4 @@ layout {
 			args "-c" "sleep 1 && agentx surface launch logs --session $AX_SESSION_STRING"
 		}
 	}
-	tab name="logs" {
-		pane  { 
-			size 1
-			borderless true
-			plugin location="zellij:tab-bar" 
-		}
-		pane command="bash" name="logs" {
-			args  "-c" "sleep 1 &&  agentx surface launch logs --session $AX_SESSION_STRING"
-		}
-	
-	}}
+}
