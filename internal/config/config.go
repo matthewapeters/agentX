@@ -26,7 +26,10 @@ type Config struct {
 
 // Agentx is the [agentx] table.
 type Agentx struct {
-	Ollama         Ollama         `toml:"ollama"`
+	Provider       string       `toml:"provider"`
+	ChatBackend    string       `toml:"chat_backend"` // deprecated alias for Provider
+	Ollama         Ollama       `toml:"ollama"`
+	Llamacpp       Llamacpp     `toml:"llamacpp"`
 	Classification Classification `toml:"classification"`
 	Output         Output         `toml:"output"`
 	Theme          Theme          `toml:"theme"`
@@ -97,6 +100,12 @@ type Ollama struct {
 	Model string `toml:"model"`
 }
 
+// Llamacpp is the [agentx.llamacpp] table: which llama.cpp server instance to use.
+type Llamacpp struct {
+	Host  string `toml:"host"`
+	Model string `toml:"model"`
+}
+
 // Classification is the [agentx.classification] table tuning the classify cycle.
 type Classification struct {
 	Retries              int `toml:"retries"`
@@ -128,6 +137,33 @@ func (c Config) OllamaHost() string { return c.Agentx.Ollama.Host }
 
 // OllamaModel returns the configured active model.
 func (c Config) OllamaModel() string { return c.Agentx.Ollama.Model }
+
+// Provider returns the configured provider name: "ollama", "llamacpp", or
+// "" if unset (caller should default to "ollama").
+func (c Config) Provider() string {
+	// chat_backend is a deprecated alias for backward compatibility.
+	if p := strings.TrimSpace(c.Agentx.Provider); p != "" {
+		return strings.ToLower(p)
+	}
+	if b := strings.TrimSpace(c.Agentx.ChatBackend); b != "" {
+		return strings.ToLower(b)
+	}
+	return ""
+}
+
+// EffectiveProvider returns the provider name with the default ("ollama") applied.
+func (c Config) EffectiveProvider() string {
+	if p := c.Provider(); p != "" {
+		return p
+	}
+	return "ollama"
+}
+
+// LlamacppHost returns the configured llama.cpp server host.
+func (c Config) LlamacppHost() string { return c.Agentx.Llamacpp.Host }
+
+// LlamacppModel returns the configured llama.cpp model name.
+func (c Config) LlamacppModel() string { return c.Agentx.Llamacpp.Model }
 
 // ClassificationRetries returns the classify-cycle retry budget (>= 0).
 func (c Config) ClassificationRetries() int {
@@ -358,6 +394,7 @@ const (
 func Default() Config {
 	return Config{
 		Agentx: Agentx{
+			Provider: "ollama",
 			Ollama: Ollama{
 				Host:  "localhost:11434",
 				Model: "phi4-mini:3.8b",

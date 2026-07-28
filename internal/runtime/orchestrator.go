@@ -30,10 +30,14 @@ type Settings struct {
 	// SessionName names the session; empty generates a default adjective-noun name.
 	// A collision is disambiguated with a numeric suffix (see session.uniqueName).
 	SessionName string
-	// OllamaHost and OllamaModel configure the model adapter (used by the prompt
-	// cycle in CHT-C*).
+	// Provider selects the LLM backend: "ollama" or "llamacpp" (default "ollama").
+	Provider string
+	// OllamaHost and OllamaModel configure the Ollama model adapter.
 	OllamaHost  string
 	OllamaModel string
+	// LlamacppHost and LlamacppModel configure the llama.cpp model adapter.
+	LlamacppHost  string
+	LlamacppModel string
 	// Instructions is the standing user-instructions text prefixed to every LLM
 	// context (from ~/.config/agentx/agentx-instructions.md). Empty falls back to
 	// the built-in default system prompt.
@@ -256,7 +260,12 @@ func (o *Orchestrator) Start() error {
 	o.bus = state.NewBus()
 	o.proc = state.NewProcessingPublisher(id.ID)
 	if o.model == nil {
-		o.model = newOllamaModel(o.settings.OllamaHost)
+		switch strings.ToLower(o.settings.Provider) {
+		case "llamacpp":
+			o.model = newLlamacppModel(o.settings.LlamacppHost, o.settings.LlamacppModel)
+		default:
+			o.model = newOllamaModel(o.settings.OllamaHost)
+		}
 	}
 	instructions := o.settings.Instructions
 	if instructions == "" {

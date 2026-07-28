@@ -3,7 +3,9 @@ package runtime
 import (
 	"context"
 
+	"agentx/internal/llm/llamacpp"
 	"agentx/internal/llm/ollama"
+	"agentx/internal/llm/provider"
 	"agentx/internal/prompting"
 )
 
@@ -31,6 +33,16 @@ func newOllamaModel(host string) ollamaModel {
 	return ollamaModel{client: ollama.New(host)}
 }
 
+// llamacppModel adapts *llamacpp.LlamacppProvider to the Model interface.
+type llamacppModel struct {
+	client *llamacpp.LlamacppProvider
+	model  string // cached model name for context-length lookups
+}
+
+func newLlamacppModel(host, model string) llamacppModel {
+	return llamacppModel{client: llamacpp.NewLlamacppProvider(llamacpp.New(host)), model: model}
+}
+
 func (o ollamaModel) Chat(ctx context.Context, model string, messages []prompting.Message, onDelta, onThink func(string)) (string, error) {
 	om := make([]ollama.Message, len(messages))
 	for i, m := range messages {
@@ -52,4 +64,24 @@ func (o ollamaModel) Ready(ctx context.Context, model string) error {
 
 func (o ollamaModel) ContextLength(ctx context.Context, model string) (int, error) {
 	return o.client.ContextLength(ctx, model)
+}
+
+func (l llamacppModel) Chat(ctx context.Context, model string, messages []prompting.Message, onDelta, onThink func(string)) (string, error) {
+	msgs := make([]provider.Message, len(messages))
+	for i, m := range messages {
+		msgs[i] = provider.Message{Role: m.Role, Content: m.Content}
+	}
+	req := provider.ChatRequest{Model: model, Messages: msgs, Think: onThink != nil}
+	if n, err := l.client.ContextLength(ctx, model); err == nil {
+		req.NumCtx = n
+	}
+	return l.client.Chat(ctx, req, onDelta, onThink)
+}
+
+func (l llamacppModel) Ready(ctx context.Context, model string) error {
+	return l.client.Ready(ctx, model)
+}
+
+func (l llamacppModel) ContextLength(ctx context.Context, model string) (int, error) {
+	return l.client.ContextLength(ctx, model)
 }
