@@ -1,13 +1,18 @@
-// Package invoke provides the Ollama-backed fanout.Invoker: it turns a
+// Package invoke provides the backend-agnostic fanout.Invoker: it turns a
 // fanout.Invocation into a structured, schema-constrained model completion and
 // parses the JSON back into a fanout.Response the pool can vote on.
 //
-// The model call is injected as a CompleteFunc so the request-building and
-// response-parsing logic is testable without a live Ollama; NewOllama wires the
-// production path over an *ollama.Client.
+// The model call is backed by a provider.Provider so the request-building and
+// response-parsing logic is testable with a stub; NewProvider wires the
+// production path over a real backend (Ollama, llama.cpp, …).
 //
-// Design: docs/architecture/prompt_fan_groups.md, cascade_classifier.md.
-// Behavior contract: tests/features/llm/invoker.feature.
+// The invoker reads the provider's FormatStyle once at construction. When the
+// style is FormatStylePrompt, it injects a JSON instruction into the user prompt
+// instead of sending a format field — so the rest of the runtime never sees the
+// backend-specific difference.
+//
+// Design: docs/architecture/prompt_fan_groups.md, cascade_classifier.md, ADR 0013.
+// Behavior contract: tests/features/llm/invoker.feature, tests/features/llm/provider.feature.
 package invoke
 
 import (
@@ -18,70 +23,101 @@ import (
 
 	"agentx/internal/llm/fanout"
 	"agentx/internal/llm/ollama"
+	"agentx/internal/llm/provider"
 )
 
+// jsonInstruction is the system-style directive injected into the user prompt
+// when a provider uses FormatStylePrompt (llama.cpp). It asks the model to
+// emit a JSON object with the required fields and nothing else.
+const jsonInstruction = "Respond with a JSON object using only the fields listed below. Do not include any prose or explanation outside the JSON object."
+
 // Request is one model completion the invoker asks for.
+//
+// Deprecated: Request is kept for backward compatibility with existing test
+// stubs that construct it directly. New code should use provider.CompleteRequest.
 type Request struct {
 	Model       string
 	System      string
 	User        string
 	Temperature float64
 	Seed        int
-	Format      json.RawMessage // JSON schema for constrained decoding; nil = unconstrained
+	Format      json.RawMessage // JSON schema for constrained decoding; nil = unconstrained or prompt-injected
 }
 
-// CompleteFunc runs one completion and returns the raw model text.
-type CompleteFunc func(ctx context.Context, req Request) (string, error)
-
-// Invoker implements fanout.Invoker over a CompleteFunc.
+// Invoker implements fanout.Invoker over a provider.Provider.
 type Invoker struct {
-	complete CompleteFunc
-	model    string // default model when an invocation names none
-	system   string // optional system framing prepended to every invocation
+	provider    provider.Provider
+	formatStyle provider.FormatStyle
+	model       string // default model when an invocation names none
+	system      string // optional system framing prepended to every invocation
 }
 
-// New builds an Invoker over a completion function.
-func New(model, system string, complete CompleteFunc) *Invoker {
-	return &Invoker{complete: complete, model: model, system: system}
+// NewProvider builds an Invoker backed by the given provider.
+func NewProvider(model, system string, p provider.Provider) *Invoker {
+	return &Invoker{
+		provider:    p,
+		formatStyle: p.FormatStyle(),
+		model:       model,
+		system:      system,
+	}
 }
 
-// NewOllama wires the production invoker over an Ollama client.
+// NewOllama wires the production invoker over an Ollama client, for backward
+// compatibility with existing call sites. Equivalent to NewProvider with an
+// Ollama provider (FormatStyleNative).
 func NewOllama(client *ollama.Client, model, system string) *Invoker {
-	return New(model, system, func(ctx context.Context, r Request) (string, error) {
-		msgs := make([]ollama.Message, 0, 2)
-		if r.System != "" {
-			msgs = append(msgs, ollama.Message{Role: "system", Content: r.System})
-		}
-		msgs = append(msgs, ollama.Message{Role: "user", Content: r.User})
-		return client.Complete(ctx, ollama.CompleteRequest{
-			Model:       r.Model,
-			Messages:    msgs,
-			Temperature: r.Temperature,
-			Seed:        r.Seed,
-			Format:      r.Format,
-		})
-	})
+	return NewProvider(model, system, ollama.NewOllamaProvider(client))
 }
 
 // Invoke satisfies fanout.Invoker: it sends the invocation's prompt as a
 // schema-constrained completion and parses the JSON reply into a Response.
+//
+// When the provider's FormatStyle is FormatStyleNative, the JSON schema is sent
+// as the "format" field on the request. When it is FormatStylePrompt, a JSON
+// instruction is prepended to the user prompt instead — the model must emit
+// structured output via prompt engineering rather than a server-side hook.
 func (i *Invoker) Invoke(ctx context.Context, inv fanout.Invocation) (fanout.Response, error) {
 	model := inv.Model
 	if model == "" {
 		model = i.model
 	}
-	raw, err := i.complete(ctx, Request{
+	schema := schemaFor(inv.Contract)
+
+	var userPrompt string
+	var format json.RawMessage
+	if schema != nil && i.formatStyle == provider.FormatStylePrompt {
+		// Inject JSON instruction into the prompt — the provider does not honor
+		// "format", so we ask the model via prompt engineering instead.
+		userPrompt = jsonInstruction + "\n\n" + inv.Prompt
+		format = nil
+	} else {
+		userPrompt = inv.Prompt
+		format = schema
+	}
+
+	raw, err := i.provider.Complete(ctx, provider.CompleteRequest{
 		Model:       model,
-		System:      i.system,
-		User:        inv.Prompt,
+		Messages:    buildMessages(i.system, userPrompt),
 		Temperature: inv.Params.Temperature,
 		Seed:        inv.Params.Seed,
-		Format:      schemaFor(inv.Contract),
+		Format:      format,
 	})
 	if err != nil {
 		return fanout.Response{}, err
 	}
 	return parseResponse(raw, inv.VerdictField), nil
+}
+
+// buildMessages assembles system + user messages in the provider's Message
+// representation. The provider's Message type is used so that the resulting
+// payload matches its wire format exactly.
+func buildMessages(system, user string) []provider.Message {
+	msgs := make([]provider.Message, 0, 2)
+	if system != "" {
+		msgs = append(msgs, provider.Message{Role: "system", Content: system})
+	}
+	msgs = append(msgs, provider.Message{Role: "user", Content: user})
+	return msgs
 }
 
 // schemaFor compiles a fanout.Contract into an Ollama `format` JSON schema so the

@@ -168,6 +168,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the pool default width budget is (\d+)$`, w.defaultWidth)
 
 	registerInvokerSteps(sc)
+	registerProviderSteps(sc)
+	registerLlamacppSteps(sc)
 }
 
 // ---- server-defaults steps ----

@@ -9,7 +9,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"agentx/internal/llm/provider"
 )
+
+// *Client itself does not implement provider.Provider (its method signatures
+// accept Ollama-native request types). OllamaProvider wraps *Client to provide
+// the Provider interface; see the compile-time check there.
 
 // Client talks to a local Ollama runtime.
 type Client struct {
@@ -49,6 +55,24 @@ func normalizeHost(host string) string {
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+// toProvider converts ollama Messages to provider Messages.
+func toProviderMessages(msgs []Message) []provider.Message {
+	out := make([]provider.Message, len(msgs))
+	for i, m := range msgs {
+		out[i] = provider.Message{Role: m.Role, Content: m.Content}
+	}
+	return out
+}
+
+// fromProvider converts provider Messages to ollama Messages.
+func fromProviderMessages(msgs []provider.Message) []Message {
+	out := make([]Message, len(msgs))
+	for i, m := range msgs {
+		out[i] = Message{Role: m.Role, Content: m.Content}
+	}
+	return out
 }
 
 // ChatRequest is a streaming chat completion request. When Think is set the
@@ -350,4 +374,72 @@ func modelMatches(listed, want string) bool {
 		return true
 	}
 	return false
+}
+
+// ---------------------------------------------------------------------------
+// provider.Provider adapter
+//
+// *Client itself does NOT implement provider.Provider because its Complete/Chat
+// methods accept Ollama-native request types (ollama.CompleteRequest,
+// ollama.ChatRequest) whose field shapes differ from provider.CompleteRequest
+// and provider.ChatRequest. Instead, OllamaProvider wraps *Client and converts
+// between the two.
+//
+// Direct use of *Client (e.g. tests asserting on the exact Ollama wire shape)
+// is preserved; the runtime talks to Ollama through OllamaProvider.
+// ---------------------------------------------------------------------------
+
+// OllamaProvider wraps *Client to satisfy provider.Provider.
+//
+// It converts provider.CompleteRequest → ollama.CompleteRequest, provider.ChatRequest
+// → ollama.ChatRequest, and provider.Message → ollama.Message at the boundary,
+// so the rest of the runtime stays provider-agnostic while tests can still
+// assert on the native Ollama wire format.
+type OllamaProvider struct {
+	*Client
+}
+
+// NewOllamaProvider wraps an existing *Client to satisfy provider.Provider.
+func NewOllamaProvider(c *Client) *OllamaProvider {
+	return &OllamaProvider{Client: c}
+}
+
+// Compile-time check.
+var _ provider.Provider = (*OllamaProvider)(nil)
+
+// FormatStyle reports that Ollama honors JSON-schema constrained decoding via
+// the "format" field on the request.
+func (o *OllamaProvider) FormatStyle() provider.FormatStyle { return provider.FormatStyleNative }
+
+// Complete runs a non-streaming completion through Ollama.
+func (o *OllamaProvider) Complete(ctx context.Context, req provider.CompleteRequest) (string, error) {
+	return o.Client.Complete(ctx, CompleteRequest{
+		Model:       req.Model,
+		Messages:    fromProviderMessages(req.Messages),
+		Temperature: req.Temperature,
+		Seed:        req.Seed,
+		Format:      req.Format,
+		NumCtx:      req.NumCtx,
+		Think:       req.Think,
+	})
+}
+
+// Chat streams a chat completion through Ollama.
+func (o *OllamaProvider) Chat(ctx context.Context, req provider.ChatRequest, onDelta, onThink func(string)) (string, error) {
+	return o.Client.Chat(ctx, ChatRequest{
+		Model:    req.Model,
+		Messages: fromProviderMessages(req.Messages),
+		Think:    req.Think,
+		NumCtx:   req.NumCtx,
+	}, onDelta, onThink)
+}
+
+// Ready reports Ollama model availability.
+func (o *OllamaProvider) Ready(ctx context.Context, model string) error {
+	return o.Client.Ready(ctx, model)
+}
+
+// ContextLength reports the Ollama model's context window.
+func (o *OllamaProvider) ContextLength(ctx context.Context, model string) (int, error) {
+	return o.Client.ContextLength(ctx, model)
 }

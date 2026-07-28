@@ -13,11 +13,13 @@ import (
 	"agentx/internal/llm/fanout"
 	"agentx/internal/llm/invoke"
 	"agentx/internal/llm/ollama"
+	"agentx/internal/llm/provider"
 )
 
 type invokerWorld struct {
 	canned   string
-	sent     *invoke.Request
+	sent     *provider.CompleteRequest
+	stub     *stubProvider
 	inv      fanout.Invocation
 	resp     fanout.Response
 	invErr   error
@@ -27,6 +29,29 @@ type invokerWorld struct {
 	gotBody  map[string]any
 	complete string
 	compErr  error
+}
+
+// stubProvider is a test-double provider.Provider: it returns canned text from
+// Complete and records the last request sent, so scenarios can assert on both
+// the parsed response and the wire-shape of the request.
+type stubProvider struct {
+	formatStyle provider.FormatStyle
+	completeFn  func(ctx context.Context, req provider.CompleteRequest) (string, error)
+}
+
+func (s *stubProvider) FormatStyle() provider.FormatStyle { return s.formatStyle }
+func (s *stubProvider) Complete(ctx context.Context, req provider.CompleteRequest) (string, error) {
+	if s.completeFn != nil {
+		return s.completeFn(ctx, req)
+	}
+	return "", nil
+}
+func (s *stubProvider) Chat(ctx context.Context, req provider.ChatRequest, onDelta, onThink func(string)) (string, error) {
+	return "", nil
+}
+func (s *stubProvider) Ready(ctx context.Context, model string) error { return nil }
+func (s *stubProvider) ContextLength(ctx context.Context, model string) (int, error) {
+	return 0, nil
 }
 
 func registerInvokerSteps(sc *godog.ScenarioContext) {
@@ -84,11 +109,13 @@ func (w *invokerWorld) invRequiring(a, b string, temp float64) error {
 }
 
 func (w *invokerWorld) invokerRuns() error {
-	inv := invoke.New("test-model", "", func(_ context.Context, req invoke.Request) (string, error) {
+	w.stub = &stubProvider{formatStyle: provider.FormatStyleNative}
+	w.stub.completeFn = func(_ context.Context, req provider.CompleteRequest) (string, error) {
 		captured := req
 		w.sent = &captured
 		return w.canned, nil
-	})
+	}
+	inv := invoke.NewProvider("test-model", "", w.stub)
 	w.resp, w.invErr = inv.Invoke(context.Background(), w.inv)
 	return nil
 }
