@@ -74,7 +74,7 @@ Feature: llama.cpp HTTP adapter
   Scenario: Context length reports 0 when server omits the field
     Given a stub llama.cpp server listing model "test" with no context length
     When llama.cpp context length is requested for model "test"
-    Then the llama.cpp chat returns an error
+    Then the llama.cpp context length is 0
 
   # use-case: UC-LLAMACPP-ADAPTER  (TC-LLAMA-009)
   # LlamacppProvider satisfies provider.Provider so the invoker stays

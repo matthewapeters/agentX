@@ -100,16 +100,16 @@ func (w *llamacppWorld) serverStreams(a, b string) error {
 		}
 		if r.Method == http.MethodPost {
 			rw.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(rw, `data:{"id":"c","object":"chat.completion.chunk","created":1,"model":"test","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}`)
+			fmt.Fprint(rw, `data: {"id":"c","object":"chat.completion.chunk","created":1,"model":"test","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}`)
 			fmt.Fprint(rw, "\n")
-			fmt.Fprint(rw, "data:{"+strings.Join([]string{`"id":"c"`, `"object":"chat.completion.chunk"`, `"created":1`, `"model":"test"`, `"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]`}, ",")+"}")
+			fmt.Fprint(rw, "data: {"+strings.Join([]string{`"id":"c"`, `"object":"chat.completion.chunk"`, `"created":1`, `"model":"test"`, `"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]`}, ",")+"}")
 			fmt.Fprint(rw, "\n")
 			// Stream two content deltas.
-			fmt.Fprint(rw, "data:{"+strings.Join([]string{`"id":"c"`, `"object":"chat.completion.chunk"`, `"created":1`, `"model":"test"`, fmt.Sprintf(`"choices":[{"index":0,"delta":{"role":"assistant","content":"%s"},"finish_reason":null}]`, a), `"usage":null`}, ",")+"}")
+			fmt.Fprint(rw, "data: {"+strings.Join([]string{`"id":"c"`, `"object":"chat.completion.chunk"`, `"created":1`, `"model":"test"`, fmt.Sprintf(`"choices":[{"index":0,"delta":{"role":"assistant","content":"%s"},"finish_reason":null}]`, a), `"usage":null`}, ",")+"}")
 			fmt.Fprint(rw, "\n")
-			fmt.Fprint(rw, "data:{"+strings.Join([]string{`"id":"c"`, `"object":"chat.completion.chunk"`, `"created":1`, `"model":"test"`, fmt.Sprintf(`"choices":[{"index":0,"delta":{"role":"assistant","content":"%s"},"finish_reason":null}]`, b), `"usage":null`}, ",")+"}")
+			fmt.Fprint(rw, "data: {"+strings.Join([]string{`"id":"c"`, `"object":"chat.completion.chunk"`, `"created":1`, `"model":"test"`, fmt.Sprintf(`"choices":[{"index":0,"delta":{"role":"assistant","content":"%s"},"finish_reason":null}]`, b), `"usage":null`}, ",")+"}")
 			fmt.Fprint(rw, "\n")
-			fmt.Fprint(rw, "data:{"+strings.Join([]string{`"id":"c"`, `"object":"chat.completion.chunk"`, `"created":1`, `"model":"test"`, `"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]`, `"usage":null`}, ",")+"}")
+			fmt.Fprint(rw, "data: {"+strings.Join([]string{`"id":"c"`, `"object":"chat.completion.chunk"`, `"created":1`, `"model":"test"`, `"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]`, `"usage":null`}, ",")+"}")
 			fmt.Fprint(rw, "\n")
 			fmt.Fprint(rw, "data: [DONE]\n")
 			return
@@ -396,6 +396,10 @@ func (w *llamacppWorld) contextLengthIs(expected int) error {
 		return fmt.Errorf("context length = %d, want %d", w.ctxLen, expected)
 	}
 	return nil
+}
+
+func (w *llamacppWorld) contextLengthIsZero() error {
+	return w.contextLengthIs(0)
 }
 
 // ---- FormatStyle assertions ----

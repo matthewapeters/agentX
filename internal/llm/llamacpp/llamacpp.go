@@ -308,7 +308,7 @@ func (c *Client) ContextLength(ctx context.Context, model string) (int, error) {
 		return 0, fmt.Errorf("decode model: %w", err)
 	}
 	if modelInfo.ContextLength <= 0 {
-		return 0, fmt.Errorf("model %q reports no context_length", model)
+		return 0, nil
 	}
 	c.mu.Lock()
 	c.ctxLen[model] = modelInfo.ContextLength
