@@ -50,6 +50,9 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	root := opts.SessionRoot
 	if root == "" {

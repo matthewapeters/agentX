@@ -159,6 +159,36 @@ func (c Config) EffectiveProvider() string {
 	return "ollama"
 }
 
+// Validate checks the configuration for logical errors that the TOML decoder
+// cannot catch: unknown provider names, missing model/host for the chosen
+// backend, and so on. It returns a human-readable error that names the
+// offending key and, where feasible, lists the valid choices.
+//
+// A nil return means the config is ready to use; callers should call this
+// immediately after Resolve before starting the orchestrator.
+func (c Config) Validate() error {
+	switch c.EffectiveProvider() {
+	case "ollama":
+		if strings.TrimSpace(c.Agentx.Ollama.Model) == "" {
+			return fmt.Errorf(`BAD CONFIGURATION FOR "[agentx.ollama].model". Model name is required when provider = "ollama"`)
+		}
+	case "llamacpp":
+		if strings.TrimSpace(c.Agentx.Llamacpp.Host) == "" {
+			return fmt.Errorf(`BAD CONFIGURATION FOR "[agentx.llamacpp].host". Host (host:port) is required when provider = "llamacpp"`)
+		}
+		if strings.TrimSpace(c.Agentx.Llamacpp.Model) == "" {
+			return fmt.Errorf(`BAD CONFIGURATION FOR "[agentx.llamacpp].model". Model name is required when provider = "llamacpp"`)
+		}
+	default:
+		p := c.Provider()
+		if p == "" {
+			p = "(unset)"
+		}
+		return fmt.Errorf(`BAD CONFIGURATION FOR "provider". %q is invalid. Must be one of "ollama", "llamacpp"`, p)
+	}
+	return nil
+}
+
 // LlamacppHost returns the configured llama.cpp server host.
 func (c Config) LlamacppHost() string { return c.Agentx.Llamacpp.Host }
 

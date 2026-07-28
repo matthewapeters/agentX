@@ -426,7 +426,7 @@ func (o *Orchestrator) History() ([]state.Event, error) {
 func (o *Orchestrator) CheckModel(ctx context.Context) error {
 	o.mu.Lock()
 	model := o.model
-	name := o.settings.OllamaModel
+	name := o.modelName()
 	o.mu.Unlock()
 	if model == nil {
 		return fmt.Errorf("orchestrator not started: no model")
@@ -435,6 +435,16 @@ func (o *Orchestrator) CheckModel(ctx context.Context) error {
 		return fmt.Errorf("model %q is not available: %w", name, err)
 	}
 	return nil
+}
+
+// modelName returns the configured model name for the active provider.
+func (o *Orchestrator) modelName() string {
+	switch strings.ToLower(o.settings.Provider) {
+	case "llamacpp":
+		return o.settings.LlamacppModel
+	default:
+		return o.settings.OllamaModel
+	}
 }
 
 // Submit runs one prompt cycle (CHT-C3): it records the user prompt, drives the

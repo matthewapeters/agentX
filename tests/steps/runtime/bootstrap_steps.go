@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	"github.com/cucumber/godog"
+
+	"agentx/internal/config"
 )
 
 // harnessWorld carries per-scenario state for the harness smoke domain.
@@ -45,6 +47,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerTaskBranchSteps(sc)
 	registerTaskSchedulerSteps(sc)
 	registerDecomposeAdapterSteps(sc)
+	registerConfigValidationSteps(sc)
 }
 
 // registerHarnessSteps wires the harness smoke steps.
@@ -75,4 +78,109 @@ func (w *harnessWorld) reportsSuccess() error {
 		return fmt.Errorf("scenario did not run successfully")
 	}
 	return nil
+}
+
+// configValidationWorld carries per-scenario state for config validation tests.
+type configValidationWorld struct {
+	cfg config.Config
+	err error
+}
+
+func (w *configValidationWorld) validConfig(provider string) error {
+	w.cfg = config.Config{
+		Agentx: config.Agentx{
+			Provider: provider,
+			Ollama: config.Ollama{
+				Host:  "localhost:11434",
+				Model: "phi4-mini:3.8b",
+			},
+		},
+	}
+	if provider == "llamacpp" {
+		w.cfg.Agentx.Llamacpp = config.Llamacpp{
+			Host:  "localhost:8080",
+			Model: "phi4:latest",
+		}
+	}
+	return nil
+}
+
+func (w *configValidationWorld) invalidProvider(provider string) error {
+	w.cfg = config.Config{
+		Agentx: config.Agentx{
+			Provider: provider,
+			Ollama: config.Ollama{
+				Host:  "localhost:11434",
+				Model: "phi4-mini:3.8b",
+			},
+		},
+	}
+	return nil
+}
+
+func (w *configValidationWorld) ollamaNoModel() error {
+	w.cfg = config.Config{
+		Agentx: config.Agentx{
+			Provider: "ollama",
+			Ollama: config.Ollama{
+				Host:  "localhost:11434",
+				Model: "",
+			},
+		},
+	}
+	return nil
+}
+
+func (w *configValidationWorld) llamacppNoHost() error {
+	w.cfg = config.Config{
+		Agentx: config.Agentx{
+			Provider: "llamacpp",
+			Llamacpp: config.Llamacpp{
+				Host:  "",
+				Model: "phi4:latest",
+			},
+		},
+	}
+	return nil
+}
+
+func (w *configValidationWorld) llamacppNoModel() error {
+	w.cfg = config.Config{
+		Agentx: config.Agentx{
+			Provider: "llamacpp",
+			Llamacpp: config.Llamacpp{
+				Host:  "localhost:8080",
+				Model: "",
+			},
+		},
+	}
+	return nil
+}
+
+func (w *configValidationWorld) validationPasses() error {
+	w.err = w.cfg.Validate()
+	if w.err != nil {
+		return fmt.Errorf("expected validation to pass, got error: %w", w.err)
+	}
+	return nil
+}
+
+func (w *configValidationWorld) validationFails() error {
+	w.err = w.cfg.Validate()
+	if w.err == nil {
+		return fmt.Errorf("expected validation error, got nil")
+	}
+	return nil
+}
+
+// registerConfigValidationSteps wires the config validation steps.
+func registerConfigValidationSteps(sc *godog.ScenarioContext) {
+	w := &configValidationWorld{}
+	sc.Step(`^a valid config with provider "([^"]*)"$`, w.validConfig)
+	sc.Step(`^a config with invalid provider "([^"]*)"$`, w.invalidProvider)
+	sc.Step(`^a config with provider "ollama" and no model$`, w.ollamaNoModel)
+	sc.Step(`^a config with provider "llamacpp" and no host$`, w.llamacppNoHost)
+	sc.Step(`^a config with provider "llamacpp" and no model$`, w.llamacppNoModel)
+	sc.Step(`^config validation passes$`, w.validationPasses)
+	sc.Step(`^config validation fails$`, w.validationFails)
 }
