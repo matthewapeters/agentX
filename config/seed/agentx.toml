@@ -4,9 +4,21 @@
 # the 1:1 baseline from which to tune; unknown keys are ignored by the decoder and
 # absent keys fall back to these same defaults.
 
+[agentx]
+# provider selects the LLM backend. Valid values: "ollama" (default), "llamacpp".
+# When unset, defaults to "ollama". The deprecated alias "chat_backend" is also accepted.
+# provider = "ollama"
+
 [agentx.ollama]
 host  = "localhost:11434"   # Ollama API host:port
 model = "ornith:latest"    # must match an installed Ollama model
+
+[agentx.llamacpp]
+# Host and model for the llama.cpp HTTP server (llama-server).
+# Only used when provider = "llamacpp". Host is host:port (default 8080).
+# model must match a loaded model in the llama.cpp server instance.
+# host  = "localhost:8080"
+# model = "phi4:latest"
 
 [agentx.classification]
 retries               = 2   # re-attempts when a classification verdict won't parse
