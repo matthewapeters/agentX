@@ -1079,10 +1079,6 @@ func (o *Orchestrator) withContext(msgs []prompting.Message) []prompting.Message
 	for at < len(msgs) && msgs[at].Role == "system" {
 		at++
 	}
-	fmt.Printf("DEBUG withContext: msgs=%d, at=%d\n", len(msgs), at)
-	for i, m := range msgs {
-		fmt.Printf("DEBUG   input [%d] role=%q\n", i, m.Role)
-	}
 	out := make([]prompting.Message, 0, len(msgs)+len(o.history)+1)
 	// Merge all leading system messages (instructions + working memory) into one
 	// Make a copy to avoid mutating the input slice via append aliasing
