@@ -116,8 +116,10 @@ func (w *promptFilesWorld) systemMessage(want string) error {
 	if !ok {
 		return fmt.Errorf("no system message was sent to the model")
 	}
-	if m.Content != want {
-		return fmt.Errorf("system message = %q, want %q", m.Content, want)
+	// For llama.cpp compatibility, system messages are merged with working memory.
+	// Check that the message starts with the expected text.
+	if !strings.HasPrefix(m.Content, want) {
+		return fmt.Errorf("system message %q does not start with %q", m.Content, want)
 	}
 	return nil
 }

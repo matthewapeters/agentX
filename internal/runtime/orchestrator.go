@@ -1072,20 +1072,46 @@ func (o *Orchestrator) contextWindow() int {
 // assembled [system?, user] message list, in layer order: instructions (Layer 0)
 // → working memory (band 0) → enabled conversation history → the current user
 // turn. Both are re-read fresh each turn so edits/new turns take effect on the
-// next post.
+// next post. System messages are merged into a single system message at the
+// beginning to satisfy Jinja template requirements (llama.cpp compat).
 func (o *Orchestrator) withContext(msgs []prompting.Message) []prompting.Message {
 	at := 0
 	for at < len(msgs) && msgs[at].Role == "system" {
 		at++
 	}
+	fmt.Printf("DEBUG withContext: msgs=%d, at=%d\n", len(msgs), at)
+	for i, m := range msgs {
+		fmt.Printf("DEBUG   input [%d] role=%q\n", i, m.Role)
+	}
 	out := make([]prompting.Message, 0, len(msgs)+len(o.history)+1)
-	out = append(out, msgs[:at]...)
+	// Merge all leading system messages (instructions + working memory) into one
+	// Make a copy to avoid mutating the input slice via append aliasing
+	sysMsgs := make([]prompting.Message, at)
+	copy(sysMsgs, msgs[:at])
 	if wmMsg, ok := o.workingMemoryMessage(); ok {
-		out = append(out, wmMsg)
+		sysMsgs = append(sysMsgs, wmMsg)
+	}
+	if len(sysMsgs) > 0 {
+		merged := mergeSystemMessages(sysMsgs)
+		out = append(out, merged)
 	}
 	out = append(out, o.historyMessages()...)
 	out = append(out, msgs[at:]...)
 	return out
+}
+
+// mergeSystemMessages combines multiple system messages into one, separated by
+// newlines. This is required for llama.cpp Jinja templates which expect a
+// single system message at the beginning.
+func mergeSystemMessages(msgs []prompting.Message) prompting.Message {
+	var b strings.Builder
+	for i, m := range msgs {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(m.Content)
+	}
+	return prompting.Message{Role: "system", Content: b.String()}
 }
 
 // workingMemoryMessage renders the session's enabled working-memory facts into a
