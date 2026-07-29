@@ -47,7 +47,7 @@ func (o *Orchestrator) buildTools() error {
 	}
 	if o.proposer == nil {
 		chat := func(ctx context.Context, msgs []prompting.Message) (string, error) {
-			return o.model.Chat(ctx, o.settings.OllamaModel, msgs, func(string) {}, nil)
+			return o.model.Chat(ctx, o.modelName(), msgs, func(string) {}, nil)
 		}
 		o.proposer = tools.NewProposer(o.settings.ToolCatalog, o.settings.ClassificationRetries, chat)
 		// Ground every proposal in cwd/project facts (not history — a tool resolution is a
@@ -184,14 +184,14 @@ func (o *Orchestrator) streamResponse(ctx context.Context, messages, fallback []
 		defer cancel()
 	}
 
-	resp, err := o.model.Chat(respondCtx, o.settings.OllamaModel, messages, onDelta, onThink)
+	resp, err := o.model.Chat(respondCtx, o.modelName(), messages, onDelta, onThink)
 
 	// Thinking budget exceeded (child ctx canceled, parent live, no content yet):
 	// answer directly without thinking.
 	if errors.Is(err, context.Canceled) && ctx.Err() == nil && !respondStarted.Load() && fallback != nil {
 		o.publishEv("THINKING", state.ContentThinking, map[string]any{"text": "\n…(thinking budget reached — answering directly)"}, ephemeral)
 		o.setProcessing(state.StateWorking, state.PhaseRespond)
-		resp, err = o.model.Chat(ctx, o.settings.OllamaModel, fallback, onDelta, nil)
+		resp, err = o.model.Chat(ctx, o.modelName(), fallback, onDelta, nil)
 	}
 
 	// Publish the complete answer as one durable agent_response (the canonical
