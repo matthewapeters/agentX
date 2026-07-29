@@ -745,20 +745,42 @@ Switching the provider (e.g., from "ollama" to "llamacpp") requires restarting t
 
 ## Implementation Plan
 
-### Phase 1: Transport endpoints (L)
+### Phase 1a: Read-only transport endpoints (S)
 
-- [ ] Add `GET /config` to the transport server.
-- [ ] Add `POST /config` to the transport server.
-- [ ] Add `GET /provider/{name}/models` to the transport server.
-- [ ] Add `POST /test/host` to the transport server.
-- [ ] Add `GET /config/schema` to the transport server.
-- [ ] Extend the `Provider` interface with `Config()`, `SetConfig()`, `ListModels()`, `TestHost()`, `ConfigSchema()`.
-- [ ] Implement the orchestrator's transactional write with semaphore lock.
-- [ ] Implement the orchestrator's config normalization (`chat_backend` → `provider`).
-- [ ] Implement the orchestrator's config validation (type-appropriate, host testing, etc.).
-- [ ] Implement the orchestrator's live reload for tunable keys.
-- [ ] Implement the orchestrator's restart-required key queuing.
-- [ ] Write Godog tests for the transport endpoints.
+- [ ] Extend the `Provider` interface with `Config()`, `ListModels()`, `ConfigSchema()`.
+- [ ] Add `GET /config` to the transport server (returns current effective config).
+- [ ] Add `GET /config/schema` to the transport server (returns validation rules and metadata).
+- [ ] Add `GET /provider/{name}/models` to the transport server (returns model list from provider API).
+- [ ] Write Godog tests for the read-only endpoints.
+
+### Phase 1b: Transactional write infrastructure (M)
+
+- [ ] Implement semaphore file (`~/.cache/agentx/config.lock`).
+- [ ] Implement temp file (`~/.cache/agentx/config_<timestamp>.tmp`).
+- [ ] Implement atomic rename to `~/.config/agentx/agentx.toml`.
+- [ ] Implement cleanup of stale temp files on orchestrator startup.
+- [ ] Write Godog tests for the transactional write.
+
+### Phase 1c: Validation and normalization (S)
+
+- [ ] Implement type-appropriate validation (int, string, bool, enum, color, host, model).
+- [ ] Implement `chat_backend` → `provider` normalization.
+- [ ] Implement host testing against provider API (for `POST /test/host`).
+- [ ] Write Godog tests for validation and normalization.
+
+### Phase 1d: Write transport endpoints (M)
+
+- [ ] Extend the `Provider` interface with `SetConfig()`, `TestHost()`.
+- [ ] Add `POST /config` to the transport server (validates, applies, writes to disk using Phase 1b and 1c).
+- [ ] Add `POST /test/host` to the transport server (tests a host endpoint using Phase 1c).
+- [ ] Write Godog tests for the write endpoints.
+
+### Phase 1e: Live reload and restart queuing (M)
+
+- [ ] Implement live reload for tunable keys in the orchestrator (apply immediately to running session).
+- [ ] Implement restart-required key queuing in the orchestrator (queue for next restart).
+- [ ] Implement the restart flow (surface prompts user, orchestrator restarts, surface reattaches).
+- [ ] Write Godog tests for the live reload and restart flow.
 
 ### Phase 2: Surface framework (M)
 
@@ -788,14 +810,17 @@ Switching the provider (e.g., from "ollama" to "llamacpp") requires restarting t
 - [ ] Implement the restart flow (surface prompts user, orchestrator restarts, surface reattaches).
 - [ ] Write Godog tests for the live reload and restart flow.
 
+> **Note:** Phase 1e (Live reload and restart queuing) is the orchestrator-side implementation. Phase 4 is the surface-side integration (confirming restart, reattaching after restart, etc.). Both are required for the complete flow.
+
 ### Phase 5: Documentation and polish (S)
 
 - [ ] Write the config schema endpoint response.
 - [ ] Add help documentation for each config key.
-- [ ] Add color picker for color fields (optional, future enhancement).
-- [ ] Add auto-save option (configurable).
-- [ ] Update `docs/ux/03_PANEL_DETAILS.md` with the PD-CONFIG section.
-- [ ] Update `docs/ux/UX_LIFECYCLE.md` with the PD-CONFIG traceability row.
+- [ ] Update `docs/ux/03_PANEL_DETAILS.md` with the PD-CONFIG section (already done).
+- [ ] Update `docs/ux/UX_LIFECYCLE.md` with the PD-CONFIG traceability row (already done).
+- [ ] Add visual color picker for color fields (required, not optional).
+- [ ] Verify auto-save is always ON (no user option to disable).
+- [ ] Final review and cleanup of stale temp files on orchestrator startup.
 
 ---
 
