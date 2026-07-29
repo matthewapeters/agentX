@@ -1,6 +1,7 @@
 package llamacpp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -76,25 +77,47 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("chat status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("chat status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var assembled strings.Builder
-	var buf [4096]byte
-	for {
-		n, err := resp.Body.Read(buf[:])
-		if n > 0 {
-			s := string(buf[:n])
-			if onDelta != nil {
-				onDelta(s)
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		if !bytes.HasPrefix(line, []byte("data: ")) {
+			continue
+		}
+		data := bytes.TrimPrefix(line, []byte("data: "))
+		trimmed := bytes.TrimSpace(data)
+		if len(trimmed) == 0 {
+			continue
+		}
+		// Skip done events
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(trimmed, &chunk); err != nil {
+			continue
+		}
+		for _, c := range chunk.Choices {
+			if c.Delta.Content != "" {
+				if onDelta != nil {
+					onDelta(c.Delta.Content)
+				}
+				assembled.WriteString(c.Delta.Content)
 			}
-			assembled.WriteString(s)
 		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return assembled.String(), fmt.Errorf("chat read: %w", err)
-		}
+	}
+	if err := scanner.Err(); err != nil {
+		return assembled.String(), fmt.Errorf("chat read: %w", err)
 	}
 	return assembled.String(), nil
 }
