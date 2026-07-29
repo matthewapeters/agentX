@@ -663,17 +663,180 @@ attachment-chip system today.
 
 ---
 
-## PD-CONFIG: Registered, not yet implemented
+## PD-CONFIG — Configuration Surface (TUI)
 
-`config` is a known launchable kind (`registry.go:49`), but no
-`internal/surfaces/config` package exists. Configuration today is a static
-file, `agentx.toml` (project root; runtime copy under
-`~/.config/agentx/`), hand-edited — `chat_backend`, `[agentx.theme]`,
-`[agentx.ollama] host`/`model`, timeouts, applet port range, etc. There is no
-in-app settings UI. The retired Tkinter `SettingsSurface` (PD-07) — live model
-dropdown, restart-required tooltips, and so on — describes a design that does
-not exist today and is not a confirmed target for this surface; treat it as
-historical only.
+> **TUI surface (M2+, pending implementation).** `config` is a known launchable
+> kind (`internal/surfaces/registry.go:49`), backed by a dedicated
+> `internal/surfaces/config` package (not yet built). This surface lets the user
+> inspect and edit `agentx.toml` through an interactive TUI that reads from the
+> file, writes to the file, detects external changes, and pushes changes live to
+> the running orchestrator.
+>
+> **Authoritative spec**: [`PD-CONFIG_spec.md`](PD-CONFIG_spec.md) — the full
+> affordance inventory, Gherkin contracts, transport contract, and implementation
+> plan live there. This section is the panel-level summary only.
+
+### Purpose
+
+Let the user inspect and edit AgentX's runtime configuration through an
+interactive TUI that:
+
+1. **Reflects the source of truth.** `agentx.toml` is the canonical config file.
+2. **Pushes changes live** to the running orchestrator (no restart for tunable keys).
+3. **Validates before accepting** — host fields are tested against the live
+   provider endpoint; numeric fields are type-validated; model fields are
+   populated from the provider's API.
+4. **Handles complex changes gracefully** — context size, provider switch, etc.
+
+### Architecture
+
+```text
+User terminal                          AgentX orchestrator              agentx.toml
+  ┌──────────────┐                      ┌──────────────────┐              ┌──────────────┐
+  │ config.TUI   │◀────SSE────┐         │                  │              │              │
+  │ (Bubble Tea) │            │         │  Provider        │              │              │
+  │              │            │         │  (read-only)     │              │              │
+  │ ├─ tree      │            ├────────▶│  ├─ GET /config  │              │              │
+  │ ├─ editor    │            │         │  ├─ POST /config │              │              │
+  │ ├─ status    │            │         │  ├─ GET /provider│              │              │
+  │ └─ hint row  │            │         │    /{name}/models│              │              │
+  └──────────────┘            │         │  └─ POST /test   │              │              │
+                              │         │    /host          │              │              │
+                              │         └────────┬─────────┘              │              │
+                              │                  │                        │              │
+                              └──────────────────┼────────────────────────┘              │
+                                                   │    Filesystem watch (in-process)        │
+                                                   │                                        │
+                                                   └────────────────────────────────────────┘
+```
+
+**Key design decisions:**
+
+1. **Separate Bubble Tea v2 client process** — launched by `agentx surface launch config`.
+2. **Document-based, not event-stream-based** — config is a single TOML file.
+3. **Two-way sync** — detects external file changes AND TUI changes.
+4. **Per-instance, not per-session** — config applies to the AgentX installation.
+5. **Live push for tunable keys** — the orchestrator applies changes immediately.
+
+### Placement
+
+A dedicated zellij tab, sized to the full terminal, alongside `agentX`/`editor`/`terminal`/`logs`.
+
+### Affordance Inventory
+
+| Affordance | ID | Status |
+|---|---|---|
+| Launch and attach to the running orchestrator | PD-CONFIG-AF-001 | 📝 Spec only |
+| Navigate config sections (j/k, ↑/↓, PgUp/PgDn) | PD-CONFIG-AF-002 | 📝 Spec only |
+| Edit a config key (Enter) with type-appropriate editor | PD-CONFIG-AF-003 | 📝 Spec only |
+| Validate host fields by testing the endpoint before acceptance | PD-CONFIG-AF-004 | 📝 Spec only |
+| Populate model dropdown from provider API | PD-CONFIG-AF-005 | 📝 Spec only |
+| Type-appropriate validation (int, string, bool, enum, color, host, model) | PD-CONFIG-AF-006 | 📝 Spec only |
+| Save and apply changes (live for tunable keys, queued for restart) | PD-CONFIG-AF-007 | 📝 Spec only |
+| Detect external file changes and highlight diffs | PD-CONFIG-AF-008 | 📝 Spec only |
+| Confirm restart for restart-required changes | PD-CONFIG-AF-009 | 📝 Spec only |
+| Handle complex changes (context size, provider switch) with warnings | PD-CONFIG-AF-010 | 📝 Spec only |
+| Help and documentation per key | PD-CONFIG-AF-011 | 📝 Spec only |
+| Quit with unsaved-changes confirmation | PD-CONFIG-AF-012 | 📝 Spec only |
+
+### Config Key Taxonomy
+
+Config keys fall into three categories:
+
+**Editable, live-reload (no restart):** classification retries/options, output
+widget line caps, thinking enabled/budget/routes, theme border colors, tools
+enabled/read-only/timeouts/bytes, wavefront enabled.
+
+**Editable, requires restart:** provider, ollama/llamacpp host/model, transport
+enabled/host/port range. These are tested against the live endpoint before
+acceptance.
+
+**Read-only (display only):** session identity, connected surfaces, derived
+values (context length).
+
+**Prompt files (managed separately):** standing instructions, bootstrap prompt,
+classification/thinking/planner/wavefront prompts, tool catalog — displayed as
+file paths with an "open in editor" affordance.
+
+### Transport Contract
+
+The surface needs five new transport endpoints (see `PD-CONFIG_spec.md` §Transport
+Contract for full detail):
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/config` | GET | Return the current effective configuration as JSON |
+| `/config` | POST | Apply a new configuration (full config JSON body) |
+| `/provider/{name}/models` | GET | List available models for a provider (ollama/llamacpp) |
+| `/test/host` | POST | Test a host endpoint against the live provider API |
+| `/config/schema` | GET | Return the config schema with validation rules and metadata |
+
+The orchestrator's `Provider` interface gains `Config()`, `SetConfig()`,
+`ListModels()`, `TestHost()`, and `ConfigSchema()` methods.
+
+### Two-Way Sync
+
+**File → TUI:** The orchestrator watches `agentx.toml` for modifications
+(using `fsnotify` or polling at 1s intervals). When the file changes, the
+orchestrator publishes a `config_changed` event to the config surface's event
+stream. The surface reloads the file, diffs against the current TUI state, and
+highlights changed keys (yellow background). If the user has unsaved TUI
+changes, a prompt appears: "File changed externally. Discard TUI changes and
+reload, or keep TUI changes?"
+
+**TUI → File:** The user edits a key in the TUI and saves (via `s` or
+auto-save). The surface serializes the config to TOML and sends `POST /config`
+with the new config. The orchestrator validates, applies live-reloadable keys
+immediately, queues restart-required keys, writes to `agentx.toml`, and responds
+with the list of applied/restart-required keys and any errors. The surface
+updates the status bar.
+
+**Conflict resolution:** If the file changes externally while the user has
+unsaved TUI changes, the orchestrator keeps the TUI changes (the TUI is the
+"active" edit). The file change is noted in the status bar.
+
+### Keybindings
+
+| Key | Action |
+|---|---|
+| `j`/`↓` | Move selection down one row |
+| `k`/`↑` | Move selection up one row |
+| `h`/`←` | Collapse the selected section |
+| `l`/`→` | Expand the selected section |
+| `PgUp` | Scroll up one page |
+| `PgDn` | Scroll down one page |
+| `Home` | Jump to the first section |
+| `End` | Jump to the last section |
+| `↵` | Enter edit mode for the selected key |
+| `Esc` | Cancel edit mode, revert the value |
+| `s` | Save changes (serialize, write to disk, push to orchestrator) |
+| `?` | Show help overlay with documentation for the selected key |
+| `q` | Quit (with unsaved-changes confirmation) |
+| `Ctrl+C` | Quit unconditionally (hard abort, always reachable) |
+
+### Behavior contracts (GIVEN/WHEN/THEN)
+
+See `PD-CONFIG_spec.md` §Gherkin Use-Cases for the full contract.
+
+### Implementation phases
+
+1. **Transport endpoints (L)** — new endpoints on the HTTP server, new methods
+   on the `Provider` interface, Godog tests.
+2. **Surface framework (M)** — `internal/surfaces/config/` package, tree
+   navigation, value editors, status bar, dialog overlay, Godog tests.
+3. **Two-way sync (M)** — filesystem watch in the orchestrator,
+   `config_changed` event publishing, diff highlighting, conflict resolution.
+4. **Live reload and restart (M)** — live reload for tunable keys, restart-
+   required key queuing, restart flow with surface reattach.
+5. **Documentation and polish (S)** — schema endpoint, help docs, color picker,
+   auto-save, panel details update.
+
+### Deferred (later slices)
+
+Inline editing of prompt files, managing tool blacklists/approvals, managing the
+zellij layout (`agentx.kdl`), managing `agentx_tools.toml`, managing
+`prompts.toml`, managing continuation verb lists, managing per-tool output
+overrides.
 
 ---
 
