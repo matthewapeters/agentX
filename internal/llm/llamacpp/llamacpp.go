@@ -78,7 +78,7 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("chat status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("chat status %d: %s (model=%q)", resp.StatusCode, strings.TrimSpace(string(body)), req.Model)
 	}
 	var assembled strings.Builder
 	scanner := bufio.NewScanner(resp.Body)
