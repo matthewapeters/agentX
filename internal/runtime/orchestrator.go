@@ -275,7 +275,7 @@ func (o *Orchestrator) Start() error {
 	if o.classifier == nil {
 		chat := func(ctx context.Context, msgs []prompting.Message) (string, error) {
 			// Classification never thinks (nil onThink): a fast strict-JSON verdict.
-			return o.model.Chat(ctx, o.settings.OllamaModel, msgs, func(string) {}, nil)
+			return o.model.Chat(ctx, o.modelName(), msgs, func(string) {}, nil)
 		}
 		o.classifier = classify.New(o.settings.ClassificationPrompt, o.settings.ClassificationRetries, chat)
 		// Ground every classification in cwd/project facts so a fact-question about "this
@@ -1007,7 +1007,7 @@ func (o *Orchestrator) ContextBreakdown() (session.ContextReport, error) {
 	}
 
 	o.mu.Lock()
-	model := o.settings.OllamaModel
+	model := o.modelName()
 	o.mu.Unlock()
 	return session.ContextReport{
 		Model:        model,
@@ -1051,7 +1051,7 @@ func (o *Orchestrator) contextWindow() int {
 		o.mu.Unlock()
 		return w
 	}
-	model, name := o.model, o.settings.OllamaModel
+	model, name := o.model, o.modelName()
 	o.mu.Unlock()
 	if model == nil {
 		return 0
@@ -1190,7 +1190,7 @@ func (o *Orchestrator) publishEv(eventType string, ct state.ContentType, payload
 		ContentType: ct,
 		Payload:     payload,
 		Enabled:     state.DefaultEnabled(ct),
-		ModelName:   o.settings.OllamaModel,
+		ModelName:   o.modelName(),
 		Ephemeral:   ephemeral,
 	})
 }

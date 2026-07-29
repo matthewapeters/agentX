@@ -110,8 +110,11 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 	orc := runtime.New(runtime.Settings{
 		SessionRoot:                  root,
 		SessionName:                  opts.SessionName,
+		Provider:                     cfg.EffectiveProvider(),
 		OllamaHost:                   cfg.OllamaHost(),
 		OllamaModel:                  cfg.OllamaModel(),
+		LlamacppHost:                 cfg.LlamacppHost(),
+		LlamacppModel:                cfg.LlamacppModel(),
 		Instructions:                 instructions,
 		BootstrapPrompt:              bootstrap,
 		ClassificationPrompt:         classification,
