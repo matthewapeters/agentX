@@ -5,6 +5,8 @@
 // Launched with `agentx surface launch config`.
 package config
 
+import "agentx/internal/state"
+
 // section holds the data for one config section (e.g. "[agentx.ollama]").
 type section struct {
 	name  string   // dotted path, e.g. "agentx.ollama"
@@ -27,15 +29,15 @@ type keyDef struct {
 	unit            string  // optional unit label (e.g. "s", "KiB")
 }
 
-// saveState enumerates the status bar states.
-type saveState string
+// SaveState enumerates the status bar states.
+type SaveState string
 
 const (
-	saveStateLoaded saveState = "loaded"
-	saveStateSaved  saveState = "saved"
-	saveStateUnsaved saveState = "unsaved"
-	saveStateSaving saveState = "saving…"
-	saveStateError  saveState = "error"
+	SaveStateLoaded  SaveState = "loaded"
+	SaveStateSaved   SaveState = "saved"
+	SaveStateUnsaved SaveState = "unsaved"
+	SaveStateSaving  SaveState = "saving…"
+	SaveStateError   SaveState = "error"
 )
 
 // editState captures the current edit session for one key.
@@ -117,7 +119,7 @@ type modelData struct {
 	Cursor        int          // index of the selected key within the section
 	Expanded      map[int]bool // which sections are expanded (nil = all expanded)
 	Edit          *editState   // non-nil when a free-text edit session is in progress
-	SaveStatus    saveState
+	SaveStatus    SaveState
 	SaveMsg       string
 	ScrollOffset  int          // vertical scroll offset (first visible row index in flat row list)
 
@@ -145,4 +147,21 @@ type modelData struct {
 	// changed in the most recent external reload. Rendered with a yellow
 	// background so the user can see what shifted.
 	HighlightedKeys map[string]bool
+
+	// Phase 3c: pending external event queue.
+	// When a config_changed event arrives while a POST /config is in flight
+	// (SaveStatus == SaveStateSaving), the event is captured here so it can
+	// be processed after the save completes.
+	PendingExternalEvent *state.Event
+
+	// Phase 3c: surface-side debounce for external change detection.
+	// lastExternalEventAt records the epoch of the most recently processed
+	// config_changed event. Events arriving within surfaceDebounceWindow of
+	// this timestamp are coalesced (the timestamp is updated but the full
+	// handler is not re-triggered).
+	LastExternalEventAt int64
+
+	// Phase 3c: whether the last external change was discarded because TUI
+	// changes took precedence.
+	ExternalChangeDiscarded bool
 }

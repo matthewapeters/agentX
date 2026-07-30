@@ -92,7 +92,7 @@ func (m *ConfigModel) FetchConfig() error {
 	m.Data = BuildTree(cfg, schema)
 	m.Data.Selected = 0
 	m.Data.Cursor = 0
-	m.Data.SaveStatus = saveStateLoaded
+	m.Data.SaveStatus = SaveStateLoaded
 	return nil
 }
 
@@ -104,7 +104,7 @@ func (m *ConfigModel) LoadConfigDirect(cfg map[string]any, schema map[string]pro
 	m.Data = BuildTree(cfg, schema)
 	m.Data.Selected = 0
 	m.Data.Cursor = 0
-	m.Data.SaveStatus = saveStateLoaded
+	m.Data.SaveStatus = SaveStateLoaded
 	m.Err = nil
 }
 
@@ -145,7 +145,7 @@ func (m *ConfigModel) SimulateExternalChange(modifiedCfg map[string]any, path st
 		Selected: 0,
 		Source:   path,
 	}
-	m.Data.SaveStatus = saveStateSaved
+	m.Data.SaveStatus = SaveStateSaved
 	m.Data.SaveMsg = fmt.Sprintf("external change detected (%d keys)", len(changedKeys))
 	return nil
 }
@@ -326,6 +326,12 @@ func formatValue(v any) string {
 		return fmt.Sprintf("%v", val)
 	}
 }
+
+// surfaceDebounceWindowSec is the surface-side debounce window (in seconds)
+// for external change detection. Events arriving within this window of the
+// previous event are coalesced into a single notification. Matches the
+// orchestrator-side debounceWindow (100ms).
+const surfaceDebounceWindowSec = 1
 
 // colorPalette is the built-in named-color palette for the color picker.
 var colorPalette = []colorSwatch{
@@ -745,7 +751,7 @@ func (m *ConfigModel) handleQuit() tea.Cmd {
 		return nil
 	}
 	// If we have any unsaved changes at all.
-	if m.Data.SaveStatus == saveStateUnsaved || m.Data.UnsavedChanges {
+	if m.Data.SaveStatus == SaveStateUnsaved || m.Data.UnsavedChanges {
 		m.Data.Dialog = &dialogState{
 			Kind:    dialogConfirm,
 			Title:   "Unsaved changes",
@@ -824,11 +830,11 @@ func (m *ConfigModel) confirmDialog() tea.Cmd {
 			return m.executeRestart()
 		case "Restart later":
 			m.Data.SaveMsg = "restart deferred — changes saved"
-			m.Data.SaveStatus = saveStateSaved
+			m.Data.SaveStatus = SaveStateSaved
 		case "Discard changes":
 			m.Data.RestartKeys = nil
 			m.Data.UnsavedChanges = false
-			m.Data.SaveStatus = saveStateLoaded
+			m.Data.SaveStatus = SaveStateLoaded
 			m.Data.SaveMsg = "changes discarded"
 		}
 		m.Data.Dialog = nil
@@ -848,7 +854,7 @@ func (m *ConfigModel) confirmDialog() tea.Cmd {
 func (m *ConfigModel) executeRestart() tea.Cmd {
 	if m.client == nil {
 		m.Data.SaveMsg = "restart not available (no transport)"
-		m.Data.SaveStatus = saveStateError
+		m.Data.SaveStatus = SaveStateError
 		return nil
 	}
 
@@ -857,7 +863,7 @@ func (m *ConfigModel) executeRestart() tea.Cmd {
 	return func() tea.Msg {
 		result, err := m.client.PostConfig(cfg)
 		if err != nil {
-			m.Data.SaveStatus = saveStateError
+			m.Data.SaveStatus = SaveStateError
 			m.Data.SaveMsg = "save before restart failed: " + err.Error()
 			return nil
 		}
@@ -866,11 +872,11 @@ func (m *ConfigModel) executeRestart() tea.Cmd {
 		// Now trigger the restart.
 		err = m.client.ExecuteRestart()
 		if err != nil {
-			m.Data.SaveStatus = saveStateError
+			m.Data.SaveStatus = SaveStateError
 			m.Data.SaveMsg = "restart failed: " + err.Error()
 			return nil
 		}
-		m.Data.SaveStatus = saveStateSaved
+		m.Data.SaveStatus = SaveStateSaved
 		m.Data.SaveMsg = "restarting…"
 		m.Data.Dialog = nil
 		return nil
@@ -962,12 +968,12 @@ func (m *ConfigModel) applyModelPickerSelection() {
 	}
 	sec.keys[pk.keyIndex].value = val
 	m.Data.ModelPicker = nil
-	m.Data.SaveStatus = saveStateSaving
+	m.Data.SaveStatus = SaveStateSaving
 	if m.client != nil {
 		m.Data.SaveMsg = "testing model…"
 		return
 	}
-	m.Data.SaveStatus = saveStateSaved
+	m.Data.SaveStatus = SaveStateSaved
 	m.Data.SaveMsg = "saved (model verified)"
 }
 
@@ -995,12 +1001,12 @@ func (m *ConfigModel) handleColorPickerKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		sec.keys[pk.keyIndex].value = input
 		m.Data.ColorPicker = nil
-		m.Data.SaveStatus = saveStateSaving
+		m.Data.SaveStatus = SaveStateSaving
 		if m.client != nil {
 			m.Data.SaveMsg = "saving color…"
 			return nil
 		}
-		m.Data.SaveStatus = saveStateSaved
+		m.Data.SaveStatus = SaveStateSaved
 		m.Data.SaveMsg = "saved (color)"
 		return nil
 	case "down", "j":
@@ -1238,7 +1244,7 @@ func (m *ConfigModel) enterEdit() tea.Cmd {
 
 	// Read-only keys cannot be edited.
 	if k.readOnly {
-		m.Data.SaveStatus = saveStateError
+		m.Data.SaveStatus = SaveStateError
 		m.Data.SaveMsg = "read-only key"
 		return nil
 	}
@@ -1283,7 +1289,7 @@ func (m *ConfigModel) enterEdit() tea.Cmd {
 		input:    input,
 		cursor:   len(input),
 	}
-	m.Data.SaveStatus = saveStateUnsaved
+	m.Data.SaveStatus = SaveStateUnsaved
 	return nil
 }
 
@@ -1294,7 +1300,7 @@ func (m *ConfigModel) enterHostEdit(k keyDef) {
 		input:    k.value,
 		cursor:   len(k.value),
 	}
-	m.Data.SaveStatus = saveStateUnsaved
+	m.Data.SaveStatus = SaveStateUnsaved
 }
 
 // enterModelPicker starts model editing with provider API lookup (AF-005).
@@ -1315,7 +1321,7 @@ func (m *ConfigModel) enterModelPicker(k keyDef) tea.Cmd {
 		Loading:  true,
 		Options:  nil,
 	}
-	m.Data.SaveStatus = saveStateSaving
+	m.Data.SaveStatus = SaveStateSaving
 	m.Data.SaveMsg = "loading models…"
 
 	if m.client != nil {
@@ -1343,7 +1349,7 @@ func (m *ConfigModel) fetchModelList() tea.Cmd {
 		if len(models) == 0 {
 			pk.Error = "no models available"
 		}
-		m.Data.SaveStatus = saveStateUnsaved
+		m.Data.SaveStatus = SaveStateUnsaved
 		m.Data.SaveMsg = ""
 		return nil
 	}
@@ -1358,7 +1364,7 @@ func (m *ConfigModel) enterColorPicker(k keyDef) {
 		palette:   colorPalette,
 		mode:      "name",
 	}
-	m.Data.SaveStatus = saveStateUnsaved
+	m.Data.SaveStatus = SaveStateUnsaved
 }
 
 // confirmEdit validates and applies the current edit.
@@ -1390,7 +1396,7 @@ func (m *ConfigModel) confirmEdit() tea.Cmd {
 	sec.keys[edit.keyIndex].value = edit.input
 	m.Data.Edit = nil
 	m.Data.UnsavedChanges = false
-	m.Data.SaveStatus = saveStateSaving
+	m.Data.SaveStatus = SaveStateSaving
 
 	// If we have a transport client, POST the change.
 	if m.client != nil {
@@ -1398,7 +1404,7 @@ func (m *ConfigModel) confirmEdit() tea.Cmd {
 	}
 
 	// No client (tests): mark as saved immediately.
-	m.Data.SaveStatus = saveStateSaved
+	m.Data.SaveStatus = SaveStateSaved
 	m.Data.SaveMsg = "auto-saved"
 	return nil
 }
@@ -1430,7 +1436,7 @@ func (m *ConfigModel) testHostAndSave(provider string) tea.Cmd {
 			} else {
 				edit.error = "host unreachable"
 			}
-			m.Data.SaveStatus = saveStateError
+			m.Data.SaveStatus = SaveStateError
 			m.Data.SaveMsg = edit.error
 			return nil
 		}
@@ -1440,16 +1446,19 @@ func (m *ConfigModel) testHostAndSave(provider string) tea.Cmd {
 			sec.keys[edit.keyIndex].value = input
 		}
 		m.Data.Edit = nil
-		m.Data.SaveStatus = saveStateSaving
+		m.Data.SaveStatus = SaveStateSaving
 		m.Data.SaveMsg = "host verified, saving…"
 		return nil
 	}
 }
 
 // saveToServer POSTs the current config state to the orchestrator.
+//
+// Phase 3c: after a successful save, processes any queued external change
+// event (PendingExternalEvent) so it is handled once the save completes.
 func (m *ConfigModel) saveToServer() tea.Cmd {
 	if m.client == nil {
-		m.Data.SaveStatus = saveStateError
+		m.Data.SaveStatus = SaveStateError
 		m.Data.SaveMsg = "no transport client"
 		return nil
 	}
@@ -1461,23 +1470,49 @@ func (m *ConfigModel) saveToServer() tea.Cmd {
 	return func() tea.Msg {
 		result, err := m.client.PostConfig(cfg)
 		if err != nil {
-			m.Data.SaveStatus = saveStateError
+			m.Data.SaveStatus = SaveStateError
 			m.Data.SaveMsg = "save failed: " + err.Error()
+			// Process any queued external event even on save failure,
+			// so we don't lose the event while the user is still editing.
+			m.ProcessPendingExternalEvent()
 			return nil
 		}
 		if result.Status == "error" {
-			m.Data.SaveStatus = saveStateError
+			m.Data.SaveStatus = SaveStateError
 			if len(result.Errors) > 0 {
 				m.Data.SaveMsg = strings.Join(result.Errors, "; ")
 			} else {
 				m.Data.SaveMsg = "save rejected by server"
 			}
+			// Still process queued event even on server rejection.
+			m.ProcessPendingExternalEvent()
 			return nil
 		}
-		m.Data.SaveStatus = saveStateSaved
+		m.Data.SaveStatus = SaveStateSaved
 		m.Data.SaveMsg = fmt.Sprintf("saved (%d live, %d restart)", len(result.LiveApplied), len(result.RestartRequired))
+
+		// Phase 3c: after a successful save, process any queued external
+		// change event that arrived while we were saving.
+		m.ProcessPendingExternalEvent()
 		return nil
 	}
+}
+
+// ProcessPendingExternalEvent processes a queued external change event if one
+// is pending. Called after a POST /config completes (success or failure) to
+// ensure the event is not lost during the write window.
+//
+// Exported for use by test step definitions.
+func (m *ConfigModel) ProcessPendingExternalEvent() {
+	if m.Data.PendingExternalEvent == nil {
+		return
+	}
+	ev := m.Data.PendingExternalEvent
+	m.Data.PendingExternalEvent = nil
+
+	// Re-run the external change handler. Since the save is now complete
+	// (SaveStatus is no longer saving), the handler will proceed normally.
+	m.handleExternalConfigChange(*ev)
 }
 
 // serializeTree converts the current tree state back to a config map.
@@ -1507,7 +1542,7 @@ func (m *ConfigModel) exitEdit() {
 		m.Data.UnsavedChanges = true
 	}
 	m.Data.Edit = nil
-	m.Data.SaveStatus = saveStateUnsaved
+	m.Data.SaveStatus = SaveStateUnsaved
 }
 
 // validateValue checks that input is valid for the given kind and key.
@@ -1623,12 +1658,34 @@ func (m *ConfigModel) FetchConfigOld(cl *transporthttp.Client) error {
 // current in-memory state, highlights changed keys, and shows a reload prompt.
 //
 // Phase 3b: AF-008 — external file change detection.
+// Phase 3c: adds conflict resolution (TUI wins when unsaved), surface-side
+// debounce for rapid successive changes, and event queueing while a POST /config
+// is in flight.
 func (m *ConfigModel) handleExternalConfigChange(ev state.Event) {
-	// Already handling an external change — debounce by ignoring if we already
-	// have a pending dialog (rapid successive changes).
-	if m.Data.ExternalChange != nil && m.Data.ExternalChange.NewHash != "" {
+	// Phase 3c: if a save is in flight, queue the event so it is processed
+	// after the save completes. This prevents a lost event during the critical
+	// write window.
+	if m.Data.SaveStatus == SaveStateSaving {
+		m.Data.PendingExternalEvent = &ev
+		m.Data.SaveMsg = "save in progress; external change queued"
 		return
 	}
+
+	// Phase 3c: surface-side debounce for rapid successive changes.
+	// If another event arrived within the debounce window, update the timestamp
+	// on any existing ExternalChange but do not re-trigger the full handler.
+	if m.Data.LastExternalEventAt > 0 {
+		elapsed := ev.Epoch - m.Data.LastExternalEventAt
+		if elapsed < surfaceDebounceWindowSec {
+			// Coalesce: update the existing ExternalChange's timestamp if we have one.
+			if m.Data.ExternalChange != nil {
+				m.Data.ExternalChange.ChangedAt = ev.Epoch
+			}
+			m.Data.LastExternalEventAt = ev.Epoch
+			return
+		}
+	}
+	m.Data.LastExternalEventAt = ev.Epoch
 
 	// Pull the payload path if available.
 	var changePath string
@@ -1638,12 +1695,33 @@ func (m *ConfigModel) handleExternalConfigChange(ev state.Event) {
 		}
 	}
 
+	// Phase 3c: conflict resolution — if the TUI has unsaved changes, prefer
+	// TUI state over the external file change.
+	if m.Data.SaveStatus == SaveStateUnsaved || m.Data.UnsavedChanges {
+		m.Data.ExternalChangeDiscarded = true
+		m.Data.ExternalChange = &externalChangeState{
+			Path:      changePath,
+			ChangedAt: ev.Epoch,
+		}
+		m.Data.Dialog = &dialogState{
+			Kind:     dialogExternalFile,
+			Title:    "TUI changes take precedence",
+			Message:  "You have unsaved changes in the TUI. The external file change is discarded.",
+			Options:  []string{"Keep TUI changes", "Discard"},
+			Selected: 0, // "Keep TUI changes" is the default — TUI wins.
+			Source:   changePath,
+		}
+		m.Data.SaveStatus = SaveStateUnsaved
+		m.Data.SaveMsg = fmt.Sprintf("external change discarded (TUI changes take precedence)")
+		return
+	}
+
 	// Snapshot the current sections for diffing before we overwrite them.
 	oldSections := snapshotSections(m.Data.Sections)
 
 	// Re-fetch from the orchestrator.
 	if err := m.FetchConfig(); err != nil {
-		m.Data.SaveStatus = saveStateError
+		m.Data.SaveStatus = SaveStateError
 		m.Data.SaveMsg = "external change: fetch failed: " + err.Error()
 		return
 	}
@@ -1659,7 +1737,7 @@ func (m *ConfigModel) handleExternalConfigChange(ev state.Event) {
 			OldHash:   oldHash,
 			NewHash:   newHash,
 		}
-		m.Data.SaveStatus = saveStateSaved
+		m.Data.SaveStatus = SaveStateSaved
 		m.Data.SaveMsg = "config refreshed (no changes detected)"
 		return
 	}
@@ -1690,7 +1768,7 @@ func (m *ConfigModel) handleExternalConfigChange(ev state.Event) {
 		Selected: 0,
 		Source:   changePath,
 	}
-	m.Data.SaveStatus = saveStateSaved
+	m.Data.SaveStatus = SaveStateSaved
 	m.Data.SaveMsg = fmt.Sprintf("external change detected (%d keys)", len(changedKeys))
 }
 
@@ -1806,6 +1884,11 @@ func (m *ConfigModel) handleExternalChangeDialogKey(msg tea.KeyPressMsg) {
 }
 
 // confirmExternalDialog processes the selected option in the external-file dialog.
+//
+// Phase 3c: handles both the standard "File changed externally" dialog
+// (Reload / Keep changes / Discard changes) and the conflict-resolution dialog
+// ("TUI changes take precedence" / Keep TUI changes / Discard) that appears
+// when the user has unsaved TUI changes.
 func (m *ConfigModel) confirmExternalDialog() {
 	dlg := m.Data.Dialog
 	if dlg == nil || dlg.Kind != dialogExternalFile {
@@ -1818,7 +1901,15 @@ func (m *ConfigModel) confirmExternalDialog() {
 	case "Keep changes":
 		m.dismissExternalChange()
 		m.Data.SaveMsg = "TUI changes take precedence (external change discarded)"
-		m.Data.ExternalChange = nil
+	case "Keep TUI changes":
+		m.dismissExternalChange()
+		m.Data.ExternalChangeDiscarded = false
+		m.Data.SaveMsg = "TUI changes take precedence (external change discarded)"
+	case "Discard":
+		m.dismissExternalChange()
+		m.Data.ExternalChangeDiscarded = false
+		m.Data.SaveStatus = SaveStateLoaded
+		m.Data.SaveMsg = "external change discarded"
 	case "Discard changes":
 		m.reloadExternalChange()
 		m.Data.SaveMsg = "changes discarded, reloaded from file"
@@ -1830,17 +1921,17 @@ func (m *ConfigModel) confirmExternalDialog() {
 func (m *ConfigModel) reloadExternalChange() {
 	if m.client == nil {
 		m.Data.SaveMsg = "reload failed: no transport"
-		m.Data.SaveStatus = saveStateError
+		m.Data.SaveStatus = SaveStateError
 		return
 	}
 	if err := m.FetchConfig(); err != nil {
-		m.Data.SaveStatus = saveStateError
+		m.Data.SaveStatus = SaveStateError
 		m.Data.SaveMsg = "reload failed: " + err.Error()
 		return
 	}
 	m.Data.ExternalChange = nil
 	m.Data.HighlightedKeys = nil
-	m.Data.SaveStatus = saveStateSaved
+	m.Data.SaveStatus = SaveStateSaved
 	m.Data.SaveMsg = "config reloaded from file"
 }
 

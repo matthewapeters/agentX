@@ -887,7 +887,7 @@ func TestConfigModel_ExternalChange_RKey_Reload(t *testing.T) {
 	if m.Data.SaveMsg != "reload failed: no transport" {
 		t.Fatalf("expected transport error message, got: %q", m.Data.SaveMsg)
 	}
-	if m.Data.SaveStatus != saveStateError {
+	if m.Data.SaveStatus != SaveStateError {
 		t.Fatalf("expected error status, got: %s", m.Data.SaveStatus)
 	}
 	// ExternalChange persists so the user can retry.
@@ -1088,5 +1088,360 @@ func TestConfigModel_HintRow_BrowseMode_Normal(t *testing.T) {
 	// Normal browse mode should include 'r reload' as part of the hint.
 	if !strings.Contains(hint, "r reload") {
 		t.Fatalf("expected 'r reload' in normal hint row, got: %s", hint)
+	}
+}
+
+// --- Phase 3c: conflict resolution + edge cases ---
+
+// TestConfigModel_ExternalChange_ConflictResolution_TUIWins verifies that when
+// the TUI has unsaved changes (SaveStatus == SaveStateUnsaved), an incoming
+// external change event triggers a conflict-resolution dialog that defaults
+// to "Keep TUI changes" (TUI wins).
+func TestConfigModel_ExternalChange_ConflictResolution_TUIWins(t *testing.T) {
+	cfg := map[string]any{
+		"agentx": map[string]any{
+			"ollama": map[string]any{
+				"host": "localhost:11434",
+			},
+		},
+	}
+	m := NewFromConfig(cfg, map[string]provider.SchemaField{}, 80, 24, nil, "")
+
+	// Put the TUI in unsaved state.
+	m.Data.SaveStatus = SaveStateUnsaved
+	m.Data.UnsavedChanges = true
+
+	// Simulate an external change event.
+	ev := state.Event{
+		Epoch:       2000,
+		SessionID:   "test",
+		EventType:   "config_changed",
+		ContentType: state.ContentConfigChanged,
+		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
+	}
+	m.Apply(ev)
+
+	// Conflict-resolution dialog should be shown.
+	if m.Data.Dialog == nil {
+		t.Fatalf("expected dialog for conflict resolution, got nil")
+	}
+	if m.Data.Dialog.Kind != dialogExternalFile {
+		t.Fatalf("expected dialogExternalFile, got %s", m.Data.Dialog.Kind)
+	}
+	if m.Data.Dialog.Title != "TUI changes take precedence" {
+		t.Fatalf("expected title 'TUI changes take precedence', got %q", m.Data.Dialog.Title)
+	}
+	// First option (selected) should be "Keep TUI changes".
+	if m.Data.Dialog.Selected != 0 {
+		t.Fatalf("expected selected option 0, got %d", m.Data.Dialog.Selected)
+	}
+	if m.Data.Dialog.Options[0] != "Keep TUI changes" {
+		t.Fatalf("expected first option 'Keep TUI changes', got %q", m.Data.Dialog.Options[0])
+	}
+	// Status bar should show the TUI-wins message.
+	if !strings.Contains(m.Data.SaveMsg, "external change discarded") {
+		t.Fatalf("expected status bar to mention 'external change discarded', got %q", m.Data.SaveMsg)
+	}
+	if !strings.Contains(m.Data.SaveMsg, "TUI changes take precedence") {
+		t.Fatalf("expected status bar to mention 'TUI changes take precedence', got %q", m.Data.SaveMsg)
+	}
+	// ExternalChangeDiscarded flag should be set.
+	if !m.Data.ExternalChangeDiscarded {
+		t.Fatal("expected ExternalChangeDiscarded to be true")
+	}
+}
+
+// TestConfigModel_ExternalChange_ConflictResolution_KeepTUIChanges verifies
+// that selecting "Keep TUI changes" dismisses the dialog and clears
+// ExternalChangeDiscarded.
+func TestConfigModel_ExternalChange_ConflictResolution_KeepTUIChanges(t *testing.T) {
+	cfg := map[string]any{
+		"agentx": map[string]any{
+			"ollama": map[string]any{
+				"host": "localhost:11434",
+			},
+		},
+	}
+	m := NewFromConfig(cfg, map[string]provider.SchemaField{}, 80, 24, nil, "")
+	m.Data.SaveStatus = SaveStateUnsaved
+
+	ev := state.Event{
+		Epoch:       2000,
+		SessionID:   "test",
+		EventType:   "config_changed",
+		ContentType: state.ContentConfigChanged,
+		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
+	}
+	m.Apply(ev)
+
+	// Confirm "Keep TUI changes".
+	m.Key(testKey("enter"))
+
+	if m.Data.Dialog != nil {
+		t.Fatalf("expected dialog to be dismissed, got: %+v", m.Data.Dialog)
+	}
+	if m.Data.ExternalChange != nil {
+		t.Fatalf("expected ExternalChange to be nil, got: %+v", m.Data.ExternalChange)
+	}
+	if m.Data.ExternalChangeDiscarded {
+		t.Fatal("expected ExternalChangeDiscarded to be false after keeping TUI changes")
+	}
+	if !strings.Contains(m.Data.SaveMsg, "TUI changes take precedence") {
+		t.Fatalf("expected status bar to mention 'TUI changes take precedence', got %q", m.Data.SaveMsg)
+	}
+}
+
+// TestConfigModel_ExternalChange_ConflictResolution_Discard verifies that
+// selecting "Discard" dismisses the dialog and clears the discarded flag.
+func TestConfigModel_ExternalChange_ConflictResolution_Discard(t *testing.T) {
+	cfg := map[string]any{
+		"agentx": map[string]any{
+			"ollama": map[string]any{
+				"host": "localhost:11434",
+			},
+		},
+	}
+	m := NewFromConfig(cfg, map[string]provider.SchemaField{}, 80, 24, nil, "")
+	m.Data.SaveStatus = SaveStateUnsaved
+
+	ev := state.Event{
+		Epoch:       2000,
+		SessionID:   "test",
+		EventType:   "config_changed",
+		ContentType: state.ContentConfigChanged,
+		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
+	}
+	m.Apply(ev)
+
+	// Select "Discard" (option 1).
+	m.Data.Dialog.Selected = 1
+	m.Key(testKey("enter"))
+
+	if m.Data.Dialog != nil {
+		t.Fatalf("expected dialog to be dismissed, got: %+v", m.Data.Dialog)
+	}
+	if m.Data.ExternalChange != nil {
+		t.Fatalf("expected ExternalChange to be nil, got: %+v", m.Data.ExternalChange)
+	}
+	if m.Data.ExternalChangeDiscarded {
+		t.Fatal("expected ExternalChangeDiscarded to be false")
+	}
+}
+
+// TestConfigModel_ExternalChange_DebounceSurface verifies the surface-side
+// debounce: a second event arriving within the debounce window coalesces with
+// the first (timestamp is updated, no new dialog).
+func TestConfigModel_ExternalChange_DebounceSurface(t *testing.T) {
+	cfg := map[string]any{
+		"agentx": map[string]any{
+			"ollama": map[string]any{
+				"host": "localhost:11434",
+			},
+		},
+	}
+	m := NewFromConfig(cfg, map[string]provider.SchemaField{}, 80, 24, nil, "")
+
+	// Manually set LastExternalEventAt to simulate a previous event.
+	m.Data.LastExternalEventAt = 1000
+
+	// First new event — outside the debounce window (epoch 3000 vs 1000).
+	ev1 := state.Event{
+		Epoch:       3000,
+		SessionID:   "test",
+		EventType:   "config_changed",
+		ContentType: state.ContentConfigChanged,
+		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
+	}
+	m.Apply(ev1)
+
+	// Should have processed the event.
+	if m.Data.LastExternalEventAt != 3000 {
+		t.Fatalf("expected LastExternalEventAt 3000, got %d", m.Data.LastExternalEventAt)
+	}
+
+	// Second event within debounce window (epoch 3000 + 500 = 3500, within 1s).
+	ev2 := state.Event{
+		Epoch:       3500,
+		SessionID:   "test",
+		EventType:   "config_changed",
+		ContentType: state.ContentConfigChanged,
+		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
+	}
+	m.Apply(ev2)
+
+	// The handler should coalesce: LastExternalEventAt updated to 3500,
+	// but no new dialog or re-fetch triggered.
+	if m.Data.LastExternalEventAt != 3500 {
+		t.Fatalf("expected LastExternalEventAt 3500 after coalesce, got %d", m.Data.LastExternalEventAt)
+	}
+	// No second dialog should have been created.
+	if m.Data.Dialog != nil {
+		t.Fatalf("expected no new dialog from coalesced event, got: %+v", m.Data.Dialog)
+	}
+}
+
+// TestConfigModel_ExternalChange_DebounceSurface_BeyondWindow verifies that an
+// event arriving after the debounce window is processed normally.
+func TestConfigModel_ExternalChange_DebounceSurface_BeyondWindow(t *testing.T) {
+	cfg := map[string]any{
+		"agentx": map[string]any{
+			"ollama": map[string]any{
+				"host": "localhost:11434",
+			},
+		},
+	}
+	m := NewFromConfig(cfg, map[string]provider.SchemaField{}, 80, 24, nil, "")
+
+	m.Data.LastExternalEventAt = 1000
+
+	// Event outside debounce window (> 1 second later).
+	ev := state.Event{
+		Epoch:       5000,
+		SessionID:   "test",
+		EventType:   "config_changed",
+		ContentType: state.ContentConfigChanged,
+		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
+	}
+	m.Apply(ev)
+
+	if m.Data.LastExternalEventAt != 5000 {
+		t.Fatalf("expected LastExternalEventAt 5000, got %d", m.Data.LastExternalEventAt)
+	}
+}
+
+// TestConfigModel_ExternalChange_QueueDuringSave verifies that when a
+// config_changed event arrives while a save is in progress (SaveStatus ==
+// SaveStateSaving), the event is queued in PendingExternalEvent instead of
+// being processed immediately.
+func TestConfigModel_ExternalChange_QueueDuringSave(t *testing.T) {
+	cfg := map[string]any{
+		"agentx": map[string]any{
+			"ollama": map[string]any{
+				"host": "localhost:11434",
+			},
+		},
+	}
+	m := NewFromConfig(cfg, map[string]provider.SchemaField{}, 80, 24, nil, "")
+
+	// Simulate a save in progress.
+	m.Data.SaveStatus = SaveStateSaving
+
+	// External change event arrives during save.
+	ev := state.Event{
+		Epoch:       5000,
+		SessionID:   "test",
+		EventType:   "config_changed",
+		ContentType: state.ContentConfigChanged,
+		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
+	}
+	m.Apply(ev)
+
+	// Event should be queued.
+	if m.Data.PendingExternalEvent == nil {
+		t.Fatal("expected PendingExternalEvent to be set during save")
+	}
+	if m.Data.PendingExternalEvent.Epoch != 5000 {
+		t.Fatalf("expected queued event epoch 5000, got %d", m.Data.PendingExternalEvent.Epoch)
+	}
+	// Status bar should indicate the queue.
+	if !strings.Contains(m.Data.SaveMsg, "external change queued") {
+		t.Fatalf("expected status bar to mention 'external change queued', got %q", m.Data.SaveMsg)
+	}
+}
+
+// TestConfigModel_ProcessPendingExternalEvent verifies that processPendingExternalEvent
+// processes the queued event and clears the queue.
+func TestConfigModel_ProcessPendingExternalEvent(t *testing.T) {
+	cfg := map[string]any{
+		"agentx": map[string]any{
+			"ollama": map[string]any{
+				"host": "localhost:11434",
+			},
+		},
+	}
+	m := NewFromConfig(cfg, map[string]provider.SchemaField{}, 80, 24, nil, "")
+
+	// Simulate a queued event.
+	m.Data.PendingExternalEvent = &state.Event{
+		Epoch:       5000,
+		SessionID:   "test",
+		EventType:   "config_changed",
+		ContentType: state.ContentConfigChanged,
+		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
+	}
+
+	// Process it.
+	m.ProcessPendingExternalEvent()
+
+	// Queue should be cleared.
+	if m.Data.PendingExternalEvent != nil {
+		t.Fatalf("expected PendingExternalEvent to be nil after processing, got: %+v", m.Data.PendingExternalEvent)
+	}
+	// LastExternalEventAt should be updated.
+	if m.Data.LastExternalEventAt != 5000 {
+		t.Fatalf("expected LastExternalEventAt 5000, got %d", m.Data.LastExternalEventAt)
+	}
+}
+
+// TestConfigModel_ProcessPendingExternalEvent_NoEvent verifies that calling
+// processPendingExternalEvent with no queued event is a no-op.
+func TestConfigModel_ProcessPendingExternalEvent_NoEvent(t *testing.T) {
+	cfg := map[string]any{
+		"agentx": map[string]any{
+			"ollama": map[string]any{
+				"host": "localhost:11434",
+			},
+		},
+	}
+	m := NewFromConfig(cfg, map[string]provider.SchemaField{}, 80, 24, nil, "")
+
+	// Should not panic or change state.
+	m.ProcessPendingExternalEvent()
+
+	if m.Data.PendingExternalEvent != nil {
+		t.Fatal("expected PendingExternalEvent to remain nil")
+	}
+}
+
+// TestConfigModel_ExternalChange_ConflictResolution_NoUnsavedChanges verifies
+// that when the TUI has no unsaved changes, an external change via
+// SimulateExternalChange (which bypasses FetchConfig) triggers the standard
+// external change dialog (not the conflict-resolution dialog).
+func TestConfigModel_ExternalChange_ConflictResolution_NoUnsavedChanges(t *testing.T) {
+	cfg := map[string]any{
+		"agentx": map[string]any{
+			"ollama": map[string]any{
+				"host": "localhost:11434",
+			},
+		},
+	}
+	m := NewFromConfig(cfg, map[string]provider.SchemaField{}, 80, 24, nil, "")
+	m.Data.SaveStatus = SaveStateSaved
+
+	// Modify the config to simulate an external change.
+	modified := map[string]any{
+		"agentx": map[string]any{
+			"ollama": map[string]any{
+				"host": "localhost:11435",
+			},
+		},
+	}
+
+	// Use SimulateExternalChange to trigger the standard flow without a transport.
+	err := m.SimulateExternalChange(modified, "/tmp/agentx.toml")
+	if err != nil {
+		t.Fatalf("SimulateExternalChange failed: %v", err)
+	}
+
+	// Should show the standard external change dialog (not the conflict one).
+	if m.Data.Dialog == nil {
+		t.Fatalf("expected dialog, got nil")
+	}
+	if m.Data.Dialog.Title != "File changed externally" {
+		t.Fatalf("expected 'File changed externally' dialog, got %q", m.Data.Dialog.Title)
+	}
+	// Conflict resolution title should NOT appear.
+	if m.Data.Dialog.Title == "TUI changes take precedence" {
+		t.Fatal("should not show conflict resolution dialog when TUI has no unsaved changes")
 	}
 }

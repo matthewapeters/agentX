@@ -1,6 +1,6 @@
 # AgentX — PD-CONFIG: Configuration Surface (TUI)
 
-> **Status:** Phases 1a–3b implemented; 3c in progress.
+> **Status:** Phases 1a–3c implemented; Phase 5 pending.
 > **Surface kind:** `config` (registered in `internal/surfaces/registry.go:49`)
 > **Launch command:** `agentx surface launch config`
 > **Owner:** Delivery Lead (M2+)
@@ -848,13 +848,13 @@ Handle the complex interactions: restart confirmation, host testing, model picki
 
 **Deliverable:** User editing `agentx.toml` in an external editor triggers a highlighted diff in the TUI with a reload prompt.
 
-### Phase 3c: Conflict resolution + edge cases (S)
+### Phase 3c: Conflict resolution + edge cases (S) ✅ **COMPLETE**
 
-- [ ] Implement conflict resolution: if TUI has unsaved changes, prefer TUI state.
-- [ ] Status bar message: "External change discarded (TUI changes take precedence)."
-- [ ] Edge case: rapid successive external changes → debounce on the surface side too.
-- [ ] Edge case: external change while a `POST /config` is in flight → queue the event.
-- [ ] Write Godog tests for conflict resolution scenarios.
+- [x] Implement conflict resolution: if TUI has unsaved changes, prefer TUI state.
+- [x] Status bar message: "External change discarded (TUI changes take precedence)."
+- [x] Edge case: rapid successive external changes → debounce on the surface side too (1s window).
+- [x] Edge case: external change while a `POST /config` is in flight → queue the event.
+- [x] Write Godog tests for conflict resolution scenarios.
 
 **Deliverable:** All two-way sync edge cases handled: TUI-wins on conflict, no flicker on rapid edits, no lost events during writes.
 

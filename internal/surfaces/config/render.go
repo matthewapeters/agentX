@@ -245,23 +245,23 @@ func (m *ConfigModel) hintRow() string {
 	var statusPart string
 
 	switch m.Data.SaveStatus {
-	case saveStateLoaded:
+	case SaveStateLoaded:
 		statusPart = saveStatusStyle.Render("● loaded")
-	case saveStateSaved:
+	case SaveStateSaved:
 		if m.Data.SaveMsg != "" {
 			statusPart = saveStatusStyle.Render("● " + m.Data.SaveMsg)
 		} else {
 			statusPart = saveStatusStyle.Render("● saved")
 		}
-	case saveStateSaving:
+	case SaveStateSaving:
 		statusPart = saveSavingStyle.Render("● saving…")
-	case saveStateError:
+	case SaveStateError:
 		if m.Data.SaveMsg != "" {
 			statusPart = saveErrorStyle.Render("● " + m.Data.SaveMsg)
 		} else {
 			statusPart = saveErrorStyle.Render("● error")
 		}
-	case saveStateUnsaved:
+	case SaveStateUnsaved:
 		statusPart = saveSavingStyle.Render("● unsaved")
 	default:
 		statusPart = hintStyle.Render("● idle")
