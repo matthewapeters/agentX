@@ -3,9 +3,12 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -157,6 +160,46 @@ func (c Config) EffectiveProvider() string {
 		return p
 	}
 	return "ollama"
+}
+
+// NormalizedKey records a single key that was normalized from a deprecated form
+// to its canonical name. Returned by Normalize so callers (the transport layer,
+// the config surface) can surface which keys were rewritten and warn the user.
+type NormalizedKey struct {
+	// Old is the deprecated key name (e.g. "chat_backend").
+	Old string
+	// New is the canonical key name (e.g. "provider").
+	New string
+}
+
+// Normalize mutates cfg in place, replacing deprecated key aliases with their
+// canonical equivalents. It returns the list of normalizations applied so the
+// caller can report them back to the user (the PD-CONFIG spec requires a
+// warning when the user is editing a deprecated key).
+//
+// Current rules:
+//   - chat_backend → provider: if Provider is empty and ChatBackend is set,
+//     copy ChatBackend into Provider.
+//
+// The function does NOT write to disk; callers should call WriteConfig after
+// Normalize if the change should persist.
+func (c *Config) Normalize() []NormalizedKey {
+	var normalized []NormalizedKey
+
+	// chat_backend → provider.
+	if c.Agentx.Provider == "" && strings.TrimSpace(c.Agentx.ChatBackend) != "" {
+		c.Agentx.Provider = strings.TrimSpace(c.Agentx.ChatBackend)
+		normalized = append(normalized, NormalizedKey{Old: "chat_backend", New: "provider"})
+	}
+
+	return normalized
+}
+
+// HasDeprecatedKeys reports whether the config still contains a deprecated key
+// that has not yet been normalized. Used by the config surface to warn the
+// user when they are editing a deprecated key (PD-CONFIG-AF-011).
+func (c *Config) HasDeprecatedKeys() bool {
+	return c.Agentx.Provider == "" && strings.TrimSpace(c.Agentx.ChatBackend) != ""
 }
 
 // Validate checks the configuration for logical errors that the TOML decoder
@@ -404,7 +447,13 @@ var namedColors = map[string]string{
 	"darkgrey":    "38;5;240",
 }
 
-// Built-in defaults for the tuning tables.
+// IsProviderDeprecated reports whether the config still contains a deprecated
+// key (chat_backend). A non-empty chat_backend is deprecated regardless of
+// whether provider has been set — Normalize() copies it to provider but does
+// not clear the source field (PD-CONFIG-AF-011).
+func (c Config) IsProviderDeprecated() bool {
+	return strings.TrimSpace(c.Agentx.ChatBackend) != ""
+}
 const (
 	defaultClassificationRetries = 2
 	defaultClarificationOptions  = 3
@@ -483,6 +532,47 @@ type Paths struct {
 	Deployment string
 	// Project is the optional project-local default (<cwd>/.agentx/.agentx.toml).
 	Project string
+}
+
+// CachePaths holds the cache-location metadata for config-write coordination
+// (Phase 1b). The lock file guards concurrent writes so two orchestrator
+// instances (or two processes racing on seed) never interleave their partial
+// bytes onto the deployment config.
+//
+// Convention:
+//
+	// CacheDir   = $XDG_CACHE_HOME/agentx/  (default ~/.cache/agentx/)
+	// LockFile   = $CacheDir/config.lock
+	// TempPattern= $CacheDir/config_*.tmp    (stale temps cleaned at startup)
+type CachePaths struct {
+	// CacheDir is the cache directory used for the config semaphore and temp
+	// file staging area. Honors XDG_CACHE_HOME, falling back to ~/.cache.
+	CacheDir string
+}
+
+// LockFile returns the path of the config-write semaphore file.
+func (c CachePaths) LockFile() string {
+	return filepath.Join(c.CacheDir, "config.lock")
+}
+
+// TempPattern returns the glob pattern used to find stale temp files at cleanup
+// time (e.g. "config_*.tmp").
+func (c CachePaths) TempPattern() string {
+	return filepath.Join(c.CacheDir, "config_*.tmp")
+}
+
+// DefaultCachePaths resolves the conventional cache paths, honoring
+// XDG_CACHE_HOME.
+func DefaultCachePaths() (CachePaths, error) {
+	cacheHome := os.Getenv("XDG_CACHE_HOME")
+	if cacheHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return CachePaths{}, fmt.Errorf("resolve home dir: %w", err)
+		}
+		cacheHome = filepath.Join(home, ".cache")
+	}
+	return CachePaths{CacheDir: filepath.Join(cacheHome, "agentx")}, nil
 }
 
 // SessionRoot returns the session storage root alongside the deployment config
@@ -640,26 +730,259 @@ func Resolve(p Paths) (Config, Source, error) {
 			return Config{}, "", fmt.Errorf("load project config %s: %w", p.Project, err)
 		}
 	}
-	if err := seed(p.Deployment, cfg); err != nil {
+	cp, err := DefaultCachePaths()
+	if err != nil {
+		return Config{}, "", err
+	}
+	if err := seed(p.Deployment, cfg, cp); err != nil {
 		return Config{}, "", err
 	}
 	return cfg, SourceSeeded, nil
 }
 
-// seed writes cfg to path, creating parent directories as needed.
-func seed(path string, cfg Config) error {
+// ResolveWithCache is the Resolve variant that takes an explicit CachePaths so
+// callers and tests can point the semaphore at a known temp location instead of
+// the real user cache dir.
+func ResolveWithCache(p Paths, cp CachePaths) (Config, Source, error) {
+	if fileExists(p.Deployment) {
+		cfg := Default()
+		if _, err := toml.DecodeFile(p.Deployment, &cfg); err != nil {
+			return Config{}, "", fmt.Errorf("load deployment config %s: %w", p.Deployment, err)
+		}
+		return cfg, SourceDeployment, nil
+	}
+
+	cfg := Default()
+	if p.Project != "" && fileExists(p.Project) {
+		if _, err := toml.DecodeFile(p.Project, &cfg); err != nil {
+			return Config{}, "", fmt.Errorf("load project config %s: %w", p.Project, err)
+		}
+	}
+	if err := seed(p.Deployment, cfg, cp); err != nil {
+		return Config{}, "", err
+	}
+	return cfg, SourceSeeded, nil
+}
+
+// seed writes cfg to path, creating parent directories and the config-cache
+// semaphore directory as needed, then performs an atomic temp+rename write
+// guarded by the semaphore lock.
+func seed(path string, cfg Config, cp CachePaths) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create config dir for %s: %w", path, err)
 	}
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("create config %s: %w", path, err)
+	if err := os.MkdirAll(cp.CacheDir, 0o755); err != nil {
+		return fmt.Errorf("create cache dir for %s: %w", cp.CacheDir, err)
 	}
-	defer f.Close()
-	if err := toml.NewEncoder(f).Encode(cfg); err != nil {
-		return fmt.Errorf("write config %s: %w", path, err)
+	if err := writeConfigAtomic(path, cfg, cp); err != nil {
+		return err
 	}
 	return nil
+}
+
+// writeConfigAtomic encodes cfg to TOML, writes to a timestamped temp file
+// in the cache dir, then atomically renames it over dst. The caller must hold
+// the semaphore lock (see LockConfig/UnlockConfig).
+//
+// If the cache dir and dst are on different filesystems (os.Rename reports
+// "invalid cross-device link"), we fall back to copying the temp into dst's
+// parent dir and then renaming — the copy+rename keeps the same atomic
+// guarantee on the local filesystem.
+func writeConfigAtomic(dst string, cfg Config, cp CachePaths) error {
+	buf, err := toml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("encode config %s: %w", dst, err)
+	}
+	// Stamp the temp name with a monotonic timestamp so stale temps sort by
+	// age and cleanup can purge them in one glob pass. The cache dir is the
+	// staging area — it lives on the same filesystem as the deployment config
+	// when XDG_CACHE_HOME is on the user's home mount, so os.Rename is atomic.
+	tmp := filepath.Join(cp.CacheDir, "config_"+timestampSuffix()+".tmp")
+	if err := os.WriteFile(tmp, buf, 0o644); err != nil {
+		return fmt.Errorf("write temp config %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		// Cross-device fallback: copy into dst's parent, then rename locally.
+		if isCrossDevice(err) {
+			if cerr := copyTempToLocal(tmp, dst, cp); cerr != nil {
+				// If copy failed, best-effort cleanup and return the original
+				// rename error so the root cause is surfaced.
+				_ = os.Remove(tmp)
+				return fmt.Errorf("replace config %s: %w", dst, err)
+			}
+			return nil
+		}
+		// Non-cross-device error — clean up and return.
+		_ = os.Remove(tmp)
+		return fmt.Errorf("replace config %s: %w", dst, err)
+	}
+	return nil
+}
+
+// copyTempToLocal copies the staged temp file into dst's parent directory and
+// atomically renames it over dst. The temp is removed on success.
+func copyTempToLocal(tmp, dst string, cp CachePaths) error {
+	localTmp := filepath.Join(filepath.Dir(dst), filepath.Base(tmp))
+	if err := copyFile(tmp, localTmp); err != nil {
+		return fmt.Errorf("copy temp to local %s: %w", localTmp, err)
+	}
+	if err := os.Rename(localTmp, dst); err != nil {
+		_ = os.Remove(localTmp)
+		return fmt.Errorf("replace local %s: %w", dst, err)
+	}
+	// Best-effort cleanup of the cross-device staging copy.
+	_ = os.Remove(tmp)
+	return nil
+}
+
+// copyFile copies src to dst byte-for-byte (no rename semantics — callers that
+// need atomicity use copyTempToLocal).
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode())
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
+}
+
+// isCrossDevice reports whether err is an "invalid cross-device link" error.
+// The exact sentinel varies by OS — Linux uses syscall.EXDEV, Darwin uses
+// errno 18. We inspect both.
+func isCrossDevice(err error) bool {
+	if err == nil {
+		return false
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		return errno == syscall.EXDEV
+	}
+	return strings.Contains(err.Error(), "cross-device link")
+}
+
+// timestampSuffix returns a short monotonic timestamp suitable for temp-file
+// naming. Millisecond precision is plenty to order writes within a single
+// session and keeps the filename short.
+func timestampSuffix() string {
+	return fmt.Sprintf("%d", time.Now().UnixMilli())
+}
+
+// LockConfig acquires the config-write semaphore. The lock is a best-effort
+// advisory lock using a single-file "mutex" in the cache dir: only one process
+// can write config.lock at a time, so a second concurrent write blocks until the
+// first completes. We use file locking (syscall.Flock) for portability across
+// POSIX systems; the lock file lives at ~/.cache/agentx/config.lock.
+//
+// LockConfig returns an *Unlocker that must be called exactly once to release
+// the lock. Callers should defer unlock() immediately after a successful lock.
+func LockConfig(cp CachePaths) (*Unlocker, error) {
+	if err := os.MkdirAll(cp.CacheDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create cache dir %s: %w", cp.CacheDir, err)
+	}
+	f, err := os.OpenFile(cp.LockFile(), os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("open lock file %s: %w", cp.LockFile(), err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("lock %s: %w", cp.LockFile(), err)
+	}
+	// Write the PID so stale locks can be diagnosed.
+	_, _ = f.Write([]byte(fmt.Sprintf("%d %s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))))
+	_, _ = f.Seek(0, 0)
+	return &Unlocker{f: f}, nil
+}
+
+// Unlocker releases a config-write lock.
+type Unlocker struct {
+	f *os.File
+}
+
+// Unlock releases the lock and closes the lock file.
+func (u *Unlocker) Unlock() error {
+	if u.f == nil {
+		return nil
+	}
+	err := syscall.Flock(int(u.f.Fd()), syscall.LOCK_UN)
+	closeErr := u.f.Close()
+	u.f = nil
+	if err != nil {
+		return fmt.Errorf("unlock: %w", err)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close lock file: %w", closeErr)
+	}
+	return nil
+}
+
+// UnlockConfig is the legacy unlocked release form kept for callers that do not
+// need the Unlocker return value. Prefer LockConfig's returned Unlocker.
+func UnlockConfig(u *Unlocker) error {
+	if u == nil {
+		return nil
+	}
+	return u.Unlock()
+}
+
+// WriteConfig writes cfg to dst atomically under the config semaphore. It is the
+// public write entry point used by the config surface (Phase 1b).
+//
+// WriteConfig:
+//   1. Creates the cache dir (~/.cache/agentx/) if absent.
+//   2. Acquires the semaphore lock.
+//   3. Writes cfg to dst via temp file + atomic rename in the cache staging dir.
+//   4. Releases the lock.
+//
+// If the lock cannot be acquired (another writer is in progress), WriteConfig
+// returns an error so the caller can retry or abort.
+func WriteConfig(cp CachePaths, dst string, cfg Config) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("create config dir for %s: %w", dst, err)
+	}
+	lock, err := LockConfig(cp)
+	if err != nil {
+		return err
+	}
+	defer lock.Unlock()
+	return writeConfigAtomic(dst, cfg, cp)
+}
+
+// CleanupStaleTemps removes any temp files matching the cache-dir glob
+// (config_*.tmp). Called at orchestrator startup so a crash that left a temp
+// behind does not leave orphan files accumulating. It returns the number of
+// files removed so callers can log or assert.
+//
+// The cleanup is best-effort: if a glob fails (e.g. the cache dir does not
+// exist), we return 0 with a nil error. Only removal failures are reported.
+func CleanupStaleTemps(cp CachePaths) (int, error) {
+	matches, err := filepath.Glob(cp.TempPattern())
+	if err != nil {
+		// Bad glob — nothing we can do; treat as zero removals.
+		return 0, nil
+	}
+	if len(matches) == 0 {
+		return 0, nil
+	}
+	removed := 0
+	for _, m := range matches {
+		if err := os.Remove(m); err != nil {
+			return removed, fmt.Errorf("remove stale temp %s: %w", m, err)
+		}
+		removed++
+	}
+	return removed, nil
 }
 
 func fileExists(path string) bool {

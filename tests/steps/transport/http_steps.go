@@ -23,6 +23,7 @@ import (
 	"github.com/cucumber/godog"
 
 	"agentx/internal/cli"
+	"agentx/internal/llm/provider"
 	"agentx/internal/session"
 	"agentx/internal/state"
 	"agentx/internal/surfaces"
@@ -216,6 +217,140 @@ func (p *fakeProvider) SetEventEnabled(ordinal uint64, enabled bool) error {
 	return nil
 }
 
+// Config returns the fake provider's configuration.
+func (p *fakeProvider) Config() map[string]any {
+	return map[string]any{
+		"provider":       "ollama",
+		"ollama_host":    "localhost:11434",
+		"ollama_model":   "llama3.1",
+		"llamacpp_host":  "localhost:8080",
+		"llamacpp_model": "",
+	}
+}
+
+// ConfigSchema returns the fake provider's configuration schema.
+func (p *fakeProvider) ConfigSchema() map[string]provider.SchemaField {
+	return map[string]provider.SchemaField{
+		"provider": {
+			Name:            "Provider",
+			Type:            "enum",
+			Default:         "ollama",
+			Required:        true,
+			ReadOnly:        false,
+			Description:     "The LLM backend to use: 'ollama' or 'llamacpp'.",
+			EnumValues:      []string{"ollama", "llamacpp"},
+			RestartRequired: true,
+		},
+		"ollama_host": {
+			Name:            "Ollama Host",
+			Type:            "host",
+			Default:         "localhost:11434",
+			Required:        true,
+			ReadOnly:        false,
+			Description:     "The Ollama host address (host:port).",
+			RestartRequired: true,
+		},
+		"ollama_model": {
+			Name:            "Ollama Model",
+			Type:            "model",
+			Default:         "",
+			Required:        true,
+			ReadOnly:        false,
+			Description:     "The Ollama model name (e.g., 'llama3.1').",
+			RestartRequired: true,
+		},
+		"llamacpp_host": {
+			Name:            "llama.cpp Host",
+			Type:            "host",
+			Default:         "localhost:8080",
+			Required:        true,
+			ReadOnly:        false,
+			Description:     "The llama.cpp server host address (host:port).",
+			RestartRequired: true,
+		},
+		"llamacpp_model": {
+			Name:            "llama.cpp Model",
+			Type:            "model",
+			Default:         "",
+			Required:        true,
+			ReadOnly:        false,
+			Description:     "The llama.cpp model name (e.g., 'llama3.1').",
+			RestartRequired: true,
+		},
+	}
+}
+
+// ListModels returns the list of models hosted on the fake provider.
+func (p *fakeProvider) ListModels() ([]string, error) {
+	return []string{"llama3.1", "codellama", "phi3"}, nil
+}
+
+// TestHost tests a host endpoint for the named provider and returns whether
+// it's reachable. The provider name selects the probe endpoint; the fake
+// always fails on port 99999 (unreachable).
+func (p *fakeProvider) TestHost(provider, host string) error {
+	if strings.Contains(host, "99999") {
+		return fmt.Errorf("connection refused")
+	}
+	return nil
+}
+
+// SetConfig applies a config payload to the fake provider. It validates the
+// payload, normalizes deprecated keys, writes to an in-memory store (simulated
+// via the fake's internal state), and returns a ConfigWriteResult. This is the
+// Phase 1d write endpoint implementation for the fake.
+func (p *fakeProvider) SetConfig(payload map[string]any) (*transporthttp.ConfigWriteResult, error) {
+	// Validate provider field if present.
+	if v, ok := payload["provider"]; ok {
+		if s, ok := v.(string); ok {
+			if s != "ollama" && s != "llamacpp" {
+				return &transporthttp.ConfigWriteResult{
+					Status: "error",
+					Errors: []string{"provider: must be one of: ollama, llamacpp"},
+				}, nil
+			}
+		}
+	}
+
+	// Classify keys: provider, ollama_host, ollama_model, llamacpp_host,
+	// llamacpp_model, transport.host, transport.port_start, transport.port_end
+	// require restart; everything else is live.
+	restartKeys := []string{}
+	liveKeys := []string{}
+	for key := range payload {
+		switch key {
+		case "provider", "ollama_host", "ollama_model", "llamacpp_host", "llamacpp_model",
+			"transport.host", "transport.port_start", "transport.port_end":
+			restartKeys = append(restartKeys, key)
+		default:
+			liveKeys = append(liveKeys, key)
+		}
+	}
+
+	// Normalize deprecated keys.
+	var normKeys []transporthttp.NormalizedKey
+	if cb, ok := payload["chat_backend"]; ok {
+		if s, ok := cb.(string); ok && s != "" {
+			if _, hasProvider := payload["provider"]; !hasProvider {
+				payload["provider"] = s
+				normKeys = append(normKeys, transporthttp.NormalizedKey{Old: "chat_backend", New: "provider"})
+			}
+		}
+	}
+
+	return &transporthttp.ConfigWriteResult{
+		Status:          "applied",
+		LiveApplied:     liveKeys,
+		RestartRequired: restartKeys,
+		NormalizedKeys:  normKeys,
+	}, nil
+}
+
+// Phase 1e: restart stubs.
+func (p *fakeProvider) QueuedRestartKeys() []string { return nil }
+func (p *fakeProvider) HasQueuedRestart() bool      { return false }
+func (p *fakeProvider) ExecuteRestart() error       { return nil }
+
 func (p *fakeProvider) decision() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -253,6 +388,14 @@ type transportWorld struct {
 	liveCancel context.CancelFunc
 	received   []state.Event
 	recorded   int
+
+	// Config surface test state (PD-CONFIG).
+	configResponse     map[string]any
+	configSchemaResp   map[string]provider.SchemaField
+	modelList          []string
+	testHostResult     map[string]any
+	testHostErr        error
+	lastHTTPStatus     int
 }
 
 // sseStream reads SSE data lines from an open /events connection on a goroutine.
@@ -392,6 +535,23 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the launched surface kind is "([^"]*)"$`, w.launchedKind)
 	sc.Step(`^the launched surface appears in the registry$`, w.launchedInRegistry)
 	sc.Step(`^the launch fails with category "([^"]*)"$`, w.launchFailsCategory)
+
+	// Config surface steps (PD-CONFIG).
+	sc.Step(`^the client reads the config over the transport$`, w.readConfig)
+	sc.Step(`^the client reads the config schema over the transport$`, w.readConfigSchema)
+	sc.Step(`^the client requests models for "([^"]*)" over the transport$`, w.requestModels)
+	sc.Step(`^the client tests host "([^"]*)" over the transport$`, w.testHost)
+	sc.Step(`^the config response includes "([^"]*)"$`, w.configIncludes)
+	sc.Step(`^the schema response includes "([^"]*)"$`, w.schemaIncludes)
+	sc.Step(`^the schema response includes "([^"]*)" type for "([^"]*)"$`, w.schemaIncludesType)
+	sc.Step(`^the schema response includes "([^"]*)" true for "([^"]*)"$`, w.schemaIncludesRestartRequired)
+	sc.Step(`^the model list is not empty$`, w.modelListNotEmpty)
+	sc.Step(`^the model list is empty$`, w.modelListEmpty)
+	sc.Step(`^each model is a non-empty string$`, w.modelListNonEmpty)
+	sc.Step(`^the model list includes "([^"]*)"$`, w.modelListIncludes)
+	sc.Step(`^the test response shows "([^"]*)" "(true|false)"$`, w.assertTestHostResponse)
+	sc.Step(`^the test is rejected as "([^"]*)"$`, w.testHostRejected)
+	sc.Step(`^the test returns status (\d+)$`, w.testReturnsStatus)
 }
 
 func (w *transportWorld) serverNamed(name string) func() error {
@@ -1360,4 +1520,220 @@ func (st *sseStream) waitFor(want string, timeout time.Duration) error {
 			return fmt.Errorf("timed out waiting for %q", want)
 		}
 	}
+}
+
+// --- Config surface steps (PD-CONFIG) ---
+
+func (w *transportWorld) readConfig() error {
+	resp, err := w.httptst.Client().Get(w.httptst.URL + "/config")
+	if err != nil {
+		return fmt.Errorf("GET /config: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET /config returned %d", resp.StatusCode)
+	}
+	var cfg map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		return fmt.Errorf("decode config: %w", err)
+	}
+	w.configResponse = cfg
+	return nil
+}
+
+func (w *transportWorld) readConfigSchema() error {
+	resp, err := w.httptst.Client().Get(w.httptst.URL + "/config/schema")
+	if err != nil {
+		return fmt.Errorf("GET /config/schema: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET /config/schema returned %d", resp.StatusCode)
+	}
+	var schema map[string]provider.SchemaField
+	if err := json.NewDecoder(resp.Body).Decode(&schema); err != nil {
+		return fmt.Errorf("decode config schema: %w", err)
+	}
+	w.configSchemaResp = schema
+	return nil
+}
+
+func (w *transportWorld) requestModels(providerName string) error {
+	resp, err := w.httptst.Client().Get(w.httptst.URL + "/provider/" + url.PathEscape(providerName) + "/models")
+	if err != nil {
+		return fmt.Errorf("GET /provider/%s/models: %w", providerName, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET /provider/%s/models returned %d", providerName, resp.StatusCode)
+	}
+	var models []string
+	if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
+		return fmt.Errorf("decode models: %w", err)
+	}
+	w.modelList = models
+	return nil
+}
+
+func (w *transportWorld) testHost(host string) error {
+	// Default to "ollama" as the provider for existing test scenarios.
+	return w.testHostWithProvider(host, "ollama")
+}
+
+// testHostWithProvider sends POST /test/host with the given provider and host.
+func (w *transportWorld) testHostWithProvider(host, provider string) error {
+	body, err := json.Marshal(map[string]string{"provider": provider, "host": host})
+	if err != nil {
+		return fmt.Errorf("marshal test host: %w", err)
+	}
+	resp, err := w.httptst.Client().Post(w.httptst.URL+"/test/host", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("POST /test/host: %w", err)
+	}
+	defer resp.Body.Close()
+	w.lastHTTPStatus = resp.StatusCode
+	if resp.StatusCode != http.StatusOK {
+		// Record the error for later assertions.
+		var errBody map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&errBody); err == nil {
+			if msg, ok := errBody["error"].(string); ok {
+				w.testHostErr = fmt.Errorf("%s", msg)
+			}
+		}
+		return nil
+	}
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode test host: %w", err)
+	}
+	w.testHostResult = result
+	return nil
+}
+
+func (w *transportWorld) configIncludes(key string) error {
+	if w.configResponse == nil {
+		return fmt.Errorf("config response is nil")
+	}
+	if _, ok := w.configResponse[key]; !ok {
+		return fmt.Errorf("config response missing key %q", key)
+	}
+	return nil
+}
+
+func (w *transportWorld) schemaIncludes(key string) error {
+	if w.configSchemaResp == nil {
+		return fmt.Errorf("config schema response is nil")
+	}
+	if _, ok := w.configSchemaResp[key]; !ok {
+		return fmt.Errorf("config schema response missing key %q", key)
+	}
+	return nil
+}
+
+func (w *transportWorld) schemaIncludesType(schemaKey, fieldType string) error {
+	if w.configSchemaResp == nil {
+		return fmt.Errorf("config schema response is nil")
+	}
+	field, ok := w.configSchemaResp[schemaKey]
+	if !ok {
+		return fmt.Errorf("config schema response missing key %q", schemaKey)
+	}
+	if field.Type != fieldType {
+		return fmt.Errorf("config schema field %q type = %q, want %q", schemaKey, field.Type, fieldType)
+	}
+	return nil
+}
+
+func (w *transportWorld) schemaIncludesRestartRequired(schemaKey, value string) error {
+	if w.configSchemaResp == nil {
+		return fmt.Errorf("config schema response is nil")
+	}
+	field, ok := w.configSchemaResp[schemaKey]
+	if !ok {
+		return fmt.Errorf("config schema response missing key %q", schemaKey)
+	}
+	if len(field.EnumValues) == 0 {
+		return fmt.Errorf("config schema field %q has no enumValues", schemaKey)
+	}
+	if field.EnumValues[0] != value {
+		return fmt.Errorf("config schema field %q enumValues[0] = %q, want %q", schemaKey, field.EnumValues[0], value)
+	}
+	return nil
+}
+
+func (w *transportWorld) modelListNotEmpty() error {
+	if len(w.modelList) == 0 {
+		return fmt.Errorf("model list is empty")
+	}
+	return nil
+}
+
+func (w *transportWorld) modelListEmpty() error {
+	if len(w.modelList) != 0 {
+		return fmt.Errorf("model list is not empty: %v", w.modelList)
+	}
+	return nil
+}
+
+func (w *transportWorld) modelListNonEmpty() error {
+	for _, m := range w.modelList {
+		if m == "" {
+			return fmt.Errorf("model list contains empty string")
+		}
+	}
+	return nil
+}
+
+func (w *transportWorld) modelListIncludes(model string) error {
+	for _, m := range w.modelList {
+		if m == model {
+			return nil
+		}
+	}
+	return fmt.Errorf("model list does not include %q", model)
+}
+
+func (w *transportWorld) assertTestHostResponse(key string, expected string) error {
+	if w.testHostResult == nil {
+		return fmt.Errorf("test host response is nil")
+	}
+	val, ok := w.testHostResult[key]
+	if !ok {
+		return fmt.Errorf("test host response missing key %q", key)
+	}
+	// Handle both string and bool types.
+	switch v := val.(type) {
+	case bool:
+		expectedBool := expected == "true"
+		if v != expectedBool {
+			return fmt.Errorf("test host response key %q = %v, want %v", key, v, expectedBool)
+		}
+	case string:
+		if v != expected {
+			return fmt.Errorf("test host response key %q = %q, want %q", key, v, expected)
+		}
+	default:
+		return fmt.Errorf("test host response key %q is not a string or bool: %v", key, val)
+	}
+	return nil
+}
+
+func (w *transportWorld) testHostRejected(reason string) error {
+	if w.testHostErr == nil {
+		return fmt.Errorf("no error recorded for test host")
+	}
+	if !strings.Contains(w.testHostErr.Error(), reason) {
+		return fmt.Errorf("test host error = %q, want to contain %q", w.testHostErr.Error(), reason)
+	}
+	return nil
+}
+
+func (w *transportWorld) testReturnsStatus(expectedStatus int) error {
+	if w.lastHTTPStatus == 0 {
+		return fmt.Errorf("no HTTP status recorded")
+	}
+	if w.lastHTTPStatus != expectedStatus {
+		return fmt.Errorf("HTTP status = %d, want %d", w.lastHTTPStatus, expectedStatus)
+	}
+	return nil
 }

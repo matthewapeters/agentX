@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"agentx/internal/llm/provider"
 )
 
 // Client talks to a local Ollama runtime.
@@ -350,4 +352,81 @@ func modelMatches(listed, want string) bool {
 		return true
 	}
 	return false
+}
+
+// Config returns the Ollama client's configuration as a map for transport.
+func (c *Client) Config() map[string]any {
+	return map[string]any{
+		"host": c.baseURL,
+	}
+}
+
+// ListModels returns the list of models hosted on the Ollama server.
+func (c *Client) ListModels() ([]string, error) {
+	httpReq, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/tags", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build tags request: %w", err)
+	}
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("ollama unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama tags returned status %d", resp.StatusCode)
+	}
+
+	var tags tagsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		return nil, fmt.Errorf("decode tags: %w", err)
+	}
+
+	models := make([]string, len(tags.Models))
+	for i, m := range tags.Models {
+		models[i] = m.Name
+	}
+	return models, nil
+}
+
+// ConfigSchema returns the Ollama configuration schema.
+func (c *Client) ConfigSchema() map[string]provider.SchemaField {
+	return map[string]provider.SchemaField{
+		"host": {
+			Name:        "Host",
+			Type:        "host",
+			Default:     "localhost:11434",
+			Required:    true,
+			ReadOnly:    false,
+			Description: "The Ollama host address (host:port).",
+			RestartRequired: true,
+		},
+		"model": {
+			Name:        "Model",
+			Type:        "model",
+			Default:     "",
+			Required:    true,
+			ReadOnly:    false,
+			Description: "The model name (e.g., 'llama3.1').",
+			RestartRequired: true,
+		},
+	}
+}
+
+// TestHost probes the Ollama runtime's /api/tags endpoint. A 200 response
+// means the host is reachable and responding; any other outcome returns the
+// underlying error so the caller (transport, TUI) can surface it to the user.
+func (c *Client) TestHost(ctx context.Context) error {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/tags", nil)
+	if err != nil {
+		return fmt.Errorf("build tags request: %w", err)
+	}
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("ollama unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ollama tags returned status %d", resp.StatusCode)
+	}
+	return nil
 }

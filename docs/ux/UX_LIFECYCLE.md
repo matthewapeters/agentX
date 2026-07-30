@@ -206,7 +206,7 @@ Examples:
 | PD-CTXVIZ | Context Visualizer (TUI) | New (M2) |
 | PD-WM | Working Memory Editor (TUI) | New (M2) |
 | PD-LOGS | Log/Trace Surface (TUI) | New (M2+) |
-| PD-CONFIG | Configuration Surface (TUI) | New (M2+, pending) |
+| PD-CONFIG | Configuration Surface (TUI) | Phase 1a complete (M2+, in progress) |
 
 When a new surface feature is added, assign the next available PD number,
 add a row to this table, and create a section in `03_PANEL_DETAILS.md`.
@@ -485,7 +485,7 @@ Evidence expectations remain:
 | System applet suite (files/config/context-history/working-memory/context-visualizer) | `PD-18-AF-001..007` | `PD-18` | `system_applet_host_test.go`, `context_widget_test.go`, `core_system_renderer_test.go`, `tests/test_demo_system_panel_tour_headless.sh` | ⚠ Re-opened |
 | UAT-visible startup topology | `PD-18-AF-007` | `PD-18` | `config_startup_mode_test.go`, `core_tmux_startup_integration_test.go` | ✅ Closed |
 | Log/trace surface — session-event viewer (distinct from the retired "Logs widget" row above, which was DemoMode's own diagnostics-capture artifact viewer) | `PD-LOGS-AF-002..008` (AF-001, full-tab placement, is a layout fact with no unit-level test, same as `context-visualizer`'s) | `PD-LOGS` | `tests/steps/surfaces/logs_steps.go`, `tests/features/surfaces/logs_surface.feature` (`docs/build-plan/06_system_surfaces_backlog.md` Phase G, SS-8/SS-9) | ✅ Tested |
-| Configuration surface — inspect and edit `agentx.toml` with live push to the orchestrator | `PD-CONFIG-AF-001..012` | `PD-CONFIG` | `tests/steps/surfaces/config_steps.go`, `tests/features/surfaces/config_surface.feature` | 📝 Spec only |
+| Configuration surface — inspect and edit `agentx.toml` with live push to the orchestrator | `PD-CONFIG-AF-001..012` | `PD-CONFIG` | `tests/steps/transport/http_steps.go`, `tests/features/transport/config_surface_api.feature` | ✅ Phase 1a (read-only transport) |
 
 **Pending:** PD-CTXHIST (context-history surface) — registered, not yet implemented, needs a fresh spec.
 

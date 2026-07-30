@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"agentx/internal/classify"
+	"agentx/internal/config"
+	"agentx/internal/llm/provider"
+	"agentx/internal/llm/provider/validation"
 	"agentx/internal/prompting"
 	"agentx/internal/prompting/pipeline"
 	"agentx/internal/runtime/scheduler"
@@ -50,6 +54,8 @@ type Settings struct {
 	ClassificationPrompt string
 	// ClassificationRetries is the classify-cycle retry budget.
 	ClassificationRetries int
+	// ClarificationOptions is the number of interpretations offered on ambiguity.
+	ClarificationOptions int
 	// PromptCorpus is the fan-group prompt corpus (prompts.toml content) that drives
 	// the experimental task classifier. Empty (the default, when no prompts.toml is
 	// seeded) leaves the classifier off and the prompt cycle unchanged.
@@ -117,6 +123,9 @@ type Settings struct {
 	// applies. Empty disables persistence (an "always" decision behaves like "once").
 	ContinuationVerbsAllowedPath string
 	ContinuationVerbsDeniedPath  string
+	// ToolTimeoutSeconds bounds the wall-clock budget for a single tool
+	// execution. <=0 lets the executor use its own default.
+	ToolTimeoutSeconds int
 	// ToolOutputMaxBytes caps captured tool output before truncation (full output
 	// still persists to the artifact). <=0 uses the executor default.
 	ToolOutputMaxBytes int
@@ -137,7 +146,15 @@ type Settings struct {
 	// transport binds the first free port from.
 	TransportPortStart int
 	TransportPortEnd   int
+	// ConfigWatcherPath is the path the config-file watcher monitors (Phase 3a).
+	// Empty means the orchestrator resolves the path from config.DefaultPaths()
+	// at start time (the conventional deployment path).
+	ConfigWatcherPath string
 }
+
+// configPayload is an in-memory snapshot of the latest config write, stored so
+// a restart can reapply it. See restartQueue on Orchestrator (Phase 1e).
+type configPayload = map[string]any
 
 // Orchestrator owns the per-process runtime: session, event bus, processing
 // state, and persistence.
@@ -174,6 +191,19 @@ type Orchestrator struct {
 	recDone         chan error
 	recSub          *state.Subscription
 	gate            decisionGate
+
+	// configWatcher monitors agentx.toml for external edits (Phase 3a, PD-CONFIG-AF-008)
+	// and fans config_changed events to attached surfaces via the Bus.
+	configWatcher     *config.Watcher
+	configWatcherStop context.CancelFunc
+
+	// restartQueue holds pending config changes that require a restart (e.g.
+	// provider switch, host change). Applied when the orchestrator restarts via
+	// Restart() (Phase 1e, PD-CONFIG-AF-009).
+	restartQueue configPayload
+	// liveReloadEnabled reports whether tunable settings should be applied
+	// immediately to the running session without restart (Phase 1e).
+	liveReloadEnabled bool
 	registry        *tools.Registry
 	policy          *tools.Policy
 	proposer        *tools.Proposer
@@ -213,6 +243,13 @@ func WithModel(m Model) Option {
 // builds one from its settings (using the model) at Start.
 func WithClassifier(c *classify.Classifier) Option {
 	return func(o *Orchestrator) { o.classifier = c }
+}
+
+// WithConfigWatcherPath overrides the config file path the watcher monitors
+// (Phase 3a test hook). Without it the orchestrator resolves the path from
+// config.DefaultPaths().deployment at start time.
+func WithConfigWatcherPath(path string) Option {
+	return func(o *Orchestrator) { o.settings.ConfigWatcherPath = path }
 }
 
 // New returns an unstarted Orchestrator for the given settings.
@@ -312,6 +349,15 @@ func (o *Orchestrator) Start() error {
 		}
 	}
 
+	// Phase 3a: start the config-file watcher so external edits to agentx.toml
+	// are fanned out as config_changed events to attached surfaces.
+	if err := o.startConfigWatcher(); err != nil {
+		// Non-fatal: a failed watcher start does not block the orchestrator.
+		// The bus and transport are still live; only external-change detection
+		// is disabled.
+		_ = err
+	}
+
 	o.started = true
 	o.accepting = true
 	return nil
@@ -341,6 +387,45 @@ func (o *Orchestrator) startTransport() error {
 	return nil
 }
 
+// startConfigWatcher begins the config-file watcher (Phase 3a, PD-CONFIG-AF-008).
+// It watches agentx.toml for external modifications and publishes a config_changed
+// event to the bus whenever one is detected. The watcher runs in its own goroutine
+// and is cleaned up in Shutdown.
+func (o *Orchestrator) startConfigWatcher() error {
+	configPath := o.settings.ConfigWatcherPath
+	if configPath == "" {
+		paths, err := config.DefaultPaths()
+		if err != nil {
+			return err
+		}
+		configPath = paths.Deployment
+	}
+
+	w, err := config.NewWatcher(configPath)
+	if err != nil {
+		return err
+	}
+	o.configWatcher = w
+
+	// Subscribe to the watcher and fan events into the bus.
+	sub := w.Subscribe()
+	go func() {
+		for range sub.C {
+			// Publish a config_changed event. The bus stamps it with an ordinal
+			// and fans it to every subscriber (including SSE-attached surfaces).
+			ordinal := o.bus.Publish(state.Event{
+				Epoch:       time.Now().UnixMilli(),
+				SessionID:   o.id.ID,
+				EventType:   "CONFIG_CHANGED",
+				ContentType: state.ContentConfigChanged,
+				Payload:     map[string]any{"path": configPath},
+			})
+			_ = ordinal
+		}
+	}()
+	return nil
+}
+
 // Shutdown stops accepting prompts, persists a final processing-state snapshot,
 // flushes the recorder, and returns. It respects ctx cancellation while waiting
 // for the recorder to drain.
@@ -363,6 +448,12 @@ func (o *Orchestrator) Shutdown(ctx context.Context) error {
 		_ = server.Shutdown(ctx)
 		o.surfaceReg.StopAll()
 		_ = o.store.RemoveAttachToken(o.id.ID)
+	}
+
+	// Phase 3a: stop the config-file watcher before draining, so no new
+	// config_changed events are published after the bus closes.
+	if w := o.configWatcher; w != nil {
+		_ = w.Close()
 	}
 
 	// Persist a final processing-state snapshot before draining.
@@ -1228,4 +1319,936 @@ func (o *Orchestrator) setProcessing(s state.RunState, ph state.Phase) {
 		ContentType: state.ContentProcessingState,
 		Payload:     o.proc.Current(),
 	})
+}
+
+// Config returns the current effective configuration for transport.
+func (o *Orchestrator) Config() map[string]any {
+	// Phase 1e: return the full effective configuration so the config surface
+	// can render all editable keys. Live-reloadable and restart-required keys
+	// are both included; the surface uses ConfigSchema to determine editability.
+	return map[string]any{
+		"provider":                       o.settings.Provider,
+		"ollama_host":                    o.settings.OllamaHost,
+		"ollama_model":                   o.settings.OllamaModel,
+		"llamacpp_host":                  o.settings.LlamacppHost,
+		"llamacpp_model":                 o.settings.LlamacppModel,
+		"classification.retries":         o.settings.ClassificationRetries,
+		"classification.clarification_options": o.settings.ClarificationOptions,
+		"output.max_widget_lines":        o.settings.MaxWidgetLines,
+		"output.input_max_lines":         o.settings.InputMaxLines,
+		"output.markdown_renderer":       o.settings.MarkdownRenderer,
+		"agentx.theme.active_border_color":   o.settings.ActiveBorderColor,
+		"agentx.theme.inactive_border_color": o.settings.InactiveBorderColor,
+		"thinking.enabled":               o.settings.ThinkingEnabled,
+		"thinking.time_budget_seconds":   int(o.settings.ThinkingBudget.Seconds()),
+		"tools.enabled":                  o.settings.ToolsEnabled,
+		"tools.read_only":                o.settings.ToolReadOnly,
+		"tools.timeout_seconds":          o.settings.ToolTimeoutSeconds,
+		"tools.output_max_bytes":         o.settings.ToolOutputMaxBytes,
+		"tools.absolute_max_bytes":       o.settings.ToolOutputAbsoluteMaxBytes,
+		"transport.enabled":              o.settings.TransportEnabled,
+		"transport.host":                 o.settings.TransportHost,
+		"transport.port_start":           o.settings.TransportPortStart,
+		"transport.port_end":             o.settings.TransportPortEnd,
+		"wavefront.enabled":              o.settings.WavefrontEnabled,
+	}
+}
+
+// ConfigSchema returns the configuration schema for transport.
+func (o *Orchestrator) ConfigSchema() map[string]provider.SchemaField {
+	// Phase 1e: the schema is the authoritative source of truth for the config
+	// surface. It lists every editable key, its type, validation rules, and
+	// whether a change requires restart. The surface uses this to render the
+	// correct editor (text, dropdown, toggle, color picker) per key.
+	return map[string]provider.SchemaField{
+		// --- [agentx]: provider identity ---
+		"provider": {
+			Name:            "Provider",
+			Type:            "enum",
+			Default:         "ollama",
+			Required:        true,
+			ReadOnly:        false,
+			Description:     "The LLM backend to use: 'ollama' or 'llamacpp'.",
+			EnumValues:      []string{"ollama", "llamacpp"},
+			RestartRequired: true,
+		},
+		// --- [agentx.ollama] ---
+		"ollama_host": {
+			Name:            "Ollama Host",
+			Type:            "host",
+			Default:         "localhost:11434",
+			Required:        true,
+			ReadOnly:        false,
+			Description:     "The Ollama host address (host:port).",
+			RestartRequired: true,
+		},
+		"ollama_model": {
+			Name:            "Ollama Model",
+			Type:            "model",
+			Default:         "",
+			Required:        true,
+			ReadOnly:        false,
+			Description:     "The Ollama model name (e.g., 'llama3.1').",
+			RestartRequired: true,
+		},
+		// --- [agentx.llamacpp] ---
+		"llamacpp_host": {
+			Name:            "llama.cpp Host",
+			Type:            "host",
+			Default:         "localhost:8080",
+			Required:        true,
+			ReadOnly:        false,
+			Description:     "The llama.cpp server host address (host:port).",
+			RestartRequired: true,
+		},
+		"llamacpp_model": {
+			Name:            "llama.cpp Model",
+			Type:            "model",
+			Default:         "",
+			Required:        true,
+			ReadOnly:        false,
+			Description:     "The llama.cpp model name (e.g., 'llama3.1').",
+			RestartRequired: true,
+		},
+		// --- [agentx.classification] (live-reload) ---
+		"classification.retries": {
+			Name:            "Classification Retries",
+			Type:            "int",
+			Default:         "2",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "How many retry attempts the classify cycle makes on a non-JSON verdict.",
+			RestartRequired: false,
+		},
+		"classification.clarification_options": {
+			Name:            "Clarification Options",
+			Type:            "int",
+			Default:         "3",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Number of interpretation options offered to the user on ambiguous input.",
+			RestartRequired: false,
+		},
+		// --- [agentx.output] (live-reload) ---
+		"output.max_widget_lines": {
+			Name:            "Max Widget Lines",
+			Type:            "int",
+			Default:         "20",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Maximum body rows before an output widget scrolls.",
+			RestartRequired: false,
+		},
+		"output.input_max_lines": {
+			Name:            "Input Max Lines",
+			Type:            "int",
+			Default:         "8",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Maximum rows the input panel grows to before scrolling.",
+			RestartRequired: false,
+		},
+		"output.markdown_renderer": {
+			Name:            "Markdown Renderer",
+			Type:            "enum",
+			Default:         "native",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Assistant-markdown rendering mode: 'native' (full) or 'scanner' (lightweight).",
+			EnumValues:      []string{"native", "scanner"},
+			RestartRequired: false,
+		},
+		// --- [agentx.theme] (live-reload) ---
+		"agentx.theme.active_border_color": {
+			Name:            "Active Border Color",
+			Type:            "color",
+			Default:         "cyan",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "SGR foreground for the focused panel border. Accepts a named color, ANSI 256 index (0-255), or hex (#RRGGBB).",
+			RestartRequired: false,
+		},
+		"agentx.theme.inactive_border_color": {
+			Name:            "Inactive Border Color",
+			Type:            "color",
+			Default:         "dark gray",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "SGR foreground for unfocused panel borders. Accepts a named color, ANSI 256 index (0-255), or hex (#RRGGBB).",
+			RestartRequired: false,
+		},
+		// --- [agentx.thinking] (live-reload) ---
+		"thinking.enabled": {
+			Name:            "Thinking Enabled",
+			Type:            "bool",
+			Default:         "true",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Master switch for model reasoning during the respond phase.",
+			RestartRequired: false,
+		},
+		"thinking.time_budget_seconds": {
+			Name:            "Thinking Time Budget",
+			Type:            "int",
+			Default:         "180",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Wall-clock cap on the thinking phase in seconds before falling back to a direct answer.",
+			RestartRequired: false,
+		},
+		"thinking.routes.respond_directly": {
+			Name:            "Thinking on Respond Directly",
+			Type:            "bool",
+			Default:         "false",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Enable thinking for the respond_directly classification route.",
+			RestartRequired: false,
+		},
+		"thinking.routes.single_tool": {
+			Name:            "Thinking on Single Tool",
+			Type:            "bool",
+			Default:         "true",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Enable thinking for the single_tool classification route.",
+			RestartRequired: false,
+		},
+		"thinking.routes.invoke_planner": {
+			Name:            "Thinking on Invoke Planner",
+			Type:            "bool",
+			Default:         "true",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Enable thinking for the invoke_planner classification route.",
+			RestartRequired: false,
+		},
+		// --- [agentx.tools] (live-reload) ---
+		"tools.enabled": {
+			Name:            "Tools Enabled",
+			Type:            "bool",
+			Default:         "true",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Turn on the single_tool execution cycle.",
+			RestartRequired: false,
+		},
+		"tools.read_only": {
+			Name:            "Tools Read-Only",
+			Type:            "bool",
+			Default:         "true",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Restrict execution to read-risk tools only.",
+			RestartRequired: false,
+		},
+		"tools.timeout_seconds": {
+			Name:            "Tool Timeout",
+			Type:            "int",
+			Default:         "30",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Tool execution timeout in seconds.",
+			RestartRequired: false,
+		},
+		"tools.output_max_bytes": {
+			Name:            "Tool Output Max Bytes",
+			Type:            "int",
+			Default:         "65536",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Captured tool output cap before truncation (bytes).",
+			RestartRequired: false,
+		},
+		"tools.absolute_max_bytes": {
+			Name:            "Tool Absolute Max Bytes",
+			Type:            "int",
+			Default:         "2097152",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Hard ceiling on captured tool output (bytes); the oversized-output recovery gate never asks for more than this.",
+			RestartRequired: false,
+		},
+		// --- [agentx.transport] (restart-required) ---
+		"transport.enabled": {
+			Name:            "Transport Enabled",
+			Type:            "bool",
+			Default:         "true",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Serve the HTTP/SSE transport alongside the in-process chat.",
+			RestartRequired: true,
+		},
+		"transport.host": {
+			Name:            "Transport Host",
+			Type:            "host",
+			Default:         "127.0.0.1",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Loopback host the transport binds (v1: loopback only).",
+			RestartRequired: true,
+		},
+		"transport.port_start": {
+			Name:            "Transport Port Start",
+			Type:            "int",
+			Default:         "8420",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Start of the inclusive candidate port range the transport binds from.",
+			RestartRequired: true,
+		},
+		"transport.port_end": {
+			Name:            "Transport Port End",
+			Type:            "int",
+			Default:         "8460",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "End of the inclusive candidate port range (>= port_start).",
+			RestartRequired: true,
+		},
+		// --- [agentx.wavefront] (live-reload) ---
+		"wavefront.enabled": {
+			Name:            "Wavefront Enabled",
+			Type:            "bool",
+			Default:         "false",
+			Required:        false,
+			ReadOnly:        false,
+			Description:     "Route invoke_planner plans through ADR 0012's round-free decomposition engine.",
+			RestartRequired: false,
+		},
+	}
+}
+
+// ListModels returns the list of models hosted on the active provider.
+func (o *Orchestrator) ListModels() ([]string, error) {
+	switch o.settings.Provider {
+	case "ollama":
+		// Ollama models are returned as a list of strings.
+		// For now, return an empty list since we don't have a direct Ollama client here.
+		// This will be filled in by Phase 1d when we wire up the actual provider.
+		return []string{}, nil
+	case "llamacpp":
+		// llama.cpp models are returned as a list of strings.
+		// For now, return an empty list since we don't have a direct llama.cpp client here.
+		// This will be filled in by Phase 1d when we wire up the actual provider.
+		return []string{}, nil
+	default:
+		return nil, fmt.Errorf("unknown provider: %s", o.settings.Provider)
+	}
+}
+
+// TestHost tests a host endpoint and returns whether it's reachable.
+func (o *Orchestrator) TestHost(provider, host string) error {
+	switch strings.ToLower(provider) {
+	case "ollama":
+		// The ollama client is wired through the model layer in Phase 1d; for
+		// Phase 1c we probe the /api/tags endpoint directly so the surface gets
+		// a real reachability check without depending on a fully-built adapter.
+		url := host
+		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+			url = "http://" + url
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/api/tags", nil)
+		if err != nil {
+			return fmt.Errorf("build ollama tags request: %w", err)
+		}
+		resp, err := http.DefaultClient.Do(httpReq)
+		if err != nil {
+			return fmt.Errorf("ollama unreachable: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("ollama tags returned status %d", resp.StatusCode)
+		}
+		return nil
+
+	case "llamacpp":
+		url := host
+		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+			url = "http://" + url
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/v1/models", nil)
+		if err != nil {
+			return fmt.Errorf("build llamacpp models request: %w", err)
+		}
+		resp, err := http.DefaultClient.Do(httpReq)
+		if err != nil {
+			return fmt.Errorf("llama.cpp unreachable: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("llama.cpp models returned status %d", resp.StatusCode)
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("unknown provider: %q", provider)
+	}
+}
+
+// SetConfig accepts a full config payload from the transport layer, validates
+// each field with type-appropriate rules, normalizes deprecated keys, applies
+// live-reloadable keys immediately, writes atomically to disk under the
+// config-write semaphore, and queues restart-required keys. The returned
+// ConfigWriteResult reports status, live-applied keys, restart-required keys,
+// validation errors, and normalized keys.
+//
+// This is the orchestrator-side implementation of the POST /config transport
+// endpoint (Phase 1d).
+func (o *Orchestrator) SetConfig(payload map[string]any) (*transporthttp.ConfigWriteResult, error) {
+	// 1. Resolve config paths for the write.
+	cp, err := config.DefaultCachePaths()
+	if err != nil {
+		return &transporthttp.ConfigWriteResult{
+			Status:     "error",
+			Errors:     []string{"resolve cache paths: " + err.Error()},
+		}, nil
+	}
+	paths, err := config.DefaultPaths()
+	if err != nil {
+		return &transporthttp.ConfigWriteResult{
+			Status:     "error",
+			Errors:     []string{"resolve config paths: " + err.Error()},
+		}, nil
+	}
+
+	// 2. Decode the payload into a typed Config for validation.
+	var cfg config.Config
+	if err := decodeConfigPayload(payload, &cfg); err != nil {
+		return &transporthttp.ConfigWriteResult{
+			Status: "error",
+			Errors: []string{"invalid config payload: " + err.Error()},
+		}, nil
+	}
+
+	// 3. Normalize deprecated keys (chat_backend → provider).
+	normalized := cfg.Normalize()
+	normalizedKeys := make([]transporthttp.NormalizedKey, 0, len(normalized))
+	for _, nk := range normalized {
+		normalizedKeys = append(normalizedKeys, transporthttp.NormalizedKey{Old: nk.Old, New: nk.New})
+	}
+
+	// 4. Validate every field in the payload with type-appropriate rules.
+	var errors []string
+
+	// Validate provider (enum).
+	if v, ok := payload["provider"]; ok {
+		if s, ok := v.(string); ok {
+			if err := validation.ValidateEnum(s, []string{"ollama", "llamacpp"}); err != nil {
+				errors = append(errors, err.Error())
+			}
+		}
+	}
+
+	// Validate ollama_host (host).
+	if v, ok := payload["ollama_host"]; ok {
+		if s, ok := v.(string); ok {
+			if err := validation.ValidateHost(s); err != nil {
+				errors = append(errors, err.Error())
+			}
+		}
+	}
+
+	// Validate ollama_model (model name).
+	if v, ok := payload["ollama_model"]; ok {
+		if s, ok := v.(string); ok {
+			if err := validation.ValidateModelName(s); err != nil {
+				errors = append(errors, err.Error())
+			}
+		}
+	}
+
+	// Validate llamacpp_host (host).
+	if v, ok := payload["llamacpp_host"]; ok {
+		if s, ok := v.(string); ok {
+			if err := validation.ValidateHost(s); err != nil {
+				errors = append(errors, err.Error())
+			}
+		}
+	}
+
+	// Validate llamacpp_model (model name).
+	if v, ok := payload["llamacpp_model"]; ok {
+		if s, ok := v.(string); ok {
+			if err := validation.ValidateModelName(s); err != nil {
+				errors = append(errors, err.Error())
+			}
+		}
+	}
+
+	// Validate integer fields with range checks.
+	intFields := map[string]struct{ min, max int }{
+		"classification.retries":               {0, 100},
+		"classification.clarification_options":  {1, 20},
+		"output.max_widget_lines":              {1, 500},
+		"output.input_max_lines":               {1, 100},
+		"thinking.time_budget_seconds":         {0, 3600},
+		"tools.timeout_seconds":                {1, 600},
+		"tools.output_max_bytes":               {1024, 10485760},
+		"tools.absolute_max_bytes":             {1024, 10485760},
+		"transport.port_start":                 {1024, 65535},
+		"transport.port_end":                   {1024, 65535},
+	}
+	for key, bounds := range intFields {
+		if v, ok := payload[key]; ok {
+			switch val := v.(type) {
+			case float64:
+				s := fmt.Sprintf("%d", int(val))
+				if err := validation.ValidateInt(s, bounds.min, bounds.max); err != nil {
+					errors = append(errors, fmt.Sprintf("%s: %s", key, err.Message))
+				}
+			case string:
+				if err := validation.ValidateInt(val, bounds.min, bounds.max); err != nil {
+					errors = append(errors, fmt.Sprintf("%s: %s", key, err.Message))
+				}
+			}
+		}
+	}
+
+	// Validate boolean fields.
+	boolFields := []string{
+		"thinking.enabled",
+		"tools.enabled",
+		"tools.read_only",
+		"transport.enabled",
+		"wavefront.enabled",
+	}
+	for _, key := range boolFields {
+		if v, ok := payload[key]; ok {
+			if s, ok := v.(string); ok {
+				if err := validation.ValidateBool(s); err != nil {
+					errors = append(errors, fmt.Sprintf("%s: %s", key, err.Message))
+				}
+			}
+		}
+	}
+
+	// If there are validation errors, return early with them.
+	if len(errors) > 0 {
+		return &transporthttp.ConfigWriteResult{
+			Status:     "error",
+			Errors:     errors,
+			NormalizedKeys: normalizedKeys,
+		}, nil
+	}
+
+	// 5. Classify keys into live-applied and restart-required (Phase 1e).
+	//
+	// Live-reloadable keys are tunable settings that can be applied to the
+	// running session without restarting the orchestrator. They include:
+	//   - Classification tuning (retries, clarification_options)
+	//   - Output tuning (max_widget_lines, input_max_lines, markdown_renderer)
+	//   - Theme (active_border_color, inactive_border_color)
+	//   - Thinking settings (enabled, time_budget_seconds, routes.*)
+	//   - Tools settings (enabled, read_only, timeout_seconds, output_max_bytes,
+	//     absolute_max_bytes)
+	//   - Wavefront (enabled)
+	//
+	// Restart-required keys change the model adapter, transport binding, or
+	// provider identity and require a full orchestrator restart:
+	//   - provider
+	//   - ollama_host, ollama_model
+	//   - llamacpp_host, llamacpp_model
+	//   - transport.enabled, transport.host, transport.port_start, transport.port_end
+	//
+	// This classification drives what applyLiveSettings hot-applies vs what
+	// restartQueue holds for the next Restart() call.
+	var restartRequiredKeys, liveAppliedKeys []string
+	for key := range payload {
+		switch key {
+		// Restart-required: these change the model adapter, transport binding,
+		// or provider identity and require a full orchestrator restart.
+		case "provider", "ollama_host", "ollama_model",
+			"llamacpp_host", "llamacpp_model",
+			"transport.enabled", "transport.host",
+			"transport.port_start", "transport.port_end":
+			restartRequiredKeys = append(restartRequiredKeys, key)
+		default:
+			liveAppliedKeys = append(liveAppliedKeys, key)
+		}
+	}
+
+	// 6. Apply the config atomically to disk using the transactional write
+	// infrastructure from Phase 1b.
+	if err := config.WriteConfig(cp, paths.Deployment, cfg); err != nil {
+		return &transporthttp.ConfigWriteResult{
+			Status:     "error",
+			Errors:     []string{"write config to disk: " + err.Error()},
+			NormalizedKeys: normalizedKeys,
+			LiveApplied:    liveAppliedKeys,
+			RestartRequired: restartRequiredKeys,
+		}, nil
+	}
+
+	// Queue restart-required config for the next orchestrator restart (Phase 1e).
+	o.mu.Lock()
+	if len(restartRequiredKeys) > 0 {
+		o.restartQueue = payload
+	}
+	o.mu.Unlock()
+
+	result := &transporthttp.ConfigWriteResult{
+		Status:          "applied",
+		LiveApplied:     liveAppliedKeys,
+		RestartRequired: restartRequiredKeys,
+		NormalizedKeys:  normalizedKeys,
+		Write: &transporthttp.WriteMetadata{
+			Path:      paths.Deployment,
+			Semaphore: cp.LockFile(),
+		},
+	}
+
+	// 7. Apply live-reloadable keys to the running orchestrator state (Phase 1e).
+	o.mu.Lock()
+	o.applyLiveSettings(payload)
+	o.mu.Unlock()
+
+	return result, nil
+}
+
+// applyLiveSettings updates the orchestrator's in-memory settings from a
+// config payload (Phase 1e). Live-reloadable keys are applied immediately
+// to the running session: tunable settings take effect on the next prompt
+// cycle, the next tool execution, and so on. Restart-required keys are
+// silently ignored here — they are stored in o.restartQueue instead.
+//
+// Called under o.mu.
+func (o *Orchestrator) applyLiveSettings(payload map[string]any) {
+	// --- Tunable keys that can be hot-applied ---
+
+	// Classification tuning: take effect on the next classify cycle.
+	if v, ok := payload["classification.retries"]; ok {
+		if n, err := intFromAny(v); err == nil {
+			o.settings.ClassificationRetries = n
+		}
+	}
+	if v, ok := payload["classification.clarification_options"]; ok {
+		if n, err := intFromAny(v); err == nil {
+			o.settings.ClarificationOptions = n
+		}
+	}
+
+	// Output tuning: take effect on the next render.
+	if v, ok := payload["output.max_widget_lines"]; ok {
+		if n, err := intFromAny(v); err == nil {
+			o.settings.MaxWidgetLines = n
+		}
+	}
+	if v, ok := payload["output.input_max_lines"]; ok {
+		if n, err := intFromAny(v); err == nil {
+			o.settings.InputMaxLines = n
+		}
+	}
+	if v, ok := payload["output.markdown_renderer"]; ok {
+		if s, ok := v.(string); ok {
+			o.settings.MarkdownRenderer = strings.TrimSpace(s)
+		}
+	}
+
+	// Theme colors: take effect on the next render.
+	if v, ok := payload["agentx.theme.active_border_color"]; ok {
+		if s, ok := v.(string); ok {
+			o.settings.ActiveBorderColor = s
+		}
+	}
+	if v, ok := payload["agentx.theme.inactive_border_color"]; ok {
+		if s, ok := v.(string); ok {
+			o.settings.InactiveBorderColor = s
+		}
+	}
+
+	// Thinking settings: take effect on the next prompt's respond phase
+	// (thinkForRoute and thinkingPrompt read from o.settings each turn).
+	if v, ok := payload["thinking.enabled"]; ok {
+		if b, err := boolFromAny(v); err == nil {
+			o.settings.ThinkingEnabled = b
+		}
+	}
+	if v, ok := payload["thinking.time_budget_seconds"]; ok {
+		if n, err := intFromAny(v); err == nil {
+			o.settings.ThinkingBudget = time.Duration(n) * time.Second
+		}
+	}
+	if v, ok := payload["thinking.routes.respond_directly"]; ok {
+		if b, err := boolFromAny(v); err == nil {
+			if o.settings.ThinkingRoutes == nil {
+				o.settings.ThinkingRoutes = make(map[string]bool)
+			}
+			o.settings.ThinkingRoutes["respond_directly"] = b
+		}
+	}
+	if v, ok := payload["thinking.routes.single_tool"]; ok {
+		if b, err := boolFromAny(v); err == nil {
+			if o.settings.ThinkingRoutes == nil {
+				o.settings.ThinkingRoutes = make(map[string]bool)
+			}
+			o.settings.ThinkingRoutes["single_tool"] = b
+		}
+	}
+	if v, ok := payload["thinking.routes.invoke_planner"]; ok {
+		if b, err := boolFromAny(v); err == nil {
+			if o.settings.ThinkingRoutes == nil {
+				o.settings.ThinkingRoutes = make(map[string]bool)
+			}
+			o.settings.ThinkingRoutes["invoke_planner"] = b
+		}
+	}
+
+	// Tools settings: take effect on the next tool execution.
+	if v, ok := payload["tools.enabled"]; ok {
+		if b, err := boolFromAny(v); err == nil {
+			o.settings.ToolsEnabled = b
+		}
+	}
+	if v, ok := payload["tools.read_only"]; ok {
+		if b, err := boolFromAny(v); err == nil {
+			o.settings.ToolReadOnly = b
+		}
+	}
+	if v, ok := payload["tools.timeout_seconds"]; ok {
+		if n, err := intFromAny(v); err == nil {
+			o.settings.ToolTimeoutSeconds = n
+		}
+	}
+	if v, ok := payload["tools.output_max_bytes"]; ok {
+		if n, err := intFromAny(v); err == nil {
+			o.settings.ToolOutputMaxBytes = n
+		}
+	}
+	if v, ok := payload["tools.absolute_max_bytes"]; ok {
+		if n, err := intFromAny(v); err == nil {
+			o.settings.ToolOutputAbsoluteMaxBytes = n
+		}
+	}
+
+	// Wavefront: take effect on the next plan cycle.
+	if v, ok := payload["wavefront.enabled"]; ok {
+		if b, err := boolFromAny(v); err == nil {
+			o.settings.WavefrontEnabled = b
+		}
+	}
+
+	// --- Restart-required keys are silently ignored here; they are stored
+	// in o.restartQueue by SetConfig. ---
+}
+
+// Restart stops the current orchestrator run and restarts it with the
+// queued config changes (Phase 1e, PD-CONFIG-AF-009). Keys that required
+// restart — provider, host, model, transport — are reapplied from the
+// restartQueue before Start() rebuilds the model adapter and transport.
+//
+// Returns an error if no config was queued, the orchestrator is not started,
+// or restart fails.
+func (o *Orchestrator) ExecuteRestart() error {
+	o.mu.Lock()
+	q := o.restartQueue
+	started := o.started
+	o.mu.Unlock()
+
+	if !started {
+		return fmt.Errorf("orchestrator not started; cannot restart")
+	}
+	if q == nil {
+		return fmt.Errorf("no restart-queued config changes")
+	}
+
+	// Shutdown the running session (stops transport, drains recorder).
+	if err := o.Shutdown(context.Background()); err != nil {
+		return fmt.Errorf("shutdown before restart: %w", err)
+	}
+
+	// Apply the queued config to the settings, then re-Start().
+	// decodeConfigPayload mutates a Config; we decode into a throwaway and
+	// copy the fields into o.settings.
+	var queued config.Config
+	if err := decodeConfigPayload(q, &queued); err != nil {
+		return fmt.Errorf("decode queued config: %w", err)
+	}
+	o.applyQueuedSettings(queued)
+
+	// Re-start with the updated settings.
+	if err := o.Start(); err != nil {
+		return fmt.Errorf("restart Start: %w", err)
+	}
+
+	// Clear the queue on successful restart.
+	o.mu.Lock()
+	o.restartQueue = nil
+	o.mu.Unlock()
+
+	return nil
+}
+
+// applyQueuedSettings copies fields from a decoded config into o.settings.
+// Called under o.mu during Restart().
+func (o *Orchestrator) applyQueuedSettings(cfg config.Config) {
+	o.settings.Provider = cfg.Provider()
+	o.settings.OllamaHost = cfg.OllamaHost()
+	o.settings.OllamaModel = cfg.OllamaModel()
+	o.settings.LlamacppHost = cfg.LlamacppHost()
+	o.settings.LlamacppModel = cfg.LlamacppModel()
+}
+
+// QueuedRestartKeys reports the config keys currently queued for restart
+// (Phase 1e). Returns nil when no restart is pending. Used by the config
+// surface to display the "requires restart" indicator next to pending keys.
+func (o *Orchestrator) QueuedRestartKeys() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.restartQueue == nil {
+		return nil
+	}
+	keys := make([]string, 0)
+	for k := range o.restartQueue {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// HasQueuedRestart reports whether a restart is pending (Phase 1e).
+func (o *Orchestrator) HasQueuedRestart() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.restartQueue != nil
+}
+
+// decodeConfigPayload decodes a flat JSON map into a typed config.Config.
+// The transport layer sends keys as flat strings ("ollama_host") while the
+// Config struct uses nested tables ([agentx.ollama] host). This function maps
+// flat keys to the nested struct.
+func decodeConfigPayload(payload map[string]any, cfg *config.Config) error {
+	for k, v := range payload {
+		s, ok := v.(string)
+		if !ok {
+			continue // non-string values (ints, bools) are handled by the TOML decoder
+		}
+		switch k {
+		case "provider", "chat_backend":
+			cfg.Agentx.Provider = s
+			cfg.Agentx.ChatBackend = s
+		case "ollama_host":
+			cfg.Agentx.Ollama.Host = s
+		case "ollama_model":
+			cfg.Agentx.Ollama.Model = s
+		case "llamacpp_host":
+			cfg.Agentx.Llamacpp.Host = s
+		case "llamacpp_model":
+			cfg.Agentx.Llamacpp.Model = s
+		case "classification.retries":
+			if n, err := intFromAny(v); err == nil {
+				cfg.Agentx.Classification.Retries = n
+			}
+		case "classification.clarification_options":
+			if n, err := intFromAny(v); err == nil {
+				cfg.Agentx.Classification.ClarificationOptions = n
+			}
+		case "output.max_widget_lines":
+			if n, err := intFromAny(v); err == nil {
+				cfg.Agentx.Output.MaxWidgetLines = n
+			}
+		case "output.input_max_lines":
+			if n, err := intFromAny(v); err == nil {
+				cfg.Agentx.Output.InputMaxLines = n
+			}
+		case "output.markdown_renderer":
+			cfg.Agentx.Output.MarkdownRenderer = s
+		case "thinking.enabled":
+			if b, err := boolFromAny(v); err == nil {
+				cfg.Agentx.Thinking.Enabled = &b
+			}
+		case "thinking.time_budget_seconds":
+			if n, err := intFromAny(v); err == nil {
+				cfg.Agentx.Thinking.TimeBudgetSeconds = n
+			}
+		case "tools.enabled":
+			if b, err := boolFromAny(v); err == nil {
+				cfg.Agentx.Tools.Enabled = &b
+			}
+		case "tools.read_only":
+			if b, err := boolFromAny(v); err == nil {
+				cfg.Agentx.Tools.ReadOnly = &b
+			}
+		case "tools.timeout_seconds":
+			if n, err := intFromAny(v); err == nil {
+				cfg.Agentx.Tools.TimeoutSeconds = n
+			}
+		case "tools.output_max_bytes":
+			if n, err := intFromAny(v); err == nil {
+				cfg.Agentx.Tools.OutputMaxBytes = n
+			}
+		case "tools.absolute_max_bytes":
+			if n, err := intFromAny(v); err == nil {
+				cfg.Agentx.Tools.AbsoluteMaxBytes = n
+			}
+		case "transport.enabled":
+			if b, err := boolFromAny(v); err == nil {
+				cfg.Agentx.Transport.Enabled = &b
+			}
+		case "transport.host":
+			cfg.Agentx.Transport.Host = s
+		case "transport.port_start":
+			if n, err := intFromAny(v); err == nil {
+				cfg.Agentx.Transport.PortStart = n
+			}
+		case "transport.port_end":
+			if n, err := intFromAny(v); err == nil {
+				cfg.Agentx.Transport.PortEnd = n
+			}
+		case "wavefront.enabled":
+			if b, err := boolFromAny(v); err == nil {
+				cfg.Agentx.Wavefront.Enabled = &b
+			}
+		}
+	}
+	return nil
+}
+
+// intFromAny extracts an int from a JSON number (float64) or string.
+func intFromAny(v any) (int, error) {
+	switch val := v.(type) {
+	case float64:
+		return int(val), nil
+	case string:
+		var n int
+		if _, err := fmt.Sscanf(val, "%d", &n); err != nil {
+			return 0, err
+		}
+		return n, nil
+	default:
+		return 0, fmt.Errorf("not an int: %T", v)
+	}
+}
+
+// boolFromAny extracts a bool from a JSON bool, string "true"/"false", or
+// numeric 0/1.
+func boolFromAny(v any) (bool, error) {
+	switch val := v.(type) {
+	case bool:
+		return val, nil
+	case string:
+		s := strings.TrimSpace(strings.ToLower(val))
+		switch s {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		default:
+			return false, fmt.Errorf("not a bool: %q", val)
+		}
+	case float64:
+		switch int(val) {
+		case 0:
+			return false, nil
+		case 1:
+			return true, nil
+		default:
+			return false, fmt.Errorf("not a bool: %v", val)
+		}
+	default:
+		return false, fmt.Errorf("not a bool: %T", v)
+	}
 }

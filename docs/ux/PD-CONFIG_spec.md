@@ -1,6 +1,6 @@
 # AgentX — PD-CONFIG: Configuration Surface (TUI)
 
-> **Status:** Spec only — not yet implemented.
+> **Status:** Phases 1a–3b implemented; 3c in progress.
 > **Surface kind:** `config` (registered in `internal/surfaces/registry.go:49`)
 > **Launch command:** `agentx surface launch config`
 > **Owner:** Delivery Lead (M2+)
@@ -728,89 +728,146 @@ Switching the provider (e.g., from "ollama" to "llamacpp") requires restarting t
 
 | Affordance ID | Feature file | Scenario | Step file / Go test | Status |
 |---------------|--------------|----------|----------------------|--------|
-| PD-CONFIG-AF-001 | `tests/features/surfaces/config_surface.feature` | Launch and attach | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-002 | `tests/features/surfaces/config_surface.feature` | Navigate sections | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-003 | `tests/features/surfaces/config_surface.feature` | Edit a key | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-004 | `tests/features/surfaces/config_surface.feature` | Test host before accepting | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-005 | `tests/features/surfaces/config_surface.feature` | Populate model dropdown | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-006 | `tests/features/surfaces/config_surface.feature` | Type-appropriate validation | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-007 | `tests/features/surfaces/config_surface.feature` | Save and apply changes | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-008 | `tests/features/surfaces/config_surface.feature` | Detect external file changes | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-009 | `tests/features/surfaces/config_surface.feature` | Confirm restart | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-010 | `tests/features/surfaces/config_surface.feature` | Complex change handling | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-011 | `tests/features/surfaces/config_surface.feature` | Help and documentation | `tests/steps/surfaces/config_steps.go` | Planned |
-| PD-CONFIG-AF-012 | `tests/features/surfaces/config_surface.feature` | Quit and cleanup | `tests/steps/surfaces/config_steps.go` | Planned |
+| PD-CONFIG-AF-001 | `tests/features/surfaces/config_surface.feature` | Launch and attach | `tests/steps/surfaces/config_surface_steps.go` (Phase 2a) | Implemented |
+| PD-CONFIG-AF-002 | `tests/features/surfaces/config_surface.feature` | Navigate sections | `tests/steps/surfaces/config_surface_steps.go` (Phase 2a) | Implemented |
+| PD-CONFIG-AF-003 | `tests/features/surfaces/config_surface.feature` | Edit a key | `tests/steps/surfaces/config_surface_steps.go` (Phase 2b) + `internal/surfaces/config/config_test.go` | Implemented |
+| PD-CONFIG-AF-004 | `tests/features/runtime/config_write.feature` | Test host before accepting | `tests/steps/runtime/config_write_steps.go` | Implemented |
+| PD-CONFIG-AF-005 | `tests/features/runtime/config_write.feature` | Populate model dropdown | `tests/steps/runtime/config_write_steps.go` | Implemented |
+| PD-CONFIG-AF-006 | `tests/features/runtime/config_write.feature` | Type-appropriate validation | `tests/steps/runtime/config_write_steps.go` + `internal/surfaces/config/config_test.go` | Implemented |
+| PD-CONFIG-AF-007 | `tests/features/runtime/config_write.feature` | Save and apply changes | `tests/steps/runtime/config_write_steps.go` / `internal/surfaces/config/config_test.go` (auto-save) | Implemented |
+| PD-CONFIG-AF-008 | `tests/features/surfaces/config_external_change.feature` | Detect external file changes | `tests/steps/surfaces/config_external_change_steps.go` | Implemented |
+| PD-CONFIG-AF-009 | `tests/features/runtime/config_write.feature` | Confirm restart | `tests/steps/runtime/config_live_reload_steps.go` (Phase 1e) + `tests/steps/surfaces/config_surface_steps.go` (Phase 2c) | Implemented |
+| PD-CONFIG-AF-010 | `tests/features/runtime/config_write.feature` | Complex change handling | `tests/steps/runtime/config_write_steps.go` | Planned |
+| PD-CONFIG-AF-011 | `tests/features/runtime/config_write.feature` | Help and documentation | `tests/steps/runtime/config_write_steps.go` | Planned |
+| PD-CONFIG-AF-012 | `tests/features/runtime/config_write.feature` | Quit and cleanup | `tests/steps/runtime/config_write_steps.go` | Planned |
 
 ---
 
 ## Implementation Plan
 
-### Phase 1a: Read-only transport endpoints (S)
+### Phase 1a: Read-only transport endpoints (S) ✅ **COMPLETE**
 
-- [ ] Extend the `Provider` interface with `Config()`, `ListModels()`, `ConfigSchema()`.
-- [ ] Add `GET /config` to the transport server (returns current effective config).
-- [ ] Add `GET /config/schema` to the transport server (returns validation rules and metadata).
-- [ ] Add `GET /provider/{name}/models` to the transport server (returns model list from provider API).
-- [ ] Write Godog tests for the read-only endpoints.
+- [x] Extend the `Provider` interface with `Config()`, `ListModels()`, `ConfigSchema()`.
+- [x] Add `GET /config` to the transport server (returns current effective config).
+- [x] Add `GET /config/schema` to the transport server (returns validation rules and metadata).
+- [x] Add `GET /provider/{name}/models` to the transport server (returns model list from provider API).
+- [x] Write Godog tests for the read-only endpoints.
 
-### Phase 1b: Transactional write infrastructure (M)
+### Phase 1b: Transactional write infrastructure (M) ✅ **COMPLETE**
 
-- [ ] Implement semaphore file (`~/.cache/agentx/config.lock`).
-- [ ] Implement temp file (`~/.cache/agentx/config_<timestamp>.tmp`).
-- [ ] Implement atomic rename to `~/.config/agentx/agentx.toml`.
-- [ ] Implement cleanup of stale temp files on orchestrator startup.
-- [ ] Write Godog tests for the transactional write.
+- [x] Implement semaphore file (`~/.cache/agentx/config.lock`).
+- [x] Implement temp file (`~/.cache/agentx/config_<timestamp>.tmp`).
+- [x] Implement atomic rename to `~/.config/agentx/agentx.toml`.
+- [x] Implement cleanup of stale temp files on orchestrator startup.
+- [x] Write Godog tests for the transactional write.
 
-### Phase 1c: Validation and normalization (S)
+### Phase 1c: Validation and normalization (S) ✅ COMPLETE
 
-- [ ] Implement type-appropriate validation (int, string, bool, enum, color, host, model).
-- [ ] Implement `chat_backend` → `provider` normalization.
-- [ ] Implement host testing against provider API (for `POST /test/host`).
-- [ ] Write Godog tests for validation and normalization.
+- [x] Implement type-appropriate validation (int, string, bool, enum, color, host, model).
+- [x] Implement `chat_backend` → `provider` normalization.
+- [x] Implement host testing against provider API (for `POST /test/host`).
+- [x] Write Godog tests for validation and normalization.
 
-### Phase 1d: Write transport endpoints (M)
+### Phase 1d: Write transport endpoints (M) ✅ **COMPLETE**
 
-- [ ] Extend the `Provider` interface with `SetConfig()`, `TestHost()`.
-- [ ] Add `POST /config` to the transport server (validates, applies, writes to disk using Phase 1b and 1c).
-- [ ] Add `POST /test/host` to the transport server (tests a host endpoint using Phase 1c).
-- [ ] Write Godog tests for the write endpoints.
+- [x] Extend the `Provider` interface with `SetConfig()`, `TestHost()`.
+- [x] Add `POST /config` to the transport server (validates, applies, writes to disk using Phase 1b and 1c).
+- [x] Add `POST /test/host` to the transport server (tests a host endpoint using Phase 1c).
+- [x] Write Godog tests for the write endpoints.
 
-### Phase 1e: Live reload and restart queuing (M)
+### Phase 1e: Live reload and restart queuing (M) ✅ **COMPLETE**
 
-- [ ] Implement live reload for tunable keys in the orchestrator (apply immediately to running session).
-- [ ] Implement restart-required key queuing in the orchestrator (queue for next restart).
-- [ ] Implement the restart flow (surface prompts user, orchestrator restarts, surface reattaches).
-- [ ] Write Godog tests for the live reload and restart flow.
+- [x] Implement live reload for tunable keys in the orchestrator (apply immediately to running session).
+- [x] Implement restart-required key queuing in the orchestrator (queue for next restart).
+- [x] Implement the restart flow (surface prompts user, orchestrator restarts, surface reattaches).
+- [x] Write Godog tests for the live reload and restart flow.
 
-### Phase 2: Surface framework (M)
+### Phase 2a: Scaffold + transport client + read-only render (S) ✅ **COMPLETE**
 
-- [ ] Create `internal/surfaces/config/` package.
-- [ ] Implement `ConfigModel` (SurfaceModel interface).
-- [ ] Implement the tree navigation (SectionTree, KeyList, KeyRow).
-- [ ] Implement the value editors (text, dropdown, toggle, **visual color picker**).
-- [ ] Implement the status bar and hint row.
-- [ ] Implement the dialog overlay (confirm restart, error, model picker).
-- [ ] Wire up the transport client (config, provider, test-host endpoints).
-- [ ] Wire up auto-save (**always ON**, no user option to disable).
-- [ ] Wire up the surface in `internal/cli/surface_launch.go`.
-- [ ] Write Godog tests for the surface.
+Get the surface attached to the orchestrator and rendering the current config as a tree — no editing yet.
 
-### Phase 3: Two-way sync (M)
+- [x] Create `internal/surfaces/config/` package.
+- [x] Implement `ConfigModel` satisfying the `SurfaceModel` interface.
+- [x] Implement the transport client (GET /config, GET /config/schema).
+- [x] Implement the tree navigation: `SectionTree`, `KeyList`, `KeyRow` — read-only render.
+- [x] Wire up the surface in `internal/cli/surface_launch.go`.
+- [x] Write Godog tests for attach and read-only render.
 
-- [ ] Implement filesystem watch in the orchestrator.
-- [ ] Implement `config_changed` event publishing.
-- [ ] Implement the surface's file-change detection and diff highlighting.
-- [ ] Implement the conflict resolution (TUI changes take precedence).
-- [ ] Write Godog tests for the two-way sync.
+**Deliverable:** User can launch `agentx surface launch config` and see the full config tree loaded from the running orchestrator. Status bar shows "loaded".
 
-### Phase 4: Live reload and restart (M)
+### Phase 2b: Interactive editing + auto-save (M) ✅ **COMPLETE**
 
-- [ ] Implement live reload for tunable keys in the orchestrator.
-- [ ] Implement restart-required key queuing in the orchestrator.
-- [ ] Implement the restart flow (surface prompts user, orchestrator restarts, surface reattaches).
-- [ ] Write Godog tests for the live reload and restart flow.
+Make keys editable with type-appropriate editors and auto-apply changes live.
 
-> **Note:** Phase 1e (Live reload and restart queuing) is the orchestrator-side implementation. Phase 4 is the surface-side integration (confirming restart, reattaching after restart, etc.). Both are required for the complete flow.
+- [x] Implement value editors: text input, dropdown (enum), toggle (bool).
+- [x] Keyboard navigation: `j`/`k` and `↑`/`↓` scroll, `↵` enters edit mode.
+- [x] Wire up auto-save (always ON): changes POST to `/config` immediately on confirm.
+- [x] Status bar reflects save state ("saved", "unsaved", "error").
+- [x] Inline validation feedback (invalid integer → red error, out-of-range → inline message).
+- [x] Write Godog tests for editing flows.
+
+**Deliverable:** User can edit tunable keys (integers, booleans, enums), see changes auto-apply, and get inline validation feedback. Status bar confirms "saved".
+
+### Phase 2c: Dialogs + color picker + restart flow (M) ✅ **COMPLETE**
+
+Handle the complex interactions: restart confirmation, host testing, model picking, and color editing.
+
+- [x] Implement the dialog overlay: confirm restart, error display, model picker.
+- [x] Implement visual color picker (named palette, hex, ANSI 256 index).
+- [x] Wire up `POST /test/host` for host fields — probe before accepting.
+- [x] Wire up `GET /provider/{name}/models` for model dropdown population.
+- [x] Hint row with keybindings (`j`/`k`, `↑`/`↓`, `↵`, `s`, `q`, `?`).
+- [x] Host/model fields marked with 🔁 restart-required indicator.
+- [x] Write Godog tests for dialogs and restart flow.
+
+**Deliverable:** User can edit host/model fields with live testing, pick colors visually, confirm restart dialogs for provider switches, and see all affordances documented in the hint row.
+
+> **Rationale:** Phase 2 decomposes into three sequential sub-phases, each delivering incremental value and building on the previous one:
+> - **2a** is the lowest-risk starting point (no editing logic, just render).
+> - **2b** adds the main value (editing) on top of 2a.
+> - **2c** handles edge cases (restart, color picker, host test, model picker) on top of 2a + 2b.
+
+### Phase 3a: Orchestrator filesystem watch + event publishing (S) ✅
+
+- [x] Add `fsnotify` (or polling) watch on `agentx.toml` in the orchestrator.
+- [x] Debounce rapid successive changes (100ms window).
+- [x] Publish `config_changed` event to all attached config surface transports.
+- [x] Write Godog tests for the watch + event publishing.
+
+**Deliverable:** Editing `agentx.toml` externally causes the orchestrator to emit `config_changed` events.
+
+### Phase 3b: Surface change detection + diff highlighting (M) ✅ **COMPLETE**
+
+- [x] Surface subscribes to `config_changed` events via the transport.
+- [x] On event: re-fetch config via `GET /config`, diff against current TUI state.
+- [x] Highlight changed keys with yellow background.
+- [x] Show prompt: "File changed externally. Reload?"
+- [x] Wire up the "Reload" / "Keep changes" / "Discard" options in a dialog overlay.
+- [x] Update hint row with the new keybinding for reload.
+- [x] Write Godog tests for the diff-highlighting flow.
+
+**Deliverable:** User editing `agentx.toml` in an external editor triggers a highlighted diff in the TUI with a reload prompt.
+
+### Phase 3c: Conflict resolution + edge cases (S)
+
+- [ ] Implement conflict resolution: if TUI has unsaved changes, prefer TUI state.
+- [ ] Status bar message: "External change discarded (TUI changes take precedence)."
+- [ ] Edge case: rapid successive external changes → debounce on the surface side too.
+- [ ] Edge case: external change while a `POST /config` is in flight → queue the event.
+- [ ] Write Godog tests for conflict resolution scenarios.
+
+**Deliverable:** All two-way sync edge cases handled: TUI-wins on conflict, no flicker on rapid edits, no lost events during writes.
+
+> **Rationale:** Phase 3 decomposes into three sequential sub-phases, each delivering incremental value and building on the previous one:
+> - **3a** is the lowest-risk starting point (orchestrator plumbing only, no TUI code).
+> - **3b** adds the main user-facing feature (diff highlighting + reload prompt) on top of 3a.
+> - **3c** handles edge cases (conflicts, race windows, rapid edits) on top of 3a + 3b.
+
+### Phase 4: Live reload and restart — **superseded by Phase 1e** ✅
+
+Phase 1e (completed) implemented the orchestrator-side live reload, restart queuing, and transport endpoints (`GET /config/restart/status`, `POST /config/restart`). The surface-side integration (restart confirmation dialogs, reattach after restart) is covered by **Phase 2c**.
+
+> **Note:** The orchestrator-side implementation moved from Phase 4 into Phase 1e. The surface-side integration (dialog overlay, restart confirmation) is now part of Phase 2c.
 
 ### Phase 5: Documentation and polish (S)
 

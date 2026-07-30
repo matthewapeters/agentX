@@ -34,6 +34,18 @@ func ParseFormatStyle(s string) FormatStyle {
 	}
 }
 
+// SchemaField describes a single field in a provider's configuration schema.
+type SchemaField struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`        // "string", "int", "bool", "enum", "color", "host", "model"
+	Default     string `json:"default"`      // default value as string
+	Required    bool   `json:"required"`     // whether the field is required
+	ReadOnly    bool   `json:"readOnly"`     // whether the field can be edited
+	Description string `json:"description"`  // human-readable description
+	EnumValues  []string `json:"enumValues,omitempty"` // values for enum type
+	RestartRequired bool `json:"restartRequired"` // whether changing this field requires restart
+}
+
 // Message is a single chat message (role + content).
 type Message struct {
 	Role    string `json:"role"`
@@ -74,4 +86,10 @@ type Provider interface {
 	Ready(ctx context.Context, model string) error
 	// ContextLength reports the model's maximum context window in tokens.
 	ContextLength(ctx context.Context, model string) (int, error)
+	// Config returns the provider's configuration as a map for transport.
+	Config() map[string]any
+	// ListModels returns the list of models hosted on the provider server.
+	ListModels() ([]string, error)
+	// ConfigSchema returns the provider's configuration schema.
+	ConfigSchema() map[string]SchemaField
 }

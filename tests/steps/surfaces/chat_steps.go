@@ -30,6 +30,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerRoundTripSteps(sc)
 	registerRegistrySteps(sc)
 	registerClientSteps(sc)
+	registerConfigSteps(sc)
+	registerConfigExternalChangeSteps(sc)
 	registerContextSteps(sc)
 	registerWorkMemorySteps(sc)
 	registerContextVizSteps(sc)

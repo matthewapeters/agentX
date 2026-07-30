@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -44,6 +45,18 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 			return nil, fmt.Errorf("resolve config paths: %w", err)
 		}
 		paths = &p
+	}
+
+	// Phase 1b: clean up stale config temp files before any writes begin.
+	// An orchestrator crash that died mid-write can leave a config_*.tmp in
+	// the cache dir; this keeps the cache dir from accumulating orphan temps.
+	cp, err := config.DefaultCachePaths()
+	if err == nil {
+		if n, err := config.CleanupStaleTemps(cp); err != nil {
+			return nil, fmt.Errorf("cleanup stale config temps: %w", err)
+		} else if n > 0 {
+			logStaleTempCleanup(n)
+		}
 	}
 
 	cfg, _, err := config.Resolve(*paths)
@@ -154,6 +167,13 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		return nil, err
 	}
 	return orc, nil
+}
+
+// logStaleTempCleanup logs (via stderr) that stale config temps were removed.
+// We deliberately skip log infrastructure here — at startup nothing is wired up
+// yet, and the message is informational, not an error.
+func logStaleTempCleanup(n int) {
+	fmt.Fprintf(os.Stderr, "agentx: cleaned %d stale config temp(s)\n", n)
 }
 
 // Run builds the runtime, serves until ctx is canceled, then shuts down.

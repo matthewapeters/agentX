@@ -269,3 +269,88 @@ func (l *LlamacppProvider) Ready(ctx context.Context, model string) error {
 func (l *LlamacppProvider) ContextLength(ctx context.Context, model string) (int, error) {
 	return l.Client.ContextLength(ctx, model)
 }
+
+// Config returns the llama.cpp provider's configuration as a map for transport.
+func (l *LlamacppProvider) Config() map[string]any {
+	return map[string]any{
+		"host": l.Client.baseURL,
+	}
+}
+
+// ListModels returns the list of models hosted on the llama.cpp server.
+func (l *LlamacppProvider) ListModels() ([]string, error) {
+	httpReq, err := http.NewRequest(http.MethodGet, l.Client.baseURL+"/v1/models", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build models: %w", err)
+	}
+	resp, err := l.Client.http.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("models request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("models status %d", resp.StatusCode)
+	}
+	var tags struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		return nil, fmt.Errorf("decode models: %w", err)
+	}
+	models := make([]string, len(tags.Data))
+	for i, m := range tags.Data {
+		models[i] = m.ID
+	}
+	return models, nil
+}
+
+// ConfigSchema returns the llama.cpp configuration schema.
+func (l *LlamacppProvider) ConfigSchema() map[string]provider.SchemaField {
+	return map[string]provider.SchemaField{
+		"host": {
+			Name:        "Host",
+			Type:        "host",
+			Default:     "localhost:8080",
+			Required:    true,
+			ReadOnly:    false,
+			Description: "The llama.cpp server host address (host:port).",
+			RestartRequired: true,
+		},
+		"model": {
+			Name:        "Model",
+			Type:        "model",
+			Default:     "",
+			Required:    true,
+			ReadOnly:    false,
+			Description: "The model name (e.g., 'llama3.1').",
+			RestartRequired: true,
+		},
+	}
+}
+
+// TestHost probes the llama.cpp server's /v1/models endpoint. A 200 response
+// means the host is reachable; any other outcome returns the underlying error.
+func (l *LlamacppProvider) TestHost(ctx context.Context) error {
+	return l.Client.TestHost(ctx)
+}
+
+// TestHost probes the llama.cpp server's /v1/models endpoint. A 200 response
+// means the host is reachable and responding; any other outcome returns the
+// underlying error so the caller (transport, TUI) can surface it to the user.
+func (c *Client) TestHost(ctx context.Context) error {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/models", nil)
+	if err != nil {
+		return fmt.Errorf("build models request: %w", err)
+	}
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("llama.cpp unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("llama.cpp models returned status %d", resp.StatusCode)
+	}
+	return nil
+}

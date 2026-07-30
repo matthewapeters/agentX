@@ -11,6 +11,7 @@ import (
 	"agentx/internal/session"
 	"agentx/internal/surfaces"
 	"agentx/internal/surfaces/client"
+	configsurface "agentx/internal/surfaces/config"
 	contextsurface "agentx/internal/surfaces/context"
 	"agentx/internal/surfaces/contextviz"
 	"agentx/internal/surfaces/logs"
@@ -275,6 +276,12 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 // false when the kind has no TUI yet. Concrete surfaces register here as they land.
 func surfaceModelFor(kind string, res LaunchResult, sessionName string) (client.SurfaceModel, string, bool) {
 	switch kind {
+	case "config":
+		title := "config"
+		if sessionName != "" {
+			title += " · " + sessionName
+		}
+		return configsurface.New(transporthttp.NewClient(res.Endpoint), res.Token), title, true
 	case "context":
 		title := "context"
 		if sessionName != "" {

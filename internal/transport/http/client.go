@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"agentx/internal/llm/provider"
 	"agentx/internal/session"
 	"agentx/internal/state"
 	"agentx/internal/surfaces"
@@ -311,6 +312,162 @@ func (c *Client) PinPlanNode(ctx context.Context, token, root, nodeID string) (s
 		return "", &AttachError{Category: "transport", Message: err.Error()}
 	}
 	return body.Key, nil
+}
+
+// FetchConfigSchema reads GET /config and GET /config/schema together and
+// returns the config map and the schema map (nil maps on transport errors). It
+// is the config surface's single fetch path — the two endpoints are always
+// read together so the surface can render values alongside their metadata.
+func (c *Client) FetchConfigSchema() (map[string]any, map[string]provider.SchemaField, error) {
+	cfg, err := c.fetchConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	schema, err := c.fetchConfigSchema()
+	if err != nil {
+		// Schema is optional: a running orchestrator with an older transport
+		// may not yet serve /config/schema. The surface degrades gracefully.
+		schema = map[string]provider.SchemaField{}
+	}
+	return cfg, schema, nil
+}
+
+// fetchConfig returns the current effective configuration (GET /config).
+func (c *Client) fetchConfig() (map[string]any, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, c.endpoint+"/config", nil)
+	if err != nil {
+		return nil, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, attachErrorFrom(resp)
+	}
+	var cfg map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		return nil, &AttachError{Category: "transport", Message: "malformed config response"}
+	}
+	return cfg, nil
+}
+
+// fetchConfigSchema returns the configuration schema (GET /config/schema).
+func (c *Client) fetchConfigSchema() (map[string]provider.SchemaField, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, c.endpoint+"/config/schema", nil)
+	if err != nil {
+		return nil, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, attachErrorFrom(resp)
+	}
+	var schema map[string]provider.SchemaField
+	if err := json.NewDecoder(resp.Body).Decode(&schema); err != nil {
+		return nil, &AttachError{Category: "transport", Message: "malformed config schema response"}
+	}
+	return schema, nil
+}
+
+// PostConfig sends a full config payload to POST /config and returns the write
+// result. Used by the config surface to apply edits (Phase 2b).
+func (c *Client) PostConfig(payload map[string]any) (*ConfigWriteResult, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.endpoint+"/config", bytes.NewReader(body))
+	if err != nil {
+		return nil, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, attachErrorFrom(resp)
+	}
+	var result ConfigWriteResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, &AttachError{Category: "transport", Message: "malformed config write response"}
+	}
+	return &result, nil
+}
+
+// TestHost probes a provider host endpoint via POST /test/host and reports
+// whether it is reachable (Phase 2b host validation, AF-004).
+func (c *Client) TestHost(provider, host string) (bool, error) {
+	payload := map[string]string{"provider": provider, "host": host}
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.endpoint+"/test/host", bytes.NewReader(body))
+	if err != nil {
+		return false, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return false, &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Reachable bool   `json:"reachable"`
+		Error     string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, &AttachError{Category: "transport", Message: "malformed test/host response"}
+	}
+	if !result.Reachable {
+		return false, fmt.Errorf("%s", result.Error)
+	}
+	return true, nil
+}
+
+// GetProviderModels lists models for a named provider via GET /provider/{name}/models
+// (Phase 2b model dropdown, AF-005).
+func (c *Client) GetProviderModels(provider string) ([]string, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, c.endpoint+"/provider/"+url.PathEscape(provider)+"/models", nil)
+	if err != nil {
+		return nil, &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, attachErrorFrom(resp)
+	}
+	var models []string
+	if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
+		return nil, &AttachError{Category: "transport", Message: "malformed provider models response"}
+	}
+	return models, nil
+}
+
+// ExecuteRestart triggers the orchestrator to shut down and restart with queued
+// config changes (Phase 1e / PD-CONFIG-AF-009). Called by the config surface's
+// restart confirmation dialog.
+func (c *Client) ExecuteRestart() error {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.endpoint+"/config/restart", nil)
+	if err != nil {
+		return &AttachError{Category: surfaces.CategoryValidation, Message: err.Error()}
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return &AttachError{Category: "transport", Message: fmt.Sprintf("cannot reach %s: %v", c.endpoint, err)}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return attachErrorFrom(resp)
+	}
+	return nil
 }
 
 // postWM posts a token-authorized working-memory mutation.

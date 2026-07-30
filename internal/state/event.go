@@ -52,6 +52,11 @@ const (
 	// decision key). Audit trail only — persisted like every other event, but never
 	// conversation context.
 	ContentApprovalDecision ContentType = "approval_decision"
+	// ContentConfigChanged is emitted by the orchestrator's config-file watcher
+	// (Phase 3a) whenever agentx.toml is modified externally. Attaching config
+	// surfaces consume it to reload the tree; other surfaces ignore it. It is
+	// ephemeral: never folded into conversation context, only streamed to surfaces.
+	ContentConfigChanged ContentType = "config_changed"
 )
 
 var validContentTypes = map[ContentType]bool{
@@ -61,6 +66,7 @@ var validContentTypes = map[ContentType]bool{
 	ContentProcessingState: true, ContentTaskProposed: true, ContentTaskResult: true,
 	ContentTaskDiagnostic: true, ContentTaskPlan: true, ContentTaskNode: true,
 	ContentApprovalRequest: true, ContentApprovalDecision: true,
+	ContentConfigChanged: true,
 }
 
 // DefaultEnabled reports whether an event of the given content type participates
@@ -74,6 +80,10 @@ func DefaultEnabled(ct ContentType) bool {
 	switch ct {
 	case ContentUserPrompt, ContentAgentResponse, ContentAttachments:
 		return true
+	// Config change events are ephemeral surface notifications; they never fold
+	// into the assembled conversation context.
+	case ContentConfigChanged:
+		return false
 	default:
 		return false
 	}

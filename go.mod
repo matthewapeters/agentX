@@ -9,6 +9,7 @@ require (
 	github.com/alecthomas/chroma/v2 v2.14.0
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/cucumber/godog v0.15.1
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/lucasb-eyer/go-colorful v1.4.0
 )
 
@@ -39,5 +40,3 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/spf13/pflag v1.0.7 // indirect
 )
-
-replace charm.land/bubbletea/v2 => ./bubbletea

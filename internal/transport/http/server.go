@@ -19,10 +19,36 @@ import (
 	"sync"
 	"time"
 
+	"agentx/internal/llm/provider"
 	"agentx/internal/session"
 	"agentx/internal/state"
 	"agentx/internal/surfaces"
 )
+
+// ConfigWriteResult reports the outcome of a POST /config write, separating
+// live-applied keys from those requiring restart and any validation errors.
+type ConfigWriteResult struct {
+	Status          string          `json:"status"`            // "applied", "error"
+	LiveApplied     []string        `json:"live_applied"`      // keys applied immediately
+	RestartRequired []string        `json:"restart_required"`  // keys requiring restart
+	Errors          []string        `json:"errors"`            // validation errors
+	NormalizedKeys  []NormalizedKey `json:"normalized_keys"`   // keys that were normalized
+	Write           *WriteMetadata  `json:"write,omitempty"`   // write metadata for debugging
+}
+
+// NormalizedKey records a single key that was normalized from a deprecated form
+// to its canonical name.
+type NormalizedKey struct {
+	Old string `json:"old"`
+	New string `json:"new"`
+}
+
+// WriteMetadata captures write-time details for debugging (path, lock, temp).
+type WriteMetadata struct {
+	Path      string `json:"path"`
+	Semaphore string `json:"semaphore"`
+	TempFile  string `json:"temp_file"`
+}
 
 // Provider is the orchestrator surface the transport adapts. The concrete
 // *runtime.Orchestrator satisfies it.
@@ -66,6 +92,30 @@ type Provider interface {
 	// a Step, e.g. a wavefront Know) into working memory as a durable, pin-owned
 	// fact (ADR 0012 amendment). It returns the new fact's key.
 	PinPlanNode(root, nodeID string) (string, error)
+
+	// Config returns the current effective configuration for transport.
+	Config() map[string]any
+	// ConfigSchema returns the configuration schema for transport.
+	ConfigSchema() map[string]provider.SchemaField
+	// ListModels returns the list of models hosted on the active provider.
+	ListModels() ([]string, error)
+	// TestHost tests a host endpoint for the named provider and returns whether
+	// it's reachable. The provider name ("ollama" or "llamacpp") selects the
+	// probe endpoint (/api/tags for Ollama, /v1/models for llama.cpp).
+	TestHost(provider, host string) error
+	// SetConfig accepts a full config JSON payload, validates it, applies
+	// live-reloadable keys immediately, writes to disk atomically, and queues
+	// restart-required keys. Returns the write result with status, applied keys,
+	// restart-required keys, errors, and normalized keys.
+	SetConfig(payload map[string]any) (*ConfigWriteResult, error)
+	// QueuedRestartKeys reports config keys pending a restart (Phase 1e).
+	QueuedRestartKeys() []string
+	// HasQueuedRestart reports whether a restart is pending (Phase 1e).
+	HasQueuedRestart() bool
+	// ExecuteRestart triggers the orchestrator to shut down and restart with
+	// the queued config changes (Phase 1e, PD-CONFIG-AF-009). Returns an error
+	// if no changes are queued or restart fails.
+	ExecuteRestart() error
 }
 
 // Server is the loopback HTTP/SSE transport for external surfaces.
@@ -117,6 +167,16 @@ func (s *Server) routes() {
 	// Pin a plan node's own resolved value into working memory (ADR 0012 amendment
 	// — a Step/Know has no tool_result event to pin via the route above).
 	s.mux.HandleFunc("POST /plans/{root}/nodes/{node}/pin", s.handlePlanNodePin)
+
+	// Config surface (Phase 1a read-only + Phase 1d write endpoints + Phase 1e restart).
+	s.mux.HandleFunc("GET /config", s.handleConfig)
+	s.mux.HandleFunc("POST /config", s.handlePostConfig)
+	s.mux.HandleFunc("GET /config/schema", s.handleConfigSchema)
+	s.mux.HandleFunc("GET /provider/{name}/models", s.handleProviderModels)
+	s.mux.HandleFunc("POST /test/host", s.handleTestHost)
+	// Phase 1e: restart status and execution.
+	s.mux.HandleFunc("GET /config/restart/status", s.handleConfigRestartStatus)
+	s.mux.HandleFunc("POST /config/restart", s.handleConfigRestart)
 }
 
 // Handler exposes the routes for in-process testing (httptest).
@@ -301,4 +361,115 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// handleConfig returns the current effective configuration for transport.
+func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
+	cfg := s.prov.Config()
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+// handleConfigSchema returns the configuration schema for transport.
+func (s *Server) handleConfigSchema(w http.ResponseWriter, _ *http.Request) {
+	schema := s.prov.ConfigSchema()
+	writeJSON(w, http.StatusOK, schema)
+}
+
+// handleProviderModels returns the list of models hosted on the active provider.
+func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "config", "missing provider name")
+		return
+	}
+	models, err := s.prov.ListModels()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "config", "list models: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, models)
+}
+
+// handleTestHost tests a host endpoint for the named provider and returns
+// whether it's reachable. The provider ("ollama" or "llamacpp") selects the
+// probe endpoint.
+func (s *Server) handleTestHost(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Provider string `json:"provider"`
+		Host     string `json:"host"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "config", "invalid request body")
+		return
+	}
+	if req.Host == "" {
+		writeError(w, http.StatusBadRequest, "config", "host is required")
+		return
+	}
+	if req.Provider == "" {
+		writeError(w, http.StatusBadRequest, "config", "provider is required")
+		return
+	}
+	err := s.prov.TestHost(req.Provider, req.Host)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"reachable": false,
+			"error":     err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"reachable": true,
+	})
+}
+
+// handleConfigRestartStatus reports whether a restart is pending and, if so,
+// which keys are queued. Phase 1e (PD-CONFIG-AF-009).
+func (s *Server) handleConfigRestartStatus(w http.ResponseWriter, _ *http.Request) {
+	keys := s.prov.QueuedRestartKeys()
+	if keys == nil {
+		keys = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"has_queued_restart": s.prov.HasQueuedRestart(),
+		"keys":             keys,
+	})
+}
+
+// handleConfigRestart triggers the orchestrator to restart with the queued
+// config changes (Phase 1e, PD-CONFIG-AF-009).
+func (s *Server) handleConfigRestart(w http.ResponseWriter, r *http.Request) {
+	err := s.prov.ExecuteRestart()
+	if err != nil {
+		writeError(w, http.StatusConflict, surfaces.CategoryConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status": "restarted",
+	})
+}
+
+// handlePostConfig accepts a full config JSON payload, validates it, applies
+// live-reloadable keys, writes atomically to disk, and returns the write result.
+// Phase 1d write endpoint.
+func (s *Server) handlePostConfig(w http.ResponseWriter, r *http.Request) {
+	var payload map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "config", "invalid request body")
+		return
+	}
+	if payload == nil {
+		writeError(w, http.StatusBadRequest, "config", "empty config payload")
+		return
+	}
+	result, err := s.prov.SetConfig(payload)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "config", err.Error())
+		return
+	}
+	if result.Status == "error" {
+		writeJSON(w, http.StatusBadRequest, result)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
