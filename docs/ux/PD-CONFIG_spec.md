@@ -1,6 +1,6 @@
 # AgentX — PD-CONFIG: Configuration Surface (TUI)
 
-> **Status:** Phases 1a–3c implemented; Phase 5 pending.
+> **Status:** Phases 1a–3c and Phase 5 complete.
 > **Surface kind:** `config` (registered in `internal/surfaces/registry.go:49`)
 > **Launch command:** `agentx surface launch config`
 > **Owner:** Delivery Lead (M2+)
@@ -738,7 +738,7 @@ Switching the provider (e.g., from "ollama" to "llamacpp") requires restarting t
 | PD-CONFIG-AF-008 | `tests/features/surfaces/config_external_change.feature` | Detect external file changes | `tests/steps/surfaces/config_external_change_steps.go` | Implemented |
 | PD-CONFIG-AF-009 | `tests/features/runtime/config_write.feature` | Confirm restart | `tests/steps/runtime/config_live_reload_steps.go` (Phase 1e) + `tests/steps/surfaces/config_surface_steps.go` (Phase 2c) | Implemented |
 | PD-CONFIG-AF-010 | `tests/features/runtime/config_write.feature` | Complex change handling | `tests/steps/runtime/config_write_steps.go` | Planned |
-| PD-CONFIG-AF-011 | `tests/features/runtime/config_write.feature` | Help and documentation | `tests/steps/runtime/config_write_steps.go` | Planned |
+| PD-CONFIG-AF-011 | `tests/features/runtime/config_write.feature` | Help and documentation | `internal/surfaces/config/` (Phase 5) | Implemented |
 | PD-CONFIG-AF-012 | `tests/features/runtime/config_write.feature` | Quit and cleanup | `tests/steps/runtime/config_write_steps.go` | Planned |
 
 ---
@@ -869,15 +869,15 @@ Phase 1e (completed) implemented the orchestrator-side live reload, restart queu
 
 > **Note:** The orchestrator-side implementation moved from Phase 4 into Phase 1e. The surface-side integration (dialog overlay, restart confirmation) is now part of Phase 2c.
 
-### Phase 5: Documentation and polish (S)
+### Phase 5: Documentation and polish (S) ✅ **COMPLETE**
 
-- [ ] Write the config schema endpoint response.
-- [ ] Add help documentation for each config key.
-- [ ] Update `docs/ux/03_PANEL_DETAILS.md` with the PD-CONFIG section (already done).
-- [ ] Update `docs/ux/UX_LIFECYCLE.md` with the PD-CONFIG traceability row (already done).
-- [ ] Add visual color picker for color fields (required, not optional).
-- [ ] Verify auto-save is always ON (no user option to disable).
-- [ ] Final review and cleanup of stale temp files on orchestrator startup.
+- [x] Write the config schema endpoint response.
+- [x] Add help documentation for each config key.
+- [x] Update `docs/ux/03_PANEL_DETAILS.md` with the PD-CONFIG section (already done).
+- [x] Update `docs/ux/UX_LIFECYCLE.md` with the PD-CONFIG traceability row (already done).
+- [x] Add visual color picker for color fields (required, not optional).
+- [x] Verify auto-save is always ON (no user option to disable).
+- [x] Final review and cleanup of stale temp files on orchestrator startup.
 
 ---
 

@@ -498,13 +498,18 @@ func (m *ConfigModel) renderDialogOverlay() string {
 	b.WriteString(dialogBgStyle.Render("│ " + dialogTitleStyle.Render(centerText(dlg.Title, width-4)) + " " + dialogBgStyle.Render("│")) + "\n")
 	b.WriteString(dialogBgStyle.Render("│" + strings.Repeat(" ", width-2) + "│") + "\n")
 
-	// Message lines.
-	lines := splitLines(dlg.Message)
-	for i, line := range lines {
-		if i == 0 {
-			b.WriteString(dialogBgStyle.Render("│ " + dialogMessageStyle.Render(line) + " " + strings.Repeat(" ", width-4-len(line)) + "│") + "\n")
-		} else {
-			b.WriteString(dialogBgStyle.Render("│ " + strings.Repeat(" ", width-4) + "│") + "\n")
+	// Phase 5: Help overlay with per-key documentation.
+	if dlg.Kind == dialogHelp && len(dlg.KeyDocs) > 0 {
+		renderHelpDocs(&b, dlg.KeyDocs, width)
+	} else {
+		// Message lines.
+		lines := splitLines(dlg.Message)
+		for i, line := range lines {
+			if i == 0 {
+				b.WriteString(dialogBgStyle.Render("│ " + dialogMessageStyle.Render(line) + " " + strings.Repeat(" ", width-4-len(line)) + "│") + "\n")
+			} else {
+				b.WriteString(dialogBgStyle.Render("│ " + strings.Repeat(" ", width-4) + "│") + "\n")
+			}
 		}
 	}
 
@@ -528,6 +533,23 @@ func (m *ConfigModel) renderDialogOverlay() string {
 
 	b.WriteString(dialogTitleStyle.Render("└" + strings.Repeat("─", width-2) + "┘") + "\n")
 	return b.String()
+}
+
+// renderHelpDocs renders per-key help documentation in the help overlay.
+func renderHelpDocs(b *strings.Builder, docs []keyHelpDoc, width int) {
+	// Show up to 10 docs to avoid overflow.
+	visible := min(len(docs), 10)
+	for i := 0; i < visible; i++ {
+		doc := docs[i]
+		line := fmt.Sprintf("%-20s %s", doc.Label, doc.Description)
+		if doc.RestartRequired {
+			line += " 🔁"
+		}
+		if len(line) > width-4 {
+			line = line[:width-4]
+		}
+		b.WriteString(dialogBgStyle.Render("│ " + helpLineStyle.Render(line) + " " + strings.Repeat(" ", width-4-len(line)) + "│") + "\n")
+	}
 }
 
 // renderModelPickerOverlay renders the model picker.

@@ -764,19 +764,64 @@ func (m *ConfigModel) handleQuit() tea.Cmd {
 	return nil
 }
 
-// handleHelp shows the help overlay documenting keybindings.
+// handleHelp shows the help overlay documenting keybindings and per-key docs.
 func (m *ConfigModel) handleHelp() tea.Cmd {
 	if m.Data.Dialog != nil && m.Data.Dialog.Kind == dialogHelp {
 		m.Data.Dialog = nil
 		return nil
 	}
+	// Build per-key help documentation from the loaded config tree.
+	docs := m.buildKeyHelpDocs()
 	m.Data.Dialog = &dialogState{
 		Kind:    dialogHelp,
 		Title:   "Help — config surface",
-		Message: "",
+		Message: formatHelpMessage(),
 		Options: []string{},
+		KeyDocs: docs,
 	}
 	return nil
+}
+
+// buildKeyHelpDocs collects per-key documentation from the loaded config tree.
+func (m *ConfigModel) buildKeyHelpDocs() []keyHelpDoc {
+	var docs []keyHelpDoc
+	for _, sec := range m.Data.Sections {
+		for _, k := range sec.keys {
+			docs = append(docs, keyHelpDoc{
+				Section:         sec.name,
+				Key:             k.name,
+				Label:           k.label,
+				Description:     k.description,
+				Type:            k.kind,
+				RestartRequired: k.restartRequired,
+			})
+		}
+	}
+	return docs
+}
+
+// formatHelpMessage returns the keybinding help text shown in the help overlay.
+func formatHelpMessage() string {
+	return `Config Surface — Keybindings
+
+j/k or ↑/↓     Navigate keys within a section
+h/l or ←/→     Move to previous/next section
+g/G            Jump to top/bottom
+↵              Expand/collapse section, or edit selected key
+s              Save (auto-save is always on)
+?              Toggle this help overlay
+q              Quit
+
+Type-appropriate editors:
+• int       — Text input, arrow keys ±1
+• bool      — Space toggles on/off
+• enum      — j/k selects from dropdown
+• color     — Visual picker (name, hex, ANSI)
+• host      — Text input + live probe
+• model     — Dropdown + live test
+
+Auto-save is always ON. Changes apply immediately.
+Restart-required keys are marked with 🔁.`
 }
 
 // handleDialogKey processes keys while a modal dialog is active.

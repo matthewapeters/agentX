@@ -69,6 +69,20 @@ type dialogState struct {
 	Options  []string // "Restart now", "Restart later", "Discard changes", etc.
 	Selected int      // which option is currently highlighted
 	Source   string   // which key triggered the dialog (e.g. "agentx.provider")
+
+	// Phase 5: per-key help documentation (shown when help overlay is active
+	// and a key is selected).
+	KeyDocs []keyHelpDoc // list of (key, description, restart, type) for help overlay
+}
+
+// keyHelpDoc holds the documentation for a single config key, shown in the help overlay.
+type keyHelpDoc struct {
+	Section         string // dotted section path, e.g. "agentx.ollama"
+	Key             string // key name, e.g. "host"
+	Label           string // display label, e.g. "Ollama Host"
+	Description     string // human-readable description
+	Type            string // type kind, e.g. "host", "model", "int"
+	RestartRequired bool   // whether a change requires restart
 }
 
 // colorPickerState captures the active color-picker editing session.
