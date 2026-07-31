@@ -15,10 +15,12 @@ func DefaultRegistry() *Registry {
 	descs := []Descriptor{
 		// Read & search (read-only). "--" stops option parsing so a path value is
 		// never treated as a flag.
-		{ID: "read_file", Command: "cat", Argv: []string{"cat", "--", "{path}"},
+		{ID: "read_file", Description: "Return a file's contents.",
+			Command: "cat", Argv: []string{"cat", "--", "{path}"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
-		{ID: "list_dir", Command: "ls", Argv: []string{"ls", "-la", "--", "{path}"},
+		{ID: "list_dir", Description: "List a directory's contents.",
+			Command: "ls", Argv: []string{"ls", "-la", "--", "{path}"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
 		// tree: a bounded structural overview in one call, instead of one list_dir per
@@ -28,39 +30,49 @@ func DefaultRegistry() *Registry {
 		// output stays bounded and signal-dense on a large repo; no arg for either, since
 		// BuildArgv requires every "{name}" placeholder to be supplied and this tool's
 		// only variable input is the target path.
-		{ID: "tree", Command: "tree", Argv: []string{"tree", "-L", "3",
-			"-I", "node_modules|.git|vendor|__pycache__|.venv|dist|build|.next|target", "--", "{path}"},
+		{ID: "tree", Description: "Show a directory's structure (depth-limited to 3, vendored dirs excluded).",
+			Command: "tree", Argv: []string{"tree", "-L", "3",
+				"-I", "node_modules|.git|vendor|__pycache__|.venv|dist|build|.next|target", "--", "{path}"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
-		{ID: "find_path", Command: "find", Argv: []string{"find", "{root}", "-name", "{name}"},
+		{ID: "find_path", Description: "Find files by name under a directory.",
+			Command: "find", Argv: []string{"find", "{root}", "-name", "{name}"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "root", Kind: KindPath, Required: true}, {Name: "name", Kind: KindString, Required: true}}},
 		// date: no variable input, so Argv carries no "{name}" placeholder and Args is
 		// nil — BuildArgv only requires a placeholder's arg when the template uses one.
-		{ID: "date", Command: "date", Argv: []string{"date"},
+		{ID: "date", Description: "Return the current date/time.",
+			Command: "date", Argv: []string{"date"},
 			Risk: RiskRead, TimeoutSeconds: 5},
-		{ID: "git_status", Command: "git", Argv: []string{"git", "-C", "{path}", "status"},
+		{ID: "git_status", Description: "Show a directory's git working-tree status.",
+			Command: "git", Argv: []string{"git", "-C", "{path}", "status"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
-		{ID: "read_output", Builtin: "read_output", Risk: RiskRead, TimeoutSeconds: 30,
+		{ID: "read_output", Description: "Re-read a previous tool result stored in the session, by ref.",
+			Builtin: "read_output", Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "ref", Kind: KindString, Required: true}, {Name: "offset", Kind: KindInt}, {Name: "limit", Kind: KindInt}}},
 
 		// Write & modify (mutating; approval required). write_file is a Go built-in;
 		// apply_patch feeds the diff via stdin (no shell).
-		{ID: "write_file", Builtin: "write_file", Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
+		{ID: "write_file", Description: "Create or overwrite a file with the given content.",
+			Builtin: "write_file", Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}, {Name: "content", Kind: KindString, Required: true}}},
-		{ID: "apply_patch", Command: "patch", Argv: []string{"patch", "-p0"}, StdinArg: "patch",
+		{ID: "apply_patch", Description: "Apply a unified diff to the working tree.",
+			Command: "patch", Argv: []string{"patch", "-p0"}, StdinArg: "patch",
 			Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "patch", Kind: KindString, Required: true}}},
-		{ID: "edit_file", Command: "sed", Argv: []string{"sed", "-i", "-e", "{script}", "--", "{path}"},
+		{ID: "edit_file", Description: "Apply a single in-place substitution (sed-style) to a file.",
+			Command: "sed", Argv: []string{"sed", "-i", "-e", "{script}", "--", "{path}"},
 			Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}, {Name: "script", Kind: KindString, Required: true}}},
 
 		// Network (egress; approval required).
-		{ID: "http_get", Command: "curl", Argv: []string{"curl", "-sSL", "--", "{url}"},
+		{ID: "http_get", Description: "Fetch a URL and return the response body.",
+			Command: "curl", Argv: []string{"curl", "-sSL", "--", "{url}"},
 			Risk: RiskNetwork, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "url", Kind: KindString, Required: true}}},
-		{ID: "download", Command: "wget", Argv: []string{"wget", "-O", "{output}", "--", "{url}"},
+		{ID: "download", Description: "Download a URL's contents to a file.",
+			Command: "wget", Argv: []string{"wget", "-O", "{output}", "--", "{url}"},
 			Risk: RiskNetwork, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "url", Kind: KindString, Required: true}, {Name: "output", Kind: KindPath, Required: true}}},
 	}

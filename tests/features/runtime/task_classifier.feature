@@ -1,22 +1,28 @@
-# Source contracts:
+# RETIRED (2026-07-31): maybeEmitTask/buildTaskClassifier are no longer called
+# from Orchestrator.Start/runPrompt — the task-classifier pipeline this feature
+# drives through Submit() is unreachable via the public API now (unwired, not
+# deleted; see docs/implementation/04_llm_prompt_tooling_runtime.md's "Legacy"
+# subsection and 90_open_questions.md D.5). Tagged @pending-hook-reintegration
+# instead of @integration so it is excluded from the active suites but stays in
+# the corpus, documenting the expected behavior if/when this pipeline is
+# reconnected as a hook.
+#
+# Source contracts (as originally written):
 #   - docs/architecture/cascade_classifier.md (externalize the task; task record)
 #   - docs/architecture/task_record.md
-#   - internal/runtime (buildTaskClassifier presence-gate + maybeEmitTask hook)
 #
-# Behavior: when a prompt corpus is configured, the orchestrator runs the classifier
-# pipeline after the response and emits a durable task_proposed event for an
-# actionable turn. A pure-conversation turn emits none. With no corpus the classifier
-# is off and the prompt cycle is unchanged (covered by the existing prompt-cycle
-# feature — no task_proposed appears there).
+# Original behavior: when a prompt corpus is configured, the orchestrator runs the
+# classifier pipeline after the response and emits a durable task_proposed event
+# for an actionable turn. A pure-conversation turn emits none.
 
-@runtime @task-classifier @arch:task-record
+@pending-hook-reintegration @task-classifier @arch:task-record
 Feature: the orchestrator emits a task record when the classifier is wired
   As the server's request-handling brain
   I want an actionable turn externalized as a durable task_proposed event
   So that an action the model commits to survives outside the conversation
 
   # use-case: UC-RT-TASK  (TC-RTTASK-001)
-  @integration
+  @pending-hook-reintegration
   Scenario: An actionable turn emits a task_proposed event
     Given a started orchestrator whose classifier calls the turn "artifact"
     When the classifier turn "write hello.txt with hi" is submitted
@@ -24,7 +30,7 @@ Feature: the orchestrator emits a task record when the classifier is wired
     And the task_proposed event records type "artifact"
 
   # use-case: UC-RT-TASK-NONE  (TC-RTTASK-002)
-  @integration
+  @pending-hook-reintegration
   Scenario: A pure conversational turn emits no task events
     Given a started orchestrator whose classifier calls the turn "none"
     When the classifier turn "how are you" is submitted
@@ -32,7 +38,7 @@ Feature: the orchestrator emits a task record when the classifier is wired
     And the session timeline contains no task_result event
 
   # use-case: UC-RT-TASK-EXEC  (TC-RTTASK-003)
-  @integration
+  @pending-hook-reintegration
   Scenario: An actionable turn is reconciled and drained through the executor
     Given the task executor reports "executed"
     And the model's response shows an action
@@ -43,7 +49,7 @@ Feature: the orchestrator emits a task record when the classifier is wired
     And the task_result event records route "reify"
 
   # use-case: UC-RT-TASK-VOLUNTEERED  (TC-RTTASK-004)
-  @integration
+  @pending-hook-reintegration
   Scenario: A volunteered action on a conversational turn needs approval and is not executed
     Given the task executor reports "executed"
     And the model's response shows an action
@@ -56,7 +62,7 @@ Feature: the orchestrator emits a task record when the classifier is wired
   # use-case: UC-RT-TASK-DIAG  (TC-RTTASK-005)
   # Observability: the three fan-group stage scores (triage/action/response) are
   # surfaced on every classified turn, so a routing decision is never opaque.
-  @integration
+  @pending-hook-reintegration
   Scenario: A classified turn emits a task_diagnostic carrying the three stage scores
     Given a started orchestrator whose classifier calls the turn "artifact"
     When the classifier turn "write hello.txt with hi" is submitted
@@ -65,7 +71,7 @@ Feature: the orchestrator emits a task record when the classifier is wired
 
   # use-case: UC-RT-TASK-DIAG-SKIP  (TC-RTTASK-006)
   # No turn is silently dropped: a turn that does not execute still leaves a reason.
-  @integration
+  @pending-hook-reintegration
   Scenario: A non-executing turn still emits a task_diagnostic with a skip reason
     Given a started orchestrator whose classifier calls the turn "none"
     When the classifier turn "how are you" is submitted

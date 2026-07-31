@@ -23,8 +23,8 @@ import (
 // runtime.Model well enough for Start to succeed.
 type stubModel struct{}
 
-func (stubModel) Chat(context.Context, string, []prompting.Message, func(string), func(string)) (string, error) {
-	return "", nil
+func (stubModel) Chat(context.Context, string, []prompting.Message, []tools.ToolSchema, func(string), func(string)) (runtime.ChatResult, error) {
+	return runtime.ChatResult{}, nil
 }
 func (stubModel) Ready(context.Context, string) error                { return nil }
 func (stubModel) ContextLength(context.Context, string) (int, error) { return 4096, nil }

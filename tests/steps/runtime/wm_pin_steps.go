@@ -11,7 +11,6 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"agentx/internal/classify"
 	"agentx/internal/prompting"
 	"agentx/internal/runtime"
 	"agentx/internal/session"
@@ -90,17 +89,6 @@ func registerWMPinSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the wm-pin context breakdown omits class "([^"]*)"$`, w.breakdownOmits)
 }
 
-// classifierChat routes only the tool-running prompt ("list the project") to
-// single_tool; every other prompt answers directly, so a follow-up turn's only
-// source of tool re-execution is Orchestrator.refreshLiveFacts, isolating what a
-// live pin actually controls.
-func wmPinClassifierChat(_ context.Context, msgs []prompting.Message) (string, error) {
-	if len(msgs) > 0 && msgs[len(msgs)-1].Content == "list the project" {
-		return `{"route": "single_tool"}`, nil
-	}
-	return `{"route": "respond_directly"}`, nil
-}
-
 func (w *wmPinWorld) start(tool, reply string) error {
 	return w.startWith(tool, reply, "")
 }
@@ -128,18 +116,21 @@ func (w *wmPinWorld) startWith(tool, reply, blacklistPath string) error {
 		return err
 	}
 	w.dir = dir
-	proposal := fmt.Sprintf(`{"tool": %q, "args": {"path": "."}}`, tool)
-	proposer := tools.NewProposer("catalog", 0, func(context.Context, []prompting.Message) (string, error) {
-		return proposal, nil
-	})
 	w.orc = runtime.New(
 		runtime.Settings{
 			SessionRoot: dir, OllamaModel: "stub", Instructions: "Be brief.",
 			ToolsEnabled: true, ToolReadOnly: true, ToolBlacklistPath: blacklistPath,
 		},
-		runtime.WithModel(stubModel{deltas: []string{reply}}),
-		runtime.WithClassifier(classify.New("", 0, wmPinClassifierChat)),
-		runtime.WithProposer(proposer),
+		// toolCalls fires on this stub's very first Chat call only (calls-pointer
+		// "first call only" semantics — see stubModel), i.e. this scenario's own
+		// "list the project" turn; every later turn answers directly, so the only
+		// other source of tool re-execution is Orchestrator.refreshLiveFacts,
+		// isolating what a live pin actually controls.
+		runtime.WithModel(stubModel{
+			deltas:    []string{reply},
+			toolCalls: []prompting.ToolCall{{ID: "call_1", Name: tool, Arguments: map[string]any{"path": "."}}},
+			calls:     new(int),
+		}),
 		runtime.WithToolRunner(&counterRunner{}),
 	)
 	if err := w.orc.Start(); err != nil {

@@ -9,17 +9,22 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"agentx/internal/classify"
 	"agentx/internal/prompting"
 	"agentx/internal/runtime"
 	"agentx/internal/session"
 	"agentx/internal/state"
+	"agentx/internal/tools"
 )
 
 // stubModel is a deterministic Model: it emits a fixed set of deltas, fails with
 // a fixed error, or (when block is set) streams nothing and waits for ctx
 // cancellation — so the prompt cycle can be exercised without a live Ollama. When
 // captured is non-nil it records the assembled messages it was called with.
+// toolCalls, when set, is returned as the model's native tool calls on the
+// first call only (tracked via the calls pointer, so value-receiver Chat can
+// still count across calls) — the second call answers with deltas as plain
+// text, so a test can exercise a one-round tool-call loop deterministically.
+// calls may be left nil when a test never sets toolCalls (unchanged behavior).
 type stubModel struct {
 	deltas      []string
 	thinks      []string
@@ -28,14 +33,16 @@ type stubModel struct {
 	block       bool
 	captured    *[]prompting.Message
 	ctxLen      int // reported context window (0 → ContextLength errors)
+	toolCalls   []prompting.ToolCall
+	calls       *int
 }
 
-func (s stubModel) Chat(ctx context.Context, _ string, messages []prompting.Message, onDelta, onThink func(string)) (string, error) {
+func (s stubModel) Chat(ctx context.Context, _ string, messages []prompting.Message, _ []tools.ToolSchema, onDelta, onThink func(string)) (runtime.ChatResult, error) {
 	if s.captured != nil {
 		*s.captured = messages
 	}
 	if s.err != nil {
-		return "", s.err
+		return runtime.ChatResult{}, s.err
 	}
 	if onThink != nil {
 		for _, t := range s.thinks {
@@ -43,7 +50,7 @@ func (s stubModel) Chat(ctx context.Context, _ string, messages []prompting.Mess
 		}
 		if s.thinkBlocks {
 			<-ctx.Done()
-			return "", ctx.Err()
+			return runtime.ChatResult{}, ctx.Err()
 		}
 	}
 	for _, d := range s.deltas {
@@ -51,9 +58,19 @@ func (s stubModel) Chat(ctx context.Context, _ string, messages []prompting.Mess
 	}
 	if s.block {
 		<-ctx.Done()
-		return "", ctx.Err()
+		return runtime.ChatResult{}, ctx.Err()
 	}
-	return strings.Join(s.deltas, ""), nil
+	n := 0
+	if s.calls != nil {
+		n = *s.calls
+		*s.calls++
+	}
+	result := runtime.ChatResult{Content: strings.Join(s.deltas, "")}
+	if n == 0 && len(s.toolCalls) > 0 {
+		result.ToolCalls = s.toolCalls
+		result.Content = ""
+	}
+	return result, nil
 }
 
 func (s stubModel) Ready(context.Context, string) error { return s.err }
@@ -97,15 +114,9 @@ func (w *promptCycleWorld) startWith(model runtime.Model) error {
 		return err
 	}
 	w.dir = dir
-	// A deterministic classifier keeps these respond-cycle assertions focused on
-	// the respond stream (classification is exercised separately in CHT-D3/D4).
-	classifierChat := func(context.Context, []prompting.Message) (string, error) {
-		return `{"route": "respond_directly"}`, nil
-	}
 	w.orc = runtime.New(
 		runtime.Settings{SessionRoot: dir, OllamaModel: "stub"},
 		runtime.WithModel(model),
-		runtime.WithClassifier(classify.New("", 0, classifierChat)),
 	)
 	return w.orc.Start()
 }

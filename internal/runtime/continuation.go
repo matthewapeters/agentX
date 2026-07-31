@@ -116,9 +116,9 @@ func (o *Orchestrator) maybeContinuePlan(ctx context.Context, route, userText, r
 	combined := planCtx + extraCtx
 	msgs := o.withContext(o.assembler.AssembleWithThinking(userText+combined, o.thinkingPrompt(doThink), route))
 	fallback := o.withContext(o.assembler.Assemble(userText + combined))
-	newResp, _, err := o.streamResponse(ctx, msgs, fallback, doThink, ephemeral)
+	newResp, _, err := o.streamResponse(ctx, msgs, fallback, nil, doThink, ephemeral)
 	if err != nil {
 		return resp // re-synthesis failed: keep the original (already-streamed) answer
 	}
-	return newResp
+	return newResp.Content
 }

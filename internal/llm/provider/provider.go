@@ -46,10 +46,45 @@ type SchemaField struct {
 	RestartRequired bool `json:"restartRequired"` // whether changing this field requires restart
 }
 
-// Message is a single chat message (role + content).
+// Message is a single chat message (role + content). ToolCalls is set on an
+// assistant message that invoked tools; ToolCallID is set on a role:"tool"
+// message answering a prior call.
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// ToolFunction describes one callable tool: its name, a model-facing
+// description, and its arguments as a JSON Schema object.
+type ToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+}
+
+// Tool is a single entry in a ChatRequest's Tools list.
+type Tool struct {
+	Type     string       `json:"type"` // "function"
+	Function ToolFunction `json:"function"`
+}
+
+// ToolCall is a model-issued invocation of one Tool. Arguments is always a
+// decoded JSON object regardless of whether the backend wire-encodes it as a
+// native object (Ollama) or a JSON string (OpenAI-compatible/llama.cpp) — each
+// client normalizes at its own boundary so callers never see the difference.
+type ToolCall struct {
+	ID        string
+	Name      string
+	Arguments map[string]any
+}
+
+// ChatResult is a completed chat turn: the assembled text content and any
+// native tool calls the model issued.
+type ChatResult struct {
+	Content   string
+	ToolCalls []ToolCall
 }
 
 // CompleteRequest is a non-streaming completion request.
@@ -63,12 +98,14 @@ type CompleteRequest struct {
 	Format      json.RawMessage
 }
 
-// ChatRequest is a streaming chat request.
+// ChatRequest is a streaming chat request. Tools, when non-empty, advertises
+// native tool-calling to the backend.
 type ChatRequest struct {
 	Model    string
 	Messages []Message
 	Think    bool
 	NumCtx   int
+	Tools    []Tool
 }
 
 // Provider is the backend-agnostic interface every LLM backend must implement.
@@ -80,8 +117,9 @@ type Provider interface {
 	// Complete runs a non-streaming completion and returns the assembled response.
 	Complete(ctx context.Context, req CompleteRequest) (string, error)
 	// Chat streams a chat completion, invoking onDelta for each content chunk
-	// and onThink for each reasoning chunk, and returns the assembled response.
-	Chat(ctx context.Context, req ChatRequest, onDelta, onThink func(string)) (string, error)
+	// and onThink for each reasoning chunk, and returns the assembled response
+	// plus any native tool calls the model issued.
+	Chat(ctx context.Context, req ChatRequest, onDelta, onThink func(string)) (ChatResult, error)
 	// Ready reports whether the model is available.
 	Ready(ctx context.Context, model string) error
 	// ContextLength reports the model's maximum context window in tokens.

@@ -136,129 +136,119 @@ record). Live continuity therefore starts from the first real user turn.
 > disk) — and deterministic token-budget trimming (persona canon Layer 4) are
 > follow-ups.
 
-## Classification Cycle (v1, Stage 1)
+## The Prompt/Response Loop (v2 — native tool-calling)
 
-Every user prompt is first **classified** for intent, then routed, then answered.
-This is the `classify → respond` slice of the documented `classify → think → tool
-→ respond` cycle (`06_delivery_plan.md`); `think`/`tool`/planning routes are
-reserved and fall back to `respond_directly` until their executors land (M3b+).
-
-### Tunable classification prompt
-
-```
-GIVEN a file at ~/.config/agentx/agentx-classification.md
-  AND an application `agentx`
-WHEN the application classifies a user prompt
-THEN the contents of agentx-classification.md are used as the system prompt for
-     the classification call (its role for the classify step; agentx-instructions.md
-     remains the system prompt for the respond step)
-  AND the user's prompt is the user message of the classification call.
-```
-
-- The classification prompt is the place to describe the breadth of agentic
-  workflows so ambiguous prompts route well. It is **tunable without recompiling**.
-- A built-in default is seeded on first launch (see *Default classification
-  prompt* below). Absent/empty → the default is used.
-- It does **not** replace `agentx-instructions.md`; the two play different roles
-  (classify system prompt vs. respond system prompt).
-
-### Routable taxonomy (fixed contract)
-
-The runtime owns the set of routes it can execute; the prompt tunes how prompts
-are matched to them, but may only emit a route from this set:
-
-| Route | v1 behaviour |
-|-------|--------------|
-| `respond_directly` | Stream a conversational answer (the only executable route in v1). |
-| `single_tool` | **Reserved** — falls back to `respond_directly` until the tool runtime lands (M3b). |
-| `invoke_planner` | **Reserved** — falls back to `respond_directly` until the planner lands. |
-
-An unrecognised or unexecutable route degrades to `respond_directly`.
-
-### Output contract (strict JSON)
-
-The classifier must return a single JSON object:
-
-```json
-{ "route": "respond_directly", "confidence": 0.0, "rationale": "short" }
-```
-
-- `route` (required) — one of the routable taxonomy values.
-- `confidence` (optional, 0–1) and `rationale` (optional, terse) are advisory.
-- Parsing is **tolerant of surrounding prose/fences**: the first balanced `{…}`
-  object in the response is extracted, then strictly validated against this schema
-  and the route enum. The call uses a low temperature.
-
-### Retry and fallback
+Superseded design note: v1 routed every prompt through a semantic classifier
+(`classify → respond_directly | single_tool | invoke_planner`) before acting.
+That classifier, its `continuation` follow-up detector, and a second
+independent task-classifier pipeline (`prompting/pipeline`, `cascade`,
+`reconcile`, `corpus`) added up to four separate "should this turn act"
+decision layers, each assembling its own context — the opposite of this
+project's Context Curation motto (`CLAUDE.md`). The loop below replaces all of
+that with one flat loop built on the model's own native tool-calling.
 
 ```
-GIVEN a configured retry budget agentx.classification.retries = N
-WHEN a classification response cannot be parsed/validated
-THEN the runtime retries the classification up to N times
-  AND if all attempts fail it falls back to route `respond_directly`
-  AND records the fallback (so the cycle never stalls on a malformed verdict).
+GIVEN a started orchestrator with native tool-calling wired
+WHEN a user submits a prompt
+THEN the orchestrator runs registered synchronous hooks, then asynchronous hooks
+  AND submits the prompt (plus history) to the model, advertising the available
+      tool schemas (subprocess/builtin tools + plan_task)
+  AND detects, from the model's response, tool calls vs a chat response
+  AND for a chat response, streams and publishes it, ending the turn
+  AND for tool calls, executes each (policy/approval-gated) or runs plan_task,
+      folds the results back as tool-role messages, runs the hook points again,
+      and loops back to the model
+  AND stops looping and answers with whatever it has if a per-turn tool-call
+      budget (Settings.MaxToolIterationsPerTurn, default 25) is reached.
 ```
 
-> Genuine ambiguity (the prompt is parseable but unclear) and the user-clarification
-> flow (offer K interpretations; user picks one; append and resubmit) are **Stage 2**
-> — see `90_open_questions.md` and the Stage-2 backlog. Stage 1 always resolves to a
-> route (real or fallback).
+- Implementation: `internal/runtime/loop.go` (`Orchestrator.runPrompt`),
+  `internal/runtime/tool_cycle.go` (`streamResponse`, `runNativeToolCall`).
+- Executable contract: `tests/features/runtime/prompt_loop.feature`.
 
-### Events and ordering
+### Native tool-calling wire format
 
-- A new event content type `classification` carries the verdict (`route`,
-  `confidence`, `rationale`); it is persisted and rendered as the greyed `⚙️
-  intent → route` line directly under the user prompt (see `ux/06_OUTPUT_WIDGET.md`).
-- Adding `classification` to the event envelope is a **versioned change** to the
-  frozen contract (`architecture/runtime_contracts/event-envelope.schema.json`) and
-  requires a `CHANGELOG.md` entry.
-- Processing-state phase transitions: `idle → working/classify → working/respond →
-  completed` (the `classify` phase already exists in the phase contract).
+The model advertises tools via the provider's own structured tool-calling API
+(Ollama's `tools` request field / `message.tool_calls` response field; the
+OpenAI-compatible equivalent for llama.cpp) rather than a hand-rolled
+JSON-in-text convention. `internal/tools.Registry.ToolSchemas` builds each
+tool's schema from its `Descriptor` (`Description` + JSON Schema generated from
+`Args []ArgSpec`); `internal/runtime/model.go` maps that provider-agnostically
+between `tools.ToolSchema` and each client's own `Tool`/`ToolCall` wire types
+(`internal/llm/ollama`, `internal/llm/llamacpp`, `internal/llm/provider`) — per
+the import-direction matrix (`08_go_module_layout.md`), `internal/llm/*` must
+not import `internal/tools`, so this mapping lives in `internal/runtime`.
+`internal/prompting.Message` carries the shared, provider-agnostic shape
+(`ToolCalls`, `ToolCallID`) the loop accumulates within one turn.
 
-### Default classification prompt (seeded)
+### The `plan_task` tool
 
-```markdown
-You are AgentX's prompt classifier. Read the user's message and decide how the
-assistant should handle it. Reply with ONE JSON object and nothing else:
+Multi-step investigation (what the old classifier's `invoke_planner` route
+existed for) is now a tool the model calls at its own discretion, named
+`plan_task(goal string)` — not a pre-classifier decision. Its description
+carries the judgment the old classifier prompt used to make ahead of time
+("review, audit, analyze, refactor... spans multiple steps or files").
+Calling it runs the configured decomposition engine
+(`internal/runtime/decompose.DrainPlan`, or `internal/runtime/wavefront`'s
+round-free engine when `Settings.WavefrontEnabled`) to completion — both are
+synchronous, so the tool call is a plain call-and-wait, no process spawn
+needed — and returns the rendered findings as the tool result. Per-leaf tool
+executions inside the plan still go through the same policy/approval gate as
+any other native tool call. Implementation: `internal/runtime/plan_tool.go`.
 
-{"route": "<route>", "confidence": <0..1>, "rationale": "<≤10 words>"}
+### Hooks framework (present, empty)
 
-Routes:
-- respond_directly — conversation, questions, explanations, or anything answerable
-  without running tools or a multi-step plan.
-- single_tool — the request needs exactly one tool/command (e.g. read or edit a
-  file, run a command).
-- invoke_planner — a complex, multi-step task needing decomposition into a plan.
+`internal/runtime/hooks` is the loop's extension seam: a synchronous chain
+(`SyncHook`, run serially in registration order against the live turn) and an
+asynchronous fan-out (`AsyncHook`, run against a value-copy snapshot, fire-and-
+forget, orthogonal to the loop — indexers, summarizers, telemetry). Both hook
+points fire twice per loop iteration: right after a new prompt is recorded, and
+after each round of tool execution. Registration is config-driven
+(`Settings.HooksConfigPath`, a TOML file resolved against a compiled-in
+`hooks.Available` factory registry) — **no hooks are registered in this pass**;
+the framework exists so intent evaluation, decomposition-as-a-hook, or other
+future extensions can register without changing the loop. A hook that spawns a
+recursive loop instance (a sub-agent) must derive its context from
+`hooks.NextSpawnContext` and check `hooks.CanSpawn` against a depth budget —
+this guardrail exists even though nothing spawns yet.
 
-Prefer respond_directly when unsure. Output only the JSON object.
-```
+### Legacy: classify / continuation / task-classifier pipeline (unwired)
 
-## Thinking Pass-through (v1)
+`internal/classify`, `internal/runtime/continuation.go`, and
+`internal/prompting/{pipeline,cascade,reconcile,corpus}` still exist and still
+have working unit test coverage, but nothing in `Orchestrator.Start`/`runPrompt`
+constructs or calls them anymore — they are disconnected from the main loop,
+not deleted. They may return later as a hook (see above) or as a tool (the
+same treatment `plan_task` got), once native tool-call detection has proven
+reliable enough to judge whether a separate intent-evaluation layer is still
+worth its cost. `docs/implementation/90_open_questions.md` tracks this.
 
-When `[agentx.thinking] enabled` is true (the default), the **respond** phase
-requests model reasoning and streams it ahead of the answer:
+## Thinking Pass-through (v2)
+
+When `[agentx.thinking] enabled` is true, the loop's **first** model call of a
+turn requests model reasoning and streams it ahead of the answer (subsequent
+tool-round-trip calls within the same turn don't re-think — reasoning happens
+once, before acting, not before every tool result):
 
 - The Ollama adapter sets `"think": true` on the chat request and reads the
   separate `message.thinking` field from each stream chunk (distinct from
-  `message.content`). Classification never thinks (it needs a fast strict-JSON
-  verdict).
+  `message.content`).
 - The orchestrator publishes reasoning chunks as `thinking` content events, then
   switches `working/thinking → working/respond` on the first content delta.
 - The output panel coalesces the reasoning into a single, collapsed `💭 thinking`
   widget rendered above the `🤖` answer (see `ux/06_OUTPUT_WIDGET.md`).
-- Per-turn ordering becomes: `user_prompt → classification → thinking →
-  agent_response`. Models without thinking support simply emit no `thinking`
-  field and the cycle proceeds straight to the answer.
+- Per-turn ordering: `user_prompt → thinking → agent_response` (a turn with no
+  tool calls), or `user_prompt → thinking → tool_call → tool_result →
+  agent_response` (a turn that called a tool) — no `classification` event (see
+  "The Prompt/Response Loop" above). Models without thinking support simply
+  emit no `thinking` field and the cycle proceeds straight to the answer.
 
 ### Tuning thinking toward the sweet spot
 
-Three composing levers keep thinking *useful but bounded*:
+Two composing levers keep thinking *useful but bounded* (a third, route-aware
+depth, existed in v1 but no longer applies — there are no classifier routes to
+key off; `ThinkingEnabled` now applies uniformly):
 
-- **Route-aware depth.** The classification verdict decides whether a turn reasons
-  at all. `[agentx.thinking.routes]` enables thinking per route (defaults:
-  `respond_directly` off, `single_tool`/`invoke_planner` on). The classified route
-  is also injected into the thinking prompt as a calibration hint, so the model
-  scales its reasoning to the task.
 - **Tunable guidance.** `~/.config/agentx/agentx-thinking.md` (built-in default in
   `prompting.DefaultThinkingPrompt`) is folded into the respond system prompt; it
   steers brevity and goal-direction without recompiling.
@@ -306,28 +296,29 @@ Design principle:
 
 - maximize utility of local CLI environment while preserving explicit user control and safety.
 
-### The `single_tool` cycle (v1)
+### Native tool calls (v2)
 
-The `single_tool` classification route triggers one tool call before the answer
-(`classify → PhaseTool → respond`). Multi-step tool use belongs to `invoke_planner`,
-later.
+Any number of tool calls may happen per turn, in a loop, bounded by
+`Settings.MaxToolIterationsPerTurn` (see "The Prompt/Response Loop" above) —
+there is no longer a `single_tool`-route one-call-per-turn limit.
 
 - **Curated descriptors, not a generic runner.** The runtime exposes a fixed set of
-  tools (read/search, write/modify, network) defined in `internal/tools`. The
-  LLM-facing catalog is `~/.config/agentx/agentx-shell-commands.md` (default
-  `tools.DefaultCatalog`), injected into the proposal context only when a turn routes
-  to `single_tool`.
-- **Strict-JSON proposal, one call per turn.** Reusing the classification pattern
-  (strict JSON → tolerant extraction → retry → fallback), the model replies with
-  `{"tool": "<id>", "args": {...}}` or `{"tool": "none"}`. Parse failure or `none`
-  falls back to a direct response.
+  tools (read/search, write/modify, network) defined in `internal/tools`,
+  advertised to the model as native tool schemas (see "Native tool-calling wire
+  format" above) — there is no LLM-facing catalog document to inject into a
+  prompt anymore; each `Descriptor.Description` is the tool's model-facing text.
+- **Model-issued, not proposed-and-parsed.** The provider's own structured
+  tool-calling parses the call; AgentX no longer parses a `{"tool": ...}` JSON
+  object out of free text (`internal/tools.Proposer`/`ParseProposal` were
+  retired with the classifier).
 - **argv, no shell.** Commands run as an argv vector via `os/exec` — never `sh -c`. No
   pipes, redirects, globs, or expansion. File content and patches are passed inline in
-  the JSON and delivered via process **stdin** or a Go built-in, so untrusted arguments
-  are never shell-interpolated (see `05_security_approvals_and_command_policy.md`).
-- **Events and ordering.** `user_prompt → classification → tool_call → tool_result →
-  agent_response`; processing-state moves `classify → tool → respond`. A call needing
-  approval inserts an `awaiting_input` pause (see doc 05).
+  the call's arguments and delivered via process **stdin** or a Go built-in, so
+  untrusted arguments are never shell-interpolated (see
+  `05_security_approvals_and_command_policy.md`).
+- **Events and ordering.** `user_prompt → tool_call → tool_result → ... →
+  agent_response` (no `classification` event; PhaseTool still brackets each
+  call). A call needing approval inserts an `awaiting_input` pause (see doc 05).
 
 ### Output artifacts and context shaping
 

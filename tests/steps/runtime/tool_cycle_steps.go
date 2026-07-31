@@ -8,7 +8,6 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"agentx/internal/classify"
 	"agentx/internal/prompting"
 	"agentx/internal/runtime"
 	"agentx/internal/session"
@@ -49,40 +48,34 @@ func registerToolCycleSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a tool_result records status "([^"]*)"$`, w.toolResultStatus)
 }
 
-func (w *toolCycleWorld) start(proposalJSON, reply string, readOnly bool, runner runtime.ToolRunner) error {
+func (w *toolCycleWorld) start(tool string, args map[string]any, reply string, readOnly bool, runner runtime.ToolRunner) error {
 	dir, err := os.MkdirTemp("", "agentx-toolcycle-")
 	if err != nil {
 		return err
 	}
 	w.dir = dir
-	classifierChat := func(context.Context, []prompting.Message) (string, error) {
-		return `{"route": "single_tool"}`, nil
-	}
-	proposer := tools.NewProposer("catalog", 0, func(context.Context, []prompting.Message) (string, error) {
-		return proposalJSON, nil
-	})
 	w.orc = runtime.New(
 		runtime.Settings{SessionRoot: dir, OllamaModel: "stub", ToolsEnabled: true, ToolReadOnly: readOnly},
-		runtime.WithModel(stubModel{deltas: []string{reply}}),
-		runtime.WithClassifier(classify.New("", 0, classifierChat)),
-		runtime.WithProposer(proposer),
+		runtime.WithModel(stubModel{
+			deltas:    []string{reply},
+			toolCalls: []prompting.ToolCall{{ID: "call_1", Name: tool, Arguments: args}},
+			calls:     new(int),
+		}),
 		runtime.WithToolRunner(runner),
 	)
 	return w.orc.Start()
 }
 
 func (w *toolCycleWorld) startRunsTool(tool, reply string) error {
-	proposal := fmt.Sprintf(`{"tool": %q, "args": {"path": "./x"}}`, tool)
 	runner := stubRunner{res: tools.Result{
 		ToolID: tool, Status: "ok", Exit: 0, Lines: 1,
 		Preview: "file body", Ref: "artifacts/000000000001.txt",
 	}}
-	return w.start(proposal, reply, true, runner)
+	return w.start(tool, map[string]any{"path": "./x"}, reply, true, runner)
 }
 
 func (w *toolCycleWorld) startReadOnlyProposes(tool, reply string) error {
-	proposal := fmt.Sprintf(`{"tool": %q, "args": {"path": "./x", "content": "hi"}}`, tool)
-	return w.start(proposal, reply, true, stubRunner{})
+	return w.start(tool, map[string]any{"path": "./x", "content": "hi"}, reply, true, stubRunner{})
 }
 
 func (w *toolCycleWorld) runCycle(text string) error {

@@ -14,10 +14,26 @@ const DefaultThinkingPrompt = "Think briefly and purposefully before answering. 
 	"length. Scale your reasoning to the task: a direct question needs little or " +
 	"none; a multi-step task warrants a short plan."
 
-// Message is a single assembled chat message.
+// Message is a single assembled chat message. ToolCalls is set on an assistant
+// message that invoked one or more tools; ToolCallID is set on a role:"tool"
+// message answering a prior call, correlating it back to the ToolCall.ID it
+// resolves. Arguments stays a native JSON object (not pre-stringified) so
+// history round-trips back to the model without lossy coercion — only the
+// tool-execution boundary (which needs the executor's string-args contract)
+// converts it, via tools.StringifyArg.
 type Message struct {
-	Role    string
-	Content string
+	Role       string
+	Content    string
+	ToolCalls  []ToolCall
+	ToolCallID string
+}
+
+// ToolCall is a model-issued invocation of one tool, carried on an assistant
+// Message.
+type ToolCall struct {
+	ID        string
+	Name      string
+	Arguments map[string]any
 }
 
 // Fact is a single working-memory entry rendered into a turn's context.

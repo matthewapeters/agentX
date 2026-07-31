@@ -16,11 +16,6 @@ type ToolRunner interface {
 	Run(ctx context.Context, d tools.Descriptor, args map[string]string) (tools.Result, error)
 }
 
-// WithProposer overrides the tool proposer (tests inject a deterministic one).
-func WithProposer(p *tools.Proposer) Option {
-	return func(o *Orchestrator) { o.proposer = p }
-}
-
 // WithToolRunner overrides the tool executor (tests inject a stub runner).
 func WithToolRunner(r ToolRunner) Option {
 	return func(o *Orchestrator) { o.runner = r }

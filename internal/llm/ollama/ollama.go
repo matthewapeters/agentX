@@ -47,28 +47,70 @@ func normalizeHost(host string) string {
 	return "http://" + strings.TrimRight(host, "/")
 }
 
-// Message is a single chat message.
+// Message is a single chat message. ToolCalls is set on an assistant message
+// that invoked one or more tools; ToolCallID is set on a role:"tool" message
+// answering a prior call (Ollama does not require it to be echoed back, but
+// carrying it keeps history round-tripping provider-agnostic).
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// ToolFunction describes one callable tool: its name, a model-facing
+// description, and its arguments as a JSON Schema object.
+type ToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+}
+
+// Tool is a single entry in a ChatRequest's Tools list, following Ollama's
+// /api/chat tool-calling contract (function-typed tools only).
+type Tool struct {
+	Type     string       `json:"type"` // "function"
+	Function ToolFunction `json:"function"`
+}
+
+// ToolCall is a model-issued invocation of one Tool. Ollama's /api/chat does
+// not assign an id to tool calls (unlike OpenAI-style APIs); ID is populated by
+// the caller (internal/runtime/model.go) when one is needed for round-tripping.
+type ToolCall struct {
+	ID       string `json:"-"`
+	Function struct {
+		Name      string         `json:"name"`
+		Arguments map[string]any `json:"arguments"`
+	} `json:"function"`
 }
 
 // ChatRequest is a streaming chat completion request. When Think is set the
 // request asks the model to emit reasoning, delivered separately from content.
 // NumCtx, when > 0, sets the context window (options.num_ctx) so Ollama allots
-// the model's full window instead of its small server default.
+// the model's full window instead of its small server default. Tools, when
+// non-empty, advertises native tool-calling — the model may reply with
+// ChatResult.ToolCalls instead of (or alongside) Content.
 type ChatRequest struct {
 	Model    string
 	Messages []Message
 	Think    bool
 	NumCtx   int
+	Tools    []Tool
+}
+
+// ChatResult is a completed chat turn: the assembled text content and any
+// native tool calls the model issued.
+type ChatResult struct {
+	Content   string
+	ToolCalls []ToolCall
 }
 
 type chatChunk struct {
 	Message struct {
-		Role     string `json:"role"`
-		Content  string `json:"content"`
-		Thinking string `json:"thinking"`
+		Role      string     `json:"role"`
+		Content   string     `json:"content"`
+		Thinking  string     `json:"thinking"`
+		ToolCalls []ToolCall `json:"tool_calls"`
 	} `json:"message"`
 	Done  bool   `json:"done"`
 	Error string `json:"error,omitempty"`
@@ -76,8 +118,9 @@ type chatChunk struct {
 
 // Chat streams a chat completion, invoking onDelta for each content chunk and
 // onThink (when non-nil and Think is set) for each reasoning chunk, and returns
-// the assembled content. It honors ctx cancellation.
-func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink func(string)) (string, error) {
+// the assembled content plus any tool calls the model issued. Ollama emits
+// tool_calls on the final chunk, not incrementally. It honors ctx cancellation.
+func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink func(string)) (ChatResult, error) {
 	payload := map[string]any{
 		"model":    req.Model,
 		"messages": req.Messages,
@@ -89,28 +132,32 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 	if req.NumCtx > 0 {
 		payload["options"] = map[string]any{"num_ctx": req.NumCtx}
 	}
+	if len(req.Tools) > 0 {
+		payload["tools"] = req.Tools
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("encode chat request: %w", err)
+		return ChatResult{}, fmt.Errorf("encode chat request: %w", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/chat", bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("build chat request: %w", err)
+		return ChatResult{}, fmt.Errorf("build chat request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("chat request failed: %w", err)
+		return ChatResult{}, fmt.Errorf("chat request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("ollama chat returned status %d", resp.StatusCode)
+		return ChatResult{}, fmt.Errorf("ollama chat returned status %d", resp.StatusCode)
 	}
 
 	var assembled strings.Builder
+	var toolCalls []ToolCall
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -120,10 +167,10 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 		}
 		var chunk chatChunk
 		if err := json.Unmarshal(line, &chunk); err != nil {
-			return assembled.String(), fmt.Errorf("decode chat chunk: %w", err)
+			return ChatResult{Content: assembled.String(), ToolCalls: toolCalls}, fmt.Errorf("decode chat chunk: %w", err)
 		}
 		if chunk.Error != "" {
-			return assembled.String(), fmt.Errorf("ollama error: %s", chunk.Error)
+			return ChatResult{Content: assembled.String(), ToolCalls: toolCalls}, fmt.Errorf("ollama error: %s", chunk.Error)
 		}
 		if chunk.Message.Thinking != "" && onThink != nil {
 			onThink(chunk.Message.Thinking)
@@ -134,14 +181,24 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 				onDelta(chunk.Message.Content)
 			}
 		}
+		if len(chunk.Message.ToolCalls) > 0 {
+			toolCalls = append(toolCalls, chunk.Message.ToolCalls...)
+		}
 		if chunk.Done {
 			break
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return assembled.String(), fmt.Errorf("read chat stream: %w", err)
+		return ChatResult{Content: assembled.String(), ToolCalls: toolCalls}, fmt.Errorf("read chat stream: %w", err)
 	}
-	return assembled.String(), nil
+	// Ollama does not assign tool-call ids; synthesize stable per-turn ones so
+	// callers can correlate a call with its eventual tool-result message.
+	for i := range toolCalls {
+		if toolCalls[i].ID == "" {
+			toolCalls[i].ID = fmt.Sprintf("call_%d", i)
+		}
+	}
+	return ChatResult{Content: assembled.String(), ToolCalls: toolCalls}, nil
 }
 
 // CompleteRequest is a non-streaming, optionally schema-constrained completion.

@@ -1,13 +1,23 @@
-# Source contracts:
-#   - docs/implementation/04_llm_prompt_tooling_runtime.md (Classification Cycle:
-#     events and ordering)
+# RETIRED (2026-07-31): the classifier this feature exercises is no longer
+# wired into the main loop — see docs/implementation/04_llm_prompt_tooling_runtime.md
+# ("The Prompt/Response Loop" / "Legacy: classify / continuation / task-classifier
+# pipeline (unwired)") and docs/implementation/90_open_questions.md (D.5). Tagged
+# @pending-hook-reintegration instead of @functional so it is excluded from the
+# active suites (tests/suites/runtime_godog_test.go only runs @unit/@integration/
+# @functional/@e2e) — kept in the corpus, not deleted, since the underlying
+# classify package is unwired, not removed, and may return as a hook or a tool.
+# The behavior it still covers that remains real (thinking streams before the
+# response; thinking budget fallback) is now covered, without the classifier
+# dependency, by tests/features/runtime/prompt_loop.feature.
+#
+# Source contracts (as originally written):
 #   - docs/build-plan/03_chat_surface_backlog.md (CHT-D4)
 #
-# Behavior: a submitted prompt is classified before it is answered. The recorded
-# turn is user_prompt → classification → agent_response, and processing moves
-# idle → classify → respond → completed.
+# Original behavior: a submitted prompt is classified before it is answered. The
+# recorded turn is user_prompt → classification → agent_response, and processing
+# moves idle → classify → respond → completed.
 
-@functional @arch:runtime-bootstrap
+@pending-hook-reintegration @arch:runtime-bootstrap
 Feature: Classify-respond prompt cycle
   As the agentx runtime
   I want every prompt classified before the response

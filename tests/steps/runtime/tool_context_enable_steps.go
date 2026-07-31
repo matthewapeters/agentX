@@ -9,7 +9,6 @@ import (
 
 	"github.com/cucumber/godog"
 
-	"agentx/internal/classify"
 	"agentx/internal/prompting"
 	"agentx/internal/runtime"
 	"agentx/internal/state"
@@ -56,35 +55,29 @@ func registerToolContextEnableSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the enabling context breakdown includes class "([^"]*)"$`, w.breakdownIncludesClass)
 }
 
-// start wires an orchestrator whose classifier routes only the tool-running prompt
-// ("list the project") to single_tool; every other prompt answers directly, so a
-// follow-up turn's captured context reflects only the enabled history — not a
-// second live tool call — isolating what the enable toggle actually controls.
+// start wires an orchestrator whose stub model calls a tool only on its very
+// first turn ("list the project"); every later turn answers directly (see
+// stubModel's calls-pointer "first call only" semantics), so a follow-up
+// turn's captured context reflects only the enabled history — not a second
+// live tool call — isolating what the enable toggle actually controls.
 func (w *toolContextEnableWorld) start(tool, reply string) error {
 	dir, err := os.MkdirTemp("", "agentx-toolenable-")
 	if err != nil {
 		return err
 	}
 	w.dir = dir
-	classifierChat := func(_ context.Context, msgs []prompting.Message) (string, error) {
-		if len(msgs) > 0 && msgs[len(msgs)-1].Content == "list the project" {
-			return `{"route": "single_tool"}`, nil
-		}
-		return `{"route": "respond_directly"}`, nil
-	}
-	proposal := fmt.Sprintf(`{"tool": %q, "args": {"path": "."}}`, tool)
-	proposer := tools.NewProposer("catalog", 0, func(context.Context, []prompting.Message) (string, error) {
-		return proposal, nil
-	})
 	runner := stubRunner{res: tools.Result{
 		ToolID: tool, Status: "ok", Exit: 0, Lines: 1,
 		Preview: "project listing: a.go, b.go",
 	}}
 	w.orc = runtime.New(
 		runtime.Settings{SessionRoot: dir, OllamaModel: "stub", Instructions: "Be brief.", ToolsEnabled: true, ToolReadOnly: true},
-		runtime.WithModel(stubModel{deltas: []string{reply}, captured: &w.captured}),
-		runtime.WithClassifier(classify.New("", 0, classifierChat)),
-		runtime.WithProposer(proposer),
+		runtime.WithModel(stubModel{
+			deltas:    []string{reply},
+			captured:  &w.captured,
+			toolCalls: []prompting.ToolCall{{ID: "call_1", Name: tool, Arguments: map[string]any{"path": "."}}},
+			calls:     new(int),
+		}),
 		runtime.WithToolRunner(runner),
 	)
 	if err := w.orc.Start(); err != nil {

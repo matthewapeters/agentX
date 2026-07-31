@@ -109,10 +109,12 @@ func (w *ollamaWorld) serverShow(arch string, length int) error {
 func (w *ollamaWorld) sendChat(model, prompt string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	w.response, w.err = w.client.Chat(ctx, ollama.ChatRequest{
+	var res ollama.ChatResult
+	res, w.err = w.client.Chat(ctx, ollama.ChatRequest{
 		Model:    model,
 		Messages: []ollama.Message{{Role: "user", Content: prompt}},
 	}, func(d string) { w.deltas = append(w.deltas, d) }, nil)
+	w.response = res.Content
 	return nil
 }
 
@@ -133,11 +135,13 @@ func (w *ollamaWorld) sendChatNumCtx(model, prompt string, numCtx int) error {
 	w.start(mux)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	w.response, w.err = w.client.Chat(ctx, ollama.ChatRequest{
+	var res ollama.ChatResult
+	res, w.err = w.client.Chat(ctx, ollama.ChatRequest{
 		Model:    model,
 		Messages: []ollama.Message{{Role: "user", Content: prompt}},
 		NumCtx:   numCtx,
 	}, func(string) {}, nil)
+	w.response = res.Content
 	return nil
 }
 

@@ -1,153 +1,23 @@
 package tools
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
-
-	"agentx/internal/jsonx"
-	"agentx/internal/planfindings"
-	"agentx/internal/prompting"
 )
 
-// Proposal is a parsed tool call: a tool id and its string-valued arguments.
+// Proposal is a resolved tool call: a tool id and its string-valued arguments.
+// Produced today by native tool-calling (parsed from the model's structured
+// tool_calls) or a planner-produced task.Record's pre-resolved Params; consumed
+// by internal/executor and the tool policy/execution pipeline.
 type Proposal struct {
 	Tool string
 	Args map[string]string
 }
 
-// ChatFunc runs a non-streaming chat completion and returns the full text.
-type ChatFunc func(ctx context.Context, messages []prompting.Message) (string, error)
-
-// Proposer asks the model to choose one tool call for a prompt, using the tool
-// catalog as its system prompt. It mirrors the classifier: strict-JSON parsing
-// with retry, falling back to "no tool" so the cycle can answer directly.
-type Proposer struct {
-	assembler *prompting.Assembler
-	chat      ChatFunc
-	retries   int
-	// Facts supplies grounding working-memory facts (cwd/project/repo_root) folded into
-	// every proposal call as their own system message — context curation (CLAUDE.md):
-	// without this, tool resolution has no idea where it's operating and guesses (e.g.
-	// "/app" for a container-convention path that doesn't exist in this project). nil ⇒ no
-	// grounding, matching the prior ungrounded behavior. Set post-construction (like
-	// decompose.Decomposer.Facts) since the source is session-stable, not per-call.
-	Facts func() []prompting.Fact
-}
-
-// NewProposer returns a proposer using catalog as the tool-catalog system prompt
-// (DefaultCatalog when empty) and a retry budget of retries (>= 0).
-func NewProposer(catalog string, retries int, chat ChatFunc) *Proposer {
-	if strings.TrimSpace(catalog) == "" {
-		catalog = DefaultCatalog
-	}
-	if retries < 0 {
-		retries = 0
-	}
-	return &Proposer{assembler: prompting.New(catalog), chat: chat, retries: retries}
-}
-
-// Propose returns the model's chosen tool call for userText. The bool is false
-// when no tool should run (the model replied {"tool":"none"}, or every attempt
-// failed to produce a parseable proposal) — the caller then answers directly.
-func (p *Proposer) Propose(ctx context.Context, userText string) (Proposal, bool) {
-	msgs := p.assembler.Assemble(userText)
-	msgs = insertFacts(msgs, p.Facts)
-	msgs = insertPlanFindings(msgs, planfindings.From(ctx))
-	for attempt := 0; attempt <= p.retries; attempt++ {
-		raw, err := p.chat(ctx, msgs)
-		if err != nil {
-			continue
-		}
-		prop, perr := ParseProposal(raw)
-		if perr != nil {
-			continue
-		}
-		if prop.Tool == "" || prop.Tool == "none" {
-			return Proposal{}, false
-		}
-		return prop, true
-	}
-	return Proposal{}, false
-}
-
-// insertFacts folds a working-memory facts message (if getFacts is non-nil and produces
-// any) between the assembler's system message and the user message. Assemble always
-// returns at most one leading system message, so the insertion point is simple: right
-// after it (or at the front, if there's no system message at all).
-func insertFacts(msgs []prompting.Message, getFacts func() []prompting.Fact) []prompting.Message {
-	if getFacts == nil {
-		return msgs
-	}
-	factMsg, ok := prompting.WorkingMemoryMessage(getFacts())
-	if !ok {
-		return msgs
-	}
-	at := 0
-	if len(msgs) > 0 && msgs[0].Role == "system" {
-		at = 1
-	}
-	out := make([]prompting.Message, 0, len(msgs)+1)
-	out = append(out, msgs[:at]...)
-	out = append(out, factMsg)
-	out = append(out, msgs[at:]...)
-	return out
-}
-
-// insertPlanFindings folds a decomposition plan's live findings-so-far (see
-// internal/planfindings) in after any leading system messages (the catalog, and — if
-// present — insertFacts's working-memory message), still before the user message.
-// Deliberately a separate message from working memory: different context shape,
-// different source, different lifetime (this plan's drain, not the session). "" (no
-// plan in flight — the single_tool cycle, or a direct test call) leaves msgs
-// untouched.
-func insertPlanFindings(msgs []prompting.Message, findings string) []prompting.Message {
-	findingsMsg, ok := prompting.PlanFindingsMessage(findings)
-	if !ok {
-		return msgs
-	}
-	at := 0
-	for at < len(msgs) && msgs[at].Role == "system" {
-		at++
-	}
-	out := make([]prompting.Message, 0, len(msgs)+1)
-	out = append(out, msgs[:at]...)
-	out = append(out, findingsMsg)
-	out = append(out, msgs[at:]...)
-	return out
-}
-
-// ParseProposal extracts the first balanced JSON object from raw and decodes it
-// into a Proposal. Argument values are normalized to strings (JSON numbers become
-// their integer/float text), matching the executor's string-args model.
-func ParseProposal(raw string) (Proposal, error) {
-	obj := jsonx.FirstObject(raw)
-	if obj == "" {
-		return Proposal{}, fmt.Errorf("no JSON object in proposal")
-	}
-	var decoded struct {
-		Tool string         `json:"tool"`
-		Args map[string]any `json:"args"`
-	}
-	if err := json.Unmarshal([]byte(obj), &decoded); err != nil {
-		return Proposal{}, fmt.Errorf("decode proposal: %w", err)
-	}
-	if decoded.Tool == "" {
-		return Proposal{}, fmt.Errorf("proposal missing tool")
-	}
-	args := make(map[string]string, len(decoded.Args))
-	for k, v := range decoded.Args {
-		args[k] = StringifyArg(v)
-	}
-	return Proposal{Tool: decoded.Tool, Args: args}, nil
-}
-
 // StringifyArg normalizes a JSON-decoded arg value (string/float64/bool/nil/other) to its
-// canonical string form — the executor's string-args model. Exported so a pre-resolved
-// tool call (e.g. a planner-produced Task's Params, ADR 0008 amendment) can be converted
-// the same way a freshly-parsed Proposal's args are, without a second conversion routine.
+// canonical string form — the executor's string-args model. Exported so any caller that
+// receives typed JSON args (native tool-calling arguments, or a pre-resolved task.Record's
+// Params) can convert them the same way.
 func StringifyArg(v any) string {
 	switch t := v.(type) {
 	case string:
@@ -165,4 +35,3 @@ func StringifyArg(v any) string {
 		return fmt.Sprintf("%v", t)
 	}
 }
-

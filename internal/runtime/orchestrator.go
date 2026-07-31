@@ -15,6 +15,7 @@ import (
 	"agentx/internal/llm/provider/validation"
 	"agentx/internal/prompting"
 	"agentx/internal/prompting/pipeline"
+	"agentx/internal/runtime/hooks"
 	"agentx/internal/runtime/scheduler"
 	"agentx/internal/runtime/wavefront"
 	"agentx/internal/session"
@@ -150,6 +151,16 @@ type Settings struct {
 	// Empty means the orchestrator resolves the path from config.DefaultPaths()
 	// at start time (the conventional deployment path).
 	ConfigWatcherPath string
+	// MaxToolIterationsPerTurn caps how many native tool-call round-trips one turn
+	// may run before the loop stops and answers with whatever it has. <=0 uses the
+	// built-in default (25) — unbounded native tool-calling needs a runaway guard
+	// the old one-tool-per-turn cycle never required.
+	MaxToolIterationsPerTurn int
+	// HooksConfigPath is a TOML file registering synchronous/asynchronous loop
+	// hooks (see internal/runtime/hooks). Empty (the default) registers no hooks —
+	// the framework is present but unused until a future hook implementation ships
+	// and is named here.
+	HooksConfigPath string
 }
 
 // configPayload is an in-memory snapshot of the latest config write, stored so
@@ -206,10 +217,17 @@ type Orchestrator struct {
 	liveReloadEnabled bool
 	registry        *tools.Registry
 	policy          *tools.Policy
-	proposer        *tools.Proposer
 	runner          ToolRunner
 	outputOverrides *tools.OutputOverrides
 	planTrees       *planTreeRegistry
+	// hooks is the loop's sync/async extension registry (internal/runtime/hooks).
+	// Built at Start from Settings.HooksConfigPath; empty (no-op) when unset.
+	hooks *hooks.Registry
+	// planSeq mints unique plan_task root ids across this orchestrator's lifetime
+	// (atomic — a turn may call plan_task more than once, and calls execute
+	// sequentially but the counter itself must still be safe under WithX test
+	// injection races).
+	planSeq uint64
 
 	mu        sync.Mutex
 	started   bool
@@ -309,31 +327,33 @@ func (o *Orchestrator) Start() error {
 		instructions = prompting.DefaultSystemPrompt
 	}
 	o.assembler = prompting.New(instructions)
-	if o.classifier == nil {
-		chat := func(ctx context.Context, msgs []prompting.Message) (string, error) {
-			// Classification never thinks (nil onThink): a fast strict-JSON verdict.
-			return o.model.Chat(ctx, o.modelName(), msgs, func(string) {}, nil)
-		}
-		o.classifier = classify.New(o.settings.ClassificationPrompt, o.settings.ClassificationRetries, chat)
-		// Ground every classification in cwd/project facts so a fact-question about "this
-		// project" can be recognized as such instead of misread as general knowledge
-		// (quiet-frustrating-maple).
-		o.classifier.Facts = o.workingMemoryFacts
-	}
-	// Presence-gated experimental task classifier: built only when a prompt corpus
-	// is configured (or one was injected for tests).
-	o.buildTaskClassifier()
+	// classify/continuation/the task-classifier pipeline are disconnected from the
+	// main loop (native tool-calling replaces their job) but deliberately left in
+	// the tree, unwired — see docs/implementation and the simplified-workflow
+	// design discussion. o.classifier/o.taskPipeline are no longer constructed
+	// here; WithClassifier/WithTaskClassifier still exist for tests that want to
+	// inject one directly.
 	if o.settings.ToolsEnabled {
 		if err := o.buildTools(); err != nil {
 			return err
 		}
 	}
-	// The task executor drains classifier tasks into verified effects; it needs the
-	// tool collaborators, so it is built after buildTools.
+	// The task executor drains resolved task records into verified effects; it
+	// needs the tool collaborators, so it is built after buildTools. It now backs
+	// plan_task only (not gated on the task-classifier pipeline — see
+	// buildTaskExecutor's comment).
 	o.buildTaskExecutor()
-	// Decomposition (Decompose route) needs the classifier + executor; build it last.
+	// Decomposition (the plan_task tool) needs the executor; build it last.
 	o.buildDecomposition()
 	o.buildWavefront()
+	hookConfigs, err := hooks.LoadConfig(o.settings.HooksConfigPath)
+	if err != nil {
+		return fmt.Errorf("load hooks config: %w", err)
+	}
+	o.hooks, err = hooks.Build(hookConfigs)
+	if err != nil {
+		return fmt.Errorf("build hooks: %w", err)
+	}
 
 	recorder := o.store.Recorder(id.ID)
 	sub := o.bus.Subscribe()
@@ -546,7 +566,7 @@ func (o *Orchestrator) modelName() string {
 // processing-state. Canceling ctx interrupts the in-flight model call: any
 // partial response is kept, no error is recorded, and the cycle ends completed.
 func (o *Orchestrator) Submit(ctx context.Context, text string) error {
-	return o.runPrompt(ctx, text, true, true, false)
+	return o.runPrompt(ctx, text, true, false)
 }
 
 // SubmitBootstrap submits the configured bootstrap prompt at startup (story:
@@ -560,103 +580,8 @@ func (o *Orchestrator) SubmitBootstrap(ctx context.Context) error {
 	if text == "" {
 		return nil
 	}
-	// Bootstrap skips classification so the response is the first thing shown, and
-	// its events are marked ephemeral so the context viewer omits them.
-	return o.runPrompt(ctx, text, false, false, true)
-}
-
-// runPrompt drives one prompt cycle. When recordUserPrompt is false the user
-// message is still sent to the model (so instructions + prompt reach the LLM) but
-// no user_prompt event is published — used for the bootstrap prompt. When
-// classifyPrompt is true the prompt is classified (and a classification event
-// published) before the respond phase.
-func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPrompt, classifyPrompt, ephemeral bool) error {
-	o.mu.Lock()
-	ready := o.started && o.accepting
-	classifier := o.classifier
-	o.mu.Unlock()
-	if !ready {
-		return fmt.Errorf("orchestrator not accepting prompts")
-	}
-	o.refreshLiveFacts(ctx)
-
-	if classifyPrompt {
-		o.setProcessing(state.StateWorking, state.PhaseClassify)
-	}
-	var userOrd uint64
-	if recordUserPrompt {
-		userOrd = o.publishEv("USER_PROMPT", state.ContentUserPrompt, map[string]any{"text": text}, ephemeral)
-	}
-
-	route := ""
-	if classifyPrompt && classifier != nil {
-		verdict := classifier.Classify(ctx, text)
-		route = string(verdict.Route)
-		o.publishEv("CLASSIFICATION", state.ContentClassification, map[string]any{
-			"route":     route,
-			"rationale": verdict.Rationale,
-			"text":      classificationText(verdict),
-		}, ephemeral)
-		// v1: only respond_directly executes; reserved routes fall back to respond.
-	}
-
-	// Single-tool execution cycle: propose → policy/approval → execute → answer
-	// with the result folded in. A reserved route, disabled tools, or a no-tool
-	// proposal fall through to a normal answer.
-	if route == string(classify.SingleTool) && o.toolsReady() {
-		toolCtx, pin, handled, terr := o.runToolPhase(ctx, text)
-		if terr != nil {
-			// Interrupted while awaiting approval: end the cycle cleanly.
-			o.setProcessing(state.StateCompleted, state.PhaseNone)
-			return nil
-		}
-		if handled {
-			msgs := o.withContext(o.assembler.Assemble(text + toolCtx))
-			resp, respOrd, err := o.streamResponse(ctx, msgs, nil, false, ephemeral)
-			o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp, pin)
-			return o.finishCycle(err)
-		}
-	}
-
-	// Plan execution cycle: an imperative that spans multiple steps is decomposed and
-	// its leaves executed (real read tools) before the model answers, so the response is
-	// grounded in what was actually inspected rather than assumed. A decomposition that
-	// investigates nothing falls through to a normal answer.
-	if route == string(classify.InvokePlanner) && o.planReady() {
-		rootID := fmt.Sprintf("task-%d", userOrd)
-		planCtx, handled, perr := o.runPlanPhase(ctx, text, rootID)
-		if perr != nil {
-			o.setProcessing(state.StateCompleted, state.PhaseNone)
-			return nil
-		}
-		if handled {
-			// The synthesis over findings gets the same route-aware thinking pass as
-			// a direct answer would — grounding doesn't preclude reasoning.
-			doThink := o.thinkForRoute(route)
-			msgs := o.withContext(o.assembler.AssembleWithThinking(text+planCtx, o.thinkingPrompt(doThink), route))
-			fallback := o.withContext(o.assembler.Assemble(text + planCtx))
-			resp, respOrd, err := o.streamResponse(ctx, msgs, fallback, doThink, ephemeral)
-			// The model may correctly recognize its own investigation was incomplete
-			// and say so ("Let me examine the source code...") — without this, that
-			// stated intent silently never happens (clever-raven-3, amber-quartz).
-			// One bounded follow-up round, grounded in what this round already found.
-			if err == nil {
-				resp = o.maybeContinuePlan(ctx, route, text, rootID, planCtx, resp, doThink, ephemeral)
-			}
-			o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp, nil)
-			return o.finishCycle(err)
-		}
-	}
-
-	// Route-aware thinking: the verdict decides whether this turn reasons before
-	// answering, with a wall-clock budget that falls back to a direct answer.
-	doThink := o.thinkForRoute(route)
-	messages := o.withContext(o.assembler.AssembleWithThinking(text, o.thinkingPrompt(doThink), route))
-	fallback := o.withContext(o.assembler.Assemble(text))
-	resp, respOrd, err := o.streamResponse(ctx, messages, fallback, doThink, ephemeral)
-	o.maybeEmitTask(ctx, err, recordUserPrompt, userOrd, text, resp)
-	o.recordTurn(err, recordUserPrompt, userOrd, text, respOrd, resp, nil)
-	return o.finishCycle(err)
+	// Bootstrap's events are marked ephemeral so the context viewer omits them.
+	return o.runPrompt(ctx, text, false, true)
 }
 
 // recordTurn appends the completed turn to the in-memory conversation history when
@@ -667,13 +592,15 @@ func (o *Orchestrator) runPrompt(ctx context.Context, text string, recordUserPro
 // (recordTurn=false, like its user-prompt event) is excluded: it engages the
 // session but is irrelevant to the user's intent. Hard failures are not recorded.
 //
-// pin (single_tool cycle only; nil otherwise) registers this turn's tool_call and
-// tool_result as pinnable entries too, ordered between the user prompt and the
-// answer (their real chronological place). They start disabled — matching their
-// checkbox and state.DefaultEnabled — so nothing changes until the context surface
-// pins one; from then on it folds into every subsequent turn's assembled context,
-// same as any other toggled-on element, until unpinned.
-func (o *Orchestrator) recordTurn(err error, record bool, userOrd uint64, userText string, respOrd uint64, response string, pin *toolPin) {
+// pins registers every native tool call this turn made as pinnable entries
+// too (a turn may call more than one tool now, unlike the old single_tool
+// cycle's one-call-per-turn limit), ordered between the user prompt and the
+// answer (their real chronological place). They start disabled — matching
+// their checkbox and state.DefaultEnabled — so nothing changes until the
+// context surface pins one; from then on it folds into every subsequent
+// turn's assembled context, same as any other toggled-on element, until
+// unpinned.
+func (o *Orchestrator) recordTurn(err error, record bool, userOrd uint64, userText string, respOrd uint64, response string, pins []*toolPin) {
 	if !record {
 		return
 	}
@@ -685,7 +612,7 @@ func (o *Orchestrator) recordTurn(err error, record bool, userOrd uint64, userTe
 	if userText != "" {
 		o.history = append(o.history, turnMsg{ordinal: userOrd, role: "user", content: userText, enabled: true})
 	}
-	if pin != nil {
+	for _, pin := range pins {
 		if pin.callOrdinal != 0 {
 			o.history = append(o.history, turnMsg{ordinal: pin.callOrdinal, role: "tool",
 				content: "[pinned tool call] " + pin.callText, enabled: state.DefaultEnabled(state.ContentToolCall)})

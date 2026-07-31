@@ -78,12 +78,23 @@ func (o *Orchestrator) buildTaskClassifier() {
 	o.taskPipeline = pipeline.New(runner, c, digestMaxTurns)
 }
 
-// buildTaskExecutor wires the classifier's tasks to a real, verified execution
-// path, reusing the command stack. It builds only when the classifier is active
-// and tools are enabled (and none was injected); otherwise the classifier stays a
-// pure observer that emits task_proposed without executing. Caller holds o.mu.
+// noProposer is a stub executor.Proposer: plan_task's task records always
+// carry pre-resolved {"tool","args"} Params (the planner declares them at
+// generation time under JSON-schema-constrained decoding), so the fallback
+// Propose path is never actually taken — this exists only so executor.New
+// never holds a nil interface value.
+type noProposer struct{}
+
+func (noProposer) Propose(ctx context.Context, goal string) (tools.Proposal, bool) {
+	return tools.Proposal{}, false
+}
+
+// buildTaskExecutor wires resolved task records to a real, verified execution
+// path, reusing the command stack. It builds whenever tools are enabled (and
+// none was injected) — the plan_task tool needs it regardless of whether the
+// (unwired) task-classifier pipeline is active. Caller holds o.mu.
 func (o *Orchestrator) buildTaskExecutor() {
-	if o.taskExec != nil || o.taskPipeline == nil || !o.toolsReady() {
+	if o.taskExec != nil || !o.toolsReady() {
 		return
 	}
 	// Confine execution to the working directory; a task that would operate outside
@@ -105,7 +116,7 @@ func (o *Orchestrator) buildTaskExecutor() {
 		return newRes, ok
 	})
 	o.taskExec = executor.New(
-		o.proposer, o.registry, o.policy, o.runner,
+		noProposer{}, o.registry, o.policy, o.runner,
 		executor.FSVerifier{Root: root},
 		executor.WithRoot(root),
 		executor.WithApprover(approver),
@@ -423,8 +434,8 @@ func (o *Orchestrator) runDecomposition(ctx context.Context, root task.Record, e
 		return
 	}
 	msgs := o.withContext(o.assembler.Assemble(root.Goal + planCtx))
-	resp, respOrd, rerr := o.streamResponse(ctx, msgs, nil, false, false)
-	o.recordTurn(rerr, true, 0, "", respOrd, resp, nil)
+	resp, respOrd, rerr := o.streamResponse(ctx, msgs, nil, nil, false, false)
+	o.recordTurn(rerr, true, 0, "", respOrd, resp.Content, nil)
 	o.finishCycle(rerr)
 }
 

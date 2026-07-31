@@ -8,6 +8,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -50,6 +51,7 @@ type ArgSpec struct {
 // by validated argument values.
 type Descriptor struct {
 	ID               string
+	Description      string // model-facing summary; rendered into ToolSchemas' native tool-calling schema
 	Command          string   // backing argv[0]; "" => Go built-in
 	Argv             []string // argv template; "{name}" tokens are arg placeholders
 	StdinArg         string   // arg whose value is piped to stdin ("" => none)
@@ -58,6 +60,16 @@ type Descriptor struct {
 	Risk             RiskLevel
 	RequiresApproval bool
 	TimeoutSeconds   int
+}
+
+// ToolSchema is a provider-agnostic native tool-calling schema entry: a name, a
+// model-facing description, and its arguments as JSON Schema. internal/llm/* must
+// not import this package (import-direction matrix), so internal/runtime maps
+// ToolSchema to each provider's own wire-format Tool type.
+type ToolSchema struct {
+	Name        string
+	Description string
+	Parameters  json.RawMessage
 }
 
 // BuildArgv renders the descriptor's argv template against args, substituting

@@ -52,15 +52,19 @@ Purpose: collect implementation decisions required to finalize execution plannin
 1. Procedural prompts shipped as compiled assets or versioned files.
 2. Namespaced user prompt packs by profile/persona.
 3. Internal prompt integrity checks (hash or signature).
-4. Classification Stage 2 — user clarification on ambiguity (open). The classifier
-   offers K interpretations (`agentx.classification.clarification_options`); the user
-   selects one (number-press), which is appended to the prompt and resubmitted.
-   Undecided: (a) the new `clarification` event content type + whether a
-   `awaiting_input` processing state is added (both touch frozen contracts +
-   CHANGELOG); (b) how the number-select affordance coexists with the input/command
-   modes; (c) whether ambiguity is a first-class classifier outcome or only a
-   post-retry fallback. See `04_llm_prompt_tooling_runtime.md` (Classification Cycle)
-   and `../build-plan/03_chat_surface_backlog.md` (Phase D / Stage 2).
+4. ~~Classification Stage 2~~ — **moot as of the native tool-calling loop
+   (2026-07-31):** the classifier this depended on is no longer wired into the
+   main loop (see `04_llm_prompt_tooling_runtime.md`, "The Prompt/Response
+   Loop"). Superseded by item 5 below.
+5. Whether/how intent evaluation returns to the loop, now that
+   `classify`/`continuation`/the task-classifier pipeline are unwired but still
+   present in the tree (open). Two candidate shapes, not yet decided between:
+   (a) a hook (`internal/runtime/hooks`) that observes each turn and can trigger
+   a backgrounded follow-up, closer to the old `maybeEmitTask` behavior; (b) a
+   tool the model calls at its own discretion, the same treatment `plan_task`
+   got for decomposition. Depends on how reliable native tool-call detection
+   proves in practice — see `04_llm_prompt_tooling_runtime.md`'s "Legacy"
+   subsection.
 
 ### E. Persistence and Replay
 
@@ -98,3 +102,18 @@ Add accepted decisions below with date and rationale.
 - 2026-06-26: Froze Family A Phase 0 contracts under
   docs/architecture/runtime_contracts/ (index + event-envelope, processing-state, and
   surface-registration JSON schemas).
+- 2026-07-31: Replaced the classify → route → (single_tool | invoke_planner |
+  respond_directly) prompt cycle with a flat loop driven by the model's native
+  tool-calling (`internal/runtime/loop.go`). `classify`, `continuation`, and the
+  task-classifier pipeline (`prompting/pipeline`/`cascade`/`reconcile`/`corpus`)
+  are disconnected from the main loop but left in the tree, unwired — see open
+  question D.5. Decomposition/wavefront are no longer classifier-routed; they're
+  a single `plan_task` tool the model calls at its own discretion. A hooks
+  framework (`internal/runtime/hooks`) ships with no hooks registered — a
+  separate follow-up effort. Rationale and design discussion: this session;
+  motivated by CLAUDE.md's Context Curation principle (four independent
+  "should this turn act" layers, each assembling its own context, was the
+  opposite of deliberate context shaping) and by
+  docs/architecture/00_ARCHITECTURE_RECONCILIATION.md's mandate that the near-
+  term orchestrator stay simple (Family-B-shaped DAG/dispatcher machinery had
+  crept into what was supposed to be Family A).

@@ -883,3 +883,81 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Aligned reason-code and determinism contract documentation language across planning, execution, and validation references.
 - Clarified event-broker gate criteria documentation so promotion/acceptance checks are explicit and testable.
 - Clarified consistency-audit historical disposition language to distinguish prior findings from currently active remediation items.
+
+### Changed
+
+- **Replaced the classify-routed prompt cycle with a flat loop driven by the model's
+  own native tool-calling.** The prior cycle ran every prompt through a semantic
+  classifier (`respond_directly`/`single_tool`/`invoke_planner`), then branched into a
+  single-tool cycle, one of two decomposition engines, a regex-based continuation
+  detector, and a second, independent task-classifier pipeline that could spawn its
+  own background decomposition — four separate "should this turn act" decision layers,
+  each assembling its own context, the opposite of this project's Context Curation
+  motto (`CLAUDE.md`). The new loop (`internal/runtime/loop.go`,
+  `Orchestrator.runPrompt`) is: submit → LLM (advertising native tool schemas) →
+  detect tool calls vs a chat response → execute tools / run `plan_task` → loop, bounded
+  by a new `Settings.MaxToolIterationsPerTurn` (default 25).
+  - **Native tool-calling wire format**: `internal/llm/ollama` and
+    `internal/llm/llamacpp` now send a `tools` field and parse `tool_calls` from the
+    provider's own structured tool-calling API, replacing the hand-rolled
+    JSON-in-text convention (`tools.Proposer`/`ParseProposal`, retired).
+    `internal/tools.Registry.ToolSchemas` generates each tool's JSON Schema from its
+    `Descriptor` (a new `Description` field); `internal/runtime/model.go` maps
+    `tools.ToolSchema` to each provider's wire type, since `internal/llm/*` may not
+    import `internal/tools` (import-direction matrix). `Model.Chat` now returns
+    `ChatResult{Content, ToolCalls}` instead of a bare string.
+  - **`plan_task` tool**: decomposition/wavefront investigation is now a tool the
+    model calls at its own discretion (`internal/runtime/plan_tool.go`), not a
+    pre-classifier route — its description carries the "spans multiple steps/files"
+    judgment the old classifier prompt used to make ahead of time. Both engines
+    (`decompose.DrainPlan`, `wavefront.Scheduler`) are unchanged and reused as-is via
+    the existing `runPlanPhase`/`runWavefrontPhase` contract.
+  - **Hooks framework, shipped empty**: `internal/runtime/hooks` — a synchronous
+    chain (serial, registration order, mutates the live turn) and an asynchronous
+    fan-out (value-copy snapshot, fire-and-forget), firing after a new prompt and
+    after each round of tool execution. Registration is config-driven
+    (`Settings.HooksConfigPath`, a compiled-in `hooks.Available` factory registry) —
+    no hooks are registered in this change; the framework exists for a future
+    intent-evaluation or decomposition-as-hook effort to register into without
+    touching the loop. Includes a spawn-depth guardrail
+    (`hooks.CanSpawn`/`NextSpawnContext`) for a hook that spawns a recursive loop
+    instance.
+  - **`classify`, `continuation`, and the task-classifier pipeline**
+    (`prompting/pipeline`/`cascade`/`reconcile`/`corpus`) are disconnected from the
+    main loop but left in the tree, unwired, not deleted — `Orchestrator.Start` no
+    longer constructs or calls them. They may return as a hook or a tool once native
+    tool-call detection proves reliable enough to judge whether a separate intent
+    layer is still worth its cost (`docs/implementation/90_open_questions.md`, D.5).
+  - Fixed a latent coupling this surfaced: `buildTaskExecutor` was gated on the
+    task-classifier pipeline being present, meaning `plan_task`'s executor would never
+    have built without it; it now builds whenever tools are enabled.
+  - `Settings.ThinkingRoutes`/route-aware thinking depth is retired — thinking
+    (`Settings.ThinkingEnabled`) now applies uniformly, once per turn (before the
+    first model call, not before every tool-round-trip).
+  - Docs: `docs/implementation/04_llm_prompt_tooling_runtime.md` rewritten for the
+    new loop; `docs/implementation/90_open_questions.md` records the decision and the
+    open question about intent evaluation's return. Retagged (not deleted)
+    `tests/features/runtime/classify_respond_cycle.feature` and
+    `tests/features/runtime/task_classifier.feature` as
+    `@pending-hook-reintegration` since they test the now-unreachable classifier/
+    pipeline integration; their still-real coverage (thinking streams before the
+    response; thinking budget fallback) moved to the new
+    `tests/features/runtime/prompt_loop.feature`.
+  - Regression coverage: `internal/runtime/hooks/hooks_test.go` (registry ordering,
+    error-aborts-chain, async value-copy isolation, spawn-depth guardrail, config
+    load/build); `tests/features/runtime/prompt_loop.feature` (plain chat turn,
+    thinking, thinking-budget fallback, `plan_task`); updated
+    `tests/features/tools/tool_cycle.feature`/`tests/features/runtime/prompt_cycle.feature`
+    for the new (classification-free) event ordering.
+
+- **Fixed llama.cpp's native tool-calling to handle incremental streamed tool
+  calls.** `llamacpp.Client.Chat`'s SSE parser originally treated each streamed
+  `tool_calls` delta as a complete, self-contained call and appended it as-is —
+  correct only for a server that emits an entire call in one chunk, and silently
+  wrong (truncated/unparseable JSON) for llama.cpp's real OpenAI-compatible
+  incremental format, where a call's `id`/`function.name` arrive once on its first
+  fragment and `function.arguments` arrives split across many fragments keyed by
+  `index`. Fragments are now accumulated per index (`accumulatedToolCall`) and only
+  assembled into complete `ToolCall`s once the stream ends. Regression coverage:
+  `internal/llm/llamacpp/llamacpp_test.go` (single-chunk, fragmented-arguments,
+  interleaved-parallel-calls, content-only cases).

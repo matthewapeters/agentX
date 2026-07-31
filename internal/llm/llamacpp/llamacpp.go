@@ -30,18 +30,56 @@ func New(host string) *Client {
 	return &Client{baseURL: "http://" + host, http: http.DefaultClient, ctxLen: map[string]int{}}
 }
 
-// Message is a single chat message.
+// Message is a single chat message. ToolCalls is set on an assistant message
+// that invoked tools; ToolCallID is set on a role:"tool" message answering a
+// prior call (required by the OpenAI-compatible wire format llama.cpp speaks).
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
-// ChatRequest is a streaming chat request.
+// ToolFunction describes one callable tool: its name, a model-facing
+// description, and its arguments as a JSON Schema object.
+type ToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+}
+
+// Tool is a single entry in a ChatRequest's Tools list.
+type Tool struct {
+	Type     string       `json:"type"` // "function"
+	Function ToolFunction `json:"function"`
+}
+
+// ToolCall is a model-issued invocation of one Tool, OpenAI-compatible wire
+// shape: unlike Ollama, llama.cpp assigns an id and encodes Arguments as a
+// JSON-object string rather than a native object.
+type ToolCall struct {
+	ID       string `json:"id"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// ChatRequest is a streaming chat request. Tools, when non-empty, advertises
+// native tool-calling.
 type ChatRequest struct {
 	Model    string
 	Messages []Message
 	Think    bool
 	NumCtx   int
+	Tools    []Tool
+}
+
+// ChatResult is a completed chat turn: the assembled text content and any
+// native tool calls the model issued.
+type ChatResult struct {
+	Content   string
+	ToolCalls []ToolCall
 }
 
 // CompleteRequest is a non-streaming completion request.
@@ -50,9 +88,37 @@ type CompleteRequest struct {
 	Messages []Message
 }
 
+// toolCallDelta is one streamed fragment of a tool call, OpenAI's incremental
+// wire shape: Index identifies which call a fragment belongs to across
+// chunks; ID and Function.Name typically arrive once, on the first fragment
+// for that index, while Function.Arguments arrives split across many
+// fragments and must be concatenated, not treated as complete JSON on its
+// own.
+type toolCallDelta struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// accumulatedToolCall collects one tool call's fragments across the stream.
+type accumulatedToolCall struct {
+	id   string
+	name string
+	args strings.Builder
+}
+
 // Chat streams a chat completion, invoking onDelta for each content chunk
-// and onThink for each reasoning chunk, and returns the assembled response.
-func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink func(string)) (string, error) {
+// and onThink for each reasoning chunk, and returns the assembled response
+// plus any tool calls the model issued. llama.cpp's OpenAI-compatible stream
+// emits tool_calls incrementally, keyed by index — id/name usually arrive
+// once on a call's first fragment, arguments arrive split across many
+// fragments — so fragments are accumulated by index and only assembled into
+// complete ToolCalls once the stream ends, rather than treated as complete
+// calls on arrival.
+func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink func(string)) (ChatResult, error) {
 	payload := map[string]any{
 		"model":    req.Model,
 		"messages": req.Messages,
@@ -62,25 +128,30 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 	if req.NumCtx > 0 {
 		payload["n_ctx"] = req.NumCtx
 	}
+	if len(req.Tools) > 0 {
+		payload["tools"] = req.Tools
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("encode chat: %w", err)
+		return ChatResult{}, fmt.Errorf("encode chat: %w", err)
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("build chat: %w", err)
+		return ChatResult{}, fmt.Errorf("build chat: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("chat request: %w", err)
+		return ChatResult{}, fmt.Errorf("chat request: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("chat status %d: %s (model=%q)", resp.StatusCode, strings.TrimSpace(string(body)), req.Model)
+		return ChatResult{}, fmt.Errorf("chat status %d: %s (model=%q)", resp.StatusCode, strings.TrimSpace(string(body)), req.Model)
 	}
 	var assembled strings.Builder
+	calls := map[int]*accumulatedToolCall{}
+	var order []int // preserves first-seen index order regardless of map iteration
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -93,14 +164,14 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 		}
 		data := bytes.TrimPrefix(line, []byte("data: "))
 		trimmed := bytes.TrimSpace(data)
-		if len(trimmed) == 0 {
+		if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("[DONE]")) {
 			continue
 		}
-		// Skip done events
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string          `json:"content"`
+					ToolCalls []toolCallDelta `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
 		}
@@ -114,12 +185,35 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 				}
 				assembled.WriteString(c.Delta.Content)
 			}
+			for _, frag := range c.Delta.ToolCalls {
+				acc, ok := calls[frag.Index]
+				if !ok {
+					acc = &accumulatedToolCall{}
+					calls[frag.Index] = acc
+					order = append(order, frag.Index)
+				}
+				if frag.ID != "" {
+					acc.id = frag.ID
+				}
+				if frag.Function.Name != "" {
+					acc.name = frag.Function.Name
+				}
+				acc.args.WriteString(frag.Function.Arguments)
+			}
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return assembled.String(), fmt.Errorf("chat read: %w", err)
+	toolCalls := make([]ToolCall, 0, len(order))
+	for _, idx := range order {
+		acc := calls[idx]
+		tc := ToolCall{ID: acc.id}
+		tc.Function.Name = acc.name
+		tc.Function.Arguments = acc.args.String()
+		toolCalls = append(toolCalls, tc)
 	}
-	return assembled.String(), nil
+	if err := scanner.Err(); err != nil {
+		return ChatResult{Content: assembled.String(), ToolCalls: toolCalls}, fmt.Errorf("chat read: %w", err)
+	}
+	return ChatResult{Content: assembled.String(), ToolCalls: toolCalls}, nil
 }
 
 // Complete runs a non-streaming completion and returns the assembled response.
@@ -243,12 +337,56 @@ func (l *LlamacppProvider) FormatStyle() provider.FormatStyle {
 }
 
 // Chat streams a chat completion.
-func (l *LlamacppProvider) Chat(ctx context.Context, req provider.ChatRequest, onDelta, onThink func(string)) (string, error) {
+func (l *LlamacppProvider) Chat(ctx context.Context, req provider.ChatRequest, onDelta, onThink func(string)) (provider.ChatResult, error) {
 	msgs := make([]Message, len(req.Messages))
 	for i, m := range req.Messages {
-		msgs[i] = Message{Role: m.Role, Content: m.Content}
+		msgs[i] = toLlamacppMessage(m)
 	}
-	return l.Client.Chat(ctx, ChatRequest{Model: req.Model, Messages: msgs, Think: req.Think, NumCtx: req.NumCtx}, onDelta, onThink)
+	tools := make([]Tool, len(req.Tools))
+	for i, t := range req.Tools {
+		tools[i] = Tool{Type: t.Type, Function: ToolFunction{
+			Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters,
+		}}
+	}
+	res, err := l.Client.Chat(ctx, ChatRequest{Model: req.Model, Messages: msgs, Think: req.Think, NumCtx: req.NumCtx, Tools: tools}, onDelta, onThink)
+	if err != nil {
+		return provider.ChatResult{Content: res.Content}, err
+	}
+	return provider.ChatResult{Content: res.Content, ToolCalls: fromLlamacppToolCalls(res.ToolCalls)}, nil
+}
+
+// toLlamacppMessage converts a provider.Message to llama.cpp's OpenAI-compatible
+// wire shape, JSON-string-encoding ToolCalls arguments (llama.cpp/OpenAI expect
+// a string there, unlike Ollama's native object).
+func toLlamacppMessage(m provider.Message) Message {
+	out := Message{Role: m.Role, Content: m.Content, ToolCallID: m.ToolCallID}
+	if len(m.ToolCalls) == 0 {
+		return out
+	}
+	out.ToolCalls = make([]ToolCall, len(m.ToolCalls))
+	for i, tc := range m.ToolCalls {
+		args, _ := json.Marshal(tc.Arguments)
+		out.ToolCalls[i] = ToolCall{ID: tc.ID}
+		out.ToolCalls[i].Function.Name = tc.Name
+		out.ToolCalls[i].Function.Arguments = string(args)
+	}
+	return out
+}
+
+// fromLlamacppToolCalls decodes each call's JSON-string arguments into a
+// native map so provider.ToolCall's shape matches Ollama's regardless of
+// backend wire encoding.
+func fromLlamacppToolCalls(calls []ToolCall) []provider.ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]provider.ToolCall, len(calls))
+	for i, c := range calls {
+		var args map[string]any
+		_ = json.Unmarshal([]byte(c.Function.Arguments), &args)
+		out[i] = provider.ToolCall{ID: c.ID, Name: c.Function.Name, Arguments: args}
+	}
+	return out
 }
 
 // Complete runs a non-streaming completion.
