@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/cucumber/godog"
 
 	"agentx/internal/state"
@@ -39,17 +40,23 @@ func registerConfigConflictResolutionSteps(sc *godog.ScenarioContext) {
 	})
 
 	// --- Setup ---
-	sc.Step(`^a config surface loaded with initial config$`, w.setupSurface)
+	// NOTE: "a config surface loaded with initial config" is registered by
+	// config_external_change_steps.go to avoid duplicate step definitions.
 	sc.Step(`^the config surface has unsaved TUI changes$`, w.markUnsaved)
 
 	// --- Actions ---
-	sc.Step(`^an external editor modifies the config file "([^"]*)"$`, w.externalEdit)
+	// NOTE: "an external editor modifies the config file" is registered by
+	// config_external_change_steps.go to avoid duplicate step definitions.
+	sc.Step(`^the user selects "Keep TUI changes" and confirms$`, w.keepTUIChanges)
+	sc.Step(`^the user selects "Discard" and confirms$`, w.discardChanges)
 	sc.Step(`^a previous external change was detected at epoch (\d+)$`, w.previousExternalChange)
 	sc.Step(`^an external change is detected at epoch (\d+)$`, w.externalChangeDetected)
 	sc.Step(`^a second external change is detected at epoch (\d+)$`, w.secondExternalChange)
 	sc.Step(`^the config surface is saving$`, w.markSaving)
 	sc.Step(`^an external change is detected at epoch (\d+) while saving$`, w.externalChangeDuringSave)
 	sc.Step(`^the pending external event is processed$`, w.processPending)
+	// NOTE: "the status bar shows", "the hint row mentions", and "no double external change dialog was created" are registered by
+	// config_external_change_steps.go to avoid duplicate step definitions.
 
 	// --- Assertions ---
 	sc.Step(`^the config surface shows the conflict resolution dialog$`, w.conflictDialogShown)
@@ -57,12 +64,11 @@ func registerConfigConflictResolutionSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the config surface shows the external change dialog \(not conflict resolution\)$`, w.normalDialogShown)
 	sc.Step(`^the external change dialog has "([^"]*)" selected$`, w.externalDialogOptionSelected)
 	sc.Step(`^the config view does not contain the conflict resolution dialog$`, w.conflictDialogDismissed)
-	sc.Step(`^no double external change dialog was created$`, w.noDoubleDialog)
+	// NOTE: "no double external change dialog was created", "the status bar shows", and "the hint row mentions" are registered by
+	// config_external_change_steps.go to avoid duplicate step definitions.
 	sc.Step(`^the last external event epoch is (\d+)$`, w.lastEventEpochIs)
 	sc.Step(`^the external change is queued$`, w.externalChangeQueued)
 	sc.Step(`^the pending external event is cleared$`, w.pendingEventCleared)
-	sc.Step(`^the status bar shows "([^"]*)"$`, w.statusBarShows)
-	sc.Step(`^the hint row mentions "([^"]*)"$`, w.hintRowMentions)
 }
 
 // setupSurface creates a config surface pre-loaded with initial config.
@@ -292,6 +298,46 @@ func (w *configConflictWorld) externalChangeQueued() error {
 	if w.model.Data.PendingExternalEvent == nil {
 		return fmt.Errorf("expected PendingExternalEvent to be set during save")
 	}
+	return nil
+}
+
+// keepTUIChanges selects "Keep TUI changes" and confirms.
+func (w *configConflictWorld) keepTUIChanges() error {
+	if w.model == nil {
+		return fmt.Errorf("no config surface")
+	}
+	if w.model.Data.Dialog == nil {
+		return fmt.Errorf("no dialog shown")
+	}
+	// Find and select "Keep TUI changes" option.
+	for i, opt := range w.model.Data.Dialog.Options {
+		if opt == "Keep TUI changes" {
+			w.model.Data.Dialog.Selected = i
+			break
+		}
+	}
+	// Confirm by pressing enter.
+	w.model.Key(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
+	return nil
+}
+
+// discardChanges selects "Discard" and confirms.
+func (w *configConflictWorld) discardChanges() error {
+	if w.model == nil {
+		return fmt.Errorf("no config surface")
+	}
+	if w.model.Data.Dialog == nil {
+		return fmt.Errorf("no dialog shown")
+	}
+	// Find and select "Discard" option.
+	for i, opt := range w.model.Data.Dialog.Options {
+		if opt == "Discard" {
+			w.model.Data.Dialog.Selected = i
+			break
+		}
+	}
+	// Confirm by pressing enter.
+	w.model.Key(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
 	return nil
 }
 
