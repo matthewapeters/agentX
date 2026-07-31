@@ -37,6 +37,19 @@ type ConfigModel struct {
 	client *transporthttp.Client
 	// token is the attach token for authorized requests.
 	token string
+
+	// fetchOverride, when set, is used by FetchConfig instead of the transport
+	// client. Tests set this to simulate what the orchestrator would return
+	// from GET /config without a live HTTP server.
+	fetchOverride func() (map[string]any, map[string]provider.SchemaField, error)
+}
+
+// SetTestFetchOverride installs a fetch function used by FetchConfig instead
+// of the transport client. Exported for use by test step definitions that
+// drive external-change handling (handleExternalConfigChange) without a live
+// orchestrator.
+func (m *ConfigModel) SetTestFetchOverride(f func() (map[string]any, map[string]provider.SchemaField, error)) {
+	m.fetchOverride = f
 }
 
 // New returns a config model sized to 80×24 by default, bound to the given
@@ -77,11 +90,17 @@ func NewFromConfig(cfg map[string]any, schema map[string]provider.SchemaField, w
 // orchestrator, merging them into the model's internal tree. Returns nil on
 // success, or an error if either read fails.
 func (m *ConfigModel) FetchConfig() error {
-	if m.client == nil {
+	var fetch func() (map[string]any, map[string]provider.SchemaField, error)
+	switch {
+	case m.fetchOverride != nil:
+		fetch = m.fetchOverride
+	case m.client != nil:
+		fetch = m.client.FetchConfigSchema
+	default:
 		m.Err = fmt.Errorf("no transport client")
 		return m.Err
 	}
-	cfg, schema, err := m.client.FetchConfigSchema()
+	cfg, schema, err := fetch()
 	if err != nil {
 		m.Err = err
 		m.Data = modelData{Selected: -1, Cursor: -1, Expanded: m.Data.Expanded}
@@ -89,10 +108,18 @@ func (m *ConfigModel) FetchConfig() error {
 	}
 	m.Err = nil
 	m.schema = schema
+	// handleExternalConfigChange calls FetchConfig mid-session (not just at
+	// initial load) to refresh the tree during external-change diffing. The
+	// rebuild below replaces the whole Data struct, so bookkeeping fields
+	// that were just set moments earlier in the same call — namely the
+	// surface-side debounce timestamp — must be carried across explicitly or
+	// they're silently lost, permanently defeating the debounce check.
+	lastExternalEventAt := m.Data.LastExternalEventAt
 	m.Data = BuildTree(cfg, schema)
 	m.Data.Selected = 0
 	m.Data.Cursor = 0
 	m.Data.SaveStatus = SaveStateLoaded
+	m.Data.LastExternalEventAt = lastExternalEventAt
 	return nil
 }
 
@@ -112,41 +139,30 @@ func (m *ConfigModel) LoadConfigDirect(cfg map[string]any, schema map[string]pro
 // diffs it against the model's current state, populates HighlightedKeys,
 // and shows the external-change dialog. It replaces the transport-dependent
 // fetch+diff pipeline for testing purposes.
+//
+// It shares conflictResolveIfUnsaved/applyExternalDiff with
+// handleExternalConfigChange so the Phase 3c conflict-resolution behavior
+// (TUI changes take precedence over an unsaved-conflicting external edit) is
+// exercised identically whether the change arrives via a real config_changed
+// event or this test helper.
 func (m *ConfigModel) SimulateExternalChange(modifiedCfg map[string]any, path string) error {
+	if m.conflictResolveIfUnsaved(path, 0) {
+		return nil
+	}
+
+	// Mirror handleExternalConfigChange's surface-side debounce: a
+	// notification that arrives while an external-change dialog is already
+	// pending is coalesced (left untouched) rather than re-diffed. Without
+	// this, a second simulated notification would recompute OldHash against
+	// the already-loaded (post-first-change) state instead of the original
+	// pre-change baseline.
+	if m.Data.Dialog != nil && m.Data.Dialog.Kind == dialogExternalFile && m.Data.ExternalChange != nil {
+		return nil
+	}
+
 	oldSections := snapshotSections(m.Data.Sections)
-	oldHash := configHash(m.Data.Sections)
-
 	m.LoadConfigDirect(modifiedCfg, m.schema)
-
-	newHash := configHash(m.Data.Sections)
-
-	var changedKeys []string
-	if oldHash != newHash {
-		changedKeys = diffSections(oldSections, m.Data.Sections)
-	}
-
-	m.Data.ExternalChange = &externalChangeState{
-		Path:        path,
-		ChangedAt:   0,
-		OldHash:     oldHash,
-		NewHash:     newHash,
-		ChangedKeys: changedKeys,
-	}
-	m.Data.HighlightedKeys = make(map[string]bool, len(changedKeys))
-	for _, k := range changedKeys {
-		m.Data.HighlightedKeys[k] = true
-	}
-
-	m.Data.Dialog = &dialogState{
-		Kind:     dialogExternalFile,
-		Title:    "File changed externally",
-		Message:  "agentx.toml was modified externally. Reload?",
-		Options:  []string{"Reload", "Keep changes", "Discard changes"},
-		Selected: 0,
-		Source:   path,
-	}
-	m.Data.SaveStatus = SaveStateSaved
-	m.Data.SaveMsg = fmt.Sprintf("external change detected (%d keys)", len(changedKeys))
+	m.applyExternalDiff(oldSections, path, 0)
 	return nil
 }
 
@@ -327,11 +343,13 @@ func formatValue(v any) string {
 	}
 }
 
-// surfaceDebounceWindowSec is the surface-side debounce window (in seconds)
-// for external change detection. Events arriving within this window of the
-// previous event are coalesced into a single notification. Matches the
-// orchestrator-side debounceWindow (100ms).
-const surfaceDebounceWindowSec = 1
+// surfaceDebounceWindowMillis is the surface-side debounce window (in
+// milliseconds) for external change detection. Events arriving within this
+// window of the previous event are coalesced into a single notification.
+// state.Event.Epoch is always stamped with time.Now().UnixMilli() (see e.g.
+// internal/runtime/orchestrator.go), so this window must be compared in the
+// same unit — milliseconds, not seconds.
+const surfaceDebounceWindowMillis = 1000
 
 // colorPalette is the built-in named-color palette for the color picker.
 var colorPalette = []colorSwatch{
@@ -1721,7 +1739,7 @@ func (m *ConfigModel) handleExternalConfigChange(ev state.Event) {
 	// on any existing ExternalChange but do not re-trigger the full handler.
 	if m.Data.LastExternalEventAt > 0 {
 		elapsed := ev.Epoch - m.Data.LastExternalEventAt
-		if elapsed < surfaceDebounceWindowSec {
+		if elapsed < surfaceDebounceWindowMillis {
 			// Coalesce: update the existing ExternalChange's timestamp if we have one.
 			if m.Data.ExternalChange != nil {
 				m.Data.ExternalChange.ChangedAt = ev.Epoch
@@ -1742,22 +1760,7 @@ func (m *ConfigModel) handleExternalConfigChange(ev state.Event) {
 
 	// Phase 3c: conflict resolution — if the TUI has unsaved changes, prefer
 	// TUI state over the external file change.
-	if m.Data.SaveStatus == SaveStateUnsaved || m.Data.UnsavedChanges {
-		m.Data.ExternalChangeDiscarded = true
-		m.Data.ExternalChange = &externalChangeState{
-			Path:      changePath,
-			ChangedAt: ev.Epoch,
-		}
-		m.Data.Dialog = &dialogState{
-			Kind:     dialogExternalFile,
-			Title:    "TUI changes take precedence",
-			Message:  "You have unsaved changes in the TUI. The external file change is discarded.",
-			Options:  []string{"Keep TUI changes", "Discard"},
-			Selected: 0, // "Keep TUI changes" is the default — TUI wins.
-			Source:   changePath,
-		}
-		m.Data.SaveStatus = SaveStateUnsaved
-		m.Data.SaveMsg = fmt.Sprintf("external change discarded (TUI changes take precedence)")
+	if m.conflictResolveIfUnsaved(changePath, ev.Epoch) {
 		return
 	}
 
@@ -1771,14 +1774,46 @@ func (m *ConfigModel) handleExternalConfigChange(ev state.Event) {
 		return
 	}
 
-	// Compute hashes for quick-equal check.
+	m.applyExternalDiff(oldSections, changePath, ev.Epoch)
+}
+
+// conflictResolveIfUnsaved shows the "TUI changes take precedence" dialog and
+// discards the external change when the TUI has unsaved edits. Returns true
+// if it handled the change (the caller should stop processing).
+func (m *ConfigModel) conflictResolveIfUnsaved(changePath string, epoch int64) bool {
+	if m.Data.SaveStatus != SaveStateUnsaved && !m.Data.UnsavedChanges {
+		return false
+	}
+	m.Data.ExternalChangeDiscarded = true
+	m.Data.ExternalChange = &externalChangeState{
+		Path:      changePath,
+		ChangedAt: epoch,
+	}
+	m.Data.Dialog = &dialogState{
+		Kind:     dialogExternalFile,
+		Title:    "TUI changes take precedence",
+		Message:  "You have unsaved changes in the TUI. The external file change is discarded.",
+		Options:  []string{"Keep TUI changes", "Discard"},
+		Selected: 0, // "Keep TUI changes" is the default — TUI wins.
+		Source:   changePath,
+	}
+	m.Data.SaveStatus = SaveStateUnsaved
+	m.Data.SaveMsg = "external change discarded (TUI changes take precedence)"
+	return true
+}
+
+// applyExternalDiff diffs the already-loaded m.Data.Sections against
+// oldSections (a pre-load snapshot), highlights changed keys, and shows the
+// reload prompt dialog. Shared by handleExternalConfigChange (real fetch) and
+// SimulateExternalChange (test helper — the config is already loaded).
+func (m *ConfigModel) applyExternalDiff(oldSections []section, changePath string, epoch int64) {
 	oldHash := configHash(oldSections)
 	newHash := configHash(m.Data.Sections)
 
 	if oldHash == newHash {
 		m.Data.ExternalChange = &externalChangeState{
 			Path:      changePath,
-			ChangedAt: ev.Epoch,
+			ChangedAt: epoch,
 			OldHash:   oldHash,
 			NewHash:   newHash,
 		}
@@ -1792,7 +1827,7 @@ func (m *ConfigModel) handleExternalConfigChange(ev state.Event) {
 
 	m.Data.ExternalChange = &externalChangeState{
 		Path:        changePath,
-		ChangedAt:   ev.Epoch,
+		ChangedAt:   epoch,
 		OldHash:     oldHash,
 		NewHash:     newHash,
 		ChangedKeys: changedKeys,
@@ -1806,10 +1841,10 @@ func (m *ConfigModel) handleExternalConfigChange(ev state.Event) {
 
 	// Show the reload prompt dialog.
 	m.Data.Dialog = &dialogState{
-		Kind:    dialogExternalFile,
-		Title:   "File changed externally",
-		Message: fmt.Sprintf("agentx.toml was modified externally. Reload?"),
-		Options: []string{"Reload", "Keep changes", "Discard changes"},
+		Kind:     dialogExternalFile,
+		Title:    "File changed externally",
+		Message:  "agentx.toml was modified externally. Reload?",
+		Options:  []string{"Reload", "Keep changes", "Discard changes"},
 		Selected: 0,
 		Source:   changePath,
 	}

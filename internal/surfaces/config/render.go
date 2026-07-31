@@ -427,8 +427,12 @@ func (m *ConfigModel) renderExternalChangeOverlay() string {
 	b.WriteString("\n")
 	b.WriteString(dialogTitleStyle.Render("┌" + strings.Repeat("─", width-2) + "┐") + "\n")
 
-	// Title with file path.
-	title := "File changed externally"
+	// Title with file path. dlg.Title distinguishes the standard reload
+	// prompt ("File changed externally") from the Phase 3c conflict
+	// resolution dialog ("TUI changes take precedence") — both share
+	// Kind == dialogExternalFile, so the title must come from the dialog
+	// state, not be hardcoded.
+	title := dlg.Title
 	if ec != nil && ec.Path != "" {
 		title += " · " + ec.Path
 	}

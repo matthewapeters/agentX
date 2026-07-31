@@ -14,27 +14,30 @@ import (
 	"agentx/internal/surfaces/config"
 )
 
-// configConflictWorld holds state for Phase 3c config conflict resolution steps.
+// configConflictWorld holds state for Phase 3c config conflict resolution
+// steps. It shares its config surface model with configExternalChangeWorld
+// (via `shared`) because "Given a config surface loaded with initial config"
+// is only registered once, on the Phase 3b world — without sharing, every
+// scenario in config_conflict_resolution.feature would see a nil model.
 type configConflictWorld struct {
-	model        *config.ConfigModel
-	simulatedCfg map[string]any
-	prevEpoch    int64
+	shared    *configExternalChangeWorld
+	prevEpoch int64
 }
 
+func (w *configConflictWorld) model() *config.ConfigModel { return w.shared.model }
+
 // registerConfigConflictResolutionSteps wires the Phase 3c config conflict
-// resolution steps.
-func registerConfigConflictResolutionSteps(sc *godog.ScenarioContext) {
-	w := &configConflictWorld{}
+// resolution steps. shared is the world populated by
+// registerConfigExternalChangeSteps, which owns the "Given a config surface
+// loaded with initial config" step.
+func registerConfigConflictResolutionSteps(sc *godog.ScenarioContext, shared *configExternalChangeWorld) {
+	w := &configConflictWorld{shared: shared}
 
 	sc.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
-		w.model = nil
-		w.simulatedCfg = nil
 		w.prevEpoch = 0
 		return ctx, nil
 	})
 	sc.After(func(ctx context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
-		w.model = nil
-		w.simulatedCfg = nil
 		w.prevEpoch = 0
 		return ctx, nil
 	})
@@ -71,58 +74,33 @@ func registerConfigConflictResolutionSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the pending external event is cleared$`, w.pendingEventCleared)
 }
 
-// setupSurface creates a config surface pre-loaded with initial config.
-func (w *configConflictWorld) setupSurface() error {
-	cfg, schema := seedConfig()
-	w.simulatedCfg = cfg
-	w.model = config.NewFromConfig(cfg, schema, 80, 24, nil, "")
-	return nil
-}
-
 // markUnsaved puts the TUI in unsaved state.
 func (w *configConflictWorld) markUnsaved() error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	w.model.Data.SaveStatus = config.SaveStateUnsaved
-	w.model.Data.UnsavedChanges = true
+	m.Data.SaveStatus = config.SaveStateUnsaved
+	m.Data.UnsavedChanges = true
 	return nil
-}
-
-// externalEdit simulates an external file modification by changing the
-// simulated config.
-func (w *configConflictWorld) externalEdit(path string) error {
-	if w.model == nil {
-		return fmt.Errorf("no config surface")
-	}
-	if w.simulatedCfg == nil {
-		return fmt.Errorf("no simulated config")
-	}
-	if agentx, ok := w.simulatedCfg["agentx"].(map[string]any); ok {
-		if ollama, ok := agentx["ollama"].(map[string]any); ok {
-			if _, ok := ollama["host"]; ok {
-				ollama["host"] = "localhost:11435"
-			}
-		}
-	}
-	// Use SimulateExternalChange to trigger the full diff+dialog flow.
-	return w.model.SimulateExternalChange(w.simulatedCfg, path)
 }
 
 // previousExternalChange sets the LastExternalEventAt timestamp to simulate a
 // previously processed event (for debounce testing).
 func (w *configConflictWorld) previousExternalChange(epoch int64) error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	w.model.Data.LastExternalEventAt = epoch
+	m.Data.LastExternalEventAt = epoch
 	w.prevEpoch = epoch
 	return nil
 }
 
 // externalChangeDetected sends a config_changed event at the given epoch.
 func (w *configConflictWorld) externalChangeDetected(epoch int64) error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
 	ev := state.Event{
@@ -132,7 +110,7 @@ func (w *configConflictWorld) externalChangeDetected(epoch int64) error {
 		ContentType: state.ContentConfigChanged,
 		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
 	}
-	w.model.Apply(ev)
+	m.Apply(ev)
 	return nil
 }
 
@@ -143,17 +121,19 @@ func (w *configConflictWorld) secondExternalChange(epoch int64) error {
 
 // markSaving puts the model in saving state.
 func (w *configConflictWorld) markSaving() error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	w.model.Data.SaveStatus = config.SaveStateSaving
+	m.Data.SaveStatus = config.SaveStateSaving
 	return nil
 }
 
 // externalChangeDuringSave sends a config_changed event while the model is
 // in saving state, which should queue the event.
 func (w *configConflictWorld) externalChangeDuringSave(epoch int64) error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
 	ev := state.Event{
@@ -163,28 +143,38 @@ func (w *configConflictWorld) externalChangeDuringSave(epoch int64) error {
 		ContentType: state.ContentConfigChanged,
 		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
 	}
-	w.model.Apply(ev)
+	m.Apply(ev)
 	return nil
 }
 
-// processPending triggers processPendingExternalEvent.
+// processPending triggers processPendingExternalEvent. Per the scenario name
+// ("Queued external change is processed after save completes"), this
+// simulates the save having finished — production only calls
+// ProcessPendingExternalEvent once the in-flight POST /config completes and
+// SaveStatus has moved off SaveStateSaving; otherwise
+// handleExternalConfigChange would just re-queue the event.
 func (w *configConflictWorld) processPending() error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	w.model.ProcessPendingExternalEvent()
+	if m.Data.SaveStatus == config.SaveStateSaving {
+		m.Data.SaveStatus = config.SaveStateSaved
+	}
+	m.ProcessPendingExternalEvent()
 	return nil
 }
 
 // conflictDialogShown checks that the conflict resolution dialog is shown.
 func (w *configConflictWorld) conflictDialogShown() error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	if w.model.Data.Dialog == nil {
+	if m.Data.Dialog == nil {
 		return fmt.Errorf("no dialog shown")
 	}
-	view := w.model.View()
+	view := m.View()
 	if !strings.Contains(view, "TUI changes take precedence") {
 		return fmt.Errorf("conflict resolution dialog not visible in view: %s", view)
 	}
@@ -193,24 +183,25 @@ func (w *configConflictWorld) conflictDialogShown() error {
 
 // conflictDialogOptionSelected checks that the specified option is selected.
 func (w *configConflictWorld) conflictDialogOptionSelected(option string) error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	if w.model.Data.Dialog == nil {
+	if m.Data.Dialog == nil {
 		return fmt.Errorf("no dialog shown")
 	}
-	if w.model.Data.Dialog.Selected != 0 {
-		return fmt.Errorf("expected selected option 0, got %d", w.model.Data.Dialog.Selected)
+	if m.Data.Dialog.Selected != 0 {
+		return fmt.Errorf("expected selected option 0, got %d", m.Data.Dialog.Selected)
 	}
 	found := false
-	for _, opt := range w.model.Data.Dialog.Options {
+	for _, opt := range m.Data.Dialog.Options {
 		if opt == option {
 			found = true
 			break
 		}
 	}
 	if !found {
-		return fmt.Errorf("option %q not found in dialog options: %v", option, w.model.Data.Dialog.Options)
+		return fmt.Errorf("option %q not found in dialog options: %v", option, m.Data.Dialog.Options)
 	}
 	return nil
 }
@@ -218,13 +209,14 @@ func (w *configConflictWorld) conflictDialogOptionSelected(option string) error 
 // normalDialogShown checks that the standard external change dialog is shown
 // (not the conflict resolution dialog).
 func (w *configConflictWorld) normalDialogShown() error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	if w.model.Data.Dialog == nil {
+	if m.Data.Dialog == nil {
 		return fmt.Errorf("no dialog shown")
 	}
-	view := w.model.View()
+	view := m.View()
 	if !strings.Contains(view, "File changed externally") {
 		return fmt.Errorf("external change dialog not visible in view: %s", view)
 	}
@@ -237,65 +229,58 @@ func (w *configConflictWorld) normalDialogShown() error {
 // externalDialogOptionSelected checks that the specified option is selected in
 // the standard external change dialog.
 func (w *configConflictWorld) externalDialogOptionSelected(option string) error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	if w.model.Data.Dialog == nil {
+	if m.Data.Dialog == nil {
 		return fmt.Errorf("no dialog shown")
 	}
 	found := false
-	for _, opt := range w.model.Data.Dialog.Options {
+	for _, opt := range m.Data.Dialog.Options {
 		if opt == option {
 			found = true
 			break
 		}
 	}
 	if !found {
-		return fmt.Errorf("option %q not found in dialog options: %v", option, w.model.Data.Dialog.Options)
+		return fmt.Errorf("option %q not found in dialog options: %v", option, m.Data.Dialog.Options)
 	}
 	return nil
 }
 
 // conflictDialogDismissed checks that the conflict resolution dialog is gone.
 func (w *configConflictWorld) conflictDialogDismissed() error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	view := w.model.View()
+	view := m.View()
 	if strings.Contains(view, "TUI changes take precedence") {
 		return fmt.Errorf("conflict resolution dialog still visible: %s", view)
 	}
 	return nil
 }
 
-// noDoubleDialog checks that only one external change dialog exists.
-func (w *configConflictWorld) noDoubleDialog() error {
-	if w.model == nil {
-		return fmt.Errorf("no config surface")
-	}
-	if w.model.Data.ExternalChange == nil {
-		return fmt.Errorf("expected ExternalChange to persist after debounce")
-	}
-	return nil
-}
-
 // lastEventEpochIs checks the LastExternalEventAt timestamp.
 func (w *configConflictWorld) lastEventEpochIs(want int64) error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	if w.model.Data.LastExternalEventAt != want {
-		return fmt.Errorf("LastExternalEventAt = %d, want %d", w.model.Data.LastExternalEventAt, want)
+	if m.Data.LastExternalEventAt != want {
+		return fmt.Errorf("LastExternalEventAt = %d, want %d", m.Data.LastExternalEventAt, want)
 	}
 	return nil
 }
 
 // externalChangeQueued checks that the event is queued.
 func (w *configConflictWorld) externalChangeQueued() error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	if w.model.Data.PendingExternalEvent == nil {
+	if m.Data.PendingExternalEvent == nil {
 		return fmt.Errorf("expected PendingExternalEvent to be set during save")
 	}
 	return nil
@@ -303,76 +288,54 @@ func (w *configConflictWorld) externalChangeQueued() error {
 
 // keepTUIChanges selects "Keep TUI changes" and confirms.
 func (w *configConflictWorld) keepTUIChanges() error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	if w.model.Data.Dialog == nil {
+	if m.Data.Dialog == nil {
 		return fmt.Errorf("no dialog shown")
 	}
 	// Find and select "Keep TUI changes" option.
-	for i, opt := range w.model.Data.Dialog.Options {
+	for i, opt := range m.Data.Dialog.Options {
 		if opt == "Keep TUI changes" {
-			w.model.Data.Dialog.Selected = i
+			m.Data.Dialog.Selected = i
 			break
 		}
 	}
 	// Confirm by pressing enter.
-	w.model.Key(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
+	m.Key(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
 	return nil
 }
 
 // discardChanges selects "Discard" and confirms.
 func (w *configConflictWorld) discardChanges() error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	if w.model.Data.Dialog == nil {
+	if m.Data.Dialog == nil {
 		return fmt.Errorf("no dialog shown")
 	}
 	// Find and select "Discard" option.
-	for i, opt := range w.model.Data.Dialog.Options {
+	for i, opt := range m.Data.Dialog.Options {
 		if opt == "Discard" {
-			w.model.Data.Dialog.Selected = i
+			m.Data.Dialog.Selected = i
 			break
 		}
 	}
 	// Confirm by pressing enter.
-	w.model.Key(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
+	m.Key(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
 	return nil
 }
 
 // pendingEventCleared checks that the queued event is gone.
 func (w *configConflictWorld) pendingEventCleared() error {
-	if w.model == nil {
+	m := w.model()
+	if m == nil {
 		return fmt.Errorf("no config surface")
 	}
-	if w.model.Data.PendingExternalEvent != nil {
-		return fmt.Errorf("expected PendingExternalEvent to be nil after processing, got: %+v", w.model.Data.PendingExternalEvent)
+	if m.Data.PendingExternalEvent != nil {
+		return fmt.Errorf("expected PendingExternalEvent to be nil after processing, got: %+v", m.Data.PendingExternalEvent)
 	}
 	return nil
 }
-
-// statusBarShows checks the status bar message.
-func (w *configConflictWorld) statusBarShows(msg string) error {
-	if w.model == nil {
-		return fmt.Errorf("no config surface")
-	}
-	if !strings.Contains(w.model.Data.SaveMsg, msg) {
-		return fmt.Errorf("status bar does not contain %q (got: %q)", msg, w.model.Data.SaveMsg)
-	}
-	return nil
-}
-
-// hintRowMentions checks the hint row for a specific keybinding mention.
-func (w *configConflictWorld) hintRowMentions(text string) error {
-	if w.model == nil {
-		return fmt.Errorf("no config surface")
-	}
-	view := w.model.View()
-	if !strings.Contains(view, text) {
-		return fmt.Errorf("view does not mention %q (got: %s)", text, view)
-	}
-	return nil
-}
-
-

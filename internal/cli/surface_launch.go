@@ -281,7 +281,19 @@ func surfaceModelFor(kind string, res LaunchResult, sessionName string) (client.
 		if sessionName != "" {
 			title += " · " + sessionName
 		}
-		return configsurface.New(transporthttp.NewClient(res.Endpoint), res.Token), title, true
+		// config is document-based, not event-stream-based (PD-CONFIG_spec.md
+		// architecture decision #2): unlike context/logs, its state isn't
+		// reconstructed from the Host's seed+live session-event stream, so it
+		// must read agentx.toml via GET /config itself. Host has no fetch hook
+		// (SurfaceModel is Apply/SetSize/Key/View/CapturesKeys only, driven
+		// purely by session events), so the initial fetch happens here, before
+		// client.Run starts the TUI loop — the only point where mutating the
+		// model directly is safe without racing the render goroutine. A failed
+		// fetch is not fatal: it's stored in m.Err and rendered by View()
+		// (renderError) once the surface comes up.
+		m := configsurface.New(transporthttp.NewClient(res.Endpoint), res.Token)
+		_ = m.FetchConfig()
+		return m, title, true
 	case "context":
 		title := "context"
 		if sessionName != "" {

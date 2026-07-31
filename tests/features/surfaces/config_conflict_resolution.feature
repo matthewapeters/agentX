@@ -20,6 +20,7 @@ Feature: Config surface — conflict resolution and edge cases (Phase 3c)
     Given a config surface loaded with initial config
     And the config surface has unsaved TUI changes
     When an external editor modifies the config file "/tmp/agentx.toml"
+    And the config surface detects an external change
     Then the config surface shows the conflict resolution dialog
     And the conflict resolution dialog has "Keep TUI changes" selected
     And the status bar shows "external change discarded"
@@ -30,6 +31,7 @@ Feature: Config surface — conflict resolution and edge cases (Phase 3c)
     Given a config surface loaded with initial config
     And the config surface has unsaved TUI changes
     When an external editor modifies the config file "/tmp/agentx.toml"
+    And the config surface detects an external change
     And the user selects "Keep TUI changes" and confirms
     Then the config view does not contain the conflict resolution dialog
     And the status bar shows "TUI changes take precedence"
@@ -39,6 +41,7 @@ Feature: Config surface — conflict resolution and edge cases (Phase 3c)
     Given a config surface loaded with initial config
     And the config surface has unsaved TUI changes
     When an external editor modifies the config file "/tmp/agentx.toml"
+    And the config surface detects an external change
     And the user selects "Discard" and confirms
     Then the config view does not contain the conflict resolution dialog
 
@@ -46,6 +49,7 @@ Feature: Config surface — conflict resolution and edge cases (Phase 3c)
   Scenario: Normal external change dialog when TUI has no unsaved changes
     Given a config surface loaded with initial config
     When an external editor modifies the config file "/tmp/agentx.toml"
+    And the config surface detects an external change
     Then the config surface shows the external change dialog (not conflict resolution)
     And the external change dialog has "Reload" selected
 
@@ -86,4 +90,5 @@ Feature: Config surface — conflict resolution and edge cases (Phase 3c)
     Given a config surface loaded with initial config
     And the config surface has unsaved TUI changes
     When an external editor modifies the config file "/tmp/agentx.toml"
+    And the config surface detects an external change
     Then the hint row mentions "Keep TUI changes"

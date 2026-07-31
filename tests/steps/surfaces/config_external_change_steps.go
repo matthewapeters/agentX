@@ -11,7 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/cucumber/godog"
 
-	"agentx/internal/state"
+	"agentx/internal/llm/provider"
 	"agentx/internal/surfaces/config"
 )
 
@@ -23,7 +23,11 @@ type configExternalChangeWorld struct {
 }
 
 // registerConfigExternalChangeSteps wires the Phase 3b config surface steps.
-func registerConfigExternalChangeSteps(sc *godog.ScenarioContext) {
+// It returns the world so Phase 3c (config_conflict_resolution_steps.go) can
+// share the same config surface model instance rather than standing up its
+// own, which "Given a config surface loaded with initial config" never
+// populates.
+func registerConfigExternalChangeSteps(sc *godog.ScenarioContext) *configExternalChangeWorld {
 	w := &configExternalChangeWorld{}
 
 	sc.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
@@ -59,13 +63,23 @@ func registerConfigExternalChangeSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the status bar shows "([^"]*)"$`, w.statusBarShows)
 	sc.Step(`^the hint row mentions "([^"]*)"$`, w.hintRowMentions)
 	sc.Step(`^no double external change dialog was created$`, w.noDoubleDialog)
+
+	return w
 }
 
-// setupSurface creates a config surface pre-loaded with initial config.
+// setupSurface creates a config surface pre-loaded with initial config. It
+// wires a fetch override so handleExternalConfigChange's real re-fetch path
+// (m.FetchConfig, used by config_changed events applied via w.model.Apply)
+// succeeds against w.simulatedConfig instead of requiring a live transport
+// client — otherwise every non-conflict external-change event would fail at
+// the fetch step with "no transport client".
 func (w *configExternalChangeWorld) setupSurface() error {
 	cfg, schema := seedConfig()
 	w.simulatedConfig = cfg
 	w.model = config.NewFromConfig(cfg, schema, 80, 24, nil, "")
+	w.model.SetTestFetchOverride(func() (map[string]any, map[string]provider.SchemaField, error) {
+		return w.simulatedConfig, schema, nil
+	})
 	return nil
 }
 
@@ -172,20 +186,19 @@ func (w *configExternalChangeWorld) dismissDialog() error {
 }
 
 // debounceSecondChange simulates a second config_changed event while the first
-// is still pending (dialog shown).
+// is still pending (dialog shown). Goes through SimulateExternalChange (same
+// as the "detects an external change" step) rather than a raw event, since
+// SimulateExternalChange has no epoch of its own to be "recent" relative to —
+// its debounce guard instead coalesces based on whether an external-change
+// dialog is already pending.
 func (w *configExternalChangeWorld) debounceSecondChange() error {
 	if w.model == nil {
 		return fmt.Errorf("no config surface")
 	}
-	ev := state.Event{
-		Epoch:       2000,
-		SessionID:   "test-session",
-		EventType:   "config_changed",
-		ContentType: state.ContentConfigChanged,
-		Payload:     map[string]any{"path": "/tmp/agentx.toml"},
+	if w.simulatedConfig == nil {
+		return fmt.Errorf("no simulated config")
 	}
-	w.model.Apply(ev)
-	return nil
+	return w.model.SimulateExternalChange(w.simulatedConfig, "/tmp/agentx.toml")
 }
 
 // viewContainsDialog checks for the external change dialog in the view.
@@ -244,7 +257,13 @@ func (w *configExternalChangeWorld) noDoubleDialog() error {
 	if w.model.Data.ExternalChange == nil {
 		return fmt.Errorf("expected external change to persist after debounce")
 	}
-	if w.model.Data.ExternalChange.OldHash != w.oldHash {
+	// w.oldHash is only populated by the Phase 3b "an external editor
+	// modifies the config file" step (config_external_change.feature). The
+	// epoch-driven Phase 3c debounce scenarios (config_conflict_resolution.feature)
+	// exercise handleExternalConfigChange directly via config_changed events
+	// and never call externalEdit, so there is no pre-edit hash to compare
+	// against — the ExternalChange-is-non-nil check above is sufficient there.
+	if w.oldHash != "" && w.model.Data.ExternalChange.OldHash != w.oldHash {
 		return fmt.Errorf("debounce failed: hash changed from %s to %s", w.oldHash, w.model.Data.ExternalChange.OldHash)
 	}
 	return nil
