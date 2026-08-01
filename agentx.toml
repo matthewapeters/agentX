@@ -11,6 +11,6 @@ applet_api_port_range_end   = 19199   # Last port (inclusive); must be >= start 
 
 [agentx.ollama]
 host = "localhost:11434"
-model = "nemotron-cascade-2:latest"
+model = "ornith:35b"
 ollama_initial_load_timeout_seconds = 120
 
