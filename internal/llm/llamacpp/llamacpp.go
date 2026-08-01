@@ -56,9 +56,12 @@ type Tool struct {
 
 // ToolCall is a model-issued invocation of one Tool, OpenAI-compatible wire
 // shape: unlike Ollama, llama.cpp assigns an id and encodes Arguments as a
-// JSON-object string rather than a native object.
+// JSON-object string rather than a native object. Type is required on replay
+// — llama-server's parser rejects a history message whose tool_calls entries
+// omit "type":"function" ("Missing tool call type").
 type ToolCall struct {
 	ID       string `json:"id"`
+	Type     string `json:"type,omitempty"`
 	Function struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -366,7 +369,7 @@ func toLlamacppMessage(m provider.Message) Message {
 	out.ToolCalls = make([]ToolCall, len(m.ToolCalls))
 	for i, tc := range m.ToolCalls {
 		args, _ := json.Marshal(tc.Arguments)
-		out.ToolCalls[i] = ToolCall{ID: tc.ID}
+		out.ToolCalls[i] = ToolCall{ID: tc.ID, Type: "function"}
 		out.ToolCalls[i].Function.Name = tc.Name
 		out.ToolCalls[i].Function.Arguments = string(args)
 	}

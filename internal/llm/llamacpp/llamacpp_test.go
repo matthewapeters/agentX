@@ -2,9 +2,12 @@ package llamacpp
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"agentx/internal/llm/provider"
 )
 
 // sseServer serves a fixed sequence of SSE "data: " lines from /v1/chat/completions.
@@ -134,5 +137,44 @@ func TestChatContentOnlyNoToolCalls(t *testing.T) {
 	}
 	if len(deltas) != 2 || deltas[0] != "Hel" || deltas[1] != "lo" {
 		t.Errorf("onDelta calls = %v, want [Hel lo]", deltas)
+	}
+}
+
+// GIVEN an assistant message carrying a prior tool call (history being
+// replayed back to the model on a later turn)
+// WHEN toLlamacppMessage converts it to llama.cpp's wire shape
+// THEN each tool_calls entry includes "type":"function" — llama-server's
+// parser rejects a replayed message that omits it ("Missing tool call type"),
+// a real failure hit testing against a live llama.cpp server.
+func TestToLlamacppMessageIncludesToolCallType(t *testing.T) {
+	msg := toLlamacppMessage(provider.Message{
+		Role: "assistant",
+		ToolCalls: []provider.ToolCall{
+			{ID: "call_1", Name: "tree", Arguments: map[string]any{"path": "/repo"}},
+		},
+	})
+	if len(msg.ToolCalls) != 1 {
+		t.Fatalf("ToolCalls = %+v, want 1 entry", msg.ToolCalls)
+	}
+	if msg.ToolCalls[0].Type != "function" {
+		t.Fatalf("ToolCalls[0].Type = %q, want %q", msg.ToolCalls[0].Type, "function")
+	}
+
+	// Also assert at the wire level: the JSON llama-server actually receives
+	// must contain "type":"function", not just the Go struct field.
+	raw, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded struct {
+		ToolCalls []struct {
+			Type string `json:"type"`
+		} `json:"tool_calls"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(decoded.ToolCalls) != 1 || decoded.ToolCalls[0].Type != "function" {
+		t.Fatalf("wire JSON tool_calls = %s, want type=function present", raw)
 	}
 }
