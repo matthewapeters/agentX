@@ -73,11 +73,14 @@ type Tool struct {
 	Function ToolFunction `json:"function"`
 }
 
-// ToolCall is a model-issued invocation of one Tool. Ollama's /api/chat does
-// not assign an id to tool calls (unlike OpenAI-style APIs); ID is populated by
-// the caller (internal/runtime/model.go) when one is needed for round-tripping.
+// ToolCall is a model-issued invocation of one Tool. Ollama does assign an id
+// (observed live, e.g. "call_d40il62x") but — unlike llama.cpp's strict
+// OpenAI-compatible parser — does not require one to be echoed back on replay,
+// so a missing id here (older servers/models) is tolerated: Chat synthesizes
+// one so callers always have a stable value to correlate a call with its
+// tool-result message.
 type ToolCall struct {
-	ID       string `json:"-"`
+	ID       string `json:"id,omitempty"`
 	Function struct {
 		Name      string         `json:"name"`
 		Arguments map[string]any `json:"arguments"`
@@ -191,8 +194,9 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta, onThink fun
 	if err := scanner.Err(); err != nil {
 		return ChatResult{Content: assembled.String(), ToolCalls: toolCalls}, fmt.Errorf("read chat stream: %w", err)
 	}
-	// Ollama does not assign tool-call ids; synthesize stable per-turn ones so
-	// callers can correlate a call with its eventual tool-result message.
+	// Ollama usually assigns an id, but fill in a stable per-turn one for any
+	// call that arrived without one (older servers/models), so callers can
+	// always correlate a call with its eventual tool-result message.
 	for i := range toolCalls {
 		if toolCalls[i].ID == "" {
 			toolCalls[i].ID = fmt.Sprintf("call_%d", i)
