@@ -307,6 +307,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.output.Update(msg)
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+	case tea.PasteMsg:
+		// Bracketed-paste content arrives as its own message type, distinct from
+		// KeyPressMsg, so it needs its own route to the input panel. Only live
+		// when the input actually owns the keyboard (same condition the border
+		// highlight at m.frame(m.input...) uses): not while an approval decision
+		// has swapped in its own widget, and not while output has focus.
+		if m.focus == focusInput && m.proc.State != state.StateAwaitingInput {
+			m.input.Paste(msg.Content)
+		}
+		return m, nil
 	}
 	return m, nil
 }

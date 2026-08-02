@@ -32,6 +32,31 @@ Feature: Input panel controls
     When the user presses enter
     Then the input reports no action
 
+  # use-case: UC-INPUT-PASTE
+  # Bracketed-paste content arrives as one PasteMsg rather than a KeyPressMsg
+  # per rune; it inserts at the cursor like typed text.
+  Scenario: Pasting inserts the clipboard content at the cursor
+    Given a focused input panel
+    When the user types "hi "
+    And the user pastes "pasted text"
+    Then the input value is "hi pasted text"
+
+  # use-case: UC-INPUT-PASTE
+  # variant: a multi-line paste becomes soft newlines, same as Alt+Enter
+  Scenario: A multi-line paste preserves its newlines
+    Given a focused input panel
+    When the user pastes "a\nb"
+    Then the input value is "a\nb"
+
+  # use-case: UC-INPUT-PASTE
+  # variant: streaming blocks paste, consistent with every other edit path
+  Scenario: Paste is ignored while streaming
+    Given a focused input panel
+    When the user types "x"
+    And the input is set streaming
+    And the user pastes "y"
+    Then the input value is "x"
+
   # use-case: UC-INPUT-NEWLINE
   Scenario: Shift+Enter inserts a newline
     Given a focused input panel
@@ -87,6 +112,21 @@ Feature: Input panel controls
     When the input is set streaming
     And the user presses esc
     Then the input reports a stop action
+
+  # use-case: UC-INPUT-PASTE
+  # the chat surface routes a bracketed-paste message to the input panel
+  Scenario: Pasting into the chat surface reaches the input
+    Given a new chat surface sized 40 by 16
+    When the user pastes "pasted" into the chat surface
+    Then the chat input value is "pasted"
+
+  # use-case: UC-INPUT-PASTE
+  # variant: paste is dropped while an approval decision owns the keyboard
+  Scenario: Paste is ignored while awaiting an approval decision
+    Given a new chat surface sized 40 by 16
+    And the processing state becomes awaiting input
+    When the user pastes "pasted" into the chat surface
+    Then the chat input value is ""
 
   # use-case: UC-CHAT-ECHO
   Scenario: Submitting a prompt echoes it into the output

@@ -23,6 +23,7 @@ func registerInputSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a focused input panel$`, w.focusedPanel)
 	sc.Step(`^a focused input panel containing "([^"]*)" with the cursor at (\d+)$`, w.focusedContaining)
 	sc.Step(`^the user types "([^"]*)"$`, w.types)
+	sc.Step(`^the user pastes "([^"]*)"$`, w.pastes)
 	sc.Step(`^the user presses enter$`, w.pressEnter)
 	sc.Step(`^the user presses shift\+enter$`, w.pressShiftEnter)
 	sc.Step(`^the user presses alt\+enter$`, w.pressAltEnter)
@@ -103,6 +104,15 @@ func (w *inputWorld) types(text string) error {
 	for _, r := range text {
 		w.panel.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
+	return nil
+}
+
+// pastes mirrors what the host does with a bracketed-paste tea.PasteMsg: hand
+// the raw content straight to the panel, newlines included, in one call
+// (unlike types, which delivers one KeyPressMsg per rune).
+func (w *inputWorld) pastes(text string) error {
+	text = strings.ReplaceAll(text, `\n`, "\n")
+	w.panel.Paste(text)
 	return nil
 }
 

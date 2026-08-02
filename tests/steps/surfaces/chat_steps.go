@@ -61,6 +61,7 @@ func registerChatSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^ESC is pressed$`, w.pressEsc)
 	sc.Step(`^the "([^"]*)" key is pressed$`, w.pressKey)
 	sc.Step(`^the user types the prompt "([^"]*)"$`, w.types)
+	sc.Step(`^the user pastes "([^"]*)" into the chat surface$`, w.pastesIntoSurface)
 	sc.Step(`^the user inserts a prompt newline$`, w.pressShiftEnter)
 	sc.Step(`^the chat hint shows "([^"]*)"$`, w.statusShows)
 	sc.Step(`^the output panel has focus$`, w.outputFocused)
@@ -127,6 +128,15 @@ func (w *chatWorld) types(text string) error {
 	for _, r := range text {
 		w.update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
+	return nil
+}
+
+// pastesIntoSurface sends the bracketed-paste message straight to the chat
+// model's Update, exercising the tea.PasteMsg route (focus- and
+// awaiting-input-gated) rather than the input panel's Paste method directly.
+func (w *chatWorld) pastesIntoSurface(text string) error {
+	text = strings.ReplaceAll(text, `\n`, "\n")
+	w.update(tea.PasteMsg{Content: text})
 	return nil
 }
 

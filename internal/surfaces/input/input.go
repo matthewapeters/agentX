@@ -2,7 +2,9 @@
 // It supports typing, Enter-to-submit (disabled while streaming), a soft-newline
 // (Shift+Enter on terminals that disambiguate it, plus the terminal-agnostic
 // Alt+Enter / Ctrl+J aliases), backspace, a stop/interrupt action while streaming,
-// readline-style history seeding (↑/↓), and a cursor with readline movement keys.
+// readline-style history seeding (↑/↓), a cursor with readline movement keys, and
+// bracketed-paste insertion (routed in by the host from tea.PasteMsg, since that
+// arrives as its own message type rather than a stream of KeyPressMsg).
 //
 // Long lines word-wrap to the panel width (no horizontal overflow) and the panel
 // grows vertically with its content up to a configured cap (input_max_lines), beyond
@@ -223,6 +225,17 @@ func (m *Model) Update(msg tea.KeyPressMsg) Action {
 		}
 		return ActionNone
 	}
+}
+
+// Paste inserts bracketed-paste content at the cursor, ignoring it while
+// streaming (consistent with every other edit path). Pasted text commonly
+// spans multiple lines; those become soft newlines exactly like Alt+Enter,
+// since visualRows already wraps on "\n".
+func (m *Model) Paste(s string) {
+	if m.streaming || s == "" {
+		return
+	}
+	m.insert(s)
 }
 
 // historyPrev seeds the buffer with the previous (older) submitted prompt. On
