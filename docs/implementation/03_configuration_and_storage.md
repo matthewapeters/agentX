@@ -48,27 +48,30 @@ User prompt files (Markdown, optional):
   - prompt submitted automatically at startup; the response opens the session
   - see `04_llm_prompt_tooling_runtime.md` (Instructions and Bootstrap Prompts)
 - ~/.config/agentx/agentx-classification.md
-  - system prompt for the classification step; describes the agentic-workflow
-    taxonomy used to route prompts (seeded with a default; tunable)
-  - see `04_llm_prompt_tooling_runtime.md` (Classification Cycle)
+  - system prompt for the `internal/classify` pipeline's route verdict. That
+    pipeline is disconnected from the live prompt/response loop (unwired, not
+    deleted — see `04_llm_prompt_tooling_runtime.md`, "Legacy: classify /
+    continuation / task-classifier pipeline"); this file has no effect on
+    current runtime behavior until/unless the pipeline returns as a hook or
+    tool (`90_open_questions.md`, D.5).
 - ~/.config/agentx/agentx-thinking.md
   - thinking guidance folded into the respond system prompt when thinking; steers
     reasoning toward the bounded "sweet spot" (built-in default; tunable)
   - see `04_llm_prompt_tooling_runtime.md` (Thinking Pass-through)
 - ~/.config/agentx/agentx-shell-commands.md
-  - LLM-facing catalog of curated tools, injected into context when a turn routes to
-    `single_tool` (built-in default `tools.DefaultCatalog`; tunable)
-  - see `04_llm_prompt_tooling_runtime.md` (The single_tool cycle) and
-    `05_security_approvals_and_command_policy.md`
+  - superseded: tools are now advertised to the model via native tool-calling
+    schemas generated from each `Descriptor` (`internal/tools.Registry.ToolSchemas`),
+    not injected as a catalog document — there is no LLM-facing catalog file
+    anymore. See `04_llm_prompt_tooling_runtime.md` ("Native tool calls (v2)").
 
 ### Runtime tables (`agentx.toml`)
 
 In addition to `[agentx.ollama]`, the following nested tables tune v1 behaviour:
 
 ```toml
-[agentx.classification]
-retries = 2               # re-attempts when a classification verdict won't parse
-clarification_options = 3 # Stage-2: candidate interpretations offered on ambiguity
+[agentx.classification]     # vestigial: only consulted by the disconnected
+retries = 2                 # internal/classify pipeline (see agentx-classification.md
+clarification_options = 3   # above); has no effect on the live loop today.
 
 [agentx.output]
 max_widget_lines = 20     # max body rows before an output widget scrolls in place
@@ -78,10 +81,10 @@ input_max_lines = 8       # max rows the input panel grows to before it scrolls
 enabled = true              # master switch for reasoning during respond (💭 widget); absent → on
 time_budget_seconds = 180   # wall-clock cap on thinking; on expiry, fall back to a direct answer
 
-[agentx.thinking.routes]    # route-aware depth (which classification routes reason)
-respond_directly = false    # plain conversation answers without thinking
-single_tool = true
-invoke_planner = true
+[agentx.thinking.routes]    # vestigial: loaded and live-reloadable but never consulted
+respond_directly = false    # by the live loop, which applies `enabled` above uniformly,
+single_tool = true          # once per turn, with no route to key off (route-aware depth
+invoke_planner = true       # was retired with the classifier — see 04_, "Thinking Pass-through (v2)")
 
 [agentx.theme]
 active_border_color   = "cyan"        # focused panel + selected output widget (bold)
@@ -195,10 +198,10 @@ Initial content_type values:
 
 `enabled` on the envelope controls whether a conversation element participates in
 the **assembled LLM context** of subsequent turns (`runtime.withContext`).
-User-prompt and agent-response elements default enabled. Thinking, classification,
-system-prompt, and approval events are display-only and never enter context —
-`enabled` on them is inert. Tool-call and tool-result events (the flat, untagged
-`single_tool`-cycle kind; a plan step's tagged call is unaffected) default
+User-prompt and agent-response elements default enabled. Thinking, system-prompt,
+and approval events are display-only and never enter context — `enabled` on them
+is inert. Tool-call and tool-result events (the flat, untagged native-tool-call
+kind; a plan step's tagged call is unaffected) default
 **disabled**: their text already folds into the turn that produced them via the
 respond-turn context block (`toolResultContext`/`toolDeniedContext`), so nothing
 extra happens by default — but unlike thinking/classification, `enabled` on a

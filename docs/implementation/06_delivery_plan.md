@@ -84,7 +84,9 @@ Build:
 
 Exit criteria:
 
-- successful classify -> think -> tool -> respond cycle
+- successful think -> tool-call-loop -> respond cycle (the flat native
+  tool-calling loop, `internal/runtime/loop.go`; supersedes the earlier
+  classify-routed cycle — see `04_llm_prompt_tooling_runtime.md`)
 - model switch success/failure surfaced cleanly
 
 ## Phase 4: Tool Runtime and Policy

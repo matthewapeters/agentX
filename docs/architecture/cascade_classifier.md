@@ -4,6 +4,23 @@ Last updated: 2026-07-04
 Status: Design draft (pre-implementation)
 Owner: Runtime / Orchestration
 
+> **⚠️ Premise partly superseded (2026-07-31).** This doc's motivating failure —
+> the model narrating a write instead of calling the tool — was a symptom of the
+> old hand-rolled JSON-in-text tool convention, which made "did the model
+> actually decide to act" ambiguous prose to parse. Commit `5283a766` replaced
+> that with native provider tool-calling (`internal/tools.Registry.ToolSchemas`,
+> `internal/runtime/loop.go`): the model now either issues a structured tool
+> call or doesn't, no parsing/classification of free text required, which
+> addresses this doc's specific failure mode directly. What became of this
+> design's own implementation, `internal/runtime/classifier_pipeline.go`
+> (`maybeEmitTask`/`reconcile`), is now disconnected from the live loop —
+> unwired, not deleted. Whether a narrower version of this doc's
+> context-isolated-classifier idea is still worth building on top of native
+> tool-calling (rather than as a replacement for it) is open — see
+> `../implementation/90_open_questions.md` (D.5). Line 28 below ("the server's
+> request-handling brain today") is no longer accurate; treat this as a design
+> record, not a current-state claim.
+
 ## Why this doc exists
 
 A live in-app session (`vivid-willow`, local `ornith:latest`) was asked to create

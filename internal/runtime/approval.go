@@ -4,7 +4,6 @@ import (
 	"context"
 	"sort"
 	"strings"
-	"time"
 
 	"agentx/internal/state"
 	"agentx/internal/tools"
@@ -56,28 +55,6 @@ func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, 
 	default:
 		return tools.Verdict{Decision: tools.Deny, Reason: "user_denied"}, nil
 	}
-}
-
-// publishToolCall emits the proposed command as a tool_call event for the surface
-// (rendered as the 🔧 widget): a plain record that a tool was called, independent of
-// whether it went through the approval gate (see RequestDecision/publishApprovalPrompt
-// for the pending-decision display itself). It returns the event's ordinal and
-// rendered text so the caller can register it as a pinnable context-history entry
-// (recordTurn) — pinning is initially off (DefaultEnabled), matching the checkbox
-// the context surface shows for it.
-func (o *Orchestrator) publishToolCall(d tools.Descriptor, args map[string]string) (uint64, string) {
-	text := proposalText(d, args)
-	ord := o.bus.Publish(state.Event{
-		Epoch:       time.Now().UnixMilli(),
-		SessionID:   o.id.ID,
-		EventType:   "TOOL_CALL",
-		ContentType: state.ContentToolCall,
-		ToolName:    d.ID,
-		Payload:     map[string]any{"text": text},
-		Enabled:     state.DefaultEnabled(state.ContentToolCall),
-		ModelName:   o.settings.OllamaModel,
-	})
-	return ord, text
 }
 
 // proposalText renders the proposed command for display/audit: the rendered argv

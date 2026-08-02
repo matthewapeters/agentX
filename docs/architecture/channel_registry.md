@@ -38,8 +38,11 @@ The runtime must expose a shared processing-state contract so all surfaces can r
 Processing state schema requirements:
 
 - `session_id`: active runtime session id.
-- `state`: one of `idle`, `working`, `completed`, `failed`.
-- `phase`: one of `classify`, `thinking`, `tool`, `respond`, `none`.
+- `state`: one of `idle`, `working`, `awaiting_input`, `completed`, `failed`.
+- `phase`: one of `thinking`, `tool`, `respond`, `planning`, `verb`,
+  `output_size`, `none` (`classify` remains a valid enum value but the live
+  loop, `internal/runtime/loop.go`, never sets it — see
+  `../implementation/04_llm_prompt_tooling_runtime.md`).
 - `prompt_cycle`: full phase object for deterministic consumers.
 
 Traffic policy requirements:

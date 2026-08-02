@@ -4,6 +4,12 @@ Diagrams reflect the current Go/bubbletea implementation on `bubbletea`.
 For narrative context see `CLAUDE.md`, `docs/implementation/01_runtime_blueprint.md`,
 and the ADRs under `docs/architecture/adr/`.
 
+> **Re-verified 2026-08-01.** §2 was rewritten for the native tool-calling loop
+> shipped 2026-07-31 (commit `5283a766`, "Replace classify-routed prompt cycle
+> with native tool-calling loop"); §4 and §6 got smaller corrections noted inline.
+> See `docs/architecture/SEQUENCE_DIAGRAMS.md` Diagram 1 for the call-by-call
+> detail.
+
 ## 1. Client-Server / Surface Topology
 
 ```
@@ -31,7 +37,7 @@ server-side regardless of which surface is attached.
 
 ---
 
-## 2. Prompt Cycle: Classify → Route → Respond
+## 2. Prompt Cycle: Native Tool-Calling Loop
 
 ```
 User prompt
@@ -40,39 +46,56 @@ User prompt
 Orchestrator.Submit (internal/runtime/orchestrator.go)
      │
      ▼
-classify (internal/classify) ──► route: one of
+runPrompt (internal/runtime/loop.go) — one flat loop, no classify step:
      │
-     ├─ respond_directly ──────────────────────────► streamResponse ──► agent_response
+     ├─ hooks.RunSync / hooks.RunAsync (internal/runtime/hooks — empty registry today)
      │
-     ├─ single_tool ───────► runToolPhase (tool_cycle.go)
-     │                          │
-     │                          ├─ tools.Proposer.Propose  (pick one tool call)
-     │                          ├─ tools.Policy.Evaluate   (Allow | Deny | NeedsApproval)
-     │                          ├─ RequestApproval, if needed (see §3)
-     │                          ├─ tools.Executor.Run
-     │                          └─ tool_call / tool_result events published
-     │                          ▼
-     │                     fold result into context ──► streamResponse ──► agent_response
+     ▼
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │ loop, up to Settings.MaxToolIterationsPerTurn (default 25):         │
+   │                                                                     │
+   │  streamResponse(msgs, toolSchemas) ──► ChatResult{Content,ToolCalls}│
+   │                                                                     │
+   │  ├─ ToolCalls empty ─────────────────────► break: plain chat answer│
+   │  │                                                                 │
+   │  └─ ToolCalls present, for each call:                              │
+   │       ├─ call.Name == "plan_task" ──► runPlanTaskTool              │
+   │       │     ├─ decompose.LLMPlanner.Plan — DAG of ≤5 nodes         │
+   │       │     │   (task: a resolved tool call | step: coarse         │
+   │       │     │    sub-goal, decomposed further on dispatch)         │
+   │       │     ├─ scheduler drains the DAG, dependency-ordered,       │
+   │       │     │   executing ready leaves (task_node events stream    │
+   │       │     │   live as nodes dispatch/decompose/complete)         │
+   │       │     └─ rendered findings returned as the tool result       │
+   │       │                                                            │
+   │       └─ any other tool ──► runNativeToolCall (tool_cycle.go)      │
+   │             ├─ tools.Policy.Evaluate   (Allow | Deny | NeedsApproval)│
+   │             ├─ RequestApproval, if needed (see §3)                 │
+   │             ├─ tools.Runner.Run                                    │
+   │             └─ tool_call / tool_result events published            │
+   │                                                                     │
+   │       fold each result back as a tool-role message, then           │
+   │       hooks.RunSync / hooks.RunAsync again, and loop                │
+   └─────────────────────────────────────────────────────────────────────┘
      │
-     └─ invoke_planner ────► runPlanPhase (plan_cycle.go)
-                                │
-                                ├─ decompose.LLMPlanner.Plan — DAG of ≤5 nodes
-                                │   (task: a resolved tool call | step: coarse
-                                │    sub-goal, decomposed further on dispatch)
-                                ├─ scheduler drains the DAG, dependency-ordered,
-                                │   executing ready leaves (task_node events
-                                │   stream live as nodes dispatch/decompose/complete)
-                                └─ findings fold into context
-                                ▼
-                          streamResponse (may run one bounded verb-continuation
-                          round first — see maybeContinuePlan) ──► agent_response
+     ▼
+agent_response (or "[stopped: reached the tool-call limit ...]" if the loop
+exhausts MaxToolIterationsPerTurn without a plain-text answer)
 ```
 
-`streamResponse` assembles the prompt (`internal/prompting`), calls the
-configured `Model.Chat` (`internal/llm/ollama` in production), and — when
-thinking is enabled — separates reasoning (`thinking` events) from the final
-answer, which streams as transient `agent_delta` events and is published once,
-complete, as `agent_response`.
+`streamResponse` assembles the prompt (`internal/prompting`), advertises native
+tool schemas (`internal/tools.Registry.ToolSchemas`), calls the configured
+`Model.Chat` (`internal/llm/ollama`/`internal/llm/llamacpp`), and — when
+thinking is enabled, once per turn on the first model call only — separates
+reasoning (`thinking` events) from the final answer, which streams as transient
+`agent_delta` events and is published once, complete, as `agent_response`.
+
+`internal/classify`, `internal/runtime/continuation.go`, and the task-classifier
+pipeline (`internal/runtime/classifier_pipeline.go`) are disconnected from this
+loop — unwired, not deleted. See
+`docs/implementation/04_llm_prompt_tooling_runtime.md` ("The Prompt/Response
+Loop", "Legacy: classify / continuation / task-classifier pipeline") and
+`docs/implementation/90_open_questions.md` (D.5).
 
 ---
 
@@ -130,7 +153,7 @@ tools.Policy.Evaluate(descriptor, args)   (internal/tools/policy.go)
      └─ else                          ──► Allow
 
 Read-only mode (agentx.toml [agentx.tools] read_only = true, default on):
-  any non-read-risk tool is denied outright in the single_tool cycle,
+  any non-read-risk tool is denied outright in runNativeToolCall,
   bypassing the approval gate entirely — a stricter, separate check in
   tool_cycle.go, ahead of policy evaluation.
 
@@ -149,10 +172,13 @@ Every published event (internal/state.Event) carries:
   epoch, session_id, event_type, content_type, payload, enabled, ordinal, ...
 
 ContentType (internal/state/event.go) includes:
-  user_prompt · system_prompt · classification · thinking · agent_delta*
+  user_prompt · system_prompt · classification¹ · thinking · agent_delta*
   agent_response · attachments · tool_call · tool_result · processing_state
   task_proposed · task_result · task_diagnostic · task_plan · task_node
   approval_request · approval_decision
+
+  ¹ classification remains a valid enum value but is no longer emitted —
+    internal/classify is disconnected from the live loop (see §2).
 
   * agent_delta is transient — never persisted, never sent to other surfaces;
     only the complete agent_response is durable.
@@ -177,9 +203,13 @@ context by filtering on Enabled at build time.
 cmd/agentx/                    — runtime entrypoint (boots server + chat surface)
 
 internal/app/                  — composition: wires Orchestrator, Bridge, transport
-internal/runtime/              — Orchestrator: classify/route, tool_cycle.go,
-                                  plan_cycle.go, decision.go, gate.go,
-                                  classifier_pipeline.go
+internal/runtime/              — Orchestrator: loop.go (the native tool-calling
+                                  loop), tool_cycle.go, plan_cycle.go, plan_tool.go,
+                                  decision.go, gate.go; classifier_pipeline.go and
+                                  continuation.go still exist but are disconnected
+                                  from loop.go (unwired, not deleted)
+internal/runtime/hooks/        — sync/async extension seam for the loop (empty
+                                  registry today — see §2)
 internal/runtime/decompose/    — LLMPlanner: DAG decomposition
 internal/runtime/scheduler/    — dependency-ordered DAG execution
 internal/cli/                  — command-line parsing (`agentx`, `agentx surface
@@ -202,13 +232,19 @@ internal/surfaces/              — registry.go (open-ended surface kinds:
                                   simpler surfaces wired directly in
                                   internal/cli/surface_launch.go
 
-internal/tools/                — Descriptor, Policy (blacklist/whitelist/
-                                  approval), Executor, Proposer
+internal/tools/                — Descriptor, ToolSchemas (native tool-calling
+                                  JSON Schema generation), Policy (blacklist/
+                                  whitelist/approval); the old Proposer/catalog
+                                  convention was retired 2026-07-31
 internal/llm/ollama/           — Ollama streaming client, model listing,
-                                  context-length lookup
+                                  context-length lookup, native tools/tool_calls
+                                  wire format
+internal/llm/llamacpp/         — llama.cpp OpenAI-compatible streaming client,
+                                  native tools/tool_calls wire format
 internal/prompting/            — prompt assembly, digest (context filtering),
-                                  classify, continuation (stated-intent
-                                  detection), planner (DAG prompt/schema)
+                                  planner (DAG prompt/schema); classify,
+                                  pipeline/cascade/reconcile/corpus still exist
+                                  but are disconnected from the live loop (see §2)
 
 internal/session/               — session identity, append-only JSON event
                                   persistence, replay

@@ -210,6 +210,17 @@ traceability (`01_comprehensive_build_plan.md` §3).
 
 ## Phase D — Classification cycle (M3a)
 
+> **⚠️ Superseded (2026-07-31).** CHT-D2–D4/D7 below shipped as written, then were
+> replaced by the native tool-calling loop (`internal/runtime/loop.go`) — the
+> classify→route architecture they describe (and the `classification` event,
+> `PhaseClassify`, route-aware thinking) is disconnected from the live loop.
+> CHT-D1/D5/D6's TUI/widget/thinking-pass-through work is still live, minus the
+> classify-specific bits. See `../implementation/04_llm_prompt_tooling_runtime.md`
+> ("The Prompt/Response Loop") for the current architecture and
+> `../implementation/90_open_questions.md` (D.5) for whether/how classification
+> returns as a hook or tool. This section is kept as a historical record of what
+> was built and why, not as a current target.
+
 Un-defers the `classify` phase. Specs: `../implementation/04_llm_prompt_tooling_runtime.md`
 (Classification Cycle) and `../ux/06_OUTPUT_WIDGET.md` (collapsible output widget).
 

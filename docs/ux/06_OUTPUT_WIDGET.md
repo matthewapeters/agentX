@@ -21,6 +21,15 @@ metadata (`intent → route`), so it renders **flat** — `⚙ classification ·
 route>` on one row, no box — rather than paying for a three-row frame. It is still
 selectable (tinted by selection like a border).
 
+> **⚠️ Stale (2026-07-31).** The `classification` content type and its emitting
+> classifier are disconnected from the live prompt/response loop — no turn emits
+> this event anymore, and `internal/surfaces/chat` has no rendering case for it
+> today. This spec's classification-widget material is retained as a design
+> record in case classification returns as a hook or tool
+> (`../implementation/90_open_questions.md`, D.5), not as a description of
+> current behavior. See `../implementation/04_llm_prompt_tooling_runtime.md`
+> ("The Prompt/Response Loop").
+
 ## Component mapping (Bubble Tea / Bubbles / Lipgloss)
 
 A suitable composition exists in the vendored components; no new external
@@ -94,7 +103,7 @@ classification, but the current code uses `⚙` for system notices):
 | Entry | Emoji | Collapsed by default |
 |-------|-------|----------------------|
 | User prompt | 👤 | no |
-| Classification | ⚙️ | no (single greyed `intent → route` line) |
+| Classification *(currently unreachable — see note above)* | ⚙️ | no (single greyed `intent → route` line) |
 | Thinking | 💭 | **yes** |
 | Tool call | 🔧 | no |
 | Tool result | 📋 | **yes** |
@@ -493,7 +502,7 @@ run's current `state.RunState`/`state.Phase` (`internal/surfaces/chat`'s
 |----------|-------|-------|
 | `Idle` / `Completed` / `Failed` | any | `Your Local Agent` |
 | `AwaitingInput` | any | `Needs Input` |
-| `Working` | `thinking`, `classify` | `Thinking` |
+| `Working` | `thinking` (code also matches `classify`, but the live loop never sets that phase) | `Thinking` |
 | `Working` | `tool` | `Working` |
 | `Working` | `respond` | `Responding` |
 | `Working` | `planning` | `Planning` |
@@ -662,11 +671,13 @@ user prompt:
 
 ```
 👤 user prompt
-  ⚙️ classification        (single greyed line: intent → route)
-  💭 thinking              (collapsed)
+  💭 thinking              (collapsed; once per turn, before any tool call)
   🔧 tool call / 📋 result (collapsed result; repeats per tool round)
   🤖 assistant response    (streams last)
 ```
+
+No `classification` line — see the stale-content-type note above; the live loop
+never emits it.
 
 ## Out of scope (this spec)
 

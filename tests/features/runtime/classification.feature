@@ -5,8 +5,16 @@
 #
 # Behavior: the classifier extracts a tolerant strict-JSON verdict, validates the
 # route enum, retries on failure, and falls back to respond_directly.
+#
+# Status: internal/classify still exists and behaves as tested here, but is
+# disconnected from the live loop (internal/runtime/loop.go) as of 2026-07-31 —
+# see docs/implementation/04_llm_prompt_tooling_runtime.md ("Legacy: classify /
+# continuation / task-classifier pipeline") and 90_open_questions.md (D.5).
+# Retagged off @functional (was misleading: this exercises the standalone
+# package, not the running app's behavior) to match the sibling
+# classify_respond_cycle.feature / task_classifier.feature retagging.
 
-@functional @arch:prompt-classification
+@pending-hook-reintegration @arch:prompt-classification
 Feature: Prompt classifier
   As the agentx runtime
   I want a reliable route from a possibly-noisy model verdict

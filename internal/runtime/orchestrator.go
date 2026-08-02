@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -172,21 +171,21 @@ type configPayload = map[string]any
 type Orchestrator struct {
 	settings Settings
 
-	store           *session.Store
-	id              session.Identity
-	bus             *state.Bus
-	proc            *state.ProcessingPublisher
-	token           surfaces.AttachToken
-	surfaceReg      *surfaces.Registry
-	server          *transporthttp.Server
-	endpoint        string
-	serveDone       chan error
-	model           Model
-	assembler       *prompting.Assembler
-	classifier      *classify.Classifier
-	taskPipeline    *pipeline.Pipeline
-	taskExec        taskExecutor
-	taskDecomp      scheduler.Decomposer
+	store        *session.Store
+	id           session.Identity
+	bus          *state.Bus
+	proc         *state.ProcessingPublisher
+	token        surfaces.AttachToken
+	surfaceReg   *surfaces.Registry
+	server       *transporthttp.Server
+	endpoint     string
+	serveDone    chan error
+	model        Model
+	assembler    *prompting.Assembler
+	classifier   *classify.Classifier
+	taskPipeline *pipeline.Pipeline
+	taskExec     taskExecutor
+	taskDecomp   scheduler.Decomposer
 	// outputSummarizer condenses an oversized captured finding (ADR 0012 §6, Phase 3);
 	// nil until buildDecomposition wires it, and capturingExec degrades to plain
 	// truncation when nil, same posture as a nil artifactReader.
@@ -198,10 +197,10 @@ type Orchestrator struct {
 	// same closure, since Format is just a per-call parameter, not two closures
 	// differing only in whether they set one.
 	wavefrontClassifier wavefront.Classifier
-	wavefrontChat        wavefront.Chat
-	recDone         chan error
-	recSub          *state.Subscription
-	gate            decisionGate
+	wavefrontChat       wavefront.Chat
+	recDone             chan error
+	recSub              *state.Subscription
+	gate                decisionGate
 
 	// configWatcher monitors agentx.toml for external edits (Phase 3a, PD-CONFIG-AF-008)
 	// and fans config_changed events to attached surfaces via the Bus.
@@ -215,14 +214,17 @@ type Orchestrator struct {
 	// liveReloadEnabled reports whether tunable settings should be applied
 	// immediately to the running session without restart (Phase 1e).
 	liveReloadEnabled bool
-	registry        *tools.Registry
-	policy          *tools.Policy
-	runner          ToolRunner
-	outputOverrides *tools.OutputOverrides
-	planTrees       *planTreeRegistry
+	registry          *tools.Registry
+	policy            *tools.Policy
+	runner            ToolRunner
+	outputOverrides   *tools.OutputOverrides
+	planTrees         *planTreeRegistry
 	// hooks is the loop's sync/async extension registry (internal/runtime/hooks).
 	// Built at Start from Settings.HooksConfigPath; empty (no-op) when unset.
 	hooks *hooks.Registry
+	// core is the extracted prompt/tool/hook loop (ADR 0013). Built at Start by
+	// buildCore, once o.hooks and o.assembler exist. runPrompt delegates to it.
+	core *ConversationCore
 	// planSeq mints unique plan_task root ids across this orchestrator's lifetime
 	// (atomic — a turn may call plan_task more than once, and calls execute
 	// sequentially but the counter itself must still be safe under WithX test
@@ -234,18 +236,6 @@ type Orchestrator struct {
 	accepting bool
 	history   []turnMsg
 	ctxWindow int // cached model context length (tokens); 0 = not yet resolved
-}
-
-// turnMsg is one conversation element in the in-memory context history: a user
-// prompt, a complete agent response, or a pinned tool_call/tool_result. ordinal is
-// the element's durable identity (its source event's ordinal); enabled controls
-// whether it folds into the next prompt's assembled context (toggled from the
-// context surface — a "tool" entry starts disabled and is the pin affordance).
-type turnMsg struct {
-	ordinal uint64
-	role    string // "user" | "assistant" | "tool"
-	content string
-	enabled bool
 }
 
 // Option configures an Orchestrator at construction time.
@@ -354,6 +344,7 @@ func (o *Orchestrator) Start() error {
 	if err != nil {
 		return fmt.Errorf("build hooks: %w", err)
 	}
+	o.buildCore()
 
 	recorder := o.store.Recorder(id.ID)
 	sub := o.bus.Subscribe()
@@ -582,71 +573,6 @@ func (o *Orchestrator) SubmitBootstrap(ctx context.Context) error {
 	}
 	// Bootstrap's events are marked ephemeral so the context viewer omits them.
 	return o.runPrompt(ctx, text, false, true)
-}
-
-// recordTurn appends the completed turn to the in-memory conversation history when
-// the cycle ended cleanly (success or user interrupt), so the next turn carries
-// the prior user prompt and agent response as enabled context. Each entry keeps the
-// ordinal of its source event (user_prompt / complete agent_response) as its stable
-// identity, so the context surface can toggle it. The bootstrap turn
-// (recordTurn=false, like its user-prompt event) is excluded: it engages the
-// session but is irrelevant to the user's intent. Hard failures are not recorded.
-//
-// pins registers every native tool call this turn made as pinnable entries
-// too (a turn may call more than one tool now, unlike the old single_tool
-// cycle's one-call-per-turn limit), ordered between the user prompt and the
-// answer (their real chronological place). They start disabled — matching
-// their checkbox and state.DefaultEnabled — so nothing changes until the
-// context surface pins one; from then on it folds into every subsequent
-// turn's assembled context, same as any other toggled-on element, until
-// unpinned.
-func (o *Orchestrator) recordTurn(err error, record bool, userOrd uint64, userText string, respOrd uint64, response string, pins []*toolPin) {
-	if !record {
-		return
-	}
-	if err != nil && !errors.Is(err, context.Canceled) {
-		return
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if userText != "" {
-		o.history = append(o.history, turnMsg{ordinal: userOrd, role: "user", content: userText, enabled: true})
-	}
-	for _, pin := range pins {
-		if pin.callOrdinal != 0 {
-			o.history = append(o.history, turnMsg{ordinal: pin.callOrdinal, role: "tool",
-				content: "[pinned tool call] " + pin.callText, enabled: state.DefaultEnabled(state.ContentToolCall)})
-		}
-		if pin.resultOrdinal != 0 {
-			o.history = append(o.history, turnMsg{ordinal: pin.resultOrdinal, role: "tool",
-				content: "[pinned tool result] " + pin.resultText, enabled: state.DefaultEnabled(state.ContentToolResult)})
-		}
-	}
-	if response != "" {
-		o.history = append(o.history, turnMsg{ordinal: respOrd, role: "assistant", content: response, enabled: true})
-	}
-}
-
-// historyMessages returns the enabled prior-turn conversation history as assembler
-// messages — disabled elements (toggled off from the context surface) are withheld.
-// A pinned tool entry (role "tool") is sent as a user-role message: the safest
-// broadly-compatible representation for a hand-rolled (non-native-tool-calling)
-// chat loop, tagged so the model reads it as reference material, not user speech.
-func (o *Orchestrator) historyMessages() []prompting.Message {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	out := make([]prompting.Message, 0, len(o.history))
-	for _, h := range o.history {
-		if !h.enabled {
-			continue
-		}
-		role := h.role
-		if role == "tool" {
-			role = "user"
-		}
-		out = append(out, prompting.Message{Role: role, Content: h.content})
-	}
-	return out
 }
 
 // seedWorkingMemory writes the bootstrap facts (userid, cwd) into the session's
@@ -1086,90 +1012,6 @@ func (o *Orchestrator) contextWindow() int {
 	return n
 }
 
-// withContext folds working memory and enabled prior-turn history into an
-// assembled [system?, user] message list, in layer order: instructions (Layer 0)
-// → working memory (band 0) → enabled conversation history → the current user
-// turn. Both are re-read fresh each turn so edits/new turns take effect on the
-// next post. System messages are merged into a single system message at the
-// beginning to satisfy Jinja template requirements (llama.cpp compat).
-func (o *Orchestrator) withContext(msgs []prompting.Message) []prompting.Message {
-	at := 0
-	for at < len(msgs) && msgs[at].Role == "system" {
-		at++
-	}
-	out := make([]prompting.Message, 0, len(msgs)+len(o.history)+1)
-	// Merge all leading system messages (instructions + working memory) into one
-	// Make a copy to avoid mutating the input slice via append aliasing
-	sysMsgs := make([]prompting.Message, at)
-	copy(sysMsgs, msgs[:at])
-	if wmMsg, ok := o.workingMemoryMessage(); ok {
-		sysMsgs = append(sysMsgs, wmMsg)
-	}
-	if len(sysMsgs) > 0 {
-		merged := mergeSystemMessages(sysMsgs)
-		out = append(out, merged)
-	}
-	out = append(out, o.historyMessages()...)
-	out = append(out, msgs[at:]...)
-	return out
-}
-
-// mergeSystemMessages combines multiple system messages into one, separated by
-// newlines. This is required for llama.cpp Jinja templates which expect a
-// single system message at the beginning.
-func mergeSystemMessages(msgs []prompting.Message) prompting.Message {
-	var b strings.Builder
-	for i, m := range msgs {
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString(m.Content)
-	}
-	return prompting.Message{Role: "system", Content: b.String()}
-}
-
-// workingMemoryMessage renders the session's enabled working-memory facts into a
-// system message (band 0). The file is the source of truth, re-read fresh each
-// turn. ok is false on a read error or an empty fact set.
-func (o *Orchestrator) workingMemoryMessage() (prompting.Message, bool) {
-	return prompting.WorkingMemoryMessage(o.workingMemoryFacts())
-}
-
-// workingMemoryFacts loads the session's enabled working-memory facts — the shared
-// grounding primitive for any LLM call that needs to resolve "the project"/"here" to a
-// real path. Used for the conversational path (via workingMemoryMessage, folded with full
-// history through withContext) and, more narrowly, for the tool proposer (facts only, no
-// history — a single_tool resolution is a narrow job, not a conversation; see CLAUDE.md's
-// Context Curation principle). nil (via a load error) is a valid "no grounding" result, not
-// a fatal one — callers already treat an empty/absent fact set as "omit the message."
-func (o *Orchestrator) workingMemoryFacts() []prompting.Fact {
-	wm, err := o.store.LoadWorkingMemory(o.id.ID)
-	if err != nil {
-		return nil
-	}
-	enabled := wm.Enabled()
-	facts := make([]prompting.Fact, 0, len(enabled))
-	for _, f := range enabled {
-		facts = append(facts, prompting.Fact{Key: f.Key, Value: pinAnnotatedValue(f)})
-	}
-	return facts
-}
-
-// pinAnnotatedValue appends a static/live + age tag to a pinned fact's value, so
-// the model has the same staleness signal the working-memory surface shows the
-// user (docs/implementation/03_configuration_and_storage.md "Pinning to Working
-// Memory"). A plain user/agent fact's value is returned unchanged.
-func pinAnnotatedValue(f session.Fact) string {
-	if f.Owner != session.OwnerPin {
-		return f.Value
-	}
-	liveness := "static"
-	if f.Live {
-		liveness = "live"
-	}
-	return fmt.Sprintf("%s (pinned %s, age %s)", f.Value, liveness, f.Age().Round(time.Second))
-}
-
 // artifactStore returns the session's artifact store, tolerating a lookup failure by
 // returning nil — an auxiliary capability (widening a plan step's findings beyond its UI
 // preview) degrading gracefully is preferable to a hard failure over it.
@@ -1254,30 +1096,30 @@ func (o *Orchestrator) Config() map[string]any {
 	// can render all editable keys. Live-reloadable and restart-required keys
 	// are both included; the surface uses ConfigSchema to determine editability.
 	return map[string]any{
-		"provider":                       o.settings.Provider,
-		"ollama_host":                    o.settings.OllamaHost,
-		"ollama_model":                   o.settings.OllamaModel,
-		"llamacpp_host":                  o.settings.LlamacppHost,
-		"llamacpp_model":                 o.settings.LlamacppModel,
-		"classification.retries":         o.settings.ClassificationRetries,
+		"provider":                             o.settings.Provider,
+		"ollama_host":                          o.settings.OllamaHost,
+		"ollama_model":                         o.settings.OllamaModel,
+		"llamacpp_host":                        o.settings.LlamacppHost,
+		"llamacpp_model":                       o.settings.LlamacppModel,
+		"classification.retries":               o.settings.ClassificationRetries,
 		"classification.clarification_options": o.settings.ClarificationOptions,
-		"output.max_widget_lines":        o.settings.MaxWidgetLines,
-		"output.input_max_lines":         o.settings.InputMaxLines,
-		"output.markdown_renderer":       o.settings.MarkdownRenderer,
-		"agentx.theme.active_border_color":   o.settings.ActiveBorderColor,
-		"agentx.theme.inactive_border_color": o.settings.InactiveBorderColor,
-		"thinking.enabled":               o.settings.ThinkingEnabled,
-		"thinking.time_budget_seconds":   int(o.settings.ThinkingBudget.Seconds()),
-		"tools.enabled":                  o.settings.ToolsEnabled,
-		"tools.read_only":                o.settings.ToolReadOnly,
-		"tools.timeout_seconds":          o.settings.ToolTimeoutSeconds,
-		"tools.output_max_bytes":         o.settings.ToolOutputMaxBytes,
-		"tools.absolute_max_bytes":       o.settings.ToolOutputAbsoluteMaxBytes,
-		"transport.enabled":              o.settings.TransportEnabled,
-		"transport.host":                 o.settings.TransportHost,
-		"transport.port_start":           o.settings.TransportPortStart,
-		"transport.port_end":             o.settings.TransportPortEnd,
-		"wavefront.enabled":              o.settings.WavefrontEnabled,
+		"output.max_widget_lines":              o.settings.MaxWidgetLines,
+		"output.input_max_lines":               o.settings.InputMaxLines,
+		"output.markdown_renderer":             o.settings.MarkdownRenderer,
+		"agentx.theme.active_border_color":     o.settings.ActiveBorderColor,
+		"agentx.theme.inactive_border_color":   o.settings.InactiveBorderColor,
+		"thinking.enabled":                     o.settings.ThinkingEnabled,
+		"thinking.time_budget_seconds":         int(o.settings.ThinkingBudget.Seconds()),
+		"tools.enabled":                        o.settings.ToolsEnabled,
+		"tools.read_only":                      o.settings.ToolReadOnly,
+		"tools.timeout_seconds":                o.settings.ToolTimeoutSeconds,
+		"tools.output_max_bytes":               o.settings.ToolOutputMaxBytes,
+		"tools.absolute_max_bytes":             o.settings.ToolOutputAbsoluteMaxBytes,
+		"transport.enabled":                    o.settings.TransportEnabled,
+		"transport.host":                       o.settings.TransportHost,
+		"transport.port_start":                 o.settings.TransportPortStart,
+		"transport.port_end":                   o.settings.TransportPortEnd,
+		"wavefront.enabled":                    o.settings.WavefrontEnabled,
 	}
 }
 
@@ -1631,15 +1473,15 @@ func (o *Orchestrator) SetConfig(payload map[string]any) (*transporthttp.ConfigW
 	cp, err := config.DefaultCachePaths()
 	if err != nil {
 		return &transporthttp.ConfigWriteResult{
-			Status:     "error",
-			Errors:     []string{"resolve cache paths: " + err.Error()},
+			Status: "error",
+			Errors: []string{"resolve cache paths: " + err.Error()},
 		}, nil
 	}
 	paths, err := config.DefaultPaths()
 	if err != nil {
 		return &transporthttp.ConfigWriteResult{
-			Status:     "error",
-			Errors:     []string{"resolve config paths: " + err.Error()},
+			Status: "error",
+			Errors: []string{"resolve config paths: " + err.Error()},
 		}, nil
 	}
 
@@ -1710,7 +1552,7 @@ func (o *Orchestrator) SetConfig(payload map[string]any) (*transporthttp.ConfigW
 	// Validate integer fields with range checks.
 	intFields := map[string]struct{ min, max int }{
 		"classification.retries":               {0, 100},
-		"classification.clarification_options":  {1, 20},
+		"classification.clarification_options": {1, 20},
 		"output.max_widget_lines":              {1, 500},
 		"output.input_max_lines":               {1, 100},
 		"thinking.time_budget_seconds":         {0, 3600},
@@ -1757,8 +1599,8 @@ func (o *Orchestrator) SetConfig(payload map[string]any) (*transporthttp.ConfigW
 	// If there are validation errors, return early with them.
 	if len(errors) > 0 {
 		return &transporthttp.ConfigWriteResult{
-			Status:     "error",
-			Errors:     errors,
+			Status:         "error",
+			Errors:         errors,
 			NormalizedKeys: normalizedKeys,
 		}, nil
 	}
@@ -1803,10 +1645,10 @@ func (o *Orchestrator) SetConfig(payload map[string]any) (*transporthttp.ConfigW
 	// infrastructure from Phase 1b.
 	if err := config.WriteConfig(cp, paths.Deployment, cfg); err != nil {
 		return &transporthttp.ConfigWriteResult{
-			Status:     "error",
-			Errors:     []string{"write config to disk: " + err.Error()},
-			NormalizedKeys: normalizedKeys,
-			LiveApplied:    liveAppliedKeys,
+			Status:          "error",
+			Errors:          []string{"write config to disk: " + err.Error()},
+			NormalizedKeys:  normalizedKeys,
+			LiveApplied:     liveAppliedKeys,
 			RestartRequired: restartRequiredKeys,
 		}, nil
 	}

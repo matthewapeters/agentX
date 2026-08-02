@@ -46,7 +46,7 @@ User terminal                          AgentX orchestrator              agentx.t
 2. **Document-based, not event-stream-based** — config is a single TOML file, not an event log. The surface reads the whole file on attach, polls for changes (file watch + transport push), and writes back on save.
 3. **Two-way sync** — detects external file changes (via filesystem watch in the orchestrator) AND TUI changes. When the file changes externally, the surface reloads and highlights the diff. When the TUI changes, it writes to disk AND pushes to the orchestrator.
 4. **Per-instance, not per-session** — config applies to the AgentX installation, not to a specific session. The surface attaches to the running orchestrator (which manages one instance), but changes affect all sessions.
-5. **Live push for tunable keys** — the orchestrator applies changes immediately for keys that don't require restart (border colors, widget line caps, thinking routes, tool timeouts). For restart-required keys (provider, model, host), the surface notifies the user and offers to restart.
+5. **Live push for tunable keys** — the orchestrator applies changes immediately for keys that don't require restart (border colors, widget line caps, thinking enabled/budget, tool timeouts). For restart-required keys (provider, model, host), the surface notifies the user and offers to restart.
 
 ---
 
@@ -90,16 +90,16 @@ Config keys are categorized by their editability and runtime behavior:
 
 | Section | Key | Type | Validation | Live Reload |
 |---------|-----|------|------------|-------------|
-| `[agentx.classification]` | `retries` | int ≥ 0 | Integer, non-negative | ✅ |
-| `[agentx.classification]` | `clarification_options` | int ≥ 1 | Integer, ≥ 1 | ✅ |
+| `[agentx.classification]` | `retries` | int ≥ 0 | Integer, non-negative | ✅ ⚠️ vestigial¹ |
+| `[agentx.classification]` | `clarification_options` | int ≥ 1 | Integer, ≥ 1 | ✅ ⚠️ vestigial¹ |
 | `[agentx.output]` | `max_widget_lines` | int ≥ 1 | Integer, ≥ 1 | ✅ |
 | `[agentx.output]` | `input_max_lines` | int ≥ 1 | Integer, ≥ 1 | ✅ |
 | `[agentx.output]` | `markdown_renderer` | enum: `native`, `scanner` | Dropdown | ✅ |
 | `[agentx.thinking]` | `enabled` | bool | Toggle | ✅ |
 | `[agentx.thinking]` | `time_budget_seconds` | int ≥ 0 | Integer, non-negative | ✅ |
-| `[agentx.thinking.routes]` | `respond_directly` | bool | Toggle | ✅ |
-| `[agentx.thinking.routes]` | `single_tool` | bool | Toggle | ✅ |
-| `[agentx.thinking.routes]` | `invoke_planner` | bool | Toggle | ✅ |
+| `[agentx.thinking.routes]` | `respond_directly` | bool | Toggle | ✅ ⚠️ vestigial² |
+| `[agentx.thinking.routes]` | `single_tool` | bool | Toggle | ✅ ⚠️ vestigial² |
+| `[agentx.thinking.routes]` | `invoke_planner` | bool | Toggle | ✅ ⚠️ vestigial² |
 | `[agentx.theme]` | `active_border_color` | color | Name/ANSI/hex | ✅ |
 | `[agentx.theme]` | `inactive_border_color` | color | Name/ANSI/hex | ✅ |
 | `[agentx.tools]` | `enabled` | bool | Toggle | ✅ |
@@ -108,6 +108,15 @@ Config keys are categorized by their editability and runtime behavior:
 | `[agentx.tools]` | `output_max_bytes` | int ≥ 1024 | Integer, ≥ 1 KiB | ✅ |
 | `[agentx.tools]` | `absolute_max_bytes` | int ≥ `output_max_bytes` | Integer, ≥ output_max_bytes | ✅ |
 | `[agentx.wavefront]` | `enabled` | bool | Toggle | ✅ |
+
+> ¹ Only consulted by `internal/classify`, which is disconnected from the live
+> prompt/response loop (`internal/runtime/loop.go`) — editing these keys has no
+> effect on current behavior.
+> ² Loaded and live-reloadable, but `internal/runtime.Orchestrator.thinkForRoute`
+> — the only reader — is unreachable from the live loop, which applies
+> `[agentx.thinking].enabled` uniformly once per turn instead of per route.
+> See `../implementation/04_llm_prompt_tooling_runtime.md` ("The Prompt/Response
+> Loop", "Thinking Pass-through (v2)").
 
 ### Editable, requires restart
 
@@ -139,10 +148,9 @@ The following prompt files are **not** edited inline in the config surface. They
 |------|---------|
 | `agentx-instructions.md` | Standing user instructions |
 | `bootstrap-prompt.md` | Startup auto-submit prompt |
-| `agentx-classification.md` | Classification system prompt |
+| `agentx-classification.md` | Classification system prompt (vestigial — see note above) |
 | `agentx-thinking.md` | Thinking guidance |
 | `agentx-planner.md` | Decomposition planner prompt |
-| `agentx-shell-commands.md` | Tool catalog |
 | `agentx-wavefront-classify.md` | Wavefront classify prompt |
 | `agentx-wavefront-synthesis.md` | Wavefront synthesis prompt |
 | `agentx-wavefront-summary.md` | Wavefront summary prompt |

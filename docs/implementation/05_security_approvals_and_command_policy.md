@@ -73,7 +73,10 @@ pauses rather than blocks the UI:
   only one is ever shown at a time regardless of which kinds are pending
 - the runtime resumes on the decision (per-request channel), persists any
   kind-specific side effect (policy scope, verb allow/deny list), then proceeds
-- the same `awaiting_input` mechanism backs Stage-2 classification clarification
+- the same `awaiting_input` mechanism is designed to back any future decision
+  kind; Stage-2 classification clarification, its originally intended second
+  consumer, is moot now that the classifier it depended on is unwired from the
+  live loop (`90_open_questions.md`, D.4)
 
 ## Policy Persistence
 

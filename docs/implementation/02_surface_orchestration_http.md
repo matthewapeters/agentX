@@ -195,8 +195,11 @@ Protocol note:
 Canonical fields (from architecture channel registry contract):
 
 - session_id
-- state: idle | working | completed | failed
-- phase: classify | thinking | tool | respond | none
+- state: idle | working | awaiting_input | completed | failed
+- phase: thinking | tool | respond | planning | verb | output_size | none
+  (`classify` remains a valid enum value for the surface contract but is no
+  longer emitted by the live loop — see `04_llm_prompt_tooling_runtime.md`,
+  "The Prompt/Response Loop")
 - prompt_cycle: structured phase details for deterministic consumers
 
 Policy:

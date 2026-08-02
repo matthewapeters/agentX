@@ -1,6 +1,6 @@
 # Architecture Reconciliation: Family A (now) vs Family B (future)
 
-Last updated: 2026-06-26
+Last updated: 2026-08-01 (ADR 0006-0012 status clarified; originally 2026-06-26)
 Status: Authoritative orientation note
 Owner: Architecture
 
@@ -35,6 +35,15 @@ Authoritative sources:
 - `docs/implementation/01_runtime_blueprint.md` … `09_makefile_and_quality_gate_contract.md`
 - `docs/architecture/channel_registry.md`
 - `docs/architecture/runtime_contracts/` (the frozen Family-A v1 contracts)
+- `docs/architecture/adr/0006…0012` (persona/context loading, output-panel
+  rendering, task decomposition + DAG scheduler, execution visibility, task
+  assertions, wavefront-grounded decomposition) — **shipped Family-A build,
+  not Family B.** ADR 0008's `decompose.DrainPlan` and ADR 0012's
+  `internal/runtime/wavefront` scheduler are wired live into the loop via the
+  `plan_task` tool (`internal/runtime/plan_tool.go`, 2026-07-31) — see
+  `docs/implementation/04_llm_prompt_tooling_runtime.md`. `docs/architecture/adr/00_INDEX.md`
+  carries per-ADR status annotations; this note's own list below (updated
+  2026-06-26) predates 0006–0012 and did not originally cover them.
 
 ### Family B — multi-expert DAG orchestrator (FUTURE)
 
@@ -48,7 +57,8 @@ Authoritative sources (treat as **future**, not the current build target):
 - `docs/architecture/design/01_*.md` … `06_*.md` (ADR 0001–0005)
 - `docs/architecture/schemas/*.schema.json` (request-envelope, compiled-dag,
   execution-outcome, policy-decision, trace-event, replay-bundle, quality-gate-report)
-- `docs/architecture/adr/0001…0005`
+- `docs/architecture/adr/0001…0005` **only** — ADR 0006 and up are Family A (see
+  above), not part of this future-orchestrator scope.
 
 ## The seam
 

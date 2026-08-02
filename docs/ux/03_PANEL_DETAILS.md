@@ -437,7 +437,7 @@ cues. Thinking/classification/system-prompt/approval elements are display-only
 and not toggleable, so they carry no checkbox. A one-line processing-state
 indicator sits at the bottom. Quitting (`Ctrl-C`/`q`) marks the surface stopped.
 
-A 🔧 tool-call or 📋 tool-result element (the flat, untagged `single_tool`-cycle
+A 🔧 tool-call or 📋 tool-result element (the flat, untagged native-tool-call
 kind — a call folded into a plan step's Task node is display-only, unaffected)
 starts **unchecked**: tool output normally scopes to the turn that produced it, so
 by default it does not carry forward. Checking it is the same enable/disable
@@ -743,9 +743,11 @@ A dedicated zellij tab, sized to the full terminal, alongside `agentX`/`editor`/
 
 Config keys fall into three categories:
 
-**Editable, live-reload (no restart):** classification retries/options, output
-widget line caps, thinking enabled/budget/routes, theme border colors, tools
-enabled/read-only/timeouts/bytes, wavefront enabled.
+**Editable, live-reload (no restart):** classification retries/options (vestigial
+— only consulted by the disconnected classifier pipeline), output widget line
+caps, thinking enabled/budget (thinking `routes` is also vestigial — the live
+loop applies `enabled` uniformly per turn, not per route), theme border colors,
+tools enabled/read-only/timeouts/bytes, wavefront enabled.
 
 **Editable, requires restart:** provider, ollama/llamacpp host/model, transport
 enabled/host/port range. These are tested against the live endpoint before
@@ -755,8 +757,11 @@ acceptance.
 values (context length).
 
 **Prompt files (managed separately):** standing instructions, bootstrap prompt,
-classification/thinking/planner/wavefront prompts, tool catalog — displayed as
-file paths with an "open in editor" affordance.
+thinking/planner/wavefront prompts — displayed as file paths with an "open in
+editor" affordance. The classification prompt file still exists on disk but only
+affects the disconnected classifier pipeline (see `../implementation/03_configuration_and_storage.md`);
+there is no LLM-facing tool-catalog file anymore (`04_llm_prompt_tooling_runtime.md`,
+"Native tool calls (v2)").
 
 ### Transport Contract
 
@@ -880,8 +885,10 @@ needed before implementation.
 
 Let the user review backend/session activity — every persisted `state.Event`
 (`user_prompt`, `tool_call`, `tool_result`, `task_plan`, `task_node`,
-`approval_request`/`approval_decision`, `thinking`, `classification`, etc.,
-see `internal/state/event.go:9-55`) — as a searchable, scrollable, continuously
+`approval_request`/`approval_decision`, `thinking`, etc.,
+see `internal/state/event.go:9-55` for the full content-type enum, which also
+still declares `classification` though the live loop no longer emits it) — as a
+searchable, scrollable, continuously
 updating stream, instead of reading raw per-event JSON files by hand. The data
 already exists: `internal/session/recorder.go` persists one JSON file per
 event, append-only, under `<session-dir>/events/`, and `Recorder.Load()`

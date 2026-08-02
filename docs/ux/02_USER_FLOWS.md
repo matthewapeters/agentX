@@ -5,6 +5,14 @@
 > two-panel chat surface and multiple independent system surfaces; flows that cross
 > the old tabbed "system" panel are being migrated during M2. See
 > [`../architecture/00_ARCHITECTURE_RECONCILIATION.md`](../architecture/00_ARCHITECTURE_RECONCILIATION.md).
+>
+> **⚠️ Prompt-cycle mechanics are also stale (2026-07-31).** Every diagram below
+> shows a `classify` call gating the turn (`classify → respond_directly`/
+> `single_tool`/`invoke_planner`). That classifier is disconnected from the live
+> loop — the current cycle is a flat loop that calls the LLM with native tool
+> schemas and branches on whether the response contains tool calls, with no
+> upfront classify step. See `../implementation/04_llm_prompt_tooling_runtime.md`
+> ("The Prompt/Response Loop") for the current, authoritative sequence.
 
 _Last updated: 2026-05-22 (v0.74.4.post2)_
 

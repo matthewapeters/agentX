@@ -121,7 +121,7 @@ UX references:
 
 Builder use:
 
-- Deliver classify/prompt/model behavior deterministically before policy-loop
+- Deliver prompt/model behavior deterministically before policy-loop
   coupling.
 
 Mandatory gate requirements:

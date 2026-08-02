@@ -9,8 +9,11 @@ moment the user sees a resolved answer. They complement the box-and-arrow diagra
 **Method.** Every arrow below was verified against the `.go` source (file:line noted
 in each diagram's "Key call sites" table), not against design docs or ADRs describing
 future work. Where a function exists but is not reachable from `cmd/agentx/main.go`,
-it is called out explicitly rather than drawn as live. Two such caveats surfaced and
-are worth knowing before reading the diagrams:
+it is called out explicitly rather than drawn as live. **Re-verified 2026-08-01**
+against the native tool-calling loop shipped 2026-07-31 (commit `5283a766`) — Diagram
+1 was rewritten, Diagrams 2/3 got entry-point/split notes, and Diagram 5 is now
+flagged disconnected rather than merely gated-off; see each diagram's inline note.
+Two more caveats surfaced earlier and are worth knowing before reading the diagrams:
 
 - `internal/runtime/scheduler/node.go`'s `NewStep`/`NewTask` wrapper types are
   defined and unit-tested but **not used** by the scheduler's actual dispatch loop,
@@ -31,11 +34,22 @@ GitHub/GitLab, which render ```mermaid fences natively.
 
 ---
 
-## Diagram 1 — Turn Overview: Classify → Route → Respond
+## Diagram 1 — Turn Overview: Native Tool-Calling Loop
 
-This is the spine every prompt goes through. The two heavy branches
-(`invoke_planner`'s decomposition and any tool execution) are black-boxed out to
-Diagrams 2 and 3 so this stays readable.
+> **Rewritten 2026-08-01.** This diagram originally showed a `classify → route →
+> (single_tool | invoke_planner | respond_directly)` spine. Commit `5283a766`
+> (2026-07-31, "Replace classify-routed prompt cycle with native tool-calling
+> loop") replaced that with the flat loop below; `internal/classify`,
+> `internal/runtime/continuation.go`, and the task-classifier pipeline
+> (`internal/runtime/classifier_pipeline.go`) are disconnected from
+> `Orchestrator.runPrompt` — unwired, not deleted (see
+> `../implementation/90_open_questions.md`, D.5). Diagram 5 below documents that
+> now-dead trigger for historical reference only.
+
+This is the spine every prompt goes through: one loop, no upfront classify step.
+Tool execution (native calls) and `plan_task` (multi-step investigation, the
+model's own discretionary replacement for the old `invoke_planner` route) both
+happen *inside* the loop, not as pre-classified branches.
 
 ```mermaid
 sequenceDiagram
@@ -43,90 +57,70 @@ sequenceDiagram
     actor User
     participant Chat as Chat Surface<br/>(surfaces/chat)
     participant Orc as Orchestrator<br/>(runtime)
-    participant Clf as Classifier<br/>(classify)
-    participant LLM as Ollama Model
-    participant Plan as Plan Phase<br/>[Diagram 2]
-    participant Tool as Tool Phase<br/>[Diagram 3]
+    participant Hooks as hooks.Registry<br/>(sync + async, empty today)
+    participant LLM as Ollama/llama.cpp Model<br/>(native tool schemas advertised)
+    participant Tool as runNativeToolCall<br/>/ plan_task [Diagram 2/3]
     participant Bus as Event Bus<br/>(state.Bus)
 
     User->>Chat: type prompt, submit
     Chat->>Orc: Submit(ctx, text)
     activate Orc
-    Orc->>Orc: runPrompt(): setProcessing(PhaseClassify)
     Orc->>Bus: publish USER_PROMPT
+    Orc->>Hooks: RunSync(turn); RunAsync(turn) — no-ops (empty registry)
 
-    Orc->>Clf: Classify(ctx, text)
-    activate Clf
-    loop up to ClassificationRetries+1 attempts
-        Clf->>LLM: chat completion (classification prompt)
-        LLM-->>Clf: reply
-        Clf->>Clf: Parse(reply) — tolerant JSON extraction
-    end
-    Clf-->>Orc: Verdict{Route, Rationale}<br/>(falls back to respond_directly on exhaustion/cancel)
-    deactivate Clf
-    Orc->>Bus: publish CLASSIFICATION
-
-    alt route == single_tool AND toolsReady()
-        Orc->>Tool: runToolPhase(ctx, text)
-        Tool-->>Orc: handled, toolContext
-    else route == invoke_planner AND planReady()
-        Orc->>Plan: runPlanPhase(ctx, text, rootID)
-        Plan-->>Orc: planCtx, handled
-    else respond_directly, or gate not ready
-        Note right of Orc: no decomposition —<br/>falls straight through to a plain answer
-    end
-
-    Orc->>LLM: streamResponse(msgs, grounded in tool/plan context if handled)
-    LLM-->>Orc: agent_delta* (streamed), then final agent_response
-    Orc->>Bus: publish agent_delta*, agent_response
-
-    opt response states an unfinished intent ("Let me examine the source...")
-        Orc->>Orc: continuation.Detect(resp) → verb, sentence
-        alt verb is deny-listed
-            Note right of Orc: skip silently, keep original response
-        else verb allow-listed, or user approves when asked
-            Orc->>Plan: runPlanPhase(ctx, sentence, rootID+"-cont")<br/>(single bounded round — never recurses again)
-            Plan-->>Orc: extraCtx, handled
-            Orc->>LLM: streamResponse (re-synthesize, combined findings)
-            LLM-->>Orc: newResp
+    loop up to MaxToolIterationsPerTurn (default 25)
+        Orc->>LLM: streamResponse(msgs, toolSchemas, think only on i==0)
+        LLM-->>Orc: ChatResult{Content, ToolCalls}
+        alt len(ToolCalls) == 0
+            Note right of Orc: plain chat response — loop ends
+        else ToolCalls present
+            loop each call
+                alt call.Name == "plan_task"
+                    Orc->>Tool: runPlanTaskTool(ctx, goal)<br/>runs runPlanPhase/runWavefrontPhase to completion [Diagram 2]
+                else any other tool
+                    Orc->>Tool: runNativeToolCall(ctx, call) [Diagram 3]
+                end
+                Tool-->>Orc: result text (folded back as a tool-role message)
+            end
+            Orc->>Hooks: RunSync(turn); RunAsync(turn) — no-ops (empty registry)
+            Note right of Orc: loop back to LLM with tool results appended
         end
     end
 
+    Orc->>Bus: publish agent_delta* (streamed), then final agent_response
     Orc->>Orc: recordTurn(...); finishCycle(err)
     Orc->>Bus: publish PROCESSING_STATE (Completed | Failed)
     deactivate Orc
     Bus-->>Chat: event fan-out [Diagram 4]
-    Chat-->>User: render streamed answer + plan/tool widgets
+    Chat-->>User: render streamed answer + tool/plan widgets
 ```
-
-> A second, independent decomposition trigger exists outside this diagram: after
-> **any** answer (including `respond_directly`), `maybeEmitTask` can retroactively
-> decide the response described a multi-step action and background-launch the same
-> Plan Phase machinery. It's gated on an optional `prompts.toml` corpus and is inert
-> by default. See **Diagram 5**.
 
 ### Key call sites
 
 | Step | File:line | Function |
 |---|---|---|
 | Submit | `internal/surfaces/chat/chat.go:467`, `internal/app/app.go:192` | `submitCmd` → `bridge.Submit` → `orc.Submit` (in-process) |
-| Entry | `internal/runtime/orchestrator.go:400` | `Orchestrator.Submit` |
-| Dispatcher | `internal/runtime/orchestrator.go:425` | `runPrompt` |
-| Classify | `internal/classify/classify.go:104` | `Classifier.Classify` (retry loop at `:106`) |
-| Route table | `internal/classify/classify.go:22-29` | `respond_directly` \| `single_tool` \| `invoke_planner` |
-| Branch | `internal/runtime/orchestrator.go:455-511` | route dispatch |
-| Tool phase gate | `internal/runtime/plan_cycle.go:18` (`planReady`), `orchestrator.go` (`toolsReady`) | readiness checks |
-| Answer synthesis | `internal/runtime/orchestrator.go:484-499` | `streamResponse` |
-| Continuation | `internal/runtime/continuation.go:89` | `maybeContinuePlan` |
-| Turn close | `internal/runtime/tool_cycle.go:209` | `finishCycle` |
+| Entry | `internal/runtime/orchestrator.go` | `Orchestrator.Submit` |
+| Loop | `internal/runtime/loop.go:24` | `runPrompt` |
+| Hooks | `internal/runtime/hooks/hooks.go` | `Registry.RunSync`, `Registry.RunAsync` |
+| Model call | `internal/runtime/tool_cycle.go` (`streamResponse`) | native tool schemas advertised, `ChatResult{Content,ToolCalls}` returned |
+| Tool-call dispatch | `internal/runtime/loop.go:112` | `runToolOrPlan` → `runNativeToolCall` or `runPlanTaskTool` |
+| Iteration bound | `internal/runtime/loop.go:60` | `Settings.MaxToolIterationsPerTurn` (default 25) |
+| Turn close | `internal/runtime/loop.go:103-104` | `recordTurn`, `finishCycle` |
 
 ---
 
 ## Diagram 2 — Plan Phase: Decomposition + Scheduler Drain
 
-This is what `invoke_planner` actually does: turn one goal into a dependency graph,
-recursively break down anything too coarse to run directly, and execute the leaves.
-Tool leaf execution itself is black-boxed to Diagram 3.
+> **Entry point changed 2026-07-31**, mechanism unchanged: this used to run only
+> when the classifier picked `invoke_planner`. It's now entered when the model
+> calls the `plan_task` tool at its own discretion (Diagram 1) —
+> `runPlanPhase`/`DrainPlan`/`Scheduler` below are reused as-is
+> (`internal/runtime/plan_tool.go`).
+
+This turns one goal into a dependency graph, recursively breaks down anything too
+coarse to run directly, and executes the leaves. Tool leaf execution itself is
+black-boxed to Diagram 3.
 
 ```mermaid
 sequenceDiagram
@@ -209,80 +203,85 @@ looping.
 
 ---
 
-## Diagram 3 — Tool Execution Detail (`Executor.Execute`)
+## Diagram 3 — Tool Execution Detail
 
-Shared machinery: both a plan's leaf `Task` nodes (Diagram 2) and the `single_tool`
-route's one-shot tool call go through this exact same function.
+> **Split 2026-07-31.** Before the native tool-calling loop, both a plan leaf and
+> the classifier's `single_tool` route went through the same `Executor.Execute`,
+> which fell back to an LLM-driven `Proposer` when a call wasn't already
+> resolved. Now there are two distinct paths that only share the policy/approval
+> primitives:
+> - **Interactive native tool calls** (from Diagram 1's loop) go straight through
+>   `runNativeToolCall` — no `Executor`, no `Proposer`, no post-run `Verify` step.
+> - **Plan leaves** (from Diagram 2) still go through `internal/executor.Executor`,
+>   including its post-run `FSVerifier.Verify` — but its `Proposer` fallback is now
+>   wired to a `noProposer` stub (`internal/runtime/classifier_pipeline.go`) that
+>   always returns "no tool"; live plan leaves always carry a pre-resolved call
+>   from the decomposer, so that fallback path is dead in practice.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Caller as Scheduler leaf dispatch<br/>(or single_tool phase)
-    participant Exec as Executor
-    participant Prop as Proposer
-    participant LLM as Ollama Model
+    participant Loop as Orchestrator.runPrompt<br/>[Diagram 1]
+    participant NTC as runNativeToolCall
+    participant Sched as Scheduler leaf dispatch<br/>[Diagram 2]
+    participant Exec as executor.Executor<br/>(plan leaves only)
     participant Pol as Policy
     participant Gate as Approval Gate<br/>(decision.go)
     participant Chat as Chat Surface
     actor User
-    participant Run as tools.Executor.Run
-    participant Ver as FSVerifier
+    participant Run as tools.Runner.Run
+    participant Ver as FSVerifier<br/>(plan leaves only)
     participant Bus as Event Bus
 
-    Caller->>Exec: Execute(ctx, rec)
-    activate Exec
-    alt rec already carries a resolved tool call
-        Exec->>Exec: use resolvedProposal(rec.Params)
-    else no resolved proposal yet
-        Exec->>Prop: Propose(ctx, goal)
-        activate Prop
-        loop up to `retries` attempts
-            Prop->>LLM: propose-a-tool call
-            LLM-->>Prop: reply
-            Prop->>Prop: parse {tool, args} JSON
-        end
-        Prop-->>Exec: {tool, args} (or "no tool")
-        deactivate Prop
+    par interactive native tool call
+        Loop->>NTC: runNativeToolCall(ctx, call)
+        activate NTC
+        NTC->>Pol: Evaluate(descriptor, args)
+    and plan leaf
+        Sched->>Exec: Execute(ctx, rec)
+        activate Exec
+        Exec->>Exec: resolvedProposal(rec.Params)<br/>(always hits — Proposer fallback is a dead noProposer stub)
+        Exec->>Pol: Evaluate(descriptor, args)
     end
 
-    Exec->>Pol: Evaluate(descriptor, args)
     alt blacklist match
-        Pol-->>Exec: Deny
-        Exec-->>Caller: Outcome{Denied}
+        Pol-->>NTC: Deny
     else already approved (session/global whitelist)
-        Pol-->>Exec: Allow
+        Pol-->>NTC: Allow
     else descriptor.RequiresApproval OR path escapes working-dir root
-        Pol-->>Exec: NeedsApproval
-        Exec->>Gate: RequestDecision(...)
+        Pol-->>NTC: NeedsApproval
+        NTC->>Gate: RequestDecision(...)
         activate Gate
         Gate->>Bus: publish approval_request;<br/>PROCESSING_STATE=awaiting_input
         Bus-->>Chat: approval_request event
-        Chat->>User: swap in approval panel (3rd panel)
+        Chat->>User: swap in approval panel
         User->>Chat: pick option
         Chat->>Gate: Resolve(decision)
-        Gate-->>Exec: decision
+        Gate-->>NTC: decision
         deactivate Gate
         alt user denies
-            Exec-->>Caller: Outcome{Denied}
+            NTC-->>Loop: tool-role message: denied
         end
     end
 
-    Exec->>Run: Run(tool, args)
-    Run-->>Exec: result (possibly Truncated)
+    NTC->>Run: Run(tool, args)
+    Run-->>NTC: result (possibly Truncated)
     opt result truncated and a size-decision callback is wired
-        Exec->>Gate: RequestDecision (accept preview / rerun wider / decline)
-        Gate-->>Exec: decision
+        NTC->>Gate: RequestDecision (accept preview / rerun wider / decline)
+        Gate-->>NTC: decision
     end
+    NTC->>Bus: publish tool_call / tool_result
+    NTC-->>Loop: tool-role message: result text
+    deactivate NTC
 
     Exec->>Ver: Verify(effect)
     alt verification fails
         Ver-->>Exec: Phantom
-        Exec-->>Caller: Outcome{Failed/Phantom}
+        Exec-->>Sched: Outcome{Failed/Phantom}
     else verified
         Ver-->>Exec: ok
-        Exec-->>Caller: Outcome{Executed, Result}
+        Exec-->>Sched: Outcome{Executed, Result}
     end
-    Exec->>Bus: publish tool_call / tool_result
     deactivate Exec
 ```
 
@@ -290,14 +289,15 @@ sequenceDiagram
 
 | Step | File:line | Function |
 |---|---|---|
-| Entry | `internal/executor/executor.go:247` | `Executor.Execute` |
-| Proposal fallback | `internal/tools/proposal.go:55,59-73` | `Proposer.Propose` (retry loop) |
+| Interactive entry | `internal/runtime/tool_cycle.go:101` | `runNativeToolCall` |
+| Plan-leaf entry | `internal/executor/executor.go:247` | `Executor.Execute` |
+| Dead Proposer fallback | `internal/runtime/classifier_pipeline.go:88` | `noProposer.Propose` (always returns "no tool") |
 | Policy | `internal/tools/policy.go:236` | `Policy.Evaluate` |
 | Confinement check | `internal/executor/executor.go:193` | `escapesRoot` |
 | Approval | `internal/runtime/approval.go:45`, `decision.go:42` | `RequestApproval` → `RequestDecision` (FIFO gate) |
-| Run tool | `internal/tools/executor.go:63` | `Executor.Run` |
-| Verify | `internal/executor/verify.go:28` | `FSVerifier.Verify` |
-| Status mapping (caller side) | `internal/runtime/scheduler/scheduler.go:257-264` | `Executed→Done`, `Denied/NeedsApproval→Denied`, else `Failed` |
+| Run tool | `internal/tools/executor.go:63` | `Runner.Run` |
+| Verify (plan leaves only) | `internal/executor/verify.go:28` | `FSVerifier.Verify` |
+| Status mapping (plan-leaf caller side) | `internal/runtime/scheduler/scheduler.go:257-264` | `Executed→Done`, `Denied/NeedsApproval→Denied`, else `Failed` |
 
 ---
 
@@ -352,12 +352,20 @@ sequenceDiagram
 
 ---
 
-## Diagram 5 — Background Retroactive Decomposition (off by default)
+## Diagram 5 — Background Retroactive Decomposition (disconnected)
+
+> **⚠️ Disconnected, not just "off by default" (2026-07-31).** This is the
+> "second, independent task-classifier pipeline" commit `5283a766` disconnected
+> from the main loop along with `internal/classify`. `Orchestrator.runPrompt`
+> (`internal/runtime/loop.go`) never calls `maybeEmitTask` — this diagram is kept
+> as a historical record, not a currently reachable (even if gated-off) code
+> path. It may return as a hook (`internal/runtime/hooks`) — see
+> `../implementation/90_open_questions.md`, D.5.
 
 A second, entirely separate trigger for the same Plan Phase machinery, run *after*
 any answer — including a plain `respond_directly` one — in case the response itself
-narrated a multi-step action that should have been investigated. It is inert unless
-an operator configures a prompt corpus.
+narrated a multi-step action that should have been investigated. It was gated on an
+operator-configured prompt corpus before being disconnected entirely.
 
 ```mermaid
 sequenceDiagram
@@ -404,24 +412,26 @@ sequenceDiagram
 
 | Site (Diagram) | Condition | Outcome A | Outcome B |
 |---|---|---|---|
-| 1 | classifier JSON parses & route valid | return verdict | retry, then fallback `respond_directly` |
-| 1 | route × readiness gate | `single_tool`+ready → Tool Phase; `invoke_planner`+ready → Plan Phase | else plain answer |
-| 1 | response states unfinished intent | verb denied/unknown+declined → keep answer | verb allowed → one bounded continuation round |
+| 1 | model response has tool calls | none → plain chat answer, loop ends | present → execute/`plan_task`, fold results back, loop |
+| 1 | tool-iteration budget (`MaxToolIterationsPerTurn`) | reached → answer with whatever text is on hand | not reached → keep looping |
 | 2 | node.Kind | `Step` → decompose | `Task` → execute |
 | 2 | echo-guard after 1 retry | still failing → demote to Task, execute directly | children valid → recurse |
 | 2 | `planContext` empty after drain | falls through to an *ungrounded* answer | grounded synthesis with findings |
-| 3 | policy verdict | `Deny`/denied approval → `Outcome{Denied}`, tool never runs | `Allow` → runs |
-| 3 | `Verify` after running | fails → `Phantom`, never reported as success | ok → `Executed` |
-| 5 | `PromptCorpus` configured | no-op (default) | classifier+reconcile may background-trigger Diagram 2 |
+| 3 | policy verdict | `Deny`/denied approval → denied result, tool never runs | `Allow` → runs |
+| 3 | `Verify` after running (plan leaves only) | fails → `Phantom`, never reported as success | ok → `Executed` |
+| 5 *(disconnected)* | `PromptCorpus` configured | no-op (default; also true always, now — see Diagram 5 note) | historical: classifier+reconcile could background-trigger Diagram 2 |
 
 ## Loop / iteration points, at a glance
 
-1. Classification retry (Diagram 1) — bounded by `ClassificationRetries+1`.
+1. Tool-call loop (Diagram 1) — bounded by `Settings.MaxToolIterationsPerTurn`
+   (default 25); ends early as soon as a response has no tool calls.
 2. Scheduler dispatch loop (Diagram 2) — runs until the DAG is drained or stalled;
    every node dispatches at most once, so it terminates structurally.
 3. Decomposition echo-guard retry (Diagram 2) — exactly one retry, then gives up.
 4. Recursive decomposition depth bound (Diagram 2) — capped at `DefaultMaxDepth = 3`.
-5. Tool-proposal retry (Diagram 3) — bounded by a fixed `retries` count.
-6. Interactive decision gate wait (Diagram 3) — blocks on a per-request channel,
+5. Interactive decision gate wait (Diagram 3) — blocks on a per-request channel,
    FIFO-serialized against any other concurrent decision request.
-7. Continuation round (Diagram 1) — explicitly single-bounded, cannot chain.
+
+Retired: classification retry (bounded `ClassificationRetries+1`), tool-proposal
+retry, and the single-bounded continuation round all belonged to the disconnected
+classify-routed cycle — see the note at the top of Diagram 1.

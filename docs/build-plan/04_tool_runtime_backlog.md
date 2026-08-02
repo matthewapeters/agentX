@@ -4,7 +4,18 @@ Last updated: 2026-06-28
 Status: Execution-ready backlog
 Owner: Delivery Lead
 Scope: The minimal end-to-end slice that lets the agent run **curated, policy-gated
-command-line tools** — turning the reserved `single_tool` route into real execution.
+command-line tools**.
+
+> **⚠️ Wire mechanism superseded (2026-07-31).** This backlog was written and shipped
+> against the classify-gated `single_tool` route with a hand-rolled strict-JSON tool
+> proposal (`internal/tools.Proposer`/`ParseProposal`). That convention is retired —
+> tools are now advertised to the model as native tool-calling schemas
+> (`internal/tools.Registry.ToolSchemas`) and called any number of times per turn in
+> the flat loop (`internal/runtime/loop.go`), not gated by a classifier route. The
+> descriptor/policy/execution machinery this backlog built (TOOL-1, 2, 3, 5, 6, 7, 8)
+> is still live and accurate as shipped — only the proposal/dispatch wire format and
+> the `classify → single_tool` framing below are stale. See
+> `../implementation/04_llm_prompt_tooling_runtime.md` ("Native tool calls (v2)").
 
 ## Context
 
@@ -25,9 +36,9 @@ It builds on the chat slice (`03_chat_surface_backlog.md`) and the classify cycl
 1. **Curated descriptor set** (not a generic `run_command`). Initial tools: read/search
    (`read_file`, `list_dir`, `find_path`, `read_output`), write/modify (`write_file`,
    `apply_patch`, `edit_file`), network (`http_get`, `download`).
-2. **Strict-JSON proposal, one tool call per turn** — reuse the `internal/classify`
-   pattern (strict JSON → tolerant extraction → retry → fallback). The model replies
-   with `{"tool": "<id>", "args": {...}}` or `{"tool": "none"}`.
+2. ~~**Strict-JSON proposal, one tool call per turn**~~ — superseded: the model now
+   issues native tool calls (provider-parsed, no `internal/classify`-style JSON
+   extraction), any number per turn, bounded by `Settings.MaxToolIterationsPerTurn`.
 3. **argv, no shell** — commands execute as an argv vector via `os/exec` (never
    `sh -c`); no pipes/redirects/globs/expansion. File content and patches are passed
    inline (JSON) and delivered to the process via **stdin** or a Go built-in — no shell
@@ -45,6 +56,7 @@ It builds on the chat slice (`03_chat_surface_backlog.md`) and the classify cycl
 ## Architecture of the slice
 
 ```
+(as originally built — see the superseded-mechanism note above for the current wire format)
 classify ──route=single_tool──▶ PhaseTool
    propose   (TOOL-4)  model → {"tool","args"}  [catalog injected from agentx-shell-commands.md]
    evaluate  (TOOL-1)  policy: blacklist → global wl → session wl → approval
@@ -53,6 +65,10 @@ classify ──route=single_tool──▶ PhaseTool
    publish              🔧 tool_call,  📋 tool_result (preview + ref + audit)
    respond   (TOOL-4)  feed preview+ref to model → 🤖 final answer
 ```
+
+Current (2026-07-31): `native tool call (any count/turn) → evaluate (TOOL-1) →
+approve (TOOL-3) → execute (TOOL-2) → publish → fold result back → loop`, no
+classify gate — see `internal/runtime/loop.go`.
 
 New package `internal/tools` (reserved in `08_go_module_layout.md`): descriptors,
 policy, executor, artifact store.
@@ -103,16 +119,22 @@ policy, executor, artifact store.
 ## TOOL-4 · Proposal + cycle integration + respond shaping · M
 - **Target**: `internal/runtime/`, `internal/prompting/`, `internal/tools/`
 - **Deps**: TOOL-2, TOOL-3
-- **Behavior**: on `route == single_tool`, enter `PhaseTool`; inject the tool catalog
+- **Behavior** *(as originally built; see superseded-mechanism note above)*: on
+  `route == single_tool`, enter `PhaseTool`; inject the tool catalog
   (`agentx-shell-commands.md`, default `tools.DefaultCatalog`) and parse one strict-JSON
   tool call (reuse classify parse + retry; `{"tool":"none"}` or parse failure → fall
   back to respond). Run TOOL-1→3→2, publish `tool_call`/`tool_result`, then a respond
   turn whose context carries the **preview + ref** (never the full artifact).
   `read_output` is exposed as a read-tier descriptor so the model can page the artifact.
+  *Current (2026-07-31)*: the model issues native tool calls directly (no catalog
+  injection, no classify gate, no JSON parse/retry); `PhaseTool` and TOOL-1→3→2 still
+  apply per call, any number of times per turn — see `internal/runtime/tool_cycle.go`.
 - **Feature**: `tests/features/tools/tool_cycle.feature` (`@e2e`, stub executor)
 - **Done**: `classify → tool → respond` with deterministic event ordering
   (`user_prompt → classification → tool_call → tool_result → agent_response`); result +
-  ref injected. *Revised 2026-07-12*: the original "preview + ref, never the full
+  ref injected — **as originally shipped; current ordering has no `classification`
+  event** (`user_prompt → tool_call → tool_result → ... → agent_response`).
+  *Revised 2026-07-12*: the original "preview + ref, never the full
   artifact" design silently line-truncated durable facts too (RCA: session
   `nimble-pebble-2`, see `CHANGELOG.md`); context now always carries the full captured
   result, bounded only by `output_max_bytes`, and truncation is labeled, never silent.
@@ -124,8 +146,9 @@ policy, executor, artifact store.
 - **Deps**: TOOL-1
 - **Behavior**: `[agentx.tools]` config (enable, tier enablement, default
   `timeout_seconds`, `output_max_bytes`); persisted blacklist + global whitelist under
-  `~/.config/agentx/`; load the tool catalog from `agentx-shell-commands.md` (already
-  seeded). Add policy seed templates to `config/seed/`.
+  `~/.config/agentx/`. Add policy seed templates to `config/seed/`. *(The
+  `agentx-shell-commands.md` catalog this originally loaded is retired — see
+  superseded-mechanism note above.)*
 - **Feature**: covered via TOOL-1/TOOL-4 config-driven scenarios (`@unit`)
 - **Done**: tiers gate availability; policy persists across sessions; seeds mirror
   built-in defaults 1:1.

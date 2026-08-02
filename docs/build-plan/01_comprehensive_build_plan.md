@@ -264,7 +264,7 @@ Gate owners: Architecture=Architecture Reviewer, UX=UX Reviewer, QA=QA Lead
 
 Goal:
 
-- Deliver deterministic classify/prompt/model-switch behavior without tool
+- Deliver deterministic prompt/model-switch behavior without tool
   policy enforcement scope.
 
 Primary dependencies:
@@ -288,7 +288,7 @@ Milestone deliverables:
 
 Acceptance criteria:
 
-- AC-M3a-1: 100 percent of in-scope classify/prompt flows complete with
+- AC-M3a-1: 100 percent of in-scope prompt flows complete with
   deterministic event ordering under repeated runs.
 - AC-M3a-2: Model switching behavior is recoverable in 10 out of 10
   interruption tests for in-scope paths.
