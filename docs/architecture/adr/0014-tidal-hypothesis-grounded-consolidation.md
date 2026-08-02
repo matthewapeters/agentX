@@ -366,37 +366,79 @@ Trade-offs:
 
 ## Phased Build Plan
 
-1. **Schema.** `Kind` gains `KindHypothesis`; `Likelihood`/`Evidence`/`Stance`/
-   `AssertionOutcome`/`ResolutionAssertion` added to `internal/prompting/task`.
-   Additive only — existing `task.Graph`/scheduler/wavefront tests must pass
-   unchanged, mirroring the discipline ADR 0012's own `Value`/`Error`/`Seq`
-   phase required.
-2. **Render function.** The five-section template over `task.Graph.Nodes()`,
-   filtered/grouped by `Kind`/`Status` — a pure function, unit-testable with
-   fixed inputs and expected string outputs, same posture as wavefront's own
-   `Render`-equivalent.
+1. **Schema.** `Kind` gains `KindHypothesis`; `Likelihood`/`Stance`/`Evidence`/
+   `AssertionOutcome`/`ResolutionAssertion` added via a new
+   `internal/prompting/task/hypothesis.go`; `Record` gains `Likelihood`,
+   `Evidence`, `ResolutionCriteria`, `Deferred` (all additive, meaningful only
+   for the record kinds/roles named in their doc comments). **Includes a
+   `Graph.Ready()` fix, found by checking dispatch behavior before writing this
+   phase, not assumed:** `Ready()` filters by `Status` only, not `Kind` — a
+   `KindHypothesis` record with a schedulable `Status` would be handed to both
+   the continuous scheduler's and wavefront's dispatch switches, landing in
+   their `default: doneError("node has no valid Kind")` branch. `Ready()` gains
+   an explicit `Kind == KindHypothesis` exclusion, closing this at the one
+   shared read seam both schedulers use rather than requiring each scheduler to
+   carry its own defensive case. Additive only — existing
+   `task.Graph`/scheduler/wavefront tests must pass unchanged, mirroring the
+   discipline ADR 0012's own `Value`/`Error`/`Seq` phase required. Behavior doc
+   (written): `docs/architecture/behavior/adr/0014_tidal_schema.feature.md`.
+2. **Render function.** New `internal/runtime/tidal/render.go` — a pure
+   `Render(g *task.Graph) string` producing the five-section template (§1) over
+   `task.Graph.Nodes()`, grouped by `Kind`/`Status`/`Deferred`. `PROBLEM` and
+   `RESOLUTION CRITERIA` come from the graph's single root record
+   (`Graph.Roots()`); `HYPOTHESES` from `Kind == KindHypothesis` records,
+   `Evidence` entries resolved against their referenced `NodeID`s; `KNOWN` from
+   every `Done` `KindTask` record; `NEED TO KNOW` from every still-open record,
+   split by `Deferred`. `Impossible`-likelihood hypotheses are omitted from the
+   rendered section (collapsed or dropped — exact treatment decided when this
+   phase starts) per the Context Curation token-cost discipline §1 already
+   commits to. Unit-testable with fixed graph fixtures and exact expected
+   strings — no LLM call anywhere in this phase. Behavior doc written at the
+   start of this phase, not before.
 3. **Tier 1 wrapper.** `continue_investigating` as a native tool wrapping
-   `wavefront.Scheduler` unchanged; behavior-preserving for wavefront itself
-   (full existing wavefront suite passes unchanged).
+   `wavefront.Scheduler` unchanged, dispatched against the same graph phase 2's
+   render reads. Testable standalone (construct a graph, call the wrapper,
+   assert on the resulting graph state and the tool's returned status summary)
+   without any sub-session or `ConversationCore` involvement — the same
+   "prove it works standalone before anything real consumes it" posture ADR
+   0013 Phase 5 already validated as the right one for this codebase.
+   Behavior-preserving for wavefront itself: its own full suite passes
+   unchanged, since this phase only wraps it, never modifies it.
 4. **Tier 2 operations.** `EvaluateHypotheses`/`Abduce`/`CheckResolution`/
    `ProposeResolutionCriteria` as standalone, independently-testable functions
-   against the schema — no hook wiring yet.
+   against the schema — each a real LLM call (schema-constrained, mirroring
+   `wavefront.Classifier`'s existing pattern), each needing its own seed-config
+   prompt template under `config/seed/` (mirroring
+   `agentx-wavefront-classify.md`'s existing convention) plus a
+   `Settings`/default-template pair, wired the same way
+   `WavefrontClassifyPrompt` already is. No hook wiring yet — each function is
+   directly unit-testable with a stub `Chat`, the same posture
+   `wavefront.LLMClassifier`'s own tests already use.
 5. **`ConsolidatorHook`.** Wires phase 4's operations behind the stall-detection
-   gate, satisfying `hooks.SyncHook`; tested standalone against a fake `Turn`
-   and a stub graph, mirroring `core_loop_test.go`'s existing fake-driven
-   pattern — no `ConversationCore` or sub-session wiring required to prove this
-   phase.
+   gate (a cheap, deterministic graph query — before/after node-count
+   comparison, no LLM call), satisfying `hooks.SyncHook` as its own named,
+   documented type (not an anonymous closure — see §3's discoverability
+   consequence). Tested standalone against a fake `Turn` and a stub graph,
+   mirroring `core_loop_test.go`'s existing fake-driven pattern exactly — no
+   `ConversationCore` or sub-session wiring required to prove this phase.
+   Highest-risk phase in this build plan: a bug here either means Tier 2 never
+   fires (silent incompleteness — the exact failure this whole ADR exists to
+   close) or fires needlessly (a cost regression) — behavior doc first, not
+   optional, mirroring how ADR 0008 and ADR 0012 each called out their own
+   scheduler-shaped phase as the priority contract to pin down before coding.
 6. **Sub-session wiring.** Attaching `continue_investigating` + `ConsolidatorHook`
    to a real sub-session `ConversationCore` — blocked on ADR 0013 OQ2/OQ4
-   resolving; scoped as its own follow-on, not part of this build plan's first
-   five phases.
+   resolving; scoped as its own follow-on ADR or amendment, not part of this
+   build plan's first five phases, and not started until those two questions
+   have real answers.
 
 Every phase's touched functions need a GIVEN/WHEN/THEN behavior doc before
-implementation, per repo invariant — phase 1 (schema) and phase 5
-(`ConsolidatorHook`'s stall-gate logic) are the two contracts most worth writing
-first, since they're where a bug would either corrupt the graph's shared meaning
-across both tiers or cause Tier 2 to never fire (silent incompleteness — the
-exact failure this ADR exists to close) or fire needlessly (cost regression).
+implementation, per repo invariant, written immediately before that phase
+starts (not all up front) — matching how ADR 0013's own five phases were each
+documented just ahead of their implementation, with real corrections folded in
+as each phase's actual work surfaced them (e.g. Phase 3's `EventSink` gap, its
+live-reload snapshot fix). Phase 1's behavior doc is written and linked above;
+phases 2-6 get theirs in turn.
 
 ## Open Questions
 
