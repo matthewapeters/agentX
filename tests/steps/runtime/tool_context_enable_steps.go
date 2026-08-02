@@ -71,7 +71,7 @@ func (w *toolContextEnableWorld) start(tool, reply string) error {
 		Preview: "project listing: a.go, b.go",
 	}}
 	w.orc = runtime.New(
-		runtime.Settings{SessionRoot: dir, OllamaModel: "stub", Instructions: "Be brief.", ToolsEnabled: true, ToolReadOnly: true},
+		runtime.Settings{SessionRoot: dir, OllamaModel: "stub", Instructions: "Be brief.", ToolsEnabled: true},
 		runtime.WithModel(stubModel{
 			deltas:    []string{reply},
 			captured:  &w.captured,

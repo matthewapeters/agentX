@@ -57,7 +57,6 @@ func newTestToolCore() (*ConversationCore, *fakeEventSink, *stubToolRunner, *stu
 		policy:       tools.NewPolicy(),
 		runner:       runner,
 		toolsEnabled: func() bool { return true },
-		toolReadOnly: func() bool { return false },
 	}
 	return c, events, runner, approvals
 }
@@ -86,8 +85,8 @@ func TestConversationCoreToolsReady(t *testing.T) {
 
 // GIVEN tools are ready
 // WHEN toolSchemas is called
-// THEN it returns the registry's catalog filtered by the live toolReadOnly
-// setting — and never includes plan_task (that's Orchestrator's job).
+// THEN it returns the registry's full catalog — and never includes plan_task
+// (that's Orchestrator's job).
 func TestConversationCoreToolSchemas(t *testing.T) {
 	c, _, _, _ := newTestToolCore()
 	schemas := c.toolSchemas()
@@ -132,31 +131,6 @@ func TestConversationCoreRunNativeToolCallExecutesDirectly(t *testing.T) {
 	}
 	if text == "" {
 		t.Error("runNativeToolCall returned empty result text")
-	}
-}
-
-// GIVEN ToolReadOnly is on and the requested tool is not read-risk
-// WHEN runNativeToolCall runs
-// THEN it denies the call without running it or asking for approval.
-func TestConversationCoreRunNativeToolCallDeniesUnderReadOnly(t *testing.T) {
-	c, _, runner, approvals := newTestToolCore()
-	c.toolReadOnly = func() bool { return true }
-
-	text, pin, err := c.runNativeToolCall(context.Background(), toolCall("write_file", map[string]any{"path": "x", "content": "y"}))
-	if err != nil {
-		t.Fatalf("runNativeToolCall error: %v", err)
-	}
-	if runner.calls != 0 {
-		t.Errorf("runner.Run called %d times, want 0 (denied under read-only)", runner.calls)
-	}
-	if approvals.approveCalls != 0 {
-		t.Errorf("RequestApproval called %d times, want 0 (denied before reaching policy)", approvals.approveCalls)
-	}
-	if pin == nil || pin.resultOrdinal == 0 {
-		t.Fatalf("pin = %+v, want resultOrdinal populated (denial is still published)", pin)
-	}
-	if text == "" {
-		t.Error("runNativeToolCall returned empty denial text")
 	}
 }
 

@@ -4,6 +4,12 @@ Status: **Implemented** (2026-08-01) — all 5 phases of the Phased Build Plan s
 `ConversationCore` is independently instantiable and runnable with zero `Orchestrator`
 involvement (Phase 5's standalone/concurrent tests). What consumes a second instance
 (a sub-session, a planning tool) remains future work — see Open Questions, unchanged.
+**Note (2026-08-02):** Phase 3's `toolReadOnly` closure (§"Architecture — insertion
+points", the `ToolReadOnly`/`tools.read_only` live-reload example below) describes a
+setting that has since been removed entirely — read-only mode is gone;
+approval-gating is the sole tool-execution gate now. Left unedited below as the
+historical record of Phase 3's actual design; see
+`docs/architecture/behavior/tool_policy_read_only_removal.feature.md`.
 Date: 2026-08-01
 Deciders: AgentX architecture owners
 Depends on: ADR 0008 (branch context — the existing in-memory sub-session precedent),

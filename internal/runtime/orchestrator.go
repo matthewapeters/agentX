@@ -108,8 +108,6 @@ type Settings struct {
 	// WavefrontEnabled routes invoke_planner plans through ADR 0012's round-free
 	// decomposition engine instead of the continuous engine (default off).
 	WavefrontEnabled bool
-	// ToolReadOnly restricts execution to read-risk tools (the rollout default).
-	ToolReadOnly bool
 	// ToolCatalog is the LLM-facing tool catalog injected into the proposal prompt
 	// (from agentx-shell-commands.md). Empty uses tools.DefaultCatalog.
 	ToolCatalog string
@@ -1111,7 +1109,6 @@ func (o *Orchestrator) Config() map[string]any {
 		"thinking.enabled":                     o.settings.ThinkingEnabled,
 		"thinking.time_budget_seconds":         int(o.settings.ThinkingBudget.Seconds()),
 		"tools.enabled":                        o.settings.ToolsEnabled,
-		"tools.read_only":                      o.settings.ToolReadOnly,
 		"tools.timeout_seconds":                o.settings.ToolTimeoutSeconds,
 		"tools.output_max_bytes":               o.settings.ToolOutputMaxBytes,
 		"tools.absolute_max_bytes":             o.settings.ToolOutputAbsoluteMaxBytes,
@@ -1300,15 +1297,6 @@ func (o *Orchestrator) ConfigSchema() map[string]provider.SchemaField {
 			Required:        false,
 			ReadOnly:        false,
 			Description:     "Turn on the single_tool execution cycle.",
-			RestartRequired: false,
-		},
-		"tools.read_only": {
-			Name:            "Tools Read-Only",
-			Type:            "bool",
-			Default:         "true",
-			Required:        false,
-			ReadOnly:        false,
-			Description:     "Restrict execution to read-risk tools only.",
 			RestartRequired: false,
 		},
 		"tools.timeout_seconds": {
@@ -1582,7 +1570,6 @@ func (o *Orchestrator) SetConfig(payload map[string]any) (*transporthttp.ConfigW
 	boolFields := []string{
 		"thinking.enabled",
 		"tools.enabled",
-		"tools.read_only",
 		"transport.enabled",
 		"wavefront.enabled",
 	}
@@ -1613,7 +1600,7 @@ func (o *Orchestrator) SetConfig(payload map[string]any) (*transporthttp.ConfigW
 	//   - Output tuning (max_widget_lines, input_max_lines, markdown_renderer)
 	//   - Theme (active_border_color, inactive_border_color)
 	//   - Thinking settings (enabled, time_budget_seconds, routes.*)
-	//   - Tools settings (enabled, read_only, timeout_seconds, output_max_bytes,
+	//   - Tools settings (enabled, timeout_seconds, output_max_bytes,
 	//     absolute_max_bytes)
 	//   - Wavefront (enabled)
 	//
@@ -1771,11 +1758,6 @@ func (o *Orchestrator) applyLiveSettings(payload map[string]any) {
 	if v, ok := payload["tools.enabled"]; ok {
 		if b, err := boolFromAny(v); err == nil {
 			o.settings.ToolsEnabled = b
-		}
-	}
-	if v, ok := payload["tools.read_only"]; ok {
-		if b, err := boolFromAny(v); err == nil {
-			o.settings.ToolReadOnly = b
 		}
 	}
 	if v, ok := payload["tools.timeout_seconds"]; ok {
@@ -1936,10 +1918,6 @@ func decodeConfigPayload(payload map[string]any, cfg *config.Config) error {
 		case "tools.enabled":
 			if b, err := boolFromAny(v); err == nil {
 				cfg.Agentx.Tools.Enabled = &b
-			}
-		case "tools.read_only":
-			if b, err := boolFromAny(v); err == nil {
-				cfg.Agentx.Tools.ReadOnly = &b
 			}
 		case "tools.timeout_seconds":
 			if n, err := intFromAny(v); err == nil {

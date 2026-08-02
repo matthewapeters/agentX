@@ -6,6 +6,15 @@ Status: **Implemented** (2026-08-01). Realizes ADR 0013's Phased Build Plan step
 implementation that weren't anticipated when Phase 2 was scoped — both fixed here,
 recorded below rather than silently patched over.
 
+**Later removed (2026-08-02):** `ToolReadOnly`/`toolReadOnly`/`tools.read_only`,
+described throughout this document as a live-reloadable setting, no longer
+exist — read-only mode was removed entirely; approval-gating
+(`Policy.Evaluate`/`RequestApproval`) is now the sole tool-execution gate. See
+`docs/architecture/behavior/tool_policy_read_only_removal.feature.md`. This
+document is left as-is below as the historical record of what Phase 3 actually
+built and why (including the live-reload bug this phase fixed for that
+now-removed setting) — not rewritten to erase that it existed.
+
 ## Correction 1: `toolSchemasFn` is permanent, not a Phase 3 cleanup target
 
 Phase 2's plan assumed all four of `streamFn`/`finishFn`/`toolSchemasFn`/`maxIterFn`

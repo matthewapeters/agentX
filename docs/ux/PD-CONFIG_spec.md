@@ -103,7 +103,6 @@ Config keys are categorized by their editability and runtime behavior:
 | `[agentx.theme]` | `active_border_color` | color | Name/ANSI/hex | ✅ |
 | `[agentx.theme]` | `inactive_border_color` | color | Name/ANSI/hex | ✅ |
 | `[agentx.tools]` | `enabled` | bool | Toggle | ✅ |
-| `[agentx.tools]` | `read_only` | bool | Toggle | ✅ |
 | `[agentx.tools]` | `timeout_seconds` | int ≥ 1 | Integer, ≥ 1 | ✅ |
 | `[agentx.tools]` | `output_max_bytes` | int ≥ 1024 | Integer, ≥ 1 KiB | ✅ |
 | `[agentx.tools]` | `absolute_max_bytes` | int ≥ `output_max_bytes` | Integer, ≥ output_max_bytes | ✅ |
@@ -442,7 +441,6 @@ Returns the current effective configuration as JSON.
     },
     "tools": {
       "enabled": true,
-      "read_only": true,
       "timeout_seconds": 30,
       "output_max_bytes": 65536,
       "absolute_max_bytes": 2097152

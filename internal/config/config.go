@@ -61,10 +61,9 @@ type Transport struct {
 }
 
 // Tools is the [agentx.tools] table gating the single_tool execution cycle.
-// Enabled and ReadOnly are pointers so absent keys take their defaults.
+// Enabled is a pointer so an absent key takes its default.
 type Tools struct {
 	Enabled        *bool `toml:"enabled"`
-	ReadOnly       *bool `toml:"read_only"`
 	TimeoutSeconds int   `toml:"timeout_seconds"`
 	OutputMaxBytes int   `toml:"output_max_bytes"`
 	// AbsoluteMaxBytes bounds the oversized-output recovery gate's "capture more"
@@ -289,10 +288,6 @@ func (c Config) ToolsEnabled() bool { return boolOr(c.Agentx.Tools.Enabled, true
 // drains invoke_planner plans instead of the continuous engine (default off).
 func (c Config) WavefrontEnabled() bool { return boolOr(c.Agentx.Wavefront.Enabled, false) }
 
-// ToolReadOnly reports whether execution is restricted to read-risk tools
-// (default on — the rollout default).
-func (c Config) ToolReadOnly() bool { return boolOr(c.Agentx.Tools.ReadOnly, true) }
-
 // ToolOutputMaxBytes is the captured-output cap before truncation (default 65536).
 func (c Config) ToolOutputMaxBytes() int {
 	if c.Agentx.Tools.OutputMaxBytes > 0 {
@@ -498,7 +493,6 @@ func Default() Config {
 			},
 			Tools: Tools{
 				Enabled:          boolPtr(true),
-				ReadOnly:         boolPtr(true),
 				TimeoutSeconds:   30,
 				OutputMaxBytes:   65536,
 				AbsoluteMaxBytes: 2097152,

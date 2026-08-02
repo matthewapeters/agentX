@@ -108,7 +108,7 @@ func (w *liveReloadWorld) postRestartChange() error {
 func (w *liveReloadWorld) postMixedChange() error {
 	payload := map[string]any{
 		"tools.timeout_seconds": float64(45),
-		"provider":            "ollama",
+		"provider":              "ollama",
 	}
 	return w.postConfig(payload)
 }
@@ -336,36 +336,37 @@ type liveReloadProvider struct {
 	restartQueue map[string]any
 }
 
-func (p *liveReloadProvider) Bus() *state.Bus                        { return nil }
-func (p *liveReloadProvider) Processing() *state.ProcessingPublisher { return nil }
-func (p *liveReloadProvider) Session() session.Identity              { return session.Identity{} }
-func (p *liveReloadProvider) Registry() *surfaces.Registry           { return nil }
+func (p *liveReloadProvider) Bus() *state.Bus                               { return nil }
+func (p *liveReloadProvider) Processing() *state.ProcessingPublisher        { return nil }
+func (p *liveReloadProvider) Session() session.Identity                     { return session.Identity{} }
+func (p *liveReloadProvider) Registry() *surfaces.Registry                  { return nil }
 func (p *liveReloadProvider) Submit(_ context.Context, text string) error   { return nil }
-func (p *liveReloadProvider) Resolve(decision string)                 {}
-func (p *liveReloadProvider) Accepting() bool                       { return true }
-func (p *liveReloadProvider) History() ([]state.Event, error)       { return nil, nil }
-func (p *liveReloadProvider) WorkingMemory() ([]session.Fact, error) { return nil, nil }
-func (p *liveReloadProvider) SetFact(key, value string) error      { return nil }
-func (p *liveReloadProvider) DeleteFact(key string) error          { return nil }
+func (p *liveReloadProvider) Resolve(decision string)                       {}
+func (p *liveReloadProvider) Accepting() bool                               { return true }
+func (p *liveReloadProvider) History() ([]state.Event, error)               { return nil, nil }
+func (p *liveReloadProvider) WorkingMemory() ([]session.Fact, error)        { return nil, nil }
+func (p *liveReloadProvider) SetFact(key, value string) error               { return nil }
+func (p *liveReloadProvider) DeleteFact(key string) error                   { return nil }
 func (p *liveReloadProvider) SetFactEnabled(key string, enabled bool) error { return nil }
-func (p *liveReloadProvider) SetFactLive(key string, live bool) error     { return nil }
-func (p *liveReloadProvider) ContextBreakdown() (session.ContextReport, error) { return session.ContextReport{}, nil }
-func (p *liveReloadProvider) SetEventEnabled(ordinal uint64, enabled bool) error { return nil }
+func (p *liveReloadProvider) SetFactLive(key string, live bool) error       { return nil }
+func (p *liveReloadProvider) ContextBreakdown() (session.ContextReport, error) {
+	return session.ContextReport{}, nil
+}
+func (p *liveReloadProvider) SetEventEnabled(ordinal uint64, enabled bool) error     { return nil }
 func (p *liveReloadProvider) PinToolEvent(ordinal uint64, live bool) (string, error) { return "", nil }
-func (p *liveReloadProvider) PinPlanNode(root, nodeID string) (string, error) { return "", nil }
+func (p *liveReloadProvider) PinPlanNode(root, nodeID string) (string, error)        { return "", nil }
 
 func (p *liveReloadProvider) Config() map[string]any {
 	out := map[string]any{
-		"provider":             p.cfg.Provider(),
-		"ollama_host":          p.cfg.OllamaHost(),
-		"ollama_model":         p.cfg.OllamaModel(),
-		"llamacpp_host":        p.cfg.LlamacppHost(),
-		"llamacpp_model":       p.cfg.LlamacppModel(),
-		"tools.timeout_seconds": p.cfg.Agentx.Tools.TimeoutSeconds,
-		"tools.output_max_bytes": p.cfg.Agentx.Tools.OutputMaxBytes,
+		"provider":                 p.cfg.Provider(),
+		"ollama_host":              p.cfg.OllamaHost(),
+		"ollama_model":             p.cfg.OllamaModel(),
+		"llamacpp_host":            p.cfg.LlamacppHost(),
+		"llamacpp_model":           p.cfg.LlamacppModel(),
+		"tools.timeout_seconds":    p.cfg.Agentx.Tools.TimeoutSeconds,
+		"tools.output_max_bytes":   p.cfg.Agentx.Tools.OutputMaxBytes,
 		"tools.absolute_max_bytes": p.cfg.Agentx.Tools.AbsoluteMaxBytes,
-		"tools.enabled":          p.cfg.ToolsEnabled(),
-		"tools.read_only":        p.cfg.ToolReadOnly(),
+		"tools.enabled":            p.cfg.ToolsEnabled(),
 	}
 	return out
 }
@@ -563,10 +564,6 @@ func decodeConfigPayloadTransport(payload map[string]any, cfg *config.Config) er
 		case "tools.enabled":
 			if b, err := boolFromAny(v); err == nil {
 				cfg.Agentx.Tools.Enabled = &b
-			}
-		case "tools.read_only":
-			if b, err := boolFromAny(v); err == nil {
-				cfg.Agentx.Tools.ReadOnly = &b
 			}
 		}
 	}

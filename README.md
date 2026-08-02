@@ -83,7 +83,6 @@ model = "llama3.2"          # must match an installed Ollama model
 
 [agentx.tools]
 enabled   = true
-read_only = true            # write/network tools are denied outright when true
 
 [agentx.thinking]
 enabled = true

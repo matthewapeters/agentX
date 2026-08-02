@@ -68,13 +68,15 @@ type ConversationCore struct {
 	// Settings read fresh on every call — see the type doc comment for why these
 	// are closures rather than fields. thinkingEnabled/thinkingPromptText back
 	// thinkingPrompt/RunPrompt's doThink; thinkingBudget backs streamResponse's
-	// timeout; toolsEnabled/toolReadOnly back toolsReady/toolSchemas/
-	// runNativeToolCall; maxIterSetting backs maxToolIterations.
+	// timeout; toolsEnabled backs toolsReady/toolSchemas; maxIterSetting backs
+	// maxToolIterations. There is deliberately no toolReadOnly — read-only mode
+	// was removed; approval-gating (Policy.Evaluate/RequestApproval) is the sole
+	// execution gate now (docs/architecture/behavior/
+	// tool_policy_read_only_removal.feature.md).
 	thinkingEnabled    func() bool
 	thinkingPromptText func() string
 	thinkingBudget     func() time.Duration
 	toolsEnabled       func() bool
-	toolReadOnly       func() bool
 	maxIterSetting     func() int
 
 	// reportState mirrors Orchestrator.setProcessing's signature. Nil-safe
@@ -229,7 +231,6 @@ func (o *Orchestrator) buildCore() {
 		thinkingPromptText: func() string { return o.settings.ThinkingPrompt },
 		thinkingBudget:     func() time.Duration { return o.settings.ThinkingBudget },
 		toolsEnabled:       func() bool { return o.settings.ToolsEnabled },
-		toolReadOnly:       func() bool { return o.settings.ToolReadOnly },
 		maxIterSetting:     func() int { return o.settings.MaxToolIterationsPerTurn },
 
 		reportState:   o.setProcessing,

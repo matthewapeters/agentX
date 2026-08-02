@@ -42,7 +42,6 @@ inactive_border_color = "dark gray"   # unfocused panel + other widgets
 
 [agentx.tools]
 enabled          = true     # master switch for the single_tool execution cycle
-read_only        = true     # only read-risk tools run; writes/network need approval
 timeout_seconds  = 30       # per-command execution timeout
 output_max_bytes = 65536    # output cap before truncation (full output → artifact)
 absolute_max_bytes = 2097152  # hard ceiling on the oversized-output recovery gate's "capture more"

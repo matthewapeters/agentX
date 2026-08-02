@@ -40,7 +40,6 @@ func registerToolCycleSteps(sc *godog.ScenarioContext) {
 	})
 
 	sc.Step(`^a started orchestrator that runs the "([^"]*)" tool and replies "([^"]*)"$`, w.startRunsTool)
-	sc.Step(`^a started orchestrator in read-only mode that proposes "([^"]*)" and replies "([^"]*)"$`, w.startReadOnlyProposes)
 	sc.Step(`^the prompt "([^"]*)" runs the tool cycle$`, w.runCycle)
 	sc.Step(`^the tool cycle's content events are, in order:$`, w.contentEvents)
 	sc.Step(`^the tool cycle's final state is "([^"]*)"$`, w.finalState)
@@ -48,14 +47,14 @@ func registerToolCycleSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a tool_result records status "([^"]*)"$`, w.toolResultStatus)
 }
 
-func (w *toolCycleWorld) start(tool string, args map[string]any, reply string, readOnly bool, runner runtime.ToolRunner) error {
+func (w *toolCycleWorld) start(tool string, args map[string]any, reply string, runner runtime.ToolRunner) error {
 	dir, err := os.MkdirTemp("", "agentx-toolcycle-")
 	if err != nil {
 		return err
 	}
 	w.dir = dir
 	w.orc = runtime.New(
-		runtime.Settings{SessionRoot: dir, OllamaModel: "stub", ToolsEnabled: true, ToolReadOnly: readOnly},
+		runtime.Settings{SessionRoot: dir, OllamaModel: "stub", ToolsEnabled: true},
 		runtime.WithModel(stubModel{
 			deltas:    []string{reply},
 			toolCalls: []prompting.ToolCall{{ID: "call_1", Name: tool, Arguments: args}},
@@ -71,11 +70,7 @@ func (w *toolCycleWorld) startRunsTool(tool, reply string) error {
 		ToolID: tool, Status: "ok", Exit: 0, Lines: 1,
 		Preview: "file body", Ref: "artifacts/000000000001.txt",
 	}}
-	return w.start(tool, map[string]any{"path": "./x"}, reply, true, runner)
-}
-
-func (w *toolCycleWorld) startReadOnlyProposes(tool, reply string) error {
-	return w.start(tool, map[string]any{"path": "./x", "content": "hi"}, reply, true, stubRunner{})
+	return w.start(tool, map[string]any{"path": "./x"}, reply, runner)
 }
 
 func (w *toolCycleWorld) runCycle(text string) error {

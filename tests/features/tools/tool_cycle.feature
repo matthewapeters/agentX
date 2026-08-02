@@ -5,7 +5,7 @@
 # Behavior: a model-issued native tool call runs under policy, and the loop
 # answers with the result folded back in. Ordering is user_prompt → tool_call →
 # tool_result → agent_response — no classification event (the native
-# tool-calling loop has no classify step). Read-only mode blocks mutating tools.
+# tool-calling loop has no classify step).
 
 @e2e @arch:tool-cycle
 Feature: Native tool-call cycle
@@ -25,11 +25,3 @@ Feature: Native tool-call cycle
       | agent_response |
     And the tool cycle's final state is "completed"
     And the tool cycle answer is "here it is"
-
-  # use-case: UC-TOOL-CYCLE
-  # variant: read-only-blocks-write
-  Scenario: A write tool is blocked in read-only mode
-    Given a started orchestrator in read-only mode that proposes "write_file" and replies "blocked"
-    When the prompt "edit the file" runs the tool cycle
-    Then a tool_result records status "denied"
-    And the tool cycle's final state is "completed"

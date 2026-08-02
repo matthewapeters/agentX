@@ -19,17 +19,19 @@ func (c *ConversationCore) toolsReady() bool {
 	return c.toolsEnabled() && c.runner != nil && c.policy != nil && c.registry != nil
 }
 
-// toolSchemas returns the generic tool catalog this turn should advertise,
-// filtered by the live toolReadOnly setting. Does not include plan_task — that
-// remains an Orchestrator-only concern layered on by Orchestrator's
-// availableToolSchemas (ADR 0013 §"Explicitly not decided here", Open Question
-// 4). RunPrompt reaches the combined (generic + plan_task) list through the
-// toolSchemasFn closure, not this method directly.
+// toolSchemas returns the full generic tool catalog this turn should
+// advertise (read-only mode was removed — approval-gating is the sole
+// execution gate now, see docs/architecture/behavior/
+// tool_policy_read_only_removal.feature.md). Does not include plan_task —
+// that remains an Orchestrator-only concern layered on by Orchestrator's
+// availableToolSchemas (ADR 0013 §"Explicitly not decided here", Open
+// Question 4). RunPrompt reaches the combined (generic + plan_task) list
+// through the toolSchemasFn closure, not this method directly.
 func (c *ConversationCore) toolSchemas() []tools.ToolSchema {
 	if !c.toolsReady() {
 		return nil
 	}
-	return c.registry.ToolSchemas(c.toolReadOnly())
+	return c.registry.ToolSchemas(false)
 }
 
 // runNativeToolCall executes one model-issued native tool call: looks it up in
@@ -53,22 +55,15 @@ func (c *ConversationCore) runNativeToolCall(ctx context.Context, call prompting
 	}
 
 	pin := &toolPin{}
-	var verdict tools.Verdict
-	switch {
-	case c.toolReadOnly() && d.Risk != tools.RiskRead:
-		verdict = tools.Verdict{Decision: tools.Deny, Reason: "read_only"}
-		pin.callOrdinal, pin.callText = c.publishToolCall(d, args)
-	default:
-		verdict = c.policy.Evaluate(d, args)
-		if verdict.Decision == tools.NeedsApproval {
-			v, err := c.approvals.RequestApproval(ctx, d, args, c.policy)
-			if err != nil {
-				return "", nil, err // interrupted while awaiting
-			}
-			verdict = v
-		} else {
-			pin.callOrdinal, pin.callText = c.publishToolCall(d, args)
+	verdict := c.policy.Evaluate(d, args)
+	if verdict.Decision == tools.NeedsApproval {
+		v, err := c.approvals.RequestApproval(ctx, d, args, c.policy)
+		if err != nil {
+			return "", nil, err // interrupted while awaiting
 		}
+		verdict = v
+	} else {
+		pin.callOrdinal, pin.callText = c.publishToolCall(d, args)
 	}
 
 	if verdict.Decision == tools.Deny {

@@ -152,10 +152,12 @@ tools.Policy.Evaluate(descriptor, args)   (internal/tools/policy.go)
      ├─ descriptor.RequiresApproval?  ──► NeedsApproval  (→ RequestApproval, §3)
      └─ else                          ──► Allow
 
-Read-only mode (agentx.toml [agentx.tools] read_only = true, default on):
-  any non-read-risk tool is denied outright in runNativeToolCall,
-  bypassing the approval gate entirely — a stricter, separate check in
-  tool_cycle.go, ahead of policy evaluation.
+Read-only mode was removed (2026-08-02): approval-gating above is now the sole
+tool-execution gate — every non-read-risk tool call reaches Policy.Evaluate
+directly, with no separate auto-deny check ahead of it. A pending approval
+with no human present to answer blocks indefinitely; this is accepted
+behavior, not a bug (see
+docs/architecture/behavior/tool_policy_read_only_removal.feature.md).
 
 Approval scopes:
   session — in-memory only, this session

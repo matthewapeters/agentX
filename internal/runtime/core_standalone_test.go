@@ -38,7 +38,6 @@ func standaloneCore(hookRan *int, chatFn func(callN int) (ChatResult, error)) (*
 		thinkingPromptText: func() string { return "" },
 		thinkingBudget:     func() time.Duration { return 0 },
 		toolsEnabled:       func() bool { return true },
-		toolReadOnly:       func() bool { return false },
 		maxIterSetting:     func() int { return 10 },
 	}
 	c.hooks.RegisterSync(countingHook{calls: hookRan})

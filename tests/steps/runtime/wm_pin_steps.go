@@ -119,7 +119,7 @@ func (w *wmPinWorld) startWith(tool, reply, blacklistPath string) error {
 	w.orc = runtime.New(
 		runtime.Settings{
 			SessionRoot: dir, OllamaModel: "stub", Instructions: "Be brief.",
-			ToolsEnabled: true, ToolReadOnly: true, ToolBlacklistPath: blacklistPath,
+			ToolsEnabled: true, ToolBlacklistPath: blacklistPath,
 		},
 		// toolCalls fires on this stub's very first Chat call only (calls-pointer
 		// "first call only" semantics — see stubModel), i.e. this scenario's own
