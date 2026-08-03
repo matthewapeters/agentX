@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"time"
 
 	"agentx/internal/state"
 )
@@ -43,12 +44,12 @@ func (o *Orchestrator) RequestDecision(ctx context.Context, phase state.Phase, p
 	req := newPendingRequest[approvalUIRequest, string](approvalUIRequest{prompt: prompt, options: options})
 	shown := o.gate.enqueue(req)
 	if shown {
-		o.publishApprovalPrompt(prompt, options, o.gate.Len())
+		o.publishApprovalPrompt(prompt, options, o.gate.Len(), req.enqueuedAt)
 		o.setProcessing(state.StateAwaitingInput, phase)
 	}
 	defer func() {
 		if next, ok := o.gate.dequeue(req); ok {
-			o.publishApprovalPrompt(next.payload.prompt, next.payload.options, o.gate.Len())
+			o.publishApprovalPrompt(next.payload.prompt, next.payload.options, o.gate.Len(), next.enqueuedAt)
 			o.setProcessing(state.StateAwaitingInput, phase)
 		}
 	}()
@@ -74,7 +75,7 @@ func chosenLabel(options []state.ApprovalOption, decision string) string {
 	return decision
 }
 
-// publishApprovalPrompt emits {prompt, options, pending} as an
+// publishApprovalPrompt emits {prompt, options, pending, since} as an
 // approval_request event — rendered by the surface both as the swapped-in
 // input-panel widget and as a lightweight scrollback record of what was
 // asked. Replaces the former per-kind publishToolCall (the pending-decision
@@ -84,9 +85,13 @@ func chosenLabel(options []state.ApprovalOption, decision string) string {
 // nothing else is queued; the surface uses it to show "1 of N" rather than
 // leaving the user unaware several more decisions are waiting behind this
 // one (docs/architecture/behavior/chat_pending_approval_count.feature.md).
-func (o *Orchestrator) publishApprovalPrompt(prompt string, options []state.ApprovalOption, pending int) {
+// since is this specific request's own creation time (pendingRequest.enqueuedAt),
+// carried as a millisecond epoch — the surface computes elapsed duration
+// fresh at render time, never cached, so "waiting Xm" is always accurate
+// (docs/architecture/behavior/chat_pending_approval_duration.feature.md).
+func (o *Orchestrator) publishApprovalPrompt(prompt string, options []state.ApprovalOption, pending int, since time.Time) {
 	o.publish("APPROVAL_REQUEST", state.ContentApprovalRequest, map[string]any{
-		"prompt": prompt, "options": options, "pending": pending,
+		"prompt": prompt, "options": options, "pending": pending, "since": since.UnixMilli(),
 	})
 }
 

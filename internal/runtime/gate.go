@@ -1,6 +1,9 @@
 package runtime
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // pendingRequest is one request awaiting a decision, queued in a gate. Each request
 // owns its own response channel — the fix for the concurrent-approval deadlock
@@ -13,10 +16,16 @@ import "sync"
 type pendingRequest[Req any, Resp any] struct {
 	payload Req
 	resp    chan Resp // size-1, owned solely by this request
+	// enqueuedAt is when this request was created — "a decision became
+	// necessary," not "this became the front of the queue and visible."
+	// Immutable once set; the surface uses it to show how long a pending
+	// decision has really been waiting (docs/architecture/behavior/
+	// chat_pending_approval_duration.feature.md).
+	enqueuedAt time.Time
 }
 
 func newPendingRequest[Req any, Resp any](payload Req) *pendingRequest[Req, Resp] {
-	return &pendingRequest[Req, Resp]{payload: payload, resp: make(chan Resp, 1)}
+	return &pendingRequest[Req, Resp]{payload: payload, resp: make(chan Resp, 1), enqueuedAt: time.Now()}
 }
 
 // gate serializes concurrent requests of type Req into a FIFO queue and shows exactly

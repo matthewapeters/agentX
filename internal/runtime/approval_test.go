@@ -1,6 +1,9 @@
 package runtime
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // TestDecisionGateQueuesConcurrentRequests reproduces the vivid-raven deadlock
 // mechanism directly: two requests enqueued while the first is still pending must
@@ -173,14 +176,16 @@ func TestGateLenReflectsQueueDepth(t *testing.T) {
 }
 
 // TestPublishApprovalPromptCarriesPendingCount: the APPROVAL_REQUEST event's
-// payload carries whatever pending count the caller passes, unchanged — the
-// piece RequestDecision wires to o.gate.Len() at each of its two call sites.
+// payload carries whatever pending count and since timestamp the caller
+// passes, unchanged — the piece RequestDecision wires to o.gate.Len() and
+// the request's own enqueuedAt at each of its two call sites.
 func TestPublishApprovalPromptCarriesPendingCount(t *testing.T) {
 	o := testOrchestrator()
 	sub := o.bus.Subscribe()
 	defer sub.Close()
 
-	o.publishApprovalPrompt("run write_file?", toolApprovalOptions, 3)
+	since := time.Now().Add(-90 * time.Second)
+	o.publishApprovalPrompt("run write_file?", toolApprovalOptions, 3, since)
 
 	ev := <-sub.C
 	if ev.EventType != "APPROVAL_REQUEST" {
@@ -192,5 +197,21 @@ func TestPublishApprovalPromptCarriesPendingCount(t *testing.T) {
 	}
 	if got, ok := p["pending"].(int); !ok || got != 3 {
 		t.Errorf("payload[\"pending\"] = %v (%T), want 3", p["pending"], p["pending"])
+	}
+	if got, ok := p["since"].(int64); !ok || got != since.UnixMilli() {
+		t.Errorf("payload[\"since\"] = %v (%T), want %d", p["since"], p["since"], since.UnixMilli())
+	}
+}
+
+// TestNewPendingRequestStampsEnqueuedAt: enqueuedAt is set at construction to
+// roughly time.Now(), not left zero-valued — the field the pending-duration
+// display depends on entirely.
+func TestNewPendingRequestStampsEnqueuedAt(t *testing.T) {
+	before := time.Now()
+	req := newPendingRequest[approvalUIRequest, string](approvalUIRequest{prompt: "x"})
+	after := time.Now()
+
+	if req.enqueuedAt.Before(before) || req.enqueuedAt.After(after) {
+		t.Errorf("enqueuedAt = %v, want between %v and %v", req.enqueuedAt, before, after)
 	}
 }

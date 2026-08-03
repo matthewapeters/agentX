@@ -3,6 +3,7 @@ package chat
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -125,22 +126,71 @@ func TestApprovalPanelTitleShowsCount(t *testing.T) {
 		{2, approvalTitleBase + " (1 of 2)"},
 		{5, approvalTitleBase + " (1 of 5)"},
 	} {
-		if got := approvalPanelTitle(tc.pending); got != tc.want {
-			t.Errorf("approvalPanelTitle(%d) = %q, want %q", tc.pending, got, tc.want)
+		if got := approvalPanelTitle(tc.pending, 0); got != tc.want {
+			t.Errorf("approvalPanelTitle(%d, 0) = %q, want %q", tc.pending, got, tc.want)
 		}
 	}
 }
 
-// GIVEN an APPROVAL_REQUEST event's pending field arrives as either a native
-// int (in-process chat surface) or a JSON-decoded float64 (a remote surface
-// attached over transport)
+// GIVEN various elapsed durations, alone and combined with a pending count
+// WHEN approvalPanelTitle builds the panel title
+// THEN it appends "waiting Xs"/"waiting Xm"/"waiting XhYYm" per
+// formatPendingDuration's coarse boundaries, composing independently of the
+// "(1 of N)" count suffix — an elapsed of 0 (no APPROVAL_REQUEST received
+// yet) omits the duration suffix entirely.
+func TestApprovalPanelTitleShowsDuration(t *testing.T) {
+	for _, tc := range []struct {
+		pending int
+		elapsed time.Duration
+		want    string
+	}{
+		{1, 0, approvalTitleBase},
+		{1, 45 * time.Second, approvalTitleBase + " · waiting 45s"},
+		{1, 90 * time.Second, approvalTitleBase + " · waiting 1m"},
+		{1, 61 * time.Minute, approvalTitleBase + " · waiting 1h01m"},
+		{3, 90 * time.Second, approvalTitleBase + " (1 of 3) · waiting 1m"},
+	} {
+		if got := approvalPanelTitle(tc.pending, tc.elapsed); got != tc.want {
+			t.Errorf("approvalPanelTitle(%d, %v) = %q, want %q", tc.pending, tc.elapsed, got, tc.want)
+		}
+	}
+}
+
+// GIVEN an approvalAgeTickMsg
+// WHEN proc.State is StateAwaitingInput
+// THEN the tick loop reschedules itself (a non-nil Cmd) — and once
+// proc.State leaves StateAwaitingInput, the same message produces no Cmd,
+// the self-stopping contract the existing spinner ticker already has.
+func TestApprovalAgeTickStopsWhenNoLongerAwaiting(t *testing.T) {
+	m := New()
+	m.proc = state.ProcessingState{State: state.StateAwaitingInput}
+	if _, cmd := m.Update(approvalAgeTickMsg{}); cmd == nil {
+		t.Error("Update(approvalAgeTickMsg{}) while awaiting input returned a nil Cmd, want the tick to reschedule")
+	}
+
+	m.proc = state.ProcessingState{State: state.StateIdle}
+	if _, cmd := m.Update(approvalAgeTickMsg{}); cmd != nil {
+		t.Error("Update(approvalAgeTickMsg{}) while idle rescheduled a tick, want nil (self-stopping)")
+	}
+}
+
+// GIVEN an APPROVAL_REQUEST event's pending and since fields arrive as
+// either native Go values (int, int64 — in-process chat surface) or
+// JSON-decoded float64 (a remote surface attached over transport)
 // WHEN chat.Model handles the event
-// THEN both decode to the same count and the same rendered panel title —
-// proving the transport-decoded path works identically to the native-int
-// path, the same dual-mode robustness state.DecodeApprovalOptions already
+// THEN both wire shapes decode to the same count and the same pendingSince
+// — proving the transport-decoded path works identically to the native path,
+// the same dual-mode robustness state.DecodeApprovalOptions already
 // demonstrates for the sibling options field.
 func TestApprovalRequestEventPendingDecodesBothWireShapes(t *testing.T) {
-	for _, pending := range []any{3, float64(3)} {
+	wantSince := time.UnixMilli(1_700_000_000_000)
+	for _, tc := range []struct {
+		pending any
+		since   any
+	}{
+		{3, wantSince.UnixMilli()},
+		{float64(3), float64(wantSince.UnixMilli())},
+	} {
 		m := New()
 		m.width = 80
 		m.height = 24
@@ -152,14 +202,18 @@ func TestApprovalRequestEventPendingDecodesBothWireShapes(t *testing.T) {
 			Payload: map[string]any{
 				"prompt":  "run write_file?",
 				"options": []any{map[string]any{"label": "Deny", "decision": "deny"}},
-				"pending": pending,
+				"pending": tc.pending,
+				"since":   tc.since,
 			},
 			Enabled: true,
 		}))
 		m = updated.(Model)
 
 		if m.pending != 3 {
-			t.Errorf("pending = %v: m.pending = %d, want 3", pending, m.pending)
+			t.Errorf("pending = %v: m.pending = %d, want 3", tc.pending, m.pending)
+		}
+		if !m.pendingSince.Equal(wantSince) {
+			t.Errorf("since = %v: m.pendingSince = %v, want %v", tc.since, m.pendingSince, wantSince)
 		}
 	}
 }

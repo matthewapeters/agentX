@@ -55,13 +55,37 @@ const approvalTitleBase = "AgentX Needs Your Input"
 
 // approvalPanelTitle appends a "(1 of N)" queue-depth suffix when more than
 // one decision is pending — always position 1, since decisionGate only ever
-// shows the front of its FIFO queue. Unchanged for the common single-pending
-// case, so this adds no clutter when there's nothing to disambiguate.
-func approvalPanelTitle(pending int) string {
-	if pending <= 1 {
-		return approvalTitleBase
+// shows the front of its FIFO queue — and a "waiting Xm"-style duration
+// suffix whenever elapsed is known (elapsed <= 0 means no APPROVAL_REQUEST
+// has arrived yet this session, so it's omitted). The two suffixes compose
+// independently; neither gates the other. Unchanged base title for the
+// common single-pending, freshly-arrived case, so this adds no clutter when
+// there's nothing to disambiguate or report.
+func approvalPanelTitle(pending int, elapsed time.Duration) string {
+	title := approvalTitleBase
+	if pending > 1 {
+		title += fmt.Sprintf(" (1 of %d)", pending)
 	}
-	return fmt.Sprintf("%s (1 of %d)", approvalTitleBase, pending)
+	if elapsed > 0 {
+		title += " · waiting " + formatPendingDuration(elapsed)
+	}
+	return title
+}
+
+// formatPendingDuration renders d compactly for the approval panel title —
+// coarse on purpose, matching approvalAgeTickInterval's own granularity: a
+// duration display doesn't need per-second precision once past a minute.
+func formatPendingDuration(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	default:
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		return fmt.Sprintf("%dh%02dm", h, m)
+	}
 }
 
 // decodeInt reads an int payload field that may arrive as a native Go int
@@ -75,6 +99,24 @@ func decodeInt(v any) int {
 		return n
 	case float64:
 		return int(n)
+	default:
+		return 0
+	}
+}
+
+// decodeInt64 is decodeInt's sibling for a millisecond-epoch timestamp field
+// — the same native-int64-or-JSON-float64 dual-mode coercion, kept as a
+// separate function (not a cast through decodeInt's int) so a large epoch
+// value can't silently overflow on a platform where int is narrower than
+// int64.
+func decodeInt64(v any) int64 {
+	switch n := v.(type) {
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case float64:
+		return int64(n)
 	default:
 		return 0
 	}
@@ -129,6 +171,13 @@ type Model struct {
 	// is never a surprise (docs/architecture/behavior/
 	// chat_pending_approval_count.feature.md).
 	pending      int
+	// pendingSince is when the currently-shown approval request was created
+	// (RequestDecision's own enqueuedAt, not "since it became visible") — the
+	// zero value means no APPROVAL_REQUEST has arrived yet this session.
+	// View() computes elapsed duration fresh from this on every render, never
+	// cached, so "waiting Xm" is always accurate (docs/architecture/behavior/
+	// chat_pending_approval_duration.feature.md).
+	pendingSince time.Time
 	proc         state.ProcessingState
 	spinner      spinner.Model
 	focus        focus
@@ -194,6 +243,25 @@ func (m Model) pollConnections() tea.Cmd {
 		return nil
 	}
 	return tea.Tick(connPollInterval, func(time.Time) tea.Msg { return connTickMsg{} })
+}
+
+// approvalAgeTickInterval is how often the chat surface redraws while a
+// decision is pending, purely to advance the "waiting Xm" duration shown on
+// the approval panel's title — deliberately coarse: a duration display
+// doesn't need per-second precision, and ticking is pure redraw overhead
+// while nothing else is happening.
+const approvalAgeTickInterval = 15 * time.Second
+
+// approvalAgeTickMsg requests a redraw so the pending-approval duration
+// advances even with no new events arriving — View() is a pure function of
+// Model's current fields, and nothing else periodically re-invokes it while
+// idle (the spinner ticker explicitly stops once proc.State != StateWorking,
+// and StateAwaitingInput is not StateWorking).
+type approvalAgeTickMsg struct{}
+
+// tickApprovalAge schedules the next approvalAgeTickMsg.
+func tickApprovalAge() tea.Cmd {
+	return tea.Tick(approvalAgeTickInterval, func(time.Time) tea.Msg { return approvalAgeTickMsg{} })
 }
 
 // SetMaxWidgetLines configures the output widgets' body-row cap.
@@ -281,6 +349,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the input slot whenever a decision starts or stops being awaited.
 		if (m.proc.State == state.StateAwaitingInput) != (prev == state.StateAwaitingInput) {
 			m.relayout()
+			// Start the pending-duration redraw loop; it stops itself (see the
+			// approvalAgeTickMsg case) once no longer awaiting input, so it's
+			// only started here, on the false->true transition.
+			if m.proc.State == state.StateAwaitingInput {
+				cmds = append(cmds, tickApprovalAge())
+			}
 		}
 		return m, tea.Batch(cmds...)
 	case spinner.TickMsg:
@@ -312,6 +386,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prompt, _ := p["prompt"].(string)
 				m.approval.Set(prompt, state.DecodeApprovalOptions(p["options"]))
 				m.pending = decodeInt(p["pending"])
+				m.pendingSince = time.UnixMilli(decodeInt64(p["since"]))
 			}
 		}
 		cmd := m.output.Apply(ev)
@@ -324,6 +399,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.output.SetConnected(m.bridge.Connected())
 		}
 		return m, m.pollConnections()
+	case approvalAgeTickMsg:
+		if m.proc.State != state.StateAwaitingInput {
+			return m, nil // stop ticking once no longer awaiting a decision
+		}
+		return m, tickApprovalAge()
 	case flashOffMsg:
 		m.flashing = false
 		return m, nil
@@ -620,7 +700,11 @@ func (m Model) View() tea.View {
 	rows = append(rows, statusBar(m.proc, m.spinner.View(), m.width))
 	rows = append(rows, m.hintStrip())
 	if m.proc.State == state.StateAwaitingInput {
-		rows = append(rows, m.frame(m.approval.View(), true, false, approvalPanelTitle(m.pending))...)
+		var elapsed time.Duration
+		if !m.pendingSince.IsZero() {
+			elapsed = time.Since(m.pendingSince)
+		}
+		rows = append(rows, m.frame(m.approval.View(), true, false, approvalPanelTitle(m.pending, elapsed))...)
 	}
 	rows = append(rows, m.frame(m.input.View(), m.focus == focusInput && m.proc.State != state.StateAwaitingInput, m.flashing, "")...)
 	rows = clampRowWidth(rows, m.width)
