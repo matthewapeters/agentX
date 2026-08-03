@@ -26,12 +26,22 @@ func (s *stubToolRunner) Run(_ context.Context, _ tools.Descriptor, _ map[string
 	return s.result, s.err
 }
 
-// stubApprovalSeeker scripts RequestApproval/RequestOutputSizeDecision and
-// records how many times each was called.
+// stubApprovalSeeker scripts RequestApproval/RequestOutputSizeDecision/
+// RequestToolLimitApproval and records how many times each was called.
 type stubApprovalSeeker struct {
 	verdict      tools.Verdict
 	approveErr   error
 	approveCalls int
+
+	// continueOnLimit/continueErr script RequestToolLimitApproval; defaults
+	// (false, nil) mean a test that never sets them gets a deterministic
+	// "stop" the first time the iteration budget is hit, matching the
+	// pre-continuation-approval behavior for any test that doesn't care
+	// about this path.
+	continueOnLimit   bool
+	continueErr       error
+	toolLimitCalls    int
+	toolLimitUsedArgs []int // used argument from each RequestToolLimitApproval call, in order
 }
 
 func (s *stubApprovalSeeker) RequestApproval(context.Context, tools.Descriptor, map[string]string, *tools.Policy, string) (tools.Verdict, error) {
@@ -41,6 +51,12 @@ func (s *stubApprovalSeeker) RequestApproval(context.Context, tools.Descriptor, 
 
 func (s *stubApprovalSeeker) RequestOutputSizeDecision(_ context.Context, _ tools.Descriptor, _ map[string]string, res tools.Result) (tools.Result, bool, error) {
 	return res, true, nil
+}
+
+func (s *stubApprovalSeeker) RequestToolLimitApproval(_ context.Context, used int) (bool, error) {
+	s.toolLimitCalls++
+	s.toolLimitUsedArgs = append(s.toolLimitUsedArgs, used)
+	return s.continueOnLimit, s.continueErr
 }
 
 // newTestToolCore builds a ConversationCore wired for runNativeToolCall/

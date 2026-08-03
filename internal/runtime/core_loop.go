@@ -123,13 +123,18 @@ func (c *ConversationCore) thinkingPrompt(doThink bool) string {
 
 // RunPrompt drives one prompt cycle as a flat loop: submit → LLM (advertising
 // native tool schemas) → detect tool calls vs a chat response → execute
-// tools/fold results back → loop, until the model answers with plain text or the
-// per-turn tool-iteration budget is hit. This is runPrompt's body
-// (internal/runtime/loop.go, pre-Phase-2), moved verbatim in control flow —
-// direct o.bus/o.store/o.gate/o.mu/o.history reaches are replaced by
-// c.events/c.convo and the injected closures above. The o.mu/started/accepting
-// readiness check and refreshLiveFacts are deliberately NOT here — see the Phase
-// 2 behavior doc for why they stay as Orchestrator-side pre-flight steps.
+// tools/fold results back → loop, until the model answers with plain text.
+// Hitting the per-turn tool-iteration budget (maxToolIterations) no longer
+// hard-stops the turn — it pauses for a continue/stop decision
+// (RequestToolLimitApproval); continuing resets the budget window and keeps
+// looping under the same cap, asking again each time it's next exhausted
+// (docs/architecture/behavior/tool_iteration_limit_approval.feature.md).
+// This is runPrompt's body (internal/runtime/loop.go, pre-Phase-2), moved
+// verbatim in control flow — direct o.bus/o.store/o.gate/o.mu/o.history
+// reaches are replaced by c.events/c.convo and the injected closures above.
+// The o.mu/started/accepting readiness check and refreshLiveFacts are
+// deliberately NOT here — see the Phase 2 behavior doc for why they stay as
+// Orchestrator-side pre-flight steps.
 func (c *ConversationCore) RunPrompt(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 	var userOrd uint64
 	if opts.RecordUserPrompt {
@@ -158,9 +163,40 @@ func (c *ConversationCore) RunPrompt(ctx context.Context, opts RunOptions) (RunO
 	var err error
 	var pins []*toolPin
 
-	for i := 0; i < maxIter; i++ {
+	// iter counts round-trips within the CURRENT budget window, reset to 0
+	// every time the user approves continuing past maxIter — totalIter never
+	// resets, purely for the prompt text ("reached N round-trips" reporting
+	// the true depth of a turn that's been extended one or more times), and
+	// firstCall (not iter) gates thinking, so a continuation reset never
+	// re-triggers reasoning that should only happen once at the very start
+	// of the turn (docs/architecture/behavior/
+	// tool_iteration_limit_approval.feature.md).
+	iter := 0
+	totalIter := 0
+	firstCall := true
+	declinedToContinue := false
+
+	for {
+		if iter >= maxIter {
+			cont, cerr := c.approvals.RequestToolLimitApproval(ctx, totalIter)
+			if cerr != nil {
+				// Interrupted while awaiting the continue/stop decision: end the
+				// cycle cleanly, the same posture as an interrupted tool approval.
+				c.report(state.StateCompleted, state.PhaseNone)
+				return RunOutcome{Interrupted: true}, nil
+			}
+			if !cont {
+				declinedToContinue = true
+				break
+			}
+			iter = 0
+		}
+		iter++
+		totalIter++
+
 		var result ChatResult
-		result, respOrd, err = c.streamResponse(ctx, turn.Messages, fallback, toolSchemas, doThink && i == 0, opts.Ephemeral)
+		result, respOrd, err = c.streamResponse(ctx, turn.Messages, fallback, toolSchemas, doThink && firstCall, opts.Ephemeral)
+		firstCall = false
 		if err != nil {
 			c.convo.Record(TurnRecord{Err: err, Record: opts.RecordUserPrompt, UserOrd: userOrd, UserText: opts.Text, RespOrd: respOrd, Pins: pins})
 			return RunOutcome{}, c.finishCycle(err)
@@ -196,9 +232,14 @@ func (c *ConversationCore) RunPrompt(ctx context.Context, opts RunOptions) (RunO
 	}
 
 	if lastResp == "" && err == nil {
-		// The tool-iteration budget was hit without ever reaching a text answer —
-		// never leave the user with total silence.
-		lastResp = "[stopped: reached the tool-call limit for this turn without a final answer]"
+		// The tool-iteration budget was hit and the user declined to continue
+		// (or, in principle, some other path left both empty) — never leave
+		// the user with total silence.
+		if declinedToContinue {
+			lastResp = "[stopped: declined to continue past the tool-call limit for this turn]"
+		} else {
+			lastResp = "[stopped: reached the tool-call limit for this turn without a final answer]"
+		}
 		respOrd = c.events.Publish("AGENT_RESPONSE", state.ContentAgentResponse, map[string]any{"text": lastResp}, opts.Ephemeral)
 	}
 	c.convo.Record(TurnRecord{Err: err, Record: opts.RecordUserPrompt, UserOrd: userOrd, UserText: opts.Text, RespOrd: respOrd, Response: lastResp, Pins: pins})

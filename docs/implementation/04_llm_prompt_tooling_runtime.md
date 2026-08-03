@@ -158,8 +158,12 @@ THEN the orchestrator runs registered synchronous hooks, then asynchronous hooks
   AND for tool calls, executes each (policy/approval-gated) or runs plan_task,
       folds the results back as tool-role messages, runs the hook points again,
       and loops back to the model
-  AND stops looping and answers with whatever it has if a per-turn tool-call
-      budget (Settings.MaxToolIterationsPerTurn, default 25) is reached.
+  AND pauses for a continue/stop decision if a per-turn tool-call budget
+      (Settings.MaxToolIterationsPerTurn, default 25) is reached without a
+      final answer — continuing resets the budget window and keeps looping
+      under the same cap; declining (or an interrupt while the decision is
+      pending) ends the turn and answers with whatever it has (docs/
+      architecture/behavior/tool_iteration_limit_approval.feature.md).
 ```
 
 - Implementation: `internal/runtime/loop.go` (`Orchestrator.runPrompt`),
