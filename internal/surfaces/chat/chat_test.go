@@ -285,3 +285,38 @@ func TestPgDownWhileAwaitingInputScrollsApprovalPromptNotFocus(t *testing.T) {
 		t.Error("approval.View() unchanged after pgdown while awaiting input, want the prompt to have scrolled")
 	}
 }
+
+// GIVEN a deliberately short terminal, an oversized prompt, and 4 options
+// WHEN relayout() computes the approval panel's height
+// THEN every option is still visible in the rendered approval widget — the
+// confirmed failure from session raw-interesting-elephant, where relayout()
+// gave the approval panel its full unclamped DesiredHeight() regardless of
+// how little of the terminal was actually left, so only the first option
+// (everything the prompt didn't already consume) ever made it on-screen
+// (docs/architecture/behavior/approval_panel_height_budget.feature.md).
+func TestRelayoutClampsApprovalHeightToTerminal(t *testing.T) {
+	m := New()
+	m.width = 40
+	m.height = 8 // deliberately too short for prompt + options unclamped
+	m.proc = state.ProcessingState{State: state.StateAwaitingInput}
+
+	words := make([]string, 200)
+	for i := range words {
+		words[i] = "word"
+	}
+	opts := []state.ApprovalOption{
+		{Label: "Approve for this session", Decision: "session"},
+		{Label: "Approve for this plan", Decision: "plan"},
+		{Label: "Approve for all sessions", Decision: "global"},
+		{Label: "Deny", Decision: "deny"},
+	}
+	m.approval.Set(strings.Join(words, " "), opts, nil)
+	m.relayout()
+
+	view := m.approval.View()
+	for _, opt := range opts {
+		if !strings.Contains(view, opt.Label) {
+			t.Errorf("approval.View() after relayout on a short terminal is missing option %q: %q", opt.Label, view)
+		}
+	}
+}

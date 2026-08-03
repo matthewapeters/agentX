@@ -287,3 +287,93 @@ func TestPromptLinesShortPromptUnaffected(t *testing.T) {
 		t.Errorf("promptLines() = %v, want [%q] unchanged", lines, "a short prompt")
 	}
 }
+
+// GIVEN an oversized prompt and 4 options, sized so tightly that even the
+// unconstrained render (prompt window + all options + nothing else) would
+// exceed the panel's actual height
+// WHEN View renders
+// THEN every option is still present — the one thing a squeeze must never
+// sacrifice, since it's what the user is actually choosing between (the
+// confirmed failure this closes: session raw-interesting-elephant showed
+// only the first option, with the rest pushed off-screen).
+func TestViewNeverDropsOptionsUnderHeightPressure(t *testing.T) {
+	m := New()
+	m.SetSize(10, 3) // far less than maxPromptRows+len(options)
+	opts := []state.ApprovalOption{
+		{Label: "Approve for this session", Decision: "session"},
+		{Label: "Approve for this plan", Decision: "plan"},
+		{Label: "Approve for all sessions", Decision: "global"},
+		{Label: "Deny", Decision: "deny"},
+	}
+	m.Set(oversizedPrompt(), opts, []string{"queued 1", "queued 2"})
+
+	view := m.View()
+	for _, opt := range opts {
+		if !strings.Contains(view, opt.Label) {
+			t.Errorf("View() = %q, missing option %q under height pressure", view, opt.Label)
+		}
+	}
+}
+
+// GIVEN a prompt and options that together need more room than is
+// available, plus a queued-preview section
+// WHEN View renders
+// THEN the queued section is dropped entirely before the prompt's window
+// shrinks below what it would otherwise get — queued preview is the least
+// essential content (a preview of what's next, not what's being decided).
+func TestViewDropsQueuedBeforeShrinkingPrompt(t *testing.T) {
+	m := New()
+	m.SetSize(10, 5) // room for options + a couple prompt rows, not queued too
+	m.Set(oversizedPrompt(), testOptions(), []string{"run http_get?", "run read_file?"})
+
+	view := m.View()
+	if strings.Contains(view, "Also waiting:") {
+		t.Errorf("View() = %q, want the queued section dropped under this height pressure", view)
+	}
+	for _, opt := range testOptions() {
+		if !strings.Contains(view, opt.Label) {
+			t.Errorf("View() = %q, missing option %q", view, opt.Label)
+		}
+	}
+}
+
+// GIVEN a panel sized to exactly its own DesiredHeight() (the "ample room"
+// case relayout() produces whenever the terminal isn't actually squeezed)
+// WHEN View renders
+// THEN it is byte-identical to the fully unconstrained render (SetSize's
+// height left at 0) — the height-aware priority logic is a no-op whenever
+// there's enough room, exactly like Phase A's width clamp.
+func TestViewAmpleHeightMatchesUnconstrained(t *testing.T) {
+	unconstrained := New()
+	unconstrained.SetSize(40, 0)
+	unconstrained.Set(oversizedPrompt(), testOptions(), []string{"run http_get?", "run read_file?"})
+	want := unconstrained.View()
+	desired := unconstrained.DesiredHeight()
+
+	constrained := New()
+	constrained.SetSize(40, 0)
+	constrained.Set(oversizedPrompt(), testOptions(), []string{"run http_get?", "run read_file?"})
+	constrained.SetSize(40, desired)
+
+	if got := constrained.View(); got != want {
+		t.Errorf("View() at exactly DesiredHeight() = %q, want unchanged from unconstrained %q", got, want)
+	}
+}
+
+// GIVEN a panel Set with content whose unconstrained size is fixed
+// WHEN SetSize is called with a constrained height (simulating relayout's
+// clamp)
+// THEN DesiredHeight() is unaffected — it must stay a pure, unconstrained
+// query so relayout() has an honest number to clamp against in the first
+// place, not one already secretly capped by a previous clamp.
+func TestDesiredHeightIgnoresSetSizeHeight(t *testing.T) {
+	m := New()
+	m.SetSize(40, 0)
+	m.Set(oversizedPrompt(), testOptions(), nil)
+	want := m.DesiredHeight()
+
+	m.SetSize(40, 3)
+	if got := m.DesiredHeight(); got != want {
+		t.Errorf("DesiredHeight() after a constrained SetSize = %d, want unchanged %d", got, want)
+	}
+}

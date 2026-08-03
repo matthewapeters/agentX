@@ -148,16 +148,32 @@ func (m *Model) Update(msg tea.KeyPressMsg) Action {
 // benefits this widget too instead of a second, drifting copy.
 const maxPromptRows = 10
 
-// promptLines renders the prompt's current scroll window: every wrapped row
-// when it fits within maxPromptRows, or a maxPromptRows-row window with a
-// scrollbar column when it doesn't.
+// promptLines is DesiredHeight's unconstrained view of the prompt — always
+// capped at maxPromptRows regardless of what m.height currently is, since
+// relayout() needs an honest "what would I like" number to compute its own
+// clamp against (docs/architecture/behavior/
+// approval_panel_height_budget.feature.md). View() calls promptRowsCapped
+// directly with whatever's actually available instead.
 func (m *Model) promptLines() []string {
+	return m.promptRowsCapped(maxPromptRows)
+}
+
+// promptRowsCapped renders the prompt's current scroll window at up to cap
+// rows: every wrapped row when it fits, or a cap-row window with a
+// scrollbar column when it doesn't. Parameterized (rather than a bare
+// maxPromptRows constant) so View() can shrink the window to whatever's
+// left after options/queued preview claim their share of a constrained
+// height, with the scrollbar's own proportions (scrollutil.ScrollbarCell's
+// track argument) matching the ACTUAL window shown — a slice-after-the-fact
+// truncation would leave the scrollbar computed against the wrong track
+// length instead.
+func (m *Model) promptRowsCapped(rowCap int) []string {
 	w := max(m.width, 1)
-	if m.prompt == "" {
+	if m.prompt == "" || rowCap <= 0 {
 		return nil
 	}
 	lines := scrollutil.WrapLines(m.prompt, w)
-	if len(lines) <= maxPromptRows {
+	if len(lines) <= rowCap {
 		m.promptOffset = 0
 		return lines
 	}
@@ -166,24 +182,43 @@ func (m *Model) promptLines() []string {
 	bodyW := max(w-1, 1)
 	lines = scrollutil.WrapLines(m.prompt, bodyW)
 	total := len(lines)
-	maxOffset := total - maxPromptRows
+	maxOffset := total - rowCap
 	m.promptOffset = scrollutil.ClampInt(m.promptOffset, 0, maxOffset)
-	window := lines[m.promptOffset : m.promptOffset+maxPromptRows]
+	window := lines[m.promptOffset : m.promptOffset+rowCap]
 
-	out := make([]string, maxPromptRows)
+	out := make([]string, rowCap)
 	for i, l := range window {
-		out[i] = scrollutil.PadTo(l, bodyW) + scrollutil.ScrollbarCell(i, m.promptOffset, total, maxPromptRows)
+		out[i] = scrollutil.PadTo(l, bodyW) + scrollutil.ScrollbarCell(i, m.promptOffset, total, rowCap)
 	}
 	return out
 }
 
-// View renders the prompt (wrapped to width) followed by one row per option,
-// the highlighted row marked with a pointer glyph, followed by a
-// queued-preview section (nothing, when this request has nothing queued
-// behind it).
+// View renders the prompt (wrapped to width), one row per option (the
+// highlighted row marked with a pointer glyph), and a queued-preview
+// section — in that order, but sized with a strict priority when m.height
+// constrains the total: EVERY option always renders (the one thing the
+// user cannot decide without seeing), the queued-preview section drops
+// entirely first when tight, and the prompt's visible window shrinks to
+// absorb whatever's left. m.height == 0 means "not yet sized" (the
+// DesiredHeight() query state SetSize(w, 0) leaves it in) — unconstrained,
+// identical to this function's behavior before this priority scheme
+// existed. See docs/architecture/behavior/
+// approval_panel_height_budget.feature.md for why: a prior session showed
+// only the first option because nothing reserved room for the rest before
+// the prompt greedily consumed the whole (unclamped) panel height.
 func (m *Model) View() string {
+	queued := m.queuedLines()
+	promptCap := maxPromptRows
+	if m.height > 0 {
+		budget := max(m.height-len(m.options), 0)
+		if len(queued) > budget {
+			queued = nil
+		}
+		promptCap = scrollutil.ClampInt(budget-len(queued), 0, maxPromptRows)
+	}
+
 	var rows []string
-	rows = append(rows, m.promptLines()...)
+	rows = append(rows, m.promptRowsCapped(promptCap)...)
 	for i, opt := range m.options {
 		marker := "  "
 		line := opt.Label
@@ -193,7 +228,7 @@ func (m *Model) View() string {
 		}
 		rows = append(rows, marker+line)
 	}
-	rows = append(rows, m.queuedLines()...)
+	rows = append(rows, queued...)
 	if len(rows) == 0 {
 		return ""
 	}

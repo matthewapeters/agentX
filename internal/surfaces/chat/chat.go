@@ -678,11 +678,6 @@ func (m *Model) relayout() {
 	inputH := m.input.DesiredHeight()
 
 	awaiting := m.proc.State == state.StateAwaitingInput
-	var approvalH int
-	if awaiting {
-		m.approval.SetSize(innerW, 0)
-		approvalH = m.approval.DesiredHeight()
-	}
 	// Chrome: output border (2) + status (1) + hint (1) + input border (2), plus
 	// the approval panel's own border (2) when it's showing.
 	chrome := 2 + 1 + hintHeight + 2
@@ -691,6 +686,30 @@ func (m *Model) relayout() {
 	}
 
 	m.banner.SetWidth(innerW)
+
+	var approvalH int
+	if awaiting {
+		m.approval.SetSize(innerW, 0) // 0 = query desired height, unconstrained
+		desired := m.approval.DesiredHeight()
+		// The approval panel must never claim more height than the terminal
+		// can actually give it after its own chrome/input/banner — previously
+		// only outputHeight (below) was floored at 0, leaving approvalH free
+		// to ask for more rows than existed and render every one of them
+		// regardless, silently pushing everything past the first option (and
+		// the input panel beneath it) off the bottom of the viewport (docs/
+		// architecture/behavior/approval_panel_height_budget.feature.md).
+		// Floored at 1, not 0: approval.Model treats SetSize's height of
+		// exactly 0 as "unconstrained" (the query call just above), so a
+		// truly-0-row budget must still read as "some real constraint" to
+		// the widget, not collide with that sentinel.
+		maxAvailable := m.height - chrome - inputH - m.banner.FullHeight()
+		if maxAvailable < 1 {
+			maxAvailable = 1
+		}
+		approvalH = min(desired, maxAvailable)
+		m.approval.SetSize(innerW, approvalH)
+	}
+
 	// The collapse trigger is measured against the output height available
 	// under the FULL-size banner, a fixed budget, so evaluating it doesn't
 	// move the goalposts once the banner has already collapsed.
@@ -705,9 +724,6 @@ func (m *Model) relayout() {
 		outputHeight = 0
 	}
 	m.output.SetSize(innerW, outputHeight)
-	if awaiting {
-		m.approval.SetSize(innerW, approvalH)
-	}
 	m.input.SetSize(innerW, inputH)
 }
 
