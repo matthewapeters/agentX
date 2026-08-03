@@ -47,11 +47,38 @@ const (
 // pending approval visually stands out from ordinary focus state.
 const defaultAttention = "1;33"
 
-// approvalTitle is the fixed border title shown while the swapped-in approval
+// approvalTitleBase is the border title shown while the swapped-in approval
 // widget occupies the input panel's slot — the same wording regardless of what
 // decision is being asked for (tool approval, verb continuation, or any future
 // kind), per the "consistent behavior" requirement.
-const approvalTitle = "AgentX Needs Your Input"
+const approvalTitleBase = "AgentX Needs Your Input"
+
+// approvalPanelTitle appends a "(1 of N)" queue-depth suffix when more than
+// one decision is pending — always position 1, since decisionGate only ever
+// shows the front of its FIFO queue. Unchanged for the common single-pending
+// case, so this adds no clutter when there's nothing to disambiguate.
+func approvalPanelTitle(pending int) string {
+	if pending <= 1 {
+		return approvalTitleBase
+	}
+	return fmt.Sprintf("%s (1 of %d)", approvalTitleBase, pending)
+}
+
+// decodeInt reads an int payload field that may arrive as a native Go int
+// (in-process chat surface) or a JSON-decoded float64 (a remote surface
+// attached over transport) — the same dual-mode robustness
+// state.DecodeApprovalOptions already demonstrates for the sibling options
+// field on the same event.
+func decodeInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case float64:
+		return int(n)
+	default:
+		return 0
+	}
+}
 
 // ProcessingStateMsg delivers a processing-state update to the chat surface.
 type ProcessingStateMsg state.ProcessingState
@@ -95,6 +122,13 @@ type Model struct {
 	// visible (inert) rather than being replaced, so there is no swap and no
 	// frame where a bottom panel goes missing.
 	approval     *approval.Model
+	// pending is the decision queue depth at the last APPROVAL_REQUEST event,
+	// including the one currently shown — always >= 1 while proc.State is
+	// StateAwaitingInput, meaningless otherwise. Drives the approval panel
+	// title's "(1 of N)" suffix when > 1, so a queued-behind-this-one decision
+	// is never a surprise (docs/architecture/behavior/
+	// chat_pending_approval_count.feature.md).
+	pending      int
 	proc         state.ProcessingState
 	spinner      spinner.Model
 	focus        focus
@@ -277,6 +311,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if p, ok := ev.Payload.(map[string]any); ok {
 				prompt, _ := p["prompt"].(string)
 				m.approval.Set(prompt, state.DecodeApprovalOptions(p["options"]))
+				m.pending = decodeInt(p["pending"])
 			}
 		}
 		cmd := m.output.Apply(ev)
@@ -585,7 +620,7 @@ func (m Model) View() tea.View {
 	rows = append(rows, statusBar(m.proc, m.spinner.View(), m.width))
 	rows = append(rows, m.hintStrip())
 	if m.proc.State == state.StateAwaitingInput {
-		rows = append(rows, m.frame(m.approval.View(), true, false, approvalTitle)...)
+		rows = append(rows, m.frame(m.approval.View(), true, false, approvalPanelTitle(m.pending))...)
 	}
 	rows = append(rows, m.frame(m.input.View(), m.focus == focusInput && m.proc.State != state.StateAwaitingInput, m.flashing, "")...)
 	rows = clampRowWidth(rows, m.width)

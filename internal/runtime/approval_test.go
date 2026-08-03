@@ -141,3 +141,56 @@ func TestDecisionGateDeliverWithNothingPending(t *testing.T) {
 		t.Fatal("deliver on an empty queue should report false")
 	}
 }
+
+// TestGateLenReflectsQueueDepth: Len() tracks the queue depth through
+// enqueue/dequeue, including the front-of-queue request currently shown —
+// the count publishApprovalPrompt threads into the APPROVAL_REQUEST event
+// so the surface can show "1 of N" instead of leaving later-queued decisions
+// invisible until resolved one at a time.
+func TestGateLenReflectsQueueDepth(t *testing.T) {
+	g := &decisionGate{}
+	if got := g.Len(); got != 0 {
+		t.Fatalf("Len() on empty gate = %d, want 0", got)
+	}
+
+	req1 := newPendingRequest[approvalUIRequest, string](approvalUIRequest{prompt: "first"})
+	req2 := newPendingRequest[approvalUIRequest, string](approvalUIRequest{prompt: "second"})
+	req3 := newPendingRequest[approvalUIRequest, string](approvalUIRequest{prompt: "third"})
+	g.enqueue(req1)
+	if got := g.Len(); got != 1 {
+		t.Errorf("Len() after 1 enqueue = %d, want 1", got)
+	}
+	g.enqueue(req2)
+	g.enqueue(req3)
+	if got := g.Len(); got != 3 {
+		t.Errorf("Len() after 3 enqueues = %d, want 3", got)
+	}
+
+	g.dequeue(req1)
+	if got := g.Len(); got != 2 {
+		t.Errorf("Len() after dequeuing the front = %d, want 2", got)
+	}
+}
+
+// TestPublishApprovalPromptCarriesPendingCount: the APPROVAL_REQUEST event's
+// payload carries whatever pending count the caller passes, unchanged — the
+// piece RequestDecision wires to o.gate.Len() at each of its two call sites.
+func TestPublishApprovalPromptCarriesPendingCount(t *testing.T) {
+	o := testOrchestrator()
+	sub := o.bus.Subscribe()
+	defer sub.Close()
+
+	o.publishApprovalPrompt("run write_file?", toolApprovalOptions, 3)
+
+	ev := <-sub.C
+	if ev.EventType != "APPROVAL_REQUEST" {
+		t.Fatalf("event type = %q, want APPROVAL_REQUEST", ev.EventType)
+	}
+	p, ok := ev.Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("payload = %T, want map[string]any", ev.Payload)
+	}
+	if got, ok := p["pending"].(int); !ok || got != 3 {
+		t.Errorf("payload[\"pending\"] = %v (%T), want 3", p["pending"], p["pending"])
+	}
+}

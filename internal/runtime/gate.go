@@ -61,6 +61,15 @@ func (g *gate[Req, Resp]) dequeue(req *pendingRequest[Req, Resp]) (next *pending
 	return nil, false
 }
 
+// Len reports the current queue depth, including the front-of-queue request
+// currently shown to the surface. Read-only — callers use it to tell the
+// surface how many decisions are pending, not just that one is.
+func (g *gate[Req, Resp]) Len() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.pending)
+}
+
 // deliver resolves the currently-shown (front-of-queue) request only — the surface
 // only ever answers the one request it was shown, so there is never ambiguity about
 // which request a decision belongs to.

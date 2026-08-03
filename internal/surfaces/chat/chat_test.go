@@ -106,3 +106,60 @@ func TestStatusBarMeasuresDisplayWidthNotRuneCount(t *testing.T) {
 		t.Errorf("statusBar display width = %d, want 40: %q", w, got)
 	}
 }
+
+// GIVEN a pending count of 0 or 1 (the common case — nothing else queued)
+// WHEN approvalPanelTitle builds the panel title
+// THEN it returns the unchanged base title, no "(1 of N)" clutter.
+//
+// GIVEN a pending count greater than 1
+// WHEN approvalPanelTitle builds the panel title
+// THEN it appends "(1 of N)" — always position 1, since decisionGate only
+// ever shows the front of its FIFO queue.
+func TestApprovalPanelTitleShowsCount(t *testing.T) {
+	for _, tc := range []struct {
+		pending int
+		want    string
+	}{
+		{0, approvalTitleBase},
+		{1, approvalTitleBase},
+		{2, approvalTitleBase + " (1 of 2)"},
+		{5, approvalTitleBase + " (1 of 5)"},
+	} {
+		if got := approvalPanelTitle(tc.pending); got != tc.want {
+			t.Errorf("approvalPanelTitle(%d) = %q, want %q", tc.pending, got, tc.want)
+		}
+	}
+}
+
+// GIVEN an APPROVAL_REQUEST event's pending field arrives as either a native
+// int (in-process chat surface) or a JSON-decoded float64 (a remote surface
+// attached over transport)
+// WHEN chat.Model handles the event
+// THEN both decode to the same count and the same rendered panel title —
+// proving the transport-decoded path works identically to the native-int
+// path, the same dual-mode robustness state.DecodeApprovalOptions already
+// demonstrates for the sibling options field.
+func TestApprovalRequestEventPendingDecodesBothWireShapes(t *testing.T) {
+	for _, pending := range []any{3, float64(3)} {
+		m := New()
+		m.width = 80
+		m.height = 24
+		m.relayout()
+
+		updated, _ := m.Update(EventMsg(state.Event{
+			EventType:   "APPROVAL_REQUEST",
+			ContentType: state.ContentApprovalRequest,
+			Payload: map[string]any{
+				"prompt":  "run write_file?",
+				"options": []any{map[string]any{"label": "Deny", "decision": "deny"}},
+				"pending": pending,
+			},
+			Enabled: true,
+		}))
+		m = updated.(Model)
+
+		if m.pending != 3 {
+			t.Errorf("pending = %v: m.pending = %d, want 3", pending, m.pending)
+		}
+	}
+}

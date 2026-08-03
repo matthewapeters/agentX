@@ -43,12 +43,12 @@ func (o *Orchestrator) RequestDecision(ctx context.Context, phase state.Phase, p
 	req := newPendingRequest[approvalUIRequest, string](approvalUIRequest{prompt: prompt, options: options})
 	shown := o.gate.enqueue(req)
 	if shown {
-		o.publishApprovalPrompt(prompt, options)
+		o.publishApprovalPrompt(prompt, options, o.gate.Len())
 		o.setProcessing(state.StateAwaitingInput, phase)
 	}
 	defer func() {
 		if next, ok := o.gate.dequeue(req); ok {
-			o.publishApprovalPrompt(next.payload.prompt, next.payload.options)
+			o.publishApprovalPrompt(next.payload.prompt, next.payload.options, o.gate.Len())
 			o.setProcessing(state.StateAwaitingInput, phase)
 		}
 	}()
@@ -74,15 +74,19 @@ func chosenLabel(options []state.ApprovalOption, decision string) string {
 	return decision
 }
 
-// publishApprovalPrompt emits {prompt, options} as an approval_request event —
-// rendered by the surface both as the swapped-in input-panel widget and as a
-// lightweight scrollback record of what was asked. Replaces the former
-// per-kind publishToolCall (the pending-decision display use, not
-// classifier_pipeline.go's unrelated post-approval ContentToolCall log) and
-// publishVerbPrompt.
-func (o *Orchestrator) publishApprovalPrompt(prompt string, options []state.ApprovalOption) {
+// publishApprovalPrompt emits {prompt, options, pending} as an
+// approval_request event — rendered by the surface both as the swapped-in
+// input-panel widget and as a lightweight scrollback record of what was
+// asked. Replaces the former per-kind publishToolCall (the pending-decision
+// display use, not classifier_pipeline.go's unrelated post-approval
+// ContentToolCall log) and publishVerbPrompt. pending is the queue depth at
+// publish time (o.gate.Len()), including this request — always 1 when
+// nothing else is queued; the surface uses it to show "1 of N" rather than
+// leaving the user unaware several more decisions are waiting behind this
+// one (docs/architecture/behavior/chat_pending_approval_count.feature.md).
+func (o *Orchestrator) publishApprovalPrompt(prompt string, options []state.ApprovalOption, pending int) {
 	o.publish("APPROVAL_REQUEST", state.ContentApprovalRequest, map[string]any{
-		"prompt": prompt, "options": options,
+		"prompt": prompt, "options": options, "pending": pending,
 	})
 }
 
