@@ -122,6 +122,28 @@ func decodeInt64(v any) int64 {
 	}
 }
 
+// decodeStringSlice reads a []string payload field that may arrive as a
+// native Go []string (in-process chat surface) or a JSON-decoded []any of
+// strings (a remote surface attached over transport) — decodeInt's dual-mode
+// coercion, for the queued-preview field (docs/architecture/behavior/
+// chat_pending_approval_batch_view.feature.md).
+func decodeStringSlice(v any) []string {
+	switch vv := v.(type) {
+	case []string:
+		return vv
+	case []any:
+		out := make([]string, 0, len(vv))
+		for _, x := range vv {
+			if s, ok := x.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 // ProcessingStateMsg delivers a processing-state update to the chat surface.
 type ProcessingStateMsg state.ProcessingState
 
@@ -384,7 +406,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if ev.ContentType == state.ContentApprovalRequest {
 			if p, ok := ev.Payload.(map[string]any); ok {
 				prompt, _ := p["prompt"].(string)
-				m.approval.Set(prompt, state.DecodeApprovalOptions(p["options"]))
+				m.approval.Set(prompt, state.DecodeApprovalOptions(p["options"]), decodeStringSlice(p["queued"]))
 				m.pending = decodeInt(p["pending"])
 				m.pendingSince = time.UnixMilli(decodeInt64(p["since"]))
 			}

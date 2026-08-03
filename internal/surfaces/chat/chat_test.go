@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -174,6 +175,29 @@ func TestApprovalAgeTickStopsWhenNoLongerAwaiting(t *testing.T) {
 	}
 }
 
+// GIVEN a []string payload field (native, in-process) or a []any of strings
+// (JSON-decoded, remote transport) — including a stray non-string element,
+// which a remote surface should never send but a defensive decoder should
+// not panic on
+// WHEN decodeStringSlice reads it
+// THEN both wire shapes decode to the same []string, and the non-string
+// element is skipped rather than crashing the decode.
+func TestDecodeStringSliceBothWireShapes(t *testing.T) {
+	want := []string{"a", "b"}
+	if got := decodeStringSlice([]string{"a", "b"}); !slices.Equal(got, want) {
+		t.Errorf("decodeStringSlice([]string) = %v, want %v", got, want)
+	}
+	if got := decodeStringSlice([]any{"a", "b"}); !slices.Equal(got, want) {
+		t.Errorf("decodeStringSlice([]any) = %v, want %v", got, want)
+	}
+	if got := decodeStringSlice([]any{"a", 42, "b"}); !slices.Equal(got, want) {
+		t.Errorf("decodeStringSlice([]any with non-string) = %v, want %v (non-string skipped)", got, want)
+	}
+	if got := decodeStringSlice(nil); got != nil {
+		t.Errorf("decodeStringSlice(nil) = %v, want nil", got)
+	}
+}
+
 // GIVEN an APPROVAL_REQUEST event's pending and since fields arrive as
 // either native Go values (int, int64 — in-process chat surface) or
 // JSON-decoded float64 (a remote surface attached over transport)
@@ -187,13 +211,18 @@ func TestApprovalRequestEventPendingDecodesBothWireShapes(t *testing.T) {
 	for _, tc := range []struct {
 		pending any
 		since   any
+		queued  any
 	}{
-		{3, wantSince.UnixMilli()},
-		{float64(3), float64(wantSince.UnixMilli())},
+		{3, wantSince.UnixMilli(), []string{"run http_get?"}},
+		{float64(3), float64(wantSince.UnixMilli()), []any{"run http_get?"}},
 	} {
 		m := New()
 		m.width = 80
 		m.height = 24
+		// relayout only sizes the approval widget while awaiting_input (it's
+		// otherwise not shown) — set that first so approval.View() below
+		// renders at a real width instead of its zero-value default.
+		m.proc = state.ProcessingState{State: state.StateAwaitingInput}
 		m.relayout()
 
 		updated, _ := m.Update(EventMsg(state.Event{
@@ -204,6 +233,7 @@ func TestApprovalRequestEventPendingDecodesBothWireShapes(t *testing.T) {
 				"options": []any{map[string]any{"label": "Deny", "decision": "deny"}},
 				"pending": tc.pending,
 				"since":   tc.since,
+				"queued":  tc.queued,
 			},
 			Enabled: true,
 		}))
@@ -214,6 +244,9 @@ func TestApprovalRequestEventPendingDecodesBothWireShapes(t *testing.T) {
 		}
 		if !m.pendingSince.Equal(wantSince) {
 			t.Errorf("since = %v: m.pendingSince = %v, want %v", tc.since, m.pendingSince, wantSince)
+		}
+		if view := m.approval.View(); !strings.Contains(view, "run http_get?") {
+			t.Errorf("queued = %v: approval.View() = %q, want it to contain the queued prompt", tc.queued, view)
 		}
 	}
 }

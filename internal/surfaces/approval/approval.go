@@ -11,6 +11,7 @@
 package approval
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -30,23 +31,37 @@ const (
 	ActionConfirm
 )
 
+// maxQueuedPreview bounds how many queued-behind prompts the panel lists
+// individually before collapsing the rest into a "+N more" summary row —
+// the panel's height must stay bounded regardless of queue depth (a plan
+// dispatching a dozen write calls must not blow the height budget Phase A's
+// clamp exists to protect); docs/architecture/behavior/
+// chat_pending_approval_batch_view.feature.md.
+const maxQueuedPreview = 5
+
 // Model is the approval widget state: a prompt and a navigable option list.
 type Model struct {
 	width, height int
 	prompt        string
 	options       []state.ApprovalOption
 	cursor        int
+	// queued is the prompt text of every request waiting BEHIND this one —
+	// a read-only preview, reviewed together with the current prompt but
+	// resolved one at a time same as always (the gate's queue is unaffected).
+	queued []string
 }
 
 // New returns an empty approval widget. Set populates it for a shown request.
 func New() *Model { return &Model{} }
 
 // Set (re)initializes the widget for a newly-shown request, resetting the
-// cursor to the first option.
-func (m *Model) Set(prompt string, options []state.ApprovalOption) {
+// cursor to the first option. queued lists what's waiting behind this
+// request, if anything (nil in the common single-pending case).
+func (m *Model) Set(prompt string, options []state.ApprovalOption, queued []string) {
 	m.prompt = prompt
 	m.options = options
 	m.cursor = 0
+	m.queued = queued
 }
 
 // SetSize sets the panel's render dimensions.
@@ -56,9 +71,10 @@ func (m *Model) SetSize(width, height int) {
 }
 
 // DesiredHeight is the number of rows the panel wants at its current width:
-// the wrapped prompt's row count plus one row per option.
+// the wrapped prompt's row count, plus one row per option, plus the
+// queued-preview rows (zero when nothing is queued behind this request).
 func (m *Model) DesiredHeight() int {
-	return max(len(m.promptLines())+len(m.options), 1)
+	return max(len(m.promptLines())+len(m.options)+len(m.queuedLines()), 1)
 }
 
 // Selected returns the currently-highlighted option. Zero value if there are
@@ -100,7 +116,9 @@ func (m *Model) promptLines() []string {
 }
 
 // View renders the prompt (wrapped to width) followed by one row per option,
-// the highlighted row marked with a pointer glyph.
+// the highlighted row marked with a pointer glyph, followed by a
+// queued-preview section (nothing, when this request has nothing queued
+// behind it).
 func (m *Model) View() string {
 	var rows []string
 	rows = append(rows, m.promptLines()...)
@@ -113,10 +131,33 @@ func (m *Model) View() string {
 		}
 		rows = append(rows, marker+line)
 	}
+	rows = append(rows, m.queuedLines()...)
 	if len(rows) == 0 {
 		return ""
 	}
 	return strings.Join(rows, "\n")
+}
+
+// queuedLines renders up to maxQueuedPreview queued prompts, each truncated
+// (not wrapped) to one row — a compact glance, not full detail; the user
+// gets the full prompt+options treatment when each one's own turn comes. A
+// "+N more" summary row covers anything beyond the cap. Returns nil (no
+// section at all) when nothing is queued behind this request — the common
+// case renders identically to before this feature existed.
+func (m *Model) queuedLines() []string {
+	if len(m.queued) == 0 {
+		return nil
+	}
+	w := max(m.width, 1)
+	lines := []string{"Also waiting:"}
+	show := min(len(m.queued), maxQueuedPreview)
+	for _, p := range m.queued[:show] {
+		lines = append(lines, "  "+ansi.Truncate(p, max(w-2, 1), "…"))
+	}
+	if more := len(m.queued) - show; more > 0 {
+		lines = append(lines, fmt.Sprintf("  … and %d more", more))
+	}
+	return lines
 }
 
 // wrapText greedily word-wraps s to w columns, preferring to break after a

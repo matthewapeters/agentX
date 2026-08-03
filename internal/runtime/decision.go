@@ -44,12 +44,12 @@ func (o *Orchestrator) RequestDecision(ctx context.Context, phase state.Phase, p
 	req := newPendingRequest[approvalUIRequest, string](approvalUIRequest{prompt: prompt, options: options})
 	shown := o.gate.enqueue(req)
 	if shown {
-		o.publishApprovalPrompt(prompt, options, o.gate.Len(), req.enqueuedAt)
+		o.publishApprovalPrompt(prompt, options, o.gate.Len(), req.enqueuedAt, queuedPrompts(o.gate.Queued()))
 		o.setProcessing(state.StateAwaitingInput, phase)
 	}
 	defer func() {
 		if next, ok := o.gate.dequeue(req); ok {
-			o.publishApprovalPrompt(next.payload.prompt, next.payload.options, o.gate.Len(), next.enqueuedAt)
+			o.publishApprovalPrompt(next.payload.prompt, next.payload.options, o.gate.Len(), next.enqueuedAt, queuedPrompts(o.gate.Queued()))
 			o.setProcessing(state.StateAwaitingInput, phase)
 		}
 	}()
@@ -75,7 +75,7 @@ func chosenLabel(options []state.ApprovalOption, decision string) string {
 	return decision
 }
 
-// publishApprovalPrompt emits {prompt, options, pending, since} as an
+// publishApprovalPrompt emits {prompt, options, pending, since, queued} as an
 // approval_request event — rendered by the surface both as the swapped-in
 // input-panel widget and as a lightweight scrollback record of what was
 // asked. Replaces the former per-kind publishToolCall (the pending-decision
@@ -89,10 +89,27 @@ func chosenLabel(options []state.ApprovalOption, decision string) string {
 // carried as a millisecond epoch — the surface computes elapsed duration
 // fresh at render time, never cached, so "waiting Xm" is always accurate
 // (docs/architecture/behavior/chat_pending_approval_duration.feature.md).
-func (o *Orchestrator) publishApprovalPrompt(prompt string, options []state.ApprovalOption, pending int, since time.Time) {
+// queued is the prompt text of every request waiting BEHIND this one, so the
+// surface can preview what's coming rather than leaving it opaque until each
+// one's turn (docs/architecture/behavior/chat_pending_approval_batch_view.feature.md).
+func (o *Orchestrator) publishApprovalPrompt(prompt string, options []state.ApprovalOption, pending int, since time.Time, queued []string) {
 	o.publish("APPROVAL_REQUEST", state.ContentApprovalRequest, map[string]any{
-		"prompt": prompt, "options": options, "pending": pending, "since": since.UnixMilli(),
+		"prompt": prompt, "options": options, "pending": pending, "since": since.UnixMilli(), "queued": queued,
 	})
+}
+
+// queuedPrompts extracts the prompt text of every request queued behind the
+// front one (index 0, currently shown) — nil when 0 or 1 requests are
+// queued, so the common case carries no batch-preview data at all.
+func queuedPrompts(all []approvalUIRequest) []string {
+	if len(all) <= 1 {
+		return nil
+	}
+	out := make([]string, 0, len(all)-1)
+	for _, r := range all[1:] {
+		out = append(out, r.prompt)
+	}
+	return out
 }
 
 // publishApprovalDecision emits the audit record of what was chosen — prompt +

@@ -79,6 +79,22 @@ func (g *gate[Req, Resp]) Len() int {
 	return len(g.pending)
 }
 
+// Queued returns every payload currently in the queue, in FIFO order,
+// including the one at the front (currently shown) — the batch-preview list
+// threaded onto APPROVAL_REQUEST events (docs/architecture/behavior/
+// chat_pending_approval_batch_view.feature.md). Callers that only want
+// what's waiting BEHIND the front slice off index 0 themselves; the gate has
+// no opinion about what "front" means to a caller, same as Len().
+func (g *gate[Req, Resp]) Queued() []Req {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	out := make([]Req, len(g.pending))
+	for i, r := range g.pending {
+		out[i] = r.payload
+	}
+	return out
+}
+
 // deliver resolves the currently-shown (front-of-queue) request only — the surface
 // only ever answers the one request it was shown, so there is never ambiguity about
 // which request a decision belongs to.

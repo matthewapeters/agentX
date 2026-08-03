@@ -179,16 +179,17 @@ func TestGateLenReflectsQueueDepth(t *testing.T) {
 }
 
 // TestPublishApprovalPromptCarriesPendingCount: the APPROVAL_REQUEST event's
-// payload carries whatever pending count and since timestamp the caller
-// passes, unchanged — the piece RequestDecision wires to o.gate.Len() and
-// the request's own enqueuedAt at each of its two call sites.
+// payload carries whatever pending count, since timestamp, and queued list
+// the caller passes, unchanged — the piece RequestDecision wires to
+// o.gate.Len(), the request's own enqueuedAt, and queuedPrompts(o.gate.Queued())
+// at each of its two call sites.
 func TestPublishApprovalPromptCarriesPendingCount(t *testing.T) {
 	o := testOrchestrator()
 	sub := o.bus.Subscribe()
 	defer sub.Close()
 
 	since := time.Now().Add(-90 * time.Second)
-	o.publishApprovalPrompt("run write_file?", toolApprovalOptions, 3, since)
+	o.publishApprovalPrompt("run write_file?", toolApprovalOptions, 3, since, []string{"run http_get?", "run read_file?"})
 
 	ev := <-sub.C
 	if ev.EventType != "APPROVAL_REQUEST" {
@@ -203,6 +204,48 @@ func TestPublishApprovalPromptCarriesPendingCount(t *testing.T) {
 	}
 	if got, ok := p["since"].(int64); !ok || got != since.UnixMilli() {
 		t.Errorf("payload[\"since\"] = %v (%T), want %d", p["since"], p["since"], since.UnixMilli())
+	}
+	if got, ok := p["queued"].([]string); !ok || len(got) != 2 || got[0] != "run http_get?" || got[1] != "run read_file?" {
+		t.Errorf("payload[\"queued\"] = %v (%T), want [run http_get? run read_file?]", p["queued"], p["queued"])
+	}
+}
+
+// TestQueuedPromptsExcludesFront: queuedPrompts reports every request's
+// prompt EXCEPT the one at index 0 (the front, already shown as the main
+// prompt) — nil for an empty or single-element queue, so the common
+// "nothing else pending" case carries no batch-preview data at all.
+func TestQueuedPromptsExcludesFront(t *testing.T) {
+	if got := queuedPrompts(nil); got != nil {
+		t.Errorf("queuedPrompts(nil) = %v, want nil", got)
+	}
+	one := []approvalUIRequest{{prompt: "front"}}
+	if got := queuedPrompts(one); got != nil {
+		t.Errorf("queuedPrompts(1 request) = %v, want nil", got)
+	}
+	three := []approvalUIRequest{{prompt: "front"}, {prompt: "second"}, {prompt: "third"}}
+	got := queuedPrompts(three)
+	if len(got) != 2 || got[0] != "second" || got[1] != "third" {
+		t.Errorf("queuedPrompts(3 requests) = %v, want [second third]", got)
+	}
+}
+
+// TestGateQueuedReflectsFIFOOrder: Queued() returns every payload in FIFO
+// order, including the front — the source queuedPrompts reads to build the
+// batch preview.
+func TestGateQueuedReflectsFIFOOrder(t *testing.T) {
+	g := &decisionGate{}
+	if got := g.Queued(); len(got) != 0 {
+		t.Fatalf("Queued() on empty gate = %v, want empty", got)
+	}
+
+	req1 := newPendingRequest[approvalUIRequest, string](approvalUIRequest{prompt: "first"})
+	req2 := newPendingRequest[approvalUIRequest, string](approvalUIRequest{prompt: "second"})
+	g.enqueue(req1)
+	g.enqueue(req2)
+
+	got := g.Queued()
+	if len(got) != 2 || got[0].prompt != "first" || got[1].prompt != "second" {
+		t.Fatalf("Queued() = %v, want [first second]", got)
 	}
 }
 
