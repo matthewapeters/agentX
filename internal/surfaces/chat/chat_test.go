@@ -320,3 +320,80 @@ func TestRelayoutClampsApprovalHeightToTerminal(t *testing.T) {
 		}
 	}
 }
+
+// GIVEN sessions raw-interesting-elephant/naive-stunning-eagle: many resolved
+// approval request/decision/result cycles in scrollback whose proposal text
+// is real, tab-indented Go source (a write_file content argument), ending
+// in a "stopped: tool-call limit" agent_response, across a range of
+// realistic and short terminal sizes
+// WHEN the full chat surface renders
+// THEN View()'s total row count never exceeds the terminal height — the
+// confirmed overflow that pushed the input panel off-screen with no live
+// approval pending (so neither of the two previous approval-panel-specific
+// fixes applies): a tab-containing line ansi.StringWidth measured as
+// fitting exactly still got soft-wrapped an extra row by lipgloss's actual
+// renderer, an untracked row nothing in relayout()'s budget accounted for
+// (docs/architecture/behavior/scrollutil_tab_width_disagreement.feature.md).
+func TestViewNeverExceedsHeightWithTabContentInScrollback(t *testing.T) {
+	tabBody := "write_file content=package task\n\nimport (\n\t\"encoding/json\"\n\n\t\"testing\"\n)\n\nfunc T… path=internal/prompting/task/hypothesis_test.go"
+
+	for _, size := range []struct{ w, h int }{
+		{100, 30}, {80, 24}, {60, 15}, {60, 10}, {40, 8},
+	} {
+		m := New()
+		m.width = size.w
+		m.height = size.h
+		m.relayout()
+
+		for i := 0; i < 15; i++ {
+			m.output.Apply(state.Event{EventType: "TOOL_CALL", ContentType: state.ContentApprovalRequest,
+				Payload: map[string]any{"prompt": tabBody}, Enabled: true})
+			m.output.Apply(state.Event{EventType: "APPROVAL_DECISION", ContentType: state.ContentApprovalDecision,
+				Payload: map[string]any{"prompt": tabBody, "chosen_label": "Approve for this session"}, Enabled: true})
+			m.output.Apply(state.Event{EventType: "TOOL_RESULT", ContentType: state.ContentToolResult, ToolName: "write_file",
+				Payload: map[string]any{"text": ""}, Enabled: true})
+			m.relayout()
+		}
+		m.output.Apply(state.Event{EventType: "AGENT_RESPONSE", ContentType: state.ContentAgentResponse,
+			Payload: map[string]any{"text": "[stopped: reached the tool-call limit for this turn without a final answer]"}, Enabled: true})
+		m.relayout()
+
+		rows := strings.Split(m.View().Content, "\n")
+		if len(rows) > size.h {
+			t.Errorf("size %dx%d: View() produced %d rows, want <= m.height (%d)", size.w, size.h, len(rows), size.h)
+		}
+	}
+}
+
+// GIVEN a panel's content is "" — the convention every panel's View() uses
+// for zero content rows (e.g. the output panel when relayout() clamps its
+// height to exactly 0 on a very short terminal)
+// WHEN frame() renders it
+// THEN the result is exactly 2 rows (top + bottom border) — not 3.
+// strings.Split("", "\n") returns [""] (length 1, not 0), so naively
+// looping over that split renders one phantom blank content row nothing in
+// relayout()'s chrome budget accounted for (docs/architecture/behavior/
+// chat_frame_empty_content_phantom_row.feature.md).
+func TestFrameEmptyContentProducesNoPhantomRow(t *testing.T) {
+	m := New()
+	m.width = 40
+
+	got := m.frame("", false, false, "")
+	if len(got) != 2 {
+		t.Fatalf("frame(\"\", ...) produced %d rows, want 2 (border only): %v", len(got), got)
+	}
+}
+
+// GIVEN a panel's content is ordinary, non-empty text
+// WHEN frame() renders it
+// THEN behavior is unchanged from before this fix — the empty-content
+// special case is a no-op for every other input.
+func TestFrameNonEmptyContentUnaffected(t *testing.T) {
+	m := New()
+	m.width = 40
+
+	got := m.frame("one line", false, false, "")
+	if len(got) != 3 {
+		t.Fatalf("frame(\"one line\", ...) produced %d rows, want 3 (border + 1 content row): %v", len(got), got)
+	}
+}

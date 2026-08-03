@@ -808,8 +808,18 @@ func (m Model) frame(content string, active, flash bool, title string) []string 
 		return "\x1b[" + code + "m" + s + "\x1b[0m"
 	}
 	out := []string{paint(titledTopBorder(title, innerW))}
-	for _, line := range strings.Split(content, "\n") {
-		out = append(out, paint("│")+padCells(line, innerW)+paint("│"))
+	// strings.Split("", "\n") returns [""] (length 1, not 0) — every panel's
+	// View() returns "" specifically to mean ZERO content rows (e.g. the
+	// output panel when relayout() clamps its height to 0), so looping over
+	// that split unconditionally would render one phantom blank content row
+	// nothing in relayout()'s chrome accounting budgeted for, silently
+	// pushing every row after it (down to the input panel) one row further
+	// than the terminal has (docs/architecture/behavior/
+	// chat_frame_empty_content_phantom_row.feature.md).
+	if content != "" {
+		for _, line := range strings.Split(content, "\n") {
+			out = append(out, paint("│")+padCells(line, innerW)+paint("│"))
+		}
 	}
 	out = append(out, paint("└"+strings.Repeat("─", innerW)+"┘"))
 	return out

@@ -29,8 +29,36 @@ func ScrollbarCell(i, offset, total, track int) string {
 	return "░"
 }
 
+// tabWidth is the fixed number of spaces a tab expands to before any width
+// measurement or wrapping in this package — not an attempt at true
+// tab-stop semantics (which depend on cursor column), just enough to
+// guarantee ansi.StringWidth and lipgloss's own internal measurement
+// always agree on a given string's width. ansi.StringWidth counts a raw
+// tab as a single column, but lipgloss.Style.Render (what
+// viewport.Model.View ultimately calls) expands it wider when actually
+// rendering — a line ansi.StringWidth measured as fitting exactly at a
+// panel's width can still get soft-wrapped by lipgloss into an extra row
+// nothing in a caller's row-count budget ever accounted for. Plain spaces
+// have unambiguous width everywhere, so expanding tabs to them here — the
+// one shared entry point every wrap/measure call in this package goes
+// through — removes the disagreement at its source instead of trying to
+// reconcile two width algorithms that disagree specifically about tabs
+// (docs/architecture/behavior/scrollutil_tab_width_disagreement.feature.md).
+const tabWidth = 4
+
+// expandTabs replaces every tab in s with tabWidth spaces. A cheap no-op
+// (one Contains scan) when s has no tabs, so it costs nothing in the
+// overwhelmingly common case.
+func expandTabs(s string) string {
+	if !strings.Contains(s, "\t") {
+		return s
+	}
+	return strings.ReplaceAll(s, "\t", strings.Repeat(" ", tabWidth))
+}
+
 // WrapLines word-wraps s to w columns, preserving existing newlines.
 func WrapLines(s string, w int) []string {
+	s = expandTabs(s)
 	if w <= 0 {
 		return strings.Split(s, "\n")
 	}
@@ -44,6 +72,7 @@ func WrapLines(s string, w int) []string {
 // TruncateWord fits s to w display columns, breaking at a word boundary and
 // marking truncation with an ellipsis.
 func TruncateWord(s string, w int) string {
+	s = expandTabs(s)
 	if w <= 0 {
 		return ""
 	}
@@ -67,6 +96,7 @@ func oneLine(s string) string {
 
 // PadTo right-pads (or clips) s to exactly w display columns.
 func PadTo(s string, w int) string {
+	s = expandTabs(s)
 	width := ansi.StringWidth(s)
 	if width == w {
 		return s
