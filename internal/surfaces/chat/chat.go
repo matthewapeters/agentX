@@ -588,9 +588,35 @@ func (m Model) View() tea.View {
 		rows = append(rows, m.frame(m.approval.View(), true, false, approvalTitle)...)
 	}
 	rows = append(rows, m.frame(m.input.View(), m.focus == focusInput && m.proc.State != state.StateAwaitingInput, m.flashing, "")...)
+	rows = clampRowWidth(rows, m.width)
 	v := tea.NewView(strings.Join(rows, "\n"))
 	v.AltScreen = true
 	return v
+}
+
+// clampRowWidth is the last-resort safety net against a row wider than the
+// terminal: the height budget in relayout is only self-consistent if every
+// row is also <= width, and nothing upstream (panel borders, per-widget
+// wrapping, the status bar, the hint strip) is otherwise guaranteed to hold
+// that invariant across every code path that can produce a row. A row wider
+// than width gets soft-wrapped by the terminal itself into an extra physical
+// row bubbletea's own height accounting never learns about, pushing every
+// row below it — including the input and approval panels — off the visible
+// viewport (docs/architecture/behavior/chat_width_overflow_clamp.feature.md).
+// A no-op for any row that already fits, so this changes nothing in the
+// common case; ansi.StringWidth/ansi.Truncate give the same display-width
+// (not byte-length) measurement and ANSI-safe truncation already trusted
+// elsewhere in this codebase (internal/surfaces/scrollutil).
+func clampRowWidth(rows []string, width int) []string {
+	if width <= 0 {
+		return rows
+	}
+	for i, r := range rows {
+		if ansi.StringWidth(r) > width {
+			rows[i] = ansi.Truncate(r, width, "")
+		}
+	}
+	return rows
 }
 
 // frame wraps a panel's rendered content in a box border colored by focus: the
@@ -690,16 +716,29 @@ func padCells(s string, w int) string {
 	}
 }
 
-// padLine clips or right-pads s to exactly width display columns.
+// padLine clips or right-pads s to exactly width display columns. Was
+// previously rune-counted, not display-width-measured — the same class of
+// bug padCells (above) already avoided. Rune count and display width only
+// coincide for plain ASCII; any wide/multi-byte character, or any ANSI
+// styling code (which contributes runes but zero display width), made this
+// undercount or overcount the real terminal width, and a naive []rune slice
+// truncation could cut a multi-byte ANSI escape sequence mid-sequence,
+// producing a malformed code the terminal could render as literal garbage
+// — genuinely wider on screen than the function ever accounted for. See
+// docs/architecture/behavior/chat_width_overflow_clamp.feature.md.
 func padLine(s string, width int) string {
 	if width <= 0 {
 		return s
 	}
-	r := []rune(s)
-	if len(r) >= width {
-		return string(r[:width])
+	w := ansi.StringWidth(s)
+	switch {
+	case w == width:
+		return s
+	case w > width:
+		return ansi.Truncate(s, width, "")
+	default:
+		return s + strings.Repeat(" ", width-w)
 	}
-	return s + strings.Repeat(" ", width-len(r))
 }
 
 // bannerLabel maps the current processing state to the text the pinned
@@ -752,9 +791,12 @@ func statusBar(ps state.ProcessingState, spin string, width int) string {
 	if width <= 0 {
 		return text
 	}
-	r := []rune(text)
-	if len(r) >= width {
-		return string(r[:width])
+	// Display-width measured, not rune-counted — see padLine's doc comment for
+	// why that distinction matters (a styled spinner frame's ANSI codes are
+	// runes but contribute zero display width).
+	w := ansi.StringWidth(text)
+	if w >= width {
+		return ansi.Truncate(text, width, "")
 	}
-	return text + strings.Repeat("─", width-len(r))
+	return text + strings.Repeat("─", width-w)
 }
