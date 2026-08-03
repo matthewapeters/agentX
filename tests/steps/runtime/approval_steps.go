@@ -53,7 +53,9 @@ func registerApprovalSteps(sc *godog.ScenarioContext) {
 
 	sc.Step(`^a started orchestrator with a tool policy$`, w.started)
 	sc.Step(`^approval is requested for "([^"]*)" with:$`, w.requestApproval)
+	sc.Step(`^approval is requested within plan "([^"]*)" for "([^"]*)" with:$`, w.requestApprovalInPlan)
 	sc.Step(`^the user approves for the "([^"]*)"$`, w.approve)
+	sc.Step(`^the user approves for the plan$`, w.approvePlanScope)
 	sc.Step(`^the user denies the request$`, w.deny)
 	sc.Step(`^the awaiting request is interrupted$`, w.interrupt)
 	sc.Step(`^the request is allowed$`, w.requestAllowed)
@@ -61,6 +63,7 @@ func registerApprovalSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the request fails$`, w.requestFailed)
 	sc.Step(`^"([^"]*)" with the same arguments is now allowed by policy$`, w.nowAllowed)
 	sc.Step(`^"([^"]*)" with the same arguments still needs approval$`, w.stillNeedsApproval)
+	sc.Step(`^"([^"]*)" with the same arguments is now plan-approved for "([^"]*)"$`, w.nowPlanApproved)
 }
 
 func (w *approvalWorld) started() error {
@@ -85,11 +88,26 @@ func (w *approvalWorld) requestApproval(id string, table *godog.Table) error {
 	w.args = argsFromTable(table)
 	w.result = make(chan approvalOutcome, 1)
 	go func() {
-		v, err := w.orc.RequestApproval(w.ctx, d, w.args, w.pol)
+		v, err := w.orc.RequestApproval(w.ctx, d, w.args, w.pol, "")
 		w.result <- approvalOutcome{verdict: v, err: err}
 	}()
 	// Wait until the cycle is parked in awaiting_input so the gate is armed before
 	// the decision is delivered.
+	return w.waitAwaiting()
+}
+
+func (w *approvalWorld) requestApprovalInPlan(root, id string, table *godog.Table) error {
+	d, ok := w.reg.Lookup(id)
+	if !ok {
+		return fmt.Errorf("unknown tool %q", id)
+	}
+	w.desc = d
+	w.args = argsFromTable(table)
+	w.result = make(chan approvalOutcome, 1)
+	go func() {
+		v, err := w.orc.RequestApproval(w.ctx, d, w.args, w.pol, root)
+		w.result <- approvalOutcome{verdict: v, err: err}
+	}()
 	return w.waitAwaiting()
 }
 
@@ -109,6 +127,11 @@ func (w *approvalWorld) waitAwaiting() error {
 
 func (w *approvalWorld) approve(scope string) error {
 	w.orc.Resolve(scope)
+	return nil
+}
+
+func (w *approvalWorld) approvePlanScope() error {
+	w.orc.Resolve("plan")
 	return nil
 }
 
@@ -172,6 +195,14 @@ func (w *approvalWorld) nowAllowed(id string) error {
 	d, _ := w.reg.Lookup(id)
 	if v := w.pol.Evaluate(d, w.args); v.Decision != tools.Allow {
 		return fmt.Errorf("policy still does not allow %q: decision=%v", id, v.Decision)
+	}
+	return nil
+}
+
+func (w *approvalWorld) nowPlanApproved(id, root string) error {
+	d, _ := w.reg.Lookup(id)
+	if !w.pol.PlanApproved(root, d, w.args) {
+		return fmt.Errorf("policy has no plan approval for %q under root %q", id, root)
 	}
 	return nil
 }

@@ -34,7 +34,7 @@ type stubApprovalSeeker struct {
 	approveCalls int
 }
 
-func (s *stubApprovalSeeker) RequestApproval(context.Context, tools.Descriptor, map[string]string, *tools.Policy) (tools.Verdict, error) {
+func (s *stubApprovalSeeker) RequestApproval(context.Context, tools.Descriptor, map[string]string, *tools.Policy, string) (tools.Verdict, error) {
 	s.approveCalls++
 	return s.verdict, s.approveErr
 }

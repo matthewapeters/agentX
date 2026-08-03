@@ -26,6 +26,14 @@ func (o *Orchestrator) runWavefrontPhase(ctx context.Context, text, rootID strin
 		Status: task.Proposed, Deps: []string{},
 		Provenance: task.Provenance{Source: engineWavefront},
 	}
+	// A plan-scoped approval never outlives the plan it was scoped to, however this
+	// phase returns (normal completion, ctx cancellation, or an error mid-drain).
+	// o.policy is nil when a test injects a wavefront classifier/executor
+	// directly without going through buildTaskExecutor, the only path that
+	// ever consults it.
+	if o.policy != nil {
+		defer o.policy.ExpirePlan(root.ID)
+	}
 	o.publish("TASK_PLAN", state.ContentTaskPlan, map[string]any{
 		"root": root.ID, "goal": root.Goal, "phase": "started",
 		"nodes": []map[string]any{{

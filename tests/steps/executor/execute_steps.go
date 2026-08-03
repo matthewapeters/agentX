@@ -144,12 +144,12 @@ func (w *world) confinedTo(root string) error {
 }
 
 func (w *world) userApproves() error {
-	w.approver = executor.ApproverFunc(func(context.Context, tools.Descriptor, map[string]string, string) bool { return true })
+	w.approver = executor.ApproverFunc(func(context.Context, tools.Descriptor, map[string]string, task.Record, string) bool { return true })
 	return nil
 }
 
 func (w *world) userDeclines() error {
-	w.approver = executor.ApproverFunc(func(context.Context, tools.Descriptor, map[string]string, string) bool { return false })
+	w.approver = executor.ApproverFunc(func(context.Context, tools.Descriptor, map[string]string, task.Record, string) bool { return false })
 	return nil
 }
 

@@ -51,19 +51,24 @@ type Verifier interface {
 }
 
 // Approver decides whether a call the policy or the working-directory confinement
-// flagged may proceed. Reason explains why approval is needed (e.g. "outside
-// working directory"). The orchestrator backs this with its interactive approval
-// gate; a nil Approver means such a call is surfaced as NeedsApproval and not run.
+// flagged may proceed. rec is the task record the call was resolved for — the
+// orchestrator's approver uses rec.ID to look up which plan (if any) this call
+// belongs to, for plan-scoped approval (docs/architecture/behavior/
+// tool_policy_plan_scoped_approval.feature.md); the executor itself has no
+// concept of "plan," only of the record it's draining. Reason explains why
+// approval is needed (e.g. "outside working directory"). The orchestrator backs
+// this with its interactive approval gate; a nil Approver means such a call is
+// surfaced as NeedsApproval and not run.
 type Approver interface {
-	Approve(ctx context.Context, d tools.Descriptor, args map[string]string, reason string) bool
+	Approve(ctx context.Context, d tools.Descriptor, args map[string]string, rec task.Record, reason string) bool
 }
 
 // ApproverFunc adapts a function to the Approver interface.
-type ApproverFunc func(ctx context.Context, d tools.Descriptor, args map[string]string, reason string) bool
+type ApproverFunc func(ctx context.Context, d tools.Descriptor, args map[string]string, rec task.Record, reason string) bool
 
 // Approve implements Approver.
-func (f ApproverFunc) Approve(ctx context.Context, d tools.Descriptor, args map[string]string, reason string) bool {
-	return f(ctx, d, args, reason)
+func (f ApproverFunc) Approve(ctx context.Context, d tools.Descriptor, args map[string]string, rec task.Record, reason string) bool {
+	return f(ctx, d, args, rec, reason)
 }
 
 // OutputSizeDecider resolves what to do with a result the runner's output_max_bytes
@@ -284,7 +289,7 @@ func (e *Executor) Execute(ctx context.Context, rec task.Record) Outcome {
 		if e.approve == nil {
 			return finish(Outcome{Status: NeedsApproval, Reason: reason})
 		}
-		if !e.approve.Approve(ctx, d, prop.Args, reason) {
+		if !e.approve.Approve(ctx, d, prop.Args, rec, reason) {
 			return finish(Outcome{Status: Denied, Reason: "declined: " + reason})
 		}
 	}

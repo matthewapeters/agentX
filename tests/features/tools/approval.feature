@@ -36,6 +36,19 @@ Feature: Tool approval round-trip
     And "write_file" with the same arguments is now allowed by policy
 
   # use-case: UC-TOOL-APPROVAL
+  # variant: plan-scoped
+  Scenario: Approving for the plan allows and scopes to that plan only
+    Given a started orchestrator with a tool policy
+    When approval is requested within plan "plan-1" for "write_file" with:
+      | arg     | value       |
+      | path    | ./notes.txt |
+      | content | hello       |
+    And the user approves for the plan
+    Then the request is allowed
+    And "write_file" with the same arguments is now plan-approved for "plan-1"
+    And "write_file" with the same arguments still needs approval
+
+  # use-case: UC-TOOL-APPROVAL
   # variant: deny
   Scenario: Denying blocks and does not persist
     Given a started orchestrator with a tool policy

@@ -40,6 +40,10 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the tool "([^"]*)" is blacklisted$`, w.blacklistTool)
 	sc.Step(`^the tool "([^"]*)" is denied when an argument matches "([^"]*)"$`, w.blacklistMatch)
 	sc.Step(`^"([^"]*)" is approved for the "([^"]*)" with:$`, w.approve)
+	sc.Step(`^"([^"]*)" is approved for the plan "([^"]*)" with:$`, w.approvePlan)
+	sc.Step(`^"([^"]*)" is plan-approved for "([^"]*)" with:$`, w.assertPlanApproved)
+	sc.Step(`^"([^"]*)" is not plan-approved for "([^"]*)" with:$`, w.assertPlanNotApproved)
+	sc.Step(`^the plan "([^"]*)" ends$`, w.expirePlan)
 	sc.Step(`^"([^"]*)" is evaluated with:$`, w.evaluate)
 	sc.Step(`^"([^"]*)" is evaluated with no arguments$`, w.evaluateNoArgs)
 	sc.Step(`^the decision is "([^"]*)"$`, w.decisionIs)
@@ -142,6 +146,42 @@ func (w *policyWorld) approve(id, scope string, table *godog.Table) error {
 		s = tools.ScopeGlobal
 	}
 	w.pol.Approve(s, d, tableArgs(table))
+	return nil
+}
+
+func (w *policyWorld) approvePlan(id, root string, table *godog.Table) error {
+	d, ok := w.reg.Lookup(id)
+	if !ok {
+		return fmt.Errorf("unknown tool %q", id)
+	}
+	w.pol.ApprovePlan(root, d, tableArgs(table))
+	return nil
+}
+
+func (w *policyWorld) assertPlanApproved(id, root string, table *godog.Table) error {
+	d, ok := w.reg.Lookup(id)
+	if !ok {
+		return fmt.Errorf("unknown tool %q", id)
+	}
+	if !w.pol.PlanApproved(root, d, tableArgs(table)) {
+		return fmt.Errorf("PlanApproved(%q) = false for %q, want true", root, id)
+	}
+	return nil
+}
+
+func (w *policyWorld) assertPlanNotApproved(id, root string, table *godog.Table) error {
+	d, ok := w.reg.Lookup(id)
+	if !ok {
+		return fmt.Errorf("unknown tool %q", id)
+	}
+	if w.pol.PlanApproved(root, d, tableArgs(table)) {
+		return fmt.Errorf("PlanApproved(%q) = true for %q, want false", root, id)
+	}
+	return nil
+}
+
+func (w *policyWorld) expirePlan(root string) error {
+	w.pol.ExpirePlan(root)
 	return nil
 }
 

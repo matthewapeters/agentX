@@ -276,6 +276,14 @@ func (o *Orchestrator) runPlanPhase(ctx context.Context, text, rootID string) (s
 		Status: task.Proposed,
 		Deps:   []string{},
 	}
+	// A plan-scoped approval never outlives the plan it was scoped to, however this
+	// phase returns (normal completion, ctx cancellation, or an error mid-drain).
+	// o.policy is nil when a test injects taskExec/taskDecomp directly
+	// (WithTaskExecutor/WithDecomposition) without going through
+	// buildTaskExecutor, which is the only path that ever consults it.
+	if o.policy != nil {
+		defer o.policy.ExpirePlan(root.ID)
+	}
 	// Initial snapshot first, then per-node deltas stream as the plan drains — the user
 	// sees the plan being worked, not a silent gap (tidy-cove, ADR 0009).
 	o.publish("TASK_PLAN", state.ContentTaskPlan, map[string]any{

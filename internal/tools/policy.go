@@ -197,6 +197,13 @@ type Policy struct {
 	blacklist []Rule
 	global    map[string]ApprovalEntry
 	session   map[string]bool
+	// plan holds approvals scoped to a single in-flight plan: root task id ->
+	// approvalKey -> true. Narrower than session (survives past this plan, for
+	// the rest of the conversation) and global (survives across sessions) —
+	// for a call that needs repeating many times within one investigation but
+	// shouldn't outlive it. Cleared by ExpirePlan once that plan finishes
+	// draining.
+	plan map[string]map[string]bool
 }
 
 // NewPolicy returns a policy seeded with the given blacklist rules.
@@ -205,6 +212,7 @@ func NewPolicy(blacklist ...Rule) *Policy {
 		blacklist: blacklist,
 		global:    map[string]ApprovalEntry{},
 		session:   map[string]bool{},
+		plan:      map[string]map[string]bool{},
 	}
 }
 
@@ -219,6 +227,35 @@ func (p *Policy) Approve(scope Scope, d Descriptor, args map[string]string) {
 		return
 	}
 	p.session[key] = true
+}
+
+// ApprovePlan records an approval scoped to root's plan only. A no-op when
+// root is empty (a call outside any plan has nothing to scope to).
+func (p *Policy) ApprovePlan(root string, d Descriptor, args map[string]string) {
+	if root == "" {
+		return
+	}
+	if p.plan[root] == nil {
+		p.plan[root] = map[string]bool{}
+	}
+	p.plan[root][approvalKey(d.ID, args)] = true
+}
+
+// PlanApproved reports whether d/args was already approved within root's
+// plan scope. Always false when root is empty.
+func (p *Policy) PlanApproved(root string, d Descriptor, args map[string]string) bool {
+	if root == "" {
+		return false
+	}
+	return p.plan[root][approvalKey(d.ID, args)]
+}
+
+// ExpirePlan discards every plan-scoped approval recorded for root, once
+// that plan has finished draining — bounds Policy.plan's memory growth over
+// a long-running session; a fresh plan's root id is never reused, so this is
+// not load-bearing for correctness, only for not leaking memory forever.
+func (p *Policy) ExpirePlan(root string) {
+	delete(p.plan, root)
 }
 
 // LoadGlobal seeds the global whitelist from persisted entries.

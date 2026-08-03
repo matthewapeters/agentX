@@ -102,6 +102,37 @@ Feature: Command policy evaluation
     And the reason is "schema_violation"
 
   # use-case: UC-TOOL-POLICY
+  # variant: plan-scoped-approval-is-per-root
+  Scenario: A plan-scoped approval is honored only within its own plan
+    Given a tool policy
+    And "write_file" is approved for the plan "plan-1" with:
+      | arg     | value       |
+      | path    | ./notes.txt |
+      | content | hello       |
+    Then "write_file" is plan-approved for "plan-1" with:
+      | arg     | value       |
+      | path    | ./notes.txt |
+      | content | hello       |
+    And "write_file" is not plan-approved for "plan-2" with:
+      | arg     | value       |
+      | path    | ./notes.txt |
+      | content | hello       |
+
+  # use-case: UC-TOOL-POLICY
+  # variant: plan-scoped-approval-expires
+  Scenario: A plan-scoped approval expires with its plan
+    Given a tool policy
+    And "write_file" is approved for the plan "plan-1" with:
+      | arg     | value       |
+      | path    | ./notes.txt |
+      | content | hello       |
+    When the plan "plan-1" ends
+    Then "write_file" is not plan-approved for "plan-1" with:
+      | arg     | value       |
+      | path    | ./notes.txt |
+      | content | hello       |
+
+  # use-case: UC-TOOL-POLICY
   # variant: option-injection-guard
   Scenario: A path argument beginning with a dash is rejected
     Given a tool policy

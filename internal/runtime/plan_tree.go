@@ -144,6 +144,17 @@ func (r *planTreeRegistry) converged(root, parentID, existingID string, store *s
 	r.persist(root, store, sessionID)
 }
 
+// rootOf reports the plan root a given task/leaf id belongs to, if any — the
+// mapping RequestApproval's plan-scoped option (docs/architecture/behavior/
+// tool_policy_plan_scoped_approval.feature.md) resolves before prompting, so
+// a repeat call within the same plan can be approved once and never re-asked.
+func (r *planTreeRegistry) rootOf(id string) (root string, ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	root, ok = r.ownerOf[id]
+	return root, ok
+}
+
 func (r *planTreeRegistry) toolCalled(rec task.Record, d tools.Descriptor, args map[string]string, store *session.Store, sessionID string) {
 	r.mu.Lock()
 	root, ok := r.ownerOf[rec.ID]

@@ -1,8 +1,11 @@
 package runtime
 
 import (
+	"context"
 	"testing"
 	"time"
+
+	"agentx/internal/tools"
 )
 
 // TestDecisionGateQueuesConcurrentRequests reproduces the vivid-raven deadlock
@@ -213,5 +216,70 @@ func TestNewPendingRequestStampsEnqueuedAt(t *testing.T) {
 
 	if req.enqueuedAt.Before(before) || req.enqueuedAt.After(after) {
 		t.Errorf("enqueuedAt = %v, want between %v and %v", req.enqueuedAt, before, after)
+	}
+}
+
+// TestToolApprovalOptionsForIncludesPlanOnlyWithRoot: the plan-scoped option
+// (docs/architecture/behavior/tool_policy_plan_scoped_approval.feature.md)
+// only appears when the proposed call is actually part of a plan — offering
+// it outside one would let a user "approve for a plan" that doesn't exist.
+func TestToolApprovalOptionsForIncludesPlanOnlyWithRoot(t *testing.T) {
+	for _, opt := range toolApprovalOptionsFor("") {
+		if opt.Decision == "plan" {
+			t.Fatal(`toolApprovalOptionsFor("") offers a "plan" option, want none outside a plan`)
+		}
+	}
+
+	found := false
+	for _, opt := range toolApprovalOptionsFor("root-1") {
+		if opt.Decision == "plan" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal(`toolApprovalOptionsFor("root-1") does not offer a "plan" option, want one inside a plan`)
+	}
+}
+
+// TestRequestApprovalPlanDecisionScopesToRoot: resolving a plan-scoped call
+// with "plan" allows it and records the approval under exactly the root
+// RequestApproval was called with — not session or global scope, and not
+// visible under a different root (a later, unrelated plan reusing the same
+// tool+args must still prompt).
+func TestRequestApprovalPlanDecisionScopesToRoot(t *testing.T) {
+	o := testOrchestrator()
+	pol := tools.NewPolicy()
+	d, ok := tools.DefaultRegistry().Lookup("write_file")
+	if !ok {
+		t.Fatal("write_file not found in default registry")
+	}
+	args := map[string]string{"path": "notes.txt", "content": "hello"}
+
+	type result struct {
+		verdict tools.Verdict
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		v, err := o.RequestApproval(context.Background(), d, args, pol, "root-1")
+		done <- result{v, err}
+	}()
+
+	for !o.gate.deliver("plan") {
+		time.Sleep(time.Millisecond)
+	}
+	r := <-done
+
+	if r.err != nil || r.verdict.Decision != tools.Allow {
+		t.Fatalf("RequestApproval(root-1, plan) = (%+v, %v), want Allow, nil", r.verdict, r.err)
+	}
+	if !pol.PlanApproved("root-1", d, args) {
+		t.Error("PlanApproved(root-1) = false, want true after a \"plan\" decision")
+	}
+	if pol.PlanApproved("root-2", d, args) {
+		t.Error("PlanApproved(root-2) = true, want false — approval must not leak across plan roots")
+	}
+	if v := pol.Evaluate(d, args); v.Decision != tools.NeedsApproval {
+		t.Errorf("Evaluate() after a plan-only approval = %v, want NeedsApproval — plan scope is deliberately not folded into Evaluate", v.Decision)
 	}
 }

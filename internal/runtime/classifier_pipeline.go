@@ -99,9 +99,13 @@ func (o *Orchestrator) buildTaskExecutor() {
 	}
 	// Confine execution to the working directory; a task that would operate outside
 	// it prompts the user through the existing interactive approval gate.
-	root, _ := os.Getwd()
-	approver := executor.ApproverFunc(func(ctx context.Context, d tools.Descriptor, args map[string]string, _ string) bool {
-		v, err := o.RequestApproval(ctx, d, args, o.policy)
+	cwd, _ := os.Getwd()
+	approver := executor.ApproverFunc(func(ctx context.Context, d tools.Descriptor, args map[string]string, rec task.Record, _ string) bool {
+		planRoot, _ := o.planTrees.rootOf(rec.ID)
+		if o.policy.PlanApproved(planRoot, d, args) {
+			return true
+		}
+		v, err := o.RequestApproval(ctx, d, args, o.policy, planRoot)
 		return err == nil && v.Decision == tools.Allow
 	})
 	// TOOL-6: plan leaves resolve oversized output through the same decision gate
@@ -117,8 +121,8 @@ func (o *Orchestrator) buildTaskExecutor() {
 	})
 	o.taskExec = executor.New(
 		noProposer{}, o.registry, o.policy, o.runner,
-		executor.FSVerifier{Root: root},
-		executor.WithRoot(root),
+		executor.FSVerifier{Root: cwd},
+		executor.WithRoot(cwd),
 		executor.WithApprover(approver),
 		executor.WithOutputSizeDecider(sizeDecider),
 		executor.WithCallObserver(taskToolPublisher{o: o}),

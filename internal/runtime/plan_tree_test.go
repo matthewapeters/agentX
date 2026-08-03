@@ -166,3 +166,33 @@ func TestPlanTreeRegistryRootDegradesToTaskGetsOwnedForToolEvents(t *testing.T) 
 		t.Fatal("degraded root's own tool_call did not fold in — ownerOf must self-register on dispatch")
 	}
 }
+
+// GIVEN a leaf task registered under a plan root (via dispatched/decomposed)
+// WHEN rootOf looks it up
+// THEN it reports that root — the lookup RequestApproval's plan-scoped option
+// depends on (docs/architecture/behavior/tool_policy_plan_scoped_approval.feature.md)
+// — and reports ok=false for an id that was never registered, rather than
+// panicking or silently returning a zero-value root.
+func TestPlanTreeRegistryRootOf(t *testing.T) {
+	dir := t.TempDir()
+	store := session.NewStore(dir)
+	id, err := store.Create()
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	r := newPlanTreeRegistry()
+	root := task.Record{ID: "task-1", Goal: "review the project", Kind: task.KindStep}
+	r.dispatched("task-1", root, store, id.ID)
+	children := []task.Record{
+		{ID: "task-1-1", Goal: "list files", Kind: task.KindTask, Type: task.Command},
+	}
+	r.decomposed("task-1", root, children, store, id.ID)
+
+	if got, ok := r.rootOf("task-1-1"); !ok || got != "task-1" {
+		t.Errorf("rootOf(%q) = (%q, %v), want (%q, true)", "task-1-1", got, ok, "task-1")
+	}
+	if _, ok := r.rootOf("never-registered"); ok {
+		t.Error("rootOf(unregistered id) reported ok=true, want false")
+	}
+}

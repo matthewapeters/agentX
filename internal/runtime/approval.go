@@ -20,13 +20,33 @@ func WithToolRunner(r ToolRunner) Option {
 	return func(o *Orchestrator) { o.runner = r }
 }
 
-// toolApprovalOptions is the fixed option set every tool-approval request
-// offers — deliberately not configurable per call site, so the surface always
-// shows the same three choices regardless of which tool is being proposed.
+// toolApprovalOptions is the option set a tool-approval request outside any
+// plan offers (root == "" — the single_tool cycle never has a plan to scope
+// an approval to).
 var toolApprovalOptions = []state.ApprovalOption{
 	{Label: "Approve for this session", Decision: "session"},
 	{Label: "Approve for all sessions", Decision: "global"},
 	{Label: "Deny", Decision: "deny"},
+}
+
+// toolApprovalOptionsPlan is offered instead whenever root != "" — a call
+// made while a plan is draining, so the user can additionally scope an
+// approval to that plan only (docs/architecture/behavior/
+// tool_policy_plan_scoped_approval.feature.md).
+var toolApprovalOptionsPlan = []state.ApprovalOption{
+	{Label: "Approve for this session", Decision: "session"},
+	{Label: "Approve for this plan", Decision: "plan"},
+	{Label: "Approve for all sessions", Decision: "global"},
+	{Label: "Deny", Decision: "deny"},
+}
+
+// toolApprovalOptionsFor picks the option set for a proposed call: the plan
+// option only appears when the call is actually part of a plan.
+func toolApprovalOptionsFor(root string) []state.ApprovalOption {
+	if root == "" {
+		return toolApprovalOptions
+	}
+	return toolApprovalOptionsPlan
 }
 
 // RequestApproval enqueues the proposed tool call and, once it's at the front of the
@@ -35,15 +55,20 @@ var toolApprovalOptions = []state.ApprovalOption{
 // orphan this one. On approval it persists the chosen scope to pol and returns Allow;
 // a denial returns Deny; cancellation returns the ctx error. It is the reusable
 // approval seam both the single_tool cycle and the scheduler's concurrent leaves call
-// (TOOL-4; ADR 0008).
-func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, args map[string]string, pol *tools.Policy) (tools.Verdict, error) {
-	dec, err := o.RequestDecision(ctx, state.PhaseTool, proposalText(d, args), toolApprovalOptions)
+// (TOOL-4; ADR 0008). root is the plan this call belongs to, or "" outside any plan —
+// it gates whether the plan-scoped option is offered and, if chosen, which plan the
+// approval is recorded against.
+func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, args map[string]string, pol *tools.Policy, root string) (tools.Verdict, error) {
+	dec, err := o.RequestDecision(ctx, state.PhaseTool, proposalText(d, args), toolApprovalOptionsFor(root))
 	if err != nil {
 		return tools.Verdict{}, err
 	}
 	switch dec {
 	case "session":
 		pol.Approve(tools.ScopeSession, d, args)
+		return tools.Verdict{Decision: tools.Allow}, nil
+	case "plan":
+		pol.ApprovePlan(root, d, args)
 		return tools.Verdict{Decision: tools.Allow}, nil
 	case "global":
 		pol.Approve(tools.ScopeGlobal, d, args)
