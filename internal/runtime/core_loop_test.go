@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -72,13 +73,23 @@ func (h countingHook) Run(_ context.Context, _ *hooks.Turn) error {
 // runNativeToolCall entirely), so approvals/registry/policy/runner are left nil —
 // core_tools_test.go covers runNativeToolCall itself.
 func newTestCore() (*ConversationCore, *fakeEventSink, *fakeContextStore) {
+	c, events, convo, _ := newTestCoreWithApprovals()
+	return c, events, convo
+}
+
+// newTestCoreWithApprovals is newTestCore's full form, additionally
+// returning the stubApprovalSeeker so a test can script
+// RequestToolLimitApproval's continue/stop decision.
+func newTestCoreWithApprovals() (*ConversationCore, *fakeEventSink, *fakeContextStore, *stubApprovalSeeker) {
 	events := &fakeEventSink{}
 	convo := &fakeContextStore{}
+	approvals := &stubApprovalSeeker{}
 	c := &ConversationCore{
 		assembler: prompting.New(""),
 		hooks:     hooks.NewRegistry(),
 		events:    events,
 		convo:     convo,
+		approvals: approvals,
 		execTool: func(context.Context, prompting.ToolCall) (string, *toolPin, error) {
 			return "", nil, nil
 		},
@@ -92,7 +103,7 @@ func newTestCore() (*ConversationCore, *fakeEventSink, *fakeContextStore) {
 		toolSchemasFn:      func() []tools.ToolSchema { return nil },
 		maxIterSetting:     func() int { return 25 },
 	}
-	return c, events, convo
+	return c, events, convo, approvals
 }
 
 // GIVEN a model call that returns plain text with no tool calls
@@ -266,12 +277,17 @@ func TestConversationCoreRunPromptInterruptDuringToolApproval(t *testing.T) {
 }
 
 // GIVEN the model keeps issuing tool calls past the tool-iteration budget,
-// never answering with plain text
+// never answering with plain text, and the user declines to continue when
+// asked (stubApprovalSeeker's zero-value continueOnLimit=false)
 // WHEN RunPrompt's loop exhausts maxIterSetting's budget
-// THEN it publishes and returns the fixed "[stopped: ...]" fallback text rather
-// than leaving the caller with an empty response.
-func TestConversationCoreRunPromptBudgetExhausted(t *testing.T) {
-	c, events, convo := newTestCore()
+// THEN it asks RequestToolLimitApproval exactly once (with the exhausted
+// count), then publishes and returns the fixed "[stopped: ...]" fallback
+// text rather than leaving the caller with an empty response — the
+// pre-continuation-approval behavior, now reached via an explicit decline
+// instead of an automatic hard stop (docs/architecture/behavior/
+// tool_iteration_limit_approval.feature.md).
+func TestConversationCoreRunPromptBudgetExhaustedDeclined(t *testing.T) {
+	c, events, convo, approvals := newTestCoreWithApprovals()
 	c.maxIterSetting = func() int { return 2 }
 	c.model = stubModel{chatFn: func(context.Context, string, []prompting.Message, []tools.ToolSchema, func(string), func(string)) (ChatResult, error) {
 		return ChatResult{ToolCalls: []prompting.ToolCall{{ID: "call-1", Name: "list_dir"}}}, nil
@@ -284,9 +300,15 @@ func TestConversationCoreRunPromptBudgetExhausted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunPrompt error: %v", err)
 	}
-	const want = "[stopped: reached the tool-call limit for this turn without a final answer]"
+	const want = "[stopped: declined to continue past the tool-call limit for this turn]"
 	if outcome.Response != want {
 		t.Fatalf("outcome.Response = %q, want %q", outcome.Response, want)
+	}
+	if approvals.toolLimitCalls != 1 {
+		t.Errorf("RequestToolLimitApproval called %d times, want exactly 1", approvals.toolLimitCalls)
+	}
+	if len(approvals.toolLimitUsedArgs) != 1 || approvals.toolLimitUsedArgs[0] != 2 {
+		t.Errorf("RequestToolLimitApproval used arg = %v, want [2]", approvals.toolLimitUsedArgs)
 	}
 	found := false
 	for _, ev := range events.published {
@@ -299,5 +321,76 @@ func TestConversationCoreRunPromptBudgetExhausted(t *testing.T) {
 	}
 	if len(convo.recorded) != 1 || convo.recorded[0].Response != want {
 		t.Errorf("recorded = %+v, want one entry with the fallback Response", convo.recorded)
+	}
+}
+
+// GIVEN the model hits the tool-iteration budget, the user approves
+// continuing, and the model keeps issuing tool calls a while longer before
+// finally answering with plain text
+// WHEN RunPrompt runs
+// THEN it asks RequestToolLimitApproval exactly once (the reset window
+// never runs long enough to hit the budget a second time in this test),
+// resets the per-window counter, and lets the model make MORE round-trips
+// than maxIterSetting's original budget alone would have allowed — proving
+// the reset actually happened, not just that the decision was consulted.
+func TestConversationCoreRunPromptContinuesPastBudgetOnApproval(t *testing.T) {
+	c, _, _, approvals := newTestCoreWithApprovals()
+	c.maxIterSetting = func() int { return 2 }
+	approvals.continueOnLimit = true
+
+	callN := 0
+	c.model = stubModel{chatFn: func(context.Context, string, []prompting.Message, []tools.ToolSchema, func(string), func(string)) (ChatResult, error) {
+		callN++
+		if callN <= 3 {
+			return ChatResult{ToolCalls: []prompting.ToolCall{{ID: fmt.Sprintf("call-%d", callN), Name: "list_dir"}}}, nil
+		}
+		return ChatResult{Content: "done after continuing"}, nil
+	}}
+	c.execTool = func(context.Context, prompting.ToolCall) (string, *toolPin, error) {
+		return "ok", nil, nil
+	}
+
+	outcome, err := c.RunPrompt(context.Background(), RunOptions{Text: "keep going"})
+	if err != nil {
+		t.Fatalf("RunPrompt error: %v", err)
+	}
+	const want = "done after continuing"
+	if outcome.Response != want {
+		t.Fatalf("outcome.Response = %q, want %q", outcome.Response, want)
+	}
+	if callN != 4 {
+		t.Errorf("model called %d times, want 4 (2 to hit the budget, 1 more after the reset, 1 final text answer) — proves the reset let it exceed maxIterSetting's original budget of 2", callN)
+	}
+	if approvals.toolLimitCalls != 1 {
+		t.Errorf("RequestToolLimitApproval called %d times, want exactly 1", approvals.toolLimitCalls)
+	}
+	if len(approvals.toolLimitUsedArgs) != 1 || approvals.toolLimitUsedArgs[0] != 2 {
+		t.Errorf("RequestToolLimitApproval used arg = %v, want [2]", approvals.toolLimitUsedArgs)
+	}
+}
+
+// GIVEN the model hits the tool-iteration budget and RequestToolLimitApproval
+// is interrupted (ctx canceled while awaiting the surface's decision)
+// WHEN RunPrompt runs
+// THEN it ends the cycle cleanly (Interrupted=true, empty Response, nil
+// error) — the same posture RunPrompt already has for an interrupted tool
+// approval, applied consistently to this new decision kind.
+func TestConversationCoreRunPromptInterruptedWhileAwaitingContinuation(t *testing.T) {
+	c, _, _, approvals := newTestCoreWithApprovals()
+	c.maxIterSetting = func() int { return 1 }
+	approvals.continueErr = context.Canceled
+	c.model = stubModel{chatFn: func(context.Context, string, []prompting.Message, []tools.ToolSchema, func(string), func(string)) (ChatResult, error) {
+		return ChatResult{ToolCalls: []prompting.ToolCall{{ID: "call-1", Name: "list_dir"}}}, nil
+	}}
+	c.execTool = func(context.Context, prompting.ToolCall) (string, *toolPin, error) {
+		return "ok", nil, nil
+	}
+
+	outcome, err := c.RunPrompt(context.Background(), RunOptions{Text: "keep going"})
+	if err != nil {
+		t.Fatalf("RunPrompt error = %v, want nil", err)
+	}
+	if !outcome.Interrupted || outcome.Response != "" {
+		t.Fatalf("outcome = %+v, want Interrupted=true Response=\"\"", outcome)
 	}
 }

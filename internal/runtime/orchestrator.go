@@ -149,9 +149,12 @@ type Settings struct {
 	// at start time (the conventional deployment path).
 	ConfigWatcherPath string
 	// MaxToolIterationsPerTurn caps how many native tool-call round-trips one turn
-	// may run before the loop stops and answers with whatever it has. <=0 uses the
-	// built-in default (25) — unbounded native tool-calling needs a runaway guard
-	// the old one-tool-per-turn cycle never required.
+	// may run before pausing for a continue/stop decision (RequestToolLimitApproval)
+	// rather than hard-stopping — unbounded native tool-calling needs a runaway
+	// guard the old one-tool-per-turn cycle never required, but declining to
+	// continue (not just reaching the cap) is what actually ends the turn early
+	// now (docs/architecture/behavior/tool_iteration_limit_approval.feature.md).
+	// <=0 uses the built-in default (25).
 	MaxToolIterationsPerTurn int
 	// HooksConfigPath is a TOML file registering synchronous/asynchronous loop
 	// hooks (see internal/runtime/hooks). Empty (the default) registers no hooks —

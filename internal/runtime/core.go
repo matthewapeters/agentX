@@ -16,14 +16,19 @@ import (
 // behavior-preserving by construction. A ConversationCore type itself, and the
 // move of runPrompt's body onto it, is Phase 2.
 
-// ApprovalSeeker requests a policy decision for a proposed tool call or an
-// oversized-output recovery choice. Orchestrator satisfies this with its existing
-// RequestApproval/RequestOutputSizeDecision methods unchanged — a future nested
-// loop's implementation is an open question (ADR 0013 §Open Questions), not decided
-// here.
+// ApprovalSeeker requests a policy decision for a proposed tool call, an
+// oversized-output recovery choice, or whether to keep working past the
+// per-turn tool-call round-trip budget. Orchestrator satisfies this with its
+// existing RequestApproval/RequestOutputSizeDecision/RequestToolLimitApproval
+// methods unchanged — a future nested loop's implementation is an open
+// question (ADR 0013 §Open Questions), not decided here.
 type ApprovalSeeker interface {
 	RequestApproval(ctx context.Context, d tools.Descriptor, args map[string]string, pol *tools.Policy, root string) (tools.Verdict, error)
 	RequestOutputSizeDecision(ctx context.Context, d tools.Descriptor, args map[string]string, res tools.Result) (tools.Result, bool, error)
+	// RequestToolLimitApproval asks whether to keep working past used
+	// tool-call round-trips this turn (docs/architecture/behavior/
+	// tool_iteration_limit_approval.feature.md).
+	RequestToolLimitApproval(ctx context.Context, used int) (bool, error)
 }
 
 // EventSink records this loop's events. Orchestrator's implementation is a pure

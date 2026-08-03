@@ -41,12 +41,19 @@ const (
 	// PhaseTool since this is a post-execution decision (the call already ran),
 	// not a pre-execution approval, and offers its own option set.
 	PhaseOutputSize Phase = "output_size"
-	PhaseNone       Phase = "none"
+	// PhaseIterationLimit pauses the cycle in StateAwaitingInput when a turn hits
+	// its per-turn tool-call round-trip budget (maxToolIterations) without ever
+	// reaching a final text answer — a simple continue/stop decision, distinct
+	// from PhaseTool/PhaseVerb/PhaseOutputSize since it isn't about any single
+	// call, just whether to keep working past the configured depth (docs/
+	// architecture/behavior/tool_iteration_limit_approval.feature.md).
+	PhaseIterationLimit Phase = "iteration_limit"
+	PhaseNone           Phase = "none"
 )
 
 var (
 	validStates = map[RunState]bool{StateIdle: true, StateWorking: true, StateCompleted: true, StateFailed: true, StateAwaitingInput: true}
-	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhasePlanning: true, PhaseVerb: true, PhaseOutputSize: true, PhaseNone: true}
+	validPhases = map[Phase]bool{PhaseClassify: true, PhaseThinking: true, PhaseTool: true, PhaseRespond: true, PhasePlanning: true, PhaseVerb: true, PhaseOutputSize: true, PhaseIterationLimit: true, PhaseNone: true}
 )
 
 // ProcessingState is the session-level processing-state payload
