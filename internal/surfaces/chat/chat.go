@@ -495,6 +495,28 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// ESC opens a chord in any state.
+	if key == "esc" || key == "escape" {
+		m.chordPending = true
+		return m, nil
+	}
+
+	// Awaiting an interactive decision: the swapped-in approval widget owns the
+	// key — navigate its option list, confirm with Enter, and PgUp/PgDn page
+	// through the prompt when it's long enough to scroll
+	// (docs/architecture/behavior/approval_prompt_length_bound.feature.md) —
+	// checked BEFORE the PgUp/PgDn output-focus jump below, so those keys page
+	// the prompt instead while a decision is pending. One code path regardless
+	// of which kind of decision is being asked for (tool approval, verb
+	// continuation, or any future kind): the widget renders whatever
+	// prompt/options it was handed and just echoes back the chosen Decision.
+	if m.proc.State == state.StateAwaitingInput {
+		if m.approval.Update(msg) == approval.ActionConfirm {
+			return m, m.approveCmd(m.approval.Selected().Decision)
+		}
+		return m, nil
+	}
+
 	// PgUp/PgDn always jump focus into the output and move the selection.
 	switch key {
 	case "pgup":
@@ -504,24 +526,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "pgdown":
 		m.setFocus(focusOutput)
 		m.output.SelectDown()
-		return m, nil
-	}
-
-	// ESC opens a chord in any state.
-	if key == "esc" || key == "escape" {
-		m.chordPending = true
-		return m, nil
-	}
-
-	// Awaiting an interactive decision: the swapped-in approval widget owns the
-	// key — navigate its option list and confirm with Enter. One code path
-	// regardless of which kind of decision is being asked for (tool approval,
-	// verb continuation, or any future kind): the widget renders whatever
-	// prompt/options it was handed and just echoes back the chosen Decision.
-	if m.proc.State == state.StateAwaitingInput {
-		if m.approval.Update(msg) == approval.ActionConfirm {
-			return m, m.approveCmd(m.approval.Selected().Decision)
-		}
 		return m, nil
 	}
 

@@ -177,28 +177,100 @@ func TestQueuedCapsPreviewWithMoreSummary(t *testing.T) {
 	}
 }
 
-// GIVEN a prompt long enough to wrap past maxPromptRows at the panel's
-// current width
-// WHEN promptLines renders it
-// THEN it is capped at maxPromptRows rows plus a trailing "…" row — the
-// defensive backstop that holds regardless of how long the prompt is or
-// how narrow the panel is (docs/architecture/behavior/
-// approval_prompt_length_bound.feature.md).
-func TestPromptLinesCapsAtMaxPromptRows(t *testing.T) {
-	m := New()
-	m.SetSize(10, 0) // narrow, so a modest prompt still wraps to many rows
+// oversizedPrompt returns a prompt that wraps to well over maxPromptRows
+// rows at a narrow width, for tests exercising the scroll/window path.
+func oversizedPrompt() string {
 	words := make([]string, 200)
 	for i := range words {
 		words[i] = "word"
 	}
-	m.Set(strings.Join(words, " "), testOptions(), nil)
+	return strings.Join(words, " ")
+}
+
+// GIVEN a prompt long enough to wrap past maxPromptRows at the panel's
+// current width
+// WHEN promptLines renders it
+// THEN it is windowed to exactly maxPromptRows rows, each carrying a
+// scrollbar cell in its last column — never unbounded, regardless of how
+// long the prompt is or how narrow the panel is, and never silently
+// dropping content the way a truncation marker would (docs/architecture/
+// behavior/approval_prompt_length_bound.feature.md).
+func TestPromptLinesWindowsAtMaxPromptRows(t *testing.T) {
+	m := New()
+	m.SetSize(10, 0) // narrow, so a modest prompt still wraps to many rows
+	m.Set(oversizedPrompt(), testOptions(), nil)
 
 	lines := m.promptLines()
-	if len(lines) != maxPromptRows+1 {
-		t.Fatalf("promptLines() has %d rows, want %d (cap + trailing marker)", len(lines), maxPromptRows+1)
+	if len(lines) != maxPromptRows {
+		t.Fatalf("promptLines() has %d rows, want %d", len(lines), maxPromptRows)
 	}
-	if lines[len(lines)-1] != "…" {
-		t.Errorf("promptLines() last row = %q, want the truncation marker %q", lines[len(lines)-1], "…")
+	for i, l := range lines {
+		if l == "" {
+			t.Errorf("promptLines()[%d] is empty, want a scrollbar cell at minimum", i)
+		}
+	}
+}
+
+// GIVEN an oversized prompt, freshly Set (scrolled to the top)
+// WHEN PgDn pages down and PgUp pages back
+// THEN the visible window's content actually changes on PgDn (proving
+// ScrollPrompt/Update wire into promptLines, not just adjust a field
+// nothing reads) and returns to the original top window on PgUp.
+func TestScrollPromptPagesThroughOversizedPrompt(t *testing.T) {
+	m := New()
+	m.SetSize(10, 0)
+	m.Set(oversizedPrompt(), testOptions(), nil)
+
+	top := strings.Join(m.promptLines(), "\n")
+	if m.Update(tea.KeyPressMsg{Text: "pgdown", Code: tea.KeyPgDown}) != ActionNone {
+		t.Fatal("pgdown returned a non-ActionNone Action")
+	}
+	scrolled := strings.Join(m.promptLines(), "\n")
+	if scrolled == top {
+		t.Fatal("promptLines() unchanged after pgdown, want the visible window to advance")
+	}
+
+	if m.Update(tea.KeyPressMsg{Text: "pgup", Code: tea.KeyPgUp}) != ActionNone {
+		t.Fatal("pgup returned a non-ActionNone Action")
+	}
+	if got := strings.Join(m.promptLines(), "\n"); got != top {
+		t.Errorf("promptLines() after pgup = %q, want back to the original top window %q", got, top)
+	}
+}
+
+// GIVEN an oversized prompt scrolled past its top
+// WHEN PgDn is pressed far more times than there is content
+// THEN the scroll offset clamps at the bottom instead of running past it —
+// mirrors output.Model.ScrollSelected's clamping contract.
+func TestScrollPromptClampsAtBottom(t *testing.T) {
+	m := New()
+	m.SetSize(10, 0)
+	m.Set(oversizedPrompt(), testOptions(), nil)
+
+	for range 50 {
+		m.Update(tea.KeyPressMsg{Text: "pgdown", Code: tea.KeyPgDown})
+	}
+	bottom := strings.Join(m.promptLines(), "\n")
+	m.Update(tea.KeyPressMsg{Text: "pgdown", Code: tea.KeyPgDown})
+	if got := strings.Join(m.promptLines(), "\n"); got != bottom {
+		t.Errorf("promptLines() changed after scrolling past the bottom, want it to stay clamped")
+	}
+}
+
+// GIVEN a widget with no options yet (an edge case, but PgUp/PgDn must not
+// depend on options being present)
+// WHEN PgDn is pressed
+// THEN it still scrolls the prompt rather than being swallowed by the
+// len(m.options) == 0 guard that gates option-cursor movement.
+func TestScrollPromptWorksWithNoOptions(t *testing.T) {
+	m := New()
+	m.SetSize(10, 0)
+	m.Set(oversizedPrompt(), nil, nil)
+
+	top := strings.Join(m.promptLines(), "\n")
+	m.Update(tea.KeyPressMsg{Text: "pgdown", Code: tea.KeyPgDown})
+	if got := strings.Join(m.promptLines(), "\n"); got == top {
+		t.Error("promptLines() unchanged after pgdown with no options set, want it to still scroll")
 	}
 }
 

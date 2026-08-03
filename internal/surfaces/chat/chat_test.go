@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"agentx/internal/state"
@@ -248,5 +249,39 @@ func TestApprovalRequestEventPendingDecodesBothWireShapes(t *testing.T) {
 		if view := m.approval.View(); !strings.Contains(view, "run http_get?") {
 			t.Errorf("queued = %v: approval.View() = %q, want it to contain the queued prompt", tc.queued, view)
 		}
+	}
+}
+
+// GIVEN a decision is pending (StateAwaitingInput) and its prompt is long
+// enough to have scrolled content of its own
+// WHEN PgDown is pressed
+// THEN it scrolls the approval widget's prompt instead of jumping chat
+// focus to the output panel — the ordinary PgUp/PgDn-jumps-focus behavior
+// is deliberately overridden while awaiting input (docs/architecture/
+// behavior/approval_prompt_length_bound.feature.md), since those keys
+// would otherwise never reach the approval widget at all.
+func TestPgDownWhileAwaitingInputScrollsApprovalPromptNotFocus(t *testing.T) {
+	m := New()
+	m.width = 80
+	m.height = 24
+	m.proc = state.ProcessingState{State: state.StateAwaitingInput}
+	m.relayout()
+
+	words := make([]string, 200)
+	for i := range words {
+		words[i] = "word"
+	}
+	m.approval.Set(strings.Join(words, " "), []state.ApprovalOption{{Label: "Deny", Decision: "deny"}}, nil)
+	m.relayout()
+	before := m.approval.View()
+
+	updated, _ := m.Update(tea.KeyPressMsg{Text: "pgdown", Code: tea.KeyPgDown})
+	m2 := updated.(Model)
+
+	if m2.focus == focusOutput {
+		t.Error("pgdown while awaiting input jumped focus to output, want it to stay routed to the approval widget")
+	}
+	if after := m2.approval.View(); after == before {
+		t.Error("approval.View() unchanged after pgdown while awaiting input, want the prompt to have scrolled")
 	}
 }

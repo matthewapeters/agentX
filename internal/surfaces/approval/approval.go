@@ -17,6 +17,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"agentx/internal/surfaces/scrollutil"
 	"agentx/internal/state"
 )
 
@@ -49,19 +50,38 @@ type Model struct {
 	// a read-only preview, reviewed together with the current prompt but
 	// resolved one at a time same as always (the gate's queue is unaffected).
 	queued []string
+	// promptOffset is the prompt's inner scroll offset (wrapped-line index)
+	// once it exceeds maxPromptRows — mirrors the output panel's per-widget
+	// body offset (internal/surfaces/output.Model's widget.offset) rather
+	// than truncating, so a large proposed edit is pageable, not hidden
+	// (docs/architecture/behavior/approval_prompt_length_bound.feature.md).
+	promptOffset int
 }
 
 // New returns an empty approval widget. Set populates it for a shown request.
 func New() *Model { return &Model{} }
 
 // Set (re)initializes the widget for a newly-shown request, resetting the
-// cursor to the first option. queued lists what's waiting behind this
-// request, if anything (nil in the common single-pending case).
+// cursor to the first option and the prompt's scroll position to the top.
+// queued lists what's waiting behind this request, if anything (nil in the
+// common single-pending case).
 func (m *Model) Set(prompt string, options []state.ApprovalOption, queued []string) {
 	m.prompt = prompt
 	m.options = options
 	m.cursor = 0
 	m.queued = queued
+	m.promptOffset = 0
+}
+
+// ScrollPrompt scrolls the prompt's inner view by n rows (positive = down),
+// clamped to its content — the same "scroll a capped body" contract
+// internal/surfaces/output.Model.ScrollSelected already has for a widget
+// body, reused here via the identical scrollutil windowing primitives
+// promptLines applies.
+func (m *Model) ScrollPrompt(n int) {
+	lines := scrollutil.WrapLines(m.prompt, max(m.width, 1))
+	maxOffset := max(len(lines)-maxPromptRows, 0)
+	m.promptOffset = scrollutil.ClampInt(m.promptOffset+n, 0, maxOffset)
 }
 
 // SetSize sets the panel's render dimensions.
@@ -86,8 +106,19 @@ func (m *Model) Selected() state.ApprovalOption {
 	return m.options[m.cursor]
 }
 
-// Update handles a key press and returns the resulting Action.
+// Update handles a key press and returns the resulting Action. PgUp/PgDn
+// page the prompt's scroll position regardless of whether there are any
+// options yet (the guard below only gates option-cursor movement and
+// confirmation); up/down/j/k move the option cursor, enter confirms.
 func (m *Model) Update(msg tea.KeyPressMsg) Action {
+	switch msg.String() {
+	case "pgup":
+		m.ScrollPrompt(-maxPromptRows)
+		return ActionNone
+	case "pgdown":
+		m.ScrollPrompt(maxPromptRows)
+		return ActionNone
+	}
 	if len(m.options) == 0 {
 		return ActionNone
 	}
@@ -106,29 +137,44 @@ func (m *Model) Update(msg tea.KeyPressMsg) Action {
 	return ActionNone
 }
 
-// maxPromptRows caps the rendered prompt at this many rows regardless of
-// how long m.prompt is or how narrow the panel is — the defensive backstop
-// on top of proposalText's own truncation (internal/runtime/approval.go):
-// a widget that trusts every caller to have already bounded its input
-// correctly is exactly the assumption a prior overflow bug argued against
-// (docs/architecture/behavior/approval_prompt_length_bound.feature.md).
-// Capping by RENDERED ROW COUNT, not character count, holds regardless of
-// panel width — a narrower panel wraps more rows per character, which a
-// char-count cap alone wouldn't protect against.
+// maxPromptRows caps the prompt's VISIBLE rows at once — regardless of how
+// long m.prompt is or how narrow the panel is, so relayout()'s height
+// budget stays statically bounded (docs/architecture/behavior/
+// approval_prompt_length_bound.feature.md). Content beyond the cap scrolls
+// (PgUp/PgDn) rather than being truncated, reusing the exact wrap/window/
+// scrollbar mechanics internal/surfaces/output.Model.renderBody already
+// uses for a widget body — nothing about a proposed call is ever hidden
+// from the user, only paged, and any future fix to that windowing logic
+// benefits this widget too instead of a second, drifting copy.
 const maxPromptRows = 10
 
-// promptLines word-wraps the prompt to the panel width, one entry per visual
-// row, capped at maxPromptRows with a trailing "…" row if truncated.
+// promptLines renders the prompt's current scroll window: every wrapped row
+// when it fits within maxPromptRows, or a maxPromptRows-row window with a
+// scrollbar column when it doesn't.
 func (m *Model) promptLines() []string {
 	w := max(m.width, 1)
 	if m.prompt == "" {
 		return nil
 	}
-	lines := wrapText(m.prompt, w)
-	if len(lines) > maxPromptRows {
-		lines = append(lines[:maxPromptRows], "…")
+	lines := scrollutil.WrapLines(m.prompt, w)
+	if len(lines) <= maxPromptRows {
+		m.promptOffset = 0
+		return lines
 	}
-	return lines
+
+	// Over the cap: reserve a scrollbar column and re-wrap to the narrower width.
+	bodyW := max(w-1, 1)
+	lines = scrollutil.WrapLines(m.prompt, bodyW)
+	total := len(lines)
+	maxOffset := total - maxPromptRows
+	m.promptOffset = scrollutil.ClampInt(m.promptOffset, 0, maxOffset)
+	window := lines[m.promptOffset : m.promptOffset+maxPromptRows]
+
+	out := make([]string, maxPromptRows)
+	for i, l := range window {
+		out[i] = scrollutil.PadTo(l, bodyW) + scrollutil.ScrollbarCell(i, m.promptOffset, total, maxPromptRows)
+	}
+	return out
 }
 
 // View renders the prompt (wrapped to width) followed by one row per option,
@@ -173,29 +219,5 @@ func (m *Model) queuedLines() []string {
 	if more := len(m.queued) - show; more > 0 {
 		lines = append(lines, fmt.Sprintf("  … and %d more", more))
 	}
-	return lines
-}
-
-// wrapText greedily word-wraps s to w columns, preferring to break after a
-// space and hard-breaking an over-long word.
-func wrapText(s string, w int) []string {
-	if w < 1 {
-		return []string{s}
-	}
-	words := strings.Fields(s)
-	if len(words) == 0 {
-		return nil
-	}
-	var lines []string
-	cur := words[0]
-	for _, word := range words[1:] {
-		if ansi.StringWidth(cur)+1+ansi.StringWidth(word) <= w {
-			cur += " " + word
-		} else {
-			lines = append(lines, cur)
-			cur = word
-		}
-	}
-	lines = append(lines, cur)
 	return lines
 }
