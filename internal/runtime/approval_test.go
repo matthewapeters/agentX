@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -324,5 +325,50 @@ func TestRequestApprovalPlanDecisionScopesToRoot(t *testing.T) {
 	}
 	if v := pol.Evaluate(d, args); v.Decision != tools.NeedsApproval {
 		t.Errorf("Evaluate() after a plan-only approval = %v, want NeedsApproval — plan scope is deliberately not folded into Evaluate", v.Decision)
+	}
+}
+
+// TestProposalTextTruncatesArgvSubstitutedValues: an Argv-templated
+// descriptor (edit_file's sed script is exactly this shape) truncates a
+// long substituted argument value identically to the k=v fallback path —
+// previously only the fallback path truncated, letting an unbounded value
+// (e.g. a large in-place-edit script) reach the approval prompt verbatim
+// (docs/architecture/behavior/approval_prompt_length_bound.feature.md).
+func TestProposalTextTruncatesArgvSubstitutedValues(t *testing.T) {
+	d := tools.Descriptor{
+		ID:   "edit_file",
+		Argv: []string{"sed", "-i", "-e", "{script}", "--", "{path}"},
+		Args: []tools.ArgSpec{{Name: "path", Kind: tools.KindPath}, {Name: "script", Kind: tools.KindString}},
+	}
+	longScript := strings.Repeat("x", 500)
+	args := map[string]string{"path": "notes.txt", "script": longScript}
+
+	got := proposalText(d, args)
+	if strings.Contains(got, longScript) {
+		t.Fatal("proposalText included the full untruncated script — the exact overflow this fix closes")
+	}
+	wantTruncated := longScript[:maxArgPreviewLen] + "…"
+	if !strings.Contains(got, wantTruncated) {
+		t.Errorf("proposalText = %q, want it to contain the truncated form %q", got, wantTruncated)
+	}
+}
+
+// TestProposalTextArgvBranchMatchesFallbackTruncation: both proposalText
+// rendering paths (Argv-templated and the k=v fallback) truncate an
+// oversized value to the same length — no path is allowed to be the
+// unbounded one.
+func TestProposalTextArgvBranchMatchesFallbackTruncation(t *testing.T) {
+	longVal := strings.Repeat("y", 500)
+	want := longVal[:maxArgPreviewLen] + "…"
+
+	argvBased := tools.Descriptor{ID: "http_get", Argv: []string{"curl", "-sSL", "--", "{url}"},
+		Args: []tools.ArgSpec{{Name: "url", Kind: tools.KindString}}}
+	if got := proposalText(argvBased, map[string]string{"url": longVal}); !strings.Contains(got, want) {
+		t.Errorf("Argv-based proposalText = %q, want it to contain %q", got, want)
+	}
+
+	fallback := tools.Descriptor{ID: "write_file"}
+	if got := proposalText(fallback, map[string]string{"content": longVal}); !strings.Contains(got, want) {
+		t.Errorf("fallback proposalText = %q, want it to contain %q", got, want)
 	}
 }

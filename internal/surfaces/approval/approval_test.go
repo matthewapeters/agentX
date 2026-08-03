@@ -176,3 +176,42 @@ func TestQueuedCapsPreviewWithMoreSummary(t *testing.T) {
 		t.Errorf("queuedLines() has %d rows, want %d", len(lines), maxQueuedPreview+2)
 	}
 }
+
+// GIVEN a prompt long enough to wrap past maxPromptRows at the panel's
+// current width
+// WHEN promptLines renders it
+// THEN it is capped at maxPromptRows rows plus a trailing "…" row — the
+// defensive backstop that holds regardless of how long the prompt is or
+// how narrow the panel is (docs/architecture/behavior/
+// approval_prompt_length_bound.feature.md).
+func TestPromptLinesCapsAtMaxPromptRows(t *testing.T) {
+	m := New()
+	m.SetSize(10, 0) // narrow, so a modest prompt still wraps to many rows
+	words := make([]string, 200)
+	for i := range words {
+		words[i] = "word"
+	}
+	m.Set(strings.Join(words, " "), testOptions(), nil)
+
+	lines := m.promptLines()
+	if len(lines) != maxPromptRows+1 {
+		t.Fatalf("promptLines() has %d rows, want %d (cap + trailing marker)", len(lines), maxPromptRows+1)
+	}
+	if lines[len(lines)-1] != "…" {
+		t.Errorf("promptLines() last row = %q, want the truncation marker %q", lines[len(lines)-1], "…")
+	}
+}
+
+// GIVEN a short prompt that fits well within maxPromptRows
+// WHEN promptLines renders it
+// THEN the cap is a no-op — unchanged from before this fix.
+func TestPromptLinesShortPromptUnaffected(t *testing.T) {
+	m := New()
+	m.SetSize(80, 0)
+	m.Set("a short prompt", testOptions(), nil)
+
+	lines := m.promptLines()
+	if len(lines) != 1 || lines[0] != "a short prompt" {
+		t.Errorf("promptLines() = %v, want [%q] unchanged", lines, "a short prompt")
+	}
+}

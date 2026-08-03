@@ -106,13 +106,29 @@ func (m *Model) Update(msg tea.KeyPressMsg) Action {
 	return ActionNone
 }
 
-// promptLines word-wraps the prompt to the panel width, one entry per visual row.
+// maxPromptRows caps the rendered prompt at this many rows regardless of
+// how long m.prompt is or how narrow the panel is — the defensive backstop
+// on top of proposalText's own truncation (internal/runtime/approval.go):
+// a widget that trusts every caller to have already bounded its input
+// correctly is exactly the assumption a prior overflow bug argued against
+// (docs/architecture/behavior/approval_prompt_length_bound.feature.md).
+// Capping by RENDERED ROW COUNT, not character count, holds regardless of
+// panel width — a narrower panel wraps more rows per character, which a
+// char-count cap alone wouldn't protect against.
+const maxPromptRows = 10
+
+// promptLines word-wraps the prompt to the panel width, one entry per visual
+// row, capped at maxPromptRows with a trailing "…" row if truncated.
 func (m *Model) promptLines() []string {
 	w := max(m.width, 1)
 	if m.prompt == "" {
 		return nil
 	}
-	return wrapText(m.prompt, w)
+	lines := wrapText(m.prompt, w)
+	if len(lines) > maxPromptRows {
+		lines = append(lines[:maxPromptRows], "…")
+	}
+	return lines
 }
 
 // View renders the prompt (wrapped to width) followed by one row per option,

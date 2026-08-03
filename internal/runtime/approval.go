@@ -82,26 +82,49 @@ func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, 
 	}
 }
 
+// maxArgPreviewLen bounds how much of a single argument's value appears in
+// a proposal's display/audit text — applies uniformly to both rendering
+// paths below. Previously only the k=v fallback path truncated; an
+// Argv-templated tool's substituted values (e.g. edit_file's free-form sed
+// script, which can carry an entire file's worth of replacement text) went
+// through untruncated, the confirmed cause of a session where the very
+// first approval prompt pushed the input widget off-screen (docs/
+// architecture/behavior/approval_prompt_length_bound.feature.md).
+const maxArgPreviewLen = 60
+
+// truncateArg caps a single argument value for display, never for
+// execution — see proposalText's doc comment.
+func truncateArg(v string) string {
+	if len(v) <= maxArgPreviewLen {
+		return v
+	}
+	return v[:maxArgPreviewLen] + "…"
+}
+
 // proposalText renders the proposed command for display/audit: the rendered argv
-// when available, otherwise the tool id with its sorted arguments.
+// when available, otherwise the tool id with its sorted arguments. Every
+// argument value is truncated to maxArgPreviewLen first — this is purely a
+// display string, never fed to Runner.Run (which always receives the real,
+// unmodified args map directly), so truncating it changes nothing about
+// what actually executes.
 func proposalText(d tools.Descriptor, args map[string]string) string {
+	display := make(map[string]string, len(args))
+	for k, v := range args {
+		display[k] = truncateArg(v)
+	}
 	if len(d.Argv) > 0 {
-		if argv, err := d.BuildArgv(args); err == nil {
+		if argv, err := d.BuildArgv(display); err == nil {
 			return strings.Join(argv, " ")
 		}
 	}
 	parts := []string{d.ID}
-	keys := make([]string, 0, len(args))
-	for k := range args {
+	keys := make([]string, 0, len(display))
+	for k := range display {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		v := args[k]
-		if len(v) > 60 {
-			v = v[:60] + "…"
-		}
-		parts = append(parts, k+"="+v)
+		parts = append(parts, k+"="+display[k])
 	}
 	return strings.Join(parts, " ")
 }
