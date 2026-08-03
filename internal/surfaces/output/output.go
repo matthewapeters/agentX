@@ -577,10 +577,16 @@ func (m *Model) Apply(ev state.Event) tea.Cmd {
 		m.add(&widget{kind: kindSystem, title: "📜 system prompt", body: eventText(ev), previewWhenCollapsed: true})
 	case state.ContentApprovalRequest:
 		// A lightweight scrollback record of what was asked — the same event also
-		// drives the swapped-in approval widget in the input panel (chat.go).
+		// drives the swapped-in approval widget in the input panel (chat.go), which
+		// is where the full prompt is actually read and decided on. Collapsed by
+		// default, same as kindToolResult: once a decision is made (recorded
+		// separately as kindApprovalDecision below), the full proposal text has no
+		// ongoing reason to occupy scrollback space — expand on demand via Enter,
+		// same as any other collapsible widget (docs/architecture/behavior/
+		// output_approval_request_collapsed_by_default.feature.md).
 		p, _ := ev.Payload.(map[string]any)
 		m.add(&widget{kind: kindApprovalRequest, title: "❓ approval needed",
-			body: str(p["prompt"]), collapsible: true, previewWhenCollapsed: true})
+			body: str(p["prompt"]), collapsible: true, collapsed: true, previewWhenCollapsed: true})
 	case state.ContentApprovalDecision:
 		// The post-decision audit line: fixed gray, not toggleable (never part of
 		// context — see grayLine/renderWidget's kindApprovalDecision dispatch).

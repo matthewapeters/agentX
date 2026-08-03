@@ -42,3 +42,30 @@ func TestViewNeverExceedsHeightWithTabContent(t *testing.T) {
 		}
 	}
 }
+
+// GIVEN a ContentApprovalRequest event with a multi-line prompt
+// WHEN it's applied
+// THEN the resulting widget renders collapsed by default — a single-line
+// preview, not the full multi-line prompt — matching kindToolResult's
+// existing default. Expanding it (ToggleCollapse) still reveals the full
+// body on demand (docs/architecture/behavior/
+// output_approval_request_collapsed_by_default.feature.md).
+func TestApprovalRequestWidgetCollapsedByDefault(t *testing.T) {
+	m := New()
+	m.SetSize(100, 30)
+	prompt := "write_file content=package task\n\nimport (\n\t\"encoding/json\"\n\n\t\"testing\"\n)\n\nfunc T… path=internal/prompting/task/hypothesis_test.go"
+	m.Apply(state.Event{EventType: "TOOL_CALL", ContentType: state.ContentApprovalRequest,
+		Payload: map[string]any{"prompt": prompt}, Enabled: true})
+
+	collapsedRows := strings.Split(m.View(), "\n")
+	// border top + one collapsed preview row + border bottom, at most (exact
+	// framing depends on boxify, but it must NOT contain the full body).
+	if strings.Contains(m.View(), "encoding/json") {
+		t.Errorf("View() while collapsed contains full body content, want only a one-line preview: %v", collapsedRows)
+	}
+
+	m.ToggleCollapse(0)
+	if !strings.Contains(m.View(), "encoding/json") {
+		t.Errorf("View() after ToggleCollapse does not contain the full body, want it expanded: %q", m.View())
+	}
+}
