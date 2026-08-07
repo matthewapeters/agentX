@@ -75,6 +75,21 @@ func DefaultRegistry() *Registry {
 				{Name: "replace_all", Kind: KindString},
 			}},
 
+		// Verification (executes the repo's build/test gate; approval required).
+		// Fixed to exactly `make all` — no target argument — so there is no
+		// injection surface and the model can only ever run the same canonical
+		// gate CLAUDE.md already holds every merge to (docs/implementation/
+		// 09_makefile_and_quality_gate_contract.md), never an arbitrary Makefile
+		// target. This is a materially bigger blast radius than any other tool
+		// here: it executes real test code, not just a bounded read/write/fetch,
+		// so it stays approval-gated like write_file/apply_patch despite running
+		// nothing the model authored itself. TimeoutSeconds is generous (a cold
+		// build + full suite is minutes, not the ~30s other tools budget for).
+		{ID: "run_checks", Description: "Run the repository's canonical build/test gate (`make all`): vets, builds, and runs the full test suite.",
+			Command: "make", Argv: []string{"make", "-C", "{path}", "all"},
+			Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 300,
+			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
+
 		// Network (egress; approval required).
 		{ID: "http_get", Description: "Fetch a URL and return the response body.",
 			Command: "curl", Argv: []string{"curl", "-sSL", "--", "{url}"},
