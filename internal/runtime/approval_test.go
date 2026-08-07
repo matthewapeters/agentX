@@ -329,19 +329,20 @@ func TestRequestApprovalPlanDecisionScopesToRoot(t *testing.T) {
 }
 
 // TestProposalTextTruncatesArgvSubstitutedValues: an Argv-templated
-// descriptor (edit_file's sed script is exactly this shape) truncates a
-// long substituted argument value identically to the k=v fallback path —
-// previously only the fallback path truncated, letting an unbounded value
-// (e.g. a large in-place-edit script) reach the approval prompt verbatim
-// (docs/architecture/behavior/approval_prompt_length_bound.feature.md).
+// descriptor (apply_patch's diff argument is exactly this shape — edit_file
+// was this test's original motivating example but is now a Go builtin, no
+// Argv template) truncates a long substituted argument value identically to
+// the k=v fallback path — previously only the fallback path truncated,
+// letting an unbounded value (e.g. a large diff) reach the approval prompt
+// verbatim (docs/architecture/behavior/approval_prompt_length_bound.feature.md).
 func TestProposalTextTruncatesArgvSubstitutedValues(t *testing.T) {
 	d := tools.Descriptor{
-		ID:   "edit_file",
-		Argv: []string{"sed", "-i", "-e", "{script}", "--", "{path}"},
-		Args: []tools.ArgSpec{{Name: "path", Kind: tools.KindPath}, {Name: "script", Kind: tools.KindString}},
+		ID:   "apply_patch",
+		Argv: []string{"patch", "-p0", "{patch}"},
+		Args: []tools.ArgSpec{{Name: "patch", Kind: tools.KindString}},
 	}
 	longScript := strings.Repeat("x", 500)
-	args := map[string]string{"path": "notes.txt", "script": longScript}
+	args := map[string]string{"patch": longScript}
 
 	got := proposalText(d, args)
 	if strings.Contains(got, longScript) {

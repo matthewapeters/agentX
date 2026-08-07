@@ -85,11 +85,14 @@ func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, 
 // maxArgPreviewLen bounds how much of a single argument's value appears in
 // a proposal's display/audit text — applies uniformly to both rendering
 // paths below. Previously only the k=v fallback path truncated; an
-// Argv-templated tool's substituted values (e.g. edit_file's free-form sed
-// script, which can carry an entire file's worth of replacement text) went
+// Argv-templated tool's substituted values (e.g. apply_patch's free-form
+// diff, which can carry an entire file's worth of replacement text) went
 // through untruncated, the confirmed cause of a session where the very
 // first approval prompt pushed the input widget off-screen (docs/
-// architecture/behavior/approval_prompt_length_bound.feature.md).
+// architecture/behavior/approval_prompt_length_bound.feature.md). edit_file
+// was the original motivating example here but is now a Go builtin
+// (old_string/new_string, no Argv template) — apply_patch is the current
+// tool with this shape.
 const maxArgPreviewLen = 60
 
 // truncateArg caps a single argument value for display, never for

@@ -61,10 +61,19 @@ func DefaultRegistry() *Registry {
 			Command: "patch", Argv: []string{"patch", "-p0"}, StdinArg: "patch",
 			Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "patch", Kind: KindString, Required: true}}},
-		{ID: "edit_file", Description: "Apply a single in-place substitution (sed-style) to a file.",
-			Command: "sed", Argv: []string{"sed", "-i", "-e", "{script}", "--", "{path}"},
-			Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
-			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}, {Name: "script", Kind: KindString, Required: true}}},
+		// edit_file is a Go built-in (no subprocess, no regex): old_string must
+		// match an exact, literal, unique substring of the file (unless
+		// replace_all is set), removing the sed escaping/addressing surface
+		// that made the original implementation unreliable — see the
+		// editFile doc comment in executor.go.
+		{ID: "edit_file", Description: "Replace an exact, unique block of text in a file with new text.",
+			Builtin: "edit_file", Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
+			Args: []ArgSpec{
+				{Name: "path", Kind: KindPath, Required: true},
+				{Name: "old_string", Kind: KindString, Required: true},
+				{Name: "new_string", Kind: KindString, Required: true},
+				{Name: "replace_all", Kind: KindString},
+			}},
 
 		// Network (egress; approval required).
 		{ID: "http_get", Description: "Fetch a URL and return the response body.",

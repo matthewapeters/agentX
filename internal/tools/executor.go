@@ -143,9 +143,68 @@ func (e *Executor) runBuiltin(d Descriptor, args map[string]string) (Result, err
 		res.Preview = textOf(data)
 		res.Ref = ref // references the existing artifact; no new one is created
 		return res, nil
+	case "edit_file":
+		return e.editFile(res, args)
 	default:
 		return Result{}, fmt.Errorf("unknown builtin %q", d.Builtin)
 	}
+}
+
+// editFile replaces old_string with new_string in the file at path — a literal,
+// non-regex match, required to be unique unless replace_all is set. This
+// replaces edit_file's original sed-backed implementation (Command: "sed",
+// Argv with a "{script}" template): a model reasoning about "put this text
+// after that text" naturally produces literal text, not a sed command, and a
+// wrong regex/address failed with sed's opaque exit code and no indication of
+// what was actually wrong — reproducible live: a model attempting to append a
+// Makefile target passed the literal block as if it were a sed script, retried
+// the identical malformed command three times with no way to self-correct
+// (docs/architecture — see the soft-alarming-nurse session review). Matching
+// by literal substring instead removes the entire regex/escaping surface, and
+// the two failure modes below (not found; not unique) give the model something
+// concrete to act on instead of a bare error.
+func (e *Executor) editFile(res Result, args map[string]string) (Result, error) {
+	path, oldStr, newStr := args["path"], args["old_string"], args["new_string"]
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return failed(res, err), nil
+	}
+	if oldStr == "" {
+		// strings.Count(content, "") matches at every position, never 0 — an
+		// empty old_string would silently fall through to inserting new_string
+		// at the very start of the file instead of hitting the "not found"
+		// case below, which is never what an edit means. Reject it outright.
+		return failed(res, fmt.Errorf("old_string must not be empty")), nil
+	}
+	content := string(data)
+	count := strings.Count(content, oldStr)
+	replaceAll := args["replace_all"] == "true"
+	switch {
+	case count == 0:
+		return failed(res, fmt.Errorf("old_string not found in %s", path)), nil
+	case count > 1 && !replaceAll:
+		return failed(res, fmt.Errorf("old_string appears %d times in %s — make it unique, or set replace_all", count, path)), nil
+	}
+	updated := content
+	if replaceAll {
+		updated = strings.ReplaceAll(content, oldStr, newStr)
+	} else {
+		updated = strings.Replace(content, oldStr, newStr, 1)
+	}
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		return failed(res, err), nil
+	}
+	replaced := count
+	if !replaceAll {
+		replaced = 1
+	}
+	msg := fmt.Sprintf("replaced %d occurrence(s) in %s", replaced, path)
+	res.Command = "edit_file " + path
+	res.Bytes, res.Lines, res.Preview = len(updated), countLines([]byte(updated)), msg
+	if ref, werr := e.art.Write([]byte(msg)); werr == nil {
+		res.Ref = ref
+	}
+	return res, nil
 }
 
 func failed(res Result, err error) Result {
