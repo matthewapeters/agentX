@@ -34,6 +34,15 @@ const (
 	KindStep Kind = "step"
 	// KindTask is a tool node: Execute()/Results() only, never decomposes.
 	KindTask Kind = "task"
+	// KindHypothesis is a candidate explanation tracked with a Likelihood and
+	// Evidence links — never scheduler-dispatched (see Graph.Ready()'s exclusion,
+	// below). Written and read by Tidal (ADR 0014), never by the schedulers in
+	// internal/runtime/scheduler or internal/runtime/wavefront.
+	//
+	// Hypothesis records live in the graph for Tier 2 consolidation logic;
+	// they are never selected by Graph.Ready() or handed to either scheduler's
+	// dispatch switch.
+	KindHypothesis Kind = "hypothesis"
 )
 
 // Status is the task lifecycle state. proposed/abstained are the classifier-side
@@ -117,6 +126,21 @@ type Record struct {
 	// Deps depth or dispatch concurrency (ADR 0012 amendment). Never set by a
 	// caller directly; Graph owns it.
 	Seq int `json:"seq"`
+	// Likelihood and Evidence are meaningful only when Kind == KindHypothesis —
+	// zero-valued and ignored otherwise. Set by Tidal (ADR 0014), never by
+	// either scheduler.
+	Likelihood Likelihood `json:"likelihood,omitempty"`
+	Evidence   []Evidence `json:"evidence,omitempty"`
+	// ResolutionCriteria is meaningful only on a Tidal investigation's root
+	// record — the disjunctive set of ResolutionAssertions whose satisfaction
+	// ends the investigation. Empty/nil on every other record.
+	ResolutionCriteria []ResolutionAssertion `json:"resolution_criteria,omitempty"`
+	// Deferred marks a Need-to-Know-shaped open question (Status other than
+	// Done/Failed/Denied/Cancelled) as adjacent context rather than required to
+	// resolve the investigation's ResolutionCriteria — the diagnostic/deferred
+	// split a Tidal render groups by. False (diagnostic) is the default for
+	// every existing record kind; irrelevant once a node resolves.
+	Deferred bool `json:"deferred,omitempty"`
 }
 
 // FromAction turns an action-classifier decision into a proposed task record.

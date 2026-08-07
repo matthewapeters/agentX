@@ -178,6 +178,9 @@ func (g *Graph) Ready() []string {
 	var out []string
 	for _, id := range g.order {
 		rec := g.nodes[id]
+		if rec.Kind == KindHypothesis {
+			continue // never scheduler-dispatched — see this file's package doc / ADR 0014
+		}
 		if rec.Status != Proposed && rec.Status != Ready {
 			continue
 		}
