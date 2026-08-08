@@ -144,7 +144,7 @@ help:
 	@echo "  llamacpp-install          cmake --install into LLAMACPP_INSTALL_PREFIX (sudo, default /opt/llama.cpp)"
 	@echo "  llamacpp-models-dir       Create LLAMACPP_MODELS_DIR (sudo, default /opt/llama-server/models)"
 	@echo "  llamacpp-service-user     Create the dedicated llama-server system user (sudo, idempotent)"
-	@echo "  llamacpp-service-install  Install the systemd unit + env file + wrapper script (sudo)"
+	@echo "  llamacpp-service-install  Deploy the whole service end to end: build+install the binary, service user, models dir, unit+env file (sudo)"
 	@echo "  llamacpp-service-uninstall Remove the systemd unit + wrapper script (sudo)"
 
 all:
@@ -337,14 +337,18 @@ llamacpp-build: llamacpp-clone
 # root-owned — needs sudo). This is the step the raw build tree skips:
 # llama.cpp's CMakeLists.txt has real install() rules (GNUInstallDirs), which
 # split binaries into <prefix>/bin and shared libraries into <prefix>/lib and
-# strip the build-tree RPATH — set LLAMACPP_PREFIX=$(LLAMACPP_INSTALL_PREFIX)
-# in $(LLAMACPP_ENV_FILE) (see llamacpp-service-install) afterward, not
-# LLAMACPP_BIN_DIR pointed at the raw build dir.
+# strip the build-tree RPATH. llamacpp-service-install seeds
+# $(LLAMACPP_ENV_FILE) with LLAMACPP_PREFIX=$(LLAMACPP_INSTALL_PREFIX)
+# automatically (substituted from this same variable, not a hardcoded
+# guess) — if you override LLAMACPP_INSTALL_PREFIX here, use the same
+# override there, or edit $(LLAMACPP_ENV_FILE) by hand afterward.
 llamacpp-install: llamacpp-build
 	@if [ "$$(id -u)" != "0" ]; then echo "requires root — run: sudo make llamacpp-install" >&2; exit 1; fi
 	cmake --install "$(LLAMACPP_BUILD_DIR)" --prefix "$(LLAMACPP_INSTALL_PREFIX)"
 	@echo "llama.cpp installed at $(LLAMACPP_INSTALL_PREFIX) (bin/, lib/)."
-	@echo "Set LLAMACPP_PREFIX=$(LLAMACPP_INSTALL_PREFIX) in $(LLAMACPP_ENV_FILE) (see 'make llamacpp-service-install')."
+	@if [ -e "$(LLAMACPP_ENV_FILE)" ] && ! grep -q "^LLAMACPP_PREFIX=$(LLAMACPP_INSTALL_PREFIX)$$" "$(LLAMACPP_ENV_FILE)" 2>/dev/null; then \
+		echo "NOTE: $(LLAMACPP_ENV_FILE) already exists and does not have LLAMACPP_PREFIX=$(LLAMACPP_INSTALL_PREFIX) — update it by hand."; \
+	fi
 
 # Creates the dedicated, no-login system account llama-server.service runs
 # as — mirrors this host's existing ollama.service pattern (system user,
@@ -378,12 +382,33 @@ llamacpp-models-dir:
 	install -d -m 0755 "$(LLAMACPP_MODELS_DIR)"
 	@echo "models directory ready at $(LLAMACPP_MODELS_DIR) — move your .gguf files (and preset.ini, if any) in, then point LLAMA_ARG_MODELS_DIR/LLAMA_ARG_MODELS_PRESET at it in $(LLAMACPP_ENV_FILE)"
 
-# Installs the wrapper script + systemd unit; seeds (never overwrites) the
-# env file — same non-clobbering convention `make seed` uses for agentx.toml.
-# Requires root. Does NOT enable or start the service: review/edit
-# $(LLAMACPP_ENV_FILE) (it ships with placeholder paths, not real ones) before
-# `sudo systemctl enable --now llama-server`.
-llamacpp-service-install: llamacpp-service-user llamacpp-models-dir
+# This target owns deploying the SERVICE end to end, not just the unit file
+# around it — that includes the binary the unit's ExecStart actually runs
+# (llamacpp-install, which pulls in llamacpp-build/-clone), the account it
+# runs as, and the models directory its env file points at. All of those are
+# constituent parts of "the service exists and can start," not separable
+# lifecycle stages a caller has to sequence themselves — the earlier version
+# of this target treated "build the software" as decoupled from "set up the
+# service," which is exactly how it ended up installed and enabled while
+# pointing at a prefix that didn't exist yet (exit 127, restart-looping).
+#
+# In practice a rerun is cheap even with llamacpp-install chained in: cmake's
+# own incremental build (llamacpp-build's `cmake --build`) finishes in well
+# under a second when nothing changed. The one real cost: since this whole
+# recipe runs as root (needs sudo for /opt, /etc, the service user), the
+# clone/build steps now also run as root, so if LLAMACPP_SRC_DIR is a
+# personal checkout you also hack on directly (not a dedicated clone), any
+# files a rebuild touches become root-owned. Run `make llamacpp-build`
+# yourself (unprivileged) first if you want to keep that tree entirely
+# user-owned; this target's own incremental rerun will then be a no-op there.
+#
+# Seeds (never overwrites) the env file — same non-clobbering convention
+# `make seed` uses for agentx.toml — with LLAMACPP_PREFIX/LLAMA_ARG_MODELS_DIR
+# substituted from the ACTUAL LLAMACPP_INSTALL_PREFIX/LLAMACPP_MODELS_DIR
+# values used here, not just a copy of the template's own hardcoded
+# defaults, so it stays correct even if you overrode either one. Does NOT
+# enable or start the service.
+llamacpp-service-install: llamacpp-install llamacpp-service-user llamacpp-models-dir
 	install -d "$(LLAMACPP_SERVICE_LIBDIR)"
 	install -m 0755 scripts/llama-server "$(LLAMACPP_SERVICE_LIBDIR)/llama-server"
 	install -m 0644 scripts/llama-server.service "$(LLAMACPP_UNIT_FILE)"
@@ -391,11 +416,15 @@ llamacpp-service-install: llamacpp-service-user llamacpp-models-dir
 		echo "  skip  $(LLAMACPP_ENV_FILE) (already exists — edit it directly to change settings)"; \
 	else \
 		install -m 0640 -o root -g $(LLAMACPP_SERVICE_USER) scripts/llama-server.env.example "$(LLAMACPP_ENV_FILE)"; \
-		echo "  seed  $(LLAMACPP_ENV_FILE)"; \
+		sed -i \
+			-e 's|^LLAMACPP_PREFIX=.*|LLAMACPP_PREFIX=$(LLAMACPP_INSTALL_PREFIX)|' \
+			-e 's|^LLAMA_ARG_MODELS_DIR=.*|LLAMA_ARG_MODELS_DIR=$(LLAMACPP_MODELS_DIR)|' \
+			"$(LLAMACPP_ENV_FILE)"; \
+		echo "  seed  $(LLAMACPP_ENV_FILE) (LLAMACPP_PREFIX=$(LLAMACPP_INSTALL_PREFIX), LLAMA_ARG_MODELS_DIR=$(LLAMACPP_MODELS_DIR))"; \
 	fi
 	systemctl daemon-reload
 	@echo ""
-	@echo "Installed. Edit $(LLAMACPP_ENV_FILE) (LLAMACPP_PREFIX + LLAMA_ARG_MODELS_DIR at least), then:"
+	@echo "Installed. $(LLAMACPP_ENV_FILE) already points at $(LLAMACPP_INSTALL_PREFIX) / $(LLAMACPP_MODELS_DIR) if freshly seeded — edit it only if you need something else (e.g. LLAMA_ARG_MODELS_PRESET), then:"
 	@echo "  sudo systemctl enable --now llama-server"
 	@echo "  journalctl -u llama-server -f"
 
