@@ -47,13 +47,18 @@ func ClassifyPath(path, projectRoot string) PathScope {
 // uses, unchanged — so this is purely about WHAT gets keyed and persisted,
 // not a new key format:
 //
-//   - write_file/edit_file (a single "path" arg): one map, {"ext": ...} when
-//     the resolved path is inside projectRoot, or {"ext": ..., "path":
-//     resolved} when it's outside. Approving one call then covers every
-//     future call at the same scope (verb + extension inside the project;
-//     verb + exact path + extension outside it) instead of today's
-//     per-call-content key — the fix for "approve for all sessions" almost
-//     never producing a cache hit on a content-bearing tool.
+//   - write_file/edit_file/delete_file (a single "path" arg): one map,
+//     {"ext": ...} when the resolved path is inside projectRoot, or {"ext":
+//     ..., "path": resolved} when it's outside. Approving one call then
+//     covers every future call at the same scope (verb + extension inside
+//     the project; verb + exact path + extension outside it) instead of
+//     today's per-call-content key — the fix for "approve for all sessions"
+//     almost never producing a cache hit on a content-bearing tool.
+//   - move_file (two path args, "from" and "to"): one map per distinct
+//     scope across both — approving a move requires, and then covers, the
+//     scope of both its source and destination, mirroring apply_patch's
+//     "approving a patch approves every file it touched" completeness rule
+//     applied to a two-path call instead of an N-file one.
 //   - apply_patch (no structured path argument — its target files live only
 //     in the diff's own headers): one map per file the diff touches,
 //     deduplicated. An unparseable diff falls back to returning args
@@ -62,28 +67,37 @@ func ClassifyPath(path, projectRoot string) PathScope {
 //   - every other tool: args unchanged — today's behavior, untouched.
 func (d Descriptor) ScopeArgs(args map[string]string, projectRoot string) []map[string]string {
 	switch d.ID {
-	case "write_file", "edit_file":
+	case "write_file", "edit_file", "delete_file":
 		return []map[string]string{pathScopeArgs(args["path"], projectRoot)}
+	case "move_file":
+		return dedupeScopeArgs([]string{args["from"], args["to"]}, projectRoot)
 	case "apply_patch":
 		paths, ok := parsePatchPaths(args["patch"])
 		if !ok {
 			return []map[string]string{args}
 		}
-		seen := make(map[string]bool, len(paths))
-		out := make([]map[string]string, 0, len(paths))
-		for _, p := range paths {
-			sa := pathScopeArgs(p, projectRoot)
-			dedupeKey := sa["ext"] + "\x00" + sa["path"]
-			if seen[dedupeKey] {
-				continue
-			}
-			seen[dedupeKey] = true
-			out = append(out, sa)
-		}
-		return out
+		return dedupeScopeArgs(paths, projectRoot)
 	default:
 		return []map[string]string{args}
 	}
+}
+
+// dedupeScopeArgs builds one pathScopeArgs entry per distinct (ext, path)
+// scope across paths, in order, dropping duplicates — shared by move_file's
+// fixed two-path case and apply_patch's diff-derived N-path case.
+func dedupeScopeArgs(paths []string, projectRoot string) []map[string]string {
+	seen := make(map[string]bool, len(paths))
+	out := make([]map[string]string, 0, len(paths))
+	for _, p := range paths {
+		sa := pathScopeArgs(p, projectRoot)
+		dedupeKey := sa["ext"] + "\x00" + sa["path"]
+		if seen[dedupeKey] {
+			continue
+		}
+		seen[dedupeKey] = true
+		out = append(out, sa)
+	}
+	return out
 }
 
 // pathScopeArgs builds one ScopeArgs entry for a single path.

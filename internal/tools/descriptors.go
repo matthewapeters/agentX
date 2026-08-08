@@ -1,6 +1,9 @@
 package tools
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // Registry is a lookup of curated tool descriptors by id.
 type Registry struct {
@@ -32,13 +35,25 @@ func DefaultRegistry() *Registry {
 		// only variable input is the target path.
 		{ID: "tree", Description: "Show a directory's structure (depth-limited to 3, vendored dirs excluded).",
 			Command: "tree", Argv: []string{"tree", "-L", "3",
-				"-I", "node_modules|.git|vendor|__pycache__|.venv|dist|build|.next|target", "--", "{path}"},
+				"-I", strings.Join(excludedDirs, "|"), "--", "{path}"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
 		{ID: "find_path", Description: "Find files by name under a directory.",
 			Command: "find", Argv: []string{"find", "{root}", "-name", "{name}"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "root", Kind: KindPath, Required: true}, {Name: "name", Kind: KindString, Required: true}}},
+		// grep_files: a Go builtin (no external grep/rg dependency), so
+		// behavior is identical on every OS Go itself supports — see
+		// docs/architecture/behavior/tool_grep_files.feature.md.
+		// max_results is optional (KindInt, not Required) — omitted or
+		// non-positive falls back to defaultGrepMaxResults in executor.go.
+		{ID: "grep_files", Description: "Search file contents for a regular-expression pattern (RE2 syntax), returning matching lines as path:line: text.",
+			Builtin: "grep_files", Risk: RiskRead, TimeoutSeconds: 30,
+			Args: []ArgSpec{
+				{Name: "path", Kind: KindPath, Required: true},
+				{Name: "pattern", Kind: KindString, Required: true},
+				{Name: "max_results", Kind: KindInt},
+			}},
 		// date: no variable input, so Argv carries no "{name}" placeholder and Args is
 		// nil — BuildArgv only requires a placeholder's arg when the template uses one.
 		{ID: "date", Description: "Return the current date/time.",
@@ -73,6 +88,20 @@ func DefaultRegistry() *Registry {
 				{Name: "old_string", Kind: KindString, Required: true},
 				{Name: "new_string", Kind: KindString, Required: true},
 				{Name: "replace_all", Kind: KindString},
+			}},
+		// delete_file/move_file are Go built-ins (os.Remove/os.Rename — already
+		// cross-platform in the Go standard library, no OS-specific Command/Argv
+		// needed). Both are deliberately bounded to a single file, never a
+		// directory — see docs/architecture/behavior/tool_delete_file.feature.md
+		// and tool_move_file.feature.md.
+		{ID: "delete_file", Description: "Delete a single file. Refuses to delete directories.",
+			Builtin: "delete_file", Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
+			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
+		{ID: "move_file", Description: "Move or rename a single file. Refuses to overwrite an existing destination or move a directory.",
+			Builtin: "move_file", Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 30,
+			Args: []ArgSpec{
+				{Name: "from", Kind: KindPath, Required: true},
+				{Name: "to", Kind: KindPath, Required: true},
 			}},
 
 		// Verification (executes the repo's build/test gate; approval required).

@@ -1,12 +1,18 @@
 package tools
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -122,6 +128,16 @@ func (e *Executor) runBuiltin(d Descriptor, args map[string]string) (Result, err
 	switch d.Builtin {
 	case "write_file":
 		path, content := args["path"], args["content"]
+		// Create the file's parent directory tree first — a brand-new package
+		// or subdirectory is an ordinary write_file target (e.g. a new Go
+		// package's first file), not an error case; os.WriteFile alone fails
+		// outright on a missing parent with no way for the caller to recover,
+		// since no other builtin creates bare directories either.
+		if dir := filepath.Dir(path); dir != "." {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return failed(res, err), nil
+			}
+		}
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return failed(res, err), nil
 		}
@@ -145,6 +161,12 @@ func (e *Executor) runBuiltin(d Descriptor, args map[string]string) (Result, err
 		return res, nil
 	case "edit_file":
 		return e.editFile(res, args)
+	case "grep_files":
+		return e.grepFiles(res, args)
+	case "delete_file":
+		return e.deleteFile(res, args)
+	case "move_file":
+		return e.moveFile(res, args)
 	default:
 		return Result{}, fmt.Errorf("unknown builtin %q", d.Builtin)
 	}
@@ -201,6 +223,187 @@ func (e *Executor) editFile(res Result, args map[string]string) (Result, error) 
 	msg := fmt.Sprintf("replaced %d occurrence(s) in %s", replaced, path)
 	res.Command = "edit_file " + path
 	res.Bytes, res.Lines, res.Preview = len(updated), countLines([]byte(updated)), msg
+	if ref, werr := e.art.Write([]byte(msg)); werr == nil {
+		res.Ref = ref
+	}
+	return res, nil
+}
+
+// excludedDirs lists directory names read tooling skips by default —
+// generated/vendored trees a human wouldn't want scanned either. Shared by
+// the tree descriptor's -I pattern (descriptors.go) and grepFiles' directory
+// walk below, as one real Go slice both reference, not two hand-copied
+// lists that could drift apart.
+var excludedDirs = []string{"node_modules", ".git", "vendor", "__pycache__", ".venv", "dist", "build", ".next", "target"}
+
+func isExcludedDir(name string) bool {
+	return slices.Contains(excludedDirs, name)
+}
+
+// defaultGrepMaxResults bounds grep_files' match count when max_results is
+// omitted or non-positive, so an unbounded pattern over a large tree can't
+// produce an unbounded result (see the Result doc comment: bounding size is
+// the tool call's job).
+const defaultGrepMaxResults = 200
+
+// grepFiles searches file contents for a regex pattern (Go's RE2 syntax) —
+// a Go-native implementation (no external grep/rg dependency), so behavior
+// is identical on every OS Go itself supports; see
+// docs/architecture/behavior/tool_grep_files.feature.md.
+func (e *Executor) grepFiles(res Result, args map[string]string) (Result, error) {
+	path, pattern := args["path"], args["pattern"]
+	maxResults := atoiOr(args["max_results"])
+	if maxResults <= 0 {
+		maxResults = defaultGrepMaxResults
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return failed(res, fmt.Errorf("invalid pattern: %w", err)), nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return failed(res, err), nil
+	}
+
+	var matches []string
+	visit := func(p string) {
+		found, ferr := grepFile(p, re, maxResults-len(matches))
+		if ferr != nil {
+			return // unreadable or binary: skip, never fatal to the whole search
+		}
+		matches = append(matches, found...)
+	}
+
+	if info.IsDir() {
+		_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return nil // unreadable entry: skip, keep walking
+			}
+			if d.IsDir() {
+				if p != path && isExcludedDir(d.Name()) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if len(matches) >= maxResults {
+				return filepath.SkipAll
+			}
+			visit(p)
+			return nil
+		})
+	} else {
+		visit(path)
+	}
+
+	text := strings.Join(matches, "\n")
+	res.Command = fmt.Sprintf("grep_files %s %q", path, pattern)
+	res.Bytes, res.Lines, res.Preview = len(text), len(matches), text
+	if ref, werr := e.art.Write([]byte(text)); werr == nil {
+		res.Ref = ref
+	}
+	return res, nil
+}
+
+// grepFile scans one file for lines matching re, returning at most limit
+// matches formatted as "path:line: text" (1-indexed). A binary-looking file
+// (a NUL byte in its first 8KB) or a read error is reported via the
+// returned error so the caller can skip it — never fatal to the overall
+// search.
+func grepFile(path string, re *regexp.Regexp, limit int) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	head := make([]byte, 8192)
+	n, _ := f.Read(head)
+	if bytes.IndexByte(head[:n], 0) >= 0 {
+		return nil, fmt.Errorf("%s looks binary", path)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	var out []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+		line := scanner.Text()
+		if re.MatchString(line) {
+			out = append(out, fmt.Sprintf("%s:%d: %s", path, lineNo, line))
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	if len(out) >= limit {
+		return out, nil // stopped voluntarily at the caller's limit, not an error
+	}
+	return out, scanner.Err()
+}
+
+// deleteFile removes a single file — never a directory, even an empty one
+// (a categorically more dangerous, unbounded operation this tool does not
+// authorize; see docs/architecture/behavior/tool_delete_file.feature.md).
+// Lstat, not Stat: a symlink whose target is a directory is still safe to
+// remove as a symlink (os.Remove on a symlink never follows it into the
+// target), so classifying by the entry itself — not what it points to — is
+// the correct check here.
+func (e *Executor) deleteFile(res Result, args map[string]string) (Result, error) {
+	path := args["path"]
+	info, err := os.Lstat(path)
+	if err != nil {
+		return failed(res, err), nil
+	}
+	if info.IsDir() {
+		return failed(res, fmt.Errorf("%s is a directory — delete_file only removes files", path)), nil
+	}
+	if err := os.Remove(path); err != nil {
+		return failed(res, err), nil
+	}
+	msg := fmt.Sprintf("deleted %s", path)
+	res.Command = "delete_file " + path
+	res.Preview = msg
+	if ref, werr := e.art.Write([]byte(msg)); werr == nil {
+		res.Ref = ref
+	}
+	return res, nil
+}
+
+// moveFile renames/relocates a single file — never a directory (same
+// bounded blast radius as deleteFile), and never overwrites an existing
+// destination (no force/overwrite flag; matches this codebase's other
+// non-clobbering conventions rather than adding a flag whose only job is to
+// opt back into a footgun). Creates to's parent directory tree first, the
+// same fix write_file received and for the same reason: moving a file into
+// a new package directory is an ordinary target, not an error case. See
+// docs/architecture/behavior/tool_move_file.feature.md.
+func (e *Executor) moveFile(res Result, args map[string]string) (Result, error) {
+	from, to := args["from"], args["to"]
+	info, err := os.Lstat(from)
+	if err != nil {
+		return failed(res, err), nil
+	}
+	if info.IsDir() {
+		return failed(res, fmt.Errorf("%s is a directory — move_file only moves files", from)), nil
+	}
+	if _, err := os.Lstat(to); err == nil {
+		return failed(res, fmt.Errorf("%s already exists — move_file will not overwrite it", to)), nil
+	}
+	if dir := filepath.Dir(to); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return failed(res, err), nil
+		}
+	}
+	if err := os.Rename(from, to); err != nil {
+		return failed(res, err), nil
+	}
+	msg := fmt.Sprintf("moved %s to %s", from, to)
+	res.Command = fmt.Sprintf("move_file %s %s", from, to)
+	res.Preview = msg
 	if ref, werr := e.art.Write([]byte(msg)); werr == nil {
 		res.Ref = ref
 	}

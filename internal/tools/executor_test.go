@@ -39,6 +39,9 @@ func writeTempFile(t *testing.T, content string) string {
 }
 
 var editFileDescriptor = Descriptor{ID: "edit_file", Builtin: "edit_file"}
+var grepFilesDescriptor = Descriptor{ID: "grep_files", Builtin: "grep_files"}
+var deleteFileDescriptor = Descriptor{ID: "delete_file", Builtin: "delete_file"}
+var moveFileDescriptor = Descriptor{ID: "move_file", Builtin: "move_file"}
 
 // GIVEN a file containing exactly one occurrence of old_string
 // WHEN edit_file runs
@@ -404,5 +407,756 @@ func TestEditFileArtifactWriteFailureStillReportsSuccess(t *testing.T) {
 	}
 	if string(got) != "hi there\n" {
 		t.Errorf("file content = %q, want the edit to have applied despite the artifact failure", string(got))
+	}
+}
+
+// GIVEN a target path whose parent directory already exists
+// WHEN write_file runs
+// THEN it writes the file normally — the new MkdirAll call must not change
+// this, the common case.
+func TestWriteFileExistingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), writeFileDescriptor(), map[string]string{
+		"path": path, "content": "hello\n",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != "hello\n" {
+		t.Errorf("file content = %q, want %q", string(got), "hello\n")
+	}
+}
+
+// GIVEN a target path whose immediate parent directory does not exist yet
+// WHEN write_file runs
+// THEN it creates that directory and writes the file — a brand-new
+// subdirectory (e.g. a new Go package's first file) is an ordinary
+// write_file target, not an error case; a bare os.WriteFile fails outright
+// here with no way for the caller to recover, since no other builtin
+// creates directories either (the bug a live tidal_two.md test run
+// surfaced: write_file failed on internal/runtime/tidal/render.go because
+// internal/runtime/tidal/ didn't exist yet).
+func TestWriteFileCreatesMissingParentDirectory(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "newpkg", "render.go")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), writeFileDescriptor(), map[string]string{
+		"path": path, "content": "package newpkg\n",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != "package newpkg\n" {
+		t.Errorf("file content = %q, want %q", string(got), "package newpkg\n")
+	}
+}
+
+// GIVEN a target path several directory levels deep, none of which exist yet
+// WHEN write_file runs
+// THEN it creates the entire missing chain (MkdirAll, not just Mkdir) and
+// writes the file.
+func TestWriteFileCreatesNestedMissingDirectories(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a", "b", "c", "deep.txt")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), writeFileDescriptor(), map[string]string{
+		"path": path, "content": "deep\n",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != "deep\n" {
+		t.Errorf("file content = %q, want %q", string(got), "deep\n")
+	}
+}
+
+// GIVEN a target path whose parent directory component already exists as a
+// regular FILE, not a directory
+// WHEN write_file runs
+// THEN MkdirAll fails and that failure is reported as the result's error,
+// not a panic or a silent no-op — the one new failure branch this change
+// added.
+func TestWriteFileParentPathIsARegularFile(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory\n"), 0o644); err != nil {
+		t.Fatalf("write blocker file: %v", err)
+	}
+	path := filepath.Join(blocker, "out.txt")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), writeFileDescriptor(), map[string]string{
+		"path": path, "content": "hello\n",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error (MkdirAll must fail when a path component is a regular file)", res.Status)
+	}
+	if res.Stderr == "" {
+		t.Error("Stderr = \"\", want the MkdirAll failure reason")
+	}
+}
+
+// GIVEN a target path with a relative (non-nested) filename — Dir() is "."
+// WHEN write_file runs
+// THEN it still writes successfully; MkdirAll(".") must not be attempted in
+// a way that errors on an existing/no-op current directory.
+func TestWriteFileRelativeFilenameInCurrentDir(t *testing.T) {
+	dir := t.TempDir()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+
+	e := newTestExecutor()
+	res, err := e.Run(context.Background(), writeFileDescriptor(), map[string]string{
+		"path": "out.txt", "content": "cwd\n",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "out.txt"))
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != "cwd\n" {
+		t.Errorf("file content = %q, want %q", string(got), "cwd\n")
+	}
+}
+
+// --- grep_files ---------------------------------------------------------
+
+// GIVEN a single file containing exactly one line matching pattern
+// WHEN grep_files runs with path set to that file
+// THEN it returns one "path:line: text" match, searching only that file.
+func TestGrepFilesSingleFileMatch(t *testing.T) {
+	path := writeTempFile(t, "hello world\ngoodbye world\n")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), grepFilesDescriptor, map[string]string{
+		"path": path, "pattern": "^hello",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+	want := path + ":1: hello world"
+	if res.Preview != want {
+		t.Errorf("Preview = %q, want %q", res.Preview, want)
+	}
+	if res.Lines != 1 {
+		t.Errorf("Lines = %d, want 1", res.Lines)
+	}
+}
+
+// GIVEN a directory tree with matches spread across more than one file
+// WHEN grep_files runs with path set to the directory root
+// THEN it walks recursively and returns matches from every file.
+func TestGrepFilesDirectoryTreeMultipleMatches(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("func Foo() {}\n"), 0o644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatalf("mkdir sub: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "b.go"), []byte("func Bar() {}\nfunc FooBar() {}\n"), 0o644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), grepFilesDescriptor, map[string]string{
+		"path": dir, "pattern": `^func Foo\(\)`,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+	if res.Lines != 1 {
+		t.Fatalf("Lines = %d, want 1 (only a.go's line matches ^func Foo(), not FooBar())", res.Lines)
+	}
+	if !strings.Contains(res.Preview, "a.go:1:") {
+		t.Errorf("Preview = %q, want it to include a.go's match", res.Preview)
+	}
+}
+
+// GIVEN more matching lines than max_results
+// WHEN grep_files runs with max_results set
+// THEN exactly that many matches are returned, not the full match set.
+func TestGrepFilesMaxResultsTruncates(t *testing.T) {
+	var lines []string
+	for range 10 {
+		lines = append(lines, "target line")
+	}
+	path := writeTempFile(t, strings.Join(lines, "\n")+"\n")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), grepFilesDescriptor, map[string]string{
+		"path": path, "pattern": "target", "max_results": "3",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Lines != 3 {
+		t.Fatalf("Lines = %d, want 3 (max_results must cap the match count)", res.Lines)
+	}
+}
+
+// GIVEN a file that looks binary (a NUL byte in its first bytes)
+// WHEN grep_files walks over it as part of a directory search
+// THEN it is skipped without error and without appearing in the results —
+// matches from other files in the same directory still come back.
+func TestGrepFilesSkipsBinaryFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "text.txt"), []byte("needle here\n"), 0o644); err != nil {
+		t.Fatalf("write text.txt: %v", err)
+	}
+	binary := append([]byte("needle\x00"), make([]byte, 100)...)
+	if err := os.WriteFile(filepath.Join(dir, "blob.bin"), binary, 0o644); err != nil {
+		t.Fatalf("write blob.bin: %v", err)
+	}
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), grepFilesDescriptor, map[string]string{
+		"path": dir, "pattern": "needle",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Lines != 1 {
+		t.Fatalf("Lines = %d, want 1 (blob.bin's NUL byte must exclude it, even though it also contains \"needle\")", res.Lines)
+	}
+	if !strings.Contains(res.Preview, "text.txt") {
+		t.Errorf("Preview = %q, want the text.txt match", res.Preview)
+	}
+}
+
+// GIVEN a file the process cannot read (permission denied)
+// WHEN grep_files walks over it as part of a directory search
+// THEN it is skipped without error; matches from every other readable file
+// in the tree still come back.
+func TestGrepFilesSkipsUnreadableFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permission bits; this test needs a non-root process")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "readable.txt"), []byte("needle here\n"), 0o644); err != nil {
+		t.Fatalf("write readable.txt: %v", err)
+	}
+	blocked := filepath.Join(dir, "blocked.txt")
+	if err := os.WriteFile(blocked, []byte("needle blocked\n"), 0o644); err != nil {
+		t.Fatalf("write blocked.txt: %v", err)
+	}
+	if err := os.Chmod(blocked, 0o000); err != nil {
+		t.Fatalf("chmod unreadable: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocked, 0o644) })
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), grepFilesDescriptor, map[string]string{
+		"path": dir, "pattern": "needle",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Lines != 1 {
+		t.Fatalf("Lines = %d, want 1 (blocked.txt must be skipped, not fatal to the search)", res.Lines)
+	}
+	if !strings.Contains(res.Preview, "readable.txt") {
+		t.Errorf("Preview = %q, want the readable.txt match", res.Preview)
+	}
+}
+
+// GIVEN a pattern that is not valid RE2 regexp syntax
+// WHEN grep_files runs
+// THEN it fails with the compile error as the result's failure reason, not
+// a panic.
+func TestGrepFilesInvalidPattern(t *testing.T) {
+	path := writeTempFile(t, "hello\n")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), grepFilesDescriptor, map[string]string{
+		"path": path, "pattern": "(unclosed",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error", res.Status)
+	}
+}
+
+// GIVEN a path that does not exist
+// WHEN grep_files runs
+// THEN it fails with a clear error, not a panic.
+func TestGrepFilesNonexistentPath(t *testing.T) {
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), grepFilesDescriptor, map[string]string{
+		"path": filepath.Join(t.TempDir(), "does-not-exist"), "pattern": "x",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error", res.Status)
+	}
+}
+
+// GIVEN a directory tree with a vendored subdirectory (e.g. node_modules)
+// containing a matching line
+// WHEN grep_files walks the tree
+// THEN it excludes that subdirectory — the same exclusion list tree already
+// applies, shared as one Go slice (excludedDirs), not a second hand-copied
+// list.
+func TestGrepFilesExcludesVendoredDirectories(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "real.go"), []byte("needle real\n"), 0o644); err != nil {
+		t.Fatalf("write real.go: %v", err)
+	}
+	nm := filepath.Join(dir, "node_modules")
+	if err := os.MkdirAll(nm, 0o755); err != nil {
+		t.Fatalf("mkdir node_modules: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nm, "vendored.js"), []byte("needle vendored\n"), 0o644); err != nil {
+		t.Fatalf("write vendored.js: %v", err)
+	}
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), grepFilesDescriptor, map[string]string{
+		"path": dir, "pattern": "needle",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Lines != 1 {
+		t.Fatalf("Lines = %d, want 1 (node_modules must be excluded)", res.Lines)
+	}
+	if strings.Contains(res.Preview, "vendored") {
+		t.Errorf("Preview = %q, must not include the excluded node_modules match", res.Preview)
+	}
+}
+
+// --- delete_file ----------------------------------------------------------
+
+// GIVEN a path naming an existing regular file
+// WHEN delete_file runs
+// THEN the file is removed from disk.
+func TestDeleteFileRemovesExistingFile(t *testing.T) {
+	path := writeTempFile(t, "bye\n")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), deleteFileDescriptor, map[string]string{"path": path})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("file still exists after delete_file, stat err = %v", err)
+	}
+}
+
+// GIVEN a path naming an existing directory
+// WHEN delete_file runs
+// THEN it fails without removing anything — directories are categorically
+// out of scope for this tool.
+func TestDeleteFileRefusesDirectory(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "subdir")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), deleteFileDescriptor, map[string]string{"path": target})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error (a directory must be refused)", res.Status)
+	}
+	if _, err := os.Stat(target); err != nil {
+		t.Errorf("directory was removed despite the refusal: stat err = %v", err)
+	}
+}
+
+// GIVEN a symlink whose target is a directory
+// WHEN delete_file runs on the symlink's own path
+// THEN the symlink itself is removed (classified by Lstat, not by resolving
+// the target) — its target directory is left untouched.
+func TestDeleteFileRemovesSymlinkToDirectory(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "realdir")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), deleteFileDescriptor, map[string]string{"path": link})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok — removing a symlink itself must succeed even though its target is a directory (stderr: %s)", res.Status, res.Stderr)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Errorf("symlink still exists after delete_file, lstat err = %v", err)
+	}
+	if _, err := os.Stat(target); err != nil {
+		t.Errorf("target directory was affected by removing the symlink: stat err = %v", err)
+	}
+}
+
+// GIVEN a path that does not exist
+// WHEN delete_file runs
+// THEN it fails with a clear error, not a silent no-op.
+func TestDeleteFileNonexistentPath(t *testing.T) {
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), deleteFileDescriptor, map[string]string{
+		"path": filepath.Join(t.TempDir(), "does-not-exist"),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error", res.Status)
+	}
+}
+
+// GIVEN a file whose containing directory denies write permission (removal
+// requires write+execute on the parent directory, not on the file itself)
+// WHEN delete_file runs
+// THEN it fails with the permission error as the result's failure reason.
+func TestDeleteFilePermissionDenied(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permission bits; this test needs a non-root process")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "target.txt")
+	if err := os.WriteFile(path, []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("chmod dir read-only: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) // let t.TempDir() clean up afterward
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), deleteFileDescriptor, map[string]string{"path": path})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error (removal requires write on the parent directory)", res.Status)
+	}
+}
+
+// --- move_file --------------------------------------------------------
+
+// GIVEN an existing file and a destination in the same directory that does
+// not yet exist
+// WHEN move_file runs
+// THEN the file is renamed: gone from `from`, present at `to`.
+func TestMoveFileRenamesWithinSameDirectory(t *testing.T) {
+	dir := t.TempDir()
+	from := filepath.Join(dir, "old.txt")
+	if err := os.WriteFile(from, []byte("content\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	to := filepath.Join(dir, "new.txt")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), moveFileDescriptor, map[string]string{"from": from, "to": to})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+	if _, err := os.Stat(from); !os.IsNotExist(err) {
+		t.Errorf("source still exists after move_file, stat err = %v", err)
+	}
+	got, err := os.ReadFile(to)
+	if err != nil {
+		t.Fatalf("read destination: %v", err)
+	}
+	if string(got) != "content\n" {
+		t.Errorf("destination content = %q, want %q", string(got), "content\n")
+	}
+}
+
+// GIVEN a destination whose parent directory does not exist yet
+// WHEN move_file runs
+// THEN that directory tree is created first, then the file is moved into
+// it — the same missing-parent-directory fix write_file received.
+func TestMoveFileCreatesMissingDestinationDirectory(t *testing.T) {
+	dir := t.TempDir()
+	from := filepath.Join(dir, "old.txt")
+	if err := os.WriteFile(from, []byte("content\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	to := filepath.Join(dir, "newpkg", "new.txt")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), moveFileDescriptor, map[string]string{"from": from, "to": to})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+	got, err := os.ReadFile(to)
+	if err != nil {
+		t.Fatalf("read destination: %v", err)
+	}
+	if string(got) != "content\n" {
+		t.Errorf("destination content = %q, want %q", string(got), "content\n")
+	}
+}
+
+// GIVEN a destination that already exists
+// WHEN move_file runs
+// THEN it fails without moving anything — the source is left in place and
+// the pre-existing destination is left untouched, never silently
+// overwritten.
+func TestMoveFileRefusesExistingDestination(t *testing.T) {
+	dir := t.TempDir()
+	from := filepath.Join(dir, "old.txt")
+	if err := os.WriteFile(from, []byte("source\n"), 0o644); err != nil {
+		t.Fatalf("write from: %v", err)
+	}
+	to := filepath.Join(dir, "new.txt")
+	if err := os.WriteFile(to, []byte("preexisting\n"), 0o644); err != nil {
+		t.Fatalf("write to: %v", err)
+	}
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), moveFileDescriptor, map[string]string{"from": from, "to": to})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error (must refuse to overwrite an existing destination)", res.Status)
+	}
+	gotFrom, err := os.ReadFile(from)
+	if err != nil || string(gotFrom) != "source\n" {
+		t.Errorf("source content = %q, err=%v — want unchanged", string(gotFrom), err)
+	}
+	gotTo, err := os.ReadFile(to)
+	if err != nil || string(gotTo) != "preexisting\n" {
+		t.Errorf("destination content = %q, err=%v — want unchanged", string(gotTo), err)
+	}
+}
+
+// GIVEN `from` names a directory, not a regular file
+// WHEN move_file runs
+// THEN it fails without moving anything — directories are out of scope for
+// this tool, same as delete_file.
+func TestMoveFileRefusesDirectorySource(t *testing.T) {
+	dir := t.TempDir()
+	from := filepath.Join(dir, "subdir")
+	if err := os.Mkdir(from, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	to := filepath.Join(dir, "renamed")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), moveFileDescriptor, map[string]string{"from": from, "to": to})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error (a directory source must be refused)", res.Status)
+	}
+	if _, err := os.Stat(from); err != nil {
+		t.Errorf("source directory was affected despite the refusal: stat err = %v", err)
+	}
+}
+
+// GIVEN `from` does not exist
+// WHEN move_file runs
+// THEN it fails with a clear error.
+func TestMoveFileNonexistentSource(t *testing.T) {
+	dir := t.TempDir()
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), moveFileDescriptor, map[string]string{
+		"from": filepath.Join(dir, "does-not-exist"), "to": filepath.Join(dir, "new.txt"),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error", res.Status)
+	}
+}
+
+// GIVEN a destination whose parent path component already exists as a
+// regular FILE, not a directory
+// WHEN move_file runs
+// THEN MkdirAll fails and that failure is reported as the result's error —
+// the same failure shape write_file's equivalent test covers.
+func TestMoveFileDestinationParentPathIsARegularFile(t *testing.T) {
+	dir := t.TempDir()
+	from := filepath.Join(dir, "old.txt")
+	if err := os.WriteFile(from, []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("write from: %v", err)
+	}
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory\n"), 0o644); err != nil {
+		t.Fatalf("write blocker: %v", err)
+	}
+	to := filepath.Join(blocker, "new.txt")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), moveFileDescriptor, map[string]string{"from": from, "to": to})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error (MkdirAll must fail when a path component is a regular file)", res.Status)
+	}
+}
+
+// GIVEN a source whose containing directory denies write permission (a
+// rename requires removing the entry from the source directory, same as
+// delete_file's removal requirement)
+// WHEN move_file runs
+// THEN os.Rename fails and that failure is reported as the result's error.
+func TestMoveFileRenamePermissionDenied(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permission bits; this test needs a non-root process")
+	}
+	srcDir := t.TempDir()
+	from := filepath.Join(srcDir, "old.txt")
+	if err := os.WriteFile(from, []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("write from: %v", err)
+	}
+	if err := os.Chmod(srcDir, 0o555); err != nil {
+		t.Fatalf("chmod source dir read-only: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(srcDir, 0o755) }) // let t.TempDir() clean up afterward
+	to := filepath.Join(t.TempDir(), "new.txt")
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), moveFileDescriptor, map[string]string{"from": from, "to": to})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error (rename requires write on the source directory)", res.Status)
+	}
+}
+
+// GIVEN a directory search where the total match count reaches max_results
+// partway through the walk (not on the very first file)
+// WHEN grep_files runs
+// THEN it stops walking further files (filepath.SkipAll) instead of
+// continuing to scan files whose matches could never be returned.
+func TestGrepFilesStopsWalkOnceMaxResultsReached(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("needle\nneedle\n"), 0o644); err != nil {
+		t.Fatalf("write a.txt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("needle\nneedle\n"), 0o644); err != nil {
+		t.Fatalf("write b.txt: %v", err)
+	}
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), grepFilesDescriptor, map[string]string{
+		"path": dir, "pattern": "needle", "max_results": "2",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Lines != 2 {
+		t.Fatalf("Lines = %d, want 2 (max_results must cap the total across the whole directory walk)", res.Lines)
+	}
+}
+
+// GIVEN a subdirectory the process cannot read (permission denied on the
+// directory itself, so WalkDir cannot even list its contents)
+// WHEN grep_files walks the tree
+// THEN that subdirectory is skipped without error; matches from every other
+// readable file in the tree still come back.
+func TestGrepFilesSkipsUnreadableSubdirectory(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permission bits; this test needs a non-root process")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "readable.txt"), []byte("needle here\n"), 0o644); err != nil {
+		t.Fatalf("write readable.txt: %v", err)
+	}
+	blocked := filepath.Join(dir, "blocked")
+	if err := os.Mkdir(blocked, 0o755); err != nil {
+		t.Fatalf("mkdir blocked: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(blocked, "inside.txt"), []byte("needle inside\n"), 0o644); err != nil {
+		t.Fatalf("write inside.txt: %v", err)
+	}
+	if err := os.Chmod(blocked, 0o000); err != nil {
+		t.Fatalf("chmod unreadable dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocked, 0o755) }) // let t.TempDir() clean up afterward
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), grepFilesDescriptor, map[string]string{
+		"path": dir, "pattern": "needle",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Lines != 1 {
+		t.Fatalf("Lines = %d, want 1 (the unreadable subdirectory must be skipped, not fatal to the search)", res.Lines)
+	}
+	if !strings.Contains(res.Preview, "readable.txt") {
+		t.Errorf("Preview = %q, want the readable.txt match", res.Preview)
 	}
 }
