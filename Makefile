@@ -215,6 +215,16 @@ doctor:
 		if [ -z "$$MODEL" ]; then echo "  - model: none configured in $(CONFIG_DIR)/agentx.toml"; \
 		elif command -v ollama >/dev/null 2>&1 && ollama list 2>/dev/null | grep -q "$$MODEL"; then echo "  \342\234\223 model $$MODEL pulled"; \
 		else echo "  \342\234\227 model $$MODEL not pulled — run: ollama pull $$MODEL"; fi
+	@LLAMACPP_HOST=$$(awk '/^\[agentx\.llamacpp\]/{f=1;next} /^\[/{f=0} f && /^[[:space:]]*host[[:space:]]*=/{gsub(/^[[:space:]]*host[[:space:]]*=[[:space:]]*"/,""); gsub(/".*/,""); print; exit}' "$(CONFIG_DIR)/agentx.toml" 2>/dev/null); \
+		LLAMACPP_HOST=$${LLAMACPP_HOST:-localhost:8888}; \
+		if command -v curl >/dev/null 2>&1 && curl -sf "http://$$LLAMACPP_HOST/v1/models" >/dev/null 2>&1; then echo "  \342\234\223 llama.cpp server reachable at $$LLAMACPP_HOST"; \
+		else echo "  \342\234\227 llama.cpp server not reachable at $$LLAMACPP_HOST — start llama-server (https://github.com/ggml-org/llama.cpp), or ignore if using provider = \"ollama\""; fi
+	@LLAMACPP_HOST=$$(awk '/^\[agentx\.llamacpp\]/{f=1;next} /^\[/{f=0} f && /^[[:space:]]*host[[:space:]]*=/{gsub(/^[[:space:]]*host[[:space:]]*=[[:space:]]*"/,""); gsub(/".*/,""); print; exit}' "$(CONFIG_DIR)/agentx.toml" 2>/dev/null); \
+		LLAMACPP_HOST=$${LLAMACPP_HOST:-localhost:8888}; \
+		LLAMACPP_MODEL=$$(awk '/^\[agentx\.llamacpp\]/{f=1;next} /^\[/{f=0} f && /^[[:space:]]*model[[:space:]]*=/{gsub(/^[[:space:]]*model[[:space:]]*=[[:space:]]*"/,""); gsub(/".*/,""); print; exit}' "$(CONFIG_DIR)/agentx.toml" 2>/dev/null); \
+		if [ -z "$$LLAMACPP_MODEL" ]; then echo "  - llama.cpp model: none configured in $(CONFIG_DIR)/agentx.toml"; \
+		elif command -v curl >/dev/null 2>&1 && curl -sf "http://$$LLAMACPP_HOST/v1/models" 2>/dev/null | grep -q "$$LLAMACPP_MODEL"; then echo "  \342\234\223 llama.cpp model $$LLAMACPP_MODEL loaded"; \
+		else echo "  \342\234\227 llama.cpp model $$LLAMACPP_MODEL not confirmed loaded on $$LLAMACPP_HOST"; fi
 	@if [ -e "$(CONFIG_DIR)/prompts.toml" ]; then echo "  \342\234\223 prompts.toml installed (task detection armed)"; \
 		else echo "  \342\234\227 prompts.toml missing — run 'make seed' (task detection stays OFF without it)"; fi
 
