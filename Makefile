@@ -53,9 +53,56 @@ DESTDIR ?=
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
+# llama.cpp router service (optional; only needed when [agentx].provider =
+# "llamacpp" in agentx.toml — see internal/config, `make doctor`). AgentX
+# itself only ever talks to it over HTTP (internal/llm/llamacpp); these
+# targets are a convenience for building/running that server, not a
+# dependency of `make build`/`make all`.
+#
+# LLAMACPP_SRC_DIR is where `make llamacpp-clone`/`llamacpp-build` clone and
+# build llama.cpp — point it at an existing checkout (e.g.
+# LLAMACPP_SRC_DIR=/path/to/llama.cpp) to build that instead of cloning a
+# fresh one. LLAMACPP_BACKEND auto-detects cuda vs cpu from nvcc on PATH;
+# override explicitly with LLAMACPP_BACKEND=cpu to force a CPU-only build
+# regardless of what's installed.
+LLAMACPP_REPO      ?= https://github.com/ggml-org/llama.cpp.git
+LLAMACPP_SRC_DIR    ?= $(HOME)/.local/share/agentx/llama.cpp
+LLAMACPP_BACKEND    ?= $(shell command -v nvcc >/dev/null 2>&1 && echo cuda || echo cpu)
+LLAMACPP_BUILD_DIR  := $(LLAMACPP_SRC_DIR)/build-$(LLAMACPP_BACKEND)
+LLAMACPP_JOBS       ?= $(shell nproc 2>/dev/null || echo 4)
+
+# Where `make llamacpp-install` installs the built binaries + shared
+# libraries via `cmake --install` (llama.cpp's CMakeLists.txt has proper
+# install() rules under GNUInstallDirs — bin/ and lib/ end up as separate
+# directories here, unlike the raw build tree where CMake colocates them for
+# in-place execution). /opt is root-owned on a standard install, so this
+# needs sudo, same as the service targets below. This is the value
+# LLAMACPP_PREFIX in /etc/default/llama-server should point at.
+LLAMACPP_INSTALL_PREFIX ?= /opt/llama.cpp
+
+# Default GGUF models location — deliberately NOT under a user's home
+# directory: a home dir's own permissions (e.g. 750) commonly block
+# traversal for a dedicated system service account regardless of how open
+# the models dir itself is, whereas /opt is world-traversable by default, so
+# nothing extra needs to be granted to the llama-server service user. This
+# is the value LLAMA_ARG_MODELS_DIR in /etc/default/llama-server should
+# point at.
+LLAMACPP_MODELS_DIR ?= /opt/llama-server/models
+
+# Install locations for the systemd unit (system-level, like this repo's
+# ollama.service reference — needs sudo). LLAMACPP_SERVICE_USER is a
+# dedicated, no-login system account the unit runs as (mirrors ollama's own
+# service-user pattern), created idempotently by llamacpp-service-user.
+LLAMACPP_SERVICE_USER   ?= llama-server
+LLAMACPP_SERVICE_LIBDIR := /usr/local/lib/agentx
+LLAMACPP_ENV_FILE       := /etc/default/llama-server
+LLAMACPP_UNIT_FILE      := /etc/systemd/system/llama-server.service
+
 .PHONY: help all build clean test go-test \
 	go-test-unit go-test-integration go-test-functional go-test-e2e \
-	vendor-check run seed install install-bin uninstall doctor install-deps
+	vendor-check run seed install install-bin uninstall doctor install-deps \
+	llamacpp-clone llamacpp-build llamacpp-install llamacpp-models-dir \
+	llamacpp-service-user llamacpp-service-install llamacpp-service-uninstall
 
 help:
 	@echo "AgentX Make Targets"
@@ -90,6 +137,15 @@ help:
 	@echo ""
 	@echo "Run:"
 	@echo "  run                 Build and run the agentx runtime"
+	@echo ""
+	@echo "llama.cpp (optional; for provider = \"llamacpp\" in agentx.toml):"
+	@echo "  llamacpp-clone            Clone llama.cpp into LLAMACPP_SRC_DIR (skips if already present)"
+	@echo "  llamacpp-build            cmake configure+build (LLAMACPP_BACKEND=cuda|cpu, auto-detected)"
+	@echo "  llamacpp-install          cmake --install into LLAMACPP_INSTALL_PREFIX (sudo, default /opt/llama.cpp)"
+	@echo "  llamacpp-models-dir       Create LLAMACPP_MODELS_DIR (sudo, default /opt/llama-server/models)"
+	@echo "  llamacpp-service-user     Create the dedicated llama-server system user (sudo, idempotent)"
+	@echo "  llamacpp-service-install  Install the systemd unit + env file + wrapper script (sudo)"
+	@echo "  llamacpp-service-uninstall Remove the systemd unit + wrapper script (sudo)"
 
 all:
 	@$(MAKE) clean && $(MAKE) build
@@ -238,3 +294,119 @@ install-deps:
 	elif command -v pacman >/dev/null 2>&1; then echo "Installing zellij via pacman..."; sudo pacman -S --needed zellij; \
 	else echo "No supported package manager found. Install zellij manually:"; \
 		echo "  https://zellij.dev/documentation/installation"; fi
+
+# --- llama.cpp router service ------------------------------------------------
+#
+# Optional: only relevant when running AgentX against a local llama.cpp
+# server instead of Ollama (agentx.toml's [agentx].provider = "llamacpp").
+# AgentX itself only talks to this over HTTP (internal/llm/llamacpp) — these
+# targets just build/run that server; nothing here is a dependency of `make
+# build`/`make all`.
+
+# Clones llama.cpp into LLAMACPP_SRC_DIR. A no-op if that path already looks
+# like a checkout (has .git) — this never auto-pulls, since silently moving
+# an existing checkout to a new upstream commit could invalidate a build the
+# service currently depends on; update it yourself when you want to.
+llamacpp-clone:
+	@if [ -d "$(LLAMACPP_SRC_DIR)/.git" ]; then \
+		echo "llama.cpp already present at $(LLAMACPP_SRC_DIR) (git -C $(LLAMACPP_SRC_DIR) pull to update)"; \
+	else \
+		echo "Cloning $(LLAMACPP_REPO) into $(LLAMACPP_SRC_DIR)..."; \
+		mkdir -p "$$(dirname $(LLAMACPP_SRC_DIR))"; \
+		git clone --depth 1 "$(LLAMACPP_REPO)" "$(LLAMACPP_SRC_DIR)"; \
+	fi
+
+# cmake configure+build. LLAMACPP_BACKEND is auto-detected (cuda if nvcc is
+# on PATH, else cpu) but always overridable: `make llamacpp-build
+# LLAMACPP_BACKEND=cpu`. Output lands in $(LLAMACPP_BUILD_DIR) — a raw build
+# tree (CMake colocates binaries + shared libs there for in-place execution,
+# with a build-tree RPATH baked in); run `make llamacpp-install` next to get
+# a real, stable install location instead of running out of this directory.
+llamacpp-build: llamacpp-clone
+	@echo "Building llama.cpp ($(LLAMACPP_BACKEND) backend) into $(LLAMACPP_BUILD_DIR)..."
+	@if [ "$(LLAMACPP_BACKEND)" = "cuda" ]; then \
+		cmake -S "$(LLAMACPP_SRC_DIR)" -B "$(LLAMACPP_BUILD_DIR)" -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON; \
+	else \
+		cmake -S "$(LLAMACPP_SRC_DIR)" -B "$(LLAMACPP_BUILD_DIR)" -DCMAKE_BUILD_TYPE=Release; \
+	fi
+	cmake --build "$(LLAMACPP_BUILD_DIR)" --config Release -j$(LLAMACPP_JOBS)
+	@echo "llama.cpp built at $(LLAMACPP_BUILD_DIR)"
+	@echo "Run 'sudo make llamacpp-install' to install it to $(LLAMACPP_INSTALL_PREFIX)."
+
+# `cmake --install` into LLAMACPP_INSTALL_PREFIX (default /opt/llama.cpp,
+# root-owned — needs sudo). This is the step the raw build tree skips:
+# llama.cpp's CMakeLists.txt has real install() rules (GNUInstallDirs), which
+# split binaries into <prefix>/bin and shared libraries into <prefix>/lib and
+# strip the build-tree RPATH — set LLAMACPP_PREFIX=$(LLAMACPP_INSTALL_PREFIX)
+# in $(LLAMACPP_ENV_FILE) (see llamacpp-service-install) afterward, not
+# LLAMACPP_BIN_DIR pointed at the raw build dir.
+llamacpp-install: llamacpp-build
+	@if [ "$$(id -u)" != "0" ]; then echo "requires root — run: sudo make llamacpp-install" >&2; exit 1; fi
+	cmake --install "$(LLAMACPP_BUILD_DIR)" --prefix "$(LLAMACPP_INSTALL_PREFIX)"
+	@echo "llama.cpp installed at $(LLAMACPP_INSTALL_PREFIX) (bin/, lib/)."
+	@echo "Set LLAMACPP_PREFIX=$(LLAMACPP_INSTALL_PREFIX) in $(LLAMACPP_ENV_FILE) (see 'make llamacpp-service-install')."
+
+# Creates the dedicated, no-login system account llama-server.service runs
+# as — mirrors this host's existing ollama.service pattern (system user,
+# private group, video+render group membership for GPU device access).
+# Idempotent; requires root.
+llamacpp-service-user:
+	@if [ "$$(id -u)" != "0" ]; then echo "requires root — run: sudo make llamacpp-service-user" >&2; exit 1; fi
+	@if getent passwd $(LLAMACPP_SERVICE_USER) >/dev/null 2>&1; then \
+		echo "service user $(LLAMACPP_SERVICE_USER) already exists"; \
+	else \
+		echo "Creating system user $(LLAMACPP_SERVICE_USER)..."; \
+		useradd --system --no-create-home --shell /usr/sbin/nologin --user-group $(LLAMACPP_SERVICE_USER); \
+		EXTRA_GROUPS=""; \
+		getent group video  >/dev/null 2>&1 && EXTRA_GROUPS="video"; \
+		getent group render >/dev/null 2>&1 && EXTRA_GROUPS="$${EXTRA_GROUPS:+$$EXTRA_GROUPS,}render"; \
+		if [ -n "$$EXTRA_GROUPS" ]; then usermod -aG "$$EXTRA_GROUPS" $(LLAMACPP_SERVICE_USER); fi; \
+		echo "  created $(LLAMACPP_SERVICE_USER) (groups: $${EXTRA_GROUPS:-none})"; \
+	fi
+
+# Creates the default GGUF models directory (LLAMACPP_MODELS_DIR). Unlike a
+# path under a user's home directory, /opt is world-traversable by default
+# (see /opt's own 755 perms), so the llama-server service user can read
+# whatever ends up here without any extra group membership or ACL — nothing
+# to grant, unlike a home-directory path where the home dir's own perms
+# (e.g. 750) commonly block traversal for a service account regardless of
+# how open the models dir itself is. Idempotent (plain mkdir -p); requires
+# root. Move your existing models in yourself, e.g.:
+#   sudo mv /home/mpeters/models/*.gguf /home/mpeters/models/preset.ini $(LLAMACPP_MODELS_DIR)/
+llamacpp-models-dir:
+	@if [ "$$(id -u)" != "0" ]; then echo "requires root — run: sudo make llamacpp-models-dir" >&2; exit 1; fi
+	install -d -m 0755 "$(LLAMACPP_MODELS_DIR)"
+	@echo "models directory ready at $(LLAMACPP_MODELS_DIR) — move your .gguf files (and preset.ini, if any) in, then point LLAMA_ARG_MODELS_DIR/LLAMA_ARG_MODELS_PRESET at it in $(LLAMACPP_ENV_FILE)"
+
+# Installs the wrapper script + systemd unit; seeds (never overwrites) the
+# env file — same non-clobbering convention `make seed` uses for agentx.toml.
+# Requires root. Does NOT enable or start the service: review/edit
+# $(LLAMACPP_ENV_FILE) (it ships with placeholder paths, not real ones) before
+# `sudo systemctl enable --now llama-server`.
+llamacpp-service-install: llamacpp-service-user llamacpp-models-dir
+	install -d "$(LLAMACPP_SERVICE_LIBDIR)"
+	install -m 0755 scripts/llama-server "$(LLAMACPP_SERVICE_LIBDIR)/llama-server"
+	install -m 0644 scripts/llama-server.service "$(LLAMACPP_UNIT_FILE)"
+	@if [ -e "$(LLAMACPP_ENV_FILE)" ]; then \
+		echo "  skip  $(LLAMACPP_ENV_FILE) (already exists — edit it directly to change settings)"; \
+	else \
+		install -m 0640 -o root -g $(LLAMACPP_SERVICE_USER) scripts/llama-server.env.example "$(LLAMACPP_ENV_FILE)"; \
+		echo "  seed  $(LLAMACPP_ENV_FILE)"; \
+	fi
+	systemctl daemon-reload
+	@echo ""
+	@echo "Installed. Edit $(LLAMACPP_ENV_FILE) (LLAMACPP_PREFIX + LLAMA_ARG_MODELS_DIR at least), then:"
+	@echo "  sudo systemctl enable --now llama-server"
+	@echo "  journalctl -u llama-server -f"
+
+# Removes the unit + wrapper script. Leaves $(LLAMACPP_ENV_FILE) and the
+# $(LLAMACPP_SERVICE_USER) system user in place — the env file may hold
+# tuned settings worth keeping, and removing a system user by hand is a more
+# deliberate action than this target should take on your behalf.
+llamacpp-service-uninstall:
+	@if [ "$$(id -u)" != "0" ]; then echo "requires root — run: sudo make llamacpp-service-uninstall" >&2; exit 1; fi
+	-systemctl disable --now llama-server
+	rm -f "$(LLAMACPP_UNIT_FILE)"
+	rm -f "$(LLAMACPP_SERVICE_LIBDIR)/llama-server"
+	systemctl daemon-reload
+	@echo "llama-server.service removed. $(LLAMACPP_ENV_FILE) and the $(LLAMACPP_SERVICE_USER) user left intact."

@@ -1,0 +1,33 @@
+# AgentX llama.cpp router service — installed by `make llamacpp-service-install`
+# to /etc/systemd/system/llama-server.service. Paths below are the fixed
+# install locations that target writes to; everything machine-specific
+# (which build to run, host/port, models dir) lives in the EnvironmentFile,
+# not here — see scripts/llama-server.env.example.
+[Unit]
+Description=llama.cpp model server (AgentX)
+Documentation=https://github.com/ggml-org/llama.cpp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=llama-server
+Group=llama-server
+EnvironmentFile=/etc/default/llama-server
+ExecStart=/usr/local/lib/agentx/llama-server
+Restart=on-failure
+RestartSec=3
+
+# journald captures stdout/stderr automatically (rotated per journald.conf's
+# own retention settings — no separate logrotate config needed); tagging the
+# identifier keeps `journalctl -t llama-server` as useful as `-u
+# llama-server`.
+SyslogIdentifier=llama-server
+
+# The service only ever reads its binary/libs and models, and serves HTTP —
+# no writes anywhere, so refusing new privileges is free hardening with no
+# behavioral risk.
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

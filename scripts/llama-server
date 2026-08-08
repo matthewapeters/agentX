@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# ExecStart target for the llama-server.service systemd unit (see
+# scripts/llama-server.service, scripts/llama-server.env.example). All
+# runtime configuration — host, port, models dir, preset, and any other
+# `llama serve` flag — comes from the environment (systemd's
+# EnvironmentFile=/etc/default/llama-server), using llama.cpp's OWN native
+# LLAMA_ARG_* variables (see `llama serve --help`), not an AgentX-invented
+# translation layer, so this script never drifts out of sync with upstream's
+# flag surface.
+#
+# LLAMACPP_PREFIX is the one AgentX-specific variable: a `cmake --install`
+# destination (see `make llamacpp-install`), i.e. a directory with the
+# `llama` binary under bin/ and its shared libraries under lib/ — NOT a raw
+# build tree, where CMake colocates both in one dir with a build-tree RPATH
+# that a real install strips. Which CPU-vs-CUDA build LLAMACPP_PREFIX points
+# at is a per-machine choice `llama serve --help` has no flag for.
+#
+# `exec`s into the llama binary rather than backgrounding or piping through
+# `tee`, so systemd's Restart= and stop/SIGTERM handling apply directly to
+# the model process, and stdout/stderr flow straight to journald instead of
+# an unrotated file in whatever directory this script happened to be run
+# from.
+set -euo pipefail
+
+: "${LLAMACPP_PREFIX:?LLAMACPP_PREFIX must be set (see /etc/default/llama-server)}"
+
+export LD_LIBRARY_PATH="$LLAMACPP_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# Intentional word-splitting: LLAMACPP_EXTRA_ARGS is a space-separated flag
+# string (e.g. "--ctx-size 8192 --n-gpu-layers 99"), not a single value.
+# shellcheck disable=SC2086
+exec "$LLAMACPP_PREFIX/bin/llama" serve ${LLAMACPP_EXTRA_ARGS:-}
