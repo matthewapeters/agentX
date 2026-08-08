@@ -6,8 +6,8 @@
 
 [agentx]
 # provider selects the LLM backend. Valid values: "ollama" (default), "llamacpp".
-# When unset, defaults to "ollama". The deprecated alias "chat_backend" is also accepted.
-provider = "llama.cpp"
+# When unset, defaults to "ollama".
+provider = "llamacpp"
 
 [agentx.ollama]
 host  = "localhost:11434"   # Ollama API host:port
@@ -18,7 +18,7 @@ model = "ornith:latest"    # must match an installed Ollama model
 # Only used when provider = "llamacpp". Host is host:port (default 8080).
 # model must match a loaded model in the llama.cpp server instance.
 host  = "localhost:8888"
-model = "ornith:35b"
+model = "ornith-1.0-35b-Q4_K_M"
 
 [agentx.classification]
 retries               = 2   # re-attempts when a classification verdict won't parse
