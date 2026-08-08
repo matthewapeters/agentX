@@ -181,6 +181,29 @@ func (o *Orchestrator) workingMemoryFacts() []prompting.Fact {
 	return facts
 }
 
+// projectRoot returns the session's project boundary for approval scoping
+// (internal/tools.ClassifyPath) — the bootstrap-seeded "cwd" working-memory
+// fact (session.BootstrapFacts), not a fresh os.Getwd() call, so the boundary
+// stays whatever was true when the session started and stays consistent with
+// the same fact the working-memory surface shows/lets the user edit. Returns
+// "" if the fact is absent, disabled, or deleted — ClassifyPath then
+// conservatively classifies every path as outside the project, never wider.
+// Reads the raw fact value directly (not via workingMemoryFacts/
+// pinAnnotatedValue) since that path appends a "(pinned ..., age ...)" display
+// suffix for a pin-owned fact — a real filesystem path must stay exact.
+func (o *Orchestrator) projectRoot() string {
+	wm, err := o.store.LoadWorkingMemory(o.id.ID)
+	if err != nil {
+		return ""
+	}
+	for _, f := range wm.Enabled() {
+		if f.Key == "cwd" {
+			return f.Value
+		}
+	}
+	return ""
+}
+
 // pinAnnotatedValue appends a static/live + age tag to a pinned fact's value, so
 // the model has the same staleness signal the working-memory surface shows the
 // user (docs/implementation/03_configuration_and_storage.md "Pinning to Working

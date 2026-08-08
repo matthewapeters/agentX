@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -57,21 +58,24 @@ func toolApprovalOptionsFor(root string) []state.ApprovalOption {
 // approval seam both the single_tool cycle and the scheduler's concurrent leaves call
 // (TOOL-4; ADR 0008). root is the plan this call belongs to, or "" outside any plan —
 // it gates whether the plan-scoped option is offered and, if chosen, which plan the
-// approval is recorded against.
-func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, args map[string]string, pol *tools.Policy, root string) (tools.Verdict, error) {
-	dec, err := o.RequestDecision(ctx, state.PhaseTool, proposalText(d, args), toolApprovalOptionsFor(root))
+// approval is recorded against. projectRoot is the session's project boundary
+// (Orchestrator.projectRoot()), used to compute the call's approval scope
+// (tools.Descriptor.ScopeArgs) — extension/location-scoped for
+// write_file/edit_file/apply_patch, the call's own args for every other tool.
+func (o *Orchestrator) RequestApproval(ctx context.Context, d tools.Descriptor, args map[string]string, pol *tools.Policy, root, projectRoot string) (tools.Verdict, error) {
+	dec, err := o.RequestDecision(ctx, state.PhaseTool, approvalPromptText(d, args, projectRoot), toolApprovalOptionsFor(root))
 	if err != nil {
 		return tools.Verdict{}, err
 	}
 	switch dec {
 	case "session":
-		pol.Approve(tools.ScopeSession, d, args)
+		pol.Approve(tools.ScopeSession, d, args, projectRoot)
 		return tools.Verdict{Decision: tools.Allow}, nil
 	case "plan":
-		pol.ApprovePlan(root, d, args)
+		pol.ApprovePlan(root, d, args, projectRoot)
 		return tools.Verdict{Decision: tools.Allow}, nil
 	case "global":
-		pol.Approve(tools.ScopeGlobal, d, args)
+		pol.Approve(tools.ScopeGlobal, d, args, projectRoot)
 		// Persist the global whitelist so the approval survives restarts.
 		if err := tools.SaveApprovals(o.settings.ToolApprovalsPath, pol.GlobalApprovals()); err != nil {
 			return tools.Verdict{}, err
@@ -130,4 +134,70 @@ func proposalText(d tools.Descriptor, args map[string]string) string {
 		parts = append(parts, k+"="+display[k])
 	}
 	return strings.Join(parts, " ")
+}
+
+// approvalPromptText renders the approval prompt: for write_file/edit_file/
+// apply_patch, a scope-aware description of what a "session"/"global"
+// decision would actually grant (Descriptor.ScopeArgs means that's no longer
+// just this one call — see policy.go) rather than this one call's raw
+// truncated args; every other tool keeps proposalText's ordinary per-call
+// rendering, unchanged.
+func approvalPromptText(d tools.Descriptor, args map[string]string, projectRoot string) string {
+	if scope := scopeDescription(d, args, projectRoot); scope != "" {
+		return d.ID + " — " + scope
+	}
+	return proposalText(d, args)
+}
+
+// scopeDescription describes the approval scope a "session"/"global" decision
+// on this call would grant, or "" when ScopeArgs fell back to the call's raw,
+// unscoped args (an unparseable apply_patch diff, or any tool this change
+// doesn't specialize) — the caller then falls back to proposalText's
+// ordinary per-call rendering.
+func scopeDescription(d tools.Descriptor, args map[string]string, projectRoot string) string {
+	switch d.ID {
+	case "write_file", "edit_file", "apply_patch":
+	default:
+		return ""
+	}
+	scopes := d.ScopeArgs(args, projectRoot)
+	if len(scopes) == 0 {
+		return ""
+	}
+	if _, hasExt := scopes[0]["ext"]; !hasExt {
+		return "" // apply_patch's diff couldn't be parsed — fall back to raw-args display
+	}
+	descs := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		descs = append(descs, oneScopeDescription(s))
+	}
+	verb := scopeVerb(d.ID)
+	if len(descs) == 1 {
+		return verb + " " + descs[0]
+	}
+	return fmt.Sprintf("%s %d files: %s", verb, len(descs), strings.Join(descs, "; "))
+}
+
+// oneScopeDescription renders a single ScopeArgs entry for display.
+func oneScopeDescription(s map[string]string) string {
+	if path, outside := s["path"]; outside {
+		return path + " (outside project)"
+	}
+	if s["ext"] == "" {
+		return "extensionless files in this project"
+	}
+	return s["ext"] + " files in this project"
+}
+
+func scopeVerb(toolID string) string {
+	switch toolID {
+	case "write_file":
+		return "create/overwrite"
+	case "edit_file":
+		return "edit"
+	case "apply_patch":
+		return "patch"
+	default:
+		return toolID
+	}
 }

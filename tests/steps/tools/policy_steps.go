@@ -74,7 +74,7 @@ func (w *policyWorld) globalApproval(id string, table *godog.Table) error {
 		return fmt.Errorf("unknown tool %q", id)
 	}
 	w.src = tools.NewPolicy()
-	w.src.Approve(tools.ScopeGlobal, d, tableArgs(table))
+	w.src.Approve(tools.ScopeGlobal, d, tableArgs(table), "")
 	return nil
 }
 
@@ -145,7 +145,7 @@ func (w *policyWorld) approve(id, scope string, table *godog.Table) error {
 	if scope == "global" {
 		s = tools.ScopeGlobal
 	}
-	w.pol.Approve(s, d, tableArgs(table))
+	w.pol.Approve(s, d, tableArgs(table), "")
 	return nil
 }
 
@@ -154,7 +154,7 @@ func (w *policyWorld) approvePlan(id, root string, table *godog.Table) error {
 	if !ok {
 		return fmt.Errorf("unknown tool %q", id)
 	}
-	w.pol.ApprovePlan(root, d, tableArgs(table))
+	w.pol.ApprovePlan(root, d, tableArgs(table), "")
 	return nil
 }
 
@@ -163,7 +163,7 @@ func (w *policyWorld) assertPlanApproved(id, root string, table *godog.Table) er
 	if !ok {
 		return fmt.Errorf("unknown tool %q", id)
 	}
-	if !w.pol.PlanApproved(root, d, tableArgs(table)) {
+	if !w.pol.PlanApproved(root, d, tableArgs(table), "") {
 		return fmt.Errorf("PlanApproved(%q) = false for %q, want true", root, id)
 	}
 	return nil
@@ -174,7 +174,7 @@ func (w *policyWorld) assertPlanNotApproved(id, root string, table *godog.Table)
 	if !ok {
 		return fmt.Errorf("unknown tool %q", id)
 	}
-	if w.pol.PlanApproved(root, d, tableArgs(table)) {
+	if w.pol.PlanApproved(root, d, tableArgs(table), "") {
 		return fmt.Errorf("PlanApproved(%q) = true for %q, want false", root, id)
 	}
 	return nil
@@ -190,7 +190,7 @@ func (w *policyWorld) evaluate(id string, table *godog.Table) error {
 	if !ok {
 		return fmt.Errorf("unknown tool %q", id)
 	}
-	w.verdict = w.pol.Evaluate(d, tableArgs(table))
+	w.verdict = w.pol.Evaluate(d, tableArgs(table), "")
 	return nil
 }
 
@@ -199,7 +199,7 @@ func (w *policyWorld) evaluateNoArgs(id string) error {
 	if !ok {
 		return fmt.Errorf("unknown tool %q", id)
 	}
-	w.verdict = w.pol.Evaluate(d, map[string]string{})
+	w.verdict = w.pol.Evaluate(d, map[string]string{}, "")
 	return nil
 }
 

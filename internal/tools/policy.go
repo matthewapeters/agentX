@@ -219,35 +219,52 @@ func NewPolicy(blacklist ...Rule) *Policy {
 // AddRule appends a blacklist rule.
 func (p *Policy) AddRule(r Rule) { p.blacklist = append(p.blacklist, r) }
 
-// Approve records an approval for the given scope, keyed by tool + validated args.
-func (p *Policy) Approve(scope Scope, d Descriptor, args map[string]string) {
-	key := approvalKey(d.ID, args)
-	if scope == ScopeGlobal {
-		p.global[key] = ApprovalEntry{Tool: d.ID, Args: cloneArgs(args)}
-		return
+// Approve records an approval for the given scope, keyed by tool + the call's
+// approval scope (Descriptor.ScopeArgs) — a single canonical entry for
+// write_file/edit_file/apply_patch (extension + inside/outside-project
+// boundary, not the call's raw path/content), or the call's own args
+// unchanged for every other tool. projectRoot is the session's project
+// boundary (Orchestrator.projectRoot(), sourced from the bootstrap "cwd"
+// working-memory fact) — "" if it can't be determined, which ScopeArgs
+// resolves conservatively (see ClassifyPath).
+func (p *Policy) Approve(scope Scope, d Descriptor, args map[string]string, projectRoot string) {
+	for _, scopeArgs := range d.ScopeArgs(args, projectRoot) {
+		key := approvalKey(d.ID, scopeArgs)
+		if scope == ScopeGlobal {
+			p.global[key] = ApprovalEntry{Tool: d.ID, Args: cloneArgs(scopeArgs)}
+			continue
+		}
+		p.session[key] = true
 	}
-	p.session[key] = true
 }
 
-// ApprovePlan records an approval scoped to root's plan only. A no-op when
-// root is empty (a call outside any plan has nothing to scope to).
-func (p *Policy) ApprovePlan(root string, d Descriptor, args map[string]string) {
+// ApprovePlan records an approval scoped to root's plan only, for every scope
+// key the call needs (see Approve). A no-op when root is empty (a call
+// outside any plan has nothing to scope to).
+func (p *Policy) ApprovePlan(root string, d Descriptor, args map[string]string, projectRoot string) {
 	if root == "" {
 		return
 	}
 	if p.plan[root] == nil {
 		p.plan[root] = map[string]bool{}
 	}
-	p.plan[root][approvalKey(d.ID, args)] = true
+	for _, scopeArgs := range d.ScopeArgs(args, projectRoot) {
+		p.plan[root][approvalKey(d.ID, scopeArgs)] = true
+	}
 }
 
-// PlanApproved reports whether d/args was already approved within root's
-// plan scope. Always false when root is empty.
-func (p *Policy) PlanApproved(root string, d Descriptor, args map[string]string) bool {
+// PlanApproved reports whether every scope key d/args needs (see Approve) was
+// already approved within root's plan scope. Always false when root is empty.
+func (p *Policy) PlanApproved(root string, d Descriptor, args map[string]string, projectRoot string) bool {
 	if root == "" {
 		return false
 	}
-	return p.plan[root][approvalKey(d.ID, args)]
+	for _, scopeArgs := range d.ScopeArgs(args, projectRoot) {
+		if !p.plan[root][approvalKey(d.ID, scopeArgs)] {
+			return false
+		}
+	}
+	return true
 }
 
 // ExpirePlan discards every plan-scoped approval recorded for root, once
@@ -282,7 +299,11 @@ func (p *Policy) GlobalApprovals() []ApprovalEntry {
 
 // Evaluate applies schema validation, then the documented policy order:
 // blacklist (always wins) → global whitelist → session whitelist → approval.
-func (p *Policy) Evaluate(d Descriptor, args map[string]string) Verdict {
+// The whitelist check requires every scope key the call needs (see Approve)
+// to already be recorded — for write_file/edit_file/apply_patch that's
+// extension/path-scoped, not per-call; for every other tool it's the single
+// legacy key, identical to before this parameter existed.
+func (p *Policy) Evaluate(d Descriptor, args map[string]string, projectRoot string) Verdict {
 	if err := d.Validate(args); err != nil {
 		return Verdict{Deny, ReasonSchema}
 	}
@@ -298,8 +319,16 @@ func (p *Policy) Evaluate(d Descriptor, args map[string]string) Verdict {
 			return Verdict{Deny, reason}
 		}
 	}
-	key := approvalKey(d.ID, args)
-	if _, ok := p.global[key]; ok || p.session[key] {
+	allApproved := true
+	for _, scopeArgs := range d.ScopeArgs(args, projectRoot) {
+		key := approvalKey(d.ID, scopeArgs)
+		if _, ok := p.global[key]; ok || p.session[key] {
+			continue
+		}
+		allApproved = false
+		break
+	}
+	if allApproved {
 		return Verdict{Allow, ""}
 	}
 	if d.RequiresApproval {

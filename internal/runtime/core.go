@@ -23,7 +23,7 @@ import (
 // methods unchanged — a future nested loop's implementation is an open
 // question (ADR 0013 §Open Questions), not decided here.
 type ApprovalSeeker interface {
-	RequestApproval(ctx context.Context, d tools.Descriptor, args map[string]string, pol *tools.Policy, root string) (tools.Verdict, error)
+	RequestApproval(ctx context.Context, d tools.Descriptor, args map[string]string, pol *tools.Policy, root, projectRoot string) (tools.Verdict, error)
 	RequestOutputSizeDecision(ctx context.Context, d tools.Descriptor, args map[string]string, res tools.Result) (tools.Result, bool, error)
 	// RequestToolLimitApproval asks whether to keep working past used
 	// tool-call round-trips this turn (docs/architecture/behavior/

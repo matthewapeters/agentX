@@ -58,6 +58,11 @@ type ConversationCore struct {
 	policy   *tools.Policy
 	runner   ToolRunner
 
+	// projectRoot returns the session's project boundary for approval scoping
+	// (bound to Orchestrator.projectRoot) — a closure, not a snapshot, since
+	// the underlying working-memory "cwd" fact can be edited/disabled mid-session.
+	projectRoot func() string
+
 	model Model
 	// modelName is a one-time snapshot, not a closure — safe because a Provider/
 	// model change is a restart-required config key (Orchestrator.SetConfig's
@@ -264,6 +269,8 @@ func (o *Orchestrator) buildCore() {
 		registry: o.registry,
 		policy:   o.policy,
 		runner:   o.runner,
+
+		projectRoot: o.projectRoot,
 
 		model:     o.model,
 		modelName: o.modelName(),

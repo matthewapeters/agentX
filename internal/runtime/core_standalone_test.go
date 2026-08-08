@@ -33,6 +33,8 @@ func standaloneCore(hookRan *int, chatFn func(callN int) (ChatResult, error)) (*
 		policy:   tools.NewPolicy(),
 		runner:   runner,
 
+		projectRoot: func() string { return "" },
+
 		modelName:          "standalone-model",
 		thinkingEnabled:    func() bool { return false },
 		thinkingPromptText: func() string { return "" },

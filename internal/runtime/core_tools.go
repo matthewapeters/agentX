@@ -55,9 +55,10 @@ func (c *ConversationCore) runNativeToolCall(ctx context.Context, call prompting
 	}
 
 	pin := &toolPin{}
-	verdict := c.policy.Evaluate(d, args)
+	projectRoot := c.projectRoot()
+	verdict := c.policy.Evaluate(d, args, projectRoot)
 	if verdict.Decision == tools.NeedsApproval {
-		v, err := c.approvals.RequestApproval(ctx, d, args, c.policy, "")
+		v, err := c.approvals.RequestApproval(ctx, d, args, c.policy, "", projectRoot)
 		if err != nil {
 			return "", nil, err // interrupted while awaiting
 		}

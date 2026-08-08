@@ -18,7 +18,7 @@ func (s stubRegistry) Lookup(string) (tools.Descriptor, bool) { return s.d, true
 
 type stubGate struct{ v tools.Verdict }
 
-func (s stubGate) Evaluate(tools.Descriptor, map[string]string) tools.Verdict { return s.v }
+func (s stubGate) Evaluate(tools.Descriptor, map[string]string, string) tools.Verdict { return s.v }
 
 type stubRunner struct{ res tools.Result }
 

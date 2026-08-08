@@ -88,7 +88,7 @@ func (w *approvalWorld) requestApproval(id string, table *godog.Table) error {
 	w.args = argsFromTable(table)
 	w.result = make(chan approvalOutcome, 1)
 	go func() {
-		v, err := w.orc.RequestApproval(w.ctx, d, w.args, w.pol, "")
+		v, err := w.orc.RequestApproval(w.ctx, d, w.args, w.pol, "", "")
 		w.result <- approvalOutcome{verdict: v, err: err}
 	}()
 	// Wait until the cycle is parked in awaiting_input so the gate is armed before
@@ -105,7 +105,7 @@ func (w *approvalWorld) requestApprovalInPlan(root, id string, table *godog.Tabl
 	w.args = argsFromTable(table)
 	w.result = make(chan approvalOutcome, 1)
 	go func() {
-		v, err := w.orc.RequestApproval(w.ctx, d, w.args, w.pol, root)
+		v, err := w.orc.RequestApproval(w.ctx, d, w.args, w.pol, root, "")
 		w.result <- approvalOutcome{verdict: v, err: err}
 	}()
 	return w.waitAwaiting()
@@ -193,7 +193,7 @@ func (w *approvalWorld) requestFailed() error {
 
 func (w *approvalWorld) nowAllowed(id string) error {
 	d, _ := w.reg.Lookup(id)
-	if v := w.pol.Evaluate(d, w.args); v.Decision != tools.Allow {
+	if v := w.pol.Evaluate(d, w.args, ""); v.Decision != tools.Allow {
 		return fmt.Errorf("policy still does not allow %q: decision=%v", id, v.Decision)
 	}
 	return nil
@@ -201,7 +201,7 @@ func (w *approvalWorld) nowAllowed(id string) error {
 
 func (w *approvalWorld) nowPlanApproved(id, root string) error {
 	d, _ := w.reg.Lookup(id)
-	if !w.pol.PlanApproved(root, d, w.args) {
+	if !w.pol.PlanApproved(root, d, w.args, "") {
 		return fmt.Errorf("policy has no plan approval for %q under root %q", id, root)
 	}
 	return nil
@@ -209,7 +209,7 @@ func (w *approvalWorld) nowPlanApproved(id, root string) error {
 
 func (w *approvalWorld) stillNeedsApproval(id string) error {
 	d, _ := w.reg.Lookup(id)
-	if v := w.pol.Evaluate(d, w.args); v.Decision != tools.NeedsApproval {
+	if v := w.pol.Evaluate(d, w.args, ""); v.Decision != tools.NeedsApproval {
 		return fmt.Errorf("policy unexpectedly changed for %q: decision=%v", id, v.Decision)
 	}
 	return nil

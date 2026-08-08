@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -305,7 +307,7 @@ func TestRequestApprovalPlanDecisionScopesToRoot(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		v, err := o.RequestApproval(context.Background(), d, args, pol, "root-1")
+		v, err := o.RequestApproval(context.Background(), d, args, pol, "root-1", "")
 		done <- result{v, err}
 	}()
 
@@ -317,14 +319,66 @@ func TestRequestApprovalPlanDecisionScopesToRoot(t *testing.T) {
 	if r.err != nil || r.verdict.Decision != tools.Allow {
 		t.Fatalf("RequestApproval(root-1, plan) = (%+v, %v), want Allow, nil", r.verdict, r.err)
 	}
-	if !pol.PlanApproved("root-1", d, args) {
+	if !pol.PlanApproved("root-1", d, args, "") {
 		t.Error("PlanApproved(root-1) = false, want true after a \"plan\" decision")
 	}
-	if pol.PlanApproved("root-2", d, args) {
+	if pol.PlanApproved("root-2", d, args, "") {
 		t.Error("PlanApproved(root-2) = true, want false — approval must not leak across plan roots")
 	}
-	if v := pol.Evaluate(d, args); v.Decision != tools.NeedsApproval {
+	if v := pol.Evaluate(d, args, ""); v.Decision != tools.NeedsApproval {
 		t.Errorf("Evaluate() after a plan-only approval = %v, want NeedsApproval — plan scope is deliberately not folded into Evaluate", v.Decision)
+	}
+}
+
+// TestRequestApprovalGlobalDecisionReusesScopeWithoutReprompting drives a
+// "global" decision on an in-project .go edit through the real approval
+// gate (RequestApproval -> Policy.Approve -> persisted TOML), then confirms
+// a second, different .go file inside the same project evaluates to Allow
+// without a second prompt — the end-to-end version of the extension-scoped
+// reuse internal/tools/policy_test.go proves at the Policy level directly.
+func TestRequestApprovalGlobalDecisionReusesScopeWithoutReprompting(t *testing.T) {
+	o := testOrchestrator()
+	dir := t.TempDir()
+	o.settings.ToolApprovalsPath = filepath.Join(dir, "agentx-tool-approvals.toml")
+
+	pol := tools.NewPolicy()
+	d, ok := tools.DefaultRegistry().Lookup("write_file")
+	if !ok {
+		t.Fatal("write_file not found in default registry")
+	}
+	root := filepath.Join(dir, "repo")
+	firstArgs := map[string]string{"path": filepath.Join(root, "a.go"), "content": "package a"}
+
+	type result struct {
+		verdict tools.Verdict
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		v, err := o.RequestApproval(context.Background(), d, firstArgs, pol, "", root)
+		done <- result{v, err}
+	}()
+
+	for !o.gate.deliver("global") {
+		time.Sleep(time.Millisecond)
+	}
+	r := <-done
+	if r.err != nil || r.verdict.Decision != tools.Allow {
+		t.Fatalf("RequestApproval(global) = (%+v, %v), want Allow, nil", r.verdict, r.err)
+	}
+
+	if _, err := os.Stat(o.settings.ToolApprovalsPath); err != nil {
+		t.Fatalf("global approval was not persisted to %s: %v", o.settings.ToolApprovalsPath, err)
+	}
+
+	secondArgs := map[string]string{"path": filepath.Join(root, "b.go"), "content": "package b"}
+	if v := pol.Evaluate(d, secondArgs, root); v.Decision != tools.Allow {
+		t.Errorf("Evaluate(different .go file, same project) = %v, want Allow — extension-scoped reuse", v.Decision)
+	}
+
+	otherExt := map[string]string{"path": filepath.Join(root, "README.md"), "content": "# hi"}
+	if v := pol.Evaluate(d, otherExt, root); v.Decision != tools.NeedsApproval {
+		t.Errorf("Evaluate(different extension, same project) = %v, want NeedsApproval", v.Decision)
 	}
 }
 

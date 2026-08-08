@@ -44,7 +44,7 @@ type stubApprovalSeeker struct {
 	toolLimitUsedArgs []int // used argument from each RequestToolLimitApproval call, in order
 }
 
-func (s *stubApprovalSeeker) RequestApproval(context.Context, tools.Descriptor, map[string]string, *tools.Policy, string) (tools.Verdict, error) {
+func (s *stubApprovalSeeker) RequestApproval(context.Context, tools.Descriptor, map[string]string, *tools.Policy, string, string) (tools.Verdict, error) {
 	s.approveCalls++
 	return s.verdict, s.approveErr
 }
@@ -73,6 +73,7 @@ func newTestToolCore() (*ConversationCore, *fakeEventSink, *stubToolRunner, *stu
 		policy:       tools.NewPolicy(),
 		runner:       runner,
 		toolsEnabled: func() bool { return true },
+		projectRoot:  func() string { return "" },
 	}
 	return c, events, runner, approvals
 }

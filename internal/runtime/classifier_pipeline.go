@@ -100,12 +100,24 @@ func (o *Orchestrator) buildTaskExecutor() {
 	// Confine execution to the working directory; a task that would operate outside
 	// it prompts the user through the existing interactive approval gate.
 	cwd, _ := os.Getwd()
+	// projectRoot prefers the working-memory "cwd" fact — the same boundary the
+	// native tool-call path uses (Orchestrator.projectRoot) — but falls back to
+	// the real process cwd if that fact is absent/disabled, so a plan drain
+	// never silently loses confinement just because a working-memory edit
+	// cleared it. FSVerifier below stays on the real cwd unconditionally: that's
+	// an operational path-resolution concern for verifying effects actually
+	// happened, not an approval-scoping trust boundary, and must always be a
+	// real, existing directory.
+	projectRoot := o.projectRoot()
+	if projectRoot == "" {
+		projectRoot = cwd
+	}
 	approver := executor.ApproverFunc(func(ctx context.Context, d tools.Descriptor, args map[string]string, rec task.Record, _ string) bool {
 		planRoot, _ := o.planTrees.rootOf(rec.ID)
-		if o.policy.PlanApproved(planRoot, d, args) {
+		if o.policy.PlanApproved(planRoot, d, args, projectRoot) {
 			return true
 		}
-		v, err := o.RequestApproval(ctx, d, args, o.policy, planRoot)
+		v, err := o.RequestApproval(ctx, d, args, o.policy, planRoot, projectRoot)
 		return err == nil && v.Decision == tools.Allow
 	})
 	// TOOL-6: plan leaves resolve oversized output through the same decision gate
@@ -122,7 +134,7 @@ func (o *Orchestrator) buildTaskExecutor() {
 	o.taskExec = executor.New(
 		noProposer{}, o.registry, o.policy, o.runner,
 		executor.FSVerifier{Root: cwd},
-		executor.WithRoot(cwd),
+		executor.WithRoot(projectRoot),
 		executor.WithApprover(approver),
 		executor.WithOutputSizeDecider(sizeDecider),
 		executor.WithCallObserver(taskToolPublisher{o: o}),

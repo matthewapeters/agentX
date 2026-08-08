@@ -699,7 +699,7 @@ func (o *Orchestrator) liveEligible(src *session.ToolSource) bool {
 	if !ok {
 		return false
 	}
-	return policy.Evaluate(d, src.Args).Decision == tools.Allow
+	return policy.Evaluate(d, src.Args, o.projectRoot()).Decision == tools.Allow
 }
 
 // PinToolEvent copies a tool_result conversation element (by ordinal) into
@@ -868,7 +868,7 @@ func (o *Orchestrator) refreshLiveFacts(ctx context.Context) {
 		if !ok {
 			continue
 		}
-		if policy != nil && policy.Evaluate(d, f.Source.Args).Decision != tools.Allow {
+		if policy != nil && policy.Evaluate(d, f.Source.Args, o.projectRoot()).Decision != tools.Allow {
 			continue // no longer permitted (blacklist/approval changed since pinning) — leave stale
 		}
 		res, err := runner.Run(ctx, d, f.Source.Args)

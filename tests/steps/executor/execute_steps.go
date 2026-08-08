@@ -41,7 +41,7 @@ type stubGate struct {
 	reason   string
 }
 
-func (g stubGate) Evaluate(tools.Descriptor, map[string]string) tools.Verdict {
+func (g stubGate) Evaluate(tools.Descriptor, map[string]string, string) tools.Verdict {
 	return tools.Verdict{Decision: g.decision, Reason: g.reason}
 }
 

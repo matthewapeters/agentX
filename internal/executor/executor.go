@@ -17,8 +17,6 @@ package executor
 import (
 	"context"
 	"maps"
-	"path/filepath"
-	"strings"
 
 	"agentx/internal/prompting/task"
 	"agentx/internal/tools"
@@ -35,8 +33,11 @@ type Registry interface {
 }
 
 // Gate is the command policy: it decides whether a tool call may run.
+// projectRoot is the confinement/approval-scope boundary (Executor.root,
+// the same value WithRoot configured) — *tools.Policy uses it to compute
+// each call's approval scope (Descriptor.ScopeArgs).
 type Gate interface {
-	Evaluate(d tools.Descriptor, args map[string]string) tools.Verdict
+	Evaluate(d tools.Descriptor, args map[string]string, projectRoot string) tools.Verdict
 }
 
 // Runner executes an approved tool call.
@@ -194,7 +195,11 @@ func New(p Proposer, reg Registry, g Gate, r Runner, v Verifier, opts ...Option)
 // escapesRoot reports whether the call's file target resolves outside the confinement
 // root, requiring approval. No root or no path means no boundary applies. A standing
 // read grant (WithReadGrants) that covers the target suppresses the escape for
-// read-risk calls only — a grant widens reads, never a mutating call.
+// read-risk calls only — a grant widens reads, never a mutating call. The actual
+// containment check (Clean+Rel, not a naive string-prefix match) is
+// tools.ClassifyPath — the same function internal/runtime's approval-scoping
+// path uses, so there is one source of truth for "is this path inside or
+// outside the project," not two independently-maintained copies.
 func (e *Executor) escapesRoot(d tools.Descriptor, args map[string]string) bool {
 	if e.root == "" {
 		return false
@@ -203,16 +208,11 @@ func (e *Executor) escapesRoot(d tools.Descriptor, args map[string]string) bool 
 	if p == "" {
 		return false
 	}
-	full := p
-	if !filepath.IsAbs(p) {
-		full = filepath.Join(e.root, p)
+	scope := tools.ClassifyPath(p, e.root)
+	if scope.InsideProject {
+		return false
 	}
-	full = filepath.Clean(full)
-	rel, err := filepath.Rel(e.root, full)
-	if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return false // within root
-	}
-	if d.Risk == tools.RiskRead && e.reads != nil && e.reads.Allows(full) {
+	if d.Risk == tools.RiskRead && e.reads != nil && e.reads.Allows(scope.Resolved) {
 		return false // standing read grant covers this out-of-root read
 	}
 	return true
@@ -274,7 +274,7 @@ func (e *Executor) Execute(ctx context.Context, rec task.Record) Outcome {
 		return out
 	}
 
-	verdict := e.gate.Evaluate(d, prop.Args)
+	verdict := e.gate.Evaluate(d, prop.Args, e.root)
 	if verdict.Decision == tools.Deny {
 		return finish(Outcome{Status: Denied, Reason: verdict.Reason})
 	}
