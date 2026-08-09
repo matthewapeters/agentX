@@ -257,6 +257,8 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 			Token:       res.Token,
 			SurfaceID:   res.SurfaceID,
 			SessionName: titleSession,
+			SessionRoot: res.SessionRoot,
+			SessionID:   res.SessionID,
 		})
 	}
 	// Context visualizer is read-only and document-based (it polls the assembled
@@ -267,6 +269,8 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 			Token:       res.Token,
 			SurfaceID:   res.SurfaceID,
 			SessionName: titleSession,
+			SessionRoot: res.SessionRoot,
+			SessionID:   res.SessionID,
 		})
 	}
 

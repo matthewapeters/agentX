@@ -63,6 +63,25 @@ func DefaultRegistry() *Registry {
 			Command: "git", Argv: []string{"git", "-C", "{path}", "status"},
 			Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "path", Kind: KindPath, Required: true}}},
+		// git: unlike git_status (one fixed, read-only subcommand), this runs
+		// ANY git subcommand with any arguments — add, commit, push, reset,
+		// branch -D, rebase, whatever the model needs — deliberately
+		// unrestricted in scope (explicit product decision: no subcommand
+		// allowlist/denylist). Blast radius is gated the same way every other
+		// write-risk tool here is: RiskWrite + RequiresApproval, not by
+		// limiting what git commands are reachable. args is a JSON array of
+		// argv tokens (e.g. ["commit", "-m", "message"]), not a shell string
+		// — BuildArgv's "{name}" template only substitutes one token per
+		// placeholder, so a multi-word commit message can't round-trip
+		// through it. This ships as a Builtin that JSON-decodes args and
+		// execs the vector itself (no shell — so no quoting/injection
+		// surface regardless of which subcommand or flags are chosen).
+		{ID: "git", Description: "Run any git subcommand with any arguments (add, commit, push, pull, reset, branch, log, diff, rebase, tag, ...) against a repository — no subcommand is restricted. `args` is a JSON array of argv tokens, e.g. [\"commit\", \"-m\", \"message\"].",
+			Builtin: "git", Risk: RiskWrite, RequiresApproval: true, TimeoutSeconds: 120,
+			Args: []ArgSpec{
+				{Name: "path", Kind: KindPath, Required: true},
+				{Name: "args", Kind: KindString, Required: true},
+			}},
 		{ID: "read_output", Description: "Re-read a previous tool result stored in the session, by ref.",
 			Builtin: "read_output", Risk: RiskRead, TimeoutSeconds: 30,
 			Args: []ArgSpec{{Name: "ref", Kind: KindString, Required: true}, {Name: "offset", Kind: KindInt}, {Name: "limit", Kind: KindInt}}},

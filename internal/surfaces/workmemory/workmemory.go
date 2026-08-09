@@ -13,6 +13,7 @@ package workmemory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"agentx/internal/session"
+	"agentx/internal/surfaces"
 	"agentx/internal/surfaces/client"
 	"agentx/internal/surfaces/scrollutil"
 	transporthttp "agentx/internal/transport/http"
@@ -63,6 +65,16 @@ type Options struct {
 	Token       string
 	SurfaceID   string
 	SessionName string
+	// SessionRoot and SessionID enable re-attachment after a mid-session
+	// resume (docs/architecture/behavior/session_resume.feature.md §5): unlike
+	// the event-stream surfaces (client.Host), this document-based surface
+	// holds its own transport client/token captured once at launch, so a
+	// resume that swaps the session out from under it otherwise leaves it
+	// stuck presenting a now-invalid token forever. SessionRoot == "" (an
+	// older/headless caller) disables re-attachment — an auth failure then
+	// just reports as before.
+	SessionRoot string
+	SessionID   string
 }
 
 // Run launches the working-memory editor against a running orchestrator and blocks
@@ -92,10 +104,28 @@ const (
 type FactsMsg []session.Fact
 
 type (
-	errMsg  string
+	errMsg  struct{ err error }
 	doneMsg struct{} // a mutation completed — refetch
 	tickMsg struct{}
 )
+
+// reattachedMsg carries the result of re-resolving this session's transport
+// endpoint and attach token from disk after an auth failure (see
+// Options.SessionRoot).
+type reattachedMsg struct {
+	endpoint string
+	token    string
+	err      error
+}
+
+// isStaleAttachToken reports whether err is the server rejecting this
+// surface's attach token — the specific, recoverable case (a resume swapped
+// the underlying session out from under this surface) as opposed to a
+// transport/validation failure, which re-resolving from disk cannot fix.
+func isStaleAttachToken(err error) bool {
+	var ae *transporthttp.AttachError
+	return errors.As(err, &ae) && ae.Category == surfaces.CategoryAuth
+}
 
 // factUI is a fact's ephemeral render state (collapsed/expanded, inner-scroll
 // offset) — kept OUTSIDE session.Fact because Model.facts is replaced wholesale on
@@ -142,12 +172,38 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(pollInterval, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
+// reattach re-resolves this session's transport endpoint and attach token
+// from disk (SS-5) — the same discovery a fresh `agentx surface launch` uses
+// — after the server has rejected this surface's token, which happens when a
+// mid-session resume (ESC,r) swaps the running session out from under it
+// (docs/architecture/behavior/session_resume.feature.md §5). A no-op
+// (returns nil) when SessionRoot is unset, matching client.Host's own
+// SessionRoot == "" convention for callers that predate reconnection.
+func (m Model) reattach() tea.Cmd {
+	if m.opts.SessionRoot == "" || m.opts.SessionID == "" {
+		return nil
+	}
+	root, id := m.opts.SessionRoot, m.opts.SessionID
+	return func() tea.Msg {
+		store := session.NewStore(root)
+		info, err := store.ReadTransport(id)
+		if err != nil {
+			return reattachedMsg{err: err}
+		}
+		token, err := store.ReadAttachToken(id)
+		if err != nil {
+			return reattachedMsg{err: err}
+		}
+		return reattachedMsg{endpoint: info.Endpoint, token: token}
+	}
+}
+
 func (m Model) fetch() tea.Cmd {
 	cl := m.cl
 	return func() tea.Msg {
 		facts, err := cl.WorkingMemory(context.Background())
 		if err != nil {
-			return errMsg(err.Error())
+			return errMsg{err}
 		}
 		return FactsMsg(facts)
 	}
@@ -157,7 +213,7 @@ func (m Model) setFact(key, value string) tea.Cmd {
 	cl, token := m.cl, m.opts.Token
 	return func() tea.Msg {
 		if err := cl.SetFact(context.Background(), token, key, value); err != nil {
-			return errMsg(err.Error())
+			return errMsg{err}
 		}
 		return doneMsg{}
 	}
@@ -167,7 +223,7 @@ func (m Model) toggle(key string, enabled bool) tea.Cmd {
 	cl, token := m.cl, m.opts.Token
 	return func() tea.Msg {
 		if err := cl.SetFactEnabled(context.Background(), token, key, enabled); err != nil {
-			return errMsg(err.Error())
+			return errMsg{err}
 		}
 		return doneMsg{}
 	}
@@ -177,7 +233,7 @@ func (m Model) deleteFact(key string) tea.Cmd {
 	cl, token := m.cl, m.opts.Token
 	return func() tea.Msg {
 		if err := cl.DeleteFact(context.Background(), token, key); err != nil {
-			return errMsg(err.Error())
+			return errMsg{err}
 		}
 		return doneMsg{}
 	}
@@ -190,7 +246,7 @@ func (m Model) toggleLive(key string, live bool) tea.Cmd {
 	cl, token := m.cl, m.opts.Token
 	return func() tea.Msg {
 		if err := cl.SetFactLive(context.Background(), token, key, live); err != nil {
-			return errMsg(err.Error())
+			return errMsg{err}
 		}
 		return doneMsg{}
 	}
@@ -213,8 +269,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	case errMsg:
-		m.status = "error: " + string(msg)
+		if isStaleAttachToken(msg.err) && m.opts.SessionRoot != "" {
+			m.status = "reattaching…"
+			return m, m.reattach()
+		}
+		m.status = "error: " + msg.err.Error()
 		return m, nil
+	case reattachedMsg:
+		if msg.err != nil {
+			m.status = "error: reattach failed: " + msg.err.Error()
+			return m, nil
+		}
+		m.opts.Endpoint, m.opts.Token = msg.endpoint, msg.token
+		m.cl = transporthttp.NewClient(msg.endpoint)
+		m.status = ""
+		return m, m.fetch()
 	case doneMsg:
 		return m, m.fetch()
 	case tickMsg:

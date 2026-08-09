@@ -80,4 +80,48 @@ func TestDefaultRegistryReadOnlyViewIncludesGrepFilesOnly(t *testing.T) {
 	if seen["move_file"] {
 		t.Error(`Available(true) includes "move_file", want it excluded (RiskWrite)`)
 	}
+	if seen["git"] {
+		t.Error(`Available(true) includes "git", want it excluded (RiskWrite)`)
+	}
+}
+
+// GIVEN the default registry
+// WHEN "git" is looked up
+// THEN it is registered as a write-risk, approval-gated builtin taking a
+// path and a JSON-array args string — same shape/gating tier as
+// write_file/edit_file/delete_file/move_file, distinct from the read-only,
+// single-fixed-subcommand git_status.
+func TestDefaultRegistryIncludesGitTool(t *testing.T) {
+	r := DefaultRegistry()
+
+	g, ok := r.Lookup("git")
+	if !ok {
+		t.Fatal(`Lookup("git") = false, want the tool registered`)
+	}
+	if g.Builtin != "git" {
+		t.Errorf("git.Builtin = %q, want %q", g.Builtin, "git")
+	}
+	if g.Risk != RiskWrite || !g.RequiresApproval {
+		t.Errorf("git Risk/RequiresApproval = %q/%v, want RiskWrite/true — arbitrary git subcommands (push, reset, branch -D, ...) are not gated by a subcommand allowlist, only by the same approval tier every other write-risk tool uses", g.Risk, g.RequiresApproval)
+	}
+	wantArgs := map[string]bool{"path": true, "args": true}
+	if len(g.Args) != 2 {
+		t.Fatalf("git.Args = %+v, want exactly path/args", g.Args)
+	}
+	for _, a := range g.Args {
+		if !wantArgs[a.Name] {
+			t.Errorf("git.Args has unexpected arg %q", a.Name)
+		}
+		if !a.Required {
+			t.Errorf("git.Args[%q].Required = false, want true", a.Name)
+		}
+	}
+
+	status, ok := r.Lookup("git_status")
+	if !ok {
+		t.Fatal(`Lookup("git_status") = false, want the pre-existing read-only tool still registered`)
+	}
+	if status.Risk != RiskRead || status.RequiresApproval {
+		t.Errorf("git_status Risk/RequiresApproval = %q/%v, want RiskRead/false unchanged by adding the new git tool", status.Risk, status.RequiresApproval)
+	}
 }

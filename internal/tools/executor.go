@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -68,7 +69,7 @@ func NewExecutor(art Artifacts, maxBytes int) *Executor {
 // infrastructure failures (bad argv template, unknown builtin) return an error.
 func (e *Executor) Run(ctx context.Context, d Descriptor, args map[string]string) (Result, error) {
 	if d.Builtin != "" {
-		return e.runBuiltin(d, args)
+		return e.runBuiltin(ctx, d, args)
 	}
 
 	argv, err := d.BuildArgv(args)
@@ -78,15 +79,25 @@ func (e *Executor) Run(ctx context.Context, d Descriptor, args map[string]string
 	if len(argv) == 0 {
 		return Result{}, fmt.Errorf("tool %q has no argv", d.ID)
 	}
-	if d.TimeoutSeconds > 0 {
+	return e.runProcess(ctx, d.ID, argv, args[d.StdinArg], d.TimeoutSeconds)
+}
+
+// runProcess execs argv (no shell) with an optional stdin payload and a
+// per-call timeout, capturing output the same way for every subprocess-backed
+// tool — the ordinary Command/Argv path above and the "git" builtin (which
+// cannot use BuildArgv's one-token-per-placeholder template, since its argv
+// tail is a variable-length, JSON-decoded vector) both funnel through here so
+// timeout/exit-code/truncation/artifact handling never drifts between them.
+func (e *Executor) runProcess(ctx context.Context, toolID string, argv []string, stdin string, timeoutSeconds int) (Result, error) {
+	if timeoutSeconds > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(d.TimeoutSeconds)*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 		defer cancel()
 	}
 
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	if d.StdinArg != "" {
-		cmd.Stdin = strings.NewReader(args[d.StdinArg])
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
 	}
 	out := &cappedBuffer{limit: e.maxBytes}
 	var errBuf bytes.Buffer
@@ -95,7 +106,7 @@ func (e *Executor) Run(ctx context.Context, d Descriptor, args map[string]string
 	runErr := cmd.Run()
 
 	res := Result{
-		ToolID:    d.ID,
+		ToolID:    toolID,
 		Command:   strings.Join(argv, " "),
 		Stderr:    capString(errBuf.String(), 2048),
 		Bytes:     out.written,
@@ -122,8 +133,11 @@ func (e *Executor) Run(ctx context.Context, d Descriptor, args map[string]string
 	return res, nil
 }
 
-// runBuiltin handles Go-native tools (no subprocess).
-func (e *Executor) runBuiltin(d Descriptor, args map[string]string) (Result, error) {
+// runBuiltin handles Go-native tools. Most are pure filesystem operations
+// with no subprocess; "git" is the exception (it execs the real git binary
+// via runProcess), which is why this takes ctx even though most cases ignore
+// it.
+func (e *Executor) runBuiltin(ctx context.Context, d Descriptor, args map[string]string) (Result, error) {
 	res := Result{ToolID: d.ID, Status: "ok"}
 	switch d.Builtin {
 	case "write_file":
@@ -167,9 +181,34 @@ func (e *Executor) runBuiltin(d Descriptor, args map[string]string) (Result, err
 		return e.deleteFile(res, args)
 	case "move_file":
 		return e.moveFile(res, args)
+	case "git":
+		return e.gitCmd(ctx, d, args)
 	default:
 		return Result{}, fmt.Errorf("unknown builtin %q", d.Builtin)
 	}
+}
+
+// gitCmd runs `git -C {path} {args...}` for any subcommand and arguments —
+// deliberately unrestricted (see the "git" descriptor's comment in
+// descriptors.go). args["args"] is a JSON array of argv tokens rather than a
+// single shell-style string: BuildArgv's placeholder template substitutes
+// exactly one token per "{name}", which cannot represent a variable-length
+// tail like `commit -m "a message with spaces"` without either a shell
+// (injection surface) or naive whitespace-splitting (breaks on any quoted or
+// multi-word argument) — a JSON array sidesteps both by naming each argv
+// token explicitly.
+func (e *Executor) gitCmd(ctx context.Context, d Descriptor, args map[string]string) (Result, error) {
+	res := Result{ToolID: d.ID, Status: "ok"}
+	path := args["path"]
+	var sub []string
+	if err := json.Unmarshal([]byte(args["args"]), &sub); err != nil {
+		return failed(res, fmt.Errorf("args must be a JSON array of strings, e.g. [\"commit\", \"-m\", \"message\"]: %w", err)), nil
+	}
+	if len(sub) == 0 {
+		return failed(res, errors.New("args must be a non-empty JSON array of argv tokens")), nil
+	}
+	argv := append([]string{"git", "-C", path}, sub...)
+	return e.runProcess(ctx, d.ID, argv, "", d.TimeoutSeconds)
 }
 
 // editFile replaces old_string with new_string in the file at path — a literal,

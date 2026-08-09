@@ -2,8 +2,10 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1158,5 +1160,186 @@ func TestGrepFilesSkipsUnreadableSubdirectory(t *testing.T) {
 	}
 	if !strings.Contains(res.Preview, "readable.txt") {
 		t.Errorf("Preview = %q, want the readable.txt match", res.Preview)
+	}
+}
+
+var gitDescriptor = Descriptor{ID: "git", Builtin: "git", TimeoutSeconds: 10}
+
+// initTestRepo creates a fresh git repository in a temp dir with a local
+// (not global) user.name/email, so `git commit` works in a sandboxed test
+// environment without touching the machine's real git config.
+func initTestRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v (%s)", args, err, out)
+		}
+	}
+	run("init")
+	run("config", "user.name", "Test")
+	run("config", "user.email", "test@example.com")
+	return dir
+}
+
+func gitArgs(t *testing.T, path string, argv ...string) map[string]string {
+	t.Helper()
+	raw, err := json.Marshal(argv)
+	if err != nil {
+		t.Fatalf("marshal argv: %v", err)
+	}
+	return map[string]string{"path": path, "args": string(raw)}
+}
+
+// GIVEN a fresh git repository and a new file
+// WHEN the git builtin runs "add" then "commit -m ..." as two separate calls
+// THEN the file lands in the repository's history — proving the tool can
+// actually mutate git state, not just read it (unlike the existing
+// read-only git_status tool).
+func TestGitAddThenCommitCreatesHistory(t *testing.T) {
+	dir := initTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatalf("write hello.txt: %v", err)
+	}
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), gitDescriptor, gitArgs(t, dir, "add", "hello.txt"))
+	if err != nil {
+		t.Fatalf("Run(add): %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("add Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+
+	res, err = e.Run(context.Background(), gitDescriptor, gitArgs(t, dir, "commit", "-m", "add hello"))
+	if err != nil {
+		t.Fatalf("Run(commit): %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("commit Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+
+	log := exec.Command("git", "-C", dir, "log", "--oneline")
+	out, err := log.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log: %v (%s)", err, out)
+	}
+	if !strings.Contains(string(out), "add hello") {
+		t.Errorf("git log = %q, want a commit titled %q", out, "add hello")
+	}
+}
+
+// GIVEN a git repository
+// WHEN the git builtin runs a subcommand with no bearing on read/write
+// (e.g. branch -D on a nonexistent branch) that no other AgentX git tool
+// exposes
+// THEN it reaches real git and fails with git's own error — proving no
+// AgentX-side subcommand allowlist stands between the model and arbitrary
+// git functionality, per the explicit "no restrictions" product decision.
+func TestGitRunsArbitrarySubcommandNotJustStatus(t *testing.T) {
+	dir := initTestRepo(t)
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), gitDescriptor, gitArgs(t, dir, "branch", "-D", "does-not-exist"))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error (git itself rejects deleting a nonexistent branch)", res.Status)
+	}
+	if !strings.Contains(res.Stderr, "does-not-exist") {
+		t.Errorf("Stderr = %q, want git's own branch-not-found message", res.Stderr)
+	}
+}
+
+// GIVEN a git repository
+// WHEN the git builtin runs a read-only subcommand (log) against an empty
+// history
+// THEN it reports the real nonzero exit git itself returns — the tool
+// reports git's outcome faithfully rather than swallowing it.
+func TestGitReportsNonZeroExit(t *testing.T) {
+	dir := initTestRepo(t)
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), gitDescriptor, gitArgs(t, dir, "log"))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error (git log on a repo with no commits exits nonzero)", res.Status)
+	}
+}
+
+// GIVEN args that is not valid JSON
+// WHEN the git builtin runs
+// THEN it fails cleanly instead of passing a garbage token straight to argv.
+func TestGitInvalidJSONArgsFails(t *testing.T) {
+	dir := initTestRepo(t)
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), gitDescriptor, map[string]string{
+		"path": dir, "args": "not valid json",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error", res.Status)
+	}
+}
+
+// GIVEN args that decodes to an empty JSON array
+// WHEN the git builtin runs
+// THEN it fails cleanly rather than invoking bare `git -C path` with no
+// subcommand.
+func TestGitEmptyArgsArrayFails(t *testing.T) {
+	dir := initTestRepo(t)
+	e := newTestExecutor()
+
+	res, err := e.Run(context.Background(), gitDescriptor, map[string]string{
+		"path": dir, "args": "[]",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("Status = %q, want error", res.Status)
+	}
+}
+
+// GIVEN a commit message containing spaces and punctuation
+// WHEN the git builtin runs "commit" with that message as one JSON array
+// element
+// THEN the full message survives intact in history — proving the JSON-array
+// argv shape (not a shell string) correctly carries a multi-word argument
+// without splitting or quoting corruption.
+func TestGitCommitMessageWithSpacesSurvivesIntact(t *testing.T) {
+	dir := initTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("write f.txt: %v", err)
+	}
+	e := newTestExecutor()
+	if _, err := e.Run(context.Background(), gitDescriptor, gitArgs(t, dir, "add", "f.txt")); err != nil {
+		t.Fatalf("Run(add): %v", err)
+	}
+
+	const msg = `fix: handle "quoted" edge cases & spaces`
+	res, err := e.Run(context.Background(), gitDescriptor, gitArgs(t, dir, "commit", "-m", msg))
+	if err != nil {
+		t.Fatalf("Run(commit): %v", err)
+	}
+	if res.Status != "ok" {
+		t.Fatalf("Status = %q, want ok (stderr: %s)", res.Status, res.Stderr)
+	}
+
+	log := exec.Command("git", "-C", dir, "log", "-1", "--pretty=%B")
+	out, err := log.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log: %v (%s)", err, out)
+	}
+	if !strings.Contains(string(out), msg) {
+		t.Errorf("commit message = %q, want it to contain %q intact", out, msg)
 	}
 }

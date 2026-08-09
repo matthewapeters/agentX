@@ -9,6 +9,7 @@ package contextviz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"agentx/internal/session"
+	"agentx/internal/surfaces"
 	"agentx/internal/surfaces/client"
 	transporthttp "agentx/internal/transport/http"
 )
@@ -53,6 +55,15 @@ type Options struct {
 	Token       string
 	SurfaceID   string
 	SessionName string
+	// SessionRoot and SessionID enable re-attachment after a mid-session
+	// resume (docs/architecture/behavior/session_resume.feature.md §5): like
+	// the working-memory surface, this document-based surface holds its own
+	// transport client/token captured once at launch, so a resume that swaps
+	// the session out from under it otherwise leaves it stuck polling with a
+	// now-invalid token forever. SessionRoot == "" (an older/headless caller)
+	// disables re-attachment — an auth failure then just reports as before.
+	SessionRoot string
+	SessionID   string
 }
 
 // Run launches the context visualizer against a running orchestrator and blocks
@@ -73,9 +84,27 @@ func Run(ctx context.Context, opts Options) error {
 type ReportMsg session.ContextReport
 
 type (
-	errMsg  string
+	errMsg  struct{ err error }
 	tickMsg struct{}
 )
+
+// reattachedMsg carries the result of re-resolving this session's transport
+// endpoint and attach token from disk after an auth failure (see
+// Options.SessionRoot).
+type reattachedMsg struct {
+	endpoint string
+	token    string
+	err      error
+}
+
+// isStaleAttachToken reports whether err is the server rejecting this
+// surface's attach token — the specific, recoverable case (a resume swapped
+// the underlying session out from under this surface) as opposed to a
+// transport/validation failure, which re-resolving from disk cannot fix.
+func isStaleAttachToken(err error) bool {
+	var ae *transporthttp.AttachError
+	return errors.As(err, &ae) && ae.Category == surfaces.CategoryAuth
+}
 
 // Model is the read-only context-visualizer.
 type Model struct {
@@ -100,12 +129,39 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(pollInterval, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
+// reattach re-resolves this session's transport endpoint and attach token
+// from disk (SS-5) — the same discovery a fresh `agentx surface launch` uses
+// — after the server has rejected this surface's token, which happens when a
+// mid-session resume (ESC,r) swaps the running session out from under it
+// (docs/architecture/behavior/session_resume.feature.md §5). A no-op
+// (returns nil) when SessionRoot is unset, matching the working-memory
+// surface's own SessionRoot == "" convention for callers that predate
+// reconnection.
+func (m Model) reattach() tea.Cmd {
+	if m.opts.SessionRoot == "" || m.opts.SessionID == "" {
+		return nil
+	}
+	root, id := m.opts.SessionRoot, m.opts.SessionID
+	return func() tea.Msg {
+		store := session.NewStore(root)
+		info, err := store.ReadTransport(id)
+		if err != nil {
+			return reattachedMsg{err: err}
+		}
+		token, err := store.ReadAttachToken(id)
+		if err != nil {
+			return reattachedMsg{err: err}
+		}
+		return reattachedMsg{endpoint: info.Endpoint, token: token}
+	}
+}
+
 func (m Model) fetch() tea.Cmd {
 	cl := m.cl
 	return func() tea.Msg {
 		report, err := cl.ContextBreakdown(context.Background())
 		if err != nil {
-			return errMsg(err.Error())
+			return errMsg{err}
 		}
 		return ReportMsg(report)
 	}
@@ -122,8 +178,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		return m, nil
 	case errMsg:
-		m.status = "error: " + string(msg)
+		if isStaleAttachToken(msg.err) && m.opts.SessionRoot != "" {
+			m.status = "reattaching…"
+			return m, m.reattach()
+		}
+		m.status = "error: " + msg.err.Error()
 		return m, nil
+	case reattachedMsg:
+		if msg.err != nil {
+			m.status = "error: reattach failed: " + msg.err.Error()
+			return m, nil
+		}
+		m.opts.Endpoint, m.opts.Token = msg.endpoint, msg.token
+		m.cl = transporthttp.NewClient(msg.endpoint)
+		m.status = ""
+		return m, m.fetch()
 	case tickMsg:
 		return m, tea.Batch(m.fetch(), tickCmd())
 	case tea.KeyPressMsg:
