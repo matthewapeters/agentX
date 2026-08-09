@@ -2130,3 +2130,11 @@ func (m *ConfigModel) SetSize(width, height int) {
 func (m *ConfigModel) CapturesKeys() bool {
 	return m.Data.Edit != nil
 }
+
+// Reset is a deliberate no-op (client.SurfaceModel): config content isn't
+// folded from session events via Apply the way other surfaces' state is —
+// it's fetched directly from the server with GET /config, independent of
+// which session Host is attached to. Clearing it here would just blank the
+// view with nothing to automatically re-fetch it
+// (docs/architecture/behavior/session_resume.feature.md §5).
+func (m *ConfigModel) Reset() {}

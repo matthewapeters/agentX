@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -33,6 +36,40 @@ type Options struct {
 	// target from cli.ResolveResume, not the raw --resume flag value (see
 	// docs/architecture/behavior/session_resume.feature.md).
 	ResumeSessionID string
+	// ResolveResumeTarget, if set, is called when the user triggers a
+	// mid-session resume switch from inside the running chat surface
+	// (ESC,r) with no target pre-selected: it should show a picker (or
+	// resolve unambiguously) and return the chosen session ID. Injected
+	// from the CLI layer (cmd/agentx) rather than called via a direct
+	// internal/cli import — internal/app must not depend on internal/cli
+	// per the import-direction matrix
+	// (docs/implementation/08_go_module_layout.md) — so this is dependency
+	// injection, not a layering exception. Nil (e.g. in a test that never
+	// exercises the resume trigger) degrades to an ordinary shutdown if the
+	// trigger somehow fires anyway.
+	ResolveResumeTarget func() (string, error)
+}
+
+// resumePortEnvVar carries the outgoing process's transport port across
+// syscall.Exec during a mid-session resume switch, so the new process can
+// try to reclaim the exact same port (Settings.PreferredTransportPort) —
+// already-attached surfaces' reconnect polling then succeeds against the
+// endpoint they already have, rather than needing to discover a changed one
+// (docs/architecture/behavior/session_resume.feature.md §5).
+const resumePortEnvVar = "AGENTX_RESUME_PORT"
+
+// preferredTransportPort reads resumePortEnvVar, returning 0 (no
+// preference — the ordinary case) if it's unset or unparsable.
+func preferredTransportPort() int {
+	v := os.Getenv(resumePortEnvVar)
+	if v == "" {
+		return 0
+	}
+	p, err := strconv.Atoi(v)
+	if err != nil {
+		return 0
+	}
+	return p
 }
 
 // shutdownTimeout bounds graceful shutdown.
@@ -167,6 +204,7 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		TransportPortStart:           transportStart,
 		TransportPortEnd:             transportEnd,
 		ResumeSessionID:              opts.ResumeSessionID,
+		PreferredTransportPort:       preferredTransportPort(),
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err
@@ -204,7 +242,17 @@ func RunChat(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	// shutdownHandled is set true only on the resume-switch path below, once
+	// it has already run its own ShutdownForResume — this deferred plain
+	// Shutdown must not also run in that case (Shutdown is not designed to
+	// be called twice). Every ordinary exit (including every early return
+	// below) leaves it false, so the plain shutdown always fires exactly
+	// once for those, unchanged from before this field existed.
+	shutdownHandled := false
 	defer func() {
+		if shutdownHandled {
+			return
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		_ = orc.Shutdown(shutdownCtx)
@@ -235,6 +283,12 @@ func RunChat(ctx context.Context, opts Options) error {
 		connected = orc.Registry().ConnectedKinds
 	}
 
+	// resumeRequested is written from the bubbletea Update goroutine (the
+	// bridge callback below) and read only after p.Run() returns, once that
+	// goroutine has fully finished — no concurrent access, so no mutex is
+	// needed here (unlike cancelPrompt/promptMu below, which are genuinely
+	// read and written while the program is still running).
+	var resumeRequested bool
 	var promptMu sync.Mutex
 	var cancelPrompt context.CancelFunc
 	bridge := chat.Bridge{
@@ -257,10 +311,11 @@ func RunChat(ctx context.Context, opts Options) error {
 				cancel()
 			}
 		},
-		Approve:    func(decision string) { orc.Resolve(decision) },
-		Events:     sub.C,
-		Processing: procCh,
-		Connected:  connected,
+		Approve:       func(decision string) { orc.Resolve(decision) },
+		Events:        sub.C,
+		Processing:    procCh,
+		Connected:     connected,
+		RequestResume: func() { resumeRequested = true },
 	}
 
 	// Auto-submit the bootstrap prompt (if configured) once the surface is
@@ -302,5 +357,61 @@ func RunChat(ctx context.Context, opts Options) error {
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		return err
 	}
+
+	// p.Run() has returned: the terminal is restored from Bubble Tea's
+	// alt-screen (same clean-quit path an ordinary ctrl+q already took).
+	// Only now — never before the program has actually quit — is it safe to
+	// resolve a picker on stdin/stdout and, on success, hand off to a
+	// resumed session.
+	if resumeRequested && opts.ResolveResumeTarget != nil {
+		target, err := opts.ResolveResumeTarget()
+		if err != nil {
+			// The switch didn't happen (no candidates, invalid selection,
+			// etc.) — report it and exit normally via the deferred plain
+			// Shutdown, same as any other error return here. Never fall
+			// back to silently continuing the just-quit session.
+			return err
+		}
+		shutdownHandled = true
+		return switchToResumedSession(orc, target)
+	}
 	return nil
+}
+
+// execFunc abstracts syscall.Exec so switchToResumedSession is testable — a
+// real unit test cannot safely exec-replace the test binary's own process
+// image, so tests swap this for a fake that records what it was called
+// with instead.
+var execFunc = syscall.Exec
+
+// switchToResumedSession completes a mid-session resume switch (ESC,r):
+// hands the current transport port across the process replacement (via
+// resumePortEnvVar) so already-attached surfaces' reconnect polling can
+// succeed against the endpoint they already have, shuts down — notifying
+// attached surfaces via ShutdownForResume, not the plain Shutdown the
+// caller's own deferred cleanup would otherwise run — then execs the same
+// binary as `agentx --resume <target>` in place: same PID, same controlling
+// terminal, no new process to hand off to or orphan
+// (docs/architecture/behavior/session_resume.feature.md §4-5). Only
+// returns on failure — a successful exec never returns at all.
+func switchToResumedSession(orc *runtime.Orchestrator, target string) error {
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve own executable path: %w", err)
+	}
+
+	if u, err := url.Parse(orc.Endpoint()); err == nil {
+		if port := u.Port(); port != "" {
+			_ = os.Setenv(resumePortEnvVar, port)
+		}
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := orc.ShutdownForResume(shutdownCtx, target); err != nil {
+		return fmt.Errorf("shut down for resume: %w", err)
+	}
+
+	argv := []string{execPath, "--resume", target}
+	return execFunc(execPath, argv, os.Environ())
 }

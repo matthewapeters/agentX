@@ -95,6 +95,17 @@ func (m *Model) SetSize(width, height int) {
 // treating it as quit, since a search pattern may contain one.
 func (m *Model) CapturesKeys() bool { return m.searching }
 
+// Reset clears every entry, scroll position, and search/cache state back to
+// New()'s defaults (client.SurfaceModel) — called when Host reconnects to a
+// different session, so a prior session's log lines don't linger alongside
+// the new one's (docs/architecture/behavior/session_resume.feature.md §5).
+// width/height are preserved: they reflect the terminal's current size, not
+// session content.
+func (m *Model) Reset() {
+	width, height := m.width, m.height
+	*m = Model{follow: true, matchIdx: -1, width: width, height: height}
+}
+
 // Key handles all logs-surface navigation and search. Quit ("q"/ctrl+c) is
 // handled by the host, never here.
 func (m *Model) Key(msg tea.KeyPressMsg) tea.Cmd {

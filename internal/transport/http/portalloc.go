@@ -25,6 +25,25 @@ func Allocate(host string, start, end int) (net.Listener, error) {
 	return nil, fmt.Errorf("transport port range [%d, %d] on %s exhausted", start, end, host)
 }
 
+// AllocatePreferred binds preferred on host if it's free; otherwise it falls
+// back to Allocate's [start, end] range scan. preferred <= 0 skips straight
+// to the range scan — the ordinary case, unchanged from Allocate alone. This
+// exists for session resume
+// (docs/architecture/behavior/session_resume.feature.md §5): the new
+// process tries to reclaim the exact port the outgoing process was just
+// using, so already-attached surfaces' disk-refreshing poll retries succeed
+// against the endpoint they already have, rather than needing to discover a
+// changed one from scratch.
+func AllocatePreferred(host string, preferred, start, end int) (net.Listener, error) {
+	if preferred > 0 {
+		addr := net.JoinHostPort(host, fmt.Sprintf("%d", preferred))
+		if ln, err := net.Listen("tcp", addr); err == nil {
+			return ln, nil
+		}
+	}
+	return Allocate(host, start, end)
+}
+
 // Endpoint formats the http:// endpoint for a bound listener address.
 func Endpoint(addr net.Addr) string {
 	return "http://" + addr.String()

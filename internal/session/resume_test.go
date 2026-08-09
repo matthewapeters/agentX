@@ -138,6 +138,59 @@ func TestHasUserPromptFalseForNoEvents(t *testing.T) {
 	}
 }
 
+// GIVEN a session with no recorded user prompt (only the bootstrap exchange)
+// WHEN RemoveIfEmpty runs
+// THEN the session's directory is deleted and removed reports true.
+func TestRemoveIfEmptyDeletesEmptySession(t *testing.T) {
+	s := NewStore(t.TempDir())
+	id, err := s.Create()
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	writeEphemeralUserPrompt(t, s, id.ID, time.Now().UnixMilli())
+
+	removed, err := s.RemoveIfEmpty(id.ID)
+	if err != nil {
+		t.Fatalf("RemoveIfEmpty: %v", err)
+	}
+	if !removed {
+		t.Error("RemoveIfEmpty = false, want true (session has no real prompt)")
+	}
+	if _, err := os.Stat(s.Dir(id.ID)); !os.IsNotExist(err) {
+		t.Errorf("session directory still exists after RemoveIfEmpty, stat err = %v", err)
+	}
+}
+
+// GIVEN a session with a real, non-ephemeral user prompt — even a session
+// being abandoned mid-conversation
+// WHEN RemoveIfEmpty runs
+// THEN nothing is removed: removed reports false and the directory is left
+// fully intact. This must hold regardless of how the session is being
+// abandoned; content is the only thing that matters.
+func TestRemoveIfEmptyLeavesNonEmptySessionIntact(t *testing.T) {
+	s := NewStore(t.TempDir())
+	id, err := s.Create()
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	writeUserPrompt(t, s, id.ID, time.Now().UnixMilli(), "real conversation in progress")
+
+	removed, err := s.RemoveIfEmpty(id.ID)
+	if err != nil {
+		t.Fatalf("RemoveIfEmpty: %v", err)
+	}
+	if removed {
+		t.Error("RemoveIfEmpty = true, want false (session has a real prompt, must never be deleted)")
+	}
+	if _, err := os.Stat(s.Dir(id.ID)); err != nil {
+		t.Errorf("session directory was removed despite having real content: stat err = %v", err)
+	}
+	got, err := s.Load(id.ID)
+	if err != nil || got != id {
+		t.Errorf("session identity after RemoveIfEmpty = %+v, err=%v — want it fully intact", got, err)
+	}
+}
+
 // GIVEN a session with no user_prompt events (only ephemeral ones)
 // WHEN ListResumable runs
 // THEN that session is excluded from the results.

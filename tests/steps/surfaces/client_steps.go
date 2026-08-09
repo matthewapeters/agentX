@@ -28,6 +28,7 @@ func (f *fakeSurface) Key(msg tea.KeyPressMsg) tea.Cmd {
 }
 func (f *fakeSurface) View() string       { return "" }
 func (f *fakeSurface) CapturesKeys() bool { return f.capturing }
+func (f *fakeSurface) Reset()             { *f = fakeSurface{} }
 
 type clientWorld struct {
 	fake           *fakeSurface
@@ -77,7 +78,7 @@ func (w *clientWorld) seeded(n int) error {
 	for i := range seed {
 		seed[i] = makeClientEvent(uint64(i + 1))
 	}
-	w.host = client.NewHost(w.fake, "ctx", seed, w.ch, func() { w.shutdownCalled = true })
+	w.host = client.NewHost(w.fake, "ctx", seed, w.ch, func() { w.shutdownCalled = true }, "", "", "")
 	return nil
 }
 

@@ -57,7 +57,20 @@ func run(args []string) error {
 		return cli.RunSurface(ctx, *cmd.Launch)
 	}
 
-	opts := app.Options{SessionName: cmd.SessionName}
+	opts := app.Options{
+		SessionName: cmd.SessionName,
+		// Injected regardless of whether this launch itself used --resume:
+		// the mid-session ESC,r trigger can fire during any running
+		// session, not just one that was itself resumed at launch. Reuses
+		// resolveResumeSessionID with an empty (ambiguous) target — the
+		// same bare-picker behavior --resume with no value already has —
+		// since RunChat only calls this after its own bubbletea program has
+		// already quit and the terminal is restored, dependency injection
+		// keeps internal/app from needing to import internal/cli directly
+		// (docs/implementation/08_go_module_layout.md's import-direction
+		// matrix).
+		ResolveResumeTarget: func() (string, error) { return resolveResumeSessionID("") },
+	}
 	if cmd.Resume {
 		id, err := resolveResumeSessionID(cmd.ResumeTarget)
 		if err != nil {

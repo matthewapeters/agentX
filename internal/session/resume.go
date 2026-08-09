@@ -90,6 +90,29 @@ func (s *Store) HasUserPrompt(id string) (bool, error) {
 	return found, err
 }
 
+// RemoveIfEmpty deletes session id's entire directory if it has no
+// recorded, non-ephemeral user prompt (per HasUserPrompt) — the mid-session
+// resume trigger's abandoned-session cleanup: a fresh session the user
+// never typed into before switching to a different one is removed as part
+// of the switch; a session with even one real prompt, including one
+// abandoned mid-conversation, is never touched
+// (docs/architecture/behavior/session_resume.feature.md §4). Reports
+// whether it actually removed anything — false with a nil error for a
+// non-empty session is the ordinary "left alone" case, not a failure.
+func (s *Store) RemoveIfEmpty(id string) (removed bool, err error) {
+	hasPrompt, err := s.HasUserPrompt(id)
+	if err != nil {
+		return false, err
+	}
+	if hasPrompt {
+		return false, nil
+	}
+	if err := os.RemoveAll(s.Dir(id)); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // lastUserPrompt finds the most recent non-ephemeral user_prompt event for
 // session id without loading its full event log. Recorder filenames are
 // epoch-then-seq prefixed and zero-padded

@@ -57,6 +57,14 @@ const (
 	// surfaces consume it to reload the tree; other surfaces ignore it. It is
 	// ephemeral: never folded into conversation context, only streamed to surfaces.
 	ContentConfigChanged ContentType = "config_changed"
+	// ContentSessionSwitching is published by ShutdownForResume before the
+	// transport actually stops, telling every attached surface which session
+	// to reconnect to (payload: {"session_id", "session_name"}) — the same
+	// shape ContentConfigChanged already established (a targeted surface
+	// notification most surfaces ignore, consumed by the ones that care).
+	// Never folded into conversation context; see
+	// docs/architecture/behavior/session_resume.feature.md §5.
+	ContentSessionSwitching ContentType = "session_switching"
 )
 
 var validContentTypes = map[ContentType]bool{
@@ -66,7 +74,7 @@ var validContentTypes = map[ContentType]bool{
 	ContentProcessingState: true, ContentTaskProposed: true, ContentTaskResult: true,
 	ContentTaskDiagnostic: true, ContentTaskPlan: true, ContentTaskNode: true,
 	ContentApprovalRequest: true, ContentApprovalDecision: true,
-	ContentConfigChanged: true,
+	ContentConfigChanged: true, ContentSessionSwitching: true,
 }
 
 // DefaultEnabled reports whether an event of the given content type participates
@@ -80,9 +88,9 @@ func DefaultEnabled(ct ContentType) bool {
 	switch ct {
 	case ContentUserPrompt, ContentAgentResponse, ContentAttachments:
 		return true
-	// Config change events are ephemeral surface notifications; they never fold
-	// into the assembled conversation context.
-	case ContentConfigChanged:
+	// Config change and session-switching events are ephemeral surface
+	// notifications; they never fold into the assembled conversation context.
+	case ContentConfigChanged, ContentSessionSwitching:
 		return false
 	default:
 		return false

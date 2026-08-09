@@ -397,3 +397,51 @@ func TestFrameNonEmptyContentUnaffected(t *testing.T) {
 		t.Fatalf("frame(\"one line\", ...) produced %d rows, want 3 (border + 1 content row): %v", len(got), got)
 	}
 }
+
+// GIVEN a chat surface wired to a Bridge with RequestResume set
+// WHEN the user completes the ESC,r chord
+// THEN Bridge.RequestResume is called and the returned command is tea.Quit —
+// the chat surface only signals the request and quits; it has no ability to
+// show a picker or exec a new process itself
+// (docs/architecture/behavior/session_resume.feature.md §4).
+func TestEscRChordSignalsRequestResumeAndQuits(t *testing.T) {
+	var called bool
+	m := NewWithBridge(Bridge{RequestResume: func() { called = true }})
+
+	updated, _ := m.Update(tea.KeyPressMsg{Text: "esc", Code: tea.KeyEscape})
+	m2 := updated.(Model)
+	if !m2.chordPending {
+		t.Fatal("ESC did not arm the chord")
+	}
+
+	_, cmd := m2.Update(tea.KeyPressMsg{Text: "r"})
+	if !called {
+		t.Error("Bridge.RequestResume was not called for the ESC,r chord")
+	}
+	if cmd == nil {
+		t.Fatal("ESC,r returned a nil command, want tea.Quit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("ESC,r's command produced %T, want tea.QuitMsg", cmd())
+	}
+}
+
+// GIVEN a chat surface with no Bridge at all (nil)
+// WHEN the user completes the ESC,r chord
+// THEN it still returns tea.Quit without panicking — RequestResume being
+// unset (or the whole bridge being nil) must degrade gracefully, the same
+// as every other bridge-optional call site in this file.
+func TestEscRChordWithNilBridgeDoesNotPanic(t *testing.T) {
+	m := New()
+
+	updated, _ := m.Update(tea.KeyPressMsg{Text: "esc", Code: tea.KeyEscape})
+	m2 := updated.(Model)
+
+	_, cmd := m2.Update(tea.KeyPressMsg{Text: "r"})
+	if cmd == nil {
+		t.Fatal("ESC,r returned a nil command, want tea.Quit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("ESC,r's command produced %T, want tea.QuitMsg", cmd())
+	}
+}

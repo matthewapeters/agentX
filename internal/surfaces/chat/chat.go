@@ -169,6 +169,14 @@ type Bridge struct {
 	// Connected returns the surface kinds currently attached (SS-4). When set, the
 	// surface polls it to drive the launch-info status emojis. Nil disables polling.
 	Connected func() []string
+	// RequestResume, if set, is called when the user triggers the
+	// mid-session resume chord (ESC,r), immediately before the program
+	// quits. The chat surface has no ability to show a session picker or
+	// exec a new process itself — it only signals the request; the caller
+	// that owns the process (not just this TUI), app.RunChat, does the
+	// actual work once the program has fully quit and the terminal is
+	// restored (docs/architecture/behavior/session_resume.feature.md §4).
+	RequestResume func()
 }
 
 // Model is the chat surface Bubble Tea model. It composes an output panel and an
@@ -460,8 +468,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey routes a key press: global quit first, then a pending ESC chord,
 // then the focus-aware navigation/edit keys. ESC is a leader key — ESC,q quits;
-// ESC,↑ focuses the output; ESC,↓ focuses the input; ESC,ESC interrupts an
-// in-flight response.
+// ESC,r requests switching to a different (or newly resumed) session —
+// signaled via Bridge.RequestResume, then the same tea.Quit as ESC,q, since
+// the actual picker/exec work happens after this process's TUI has fully
+// quit, not inside it; ESC,↑ focuses the output; ESC,↓ focuses the input;
+// ESC,ESC interrupts an in-flight response.
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
@@ -473,6 +484,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.chordPending = false
 		switch key {
 		case "q":
+			return m, tea.Quit
+		case "r":
+			if m.bridge != nil && m.bridge.RequestResume != nil {
+				m.bridge.RequestResume()
+			}
 			return m, tea.Quit
 		case "up":
 			m.setFocus(focusOutput)

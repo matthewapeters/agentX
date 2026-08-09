@@ -22,10 +22,12 @@ import (
 // output.Model for the boxed widgets/scroll and intercepts processing-state events
 // for a status line.
 type Model struct {
-	out   *output.Model
-	proc  state.ProcessingState
-	cl    *transporthttp.Client // transport for toggle POSTs (nil in unit tests)
-	token string
+	out    *output.Model
+	proc   state.ProcessingState
+	cl     *transporthttp.Client // transport for toggle POSTs (nil in unit tests)
+	token  string
+	width  int
+	height int
 }
 
 // New returns a context surface bound to a transport client for toggle POSTs. Its
@@ -61,6 +63,7 @@ func (m *Model) Apply(ev state.Event) {
 
 // SetSize sets the render area, reserving one row for the status line.
 func (m *Model) SetSize(width, height int) {
+	m.width, m.height = width, height
 	m.out.SetSize(width, max(0, height-1))
 }
 
@@ -169,6 +172,32 @@ func (m *Model) pinPlanNode(pin output.PlanNodePin) tea.Cmd {
 // CapturesKeys reports whether the surface is capturing free-form text input.
 // The context surface has no text-entry mode, so this is always false (SS-8).
 func (m *Model) CapturesKeys() bool { return false }
+
+// Reset clears the projected conversation entirely and rebuilds a fresh
+// output.Model with the same configuration New() establishes — called when
+// Host reconnects to a different session
+// (docs/architecture/behavior/session_resume.feature.md §5), so a prior
+// session's elements don't linger alongside the new one's. cl/token are left
+// untouched here; UpdateConnection is responsible for refreshing them.
+func (m *Model) Reset() {
+	out := output.New()
+	out.SetFocus(true)
+	out.SetCollapseByDefault(true)
+	out.SetShowToggleState(true)
+	out.SetSize(m.width, max(0, m.height-1))
+	m.out = out
+	m.proc = state.ProcessingState{}
+}
+
+// UpdateConnection points the surface's own toggle/pin POSTs at a newly
+// (re)connected session's transport and token (client.ConnectionUpdater) —
+// without this, those mutations would keep silently targeting the
+// pre-reconnect session after Host attaches elsewhere
+// (docs/architecture/behavior/session_resume.feature.md §5).
+func (m *Model) UpdateConnection(cl *transporthttp.Client, token string) {
+	m.cl = cl
+	m.token = token
+}
 
 // View renders the output body above a processing-state line.
 func (m *Model) View() string {

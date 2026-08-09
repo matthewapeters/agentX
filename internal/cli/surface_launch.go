@@ -63,6 +63,12 @@ type LaunchResult struct {
 	SessionName string
 	Endpoint    string
 	Token       string // resolved attach token, for the surface client to reuse
+	// SessionRoot is the resolved session storage root (args.SessionRoot, or
+	// the config default when that was empty) — carried through so a
+	// client.Host can re-resolve a different session's endpoint from disk
+	// on its own, later, without re-deriving this fallback itself
+	// (docs/architecture/behavior/session_resume.feature.md §5).
+	SessionRoot string
 }
 
 // Launch validates the launch arguments, attaches the surface to the running
@@ -101,6 +107,12 @@ func Launch(ctx context.Context, args LaunchArgs) (LaunchResult, error) {
 	if err != nil {
 		return LaunchResult{}, err
 	}
+	root := args.SessionRoot
+	if root == "" {
+		if paths, perr := config.DefaultPaths(); perr == nil {
+			root = paths.SessionRoot()
+		}
+	}
 	return LaunchResult{
 		SurfaceID:   reg.SurfaceID,
 		SurfaceKind: reg.SurfaceKind,
@@ -108,6 +120,7 @@ func Launch(ctx context.Context, args LaunchArgs) (LaunchResult, error) {
 		SessionName: reg.SessionName,
 		Endpoint:    endpoint,
 		Token:       token,
+		SessionRoot: root,
 	}, nil
 }
 
@@ -259,11 +272,13 @@ func RunSurface(ctx context.Context, args LaunchArgs) error {
 
 	if surface, title, ok := surfaceModelFor(args.SurfaceKind, res, titleSession); ok {
 		return client.Run(ctx, client.Options{
-			Endpoint:  res.Endpoint,
-			Token:     res.Token,
-			SurfaceID: res.SurfaceID,
-			Title:     title,
-			Surface:   surface,
+			Endpoint:    res.Endpoint,
+			Token:       res.Token,
+			SurfaceID:   res.SurfaceID,
+			Title:       title,
+			Surface:     surface,
+			SessionRoot: res.SessionRoot,
+			SessionID:   res.SessionID,
 		})
 	}
 	fmt.Printf("surface attached headless: %s (%s) — no TUI for this kind yet\n", res.SurfaceID, res.SurfaceKind)

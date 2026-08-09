@@ -170,6 +170,15 @@ type Settings struct {
 	// (docs/architecture/behavior/session_resume.feature.md §3). Empty (the
 	// default) creates a fresh session, unchanged from today.
 	ResumeSessionID string
+	// PreferredTransportPort, when > 0, is tried first when binding the
+	// transport, falling back to the normal [TransportPortStart,
+	// TransportPortEnd] range scan if it's taken. Set by a mid-session
+	// resume trigger to the port the outgoing process was just using, so
+	// already-attached surfaces' reconnect polling can succeed against the
+	// endpoint they already have (docs/architecture/behavior/
+	// session_resume.feature.md §5). 0 (the default) is the ordinary case:
+	// straight to the range scan, unchanged from today.
+	PreferredTransportPort int
 }
 
 // configPayload is an in-memory snapshot of the latest config write, stored so
@@ -433,7 +442,7 @@ func (o *Orchestrator) Start() error {
 // startTransport allocates a loopback port, publishes the endpoint to session
 // metadata, and serves the HTTP transport. The caller holds o.mu.
 func (o *Orchestrator) startTransport() error {
-	ln, err := transporthttp.Allocate(o.settings.TransportHost, o.settings.TransportPortStart, o.settings.TransportPortEnd)
+	ln, err := transporthttp.AllocatePreferred(o.settings.TransportHost, o.settings.PreferredTransportPort, o.settings.TransportPortStart, o.settings.TransportPortEnd)
 	if err != nil {
 		return fmt.Errorf("allocate transport port: %w", err)
 	}
@@ -490,6 +499,57 @@ func (o *Orchestrator) startConfigWatcher() error {
 			_ = ordinal
 		}
 	}()
+	return nil
+}
+
+// sessionSwitchGracePeriod bounds how long ShutdownForResume waits after
+// publishing ContentSessionSwitching before proceeding to the ordinary
+// Shutdown sequence — long enough to flush one small SSE frame over a
+// loopback connection, not tuned to accommodate a stuck or slow surface,
+// which must never block the whole resume
+// (docs/architecture/behavior/session_resume.feature.md §5).
+const sessionSwitchGracePeriod = 150 * time.Millisecond
+
+// ShutdownForResume is Shutdown's mid-session-switch variant: it publishes
+// ContentSessionSwitching (naming the session every attached surface should
+// reconnect to) and gives it a brief window to actually flush to open SSE
+// connections before running the ordinary Shutdown sequence — which would
+// otherwise close those connections with no prior signal at all. The
+// launch-time --resume path (nothing attached yet to notify) keeps calling
+// Shutdown directly, unchanged. A failure to look up newSessionID's name
+// (e.g. a since-deleted session) still publishes the ID alone rather than
+// blocking the switch on a best-effort lookup.
+func (o *Orchestrator) ShutdownForResume(ctx context.Context, newSessionID string) error {
+	name := ""
+	if id, err := o.store.Load(newSessionID); err == nil {
+		name = id.Name
+	}
+	o.bus.Publish(state.Event{
+		Epoch:       time.Now().UnixMilli(),
+		SessionID:   o.id.ID,
+		EventType:   "SESSION_SWITCHING",
+		ContentType: state.ContentSessionSwitching,
+		Payload:     map[string]any{"session_id": newSessionID, "session_name": name},
+	})
+
+	select {
+	case <-time.After(sessionSwitchGracePeriod):
+	case <-ctx.Done():
+	}
+
+	outgoingID := o.id.ID
+	if err := o.Shutdown(ctx); err != nil {
+		return err
+	}
+
+	// An abandoned session with no real content (e.g. a fresh ax the user
+	// never typed into before switching) is removed as part of the switch —
+	// deterministic Orchestrator housekeeping, not a model tool call, using
+	// the exact same emptiness predicate ListResumable already applies so
+	// "empty" can never mean two different things in two places. A session
+	// with even one real prompt, including one abandoned mid-conversation,
+	// is never touched — RemoveIfEmpty's own guarantee.
+	_, _ = o.store.RemoveIfEmpty(outgoingID)
 	return nil
 }
 
