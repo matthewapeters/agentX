@@ -880,7 +880,7 @@ func (m Model) hintStrip() string {
 			text = "esc → interrupt"
 		}
 	case m.chordPending:
-		text = "q quit · ↑ output · ↓ input · esc cancel"
+		text = "q quit · r resume · ↑ output · ↓ input · esc cancel"
 	case m.focus == focusOutput:
 		text = "j/k scroll · pgup/pgdn select · ^o expand · esc → input"
 	default:
