@@ -90,6 +90,74 @@ func (o *Orchestrator) recordTurn(err error, record bool, userOrd uint64, userTe
 	}
 }
 
+// historyFromEvents reconstructs the in-memory conversation history from a
+// session's persisted event log — the reverse of recordTurn, used when
+// resuming a session
+// (docs/architecture/behavior/session_resume.feature.md §3). Unlike
+// recordTurn's forward-direction construction (which hardcodes enabled: true
+// for a fresh user/assistant turn), this reads enabled: ev.Enabled uniformly
+// for every entry: SetEventEnabled already rewrites the specific persisted
+// event file on every toggle (Recorder.SetEnabled), so the on-disk log is
+// already the correct, up-to-date source of truth for this — no new
+// persistence work, only the reverse-direction read. Ephemeral events (the
+// bootstrap exchange) are skipped, the same exclusion
+// internal/surfaces/context.Model.Apply already applies for the same
+// reason. Content shape (the "[pinned tool call] "/"[pinned tool result] "
+// prefixes) matches recordTurn's exactly, so a reconstructed tool entry is
+// indistinguishable from one recordTurn would have produced live.
+func historyFromEvents(events []state.Event) []turnMsg {
+	hist := make([]turnMsg, 0, len(events))
+	for _, ev := range events {
+		if ev.Ephemeral {
+			continue
+		}
+		text, ok := eventText(ev)
+		switch ev.ContentType {
+		case state.ContentUserPrompt:
+			if !ok || text == "" {
+				continue
+			}
+			hist = append(hist, turnMsg{ordinal: ev.Ordinal, role: "user", content: text, enabled: ev.Enabled})
+		case state.ContentAgentResponse:
+			if !ok || text == "" {
+				continue
+			}
+			hist = append(hist, turnMsg{ordinal: ev.Ordinal, role: "assistant", content: text, enabled: ev.Enabled})
+		case state.ContentToolCall:
+			hist = append(hist, turnMsg{ordinal: ev.Ordinal, role: "tool", content: "[pinned tool call] " + text, enabled: ev.Enabled})
+		case state.ContentToolResult:
+			hist = append(hist, turnMsg{ordinal: ev.Ordinal, role: "tool", content: "[pinned tool result] " + text, enabled: ev.Enabled})
+		}
+	}
+	return hist
+}
+
+// eventText extracts an event's generic "text" payload field, the common
+// shape user_prompt/agent_response/tool_call/tool_result events all share.
+func eventText(ev state.Event) (string, bool) {
+	p, ok := ev.Payload.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	text, ok := p["text"].(string)
+	return text, ok
+}
+
+// maxEventOrdinal returns the highest Ordinal among events, or 0 for an
+// empty log — the value a resumed session's state.NewBusFrom seeds its
+// ordinal counter from, so the first newly published event is stamped past
+// every ordinal already on disk
+// (docs/architecture/behavior/session_resume.feature.md §3).
+func maxEventOrdinal(events []state.Event) uint64 {
+	var max uint64
+	for _, ev := range events {
+		if ev.Ordinal > max {
+			max = ev.Ordinal
+		}
+	}
+	return max
+}
+
 // historyMessages returns the enabled prior-turn conversation history as assembler
 // messages — disabled elements (toggled off from the context surface) are withheld.
 // A pinned tool entry (role "tool") is sent as a user-role message: the safest

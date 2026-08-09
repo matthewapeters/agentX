@@ -19,6 +19,14 @@ type Command struct {
 	// SessionName, when set, names the booted session instead of the generated
 	// adjective-noun — so scripted multiplexer layouts get predictable names.
 	SessionName string
+	// Resume requests resuming an existing session instead of creating a
+	// fresh one (see docs/architecture/behavior/session_resume.feature.md).
+	Resume bool
+	// ResumeTarget is the value given to --resume, if any: empty means "show
+	// a picker" (or auto-resume the sole candidate), "last" means "the most
+	// recently active session, no picker," and anything else is matched
+	// against a candidate's session ID or name.
+	ResumeTarget string
 }
 
 // Parse interprets process arguments (excluding the program name). The default
@@ -61,6 +69,22 @@ func Parse(args []string) (Command, error) {
 			cmd.SessionName = args[i]
 		case strings.HasPrefix(a, "--session="):
 			cmd.SessionName = strings.TrimPrefix(a, "--session=")
+		case a == "--resume":
+			cmd.Resume = true
+			// Optional value: "--resume" alone means "show a picker" (or
+			// auto-resume the sole candidate); a following non-flag token
+			// names a specific session (or "last"). Manual lookahead, not
+			// nextValue — this loop auto-increments i itself (unlike
+			// parseLaunch/parseAlias's own while-style loops nextValue was
+			// written for), so a value token is consumed with exactly one
+			// extra i++, mirroring --session's existing pattern above.
+			if i+1 < len(args) && !isFlag(args[i+1]) {
+				i++
+				cmd.ResumeTarget = args[i]
+			}
+		case strings.HasPrefix(a, "--resume="):
+			cmd.Resume = true
+			cmd.ResumeTarget = strings.TrimPrefix(a, "--resume=")
 		default:
 			return Command{}, fmt.Errorf("unknown argument %q", a)
 		}

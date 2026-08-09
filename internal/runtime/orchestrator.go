@@ -161,6 +161,15 @@ type Settings struct {
 	// the framework is present but unused until a future hook implementation ships
 	// and is named here.
 	HooksConfigPath string
+	// ResumeSessionID, when non-empty, resumes into the named existing session
+	// directory instead of creating a fresh one: Start loads the session's
+	// identity, working memory, and persisted event log rather than
+	// bootstrapping new ones, and seeds the event bus's ordinal counter past
+	// the highest one already on disk so a newly published event can never
+	// collide with one from the session's earlier run
+	// (docs/architecture/behavior/session_resume.feature.md §3). Empty (the
+	// default) creates a fresh session, unchanged from today.
+	ResumeSessionID string
 }
 
 // configPayload is an in-memory snapshot of the latest config write, stored so
@@ -174,6 +183,10 @@ type Orchestrator struct {
 
 	store        *session.Store
 	id           session.Identity
+	// lock guards this session's directory against a second concurrent
+	// process (docs/architecture/behavior/session_resume.feature.md §1) —
+	// acquired by every session, fresh or resumed, and released in Shutdown.
+	lock         *session.Unlocker
 	bus          *state.Bus
 	proc         *state.ProcessingPublisher
 	token        surfaces.AttachToken
@@ -280,15 +293,43 @@ func (o *Orchestrator) Start() error {
 	}
 
 	o.store = session.NewStore(o.settings.SessionRoot)
-	var createOpts []session.Option
-	if name := strings.TrimSpace(o.settings.SessionName); name != "" {
-		createOpts = append(createOpts, session.WithNamer(func() string { return name }))
-	}
-	id, err := o.store.Create(createOpts...)
-	if err != nil {
-		return fmt.Errorf("create session: %w", err)
+
+	resumeID := strings.TrimSpace(o.settings.ResumeSessionID)
+	var id session.Identity
+	var err error
+	if resumeID != "" {
+		id, err = o.store.Load(resumeID)
+		if err != nil {
+			return fmt.Errorf("load session %s: %w", resumeID, err)
+		}
+	} else {
+		var createOpts []session.Option
+		if name := strings.TrimSpace(o.settings.SessionName); name != "" {
+			createOpts = append(createOpts, session.WithNamer(func() string { return name }))
+		}
+		id, err = o.store.Create(createOpts...)
+		if err != nil {
+			return fmt.Errorf("create session: %w", err)
+		}
 	}
 	o.id = id
+
+	// Every session acquires this — fresh or resumed — so a later resume
+	// attempt against a session that never itself locked can't silently
+	// collide with it. Released in Shutdown; also released here if any later
+	// step in Start fails, so a failed Start never leaves a dangling lock
+	// blocking a subsequent attempt.
+	lock, err := o.store.Lock(id.ID)
+	if err != nil {
+		return fmt.Errorf("lock session %s: %w", id.ID, err)
+	}
+	o.lock = lock
+	startOK := false
+	defer func() {
+		if !startOK {
+			_ = o.lock.Unlock()
+		}
+	}()
 
 	// Mint the per-session ephemeral attach token and the surface registry that
 	// external surfaces register against (TRN-1). The raw token stays in memory.
@@ -299,11 +340,24 @@ func (o *Orchestrator) Start() error {
 	o.token = tok
 	o.surfaceReg = surfaces.NewRegistry(tok, id.ID, id.Name)
 
+	// SeedIfAbsent (inside seedWorkingMemory) only appends bootstrap facts
+	// whose key isn't already present, so this is already correct for a
+	// resumed session unchanged: LoadWorkingMemory reads back everything the
+	// session already had, and nothing here overwrites it.
 	if err := o.seedWorkingMemory(); err != nil {
 		return fmt.Errorf("seed working memory: %w", err)
 	}
 
-	o.bus = state.NewBus()
+	if resumeID != "" {
+		events, err := o.store.Recorder(id.ID).Load()
+		if err != nil {
+			return fmt.Errorf("load session history: %w", err)
+		}
+		o.history = historyFromEvents(events)
+		o.bus = state.NewBusFrom(maxEventOrdinal(events))
+	} else {
+		o.bus = state.NewBus()
+	}
 	o.proc = state.NewProcessingPublisher(id.ID)
 	if o.model == nil {
 		switch strings.ToLower(o.settings.Provider) {
@@ -372,6 +426,7 @@ func (o *Orchestrator) Start() error {
 
 	o.started = true
 	o.accepting = true
+	startOK = true
 	return nil
 }
 
@@ -478,6 +533,9 @@ func (o *Orchestrator) Shutdown(ctx context.Context) error {
 	})
 
 	sub.Close()
+	if o.lock != nil {
+		_ = o.lock.Unlock()
+	}
 	select {
 	case err := <-done:
 		return err

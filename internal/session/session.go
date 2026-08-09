@@ -74,6 +74,20 @@ func (s *Store) Create(opts ...Option) (Identity, error) {
 	return identity, nil
 }
 
+// Load reads back an existing session's identity from its persisted
+// session.json — the resume-path counterpart to Create. It does not modify
+// anything on disk and does not acquire the session lock (see Lock); callers
+// resuming a session call Load first, then Lock, so a contended lock is
+// detected before any state is touched.
+func (s *Store) Load(id string) (Identity, error) {
+	var identity Identity
+	path := filepath.Join(s.Dir(id), "session.json")
+	if err := readJSON(path, &identity); err != nil {
+		return Identity{}, fmt.Errorf("load session %s: %w", id, err)
+	}
+	return identity, nil
+}
+
 // allocateDir creates a uniquely-named session directory derived from epoch,
 // suffixing on collision, and returns the id and directory path.
 func (s *Store) allocateDir(epoch int64) (string, string, error) {

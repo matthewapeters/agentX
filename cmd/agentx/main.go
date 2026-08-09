@@ -19,6 +19,8 @@ import (
 
 	"agentx/internal/app"
 	"agentx/internal/cli"
+	"agentx/internal/config"
+	"agentx/internal/session"
 )
 
 // version is the build-time version of the agentx runtime. It is overridable
@@ -55,5 +57,30 @@ func run(args []string) error {
 		return cli.RunSurface(ctx, *cmd.Launch)
 	}
 
-	return app.RunChat(ctx, app.Options{SessionName: cmd.SessionName})
+	opts := app.Options{SessionName: cmd.SessionName}
+	if cmd.Resume {
+		id, err := resolveResumeSessionID(cmd.ResumeTarget)
+		if err != nil {
+			return err
+		}
+		opts.ResumeSessionID = id
+	}
+	return app.RunChat(ctx, opts)
+}
+
+// resolveResumeSessionID resolves a --resume flag's target to a concrete
+// session ID before the runtime boots: cli.ResolveResume needs a
+// session.Store (built from the conventional session root, same as
+// app.Build resolves internally) and interactive stdin/stdout for the
+// picker when the target is ambiguous — neither fits app.Build's role as a
+// pure composition function, so this runs first, in the CLI layer, same as
+// cli.NewSessionName's pre-launch printing above
+// (docs/architecture/behavior/session_resume.feature.md §2).
+func resolveResumeSessionID(target string) (string, error) {
+	paths, err := config.DefaultPaths()
+	if err != nil {
+		return "", fmt.Errorf("resolve config paths: %w", err)
+	}
+	store := session.NewStore(paths.SessionRoot())
+	return cli.ResolveResume(store, target, os.Stdin, os.Stdout)
 }

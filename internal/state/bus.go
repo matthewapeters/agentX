@@ -18,6 +18,21 @@ type Bus struct {
 // NewBus returns an empty Bus.
 func NewBus() *Bus { return &Bus{subs: make(map[int]*Subscription)} }
 
+// NewBusFrom returns an empty Bus whose ordinal counter starts past
+// startOrdinal — the first Publish call stamps startOrdinal+1, not 1. This
+// exists for session resume
+// (docs/architecture/behavior/session_resume.feature.md §3): a resumed
+// session's new process must never assign an ordinal that collides with one
+// already on disk from the session's earlier run, since ordinal is the exact
+// key SetEventEnabled matches against and the cursor a reattaching surface
+// seeds its live-stream boundary from. Callers seed startOrdinal from the
+// max Ordinal found in the session's persisted event log.
+func NewBusFrom(startOrdinal uint64) *Bus {
+	b := &Bus{subs: make(map[int]*Subscription)}
+	b.ordinal.Store(startOrdinal)
+	return b
+}
+
 // CurrentOrdinal returns the highest ordinal assigned so far (0 before any
 // publish). A surface captures this at subscribe time as the boundary between the
 // disk-seeded history (ordinal <= boundary) and the live stream (ordinal > boundary).

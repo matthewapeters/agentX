@@ -28,6 +28,11 @@ type Options struct {
 	// SessionName names the booted session (e.g. from --session). Empty generates
 	// the default adjective-noun name.
 	SessionName string
+	// ResumeSessionID, when non-empty, resumes into that existing session
+	// directory instead of creating a fresh one — the already-resolved
+	// target from cli.ResolveResume, not the raw --resume flag value (see
+	// docs/architecture/behavior/session_resume.feature.md).
+	ResumeSessionID string
 }
 
 // shutdownTimeout bounds graceful shutdown.
@@ -161,6 +166,7 @@ func Build(opts Options) (*runtime.Orchestrator, error) {
 		TransportHost:                cfg.TransportHost(),
 		TransportPortStart:           transportStart,
 		TransportPortEnd:             transportEnd,
+		ResumeSessionID:              opts.ResumeSessionID,
 	})
 	if err := orc.Start(); err != nil {
 		return nil, err
@@ -259,8 +265,15 @@ func RunChat(ctx context.Context, opts Options) error {
 
 	// Auto-submit the bootstrap prompt (if configured) once the surface is
 	// subscribed; its events buffer on the subscription until the program drains
-	// them, so the response opens the session.
-	go func() { _ = orc.SubmitBootstrap(ctx) }()
+	// them, so the response opens the session. Skipped when resuming: a resumed
+	// session already has its own bootstrap turn from its original run —
+	// re-submitting would append a second, redundant greeting on top of the
+	// resumed history (harmless to the model's own context, since
+	// historyFromEvents already excludes ephemeral events, but a visible
+	// wart in the chat surface, which still renders them).
+	if orc.Settings().ResumeSessionID == "" {
+		go func() { _ = orc.SubmitBootstrap(ctx) }()
+	}
 
 	surface := chat.NewWithBridge(bridge)
 	surface.SetMaxWidgetLines(orc.Settings().MaxWidgetLines)
