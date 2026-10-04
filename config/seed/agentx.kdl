@@ -10,7 +10,7 @@ layout {
 				pane {
 					cwd "$PWD"
 					command "bash"
-					args "-c" "agentx --session $AX_SESSION_STRING"
+					args "-c" "agentx $AX_CHAT_FLAG $AX_SESSION_STRING"
 					close_on_exit true
 					focus true
 					borderless false

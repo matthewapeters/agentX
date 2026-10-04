@@ -12,10 +12,27 @@ if ! command -v zellij >/dev/null 2>&1; then
 	exit 1
 fi
 
-# Mint a session name in AgentX's own adjective-noun style (filesystem-safe,
-# human-readable, and unique among sessions already on disk).
-AX_SESSION_STRING=$(agentx session new-name)
-export AX_SESSION_STRING
+# -r <session name>: resume an existing session instead of minting a new one.
+# AX_CHAT_FLAG picks which flag the chat pane launches agentx with — --resume
+# (matched against a session's ID or adjective-noun name, see
+# docs/architecture/behavior/session_resume.feature.md) instead of --session
+# (which always starts fresh). AX_SESSION_STRING still drives every pane's
+# --session selector either way: the surface panes auto-resolve by name/id
+# against whatever session ends up running (SS-5), so they need no flag swap.
+AX_CHAT_FLAG="--session"
+if [ "${1:-}" = "-r" ]; then
+	if [ "${2:-}" = "" ]; then
+		echo "ax: -r requires a session name" >&2
+		exit 1
+	fi
+	AX_SESSION_STRING=$2
+	AX_CHAT_FLAG="--resume"
+else
+	# Mint a session name in AgentX's own adjective-noun style (filesystem-safe,
+	# human-readable, and unique among sessions already on disk).
+	AX_SESSION_STRING=$(agentx session new-name)
+fi
+export AX_SESSION_STRING AX_CHAT_FLAG
 echo "$AX_SESSION_STRING"
 
 zellij --layout ~/.config/agentx/agentx.kdl
